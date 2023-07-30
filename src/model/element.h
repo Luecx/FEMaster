@@ -26,6 +26,8 @@ struct ElementInterface{
     virtual DynamicMatrix stiffness() = 0;
     virtual Dofs dofs() = 0;
     virtual Dim dimensions() = 0;
+    virtual Dim n_nodes() = 0;
+    virtual ID* nodes() = 0;
 };
 
 template<size_t N, Dim D>
@@ -131,6 +133,14 @@ struct SolidElement : public ElementInterface{
 
     Dim dimensions() override {
         return D;
+    }
+
+    Dim n_nodes() override {
+        return node_ids.size();
+    }
+
+    ID* nodes() override {
+        return &node_ids[0];
     }
 };
 

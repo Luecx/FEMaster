@@ -8,18 +8,20 @@
 
 namespace fem {
 namespace model {
+
+template<typename T = std::vector<ID>>
 struct Sets {
-    std::unordered_map<std::string, std::vector<ID>> m_sets;
-    std::string                                      m_active;
-    std::string                                      m_all;
+    std::unordered_map<std::string, T> m_sets;
+    std::string                        m_active;
+    std::string                        m_all;
 
     explicit Sets(std::string def)
-        : m_all(std::move(def)){
+        : m_all(std::move(def)) {
         activate(m_all);
     }
 
-    void activate(std::string name="") {
-        if(name.empty()){
+    void activate(std::string name = "") {
+        if (name.empty()) {
             name = m_all;
         }
         auto it = m_sets.find(name);
@@ -27,21 +29,22 @@ struct Sets {
             m_active = name;
         } else {
             // Create a new entry in the sets map
-            m_sets.emplace(name, std::vector<ID>());
+            m_sets.emplace(name, T());
             m_active = name;
         }
     }
 
-    std::vector<ID>& all() {
+    T& all() {
         return m_sets[m_all];
     }
-    std::vector<ID>& ids() {
+    T& current() {
         return m_sets[m_active];
     }
-    void add_id(ID id){
+    void add(ID id) {
         all().push_back(id);
-        ids().push_back(id);
+        current().push_back(id);
     }
 };
+
 }    // namespace model
 }    // namespace fem

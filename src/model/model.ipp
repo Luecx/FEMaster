@@ -1,6 +1,4 @@
-#include "model.h"
-
-void Model::set_node(ID id, Precision x, Precision y, Precision z) {
+inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     log_error(id < max_nodes, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
     log_error(node_coords(id,0) == 0 &&
                   node_coords(id,1) == 0 &&
@@ -8,11 +6,12 @@ void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     node_coords(id, 0) = x;
     node_coords(id, 1) = y;
     node_coords(id, 2) = z;
-    node_sets.add_id(id);
+    node_sets.add(id);
 }
 
+
 template<typename T, typename... Args>
-void Model::set_element(ID id, Args&&... args) {
+inline void Model::set_element(ID id, Args&&... args) {
     log_error(id < max_elements,
               "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
     auto el = ElementPtr {new T {id, {args...}}};
@@ -23,5 +22,5 @@ void Model::set_element(ID id, Args&&... args) {
               id, " has ", el->dimensions(), " while all other elements have ", element_dims, " dimensions");
     log_error(this->elements[id] == nullptr, "element with id=", id, " has already been defined");
 
-    this->elem_sets.add_id(id);
+    this->elem_sets.add(id);
 }

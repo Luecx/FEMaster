@@ -7,6 +7,8 @@
 #include "model/element.h"
 #include "model/model.h"
 #include "model/quadrature.h"
+#include "reader/line.h"
+#include "reader/file.h"
 #include "solve/solver.h"
 
 #include <Eigen/Core>
@@ -19,10 +21,20 @@ int main(int argc, char* argv[]) {
 
 
     using namespace fem::model;
+    using namespace fem::reader;
 
-    Model model{10,10};
-    model.set_node(0,1,2,3);
-    model.set_element<C3D8>(0,(ID)1,(ID)2,(ID)3,(ID)4,(ID)5,(ID)6,(ID)7);
+    File file{"test1.txt"};
+    while(!file.is_eof()){
+        std::cout << file.next().line() << std::endl;
+    }
+
+//    Line line;
+//    line = "* command, key_1 = 3";
+//    std::cout << line << std::endl;
+
+//    Model model{10,10};
+//    model.set_node(0,1,2,3);
+//    model.set_element<C3D8>(0,(ID)1,(ID)2,(ID)3,(ID)4,(ID)5,(ID)6,(ID)7);
 
 //    const int N = 30;
 //    const int dofs_per_node = 3;
