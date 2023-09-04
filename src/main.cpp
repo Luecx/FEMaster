@@ -22,13 +22,15 @@ int main(int argc, char* argv[]) {
 
     using namespace fem::model;
     using namespace fem::reader;
-
-    File file{"test1.txt"};
-    while(!file.is_eof()){
-        std::cout << file.next().line() << std::endl;
-    }
+//
+//    File file{"test1.txt"};
+//    while(!file.is_eof()){
+//        std::cout << file.next().line() << std::endl;
+//    }
 
 //    Line line;
+//    line = "* command, key_1 = 3";
+//    std:ine line;
 //    line = "* command, key_1 = 3";
 //    std::cout << line << std::endl;
 
@@ -36,105 +38,139 @@ int main(int argc, char* argv[]) {
 //    model.set_node(0,1,2,3);
 //    model.set_element<C3D8>(0,(ID)1,(ID)2,(ID)3,(ID)4,(ID)5,(ID)6,(ID)7);
 
-//    const int N = 30;
-//    const int dofs_per_node = 3;
-//    const int nodes_per_elem = 8;
-//    Model model{N*N*N, N*N*N};
-//
-//    // Generate node coordinates.
-//    std::cout << "begin setting node coords" << std::endl;
-//    for (int x = 0; x < N; x++) {
-//        for (int y = 0; y < N; y++) {
-//            for (int z = 0; z < N; z++) {
-//                int n = x * N * N + y * N + z;
-//                model.node_coords(n,0) = x;
-//                model.node_coords(n,1) = y;
-//                model.node_coords(n,2) = z;
-//            }
-//        }
-//    }
-//    std::cout << "finished setting node coords" << std::endl;
-//
-//    // Material setup.
-//    fem::material::MaterialPtr mat = fem::material::MaterialPtr(new fem::material::Material("my_mat"));
-//    mat->set_elasticity<fem::material::IsotropicElasticity>(210000, 0.3);
-//    mat->set_density(8100);
-//
-//
-//    int K = N * N * dofs_per_node;
-//    int M = N * N * N * dofs_per_node - K;
-//    SparseMatrixBuilder tripplets{};
-//
-//    // Generate elements and compute stiffness.
-//    int E = 0;
-//
-//    SparseMatrix matrix{M, M};
-//
-//    for (int x = 0; x < N-1; x++) {
-//        for (int y = 0; y < N-1; y++) {
-//            for (int z = 0; z < N-1; z++) {
-//                int e = x * (N-1) * (N-1) + y * (N-1) + z;
-//                C3D8 elem(e, &model, {
-//                                         (ID)(x)*N*N+(y)*N+(z),
-//                                         (ID)(x+1)*N*N+(y)*N+(z),
-//                                         (ID)(x+1)*N*N+(y+1)*N+(z),
-//                                         (ID)(x)*N*N+(y+1)*N+(z),
-//                                         (ID)(x)*N*N+(y)*N+(z+1),
-//                                         (ID)(x+1)*N*N+(y)*N+(z+1),
-//                                         (ID)(x+1)*N*N+(y+1)*N+(z+1),
-//                                         (ID)(x)*N*N+(y+1)*N+(z+1)
-//                                     });
-//                elem.set_material(mat);
-//
-//                {
-//                    E ++;
-//                    if ( E % 1000 == 0){
-//                        std::cout << E << std::endl;
-//                    }
-//                };
-//
-//                // once we collect 10M tripplets, we merge them
-//                if(tripplets.size() > 1e9){
-//                    std::cout << "collapsing elements "<< std::endl;
-//                    matrix.insertFromTriplets(tripplets.begin(), tripplets.end());
-//                    tripplets.clear();
-//                }
-//
-//                // Get stiffness matrix for current element.
-//                DynamicMatrix K = elem.stiffness();
-//
-//                // Assemble into global matrix.
-//                for (int i = 0; i < nodes_per_elem; i++) {
-//                    for (int j = 0; j < nodes_per_elem; j++) {
-//                        for (int idof = 0; idof < dofs_per_node; idof++) {
-//                            for (int jdof = 0; jdof < dofs_per_node; jdof++) {
-//                                size_t global_i = elem.node_ids[i] * dofs_per_node + idof;
-//                                size_t global_j = elem.node_ids[j] * dofs_per_node + jdof;
-//
-//                                // Assuming global matrix is large enough to accommodate all entries.
-//                                if (global_i < M && global_j < M){
-//                                    {
-//                                        tripplets.emplace_back(global_i, global_j, K(i * dofs_per_node + idof, j * dofs_per_node + jdof));
-//                                    }
-//                                }
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//    }
-//    matrix.insertFromTriplets(tripplets.begin(), tripplets.end());
-//
-//    DynamicVector rhs{matrix.rows()};
-//    for(int i = 0; i < rhs.size(); i++){
-//        rhs[i] = rand() / (Precision)(RAND_MAX) / 1000.f;
-//    }
-//
-//    matrix.finalize();
-//    solver::solve_iter(solver::GPU, matrix, rhs);
-//    solver::solve_iter(solver::GPU, matrix, rhs);
+    const int N = 2;
+    const int dofs_per_node = 3;
+    const int nodes_per_elem = 8;
+    Model model{N*N*N, N*N*N + 4};
 
+    // Generate node coordinates.
+    std::cout << "begin setting node coords" << std::endl;
+    for (int x = 0; x < N; x++) {
+        for (int y = 0; y < N; y++) {
+            for (int z = 0; z < N; z++) {
+                int n = x * N * N + y * N + z;
+                model.set_node(n, x,y,z);
+            }
+        }
+    }
+    std::cout << "finished setting node coords" << std::endl;
+
+    // Material setup.
+
+    int K = N * N * dofs_per_node;
+    int M = N * N * N * dofs_per_node - K;
+    SparseMatrixBuilder tripplets{};
+
+    // Generate elements and compute stiffness.
+    int E = 0;
+
+    SparseMatrix matrix{M, M};
+
+    for (int x = 0; x < N-1; x++) {
+        for (int y = 0; y < N-1; y++) {
+            for (int z = 0; z < N-1; z++) {
+                int e = x * (N-1) * (N-1) + y * (N-1) + z;
+
+                model.set_element<C3D8>(e,
+                        (ID)(x)*N*N+(y)*N+(z),
+                        (ID)(x+1)*N*N+(y)*N+(z),
+                        (ID)(x+1)*N*N+(y+1)*N+(z),
+                        (ID)(x)*N*N+(y+1)*N+(z),
+                        (ID)(x)*N*N+(y)*N+(z+1),
+                        (ID)(x+1)*N*N+(y)*N+(z+1),
+                        (ID)(x+1)*N*N+(y+1)*N+(z+1),
+                        (ID)(x)*N*N+(y+1)*N+(z+1)
+                );
+            }
+        }
+    }
+
+    std::cout << "generated elements" << std::endl;
+
+    model.activate_material("mat1");
+
+    model.active_material().set_elasticity<fem::material::IsotropicElasticity>(210000, 0);
+    model.active_material().set_density(8100);
+
+    model.solid_section("EALL", "mat1");
+
+    std::cout << model.node_coords << std::endl;
+
+    std::cout << "added material" << std::endl;
+//    model.add_support(0, StaticVector<3>(0,0,0));
+    model.add_support(0, StaticVector<3>(0,0,0));
+    model.add_support(2, StaticVector<3>(0,0,0));
+    model.add_support(4, StaticVector<3>(0,0,0));
+    model.add_support(6, StaticVector<3>(0,0,0));
+//    model.add_support(53, StaticVector<3>(0,0,0));
+    model.add_cload("NALL", StaticVector<3>(2,0,0));
+//    model.add_support(30, StaticVector<3>(0,0,0));
+
+    std::cout << "added material and loads" << std::endl;
+
+
+    Timer timer;  // Create an instance of Timer
+
+    timer.start();
+    auto unconstrained = model.build_unconstrained_index_matrix();
+    timer.stop();
+    std::cout << "Time taken for build_unconstrained_index_matrix: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto supp_vec = model.build_support_vector(unconstrained);
+    timer.stop();
+    std::cout << "Time taken for build_support_vector: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto load_vec = model.build_load_vector(unconstrained);
+    timer.stop();
+    std::cout << "Time taken for build_load_vector: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto stiffness = model.build_stiffness_matrix(unconstrained);
+    timer.stop();
+    std::cout << "Time taken for build_stiffness_matrix: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto impl_load_vec = model.build_implicit_load_vector(stiffness, supp_vec);
+    timer.stop();
+    std::cout << "Time taken for build_implicit_load_vector: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto constrained = model.build_constrained_index_matrix(supp_vec);
+    timer.stop();
+    std::cout << "Time taken for build_constrained_index_matrix: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto mapping_vec = model.build_mapping_vector(unconstrained, constrained);
+    timer.stop();
+    std::cout << "Time taken for build_mapping_vector: " << timer.elapsed() << " ms" << std::endl;
+
+    load_vec += impl_load_vec;
+
+    timer.start();
+    auto reduced_stiffness = model.build_reduced_stiffness(mapping_vec, stiffness);
+    timer.stop();
+    std::cout << "Time taken for build_reduced_stiffness: " << timer.elapsed() << " ms" << std::endl;
+
+    timer.start();
+    auto reduced_load = model.build_reduced_load(mapping_vec, load_vec);
+    timer.stop();
+    std::cout << "Time taken for build_reduced_load: " << timer.elapsed() << " ms" << std::endl;
+
+    auto res1 = solver::solve_iter(solver::CPU, reduced_stiffness, reduced_load);
+    auto disp = model.build_global_displacement(constrained, res1);
+
+    std::cout << disp << std::endl;
+
+    NodeData stress;
+    NodeData strain;
+
+    std::tie(stress, strain) = model.compute_stress_strain(disp);
+    std::cout << stress << std::endl;
+    std::cout << strain << std::endl;
+    ElementData compliance = model.compute_compliance(disp);
+    std::cout << compliance << std::endl;
 
     return 0;
 }

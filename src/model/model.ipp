@@ -22,5 +22,6 @@ inline void Model::set_element(ID id, Args&&... args) {
               id, " has ", el->dimensions(), " while all other elements have ", element_dims, " dimensions");
     log_error(this->elements[id] == nullptr, "element with id=", id, " has already been defined");
 
+    this->elements[id] = el;
     this->elem_sets.add(id);
 }

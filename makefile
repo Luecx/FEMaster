@@ -1,13 +1,17 @@
 # Compiler options
 NVCC = nvcc
 CXX = g++
-CXXFLAGS = -std=c++17 -fopenmp -I ./include/
-NVCCFLAGS = -std=c++17 -use_fast_math -O3 -I ./include/ --expt-relaxed-constexpr -Xcompiler=-fopenmp
+CXX = /opt/homebrew/opt/llvm/bin/clang++
+
+CXXFLAGS = -std=c++17 -I ./include/ -fopenmp
+NVCCFLAGS = -std=c++17 -O3 -I ./include/ --expt-relaxed-constexpr
 NVCCLIBS := -lcusolver -lcublas -lcusparse
 
 UNAME := $(shell uname)
-ifneq ($(UNAME), Linux)
-	$(error Only works on Linux)
+
+ifeq ($(UNAME), Linux)
+	CXXFLAGS += -fopenmp
+	NVCCFLAGS += -Xcompiler=-fopenmp
 endif
 
 # Directories
@@ -42,7 +46,7 @@ ifeq ($(show_array_processes), 1)
 	NVCCFLAGS += -DSHOW_ARRAY_PROCESSES
 endif
 
-# check if show_array_processes is set to 1
+# check if debug is set to 1
 ifeq ($(debug), 1)
 	CXXFLAGS  += -DNDEBUG
 	NVCCFLAGS += -DNDEBUG

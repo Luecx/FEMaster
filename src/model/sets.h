@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/types.h"
+#include "../core/logging.h"
 
 #include <string>
 #include <unordered_map>
@@ -15,12 +16,18 @@ struct Sets {
     std::string                        m_active;
     std::string                        m_all;
 
-    explicit Sets(std::string def)
-        : m_all(std::move(def)) {
-        activate(m_all);
+    template<typename... Args>
+    Sets() : m_all(""), m_active("") {
     }
 
-    void activate(std::string name = "") {
+    template<typename... Args>
+    explicit Sets(std::string def, Args&&... args)
+        : m_all(std::move(def)) {
+        activate(m_all, args...);
+    }
+
+    template<typename... Args>
+    void activate(std::string name = "", Args&&... args) {
         if (name.empty()) {
             name = m_all;
         }
@@ -28,21 +35,37 @@ struct Sets {
         if (it != m_sets.end()) {
             m_active = name;
         } else {
-            // Create a new entry in the sets map
-            m_sets.emplace(name, T());
+            // Create a new entry in the sets map with forwarded arguments
+            m_sets.emplace(std::piecewise_construct,
+                           std::forward_as_tuple(name),
+                           std::forward_as_tuple(std::forward<Args>(args)...));
             m_active = name;
         }
     }
 
+
     T& all() {
+        log_error(!m_all.empty(), "no all-set defined for given set");
         return m_sets[m_all];
     }
     T& current() {
+        log_error(!m_active.empty(), "active set is not defined for current material");
         return m_sets[m_active];
     }
+    bool has(const std::string& key){
+        log_error(!key.empty(), "empty keys are not valid for sets");
+        return m_sets.find(key) != m_sets.end();
+    }
+    T& get(const std::string& key) {
+        log_error(has(key), key, "is not found within the set");
+        return m_sets.at(key);
+    }
     void add(ID id) {
-        all().push_back(id);
+        static_assert(std::is_same<T, std::vector<ID>>::value, "Cannot call add() for other than default type.");
         current().push_back(id);
+        // dont add twice if active set is all
+        if(m_all != m_active)
+            all().push_back(id);
     }
 };
 

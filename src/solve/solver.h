@@ -23,9 +23,9 @@ enum SolverMethod{
 //                                  linalg::DenseNMatrix<float>& mat,
 //                                  linalg::DenseNMatrix<float>& rhs);
 //
-//linalg::DenseNMatrix<float> solve(array::Device device,
-//                                  linalg::ImmutableSparseMatrix<float>& mat,
-//                                  linalg::DenseNMatrix<float>& rhs);
+DynamicVector solve(SolverDevice device,
+                    SparseMatrix& mat,
+                    DynamicVector& rhs);
 
 DynamicVector solve_iter(SolverDevice device,
                          SparseMatrix& mat,

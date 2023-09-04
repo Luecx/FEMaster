@@ -62,6 +62,11 @@ DynamicVector solve_iter(SolverDevice device,
 #ifndef SUPPORT_GPU
     log_info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
     device = CPU;
+#else
+#ifdef DOUBLE_PRECISION
+    log_info(device != CPU, "This build does not support gpu-accelerated solving in double-precision, falling back to cpu");
+    device = CPU;
+#endif
 #endif
     log_info(true, "");
     log_info(true, "==============================================================================");
@@ -285,49 +290,31 @@ DynamicVector solve_iter(SolverDevice device,
 #endif
 
         DynamicVector sol{N};
-//        // start the time
-//        Timer t {};
-//        t.start();
-//
-//        // First, we need to convert your ImmutableSparseMatrix into an Eigen SparseMatrix
-//        Eigen::SparseMatrix<Precision> eigen_mat(N, N);
-//
-//        // Create a triplet list for easy construction of the sparse matrix
-//        std::vector<Eigen::Triplet<Precision>> tripletList;
-//        tripletList.reserve(mat.get_non_zero_values().size());
-//
-//        for (size_t i = 0; i < N; ++i) {
-//            auto row_start = mat.get_row_extents()[i];
-//            auto row_end   = mat.get_row_extents()[i + 1];
-//            for (auto j = row_start; j < row_end; ++j) {
-//                tripletList.emplace_back(i, mat.get_col_indices()[j], mat.get_non_zero_values()[j]);
-//            }
-//        }
-//        eigen_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-//
-//        // Convert your DenseVector into an Eigen Vector
-//        Eigen::VectorXf eigen_rhs(N);
-//        for (size_t i = 0; i < rhs.size(); ++i) {
-//            eigen_rhs(i) = rhs[i];
-//        }
-//
-//        // Now we use Eigen's SimplicialLDLT solver to solve the system
-//        Eigen::ConjugateGradient<Eigen::SparseMatrix<Precision>, Eigen::Lower|Eigen::Upper, Eigen::IncompleteCholesky<Precision>> cg;
-//        cg.compute(eigen_mat);
-//        log_error(cg.info() == Eigen::Success, "Decomposition failed");
-//        Eigen::VectorXf eigen_sol = cg.solve(eigen_rhs);
-//        log_error(cg.info() == Eigen::Success, "Solving failed");
-//
-//        t.stop();
-//        log_info(true, "Running PCG method finished");
-//        log_info(true, "Elapsed time: ", t.elapsed()," ms");
-//        log_info(true, "iterations  : ", cg.iterations());
-//        log_info(true, "residual    : ", cg.error());
-//
-//        // Finally, copy the result back into your rhs vector.
-//        for (size_t i = 0; i < rhs.size(); ++i) {
-//            sol[i] = eigen_sol(i);
-//        }
+        // start the time
+        Timer t {};
+        t.start();
+
+        // Convert your DenseVector into an Eigen Vector
+        DynamicVector eigen_rhs = rhs;
+
+        // Now we use Eigen's ConjugateGradient solver to solve the system
+        Eigen::ConjugateGradient<Eigen::SparseMatrix<Precision>, Eigen::Lower|Eigen::Upper, Eigen::IncompleteCholesky<Precision>> cg;
+        cg.compute(mat);
+        cg.setTolerance(1e-12);
+        log_error(cg.info() == Eigen::Success, "Decomposition failed");
+        DynamicVector eigen_sol = cg.solve(eigen_rhs);
+        log_error(cg.info() == Eigen::Success, "Solving failed");
+
+        t.stop();
+        log_info(true, "Running PCG method finished");
+        log_info(true, "Elapsed time: ", t.elapsed()," ms");
+        log_info(true, "iterations  : ", cg.iterations());
+        log_info(true, "residual    : ", cg.error());
+
+        // Finally, copy the result back into your rhs vector.
+        for (size_t i = 0; i < rhs.size(); ++i) {
+            sol[i] = eigen_sol(i);
+        }
         return sol;
 #ifdef SUPPORT_GPU
     }

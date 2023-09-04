@@ -15,10 +15,6 @@ namespace material {
 struct Material {
     private:
 
-    // Name of the material
-    // used to find the material later one since it will be stored within a vector
-    std::string m_name;
-
     // Pointer to an object of type Elasticity, used to store the elasticity properties of the material
     ElasticityPtr m_elastic = nullptr;
 
@@ -26,12 +22,6 @@ struct Material {
     Precision m_density = -1;
 
     public:
-    explicit Material(const std::string& name)
-        : m_name(name) {}
-
-    std::string name(){
-        return m_name;
-    }
 
     // set_elasticity is a templated function that takes any type T (that should inherit from Elasticity)
     // and any number of arguments to construct an object of type T, then sets the ElasticityPtr to this object
@@ -65,9 +55,5 @@ struct Material {
         return m_density;
     }
 };
-
-// Define a shorthand for a shared pointer to Material, to simplify the code where it's used
-using MaterialPtr = std::shared_ptr<Material>;
-
 }    // namespace material
 }    // namespace fem
