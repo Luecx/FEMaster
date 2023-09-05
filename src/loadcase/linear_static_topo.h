@@ -1,6 +1,7 @@
 #pragma once
 
 #include "loadcase.h"
+#include "linear_static.h"
 #include "../solve/solver.h"
 
 namespace fem{
@@ -14,20 +15,15 @@ namespace loadcase{
         logging::info(true, "It took", timer.elapsed(), "milliseconds to run", description); \
     } while(0)
 
-struct LinearStatic : public LoadCase{
+struct LinearStaticTopo : public LinearStatic{
 
-    explicit LinearStatic(ID id, reader::Writer* writer, model::Model* model);
+    explicit LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model);
 
-    std::vector<std::string> supps;
-    std::vector<std::string> loads;
-
-    solver::SolverDevice device = solver::CPU;
-    solver::SolverMethod method = solver::INDIRECT;
+    ElementData density;
+    Precision exponent = 1;
 
     public:
-    virtual void run() override;
-
-
+    void run() override;
 };
 
 #undef TIMED_EXECUTION

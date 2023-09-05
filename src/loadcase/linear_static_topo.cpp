@@ -1,18 +1,23 @@
 //
 // Created by Luecx on 04.09.2023.
 //
-#include "linear_static.h"
+#include "linear_static_topo.h"
 
-fem::loadcase::LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
-    : LoadCase(id, writer, model) {}
+fem::loadcase::LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
+    : LinearStatic(id, writer, model), density(model->max_elements, 1) {
+    density.setOnes();
+}
 
-void fem::loadcase::LinearStatic::run() {
+void fem::loadcase::LinearStaticTopo::run() {
     logging::info(true, "");
     logging::info(true, "");
     logging::info(true, "================================================================================================");
     logging::info(true, "LINEAR STATIC");
     logging::info(true, "================================================================================================");
     logging::info(true, "");
+
+    // build stiffness scalar
+    auto stiffness_scalar = density.array().pow(exponent);
 
     auto unconstrained = Timer::measure(
         [&]() { return this->m_model->build_unconstrained_index_matrix(); },
@@ -30,7 +35,7 @@ void fem::loadcase::LinearStatic::run() {
     );
 
     auto stiffness = Timer::measure(
-        [&]() { return this->m_model->build_stiffness_matrix(unconstrained); },
+        [&]() { return this->m_model->build_stiffness_matrix(unconstrained, stiffness_scalar); },
         "constructing stiffness matrix"
     );
 
@@ -73,8 +78,15 @@ void fem::loadcase::LinearStatic::run() {
 
     std::tie(stress, strain) = m_model->compute_stress_strain(disp_matrix);
 
+    ElementData compliance_raw = m_model->compute_compliance(disp_matrix);
+    ElementData compliance_adj = compliance_raw.array() * density.array().pow(exponent);
+    ElementData dens_grad      = - exponent * compliance_raw.array() * density.array().pow(exponent - 1);
+
     m_writer->add_loadcase(m_id);
-    m_writer->write_eigen_matrix(disp_matrix , "DISPLACEMENT");
-    m_writer->write_eigen_matrix(strain      , "STRAIN");
-    m_writer->write_eigen_matrix(stress      , "STRESS");
+    m_writer->write_eigen_matrix(disp_matrix   , "DISPLACEMENT");
+    m_writer->write_eigen_matrix(strain        , "STRAIN");
+    m_writer->write_eigen_matrix(stress        , "STRESS");
+    m_writer->write_eigen_matrix(compliance_raw, "COMPLIANCE_RAW");
+    m_writer->write_eigen_matrix(compliance_adj, "COMPLIANCE_ADJ");
+    m_writer->write_eigen_matrix(dens_grad     , "DENS_GRAD");
 }

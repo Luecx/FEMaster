@@ -80,6 +80,9 @@ struct Model {
     std::vector<ID>&    active_nodeset();
     std::vector<ID>&    active_elemset();
 
+    Sets<std::vector<ID>>&  nodesets();
+    Sets<std::vector<ID>>&  elemsets();
+
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);
 
@@ -92,14 +95,14 @@ struct Model {
     DynamicVector build_implicit_load_vector(const SparseMatrix& stiffness, const DynamicVector& support);
     DynamicVector build_support_vector      (IndexMatrix& indices, std::vector<std::string> load_sets = {"SALL"});
     DynamicVector build_load_vector         (IndexMatrix& indices, std::vector<std::string> load_sets = {"LALL"});
-    SparseMatrix  build_stiffness_matrix    (IndexMatrix& indices, ElementData el_data = ElementData(0,0));
+    SparseMatrix  build_stiffness_matrix    (IndexMatrix& indices, ElementData stiffness_scalar = ElementData(0,0));
     IndexVector   build_mapping_vector      (IndexMatrix& unconstrained, IndexMatrix  & constrained);
     SparseMatrix  build_reduced_stiffness   (IndexVector& mapping      , SparseMatrix & constrained);
     DynamicVector build_reduced_load        (IndexVector& mapping      , DynamicVector& constrained);
-    NodeData      build_global_displacement (IndexMatrix& constrained  , DynamicVector& result);
+    NodeData      build_global_displacement (IndexMatrix& constrained  , DynamicVector& result, IndexMatrix& unconstrained, DynamicVector& supports);
 
     std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);
-    ElementData                    compute_compliance(NodeData& displacement);
+    ElementData                    compute_compliance   (NodeData& displacement);
 };
 
 

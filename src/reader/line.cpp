@@ -25,6 +25,9 @@ Line& fem::reader::Line::operator=(const std::string& line) {
     m_line.erase(std::find_if(m_line.rbegin(), m_line.rend(), [](int ch) { return !std::isspace(ch); }).base(),
                  m_line.end());
 
+    // remove every whitespace
+    m_line.erase(std::remove(m_line.begin(), m_line.end(), ' '), m_line.end());
+
     // check if the m_line is a comment --> starts with //, #, **, !
     if (m_line.substr(0, 2) == "//" || m_line[0] == '#' || m_line.substr(0, 2) == "**" || m_line[0] == '!') {
         m_type = COMMENT;

@@ -63,7 +63,7 @@ DynamicVector solve_iter(SolverDevice device,
     logging::info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
     device = CPU;
 #else
-#ifdef DOUBLE_PRECISION
+#ifdef CUDA_DOUBLE_PRECISION
     logging::info(device != CPU, "This build does not support gpu-accelerated solving in double-precision, falling back to cpu");
     device = CPU;
 #endif

@@ -11,10 +11,13 @@ void Model::activate_element_set(const std::string &name) {
     elem_sets.activate(name);
 }
 void Model::activate_load_set(const std::string &name) {
-    load_sets.activate(name);
+    load_sets.activate(name, max_nodes, 6);
+    load_sets.current().setZero();
 }
 void Model::activate_support_set(const std::string &name) {
-    support_sets.activate(name);
+    support_sets.activate(name, max_nodes, 6);
+    support_sets.current().setZero();
+    support_sets.current().fill(std::numeric_limits<Precision>::quiet_NaN());
 }
 void Model::activate_material(const std::string &name){
     materials.activate(name);
@@ -26,9 +29,11 @@ void Model::add_cload(const std::string& nset, StaticVector<3> load){
     }
 }
 void Model::add_cload(const ID id, StaticVector<3> load){
-    load_sets.current()(id,0) = load(0);
-    load_sets.current()(id,1) = load(1);
-    load_sets.current()(id,2) = load(2);
+    for(int i = 0; i < 3; i++){
+        load_sets.current()(id,i) += load(i);
+        if(!load_sets.is_default_set())
+            load_sets.all()(id,i) += load(i);
+    }
 }
 void Model::add_support(const std::string& nset, const StaticVector<6> constraint){
     for(ID id:node_sets.get(nset)){
@@ -41,17 +46,18 @@ void Model::add_support(const std::string& nset, const StaticVector<3> displacem
     }
 }
 void Model::add_support(const ID id, const StaticVector<6> constraint){
-    support_sets.current()(id,0) = constraint(0);
-    support_sets.current()(id,1) = constraint(1);
-    support_sets.current()(id,2) = constraint(2);
-    support_sets.current()(id,3) = constraint(3);
-    support_sets.current()(id,4) = constraint(4);
-    support_sets.current()(id,5) = constraint(5);
+    for(int i = 0; i < 6; i++){
+        support_sets.current()(id,i) = constraint(i);
+        if(!support_sets.is_default_set())
+            support_sets.all()(id,i) = constraint(i);
+    }
 }
 void Model::add_support(const ID id, const StaticVector<3> displacement){
-    support_sets.current()(id,0) = displacement(0);
-    support_sets.current()(id,1) = displacement(1);
-    support_sets.current()(id,2) = displacement(2);
+    for(int i = 0; i < 3; i++){
+        support_sets.current()(id,i) = displacement(i);
+        if(!support_sets.is_default_set())
+            support_sets.all()(id,i) = displacement(i);
+    }
 }
 void Model::add_support_rot(const std::string& nset, const StaticVector<3> rotation){
     for(ID id:node_sets.get(nset)){
@@ -59,9 +65,11 @@ void Model::add_support_rot(const std::string& nset, const StaticVector<3> rotat
     }
 }
 void Model::add_support_rot(const ID id, const StaticVector<3> rotation){
-    support_sets.current()(id,3) = rotation(0);
-    support_sets.current()(id,4) = rotation(1);
-    support_sets.current()(id,5) = rotation(2);
+    for(int i = 3; i < 6; i++){
+        support_sets.current()(id,i) = rotation(i);
+        if(!support_sets.is_default_set())
+            support_sets.all()(id,i) = rotation(i);
+    }
 }
 void Model::add_support(const ID id, const Dim dim, const Precision displacement){
     support_sets.current()(id,dim) = displacement;
@@ -81,6 +89,14 @@ std::vector<ID>& Model::active_nodeset(){
 }
 std::vector<ID>& Model::active_elemset(){
     return elem_sets.current();
+}
+
+Sets<std::vector<ID>>&  Model::nodesets(){
+    return node_sets;
+}
+
+Sets<std::vector<ID>>&  Model::elemsets(){
+    return elem_sets;
 }
 
 void Model::solid_section(const std::string& set, const std::string& material){
@@ -108,16 +124,24 @@ std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     ostream << "\tLoad sets:\n";
     for (const auto& set : model.load_sets.m_sets) {
         ostream << "\t\t" << set.first << '\n';
+        ostream << "\t\t\t" << "count=" << set.second.count() << '\n';
     }
 
     ostream << "\tSupport sets:\n";
     for (const auto& set : model.support_sets.m_sets) {
         ostream << "\t\t" << set.first << '\n';
+        ostream << "\t\t\t" << "count=" << set.second.count() << '\n';
     }
 
     ostream << "\tMaterial sets:\n";
     for (const auto& set : model.materials.m_sets) {
         ostream << "\t\t" << set.first << '\n';
+        if(set.second.has_density()) {
+            ostream << "\t\t\tdensity=" << set.second.density() << '\n';
+        }
+        if(set.second.has_elasticity()) {
+            ostream << "\t\t\telastic" << '\n';
+        }
     }
 
     return ostream;

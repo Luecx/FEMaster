@@ -5,5 +5,11 @@ bin/
 obj/
 res/
 
+topo/solver
+*.exe
+*.inp
+*.out
+*.res
+
 cmake-build-debug/
 

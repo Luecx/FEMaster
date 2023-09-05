@@ -1,7 +1,7 @@
 # Compiler options
 NVCC = nvcc
 CXX = g++
-# CXX = /opt/homebrew/opt/llvm/bin/clang++
+CXX = /opt/homebrew/opt/llvm/bin/clang++
 
 CXXFLAGS = -std=c++17 -O3 -I ./include/ -fopenmp
 NVCCFLAGS = -std=c++17 -O3 -I ./include/ --expt-relaxed-constexpr
@@ -35,9 +35,9 @@ EXE_CPU  := $(BINDIR)/FEMaster.exe
 EXE_GPU  := $(BINDIR)/FEMaster_gpu.exe
 
 # Check if double_precision is set to 1
-ifeq ($(double_precision), 1)
-	CXXFLAGS  += -DDOUBLE_PRECISION
-	NVCCFLAGS += -DDOUBLE_PRECISION
+ifeq ($(cuda_double_precision), 1)
+	CXXFLAGS  += -DCUDA_DOUBLE_PRECISION
+	NVCCFLAGS += -DCUDA_DOUBLE_PRECISION
 endif
 
 # check if show_array_processes is set to 1

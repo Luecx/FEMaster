@@ -1,7 +1,7 @@
 #pragma once
 
 // define relevant cuda instructions as templates
-#ifdef DOUBLE_PRECISION
+#ifdef CUDA_DOUBLE_PRECISION
 #define CUDA_P_TYPE      CUDA_R_64F
 #define CUBLAS_DOT       cublasDdot
 #define CUBLAS_NRM       cublasDnrm2

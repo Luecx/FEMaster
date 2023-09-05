@@ -8,7 +8,7 @@
 #ifdef SUPPORT_GPU
 namespace cuda {
 
-struct CudaVector : CudaArray<Precision> {
+struct CudaVector : CudaArray<CudaPrecision> {
     cusparseDnVecDescr_t descr;
 
     explicit CudaVector(int size)

@@ -10,10 +10,13 @@ typedef uint64_t Time;
 typedef  int32_t ID;
 typedef uint8_t Dim;
 
-#ifdef DOUBLE_PRECISION
+// use double for all normal computations and cast to solver precision during solving
 typedef double Precision;
+
+#ifdef CUDA_DOUBLE_PRECISION
+typedef double CudaPrecision;
 #else
-typedef float Precision;
+typedef float CudaPrecision;
 #endif
 
 // eigen redefinitions

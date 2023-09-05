@@ -60,6 +60,9 @@ struct Sets {
         logging::error(has(key), key, "is not found within the set");
         return m_sets.at(key);
     }
+    bool is_default_set() const{
+        return m_all == m_active;
+    }
     void add(ID id) {
         static_assert(std::is_same<T, std::vector<ID>>::value, "Cannot call add() for other than default type.");
         current().push_back(id);

@@ -266,7 +266,7 @@ DynamicVector Model::build_reduced_load(IndexVector &mapping, DynamicVector &con
     return reduced_load;
 }
 
-NodeData Model::build_global_displacement (IndexMatrix& constrained, DynamicVector& result){
+NodeData Model::build_global_displacement (IndexMatrix& constrained, DynamicVector& result, IndexMatrix& unconstrained, DynamicVector& supports){
     NodeData res = NodeData(constrained.rows(), constrained.cols());
     res.setZero();
 
@@ -274,6 +274,9 @@ NodeData Model::build_global_displacement (IndexMatrix& constrained, DynamicVect
         for (int n = 0; n < constrained.cols(); n++) {
             if (constrained(m,n) >= 0) {
                 res(m,n) = result(constrained(m,n));
+            }
+            if (unconstrained(m,n) >= 0 && !std::isnan(supports(unconstrained(m,n)))){
+                res(m,n) = supports(unconstrained(m,n));
             }
         }
     }

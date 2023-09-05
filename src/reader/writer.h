@@ -9,20 +9,40 @@
 namespace fem {
 namespace reader {
 
-class writer {
-    private:
+class Writer {
+private:
     std::ofstream out_file;
 
-    public:
+public:
     // Constructor
-    writer() {}
+    Writer(const std::string& filename) {
+        this->open(filename);
+    }
 
     // Destructor
-    ~writer() {
+    ~Writer() {
         if (out_file.is_open()) {
             out_file.close();
         }
     }
+
+    // Move constructor
+    Writer(Writer&& other) noexcept
+            : out_file(std::move(other.out_file)) {
+    }
+
+    // Move assignment operator
+    Writer& operator=(Writer&& other) noexcept {
+        if (this != &other) {
+            close();
+            out_file = std::move(other.out_file);
+        }
+        return *this;
+    }
+
+    // Delete copy constructor and copy assignment operator to prevent copying
+    Writer(const Writer&) = delete;
+    Writer& operator=(const Writer&) = delete;
 
     // Function to open the file
     void open(const std::string& filename) {
@@ -44,16 +64,11 @@ class writer {
     }
 
     // Function to write any eigen matrix
-    template<typename T>
-    void write_eigen_matrix(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& matrix,
-                            const std::string&                                      field_name) {
+    void write_eigen_matrix(const DynamicMatrix& matrix,
+                            const std::string& field_name) {
         out_file << "FIELD, NAME=" << field_name << ", COLS=" << matrix.cols() << std::endl;
-        for (int i = 0; i < matrix.rows(); ++i) {
-            for (int j = 0; j < matrix.cols(); ++j) {
-                out_file << matrix(i, j) << " ";
-            }
-            out_file << std::endl;
-        }
+        out_file << matrix << std::endl;
+        out_file << "END FIELD" << std::endl;
     }
 };
 

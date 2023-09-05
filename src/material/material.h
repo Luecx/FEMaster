@@ -31,12 +31,12 @@ struct Material {
     }
 
     // Function to check if the elasticity has been set
-    bool has_elasticity() {
+    bool has_elasticity() const {
         return this->m_elastic != nullptr;
     }
 
     // Function to get the elasticity of the material
-    ElasticityPtr elasticity() {
+    ElasticityPtr elasticity() const {
         return m_elastic;
     }
 

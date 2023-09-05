@@ -124,7 +124,8 @@ struct SolidElement : public ElementInterface{
 
         StaticMatrix<N, D> node_coords = this->node_coords_local();
 
-        std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func = [this, node_coords](Precision r, Precision s, Precision t) {
+        std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
+                [this, node_coords](Precision r, Precision s, Precision t) {
             Precision                        det;
             StaticMatrix<n_strain, D * N>    B   = this->strain_displacements(node_coords, r, s, t, det);
             StaticMatrix<n_strain, n_strain> E   = this->material->elasticity()->template get<D>();
@@ -132,6 +133,7 @@ struct SolidElement : public ElementInterface{
             return StaticMatrix<D * N, D* N>(res);
         };
         StaticMatrix<D * N, D * N> stiffness = integration_scheme().integrate(func);
+        stiffness = 0.5 * (stiffness + stiffness.transpose());
 
         MapMatrix mapped{buffer, D * N, D * N};
         mapped = stiffness;
@@ -173,8 +175,8 @@ struct SolidElement : public ElementInterface{
             auto stresses = E * strains;
 
             for(int j = 0; j < n_strain; j++){
-                strain(node_id, j) = strains(j);
-                stress(node_id, j) = stresses(j);
+                strain(node_id, j) += strains(j);
+                stress(node_id, j) += stresses(j);
             }
         }
     }
@@ -184,12 +186,22 @@ struct SolidElement : public ElementInterface{
         auto K = stiffness(buffer);
 
         // 2. Extract and flatten nodal displacements
-
         auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
         auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
-        // 3. Compute the strain energy for the element
-        Precision strain_energy = local_displacement.transpose() * (K * local_displacement);
+        Precision strain_energy = local_displacement.dot((K * local_displacement));
+
+        if(strain_energy < -0.01){
+            Eigen::EigenSolver< DynamicMatrix > solver{DynamicMatrix(K)};
+            std::cout << "====================" << std::endl;
+            std::cout << solver.eigenvalues() << std::endl;
+            std::cout << (local_displacement).transpose() << std::endl;
+            std::cout << (K * local_displacement).transpose() << std::endl;
+            std::cout << (K)  << std::endl;
+            std::cout << strain_energy  << std::endl;
+            std::cout << "====================" << std::endl;
+            exit(0);
+        }
 
         result(elem_id, 0) = strain_energy;
     }
