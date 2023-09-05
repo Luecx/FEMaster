@@ -72,7 +72,7 @@ struct SolidElement : public ElementInterface{
         det = jac.determinant();
         StaticMatrix<D, D> inv = jac.inverse();
 
-        log_error(det > 0,
+        logging::error(det > 0,
                   "negative determinant encountered in element ",elem_id," det: ",det);
         StaticMatrix<N, D> global_shape_der = (inv * local_shape_der.transpose()).transpose();
 
@@ -119,8 +119,8 @@ struct SolidElement : public ElementInterface{
         return Dofs {{true}, {true}, {true}, {false}, {false}, {false}};
     }
     MapMatrix stiffness(Precision* buffer) override {
-        log_error(material != nullptr, "no material assigned to element ", elem_id);
-        log_error(material->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
+        logging::error(material != nullptr, "no material assigned to element ", elem_id);
+        logging::error(material->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
 
         StaticMatrix<N, D> node_coords = this->node_coords_local();
 

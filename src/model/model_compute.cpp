@@ -9,6 +9,8 @@ namespace fem::model{
 std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displacement){
     NodeData stress{max_nodes, 6};
     NodeData strain{max_nodes, 6};
+    stress.setZero();
+    strain.setZero();
     IndexVector count{max_nodes};
 
     for(auto el: elements){
@@ -34,6 +36,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 }
 ElementData Model::compute_compliance(NodeData& displacement){
     ElementData compliance{elements.size(), 1};
+    compliance.setZero();
 
     for (size_t idx = 0; idx < elements.size(); idx++) {
         auto el = elements[idx];

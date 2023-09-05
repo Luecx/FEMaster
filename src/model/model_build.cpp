@@ -98,7 +98,7 @@ DynamicVector Model::build_support_vector(IndexMatrix &indices, std::vector <std
             for (int n = 0; n < data.cols(); n++) {
                 auto idx = indices(m, n);
                 if (idx >= 0 && !std::isnan(data(m, n))) {
-                    log_error(std::isnan(support_vector(idx)) || support_vector(idx) == data(m, n));
+                    logging::error(std::isnan(support_vector(idx)) || support_vector(idx) == data(m, n));
                     support_vector(idx) = data(m, n);
                 }
             }
@@ -177,8 +177,12 @@ SparseMatrix Model::build_stiffness_matrix(IndexMatrix &indices, ElementData sti
             }
         }
 
+        logging::info(el->elem_id % 10000 == 0 && el->elem_id > 0, "Generated ", el->elem_id, " ids");
+
         if (tripplets.size() > BATCH_SIZE * 9 / 10) {
             matrix.insertFromTriplets(tripplets.begin(), tripplets.end());
+            logging::info(true, "Squashing buffer");
+
             tripplets.clear();
         }
     }

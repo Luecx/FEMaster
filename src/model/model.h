@@ -30,11 +30,14 @@ struct Model {
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems) :
-        max_nodes(max_nodes),
+        max_nodes   (max_nodes),
         max_elements(max_elems),
-        node_coords(max_nodes, 3),
+        node_coords (max_nodes, 3),
         load_sets   ("LALL", max_nodes, 6),
         support_sets("SALL", max_nodes, 6){
+
+        // clear node coords
+        node_coords.setZero();
 
         // clear sets to make sure
         load_sets   .current().setZero();
@@ -59,26 +62,23 @@ struct Model {
 
     // load management
     void add_cload      (const std::string& nset, StaticVector<3> load);
-    void add_cload      (const ID id, StaticVector<3> load);
+    void add_cload      (ID id, StaticVector<3> load);
 
     // support managment
-    void add_support    (const std::string& nset, const StaticVector<6> constraint);
-    void add_support    (const std::string& nset, const StaticVector<3> displacement);
-    void add_support_rot(const std::string& nset, const StaticVector<3> rotation);
-    void add_support    (const ID id, const StaticVector<6> constraint);
-    void add_support    (const ID id, const StaticVector<3> displacement);
-    void add_support_rot(const ID id, const StaticVector<3> rotation);
-    void add_support    (const ID id, const Dim dim, const Precision displacement = 0);
-
-    // additional fields managment
-    void add_element_field(const std::string& field, const ElementData& data);
+    void add_support    (const std::string& nset, StaticVector<6> constraint);
+    void add_support    (const std::string& nset, StaticVector<3> displacement);
+    void add_support_rot(const std::string& nset, StaticVector<3> rotation);
+    void add_support    (ID id, StaticVector<6> constraint);
+    void add_support    (ID id, StaticVector<3> displacement);
+    void add_support_rot(ID id, StaticVector<3> rotation);
+    void add_support    (ID id, Dim dim, Precision displacement = 0);
 
     // access to active sets
     material::Material& active_material();
     NodeData&           active_loads();
     NodeData&           active_supports();
-    std::vector<ID>     active_nodeset();
-    std::vector<ID>     active_elemset();
+    std::vector<ID>&    active_nodeset();
+    std::vector<ID>&    active_elemset();
 
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);
@@ -100,12 +100,6 @@ struct Model {
 
     std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);
     ElementData                    compute_compliance(NodeData& displacement);
-    // computing derived quantities
-    // postprocess_stress()
-    // postprocess_compliance()
-    // postprocess_compliance_grad()
-
-
 };
 
 

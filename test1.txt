@@ -1,0 +1,2 @@
+*include, SRC=test2.txt
+*include, SRC=test3.txt

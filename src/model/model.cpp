@@ -76,10 +76,10 @@ NodeData& Model::active_loads(){
 NodeData& Model::active_supports(){
     return support_sets.current();
 }
-std::vector<ID> Model::active_nodeset(){
+std::vector<ID>& Model::active_nodeset(){
     return node_sets.current();
 }
-std::vector<ID> Model::active_elemset(){
+std::vector<ID>& Model::active_elemset(){
     return elem_sets.current();
 }
 

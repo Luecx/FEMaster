@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "../core/core.h"
 
 namespace fem {
 namespace reader {
@@ -20,9 +21,7 @@ enum LineType{
     END_OF_FILE = 3,
 };
 
-bool relevant(LineType lt){
-    return lt == KEYWORD_LINE || lt == DATA_LINE;
-}
+bool relevant(LineType lt);
 
 struct Line{
     private:
@@ -49,122 +48,43 @@ struct Line{
         T value;
         std::istringstream iss(s);
         iss >> value;
-        log_error(!iss.fail(), "Failed to convert value: " + s);
+        logging::error(!iss.fail(), "Failed to convert value: " + s);
         return value;
     }
 
-    Line& operator=(const std::string& line){
-        // reset fields
-        m_line = line;
-        m_values.clear();
-        m_keys.clear();
-        m_command.clear();
-        m_type = END_OF_FILE;
+    Line& operator=(const std::string& line);
 
-        // remove leading spaces
-        m_line.erase(m_line.begin(), std::find_if(m_line.begin(), m_line.end(), [](int ch) {
-                         return !std::isspace(ch);
-                     }));
-
-        // check if the m_line is a comment --> starts with //, #, **, !
-        if (m_line.substr(0, 2) == "//" || m_line[0] == '#' || m_line.substr(0, 2) == "**" || m_line[0] == '!') {
-            m_type = COMMENT;
-        } else if (m_line.empty()) {
-            m_type = EMPTY_LINE;
-        } else {
-            // check if it is a keyword line
-            if (m_line[0] == '*') {
-                m_type = KEYWORD_LINE;
-                m_line.erase(std::remove(m_line.begin(), m_line.end(), ' '), m_line.end());
-                m_line.erase(0, 1);  // remove the leading '*'
-                std::transform(m_line.begin(), m_line.end(), m_line.begin(), ::toupper);  // convert to upper case
-                std::stringstream ss(m_line);
-                std::string item;
-                if (std::getline(ss, m_command, ',')) {  // get the command name
-                    while (std::getline(ss, item, ',')) {
-                        size_t pos = item.find("=");
-                        if (pos != std::string::npos) {
-                            m_keys[item.substr(0, pos)] = item.substr(pos + 1);
-                        }
-                    }
-                }
-            } else {
-                m_type = DATA_LINE;
-                m_line = std::regex_replace(m_line, std::regex(" +"), " ");  // replace multiple spaces with a single space
-                std::stringstream ss(m_line);
-                std::string item;
-                while (std::getline(ss, item, ' ')) {
-                    m_values.push_back(item);
-                }
-            }
-        }
-
-        return *this;
-    }
 
     // Getter functions
-    const std::string& line() const {
-        return m_line;
-    }
+    const std::string& line() const;
 
-    const std::vector<std::string>& values() const {
-        return m_values;
-    }
+    const std::vector<std::string>& values() const;
 
-    bool has_key(const std::string& key) const {
-        return m_keys.find(key) != m_keys.end();
-    }
+    bool has_key(const std::string& key) const;
 
-    const std::string& command() const {
-        return m_command;
-    }
+    const std::string& command() const;
 
-    LineType type() const {
-        return m_type;
-    }
+    LineType type() const;
 
     // "require" function to get a value from the keys and throw an error if it does not exist.
     template <typename T>
-    T require(const std::string& key) const {
-        log_error(m_type == KEYWORD_LINE, "The 'require' function can only be used with KEYWORD_LINE type.");
-        auto it = m_keys.find(key);
-        log_error(it != m_keys.end(), "Key does not exist: " + key);
-        return convert_to<T>(it->second);
-    }
+    T require(const std::string& key) const;
 
     // "parse" function to get a value from the keys or return a default value if it does not exist.
     template <typename T>
-    T parse(const std::string& key, const T& default_value) const {
-        log_error(m_type == KEYWORD_LINE, "The 'parse' function can only be used with KEYWORD_LINE type.");
-        auto it = m_keys.find(key);
-        if (it == m_keys.end()) {
-            return default_value;
-        }
-        return convert_to<T>(it->second);
-    }
+    T parse(const std::string& key, const T& default_value) const;
 
     // "count_values" function to get the number of values
-    size_t count_values() const {
-        log_error(m_type == DATA_LINE, "The 'count_values' function can only be used with DATA_LINE type.");
-        return m_values.size();
-    }
+    size_t count_values() const;
 
     // "get_value" function to get a specific value from the list of values
     template <typename T>
-    T get_value(size_t index, const T& default_value) const {
-        log_error(m_type == DATA_LINE, "The 'get_value' function can only be used with DATA_LINE type.");
-        if (index >= m_values.size()) {
-            return default_value;
-        }
-        return convert_to<T>(m_values[index]);
-    }
+    T get_value(size_t index, const T& default_value) const;
 
     // sets the end of file status to this line
-    void eof(){
-        this->m_type = END_OF_FILE;
-    }
+    void eof();
 
-    friend std::ostream& operator<<(std::ostream& os, const Line& line) {
+    friend std::ostream& operator<<(std::ostream& os, const Line& line){
         os << "Line   : " << line.line() << "\n";
         os << "Type   : " << line.type() << "\n";
 
@@ -186,6 +106,30 @@ struct Line{
         return os;
     }
 };
+template<typename T>
+T Line::get_value(size_t index, const T& default_value) const {
+    logging::error(m_type == DATA_LINE, "The 'get_value' function can only be used with DATA_LINE type.");
+    if (index >= m_values.size()) {
+        return default_value;
+    }
+    return convert_to<T>(m_values[index]);
+}
+template<typename T>
+T Line::parse(const std::string& key, const T& default_value) const {
+    logging::error(m_type == KEYWORD_LINE, "The 'parse' function can only be used with KEYWORD_LINE type.");
+    auto it = m_keys.find(key);
+    if (it == m_keys.end()) {
+        return default_value;
+    }
+    return convert_to<T>(it->second);
+}
+template<typename T>
+T Line::require(const std::string& key) const {
+    logging::error(m_type == KEYWORD_LINE, "The 'require' function can only be used with KEYWORD_LINE type.");
+    auto it = m_keys.find(key);
+    logging::error(it != m_keys.end(), "Key does not exist: " + key);
+    return convert_to<T>(it->second);
+}
 
 }
 }    // namespace fem

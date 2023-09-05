@@ -24,17 +24,17 @@ void solve_iter_gpu_precon(cuda::CudaCSR &mat) {
     runtime_check_cuda(CUSOLV_CSRIC_BUF(cuda::manager.handle_cusparse, n, nnz, mat_descr, mat.val_ptr(),
                                         mat.row_ptr(), mat.col_ind(), info, &buffer_size));
 
-    log_info(cuda::manager.mem_free() > buffer_size,
-             std::setw(60), std::left, "   Allocating buffer for incomplete cholesky solve",
+    logging::info(cuda::manager.mem_free() > buffer_size,
+             std::setw(60), std::left, "Allocating buffer for incomplete cholesky solve",
              std::setw(16), std::left, buffer_size,
              std::setw(16), std::left, cuda::manager.mem_free());
-    log_error(cuda::manager.mem_free() > buffer_size,
-              std::setw(60), std::left, "  Allocating buffer for incomplete cholesky solve",
+    logging::error(cuda::manager.mem_free() > buffer_size,
+              std::setw(60), std::left, "Allocating buffer for incomplete cholesky solve",
               std::setw(16), std::left, buffer_size,
               std::setw(16), std::left, cuda::manager.mem_free());
     cuda::CudaArray<char> buffer {(size_t)buffer_size};
 
-    log_info(buffer_size > 1e9, "IC  Buffer storage: ", buffer_size / 1024 / 1024 / 1024.0, "Gb");
+    logging::info(buffer_size > 1e9, "IC  Buffer storage: ", buffer_size / 1024 / 1024 / 1024.0, "Gb");
 
     // analyse and solve
     runtime_check_cuda(CUSOLV_CSRIC_ANA(cuda::manager.handle_cusparse, n, nnz, mat_descr, mat.val_ptr(), mat.row_ptr(),
@@ -60,21 +60,21 @@ DynamicVector solve_iter(SolverDevice device,
     const auto nnz = mat.nonZeros();
 
 #ifndef SUPPORT_GPU
-    log_info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
+    logging::info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
     device = CPU;
 #else
 #ifdef DOUBLE_PRECISION
-    log_info(device != CPU, "This build does not support gpu-accelerated solving in double-precision, falling back to cpu");
+    logging::info(device != CPU, "This build does not support gpu-accelerated solving in double-precision, falling back to cpu");
     device = CPU;
 #endif
 #endif
-    log_info(true, "");
-    log_info(true, "==============================================================================");
-    log_info(true, "Solving system with N=", N, " nnz=", nnz, " using PCG (incomplete cholesky)");
-    log_info(true, "==============================================================================");
+    logging::info(true, "");
+    logging::info(true, "Solving system with N=", N, " nnz=", nnz, " using PCG (incomplete cholesky)");
+    logging::up();
 
 #ifdef SUPPORT_GPU
     if(device == GPU){
+        logging::up();
         cuda::manager.create_cuda();
 
         // create a timer to measure time
@@ -82,25 +82,28 @@ DynamicVector solve_iter(SolverDevice device,
         t.start();
 
         // check memory availability for precon and actual matrix on the cpu
-        log_info(true,
+        logging::down();
+        logging::info(true, "memory requirements");
+        logging::up();
+        logging::info(true,
                  std::setw(60), std::left, "  ",
                  std::setw(16), std::left, "requires",
                  std::setw(16), std::left, "free");
-        log_info(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat),
-                 std::setw(60), std::left, "   Moving sparse matrix to gpu",
+        logging::info(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat),
+                 std::setw(60), std::left, "Moving sparse matrix to gpu",
                  std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat),
                  std::setw(16), std::left, cuda::manager.mem_free());
-        log_error(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat),
-                 std::setw(59), std::left, "  Moving sparse matrix to gpu",
+        logging::error(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat),
+                 std::setw(59), std::left, "Moving sparse matrix to gpu",
                  std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat),
                  std::setw(16), std::left, cuda::manager.mem_free());
         cuda::CudaCSR prec{mat};
-        log_info(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat, true),
-                 std::setw(60), std::left, "   Moving preconditioned matrix to gpu",
+        logging::info(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat, true),
+                 std::setw(60), std::left, "Moving preconditioned matrix to gpu",
                  std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat, true),
                  std::setw(16), std::left, cuda::manager.mem_free());
-        log_error(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat, true),
-                 std::setw(59), std::left, "  Moving preconditioned matrix to gpu",
+        logging::error(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat, true),
+                 std::setw(60), std::left, "Moving preconditioned matrix to gpu",
                  std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat, true),
                  std::setw(16), std::left, cuda::manager.mem_free());
         cuda::CudaCSR mata{mat, prec};
@@ -112,12 +115,12 @@ DynamicVector solve_iter(SolverDevice device,
         prec.download(prec_cpu);
 
         // things related to the pcg method
-        log_info(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 6,
-                 std::setw(60), std::left, "   Allocating vectors used for solving",
+        logging::info(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 6,
+                 std::setw(60), std::left, "Allocating vectors used for solving",
                  std::setw(16), std::left, cuda::CudaVector::estimate_mem(N) * 6,
                  std::setw(16), std::left, cuda::manager.mem_free());
-        log_error(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 6,
-                 std::setw(59), std::left, "  Allocating vectors used for solving",
+        logging::error(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 6,
+                 std::setw(60), std::left, "Allocating vectors used for solving",
                  std::setw(16), std::left, cuda::CudaVector::estimate_mem(N) * 6,
                  std::setw(16), std::left, cuda::manager.mem_free());
 
@@ -176,44 +179,42 @@ DynamicVector solve_iter(SolverDevice device,
                                                    &one, descr_L, vec_i, vec_z        , CUDA_P_TYPE,
                                                    CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr, &buffer_size_spsv_2));
 
-        log_info(cuda::manager.mem_free() > buffer_size_ap,
-                 std::setw(60), std::left, "   Allocating buffer for matrix vector product",
+        logging::info(cuda::manager.mem_free() > buffer_size_ap,
+                 std::setw(60), std::left, "Allocating buffer for matrix vector product",
                  std::setw(16), std::left, buffer_size_ap,
                  std::setw(16), std::left, cuda::manager.mem_free());
-        log_error(cuda::manager.mem_free() > buffer_size_ap,
-                 std::setw(59), std::left, "  Allocating buffer for matrix vector product",
+        logging::error(cuda::manager.mem_free() > buffer_size_ap,
+                 std::setw(60), std::left, "Allocating buffer for matrix vector product",
                  std::setw(16), std::left, buffer_size_ap,
                  std::setw(16), std::left, cuda::manager.mem_free());
         cuda::CudaArray<char> buffer_ap    {buffer_size_ap};
-        log_info(cuda::manager.mem_free() > buffer_size_spsv_1,
-                 std::setw(60), std::left, "   Allocating buffer 1 for triangular solve",
+        logging::info(cuda::manager.mem_free() > buffer_size_spsv_1,
+                 std::setw(60), std::left, "Allocating buffer 1 for triangular solve",
                  std::setw(16), std::left, buffer_size_spsv_1,
                  std::setw(16), std::left, cuda::manager.mem_free());
-        log_error(cuda::manager.mem_free() > buffer_size_spsv_1,
-                 std::setw(59), std::left, "  Allocating buffer 1 for triangular solve",
+        logging::error(cuda::manager.mem_free() > buffer_size_spsv_1,
+                 std::setw(60), std::left, "Allocating buffer 1 for triangular solve",
                  std::setw(16), std::left, buffer_size_spsv_1,
                  std::setw(16), std::left, cuda::manager.mem_free());
         cuda::CudaArray<char> buffer_spsv_1{buffer_size_spsv_1};
-        log_info(cuda::manager.mem_free() > buffer_size_spsv_2,
-                 std::setw(60), std::left, "   Allocating buffer 2 for triangular solve",
+        logging::info(cuda::manager.mem_free() > buffer_size_spsv_2,
+                 std::setw(60), std::left, "Allocating buffer 2 for triangular solve",
                  std::setw(16), std::left, buffer_size_spsv_2,
                  std::setw(16), std::left, cuda::manager.mem_free());
-        log_error(cuda::manager.mem_free() > buffer_size_spsv_2,
-                 std::setw(59), std::left, "  Allocating buffer 2 for triangular solve",
+        logging::error(cuda::manager.mem_free() > buffer_size_spsv_2,
+                 std::setw(60), std::left, "Allocating buffer 2 for triangular solve",
                  std::setw(16), std::left, buffer_size_spsv_2,
                  std::setw(16), std::left, cuda::manager.mem_free());
         cuda::CudaArray<char> buffer_spsv_2{buffer_size_spsv_2};
-        log_warning(cuda::manager.mem_free() > 1e9, "Free memory is dangerously low, crashes for no reasons may occur");
+        logging::warning(cuda::manager.mem_free() > 1e9, "Free memory is dangerously low, crashes for no reasons may occur");
 
         // analyse matrices for quick inversion
         runtime_check_cuda(cusparseSpSV_analysis(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one,
                                                  descr_L, vec_r, vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
                                                  spsv_1_descr, buffer_spsv_1));
-//        buffer_spsv_1.clear();
         runtime_check_cuda(cusparseSpSV_analysis(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE    , &one,
                                                  descr_L, vec_i, vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
                                                  spsv_2_descr, buffer_spsv_2));
-//        buffer_spsv_2.clear();
 
         // beginning of iterations
 
@@ -227,7 +228,7 @@ DynamicVector solve_iter(SolverDevice device,
         // p0 = z0
         vec_p.copy(vec_z);
 
-        log_info(true, "Starting iterations");
+        logging::info(true, "Starting iterations");
         Precision r_norm;
         int k;
         for(k = 1; k < N; k++){
@@ -277,13 +278,15 @@ DynamicVector solve_iter(SolverDevice device,
         runtime_check_cuda(cusparseDestroySpMat(descr_L));
 
         t.stop();
-        log_info(true, "Running PCG method finished");
-        log_info(true, "Elapsed time: ", t.elapsed()," ms");
-        log_info(true, "iterations  : ", k);
-        log_info(true, "residual    : ", r_norm);
+        logging::down();
+        logging::info(true, "Running PCG method finished");
+        logging::info(true, "Elapsed time: ", t.elapsed()," ms");
+        logging::info(true, "iterations  : ", k);
+        logging::info(true, "residual    : ", r_norm);
 
         DynamicVector sol{N};
         vec_x.download(sol.data());
+        logging::down();
         return sol;
 
     } else{
@@ -301,20 +304,21 @@ DynamicVector solve_iter(SolverDevice device,
         Eigen::ConjugateGradient<Eigen::SparseMatrix<Precision>, Eigen::Lower|Eigen::Upper, Eigen::IncompleteCholesky<Precision>> cg;
         cg.compute(mat);
         cg.setTolerance(1e-12);
-        log_error(cg.info() == Eigen::Success, "Decomposition failed");
+        logging::error(cg.info() == Eigen::Success, "Decomposition failed");
         DynamicVector eigen_sol = cg.solve(eigen_rhs);
-        log_error(cg.info() == Eigen::Success, "Solving failed");
+        logging::error(cg.info() == Eigen::Success, "Solving failed");
 
         t.stop();
-        log_info(true, "Running PCG method finished");
-        log_info(true, "Elapsed time: ", t.elapsed()," ms");
-        log_info(true, "iterations  : ", cg.iterations());
-        log_info(true, "residual    : ", cg.error());
+        logging::info(true, "Running PCG method finished");
+        logging::info(true, "Elapsed time: ", t.elapsed()," ms");
+        logging::info(true, "iterations  : ", cg.iterations());
+        logging::info(true, "residual    : ", cg.error());
 
         // Finally, copy the result back into your rhs vector.
         for (size_t i = 0; i < rhs.size(); ++i) {
             sol[i] = eigen_sol(i);
         }
+        logging::down();
         return sol;
 #ifdef SUPPORT_GPU
     }

@@ -19,16 +19,23 @@ enum SolverMethod{
     INDIRECT
 };
 
-//linalg::DenseNMatrix<float> solve(array::Device device,
-//                                  linalg::DenseNMatrix<float>& mat,
-//                                  linalg::DenseNMatrix<float>& rhs);
-//
-DynamicVector solve(SolverDevice device,
-                    SparseMatrix& mat,
-                    DynamicVector& rhs);
+DynamicVector solve_direct(SolverDevice device,
+                           SparseMatrix& mat,
+                           DynamicVector& rhs);
 
 DynamicVector solve_iter(SolverDevice device,
                          SparseMatrix& mat,
                          DynamicVector& rhs);
+
+inline DynamicVector solve(SolverDevice device,
+                    SolverMethod method,
+                    SparseMatrix& mat,
+                    DynamicVector& rhs){
+    if (method == DIRECT){
+        return solve_direct(device, mat, rhs);
+    }else{
+        return solve_iter(device, mat, rhs);
+    }
+}
 
 }    // namespace solver

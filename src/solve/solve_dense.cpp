@@ -17,7 +17,7 @@
 //    linalg::DenseNMatrix<float> sol{N};
 //
 //#ifndef SUPPORT_GPU
-//    log_info(device != array::CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
+//    logging::info(device != array::CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
 //    device = array::CPU;
 //#endif
 //
@@ -59,7 +59,7 @@
 //                                            gpu_pivot.address(array::GPU),
 //                                            success  .address(array::GPU)));
 //        success >> array::CPU;
-//        log_error(success[0] == 0, "decomposing system not possible");
+//        logging::error(success[0] == 0, "decomposing system not possible");
 //
 //        // compute solution
 //        runtime_check_cuda(cusolverDnSgetrs(cuda::manager.handle_cusolver_dn,
@@ -74,7 +74,7 @@
 //                                            success  .address(array::GPU)));
 //        sol     >> array::CPU;
 //        success >> array::CPU;
-//        log_error(success[0] == 0, "solving system not possible");
+//        logging::error(success[0] == 0, "solving system not possible");
 //
 //
 //        sol.free(array::GPU);

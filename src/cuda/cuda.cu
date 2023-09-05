@@ -19,7 +19,7 @@ void Manager::create_cuda() {
 
     // check that there is atleast 1 device
     if(device_count == 0){
-        log_warning(device_count, "No devices found");
+        logging::warning(device_count, "No devices found");
         return;
     }
 
@@ -42,10 +42,12 @@ void Manager::create_cuda() {
     cusolverGetProperty(PATCH_LEVEL  , &patch);
 
     // logging
-    log_info(loaded, "Creating CUDA handles");
-    log_info(loaded, "Using " + std::string(gpu_properties.name));
-    log_info(loaded, "Memory: " + std::to_string(gpu_properties.totalGlobalMem));
-    log_info(loaded, "CuSolver: " + std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch));
+    logging::info(loaded, "Creating CUDA handles");
+    logging::up();
+    logging::info(loaded, "Using " + std::string(gpu_properties.name));
+    logging::info(loaded, "Memory  : ", std::to_string(gpu_properties.totalGlobalMem));
+    logging::info(loaded, "CuSolver: ", major, ".", minor, ".", patch);
+    logging::down();
 }
 
 void Manager::destroy_cuda() {

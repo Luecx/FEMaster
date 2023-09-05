@@ -45,19 +45,19 @@ struct Sets {
 
 
     T& all() {
-        log_error(!m_all.empty(), "no all-set defined for given set");
+        logging::error(!m_all.empty(), "no all-set defined for given set");
         return m_sets[m_all];
     }
     T& current() {
-        log_error(!m_active.empty(), "active set is not defined for current material");
+        logging::error(!m_active.empty(), "active set is not defined for current material");
         return m_sets[m_active];
     }
     bool has(const std::string& key){
-        log_error(!key.empty(), "empty keys are not valid for sets");
+        logging::error(!key.empty(), "empty keys are not valid for sets");
         return m_sets.find(key) != m_sets.end();
     }
     T& get(const std::string& key) {
-        log_error(has(key), key, "is not found within the set");
+        logging::error(has(key), key, "is not found within the set");
         return m_sets.at(key);
     }
     void add(ID id) {
