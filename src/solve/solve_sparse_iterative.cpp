@@ -44,7 +44,6 @@ void solve_iter_gpu_precon(cuda::CudaCSR &mat) {
 
     runtime_check_cuda(cusparseDestroyCsric02Info(info));
     runtime_check_cuda(cusparseDestroyMatDescr(mat_descr));
-
 }
 
 #endif
@@ -63,10 +62,6 @@ DynamicVector solve_iter(SolverDevice device,
     logging::info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
     device = CPU;
 #else
-#ifdef CUDA_DOUBLE_PRECISION
-    logging::info(device != CPU, "This build does not support gpu-accelerated solving in double-precision, falling back to cpu");
-    device = CPU;
-#endif
 #endif
     logging::info(true, "");
     logging::info(true, "Solving system with N=", N, " nnz=", nnz, " using PCG (incomplete cholesky)");
@@ -132,10 +127,10 @@ DynamicVector solve_iter(SolverDevice device,
         cuda::CudaVector vec_i {int(N)};
 
 
-        Precision val_rz;
-        Precision val_pap;
-        Precision val_alpha;
-        Precision val_alpha2;
+        CudaPrecision val_rz;
+        CudaPrecision val_pap;
+        CudaPrecision val_alpha;
+        CudaPrecision val_alpha2;
 
         // descriptor object for A and L
         cusparseSpMatDescr_t descr_A;
@@ -166,8 +161,8 @@ DynamicVector solve_iter(SolverDevice device,
         size_t buffer_size_ap     = 0;
         size_t buffer_size_spsv_1 = 0;
         size_t buffer_size_spsv_2 = 0;
-        Precision  one            = 1;
-        Precision  zero           = 0;
+        CudaPrecision  one        = 1;
+        CudaPrecision  zero       = 0;
 
         runtime_check_cuda(cusparseSpMV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
                                                    &one, descr_A, vec_p, &zero, vec_ap, CUDA_P_TYPE,
@@ -229,7 +224,7 @@ DynamicVector solve_iter(SolverDevice device,
         vec_p.copy(vec_z);
 
         logging::info(true, "Starting iterations");
-        Precision r_norm;
+        CudaPrecision r_norm;
         int k;
         for(k = 1; k < N; k++){
             // compute A * p
@@ -249,7 +244,11 @@ DynamicVector solve_iter(SolverDevice device,
             // synchronize right here and only once.
             CUBLAS_NRM(cuda::manager.handle_cublas, N, vec_r, 1, &r_norm);
 
-            if(r_norm < 1e-12){
+            if(k % 1000 == 0){
+                logging::info("Iteration ", k, " r_norm: ", r_norm);
+            }
+
+            if(r_norm < 1e-8){
                 break;
             }
 

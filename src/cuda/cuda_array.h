@@ -54,14 +54,51 @@ class CudaArray {
         runtime_check_cuda(cudaMemcpy(this->data, source, this->size() * sizeof(T), cudaMemcpyDeviceToDevice));
     }
 
-    void upload(const T* source) {
+    template <typename SourceType>
+    void upload(const SourceType* source) {
         runtime_assert(cuda::manager.is_loaded(), "CUDA is not loaded");
-        runtime_check_cuda(cudaMemcpy(this->data, source, this->size() * sizeof(T), cudaMemcpyHostToDevice));
+
+        if constexpr (std::is_same_v<SourceType, T>) {
+            // If the source is of type T, directly copy
+            runtime_check_cuda(cudaMemcpy(this->data, source, this->size() * sizeof(T), cudaMemcpyHostToDevice));
+        } else {
+            // If the source is not of type T, create an intermediate array of type T
+            T* intermediate = new T[this->size()];
+            for (size_t i = 0; i < this->size(); i++) {
+                intermediate[i] = static_cast<T>(source[i]);
+            }
+
+            // Then copy the intermediate array to device
+            runtime_check_cuda(cudaMemcpy(this->data, intermediate, this->size() * sizeof(T), cudaMemcpyHostToDevice));
+
+            // Don't forget to delete the intermediate array
+            delete[] intermediate;
+        }
     }
 
-    void download(T* destination) {
+
+    template <typename DestType>
+    void download(DestType* destination) {
         runtime_assert(cuda::manager.is_loaded(), "CUDA is not loaded");
-        runtime_check_cuda(cudaMemcpy(destination, this->data, this->size() * sizeof(T), cudaMemcpyDeviceToHost));
+
+        if constexpr (std::is_same_v<DestType, T>) {
+            // If the destination is of type T, directly copy
+            runtime_check_cuda(cudaMemcpy(destination, this->data, this->size() * sizeof(T), cudaMemcpyDeviceToHost));
+        } else {
+            // If the destination is not of type T, create an intermediate array of type T
+            T* intermediate = new T[this->size()];
+
+            // Copy from device to the intermediate array
+            runtime_check_cuda(cudaMemcpy(intermediate, this->data, this->size() * sizeof(T), cudaMemcpyDeviceToHost));
+
+            // Then copy from the intermediate array to the destination
+            for (size_t i = 0; i < this->size(); i++) {
+                destination[i] = static_cast<DestType>(intermediate[i]);
+            }
+
+            // Don't forget to delete the intermediate array
+            delete[] intermediate;
+        }
     }
 
     void clear() {

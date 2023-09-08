@@ -76,25 +76,5 @@ StaticMatrix<8, 3> C3D8::node_coords_local() {
     return res;
 }
 
-StaticMatrix<6, 24> C3D8::strain_displacement(const StaticMatrix<8, 3>& shape_der_global) {
-    StaticMatrix<6, 24> B {};
-    B.setZero();
-    for (int j = 0; j < 8; j++) {
-        int r1   = j * 3;
-        int r2   = r1 + 1;
-        int r3   = r1 + 2;
-        B(0, r1) = shape_der_global(j, 0);
-        B(1, r2) = shape_der_global(j, 1);
-        B(2, r3) = shape_der_global(j, 2);
-        B(3, r1) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-        B(3, r2) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-        B(4, r1) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-        B(4, r3) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-        B(5, r2) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-        B(5, r3) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-    }
-    return B;
-}
-
 }    // namespace model
 }    // namespace fem

@@ -1,6 +1,6 @@
-
 import subprocess
 import os
+from datetime import datetime
 import numpy as np
 
 
@@ -34,28 +34,34 @@ def parse_output_file(filename):
 
     return fields
 
+
 def run(model, densities):
+    # Create the log directory if it doesn't exist
+    if not os.path.exists(model.path + "/log"):
+        os.makedirs(model.path + "/log")
+
+    # Get the current timestamp and create the filename for the log file
+    timestamp = datetime.now().strftime("%Y%m%d_%H-%M-%S")
+    log_filename = f"{model.path}/log/solver_output_{timestamp}.log"
+
     # Write the input file
-    model.write(densities, "model.inp")
+    model.write(densities, model.path + "/model.inp")
 
-    print(densities[0:15])
-
-    # Run the solver
-    result = subprocess.run(["./solver", "model.inp"], capture_output=True, text=True)
+    # Run the solver and redirect both stdout and stderr to the log file
+    with open(log_filename, 'w') as log_file:
+        result = subprocess.run(["./solver", model.path + "/model.inp"], stdout=log_file, stderr=log_file)
 
     # Check for errors in execution
     if result.returncode != 0:
-        raise Exception("Error in executing the solver:", result.stderr)
+        with open(log_filename, 'r') as log_file:
+            raise Exception("Error in executing the solver:", log_file.read())
 
-    data = parse_output_file('model.inp.res')
+    data = parse_output_file(model.path + '/model.inp.res')
 
-    data['COMPLIANCE_ADJ'] = data['COMPLIANCE_ADJ'] * 100
-    data['DENS_GRAD'] = data['DENS_GRAD'] * 100
-    data['DENS_GRAD'] = model.filter(data['DENS_GRAD'] )
+    data['COMPLIANCE_ADJ'] = data['COMPLIANCE_ADJ']
+    data['DENS_GRAD'] = data['DENS_GRAD']
 
-    print(sum(data['COMPLIANCE_ADJ']))
-
-    os.remove('model.inp')
-    os.remove('model.inp.res')
+    # os.remove(model.path + '/model.inp')
+    # os.remove(model.path + '/model.inp.res')
 
     return data

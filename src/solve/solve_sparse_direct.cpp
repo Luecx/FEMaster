@@ -19,10 +19,6 @@ DynamicVector solve_direct(SolverDevice device,
     logging::info(device != CPU, "This build does not support gpu-accelerated solving, falling back to cpu");
     device = CPU;
 #else
-#ifdef CUDA_DOUBLE_PRECISION
-    logging::info(device != CPU, "This build does not support gpu-accelerated solving in double-precision, falling back to cpu");
-    device = CPU;
-#endif
 #endif
     logging::info(true, "");
     logging::info(true, "Solving system with N=", N, " nnz=", nnz, " using cholesky decomposition");
@@ -52,7 +48,7 @@ DynamicVector solve_direct(SolverDevice device,
         Timer t {};
         t.start();
         int singularity;
-        runtime_check_cuda(cusolverSpScsrlsvchol(cuda::manager.handle_cusolver_sp,
+        runtime_check_cuda(CUSOLV_CHOLESKY(cuda::manager.handle_cusolver_sp,
                                                  N,
                                                  nnz,
                                                  descr,

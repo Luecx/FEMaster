@@ -12,6 +12,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
     stress.setZero();
     strain.setZero();
     IndexVector count{max_nodes};
+    count.setZero();
 
     for(auto el: elements){
         if(el == nullptr) continue;
@@ -30,7 +31,6 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
             }
         }
     }
-
     return {stress, strain};
 
 }

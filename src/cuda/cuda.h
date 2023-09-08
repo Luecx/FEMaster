@@ -11,8 +11,6 @@
 #include <cusolverSp.h>
 #include <cusparse_v2.h>
 
-
-
 namespace cuda {
 
 struct Manager {

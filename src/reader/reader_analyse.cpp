@@ -3,8 +3,37 @@
 //
 #include "reader.h"
 
-namespace fem::reader{
+namespace fem::reader {
 
+void Reader::analyse() {
+    // read first line
+    next_line();
 
+    while (m_current_line.type() != END_OF_FILE) {
+        while (m_current_line.type() != KEYWORD_LINE && m_current_line.type() != END_OF_FILE) {
+            next_line();
+        }
 
+        if (m_current_line.command() == "NODE") {
+            analyse_nodes();
+        } else if (m_current_line.command() == "ELEMENT") {
+            analyse_elements();
+        } else {
+            next_line();
+        }
+    }
 }
+void Reader::analyse_nodes() {
+    while (next_line().type() == DATA_LINE) {
+        int node_id            = std::stoi(m_current_line.values()[0]);
+        m_data.highest_node_id = std::max(m_data.highest_node_id, node_id);
+    }
+}
+void Reader::analyse_elements() {
+    while (next_line().type() == DATA_LINE) {
+        int element_id            = std::stoi(m_current_line.values()[0]);
+        m_data.highest_element_id = std::max(m_data.highest_element_id, element_id);
+    }
+}
+
+}    // namespace fem::reader

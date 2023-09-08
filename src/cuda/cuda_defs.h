@@ -10,6 +10,7 @@
 #define CUSOLV_CSRIC_BUF cusparseDcsric02_bufferSize
 #define CUSOLV_CSRIC_ANA cusparseDcsric02_analysis
 #define CUSOLV_CSRIC     cusparseDcsric02
+#define CUSOLV_CHOLESKY  cusolverSpDcsrlsvchol
 #else
 #define CUDA_P_TYPE      CUDA_R_32F
 #define CUBLAS_DOT       cublasSdot
@@ -19,4 +20,5 @@
 #define CUSOLV_CSRIC_BUF cusparseScsric02_bufferSize
 #define CUSOLV_CSRIC_ANA cusparseScsric02_analysis
 #define CUSOLV_CSRIC     cusparseScsric02
+#define CUSOLV_CHOLESKY  cusolverSpScsrlsvchol
 #endif

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/logging.h"
+#include "../core/core.h"
 
 #include <Eigen/Dense>
 #include <fstream>
@@ -15,16 +16,10 @@ private:
 
 public:
     // Constructor
-    Writer(const std::string& filename) {
-        this->open(filename);
-    }
+    Writer(const std::string& filename);
 
     // Destructor
-    ~Writer() {
-        if (out_file.is_open()) {
-            out_file.close();
-        }
-    }
+    ~Writer();
 
     // Move constructor
     Writer(Writer&& other) noexcept
@@ -32,44 +27,24 @@ public:
     }
 
     // Move assignment operator
-    Writer& operator=(Writer&& other) noexcept {
-        if (this != &other) {
-            close();
-            out_file = std::move(other.out_file);
-        }
-        return *this;
-    }
+    Writer& operator=(Writer&& other) noexcept;
 
     // Delete copy constructor and copy assignment operator to prevent copying
     Writer(const Writer&) = delete;
     Writer& operator=(const Writer&) = delete;
 
     // Function to open the file
-    void open(const std::string& filename) {
-        close();
-        out_file.open(filename);
-        logging::error(out_file.is_open(), "Failed to open file: ", filename);
-    }
+    void open(const std::string& filename);
 
     // Function to close the file
-    void close() {
-        if (out_file.is_open()) {
-            out_file.close();
-        }
-    }
+    void close();
 
     // Function to add a loadcase string
-    void add_loadcase(int id) {
-        out_file << "LC " << id << std::endl;
-    }
+    void add_loadcase(int id);
 
     // Function to write any eigen matrix
     void write_eigen_matrix(const DynamicMatrix& matrix,
-                            const std::string& field_name) {
-        out_file << "FIELD, NAME=" << field_name << ", COLS=" << matrix.cols() << std::endl;
-        out_file << matrix << std::endl;
-        out_file << "END FIELD" << std::endl;
-    }
+                            const std::string& field_name);
 };
 
 }    // namespace reader

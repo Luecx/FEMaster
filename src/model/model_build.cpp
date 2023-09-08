@@ -146,7 +146,7 @@ SparseMatrix Model::build_stiffness_matrix(IndexMatrix &indices, ElementData sti
         }
 
         // get the stiffness matrix and do remaining stuff
-        MapMatrix K = el->stiffness(local_storage);
+        MapMatrix K = el->stiffness(node_coords, local_storage);
 
         auto el_nodes = el->n_nodes();     // nodes in this element
         auto el_ndofs = K.rows() / el_nodes; // dofs per node

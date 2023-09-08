@@ -1,7 +1,7 @@
 # Compiler options
 NVCC = nvcc
 CXX = g++
-CXX = /opt/homebrew/opt/llvm/bin/clang++
+#CXX = /opt/homebrew/opt/llvm/bin/clang++
 
 CXXFLAGS = -std=c++17 -O3 -I ./include/ -fopenmp
 NVCCFLAGS = -std=c++17 -O3 -I ./include/ --expt-relaxed-constexpr

@@ -4,8 +4,12 @@
 bin/
 obj/
 res/
+vtk/
 
 topo/solver
+topo/runs
+
+*.pyc
 *.exe
 *.inp
 *.out
