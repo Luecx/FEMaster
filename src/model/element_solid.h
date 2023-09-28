@@ -60,11 +60,10 @@ struct SolidElement : public ElementInterface{
 
         det = jac.determinant();
         StaticMatrix<D, D> inv = jac.inverse();
-
         logging::error(det > 0,"negative determinant encountered in element ",elem_id,
                                 "\ndet        : ", det,
                                 "\nCoordinates: ", node_coords,
-                                "\nJacobi     : ", node_coords);
+                                "\nJacobi     : ", jac);
         StaticMatrix<N, D> global_shape_der = (inv * local_shape_der.transpose()).transpose();
 
         return strain_displacement(global_shape_der);
@@ -143,6 +142,16 @@ struct SolidElement : public ElementInterface{
         return &node_ids[0];
     }
 
+    Precision volume(NodeData& node_coords) override {
+        StaticMatrix<N, D> node_coords_glob = this->node_coords_global(node_coords);
+        std::function<Precision(Precision, Precision, Precision)> func =
+            [this, node_coords_glob](Precision r, Precision s, Precision t) {
+                Precision det = jacobian(node_coords_glob, r, s, t).determinant();
+                return det;
+            };
+        Precision volume = integration_scheme().integrate(func);
+        return volume;
+    }
 
     void compute_stress    (NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain) override {
         auto local_node_coords  = this->node_coords_local();

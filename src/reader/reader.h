@@ -51,6 +51,7 @@ class Reader {
 
     void process_loadcase_linear_static_topo_density (fem::loadcase::LinearStaticTopo* lc);
     void process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc);
+    void process_loadcase_linear_static_topo_filter  (fem::loadcase::LinearStaticTopo* lc);
 
     public:
     Reader(const std::string& file_path);

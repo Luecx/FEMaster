@@ -1,29 +1,76 @@
 import geometry
 import vtk
 import numpy as np
+import math
 import matplotlib.pyplot as plt
+import time
 import solution
 from vtk.util.numpy_support import numpy_to_vtk
+from vtk import *
+
+class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballCamera):
+    def __init__(self, parent=None):
+        self.AddObserver("MiddleButtonPressEvent", self.middle_button_press_event)
+        self.AddObserver("MiddleButtonReleaseEvent", self.middle_button_release_event)
+
+    def middle_button_press_event(self, obj, event):
+        clickPos = self.GetInteractor().GetEventPosition()
+
+        picker = vtk.vtkPropPicker()
+        picker.Pick(clickPos[0], clickPos[1], 0, self.GetDefaultRenderer())
+
+        # Get the world coordinates of the picked point
+        pickPosition = picker.GetPickPosition()
+
+        if picker.GetActor():
+            # Set the new focal point
+            self.GetDefaultRenderer().GetActiveCamera().SetFocalPoint(pickPosition)
+            self.GetDefaultRenderer().ResetCameraClippingRange()
+
+        self.OnMiddleButtonDown()
+        return
+
+    def middle_button_release_event(self, obj, event):
+        self.OnMiddleButtonUp()
+        return
+
+
 
 class Viewer:
     def __init__(self):
+
+        # data visual of main body
         self.geometry = None
+        self.elem_mask = None
         self.data = None
         self.data_type = None
         self.data_min = None
         self.data_max = None
         self.color_scheme = None
+        self.model_size = None
 
+        # animation and display of displacements
         self.displacement = None
         self.animate = False
+        self.start_time = time.time()
 
-        self.cos = False
+        # true if drawing a cos
+        self.cos = 0
 
+        # grid spacing
+        self.grid_xy = 0
+
+        # vtk related stuff
         self.renderer = vtk.vtkRenderer()
         self.renderWindow = vtk.vtkRenderWindow()
         self.renderWindow.AddRenderer(self.renderer)
         self.renderWindowInteractor = vtk.vtkRenderWindowInteractor()
         self.renderWindowInteractor.SetRenderWindow(self.renderWindow)
+
+        self.customInteractorStyle = CustomInteractorStyle()
+        self.customInteractorStyle.SetDefaultRenderer(self.renderer)
+        self.renderWindowInteractor.SetInteractorStyle(self.customInteractorStyle)
+
         self.actor = vtk.vtkActor()
         self.renderer.AddActor(self.actor)
 
@@ -36,6 +83,23 @@ class Viewer:
 
     def set_geometry(self, geometry):
         self.geometry = geometry
+        filtered_nodes = [node for node in geometry.nodes if node is not None]
+
+        # Extract the x, y, and z coordinates
+        x_coords = [node[0] for node in filtered_nodes]
+        y_coords = [node[1] for node in filtered_nodes]
+        z_coords = [node[2] for node in filtered_nodes]
+
+        # Compute the extents
+        x_extent = max(x_coords) - min(x_coords)
+        y_extent = max(y_coords) - min(y_coords)
+        z_extent = max(z_coords) - min(z_coords)
+
+        # Find the largest extent
+        self.model_size = max(x_extent, y_extent, z_extent)
+
+    def set_element_mask(self, mask):
+        self.elem_mask = mask
 
     def set_data(self, type='node', data=None):
         if data is not None:
@@ -53,6 +117,12 @@ class Viewer:
         else:
             self.data_min = min
             self.data_max = max
+
+    def set_grid_xy(self, spacing=None):
+        if spacing is not None:
+            self.grid_xy = spacing
+        elif self.model_size is not None:
+            self.grid_xy = 10 ** math.floor(math.log10(self.model_size / 3))
 
     def set_colorscheme(self, scheme):
         self.color_scheme = scheme
@@ -74,15 +144,18 @@ class Viewer:
     def set_displacement(self, displacement):
         self.displacement = displacement
 
-    def coordinate_system(self):
-        self.cos = True
+    def coordinate_system(self, size=None):
+        if size is not None:
+            self.cos = size
+        elif self.model_size is not None:
+            self.cos = 10 ** math.floor(math.log10(self.model_size / 3))
 
-    def animate(self):
+    def add_animation(self):
         self.animate = True
 
     def _update_geometry(self, obj, event):
         # Compute the displacement at the current time
-        current_time = obj.GetTimerDuration()
+        current_time = time.time() - self.start_time
         current_disp = self.displacement * np.sin(current_time)
         # Update the geometry
         points = vtk.vtkPoints()
@@ -95,11 +168,27 @@ class Viewer:
         # Render the scene
         self.renderWindow.Render()
 
+    def write_to_stl(self, filename="output.stl"):
+        if not hasattr(self, 'ugrid'):
+            self._generate_ugrid()
 
-    def _visualize_geom(self):
+        # Convert vtkUnstructuredGrid to vtkPolyData
+        geometryFilter = vtk.vtkGeometryFilter()
+        geometryFilter.SetInputData(self.ugrid)
+        geometryFilter.Update()
+
+        polyData = geometryFilter.GetOutput()
+
+        # Create an STL writer and set the filename
+        stlWriter = vtk.vtkSTLWriter()
+        stlWriter.SetFileName(filename)
+        stlWriter.SetInputData(polyData)
+        stlWriter.Write()
+
+
+    def _generate_ugrid(self):
         # Create the unstructured grid object
         self.ugrid = vtk.vtkUnstructuredGrid()
-
         # Set the points
         points = vtk.vtkPoints()
         for i, node in enumerate(self.geometry.nodes):
@@ -113,8 +202,8 @@ class Viewer:
         self.ugrid.SetPoints(points)
 
         # Set the cells
-        for element in self.geometry.elements:
-            if element:
+        for i, element in enumerate(self.geometry.elements):
+            if element and (self.elem_mask is None or self.elem_mask[i]):
                 cellType = element['type']
                 nodes = element['nodes']
                 if cellType in ['C3D4', 'C3D10']:
@@ -131,6 +220,19 @@ class Viewer:
                 for i, nodeId in enumerate(nodes[:num_nodes]):
                     cell.GetPointIds().SetId(i, nodeId)
                 self.ugrid.InsertNextCell(cell.GetCellType(), cell.GetPointIds())
+            else:
+                cell = vtk.vtkTetra()
+                cell.GetPointIds().SetId(0, 0)
+                cell.GetPointIds().SetId(1, 0)
+                cell.GetPointIds().SetId(2, 0)
+                cell.GetPointIds().SetId(3, 0)
+                self.ugrid.InsertNextCell(cell.GetCellType(), cell.GetPointIds())
+
+    def _visualize_geom(self):
+
+        # Create the unstructured grid object
+        if not hasattr(self, 'ugrid'):
+            self._generate_ugrid()
 
         # Map the unstructured grid to colors
         mapper = vtk.vtkDataSetMapper()
@@ -161,11 +263,41 @@ class Viewer:
 
     def _visualize_cos(self):
         self.axes = vtk.vtkAxesActor()
+        self.axes.SetTotalLength(self.cos, self.cos, self.cos)
         self.renderer.AddActor(self.axes)
+
+    def _visualize_grid(self):
+        # create grid lines
+        for i in range(-5, 6):
+            line_x = vtk.vtkLineSource()
+            line_x.SetPoint1(i*self.grid_xy, -5*self.grid_xy, 0)
+            line_x.SetPoint2(i*self.grid_xy, 5*self.grid_xy, 0)
+
+            line_y = vtk.vtkLineSource()
+            line_y.SetPoint1(-5*self.grid_xy, i*self.grid_xy, 0)
+            line_y.SetPoint2(5*self.grid_xy, i*self.grid_xy, 0)
+
+            mapper_x = vtk.vtkPolyDataMapper()
+            mapper_x.SetInputConnection(line_x.GetOutputPort())
+            actor_x = vtk.vtkActor()
+            actor_x.SetMapper(mapper_x)
+
+            mapper_y = vtk.vtkPolyDataMapper()
+            mapper_y.SetInputConnection(line_y.GetOutputPort())
+            actor_y = vtk.vtkActor()
+            actor_y.SetMapper(mapper_y)
+
+            self.renderer.AddActor(actor_x)
+            self.renderer.AddActor(actor_y)
+
+
 
     def mainloop(self):
         if self.geometry:
             self._visualize_geom()
+
+        if self.grid_xy:
+            self._visualize_grid()
 
         if self.cos:
             self._visualize_cos()
@@ -176,61 +308,27 @@ class Viewer:
         # Create a timer event
         if self.displacement is not None and self.animate:
             self.renderWindowInteractor.AddObserver('TimerEvent', self._update_geometry)
-            self.renderWindowInteractor.CreateRepeatingTimer(100)
+            self.renderWindowInteractor.CreateRepeatingTimer(40)
 
         self.renderWindowInteractor.Start()
 
 
 
-def mises(stress):
-    sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
-    mises = np.sqrt(0.5 * ((sigma_x - sigma_y) ** 2 + (sigma_y - sigma_z) ** 2 +
-                           (sigma_z - sigma_x) ** 2 + 6 * (tau_xy ** 2 + tau_yz ** 2 + tau_zx ** 2)))
-    return mises
-
-
-def principal(stress):
-    sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
-    num_points = sigma_x.shape[0]
-    principal_stresses = np.zeros((num_points, 3))
-
-    for i in range(num_points):
-        stress_tensor = np.array([[sigma_x[i], tau_xy[i], tau_zx[i]],
-                                  [tau_xy[i], sigma_y[i], tau_yz[i]],
-                                  [tau_zx[i], tau_yz[i], sigma_z[i]]])
-        eigvals, _ = np.linalg.eig(stress_tensor)
-        principal_stresses[i] = np.sort(eigvals)
-
-    return principal_stresses
-
-
-def signed_mises(stress):
-    mises_stress = mises(stress)
-    principal_stresses_val = principal(stress)
-    max_absolute_principal_stress = np.max(np.abs(principal_stresses_val), axis=1)
-    sign = np.sign(np.sum(principal_stresses_val * (np.abs(principal_stresses_val) == max_absolute_principal_stress[:, None]), axis=1))
-    signed_mises_stress = sign * mises_stress
-    return signed_mises_stress
-
-
-
-# Create a model
-
-geom = geometry.Geometry.read_input_deck("../../topo/runs/topo_20230907_08-45-11/redesign/opt.inp")
-solution = solution.Solution.open("../../topo/runs/topo_20230907_08-45-11/redesign/opt.inp.res")
-
-disp = solution.loadcases["1"]["DISPLACEMENT"]
-strain = solution.loadcases["1"]["STRAIN"]
-stress = solution.loadcases["1"]["STRESS"]
-mises = signed_mises(stress)
-
-
-# viewer
-viewer = Viewer()
-viewer.set_geometry(geom)
-viewer.set_data(type='node', data=mises)
-viewer.set_data_range(0.01, 0.99, percentile=True)
-viewer.set_colorscheme('jet')
-viewer.set_displacement(disp[:,:3] * 0.1)
-viewer.coordinate_system()
-viewer.mainloop()
+# # Create a model
+# geom = geometry.Geometry.read_input_deck("../../topo/runs/gabel/model2.inp")
+# solution = solution.Solution.open("../../topo/runs/gabel/model2.inp.res")
+# # # geom = geometry.Geometry.read_input_deck("../../test_extruded.inp")
+# # # solution = solution.Solution.open("../../topo/runs/bridge/bridge_linear_deck.inp.res")
+# # geom = geometry.Geometry.read_input_deck("../../topo/runs/bridge/bridge_quadratic_deck.inp")
+# # solution = solution.Solution.open("../../topo/runs/bridge/bridge_quadratic_deck.inp.res")
+# #
+# viewer = Viewer()
+# viewer.set_geometry(geom)
+# viewer.set_data(type='node', data=solution.displacement_x())
+# viewer.set_data_range(0, 0.995, percentile=True)
+# viewer.set_colorscheme('jet')
+# # viewer.set_displacement(solution.displacement() * 0.001)
+# # # viewer.add_animation()
+# viewer.coordinate_system()
+# viewer.set_grid_xy()
+# viewer.mainloop()

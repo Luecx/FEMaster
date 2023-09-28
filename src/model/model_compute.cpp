@@ -35,7 +35,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 
 }
 ElementData Model::compute_compliance(NodeData& displacement){
-    ElementData compliance{elements.size(), 1};
+    ElementData compliance{max_elements, 1};
     compliance.setZero();
 
     for (size_t idx = 0; idx < elements.size(); idx++) {
@@ -45,7 +45,21 @@ ElementData Model::compute_compliance(NodeData& displacement){
     }
 
     return compliance;
-
 }
+
+ElementData Model::compute_volumes(){
+
+    ElementData volumes{max_elements, 1};
+    volumes.setZero();
+
+    for (size_t idx = 0; idx < elements.size(); idx++) {
+        auto el = elements[idx];
+        if (el == nullptr) continue;
+        volumes(el->elem_id) = el->volume(node_coords);
+    }
+
+    return volumes;
+}
+
 
 }

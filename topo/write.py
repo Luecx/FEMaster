@@ -145,6 +145,7 @@ def generate_model(model, densities):
             output.append(f"{i},{density}")
 
     output.append(f"\n*EXPONENT\n{model.exponent}")
+    output.append(f"\n*FILTER\n{model.sigma}")
     output.append(f"\n*SOLVER, METHOD={'DIRECT' if model.direct else 'INDIRECT'}, DEVICE={'CPU' if model.cpu else 'GPU'}\n*END")
 
     return '\n'.join(output)

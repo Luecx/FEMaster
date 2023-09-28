@@ -3,6 +3,11 @@
 //
 #include "linear_static_topo.h"
 
+#include "../math/filter.h"
+
+#include <queue>
+#include <set>
+
 fem::loadcase::LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
     : LinearStatic(id, writer, model), density(model->max_elements, 1) {
     density.setOnes();
@@ -81,12 +86,63 @@ void fem::loadcase::LinearStaticTopo::run() {
     ElementData compliance_raw = m_model->compute_compliance(disp_matrix);
     ElementData compliance_adj = compliance_raw.array() * density.array().pow(exponent);
     ElementData dens_grad      = - exponent * compliance_raw.array() * density.array().pow(exponent - 1);
+    ElementData volumes        = m_model->compute_volumes();
+
+    auto filtered_gradient = Timer::measure(
+        [&]() { return filter(dens_grad); },
+        "filtering sensitivities"
+    );
 
     m_writer->add_loadcase(m_id);
-    m_writer->write_eigen_matrix(disp_matrix   , "DISPLACEMENT");
-    m_writer->write_eigen_matrix(strain        , "STRAIN");
-    m_writer->write_eigen_matrix(stress        , "STRESS");
-    m_writer->write_eigen_matrix(compliance_raw, "COMPLIANCE_RAW");
-    m_writer->write_eigen_matrix(compliance_adj, "COMPLIANCE_ADJ");
-    m_writer->write_eigen_matrix(dens_grad     , "DENS_GRAD");
+    m_writer->write_eigen_matrix(disp_matrix      , "DISPLACEMENT");
+    m_writer->write_eigen_matrix(strain           , "STRAIN");
+    m_writer->write_eigen_matrix(stress           , "STRESS");
+    m_writer->write_eigen_matrix(compliance_raw   , "COMPLIANCE_RAW");
+    m_writer->write_eigen_matrix(compliance_adj   , "COMPLIANCE_ADJ");
+    m_writer->write_eigen_matrix(dens_grad        , "DENS_GRAD");
+    m_writer->write_eigen_matrix(filtered_gradient, "DENS_GRAD_FILTERED");
+    m_writer->write_eigen_matrix(volumes          , "VOLUME");
+}
+
+ElementData fem::loadcase::LinearStaticTopo::filter(ElementData& data) {
+    const auto& elements     = m_model->elements;
+
+    // compute elements in question
+    int nn_elems = 0;
+    for(auto& v:elements)
+        nn_elems += (v != nullptr);
+
+    // Compute all centroids
+    DynamicMatrix xyz{nn_elems, 3};
+    DynamicVector v  {nn_elems};
+    int dof = 0;
+    for (ID i = 0; i < elements.size(); ++i) {
+        if (elements[i] != nullptr) {
+            StaticVector<3> centroid;
+            centroid.setZero();
+            for (ID j = 0; j < elements[i]->n_nodes(); ++j) {
+                ID node_id = elements[i]->nodes()[j];
+                centroid(0) += m_model->node_coords(node_id, 0);
+                centroid(1) += m_model->node_coords(node_id, 1);
+                centroid(2) += m_model->node_coords(node_id, 2);
+            }
+            centroid /= elements[i]->n_nodes();
+            xyz(dof, 0) = centroid(0);
+            xyz(dof, 1) = centroid(1);
+            xyz(dof, 2) = centroid(2);
+            v  (dof   ) = data    (i);
+            dof++;
+        }
+    }
+
+    auto res = fem::math::filter_gaussian(xyz, v, this->filter_radius, this->gaussian_sigma, solver::GPU);
+
+    ElementData result{data.rows(), 1};
+    dof = 0;
+    for (ID i = 0; i < elements.size(); ++i) {
+        if (elements[i] != nullptr) {
+            result(i) = res(dof++);
+        }
+    }
+    return result;
 }

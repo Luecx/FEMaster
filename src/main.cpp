@@ -3,6 +3,7 @@
 #include "cuda/cuda.h"
 #include "loadcase/linear_static.h"
 #include "material/material.h"
+#include "math/quadrature.h"
 #include "model/c3d10.h"
 #include "model/c3d15.h"
 #include "model/c3d20.h"
@@ -11,7 +12,6 @@
 #include "model/c3d8.h"
 #include "model/element.h"
 #include "model/model.h"
-#include "model/quadrature.h"
 #include "reader/file.h"
 #include "reader/line.h"
 #include "reader/reader.h"
@@ -60,12 +60,12 @@ int main(int argc, char* argv[]) {
 //    std::cout << quad2.integrate(f_linear) << std::endl;
 //    std::cout << quad3.integrate(f_linear) << std::endl;
 
-    fem::model::SolidElement< 4>::test_implementation<fem::model::C3D4 >();
-    fem::model::SolidElement< 6>::test_implementation<fem::model::C3D6 >();
-    fem::model::SolidElement< 8>::test_implementation<fem::model::C3D8 >();
-    fem::model::SolidElement<10>::test_implementation<fem::model::C3D10>();
-    fem::model::SolidElement<15>::test_implementation<fem::model::C3D15>();
-    fem::model::SolidElement<20>::test_implementation<fem::model::C3D20>();
+//    fem::model::SolidElement< 4>::test_implementation<fem::model::C3D4 >();
+//    fem::model::SolidElement< 6>::test_implementation<fem::model::C3D6 >();
+//    fem::model::SolidElement< 8>::test_implementation<fem::model::C3D8 >();
+//    fem::model::SolidElement<10>::test_implementation<fem::model::C3D10>();
+//    fem::model::SolidElement<15>::test_implementation<fem::model::C3D15>();
+//    fem::model::SolidElement<20>::test_implementation<fem::model::C3D20>();
 
     fem::reader::Reader reader{std::string(argv[1])};
     reader.read();

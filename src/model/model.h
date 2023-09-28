@@ -103,6 +103,7 @@ struct Model {
 
     std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);
     ElementData                    compute_compliance   (NodeData& displacement);
+    ElementData                    compute_volumes      ();
 };
 
 

@@ -22,15 +22,13 @@ class Model:
         self.youngs = 210000
         self.nu = 0.3
 
-        # filtering
-        self.proximity_radius = width / 5
-
         # constraints
         self.supports = {}
         self.loads    = {}
 
         # simp exonent
         self.exponent = 3
+        self.sigma = 3
 
         # solver mode
         self.cpu = True
@@ -44,9 +42,6 @@ class Model:
 
     def get_special_node_ids(self):
         return geom.get_special_node_ids(width=self.width, height=self.height, length=self.length, node_lookup=self.node_lookup)
-
-    def set_proximity_radius(self, radius):
-        self.proximity_radius = radius
 
     def set_material(self, youngs, nu):
         self.youngs = youngs
@@ -95,17 +90,17 @@ class Model:
         return data_3d.flatten()
 
 
-    def filter(self, values):
-        # Reshape the linearized data into a 3D array
-        data_3d = np.reshape(values, (self.width, self.height, self.length))
-
-        # Perform your filtering operation here
-        # Example: Apply a simple 3D Gaussian filter
-        sigma = self.proximity_radius  # Adjust the value as needed
-        filtered_data = gaussian_filter(data_3d, sigma=sigma)
-
-        # Return the filtered 3D array
-        return filtered_data.flatten()
+    # def filter(self, values):
+    #     # Reshape the linearized data into a 3D array
+    #     data_3d = np.reshape(values, (self.width, self.height, self.length))
+    #
+    #     # Perform your filtering operation here
+    #     # Example: Apply a simple 3D Gaussian filter
+    #     sigma = self.proximity_radius  # Adjust the value as needed
+    #     filtered_data = gaussian_filter(data_3d, sigma=sigma)
+    #
+    #     # Return the filtered 3D array
+    #     return filtered_data.flatten()
 
     def plot_cuboid(self, densities, threshold=0.5):
         plot.plot_cuboid(self, densities=densities, threshold=threshold)
@@ -115,6 +110,9 @@ class Model:
 
     def set_exponent(self, exponent):
         self.exponent = exponent
+
+    def set_filter_sigma(self, sigma):
+        self.sigma = sigma
 
     def set_force(self, id, x=0, y=0, z=0):
         self.loads[id] = (x,y,z)
