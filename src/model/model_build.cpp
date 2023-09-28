@@ -98,7 +98,9 @@ DynamicVector Model::build_support_vector(IndexMatrix &indices, std::vector <std
             for (int n = 0; n < data.cols(); n++) {
                 auto idx = indices(m, n);
                 if (idx >= 0 && !std::isnan(data(m, n))) {
-                    logging::error(std::isnan(support_vector(idx)) || support_vector(idx) == data(m, n));
+                    logging::error(std::isnan(support_vector(idx)) || support_vector(idx) == data(m, n),
+                                   "two different support collectors seem to both constrain the same "
+                                   "node with different values, this is not allowed");
                     support_vector(idx) = data(m, n);
                 }
             }

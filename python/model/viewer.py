@@ -5,8 +5,10 @@ import math
 import matplotlib.pyplot as plt
 import time
 import solution
+import sys
 from vtk.util.numpy_support import numpy_to_vtk
 from vtk import *
+import argparse
 
 class CustomInteractorStyle(vtk.vtkInteractorStyleTrackballCamera):
     def __init__(self, parent=None):
@@ -313,22 +315,45 @@ class Viewer:
         self.renderWindowInteractor.Start()
 
 
+if __name__ == '__main__':
 
-# # Create a model
-# geom = geometry.Geometry.read_input_deck("../../topo/runs/gabel/model2.inp")
-# solution = solution.Solution.open("../../topo/runs/gabel/model2.inp.res")
-# # # geom = geometry.Geometry.read_input_deck("../../test_extruded.inp")
-# # # solution = solution.Solution.open("../../topo/runs/bridge/bridge_linear_deck.inp.res")
-# # geom = geometry.Geometry.read_input_deck("../../topo/runs/bridge/bridge_quadratic_deck.inp")
-# # solution = solution.Solution.open("../../topo/runs/bridge/bridge_quadratic_deck.inp.res")
-# #
-# viewer = Viewer()
-# viewer.set_geometry(geom)
-# viewer.set_data(type='node', data=solution.displacement_x())
-# viewer.set_data_range(0, 0.995, percentile=True)
-# viewer.set_colorscheme('jet')
-# # viewer.set_displacement(solution.displacement() * 0.001)
-# # # viewer.add_animation()
-# viewer.coordinate_system()
-# viewer.set_grid_xy()
-# viewer.mainloop()
+    parser = argparse.ArgumentParser(description="Visualize geometry and solutions")
+    parser.add_argument("--geometry", type=str, help="Path to the geometry input deck")
+    parser.add_argument("--solution", type=str, help="Path to the solution file")
+    parser.add_argument("--loadcase", type=str, default='1', help="Specify loadcase")
+    parser.add_argument("--field", type=str, help="Field to display")
+    parser.add_argument("--datarange", nargs=3, help="Data range (min, max, percentile). Use True/False for percentile.")
+    parser.add_argument("--displacement", type=float, help="Displacement factor")
+
+    args = parser.parse_args()
+
+    viewer = Viewer()
+
+    if args.geometry:
+        viewer.set_geometry(geometry.Geometry.read_input_deck(args.geometry))
+
+    if args.solution:
+        sol = solution.Solution.open(args.solution)
+        available_fields = sol.list_fields(loadcase=args.loadcase)
+
+        if args.field:
+            if args.field not in available_fields:
+                print(f"Error: The field '{args.field}' is not available for the given loadcase.")
+                print("Possible fields:")
+                for k in available_fields:
+                    print(f"\t{k}")
+                sys.exit(1)
+
+            viewer.set_data(type='node', data=available_fields[args.field]())
+            viewer.set_colorscheme('jet')
+
+        if args.datarange:
+            min_val, max_val, percentile = args.datarange
+            viewer.set_data_range(float(min_val), float(max_val), percentile=(percentile.lower() == 'true'))
+
+        if args.displacement:
+            viewer.set_displacement(sol.displacement_xyz(loadcase=args.loadcase) * args.displacement)
+
+    viewer.coordinate_system()
+    viewer.set_grid_xy()
+    viewer.mainloop()

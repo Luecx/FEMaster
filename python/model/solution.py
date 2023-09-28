@@ -76,6 +76,9 @@ class Solution:
         magnitude = np.linalg.norm(displacement, axis=1)
         return magnitude
 
+    def displacement_xyz(self, loadcase='1'):
+        return self.loadcases[str(loadcase)]["DISPLACEMENT"][:,0:3]
+
     def list_fields(self, loadcase='1'):
         fields_dict = {}
         lc_fields = self.loadcases[str(loadcase)]
@@ -88,13 +91,17 @@ class Solution:
                         "principal": lambda: self.principal(loadcase),
                         "signed_mises": lambda: self.signed_mises(loadcase),
                     })
+                if field == "DISPLACEMENT":
+                    fields_dict.update({
+                        "displacement": lambda: self.displacement(loadcase)
+                    })
                 fields_dict.update({
                     field.lower() + "_x": lambda: self.get(loadcase, field)[:, 0],
                     field.lower() + "_y": lambda: self.get(loadcase, field)[:, 1],
                     field.lower() + "_z": lambda: self.get(loadcase, field)[:, 2],
                     field.lower() + "_yz": lambda: self.get(loadcase, field)[:, 3],
                     field.lower() + "_zx": lambda: self.get(loadcase, field)[:, 4],
-                    field.lower() + "_xy": lambda: self.get(loadcase, field)[:, 5]
+                    field.lower() + "_xy": lambda: self.get(loadcase, field)[:, 5],
                 })
             elif dim == 1:
                 fields_dict[field.lower()] = lambda: self.get(loadcase, field)

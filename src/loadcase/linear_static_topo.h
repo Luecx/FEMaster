@@ -13,12 +13,6 @@ struct LinearStaticTopo : public LinearStatic{
 
     ElementData density;
     Precision exponent = 1;
-    // mesh independence filtering
-    Precision filter_radius = 0;
-    Precision gaussian_sigma = 0;
-
-    private:
-    ElementData filter(ElementData& data);
 
     public:
     void run() override;

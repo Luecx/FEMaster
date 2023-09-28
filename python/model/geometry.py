@@ -215,6 +215,6 @@ class Geometry:
                     file.write(f"*ELSET, NAME={name}\n")
                     file.write(',\n'.join(map(str, [id + 1 for id in ids])) + '\n')
 
-geom = Geometry.read_input_deck("../../naca_flat.txt")
-geom2 =geom.extrude(1, spacing=10)
-geom2.write_input_deck("../../naca_extruded_mini.inp")
+#geom = Geometry.read_input_deck("../../naca_flat.txt")
+#geom2 =geom.extrude(1, spacing=10)
+#geom2.write_input_deck("../../naca_extruded_mini.inp")

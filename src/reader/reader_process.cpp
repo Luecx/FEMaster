@@ -309,8 +309,6 @@ void Reader::process_loadcase_linear_static_topo() {
             process_loadcase_linear_static_topo_exponent(&lc);
         } else if (m_current_line.command() == "DENSITY") {
             process_loadcase_linear_static_topo_density(&lc);
-        } else if (m_current_line.command() == "FILTER") {
-            process_loadcase_linear_static_topo_filter(&lc);
         } else if (m_current_line.command() == "END") {
             next_line();
             break;
@@ -355,14 +353,6 @@ void Reader::process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearS
     next_line();
     auto exp     = std::stof(m_current_line.values()[0]);
     lc->exponent = exp;
-    next_line();
-}
-
-void Reader::process_loadcase_linear_static_topo_filter(fem::loadcase::LinearStaticTopo* lc) {
-    next_line();
-    auto sigma     = std::stof(m_current_line.values()[0]);
-    lc->gaussian_sigma = sigma;
-    lc->filter_radius  = 3 * sigma;
     next_line();
 }
 
