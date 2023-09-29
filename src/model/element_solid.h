@@ -31,7 +31,6 @@ struct SolidElement : public ElementInterface{
         return this->nodal_data<D>(node_coords);
     }
 
-    // integration scheme
     virtual const quadrature::Quadrature& integration_scheme() = 0;
 
     // compute the strain displacement matrix B from the compact form
@@ -142,6 +141,10 @@ struct SolidElement : public ElementInterface{
         return &node_ids[0];
     }
 
+    Dim n_integration_points() override {
+        return integration_scheme().points.size();
+    }
+
     Precision volume(NodeData& node_coords) override {
         StaticMatrix<N, D> node_coords_glob = this->node_coords_global(node_coords);
         std::function<Precision(Precision, Precision, Precision)> func =
@@ -153,34 +156,84 @@ struct SolidElement : public ElementInterface{
         return volume;
     }
 
-    void compute_stress    (NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain) override {
+//    void compute_stress    (NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain) override {
+//        auto local_node_coords  = this->node_coords_local();
+//        auto global_node_coords = this->node_coords_global(node_coords);
+//
+//        auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
+//        auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+//
+//        for(int n = 0; n < n_nodes(); n++){
+//
+//            Precision r = local_node_coords(n, 0);
+//            Precision s = local_node_coords(n, 1);
+//            Precision t = local_node_coords(n, 2);
+//            Precision det;
+//
+//            StaticMatrix<n_strain, D * N>    B = this->strain_displacements(global_node_coords, r, s, t, det);
+//            StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
+//
+//            auto node_id  = node_ids[n];
+//            auto strains  = B * local_displacement;
+//            auto stresses = E * strains;
+//
+//            for(int j = 0; j < n_strain; j++){
+//                strain(node_id, j) += strains(j);
+//                stress(node_id, j) += stresses(j);
+//            }
+//
+//        }
+//    }
+
+    virtual void compute_stress_strain( NodeData& node_coords,
+                                        NodeData& displacement,
+                                        NodeData& stress,
+                                        NodeData& strain,
+                                        NodeData& integration_points,
+                                        int       integration_point_offset) {
         auto local_node_coords  = this->node_coords_local();
         auto global_node_coords = this->node_coords_global(node_coords);
 
         auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
         auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
-        for(int n = 0; n < n_nodes(); n++){
+        auto scheme = this->integration_scheme();
 
-            Precision r = local_node_coords(n, 0);
-            Precision s = local_node_coords(n, 1);
-            Precision t = local_node_coords(n, 2);
+        for(int n = 0; n < scheme.points.size(); n++){
+
+            Precision r = scheme.points(n).r;
+            Precision s = scheme.points(n).s;
+            Precision t = scheme.points(n).t;
             Precision det;
 
-            StaticMatrix<n_strain, D * N>    B = this->strain_displacements(global_node_coords, r, s, t, det);
-            StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
+            StaticMatrix<N       , 1> shape_func = this->shape_function(r,s,t);
+            StaticMatrix<n_strain, D * N>      B = this->strain_displacements(global_node_coords, r, s, t, det);
+            StaticMatrix<n_strain, n_strain>   E = this->material->elasticity()->template get<D>();
 
-            auto node_id  = node_ids[n];
             auto strains  = B * local_displacement;
             auto stresses = E * strains;
 
+            Precision x = 0;
+            Precision y = 0;
+            Precision z = 0;
+
             for(int j = 0; j < n_strain; j++){
-                strain(node_id, j) += strains(j);
-                stress(node_id, j) += stresses(j);
+                strain(integration_point_offset + n, j) += strains(j);
+                stress(integration_point_offset + n, j) += stresses(j);
             }
 
+            for(int j = 0; j < N; j++){
+                x += shape_func(j) * global_node_coords(j, 0);
+                y += shape_func(j) * global_node_coords(j, 1);
+                z += shape_func(j) * global_node_coords(j, 2);
+            }
+
+            integration_points(integration_point_offset + n, 0) = x;
+            integration_points(integration_point_offset + n, 1) = y;
+            integration_points(integration_point_offset + n, 2) = z;
         }
     }
+
     void compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) override {
         // 1. Compute the element stiffness matrix
         Precision buffer[D * N * D * N];

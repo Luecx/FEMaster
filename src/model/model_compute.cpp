@@ -7,31 +7,31 @@
 namespace fem::model{
 
 std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displacement){
-    NodeData stress{max_nodes, 6};
-    NodeData strain{max_nodes, 6};
-    stress.setZero();
-    strain.setZero();
-    IndexVector count{max_nodes};
-    count.setZero();
-
-    for(auto el: elements){
-        if(el == nullptr) continue;
-        el->compute_stress(node_coords, displacement, stress, strain);
-        for(int i = 0; i < el->n_nodes(); i++){
-            ID id = el->nodes()[i];
-            count(id) ++;
-        }
-    }
-
-    for (int i = 0; i < max_nodes; i++) {
-        if (count[i] != 0) {
-            for (int j = 0; j < 6; j++) {
-                stress(i, j) /= count[i];
-                strain(i, j) /= count[i];
-            }
-        }
-    }
-    return {stress, strain};
+//    NodeData stress{max_nodes, 6};
+//    NodeData strain{max_nodes, 6};
+//    stress.setZero();
+//    strain.setZero();
+//    IndexVector count{max_nodes};
+//    count.setZero();
+//
+//    for(auto el: elements){
+//        if(el == nullptr) continue;
+//        el->compute_stress(node_coords, displacement, stress, strain);
+//        for(int i = 0; i < el->n_nodes(); i++){
+//            ID id = el->nodes()[i];
+//            count(id) ++;
+//        }
+//    }
+//
+//    for (int i = 0; i < max_nodes; i++) {
+//        if (count[i] != 0) {
+//            for (int j = 0; j < 6; j++) {
+//                stress(i, j) /= count[i];
+//                strain(i, j) /= count[i];
+//            }
+//        }
+//    }
+//    return {stress, strain};
 
 }
 ElementData Model::compute_compliance(NodeData& displacement){

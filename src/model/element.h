@@ -26,12 +26,18 @@ struct ElementInterface{
     virtual Dofs dofs() = 0;
     virtual Dim dimensions() = 0;
     virtual Dim n_nodes() = 0;
+    virtual Dim n_integration_points() = 0;
     virtual ID* nodes() = 0;
 
-    virtual Precision volume(NodeData& node_coords) = 0;
-    virtual MapMatrix stiffness(NodeData& position, Precision* buffer) = 0;
-    virtual void compute_stress    (NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain) = 0;
-    virtual void compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) = 0;
+    virtual Precision volume(NodeData& node_coords)                                                          = 0;
+    virtual MapMatrix stiffness(NodeData& position, Precision* buffer)                                       = 0;
+    virtual void      compute_stress(NodeData& node_coords,
+                                     NodeData& displacement,
+                                     NodeData& stress,
+                                     NodeData& strain,
+                                     NodeData& integration_points,
+                                     int       integration_point_offset)                                     = 0;
+    virtual void      compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) = 0;
 };
 
 
