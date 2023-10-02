@@ -334,6 +334,7 @@ if __name__ == '__main__':
 
     if args.solution:
         sol = solution.Solution.open(args.solution)
+        print(sol)
         available_fields = sol.list_fields(loadcase=args.loadcase)
 
         if args.field:

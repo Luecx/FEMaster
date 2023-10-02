@@ -336,8 +336,12 @@ void Reader::process_loadcase_linear_static_load(fem::loadcase::LinearStatic* lc
     }
 }
 void Reader::process_loadcase_linear_static_solver(fem::loadcase::LinearStatic* lc) {
-    lc->device = m_current_line.parse<std::string>("DEVICE", "CPU") == "CPU" ? solver::CPU : solver::GPU;
-    lc->method = m_current_line.parse<std::string>("METHOD", "DIRECT") == "DIRECT" ? solver::DIRECT : solver::INDIRECT;
+    if(m_current_line.has_key("DEVICE")){
+        lc->device = m_current_line.parse<std::string>("DEVICE", "CPU") == "CPU" ? solver::CPU : solver::GPU;
+    }
+    if(m_current_line.has_key("METHOD")){
+        lc->method = m_current_line.parse<std::string>("METHOD", "DIRECT") == "DIRECT" ? solver::DIRECT : solver::INDIRECT;
+    }
     next_line();
 }
 

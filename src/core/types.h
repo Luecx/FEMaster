@@ -22,6 +22,8 @@ typedef float CudaPrecision;
 // eigen redefinitions
 template<size_t A, size_t B>
 using StaticMatrix        = Eigen::Matrix<Precision, A             , B             >;
+template<size_t B>
+using SemiStaticMatrix    = Eigen::Matrix<Precision, Eigen::Dynamic, B             >;
 using DynamicMatrix       = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
 using MapMatrix           = Eigen::Map<DynamicMatrix>;
 using SparseMatrix        = Eigen::SparseMatrix<Precision>;

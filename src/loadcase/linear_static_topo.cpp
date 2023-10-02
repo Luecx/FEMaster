@@ -79,7 +79,10 @@ void fem::loadcase::LinearStaticTopo::run() {
     NodeData stress;
     NodeData strain;
 
-    std::tie(stress, strain) = m_model->compute_stress_strain(disp_matrix);
+    std::tie(stress, strain) = Timer::measure(
+        [&]() { return m_model->compute_stress_strain(disp_matrix); },
+        "Interpolation of stress and strain components to nodes"
+    );
 
     ElementData compliance_raw = m_model->compute_compliance(disp_matrix);
     ElementData compliance_adj = compliance_raw.array() * density.array().pow(exponent);

@@ -19,6 +19,7 @@ struct C3D8 : public SolidElement<8>{
         const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUADRATIC};
         return quad;
     }
+
 };
 
 } }

@@ -71,7 +71,10 @@ void fem::loadcase::LinearStatic::run() {
     NodeData stress;
     NodeData strain;
 
-    std::tie(stress, strain) = m_model->compute_stress_strain(disp_matrix);
+    std::tie(stress, strain) = Timer::measure(
+        [&]() { return m_model->compute_stress_strain(disp_matrix); },
+        "Interpolation of stress and strain components to nodes"
+    );
 
     m_writer->add_loadcase(m_id);
     m_writer->write_eigen_matrix(disp_matrix , "DISPLACEMENT");

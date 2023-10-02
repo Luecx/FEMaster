@@ -9,7 +9,11 @@ namespace fem {
 namespace math {
 namespace interpolate {
 
-enum InterpolationFunction{
+/**
+ * \enum InterpolationFunction
+ * \brief Enumerates the available interpolation methods.
+ */
+enum InterpolationFunction {
     CONSTANT,
     LINEAR,
     BILINEAR,
@@ -18,118 +22,87 @@ enum InterpolationFunction{
     CUBIC,
 };
 
+/**
+ * \brief Performs interpolation and returns the result at a specified point.
+ *
+ * \tparam F The interpolation function.
+ * \param[in] xyz Interpolation nodes.
+ * \param[in] values The values at the interpolation nodes.
+ * \param[in] center The point where interpolation result is needed.
+ * \param[out] r2_values Optional output for R^2 values.
+ * \return Matrix with interpolated values.
+ *
+ * \example
+ * NodeData nodes = {{1,2,3}, {2,3,4}};
+ * NodeData vals = {{5}, {6}};
+ * StaticVector<3> point = {1.5, 2.5, 3.5};
+ * DynamicMatrix result = interpolate<LINEAR>(nodes, vals, point);
+ */
 template<InterpolationFunction F>
-constexpr int n_terms(){
-    if constexpr (F == CONSTANT) {
-        return 1;
-    } else if constexpr (F == LINEAR) {
-        return 4;
-    } else if constexpr (F == BILINEAR) {  // Trilinear in 3D context
-        return 7;
-    } else if constexpr (F == QUADRATIC) {
-        return 10;
-    } else if constexpr (F == BILINQUAD) {
-        return 10;
-    } else if constexpr (F == CUBIC) {
-        return 20;
-    } else {
-        return 0;  // Default case, should not be reached.
-    }
-}
+DynamicMatrix interpolate(const NodeData&        xyz,
+                          const NodeData&        values,
+                          const StaticVector<3>& center,
+                          DynamicVector*         r2_values = nullptr);
 
-template<InterpolationFunction F>
-Precision evaluate(const DynamicVector& coeff, const StaticVector<3>& center) {
-    Precision result = 0;
+/**
+ * @brief Computes interpolated values using various interpolation methods.
+ *
+ * Given a set of nodes (xyz) and their corresponding values, this function interpolates to find
+ * the value at a specific point (center). The function decides the interpolation method to use based on
+ * the number of nodes, the accuracy factor, and the max allowed interpolation method.
+ *
+ * @param[in] xyz  Matrix of nodes with each row being a 3D coordinate.
+ * @param[in] values Matrix of values corresponding to the nodes in xyz.
+ * @param[in] center 3D coordinate where the interpolation result is desired.
+ * @param[out] r2_values Vector that returns the R-squared values for the interpolation fit.
+ * @param[in] accuracy_factor Factor that scales the number of nodes to determine the complexity of interpolation method
+ * (lower values prefer simpler methods). Values above 1 should be avoided.
+ * @param[in] max_accuracy The maximum interpolation method allowed.
+ * @return Matrix of interpolated values.
+ *
+ * @example
+ * NodeData xyz = ...; // Get some node data
+ * NodeData values = ...; // Corresponding values for the nodes
+ * StaticVector<3> center = {x, y, z}; // Some point in space
+ * DynamicVector r2;
+ * auto result = fem::math::interpolate::interpolate(xyz, values, center, &r2, 1.0, InterpolationFunction::BILINEAR);
+ * // Result now contains interpolated values at the center point.
+ */
+DynamicMatrix interpolate(const NodeData&        xyz,
+                          const NodeData&        values,
+                          const StaticVector<3>& center,
+                          DynamicVector*         r2_values       = nullptr,
+                          float                  accuracy_factor = 1,
+                          InterpolationFunction  max_accuracy    = InterpolationFunction::CUBIC);
 
-    int idx = 0;
+class Interpolator {
+    private:
+    InterpolationFunction method;
+    float accuracy;
 
-    if constexpr (F >= CONSTANT) {
-        result += coeff(idx++);
-    }
-    if constexpr(F >= LINEAR){
-        result += coeff(idx++) * center(0);
-        result += coeff(idx++) * center(1);
-        result += coeff(idx++) * center(2);
-    }
-    if constexpr(F >= BILINEAR){
-        result += coeff(idx++) * center(1) * center(2);
-        result += coeff(idx++) * center(0) * center(2);
-        result += coeff(idx++) * center(0) * center(1);
-    }
-    if constexpr(F >= QUADRATIC){
-        result += coeff(idx++) * center(0) * center(0);
-        result += coeff(idx++) * center(1) * center(1);
-        result += coeff(idx++) * center(2) * center(2);
-    }
-    if constexpr(F >= BILINQUAD) {
-        result += coeff(idx++) * center(0) * center(1) * center(1);
-        result += coeff(idx++) * center(0) * center(2) * center(2);
+    public:
+    // Constructor
+    explicit Interpolator(InterpolationFunction method_ = InterpolationFunction::QUADRATIC,
+                 float accuracy_ = 1);
 
-        result += coeff(idx++) * center(1) * center(0) * center(0);
-        result += coeff(idx++) * center(1) * center(2) * center(2);
+    // Setter for interpolation method
+    void set_function(InterpolationFunction method_);
 
-        result += coeff(idx++) * center(2) * center(0) * center(0);
-        result += coeff(idx++) * center(2) * center(1) * center(1);
+    // Getter for interpolation method
+    InterpolationFunction get_function() const;
 
-        result += coeff(idx++) * center(0) * center(1) * center(2);
-    }
-    if constexpr(F >= CUBIC){
-        result += coeff(idx++) * center(0) * center(0) * center(0);
-        result += coeff(idx++) * center(1) * center(1) * center(1);
-        result += coeff(idx++) * center(2) * center(2) * center(2);
-    }
+    // Setter for accuracy
+    void set_accuracy(float accuracy_);
 
-    return result;
-}
+    // Getter for accuracy
+    float get_accuracy() const;
 
-
-template<InterpolationFunction F>
-DynamicVector interpolate(const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, Precision* buffer){
-    MapMatrix lhs{buffer, xyz.rows(), n_terms<F>()};
-    for (int r = 0; r < xyz.rows(); r++){
-        if constexpr (F >= CONSTANT) {
-            lhs(r,0) = 1;
-        }
-        if constexpr(F >= LINEAR){
-            lhs(r,1) = xyz(r,0);
-            lhs(r,2) = xyz(r,1);
-            lhs(r,3) = xyz(r,2);
-        }
-        if constexpr(F >= BILINEAR){
-            lhs(r,4) = xyz(r,1) * xyz(r,2);
-            lhs(r,5) = xyz(r,0) * xyz(r,2);
-            lhs(r,6) = xyz(r,0) * xyz(r,1);
-        }
-        if constexpr(F >= QUADRATIC){
-            lhs(r,7) = xyz(r,0) * xyz(r,0);
-            lhs(r,8) = xyz(r,1) * xyz(r,1);
-            lhs(r,9) = xyz(r,2) * xyz(r,2);
-        }
-        if constexpr(F >= BILINQUAD) {
-            lhs(r,10) = xyz(r,0) * xyz(r,1) * xyz(r,1);
-            lhs(r,11) = xyz(r,0) * xyz(r,2) * xyz(r,2);
-
-            lhs(r,12) = xyz(r,1) * xyz(r,0) * xyz(r,0);
-            lhs(r,13) = xyz(r,1) * xyz(r,2) * xyz(r,2);
-
-            lhs(r,14) = xyz(r,2) * xyz(r,0) * xyz(r,0);
-            lhs(r,15) = xyz(r,2) * xyz(r,1) * xyz(r,1);
-
-            lhs(r,16) = xyz(r,0) * xyz(r,1) * xyz(r,2);
-        }
-        if constexpr(F >= CUBIC){
-            lhs(r,17) = xyz(r,0) * xyz(r,0) * xyz(r,0);
-            lhs(r,18) = xyz(r,1) * xyz(r,1) * xyz(r,1);
-            lhs(r,19) = xyz(r,2) * xyz(r,2) * xyz(r,2);
-        }
-    }
-    DynamicVector results(values.cols());
-    for (int col = 0; col < values.cols(); ++col) {
-        auto sol = lhs.colPivHouseholderQr().solve(values.col(col));
-        results(col) = evaluate<F>(sol, center);
-    }
-    return results;
-}
+    // Perform interpolation
+    DynamicMatrix operator()(const NodeData&        xyz,
+                             const NodeData&        values,
+                             const StaticVector<3>& center,
+                             DynamicVector*         r2_values = nullptr);
+};
 
 
 }    // namespace interpolate

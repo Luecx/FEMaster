@@ -21,6 +21,8 @@ void Manager::create_cuda() {
     if(device_count == 0){
         logging::warning(device_count, "No devices found");
         return;
+    }else{
+        logging::info("Found ", device_count, " devices");
     }
 
     // loading handles
