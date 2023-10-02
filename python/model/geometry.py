@@ -215,6 +215,47 @@ class Geometry:
                     file.write(f"*ELSET, NAME={name}\n")
                     file.write(',\n'.join(map(str, [id + 1 for id in ids])) + '\n')
 
+    def change_to_second_order(self):
+        # Add midpoint nodes
+        max_node_id = len(self.nodes)
+        edge_nodes_map = {}
+
+        for elem in self.elements:
+            edges = []
+
+            if elem is not None and elem['type'] == 'C3D8':
+                edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
+                elem['type'] = 'C3D20'
+
+            elif elem is not None and elem['type'] == 'C3D6':
+                edges = [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (0, 3), (1, 4), (2, 5)]
+                elem['type'] = 'C3D15'
+
+            elif elem is not None and elem['type'] == 'C3D4':
+                edges = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]
+                elem['type'] = 'C3D10'
+
+            for edge in edges:
+                n1_id = elem['nodes'][edge[0]]
+                n2_id = elem['nodes'][edge[1]]
+                edge_key = tuple(sorted([n1_id, n2_id]))
+
+                if edge_key not in edge_nodes_map:
+                    n1 = self.nodes[n1_id]
+                    n2 = self.nodes[n2_id]
+                    mid_point = [(n1[i] + n2[i]) / 2 for i in range(3)]
+                    self.add_node(max_node_id, *mid_point)
+                    edge_nodes_map[edge_key] = max_node_id
+                    max_node_id += 1
+
+            # Update the nodes in the element
+            elem['nodes'] = elem['nodes'] + [edge_nodes_map[tuple(sorted([elem['nodes'][edge[0]], elem['nodes'][edge[1]]]))] for edge in edges]
+
+
+# geom = Geometry.read_input_deck("test.inp")
+# geom.change_to_second_order()
+# geom.write_input_deck("test_quadratic.inp")
+
 #geom = Geometry.read_input_deck("../../naca_flat.txt")
 #geom2 =geom.extrude(1, spacing=10)
 #geom2.write_input_deck("../../naca_extruded_mini.inp")
