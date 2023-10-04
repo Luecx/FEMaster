@@ -40,6 +40,8 @@ void Reader::process() {
             process_support();
         } else if (m_current_line.command() == "CLOAD") {
             process_cload();
+        } else if (m_current_line.command() == "VLOAD") {
+            process_vload();
         } else if (m_current_line.command() == "LOADCASE") {
             process_loadcase();
         } else {
@@ -223,6 +225,26 @@ void Reader::process_cload() {
             m_model->add_cload(str, StaticVector<3>(lx, ly, lz));
         } else {
             m_model->add_cload(std::stoi(m_current_line.values()[0]), StaticVector<3>(lx, ly, lz));
+        }
+    }
+}
+
+void Reader::process_vload() {
+    // read VLOAD, LOAD_COLLECTOR=xyz
+    // NSET, lx, ly, lz
+    // id, lx, ly, lz
+    // ...
+    m_model->activate_load_set(m_current_line.require<std::string>("LOAD_COLLECTOR"));
+    while (next_line().type() == DATA_LINE) {
+        auto str = m_current_line.values()[0];
+        auto lx  = std::stof(m_current_line.values()[1]);
+        auto ly  = std::stof(m_current_line.values()[2]);
+        auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
+
+        if (m_model->elemsets().has(str)) {
+            m_model->add_vload(str, StaticVector<3>(lx, ly, lz));
+        } else {
+            m_model->add_vload(std::stoi(m_current_line.values()[0]), StaticVector<3>(lx, ly, lz));
         }
     }
 }

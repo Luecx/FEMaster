@@ -63,6 +63,8 @@ struct Model {
     // load management
     void add_cload      (const std::string& nset, StaticVector<3> load);
     void add_cload      (ID id, StaticVector<3> load);
+    void add_vload      (const std::string& elset, StaticVector<3> load);
+    void add_vload      (ID id, StaticVector<3> load);
 
     // support managment
     void add_support    (const std::string& nset, StaticVector<6> constraint);

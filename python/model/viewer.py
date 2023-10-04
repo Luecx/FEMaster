@@ -293,7 +293,6 @@ class Viewer:
             self.renderer.AddActor(actor_y)
 
 
-
     def mainloop(self):
         if self.geometry:
             self._visualize_geom()
@@ -334,7 +333,6 @@ if __name__ == '__main__':
 
     if args.solution:
         sol = solution.Solution.open(args.solution)
-        print(sol)
         available_fields = sol.list_fields(loadcase=args.loadcase)
 
         if args.field:
@@ -352,8 +350,8 @@ if __name__ == '__main__':
             min_val, max_val, percentile = args.datarange
             viewer.set_data_range(float(min_val), float(max_val), percentile=(percentile.lower() == 'true'))
 
-        if args.displacement:
-            viewer.set_displacement(sol.displacement_xyz(loadcase=args.loadcase) * args.displacement)
+        if args.displacement and 'displacement_xyz' in available_fields:
+            viewer.set_displacement(available_fields['displacement_xyz']() * args.displacement)
 
     viewer.coordinate_system()
     viewer.set_grid_xy()

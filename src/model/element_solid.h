@@ -159,7 +159,27 @@ struct SolidElement : public ElementInterface{
         return volume;
     }
 
+    void apply_vload(NodeData& node_coords, NodeData& node_loads, StaticVector<3> load) {
+        StaticMatrix<N, D> node_coords_glob = this->node_coords_global(node_coords);
+        std::function<StaticMatrix<N, 1>(Precision, Precision, Precision)> func =
+            [this, node_coords_glob](Precision r, Precision s, Precision t) {
+                Precision det = jacobian(node_coords_glob, r, s, t).determinant();
+                auto shape_func = shape_function(r,s,t);
+                return (det * shape_func);
+            };
+        StaticMatrix<N, 1> nodal_impact = integration_scheme().integrate(func);
+        ID local_id = 0;
+        for(auto n_id:node_ids){
+            node_loads(n_id, 0) += nodal_impact(local_id) * load(0);
+            node_loads(n_id, 1) += nodal_impact(local_id) * load(1);
+            node_loads(n_id, 2) += nodal_impact(local_id) * load(2);
+            local_id ++;
+        }
+    }
 
+    void apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, StaticVector<3> load) {
+        logging::error(false, "Not implemented yet");
+    }
 
     void compute_stress_strain_nodal(NodeData& node_coords,
                                        NodeData& displacement,
