@@ -42,11 +42,9 @@ void Model::add_vload(const std::string& elset, StaticVector<3> load){
     }
 }
 void Model::add_vload(const ID id, StaticVector<3> load){
-    for(int i = 0; i < 3; i++){
-        elements[i]->apply_vload(node_coords, load_sets.current(), load);
-        if(!load_sets.is_default_set())
-            elements[i]->apply_vload(node_coords, load_sets.all(), load);
-    }
+    elements[id]->apply_vload(node_coords, load_sets.current(), load);
+    if(!load_sets.is_default_set())
+        elements[id]->apply_vload(node_coords, load_sets.all(), load);
 }
 
 void Model::add_support(const std::string& nset, const StaticVector<6> constraint){

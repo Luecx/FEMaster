@@ -50,6 +50,7 @@ class Viewer:
         self.data_max = None
         self.color_scheme = None
         self.model_size = None
+        self.boundaries = False
 
         # animation and display of displacements
         self.displacement = None
@@ -111,6 +112,9 @@ class Viewer:
         self.data_type = type
         if data is not None:
             self.set_data_range(np.min(data), np.max(data))
+
+    def set_boundaries(self, value=True):
+        self.boundaries = value
 
     def set_data_range(self, min, max, percentile=False):
         if percentile and self.data is not None:
@@ -263,6 +267,30 @@ class Viewer:
             colorbar.SetNumberOfLabels(20)
             self.renderer.AddActor(colorbar)
 
+        if self.boundaries:
+            # Convert unstructured grid to polydata
+            geometryFilter = vtk.vtkGeometryFilter()
+            geometryFilter.SetInputData(self.ugrid)
+            geometryFilter.Update()
+
+            # Extract the boundaries of the elements
+            featureEdges = vtk.vtkFeatureEdges()
+            featureEdges.SetInputData(geometryFilter.GetOutput())
+            featureEdges.ExtractAllEdgeTypesOn()
+            featureEdges.SetFeatureAngle(0)
+
+            # Map the extracted edges to a color (here black)
+            edgeMapper = vtk.vtkPolyDataMapper()
+            edgeMapper.SetInputConnection(featureEdges.GetOutputPort())
+            edgeMapper.ScalarVisibilityOff()
+            edgeMapper.Update()
+            edgeActor = vtk.vtkActor()
+            edgeActor.SetMapper(edgeMapper)
+            edgeActor.GetProperty().SetLineWidth(2.0)  # Set line width to 2.0
+            edgeActor.GetProperty().SetColor(0, 0, 0)  # Set color to black
+
+            # Add the actor for the edges to the renderer
+            self.renderer.AddActor(edgeActor)
     def _visualize_cos(self):
         self.axes = vtk.vtkAxesActor()
         self.axes.SetTotalLength(self.cos, self.cos, self.cos)
@@ -323,6 +351,7 @@ if __name__ == '__main__':
     parser.add_argument("--field", type=str, help="Field to display")
     parser.add_argument("--datarange", nargs=3, help="Data range (min, max, percentile). Use True/False for percentile.")
     parser.add_argument("--displacement", type=float, help="Displacement factor")
+    parser.add_argument("--boundaries", action='store_true', help="If set, enabled boundaries of elements being displayed")
 
     args = parser.parse_args()
 
@@ -352,6 +381,8 @@ if __name__ == '__main__':
 
         if args.displacement and 'displacement_xyz' in available_fields:
             viewer.set_displacement(available_fields['displacement_xyz']() * args.displacement)
+
+        viewer.set_boundaries(args.boundaries)
 
     viewer.coordinate_system()
     viewer.set_grid_xy()

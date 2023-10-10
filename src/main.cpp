@@ -28,27 +28,6 @@
 
 int main(int argc, char* argv[]) {
 
-
-
-
-//    const int N = 16;
-
-//    NodeData xyz(N, 3);
-//    NodeData values(N, 1);
-//
-//    for (int i = 0; i < N; ++i) {
-//        xyz(i, 0) = 0.5 + 1 / (2 * sqrt(3)) - 1 / (sqrt(3)) * ((i / 4) % 2);
-//        xyz(i, 1) = 0.5 + 1 / (2 * sqrt(3)) - 1 / (sqrt(3)) * ((i / 2) % 2);
-//        xyz(i, 2) = 1.5 + 1 / (2 * sqrt(3)) - 1 / (sqrt(3)) * (i % 2) - (i / 8) % 2;
-//        values(i, 0) = 400;
-//    }
-//    std::cout << xyz << std::endl;
-//    std::cout << values << std::endl;
-//    DynamicVector r2 {1};
-//    DynamicVector res = fem::math::interpolate::interpolate<fem::math::interpolate::CONSTANT>(xyz, values, {0,0,0}, &r2);
-//    std::cout << res << std::endl;
-//    std::cout << r2 << std::endl;
-
     fem::reader::Reader reader{std::string(argv[1])};
     reader.read();
 

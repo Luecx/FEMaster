@@ -124,6 +124,7 @@ DynamicVector Model::build_load_vector(IndexMatrix &indices, std::vector <std::s
             }
         }
     }
+
     return load_vector;
 }
 
