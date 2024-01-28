@@ -1,10 +1,17 @@
-import geometry
+
+# import geometry and solution in the same folder
+try:
+    from geometry import Geometry
+    from solution import Solution
+except:
+    from .geometry import Geometry
+    from .solution import Solution
+
 import vtk
 import numpy as np
 import math
 import matplotlib.pyplot as plt
 import time
-import solution
 import sys
 from vtk.util.numpy_support import numpy_to_vtk
 from vtk import *
@@ -358,10 +365,10 @@ if __name__ == '__main__':
     viewer = Viewer()
 
     if args.geometry:
-        viewer.set_geometry(geometry.Geometry.read_input_deck(args.geometry))
+        viewer.set_geometry(Geometry.read_input_deck(args.geometry))
 
     if args.solution:
-        sol = solution.Solution.open(args.solution)
+        sol = Solution.open(args.solution)
         available_fields = sol.list_fields(loadcase=args.loadcase)
 
         if args.field:
@@ -372,7 +379,10 @@ if __name__ == '__main__':
                     print(f"\t{k}")
                 sys.exit(1)
 
-            viewer.set_data(type='node', data=available_fields[args.field]())
+            if len(viewer.geometry.nodes) == len(available_fields[args.field]()):
+                viewer.set_data(type='node', data=available_fields[args.field]())
+            else:
+                viewer.set_data(type='element', data=available_fields[args.field]())
             viewer.set_colorscheme('jet')
 
         if args.datarange:

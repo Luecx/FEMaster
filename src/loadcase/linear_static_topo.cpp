@@ -28,12 +28,12 @@ void fem::loadcase::LinearStaticTopo::run() {
     );
 
     auto supp_vec = Timer::measure(
-        [&]() { return this->m_model->build_support_vector(unconstrained); },
+        [&]() { return this->m_model->build_support_vector(unconstrained, supps); },
         "building support vector"
     );
 
     auto load_vec = Timer::measure(
-        [&]() { return this->m_model->build_load_vector(unconstrained); },
+        [&]() { return this->m_model->build_load_vector(unconstrained, loads); },
         "formulating load vector"
     );
 

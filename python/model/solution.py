@@ -8,8 +8,10 @@ class Solution:
 
     def mises(self, stress):
         sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
-        return np.sqrt(0.5 * ((sigma_x - sigma_y)**2 + (sigma_y - sigma_z)**2 +
-                              (sigma_z - sigma_x)**2 + 6 * (tau_xy**2 + tau_yz**2 + tau_zx**2)))
+        return np.sqrt(0.5 * ((sigma_x - sigma_y)**2 +
+                              (sigma_y - sigma_z)**2 +
+                              (sigma_z - sigma_x)**2 +
+                              6 * (tau_xy**2 + tau_yz**2 + tau_zx**2)))
 
     def principal(self, stress):
         sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
@@ -102,7 +104,10 @@ class Solution:
 
                 # If the line is a data row
                 elif current_field_name:
-                    matrix.append(list(map(float, line.split())))
+                    temp = list(map(float, line.split()))
+                    # replace nans with zeros
+                    temp = [0 if np.isnan(x) else x for x in temp]
+                    matrix.append(temp)
 
             if current_loadcase:
                 loadcases[current_loadcase] = fields

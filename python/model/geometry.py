@@ -22,9 +22,17 @@ class Geometry:
         if name not in self.node_sets:
             self.node_sets[name] = []
 
+    def add_node_to_set(self, name, node_id):
+        self.add_node_set(name)
+        self.node_sets[name].append(node_id)
+
     def add_element_set(self, name):
         if name not in self.elem_sets:
             self.elem_sets[name] = []
+
+    def add_element_to_set(self, name, element_id):
+        self.add_element_set(name)
+        self.elem_sets[name].append(element_id)
 
     def compute_element_midpoints(self):
         element_midpoints = []

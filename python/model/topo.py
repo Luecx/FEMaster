@@ -1,17 +1,18 @@
 
-import geometry
 import sys
 import os
 import shutil
 import subprocess
 import numpy as np
-import filter
-import viewer
+
+from .filter import Filter, FilterFunction
+from .viewer import Viewer
+from .geometry import Geometry
+from .solution import Solution
 import time
-import pickle
+import dill as pickle
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import pdist
-import solution
 
 
 def compute_histogram(data, num_bins):
@@ -21,18 +22,19 @@ def compute_histogram(data, num_bins):
 
 
 class Optimiser:
-    def __init__(self, input_deck, desi_set, load_cols, support_cols, output_folder,
+    def __init__(self, input_deck, desi_set, loadcases, output_folder,
                  solver_path, method='indirect', device='gpu', exponent=2.5,
                  min_density=0.01, target_density=0.2, filter_radius=None,
-                 symmetry_radius=None, move_limit=0.2, symmetries={}):
+                 symmetry_radius=None, move_limit=0.2, symmetries={}, custom_density_adjustment=None):
 
         self.input_deck = input_deck
         self.desi_set = desi_set
-        self.geometry = geometry.Geometry.read_input_deck(input_deck)
+        self.geometry = Geometry.read_input_deck(input_deck)
         self.volumes = np.zeros(len(self.geometry.elements))
         self.output_folder = output_folder
-        self.load_cols = load_cols
-        self.support_cols = support_cols
+
+        self.loadcases = loadcases
+
         self.desi_mask = np.full(len(self.geometry.elements), False)
         self.desi_mask[self.geometry.elem_sets[self.desi_set]] = True
         mid_points_list = self.geometry.compute_element_midpoints()
@@ -63,7 +65,7 @@ class Optimiser:
             raise ValueError("Design set is not part of geometry")
 
         # compute default radius in case its not specified
-        distances = filter.Filter(coords=self.mid_points, sigma=1e-8).minimal_distance()
+        distances = Filter(coords=self.mid_points, sigma=1e-8).minimal_distance()
         min_dist = np.min(distances)
         if self.filter_radius is None:
             self.filter_radius = 10 * min_dist
@@ -72,6 +74,11 @@ class Optimiser:
 
         # check if fields are initialized
         self.check_fields()
+
+        # custom density adjustment
+        if custom_density_adjustment is None:
+           custom_density_adjustment = lambda x: x
+        self.custom_density_adjustment = custom_density_adjustment
 
     def check_fields(self):
         attrs = vars(self)
@@ -127,18 +134,22 @@ class Optimiser:
 
         # append things to newly created file
         with open(new_file_path, 'a') as f:
-            f.write("*LOADCASE, TYPE=LINEAR STATIC TOPO\n")
-            f.write("*LOAD\n")
-            f.write(f"{','.join(self.load_cols)}\n")
-            f.write("*SUPPORT\n")
-            f.write(f"{','.join(self.support_cols)}\n")
-            f.write("*FILTER\n")
-            f.write(f"0\n")
-            f.write(f"*SOLVER, DEVICE={self.device}, METHOD={self.method}\n")
-            f.write(f"*EXPONENT\n{self.exponent}\n")
-            f.write("*DENSITY")
-            for v in range(len(self.density)):
-                f.write(f"\n{v}, {self.density[v]}")
+            for lc in self.loadcases:
+                load_cols = lc['load_cols']
+                supp_cols = lc['supp_cols']
+                f.write("*LOADCASE, TYPE=LINEAR STATIC TOPO\n")
+                f.write("*LOAD\n")
+                f.write(f"{','.join(load_cols)}\n")
+                f.write("*SUPPORT\n")
+                f.write(f"{','.join(supp_cols)}\n")
+                f.write("*FILTER\n")
+                f.write(f"0\n")
+                f.write(f"*SOLVER, DEVICE={self.device}, METHOD={self.method}\n")
+                f.write(f"*EXPONENT\n{self.exponent}\n")
+                f.write("*DENSITY")
+                for v in range(len(self.density)):
+                    f.write(f"\n{v}, {self.density[v]}")
+                f.write("\n*END\n")
 
     def _run(self, iteration):
         self._create_input(iteration)
@@ -164,8 +175,11 @@ class Optimiser:
         file_path = os.path.join(output_path, 'model.inp.res')
 
         # open file and return loadcase 1
-        sol = solution.Solution.open(file_path)
-        return sol.loadcases['1']
+        sol = Solution.open(file_path)
+        results = []
+        for lc in sol.loadcases:
+            results.append(sol.loadcases[lc])
+        return results
 
     def _clean_folder(self, iteration):
         # create output path
@@ -209,18 +223,19 @@ class Optimiser:
         return (lower_bound + upper_bound) / 2
 
     def plot(self, threshold):
-        v = viewer.Viewer()
+        v = Viewer()
         v.set_geometry(self.geometry)
         v.set_element_mask(self.density > threshold)
         v.set_data(type='element', data=self.density)
         v.set_data_range(0, 1)
         v.set_colorscheme('jet')
         v.coordinate_system()
+        v.set_boundaries()
         v.set_grid_xy()
         v.mainloop()
 
     def to_stl(self, threshold, file):
-        v = viewer.Viewer()
+        v = Viewer()
         v.set_geometry(self.geometry)
         v.set_element_mask(self.density > threshold)
         v.write_to_stl(file)
@@ -234,10 +249,10 @@ class Optimiser:
         self.check_fields()
 
         # normal and symmetry filters
-        grads_filter = filter.Filter(sigma=self.filter_radius  , coords=self.mid_points,
-                                     symmetries=self.symmetries, filter_func=filter.FilterFunction.LINEAR)
-        value_filter = filter.Filter(sigma=self.symmetry_radius, coords=self.mid_points,
-                                     symmetries=self.symmetries, filter_func=filter.FilterFunction.LINEAR)
+        grads_filter = Filter(sigma=self.filter_radius  , coords=self.mid_points,
+                                     symmetries=self.symmetries, filter_func=FilterFunction.LINEAR)
+        value_filter = Filter(sigma=self.symmetry_radius, coords=self.mid_points,
+                                     symmetries=self.symmetries, filter_func=FilterFunction.LINEAR)
 
         # go through the iteration
         for iter in range(1, iterations+1):
@@ -249,10 +264,14 @@ class Optimiser:
             data = self._run(iter)
             # data = self._read_output(iter)
             run_time = time.time()
-            vols = data['VOLUME'].flatten()        [self.desi_mask]
-            sens = data['DENS_GRAD'].flatten()     [self.desi_mask]
-            comp = data['COMPLIANCE_ADJ'].flatten()[self.desi_mask]
-            dens = self.density                    [self.desi_mask]
+            vols = data[0]['VOLUME'].flatten()        [self.desi_mask]
+            #sens = data[0]['DENS_GRAD'].flatten()     [self.desi_mask]
+            #comp = data[0]['COMPLIANCE_ADJ'].flatten()[self.desi_mask]
+            dens = self.density                       [self.desi_mask]
+
+            # sensitivities merged from all loadcases
+            comp = np.sum([data[i]['COMPLIANCE_ADJ'].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
+            sens = np.sum([data[i]['DENS_GRAD'     ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
 
             # store self.volumes
             self.volumes = vols
@@ -271,6 +290,7 @@ class Optimiser:
                 new_x = np.minimum(1, new_x)
                 new_x = np.maximum(dens - self.move_limit, new_x)
                 new_x = np.maximum(self.min_density, new_x)
+                new_x = self.custom_density_adjustment(new_x)
 
                 if len(self.symmetries) > 0:
                     new_x = value_filter.apply(values=new_x)
@@ -325,17 +345,17 @@ class Optimiser:
 #                 filter_radius=0.7,
 #                 target_density=0.3)
 
-opt = Optimiser(input_deck="../../topo/runs/gabel/model2.inp",
-                solver_path="../../bin/FEMaster_gpu.exe",
-                desi_set="DESI",
-                load_cols=["L_LOADS_1", "L_LOADS_2"],
-                support_cols=["L_SUPP", "L_SYMM"],
-                output_folder="../../topo/runs/gabel/opt3/",
-                filter_radius=0.005,
-                target_density=0.1)
+# opt = Optimiser(input_deck="../../topo/runs/gabel/model2.inp",
+#                 solver_path="../../bin/FEMaster_gpu.exe",
+#                 desi_set="DESI",
+#                 load_cols=["L_LOADS_1", "L_LOADS_2"],
+#                 support_cols=["L_SUPP", "L_SYMM"],
+#                 output_folder="../../topo/runs/gabel/opt3/",
+#                 filter_radius=0.005,
+#                 target_density=0.1)
 
 # opt.start(iterations=50)
-opt.load("../../topo/runs/gabel/opt3/iterations/50/model.dat")
-opt.to_stl(0.9, "../../topo/runs/gabel/opt3/iterations/50/model.stl")
+# opt.load("../../topo/runs/gabel/opt3/iterations/50/model.dat")
+# opt.to_stl(0.9, "../../topo/runs/gabel/opt3/iterations/50/model.stl")
 # opt.plot(threshold=0.9)
 # print("loaded")

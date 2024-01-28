@@ -1,11 +1,18 @@
 import numpy as np
-import pycuda.autoinit
-import pycuda.driver as drv
-from pycuda.compiler import SourceModule
+
+#import pycuda if possible
+try:
+    import pycuda.autoinit
+    import pycuda.driver as drv
+    from pycuda.compiler import SourceModule
+    pycuda_available = True
+except:
+    pycuda_available = False
+
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-import symmetry
+from .symmetry import apply_symmetry
 from enum import Enum
 
 class FilterFunction(Enum):
@@ -13,127 +20,127 @@ class FilterFunction(Enum):
     GAUSSIAN = 2
     LINEAR   = 3
 
-
-mod = SourceModule("""
-__global__ void filter_gaussian_kernel(const float* xyz,
-                                  const float* val,
-                                  const int* ar1,
-                                  const int* ar2,
-                                        float* res,
-                                  const float rad,
-                                  const float sig,
-                                  const int n_nodes,
-                                  const int blocks_x,
-                                  const int blocks_y,
-                                  const int blocks_z,
-                                  const int filter_func,
-                                  const int min_values_to_filter) {
-    int n_id = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if(n_id >= n_nodes) return;
-
-    // extract location
-    float x = xyz[3 * n_id + 0];
-    float y = xyz[3 * n_id + 1];
-    float z = xyz[3 * n_id + 2];
-
-    // compute the block location
-    int bucket_x = x / rad;
-    int bucket_y = y / rad;
-    int bucket_z = z / rad;
-
-    float weight = 0;
-    float value = 0;
-    int count = 0;
-    for(int bx = max(bucket_x - 1, 0); bx < min(bucket_x + 2, blocks_x); bx++){
-        for(int by = max(bucket_y - 1, 0); by < min(bucket_y + 2, blocks_y); by++){
-            for(int bz = max(bucket_z - 1, 0); bz < min(bucket_z + 2, blocks_z); bz++){
-                int id_start = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz];
-                int id_end   = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz + 1];
-                for(int i = id_start; i < id_end; i++){
-                    int n_id_2 = ar2[i];
-                    
-                    float x_2 = xyz[3 * n_id_2 + 0];
-                    float y_2 = xyz[3 * n_id_2 + 1];
-                    float z_2 = xyz[3 * n_id_2 + 2];
-
-                    float dist_squared = (x-x_2) * (x-x_2) + (y-y_2) * (y-y_2) + (z-z_2) * (z-z_2);
-
-                    if(dist_squared < rad * rad){
-                    
-                    
-                        float wgt;
-                        if(filter_func == 1){
-                            wgt = 1;
-                        }else if(filter_func == 2){
-                            wgt = max(0.0f, sqrt(dist_squared) / sig);
-                        } else if (filter_func == 3){
-                            wgt = exp(- dist_squared / (2 * sig * sig));
+if pycuda_available:
+    mod = SourceModule("""
+    __global__ void filter_gaussian_kernel(const float* xyz,
+                                      const float* val,
+                                      const int* ar1,
+                                      const int* ar2,
+                                            float* res,
+                                      const float rad,
+                                      const float sig,
+                                      const int n_nodes,
+                                      const int blocks_x,
+                                      const int blocks_y,
+                                      const int blocks_z,
+                                      const int filter_func,
+                                      const int min_values_to_filter) {
+        int n_id = blockIdx.x * blockDim.x + threadIdx.x;
+    
+        if(n_id >= n_nodes) return;
+    
+        // extract location
+        float x = xyz[3 * n_id + 0];
+        float y = xyz[3 * n_id + 1];
+        float z = xyz[3 * n_id + 2];
+    
+        // compute the block location
+        int bucket_x = x / rad;
+        int bucket_y = y / rad;
+        int bucket_z = z / rad;
+    
+        float weight = 0;
+        float value = 0;
+        int count = 0;
+        for(int bx = max(bucket_x - 1, 0); bx < min(bucket_x + 2, blocks_x); bx++){
+            for(int by = max(bucket_y - 1, 0); by < min(bucket_y + 2, blocks_y); by++){
+                for(int bz = max(bucket_z - 1, 0); bz < min(bucket_z + 2, blocks_z); bz++){
+                    int id_start = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz];
+                    int id_end   = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz + 1];
+                    for(int i = id_start; i < id_end; i++){
+                        int n_id_2 = ar2[i];
+                        
+                        float x_2 = xyz[3 * n_id_2 + 0];
+                        float y_2 = xyz[3 * n_id_2 + 1];
+                        float z_2 = xyz[3 * n_id_2 + 2];
+    
+                        float dist_squared = (x-x_2) * (x-x_2) + (y-y_2) * (y-y_2) + (z-z_2) * (z-z_2);
+    
+                        if(dist_squared < rad * rad){
+                        
+                        
+                            float wgt;
+                            if(filter_func == 1){
+                                wgt = 1;
+                            }else if(filter_func == 2){
+                                wgt = max(0.0f, sqrt(dist_squared) / sig);
+                            } else if (filter_func == 3){
+                                wgt = exp(- dist_squared / (2 * sig * sig));
+                            }
+                            count ++;
+                            weight += wgt;
+                            value  += wgt * val[n_id_2];
                         }
-                        count ++;
-                        weight += wgt;
-                        value  += wgt * val[n_id_2];
                     }
                 }
             }
         }
+        if (count < min_values_to_filter){
+            weight += (min_values_to_filter - count);
+        }
+        res[n_id] = value / weight;
     }
-    if (count < min_values_to_filter){
-        weight += (min_values_to_filter - count);
-    }
-    res[n_id] = value / weight;
-}
-""")
+    """)
 
 
-min_dist_mod = SourceModule("""
-__global__ void min_dist_kernel(
-                                  const float* xyz,
-                                  const int* ar1,
-                                  const int* ar2,
-                                        float* res,
-                                        float rad,
-                                  const int n_nodes,
-                                  const int blocks_x,
-                                  const int blocks_y,
-                                  const int blocks_z) {
-    int n_id = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if(n_id >= n_nodes) return;
-
-    // extract location
-    float x = xyz[3 * n_id + 0];
-    float y = xyz[3 * n_id + 1];
-    float z = xyz[3 * n_id + 2];
-
-    // compute the block location
-    int bucket_x = x / rad;
-    int bucket_y = y / rad;
-    int bucket_z = z / rad;
-
-    float min_dist = 1e30;
-    for(int bx = max(bucket_x - 1, 0); bx < min(bucket_x + 2, blocks_x); bx++){
-        for(int by = max(bucket_y - 1, 0); by < min(bucket_y + 2, blocks_y); by++){
-            for(int bz = max(bucket_z - 1, 0); bz < min(bucket_z + 2, blocks_z); bz++){
-                int id_start = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz];
-                int id_end   = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz + 1];
-                for(int i = id_start; i < id_end; i++){
-                    int n_id_2 = ar2[i];
-                    
-                    float x_2 = xyz[3 * n_id_2 + 0];
-                    float y_2 = xyz[3 * n_id_2 + 1];
-                    float z_2 = xyz[3 * n_id_2 + 2];
-
-                    float dist_squared = (x-x_2) * (x-x_2) + (y-y_2) * (y-y_2) + (z-z_2) * (z-z_2);
-                    if (dist_squared > 1e-24)
-                        min_dist = min(dist_squared, min_dist);
+    min_dist_mod = SourceModule("""
+    __global__ void min_dist_kernel(
+                                      const float* xyz,
+                                      const int* ar1,
+                                      const int* ar2,
+                                            float* res,
+                                            float rad,
+                                      const int n_nodes,
+                                      const int blocks_x,
+                                      const int blocks_y,
+                                      const int blocks_z) {
+        int n_id = blockIdx.x * blockDim.x + threadIdx.x;
+    
+        if(n_id >= n_nodes) return;
+    
+        // extract location
+        float x = xyz[3 * n_id + 0];
+        float y = xyz[3 * n_id + 1];
+        float z = xyz[3 * n_id + 2];
+    
+        // compute the block location
+        int bucket_x = x / rad;
+        int bucket_y = y / rad;
+        int bucket_z = z / rad;
+    
+        float min_dist = 1e30;
+        for(int bx = max(bucket_x - 1, 0); bx < min(bucket_x + 2, blocks_x); bx++){
+            for(int by = max(bucket_y - 1, 0); by < min(bucket_y + 2, blocks_y); by++){
+                for(int bz = max(bucket_z - 1, 0); bz < min(bucket_z + 2, blocks_z); bz++){
+                    int id_start = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz];
+                    int id_end   = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz + 1];
+                    for(int i = id_start; i < id_end; i++){
+                        int n_id_2 = ar2[i];
+                        
+                        float x_2 = xyz[3 * n_id_2 + 0];
+                        float y_2 = xyz[3 * n_id_2 + 1];
+                        float z_2 = xyz[3 * n_id_2 + 2];
+    
+                        float dist_squared = (x-x_2) * (x-x_2) + (y-y_2) * (y-y_2) + (z-z_2) * (z-z_2);
+                        if (dist_squared > 1e-24)
+                            min_dist = min(dist_squared, min_dist);
+                    }
                 }
             }
         }
+        res[n_id] = sqrt(min_dist);
     }
-    res[n_id] = sqrt(min_dist);
-}
-""")
+    """)
 
 class Filter:
     def __init__(self, coords, sigma, symmetries={}, filter_func=FilterFunction.GAUSSIAN):
@@ -141,15 +148,18 @@ class Filter:
         self.n_values = len(coords)
         self.filter_func = filter_func
         self.symmetries = symmetries
-        self.kernel = mod.get_function("filter_gaussian_kernel")
-        self.kernel_min_dist = min_dist_mod.get_function("min_dist_kernel")
+        if pycuda_available:
+            self.kernel = mod.get_function("filter_gaussian_kernel")
+            self.kernel_min_dist = min_dist_mod.get_function("min_dist_kernel")
 
-        # precompute whatever possible
-        self.coords        = self._apply_symmetries(coords=coords)
-        self.radius        = self._compute_radius()
-        self.bounds        = self._compute_range()
-        self.grid          = self._compute_grid()
-        self.ar1, self.ar2 = self._compute_buckets()
+            # precompute whatever possible
+            self.coords        = self._apply_symmetries(coords=coords)
+            self.radius        = self._compute_radius()
+            self.bounds        = self._compute_range()
+            self.grid          = self._compute_grid()
+            self.ar1, self.ar2 = self._compute_buckets()
+        else:
+            pass
 
     def _compute_radius(self):
         radius = self.sigma
@@ -162,7 +172,7 @@ class Filter:
         return radius
 
     def _apply_symmetries(self, coords):
-        new_coords, _ = symmetry.apply_symmetry(coords=coords,
+        new_coords, _ = apply_symmetry(coords=coords,
                                                 values=np.zeros(self.n_values),
                                                 symmetries=self.symmetries)
         return new_coords
@@ -231,6 +241,10 @@ class Filter:
         return array_1, array_2
 
     def apply(self, values):
+
+        if not pycuda_available:
+            return values
+
         ghost_factor = round(len(self.coords) / self.n_values)
         values = np.tile(values, ghost_factor)
 
@@ -256,6 +270,9 @@ class Filter:
         return d_res
 
     def minimal_distance(self):
+        if not pycuda_available:
+            return 0
+
         d_xyz = np.array(self.coords  , dtype=np.float32)
         d_ar1 = np.array(self.ar1     , dtype=np.int32)
         d_ar2 = np.array(self.ar2     , dtype=np.int32)
