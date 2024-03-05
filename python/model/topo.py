@@ -198,6 +198,10 @@ class Optimiser:
         for key, value in state.items():
             setattr(self, key, value)
 
+    def load_it(self, iteration):
+        file_path = os.path.join(self.output_folder, 'iterations', str(iteration), 'model.dat')
+        self.load(file_path)
+
     def threshold(self):
         if self.volumes is None or np.all(self.volumes == 0):
             raise ValueError("Volumes have not been computed")
