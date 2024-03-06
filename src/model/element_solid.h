@@ -45,12 +45,12 @@ struct SolidElement : public ElementInterface{
             B(0, r1) = shape_der_global(j, 0);
             B(1, r2) = shape_der_global(j, 1);
             B(2, r3) = shape_der_global(j, 2);
-            B(3, r1) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-            B(3, r2) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(3, r2) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(3, r3) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
             B(4, r1) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
             B(4, r3) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-            B(5, r2) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-            B(5, r3) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(5, r1) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(5, r2) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
         }
         return B;
     }
@@ -260,6 +260,15 @@ struct SolidElement : public ElementInterface{
 
             auto strains  = B * local_displacement;
             auto stresses = E * strains;
+
+//            std::cout << global_node_coords << std::endl;
+//            std::cout << jacobian(global_node_coords, r, s, t) << std::endl;
+//            std::cout << strains << std::endl;
+//            std::cout << stresses << std::endl;
+//            std::cout << B << std::endl;
+//            std::cout << local_displacement << std::endl;
+//            std::cout << r << " " << s << " " << t << std::endl;
+//            exit(0);
 
             Precision x = 0;
             Precision y = 0;
