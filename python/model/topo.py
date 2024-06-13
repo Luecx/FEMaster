@@ -349,17 +349,17 @@ class Optimiser:
 #                 filter_radius=0.7,
 #                 target_density=0.3)
 
-# opt = Optimiser(input_deck="../../topo/runs/gabel/model2.inp",
+# opt = Optimiser(input_deck="../../topo_old/runs/gabel/model2.inp",
 #                 solver_path="../../bin/FEMaster_gpu.exe",
 #                 desi_set="DESI",
 #                 load_cols=["L_LOADS_1", "L_LOADS_2"],
 #                 support_cols=["L_SUPP", "L_SYMM"],
-#                 output_folder="../../topo/runs/gabel/opt3/",
+#                 output_folder="../../topo_old/runs/gabel/opt3/",
 #                 filter_radius=0.005,
 #                 target_density=0.1)
 
 # opt.start(iterations=50)
-# opt.load("../../topo/runs/gabel/opt3/iterations/50/model.dat")
-# opt.to_stl(0.9, "../../topo/runs/gabel/opt3/iterations/50/model.stl")
+# opt.load("../../topo_old/runs/gabel/opt3/iterations/50/model.dat")
+# opt.to_stl(0.9, "../../topo_old/runs/gabel/opt3/iterations/50/model.stl")
 # opt.plot(threshold=0.9)
 # print("loaded")

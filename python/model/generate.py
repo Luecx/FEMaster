@@ -3,7 +3,6 @@ from .geometry import Geometry
 from .solution import Solution
 from scipy.optimize import curve_fit
 
-
 def generate_beam(length, height, elem_length, elem_height, dent_func):
     geom = Geometry()
     n_elem_x = int(length // elem_length)

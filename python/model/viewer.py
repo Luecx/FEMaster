@@ -95,6 +95,8 @@ class Viewer:
         self.geometry = geometry
         filtered_nodes = [node for node in geometry.nodes if node is not None]
 
+        print("setting geometry with ", len(filtered_nodes), " nodes")
+
         # Extract the x, y, and z coordinates
         x_coords = [node[0] for node in filtered_nodes]
         y_coords = [node[1] for node in filtered_nodes]
