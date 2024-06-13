@@ -130,7 +130,7 @@ SUPPS
 
 
 for moment in [1, 100, 1000, 10000, 100000]:
-    file_name, moment, force, (L, W, H) = create_file(14, 3, moment=moment, force=1, type='topo')
+    file_name, moment, force, (L, W, H) = create_file(14, 3, moment=moment, force=1, type='topo_old')
     opt = topo.Optimiser(input_deck=f"{file_name}",
                          solver_path="../bin/FEMaster.exe",
                          desi_set="EALL",
