@@ -94,9 +94,9 @@ StaticMatrix<15, 3> C3D15::shape_derivative(Precision r, Precision s, Precision 
     res(10, 1) = 2 * r * (1 + t);
     res(10, 2) = 2 * r * s;
 
-    res(11, 0) = -2 * s * (1 + t);
-    res(11, 1) = (1 + t) * (2 * (1 - r - s) - 2 * s);
-    res(11, 2) = 2 * s * (1 - r - s);
+    res(11, 0) = -2*s*(t + 1);
+    res(11, 1) = -2*s*(t + 1) + 2*(t + 1)*(-r - s + 1);
+    res(11, 2) =  2*s*(-r - s + 1);
 
     res(12, 0) = -(1 - t * t);
     res(12, 1) = -(1 - t * t);
@@ -120,53 +120,53 @@ StaticMatrix<15, 3> C3D15::node_coords_local() {
     // Vertex nodes
     res(0, 0) = 0;
     res(0, 1) = 0;
-    res(0, 2) = -1;    // Node 3
+    res(0, 2) = -1;    // Node 1
     res(1, 0) = 1;
     res(1, 1) = 0;
-    res(1, 2) = -1;    // Node 1
+    res(1, 2) = -1;    // Node 2
     res(2, 0) = 0;
     res(2, 1) = 1;
-    res(2, 2) = -1;    // Node 2
+    res(2, 2) = -1;    // Node 3
     res(3, 0) = 0;
     res(3, 1) = 0;
-    res(3, 2) = 1;    // Node 6
+    res(3, 2) = 1;    // Node 4
     res(4, 0) = 1;
     res(4, 1) = 0;
-    res(4, 2) = 1;    // Node 4
+    res(4, 2) = 1;    // Node 5
     res(5, 0) = 0;
     res(5, 1) = 1;
-    res(5, 2) = 1;    // Node 5
+    res(5, 2) = 1;    // Node 6
 
     // Mid-edge nodes (bottom face, then top face)
     res(6, 0)  = 0.5;
     res(6, 1)  = 0;
-    res(6, 2)  = -1;    // Node 9
+    res(6, 2)  = -1;    // Node 7
     res(7, 0)  = 0.5;
     res(7, 1)  = 0.5;
-    res(7, 2)  = -1;    // Node 7
+    res(7, 2)  = -1;    // Node 8
     res(8, 0)  = 0;
     res(8, 1)  = 0.5;
-    res(8, 2)  = -1;    // Node 8
+    res(8, 2)  = -1;    // Node 9
     res(9, 0)  = 0.5;
     res(9, 1)  = 0;
-    res(9, 2)  = 1;    // Node 12
+    res(9, 2)  = 1;    // Node 10
     res(10, 0) = 0.5;
     res(10, 1) = 0.5;
-    res(10, 2) = 1;    // Node 10
+    res(10, 2) = 1;    // Node 11
     res(11, 0) = 0;
     res(11, 1) = 0.5;
-    res(11, 2) = 1;    // Node 11
+    res(11, 2) = 1;    // Node 12
 
     // Mid-edge nodes (connecting top and bottom faces)
     res(12, 0) = 0;
     res(12, 1) = 0.0;
-    res(12, 2) = 0;    // Node 15
+    res(12, 2) = 0;    // Node 13
     res(13, 0) = 1.0;
     res(13, 1) = 0.0;
-    res(13, 2) = 0;    // Node 13
+    res(13, 2) = 0;    // Node 14
     res(14, 0) = 0.0;
     res(14, 1) = 1.0;
-    res(14, 2) = 0;    // Node 14
+    res(14, 2) = 0;    // Node 15
 
     return res;
 }

@@ -209,31 +209,42 @@ class Viewer:
         for i, node in enumerate(self.geometry.nodes):
             if node:
                 if not self.animate and self.displacement is not None:
-                    points.InsertNextPoint(node + self.displacement[i])
+                    points.InsertNextPoint(node[0] + self.displacement[i][0], node[1] + self.displacement[i][1], node[2] + self.displacement[i][2])
                 else:
                     points.InsertNextPoint(node)
             else:
-                points.InsertNextPoint([0,0,0])
+                points.InsertNextPoint([0, 0, 0])
         self.ugrid.SetPoints(points)
 
         # Set the cells
         for i, element in enumerate(self.geometry.elements):
             if element and (self.elem_mask is None or self.elem_mask[i]):
-                cellType = element['type']
-                nodes = element['nodes']
-                if cellType in ['C3D4', 'C3D10']:
+                cellType = element.elem_type
+                nodes = element.node_ids
+                if cellType == 'C3D4':
                     cell = vtk.vtkTetra()
-                    num_nodes = 4
-                elif cellType in ['C3D6', 'C3D15']:
+                elif cellType == 'C3D6':
                     cell = vtk.vtkWedge()
-                    num_nodes = 6
-                elif cellType in ['C3D8', 'C3D20']:
+                elif cellType == 'C3D8':
                     cell = vtk.vtkHexahedron()
-                    num_nodes = 8
+                elif cellType == 'C3D10':
+                    cell = vtk.vtkQuadraticTetra()
+                elif cellType == 'C3D15':
+                    cell = vtk.vtkQuadraticWedge()
+                elif cellType == 'C3D20':
+                    cell = vtk.vtkQuadraticHexahedron()
+                elif cellType == 'C2D3':
+                    cell = vtk.vtkTriangle()
+                elif cellType == 'C2D4':
+                    cell = vtk.vtkQuad()
+                elif cellType == 'C2D6':
+                    cell = vtk.vtkQuadraticTriangle()
+                elif cellType == 'C2D8':
+                    cell = vtk.vtkQuadraticQuad()
                 else:
                     raise ValueError(f'Unknown cell type: {cellType}')
-                for i, nodeId in enumerate(nodes[:num_nodes]):
-                    cell.GetPointIds().SetId(i, nodeId)
+                for j, nodeId in enumerate(nodes):
+                    cell.GetPointIds().SetId(j, nodeId)
                 self.ugrid.InsertNextCell(cell.GetCellType(), cell.GetPointIds())
             else:
                 cell = vtk.vtkTetra()
@@ -244,7 +255,6 @@ class Viewer:
                 self.ugrid.InsertNextCell(cell.GetCellType(), cell.GetPointIds())
 
     def _visualize_geom(self):
-
         # Create the unstructured grid object
         if not hasattr(self, 'ugrid'):
             self._generate_ugrid()
@@ -253,7 +263,10 @@ class Viewer:
         mapper = vtk.vtkDataSetMapper()
         mapper.SetInputData(self.ugrid)
         mapper.SetInterpolateScalarsBeforeMapping(1)
+
+        # Set up the main actor with the mapper
         self.actor.SetMapper(mapper)
+        self.actor.GetProperty().SetRepresentationToSurface()  # Set the main representation to surface
 
         # If data, data_min, data_max, and color_scheme are provided, map it to colors and display color bar
         if self.data is not None and self.data_min is not None and self.data_max is not None and self.color_scheme is not None:
@@ -276,30 +289,22 @@ class Viewer:
             colorbar.SetNumberOfLabels(20)
             self.renderer.AddActor(colorbar)
 
+        # Add the wireframe overlay if boundaries are enabled
         if self.boundaries:
-            # Convert unstructured grid to polydata
-            geometryFilter = vtk.vtkGeometryFilter()
-            geometryFilter.SetInputData(self.ugrid)
-            geometryFilter.Update()
+            wireframe_mapper = vtk.vtkDataSetMapper()
+            wireframe_mapper.SetInputData(self.ugrid)
+            wireframe_actor = vtk.vtkActor()
+            wireframe_actor.SetMapper(wireframe_mapper)
+            wireframe_actor.GetProperty().SetRepresentationToWireframe()
+            wireframe_actor.GetProperty().SetColor(0, 0, 0)  # Set color to black
+            wireframe_actor.GetProperty().SetLineWidth(2.0)  # Set line width
 
-            # Extract the boundaries of the elements
-            featureEdges = vtk.vtkFeatureEdges()
-            featureEdges.SetInputData(geometryFilter.GetOutput())
-            featureEdges.ExtractAllEdgeTypesOn()
-            featureEdges.SetFeatureAngle(0)
+            # Add the wireframe actor to the renderer
+            self.renderer.AddActor(wireframe_actor)
 
-            # Map the extracted edges to a color (here black)
-            edgeMapper = vtk.vtkPolyDataMapper()
-            edgeMapper.SetInputConnection(featureEdges.GetOutputPort())
-            edgeMapper.ScalarVisibilityOff()
-            edgeMapper.Update()
-            edgeActor = vtk.vtkActor()
-            edgeActor.SetMapper(edgeMapper)
-            edgeActor.GetProperty().SetLineWidth(2.0)  # Set line width to 2.0
-            edgeActor.GetProperty().SetColor(0, 0, 0)  # Set color to black
+        # Ensure background and other settings are set if not already
+        self.renderer.SetBackground(0.9, 0.9, 0.9)  # This can be changed to any color
 
-            # Add the actor for the edges to the renderer
-            self.renderer.AddActor(edgeActor)
     def _visualize_cos(self):
         self.axes = vtk.vtkAxesActor()
         self.axes.SetTotalLength(self.cos, self.cos, self.cos)
@@ -350,7 +355,6 @@ class Viewer:
 
         self.renderWindowInteractor.Start()
 
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Visualize geometry and solutions")
@@ -368,6 +372,7 @@ if __name__ == '__main__':
 
     if args.geometry:
         viewer.set_geometry(Geometry.read_input_deck(args.geometry))
+        viewer.set_boundaries(args.boundaries)
 
     if args.solution:
         sol = Solution.open(args.solution)
@@ -380,6 +385,10 @@ if __name__ == '__main__':
                 for k in available_fields:
                     print(f"\t{k}")
                 sys.exit(1)
+
+            print(f"Displaying field: {args.field}")
+            print("geometry nodes: ", len(viewer.geometry.nodes))
+            print("values in field: ", len(available_fields[args.field]()))
 
             if len(viewer.geometry.nodes) == len(available_fields[args.field]()):
                 viewer.set_data(type='node', data=available_fields[args.field]())
@@ -394,7 +403,6 @@ if __name__ == '__main__':
         if args.displacement and 'displacement_xyz' in available_fields:
             viewer.set_displacement(available_fields['displacement_xyz']() * args.displacement)
 
-        viewer.set_boundaries(args.boundaries)
 
     viewer.coordinate_system()
     viewer.set_grid_xy()

@@ -45,12 +45,12 @@ struct SolidElement : public ElementInterface{
             B(0, r1) = shape_der_global(j, 0);
             B(1, r2) = shape_der_global(j, 1);
             B(2, r3) = shape_der_global(j, 2);
-            B(3, r1) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-            B(3, r2) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(3, r2) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(3, r3) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
             B(4, r1) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
             B(4, r3) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-            B(5, r2) = shape_der_global(j, 2) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
-            B(5, r3) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(5, r1) = shape_der_global(j, 1) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
+            B(5, r2) = shape_der_global(j, 0) / (Precision) 2.0;    // divide by 2 in order to account for real shear strain
         }
         return B;
     }
@@ -261,6 +261,15 @@ struct SolidElement : public ElementInterface{
             auto strains  = B * local_displacement;
             auto stresses = E * strains;
 
+//            std::cout << global_node_coords << std::endl;
+//            std::cout << jacobian(global_node_coords, r, s, t) << std::endl;
+//            std::cout << strains << std::endl;
+//            std::cout << stresses << std::endl;
+//            std::cout << B << std::endl;
+//            std::cout << local_displacement << std::endl;
+//            std::cout << r << " " << s << " " << t << std::endl;
+//            exit(0);
+
             Precision x = 0;
             Precision y = 0;
             Precision z = 0;
@@ -297,7 +306,7 @@ struct SolidElement : public ElementInterface{
     }
 
     template<class ElementType>
-    static void test_implementation() {
+    static bool test_implementation(bool print = false) {
         // Create an instance of the element type
         std::array<ID, N> nodeArray;
         for (size_t i = 0; i < N; i++) {
@@ -321,7 +330,8 @@ struct SolidElement : public ElementInterface{
                 globalMatrix(i, j) = shapeFuncValues(j);
             }
         }
-        std::cout << globalMatrix << std::endl;
+        if (print)
+            std::cout << globalMatrix << std::endl;
 
         // Test 2: Checking shape function sum
         const Precision step      = 0.2;
@@ -338,8 +348,10 @@ struct SolidElement : public ElementInterface{
                     }
 
                     if (std::abs(sum - 1.0) > tolerance) {
-                        std::cout << "Sum of shape functions at (r, s, t) = (" << r << ", " << s << ", " << t
-                                  << ") is not 1. Actual sum: " << sum << std::endl;
+                        if (print)
+                            std::cout << "Sum of shape functions at (r, s, t) = (" << r << ", " << s << ", " << t
+                                      << ") is not 1. Actual sum: " << sum << std::endl;
+                        return false;
                     }
                 }
             }
@@ -376,17 +388,20 @@ struct SolidElement : public ElementInterface{
                     for (size_t j = 0; j < N; j++) {
                         for (size_t d = 0; d < D; d++) {
                             if (std::abs(true_derivatives(j, d) - finite_diff_derivatives(j, d)) > tolerance) {
-                                std::cout << "Mismatch in derivative at (r, s, t) = (" << r << ", " << s << ", " << t
-                                          << ") in direction " << d
-                                          << " from shape function " << j
-                                          << ". True derivative: " << true_derivatives(j, d)
-                                          << ", Finite Difference: " << finite_diff_derivatives(j, d) << std::endl;
+                                if (print)
+                                    std::cout << "Mismatch in derivative at (r, s, t) = (" << r << ", " << s << ", " << t
+                                              << ") in direction " << d
+                                              << " from shape function " << j
+                                              << ". True derivative: " << true_derivatives(j, d)
+                                              << ", Finite Difference: " << finite_diff_derivatives(j, d) << std::endl;
+                                return false;
                             }
                         }
                     }
                 }
             }
         }
+        return true;
 
     }
 
