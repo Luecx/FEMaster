@@ -2,13 +2,22 @@
 
 #include <cstdint>
 
+#ifdef USE_MKL
+#define EIGEN_USE_MKL_ALL
+#endif
+
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <Eigen/Eigen>
 
+#ifdef USE_MKL
+#include <Eigen/PardisoSupport>
+#endif
+
 typedef uint64_t Time;
 typedef  int32_t ID;
 typedef uint8_t Dim;
+typedef uint64_t Index;
 
 // use double for all normal computations and cast to solver precision during solving
 typedef double Precision;

@@ -64,7 +64,7 @@ struct Quadrature {
         if constexpr (!std::is_arithmetic_v<T>) {
             res.setZero();
         }
-        for (int i = 0; i < points.size(); i++) {
+        for (Index i = 0; i < points.size(); i++) {
             res += points[i](func);
         }
         return res;

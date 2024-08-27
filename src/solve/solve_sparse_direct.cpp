@@ -76,27 +76,43 @@ DynamicVector solve_direct(SolverDevice device,
 
     //...
     if (device == CPU) {
-        // start the time
+        // Start the time
         Timer t {};
         t.start();
 
-        // Now we use Eigen's SimplicialLDLT solver to solve the system
+#ifdef USE_MKL
+        // Use MKL PardisoLDLT solver
+        logging::info(true, "Using MKL PardisoLDLT solver");
+
+        Eigen::PardisoLDLT<SparseMatrix> solver {};
+        solver.compute(mat);
+        logging::error(solver.info() == Eigen::Success, "Decomposition failed with PardisoLDLT");
+        DynamicVector eigen_sol = solver.solve(rhs);
+        logging::error(solver.info() == Eigen::Success, "Solving failed with PardisoLDLT");
+
+#else
+        // Use Eigen's SimplicialLDLT solver
+        logging::info(true, "Using Eigen SimplicialLDLT solver");
+
         Eigen::SimplicialLDLT<SparseMatrix> solver {};
         solver.compute(mat);
-        logging::error(solver.info() == Eigen::Success, "Decomposition failed");
+        logging::error(solver.info() == Eigen::Success, "Decomposition failed with SimplicialLDLT");
         DynamicVector eigen_sol = solver.solve(rhs);
-        logging::error(solver.info() == Eigen::Success, "Solving failed");
+        logging::error(solver.info() == Eigen::Success, "Solving failed with SimplicialLDLT");
+
+#endif
 
         t.stop();
         logging::info(true, "Solving finished");
         logging::info(true, "Elapsed time: " + std::to_string(t.elapsed()) + " ms");
         logging::info(true, "residual2   : ", (rhs - mat * eigen_sol).norm() / (rhs.norm()));
 
-        // Finally, copy the result back into your rhs vector.
-        for (size_t i = 0; i < rhs.size(); ++i) {
+        // Finally, copy the result back into your sol vector.
+        for (int i = 0; i < rhs.size(); ++i) {
             sol[i] = eigen_sol(i);
         }
     }
+
     logging::down();
     return sol;
     //...

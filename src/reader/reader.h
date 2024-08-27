@@ -15,12 +15,11 @@ class Reader {
         int highest_element_id = -1;
         int current_loadcase_num = 1;
     };
-
     File        m_file;
+    std::string m_file_path;
     Writer      m_writer;
     Line        m_current_line;
     ProblemData m_data;
-    std::string m_file_path;
 
     std::shared_ptr<fem::model::Model> m_model;
 

@@ -18,9 +18,9 @@ StaticMatrix<6, 6> fem::material::IsotropicElasticity::get_3d() {
         {{1-poisson, poisson   , poisson   , 0 , 0 , 0 },
          {poisson  , 1-poisson , poisson   , 0 , 0 , 0 },
          {poisson  , poisson   , 1-poisson , 0 , 0 , 0 },
-         {0        , 0         , 0         , mu, 0 , 0 },
-         {0        , 0         , 0         , 0 , mu, 0 },
-         {0        , 0         , 0         , 0 , 0 , mu}}) * scalar;
+         {0        , 0         , 0         , mu/2, 0 , 0 },
+         {0        , 0         , 0         , 0 , mu/2, 0 },
+         {0        , 0         , 0         , 0 , 0 , mu/2}}) * scalar;
 }
 
 fem::material::IsotropicElasticity::IsotropicElasticity(Precision youngs, Precision poisson)

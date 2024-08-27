@@ -21,7 +21,6 @@ StaticMatrix<15, 1> C3D15::shape_function(Precision r, Precision s, Precision t)
     Precision one_mr      = 1 - r;
     Precision one_pr      = 1 + r;
     Precision one_mr2     = 1 - r * r;
-    Precision one_pr2     = 1 + r * r;
     Precision two_g_m1    = 2 * g - 1;
     Precision two_h_m1    = 2 * h - 1;
 

@@ -4,6 +4,7 @@
 #include "../model/c3d10.h"
 #include "../model/c3d15.h"
 #include "../model/c3d20.h"
+#include "../model/c3d20r.h"
 #include "../model/c3d4.h"
 #include "../model/c3d6.h"
 #include "../model/c3d8.h"
@@ -129,6 +130,28 @@ void Reader::process_elements() {
                                                     std::stoi(m_current_line.values()[15]));
         } else if (type == "C3D20") {
             m_model->set_element<fem::model::C3D20>(id,
+                                                    std::stoi(m_current_line.values()[1]),
+                                                    std::stoi(m_current_line.values()[2]),
+                                                    std::stoi(m_current_line.values()[3]),
+                                                    std::stoi(m_current_line.values()[4]),
+                                                    std::stoi(m_current_line.values()[5]),
+                                                    std::stoi(m_current_line.values()[6]),
+                                                    std::stoi(m_current_line.values()[7]),
+                                                    std::stoi(m_current_line.values()[8]),
+                                                    std::stoi(m_current_line.values()[9]),
+                                                    std::stoi(m_current_line.values()[10]),
+                                                    std::stoi(m_current_line.values()[11]),
+                                                    std::stoi(m_current_line.values()[12]),
+                                                    std::stoi(m_current_line.values()[13]),
+                                                    std::stoi(m_current_line.values()[14]),
+                                                    std::stoi(m_current_line.values()[15]),
+                                                    std::stoi(m_current_line.values()[16]),
+                                                    std::stoi(m_current_line.values()[17]),
+                                                    std::stoi(m_current_line.values()[18]),
+                                                    std::stoi(m_current_line.values()[19]),
+                                                    std::stoi(m_current_line.values()[20]));
+        } else if (type == "C3D20R") {
+            m_model->set_element<fem::model::C3D20R>(id,
                                                     std::stoi(m_current_line.values()[1]),
                                                     std::stoi(m_current_line.values()[2]),
                                                     std::stoi(m_current_line.values()[3]),

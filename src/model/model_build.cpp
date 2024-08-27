@@ -191,6 +191,7 @@ SparseMatrix Model::build_stiffness_matrix(IndexMatrix &indices, ElementData sti
     }
     matrix.insertFromTriplets(tripplets.begin(), tripplets.end());
     tripplets.clear();
+
     return matrix;
 }
 

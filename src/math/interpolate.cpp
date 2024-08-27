@@ -210,6 +210,16 @@ DynamicMatrix
 
     auto ATA = lhs.transpose() * lhs;
     auto determinant = ATA.determinant();
+
+    if (determinant < 1e-10) {
+        // If the determinant is too small, we cannot solve the system.
+        // In this case, we will try to use a simpler interpolation method.
+        if (r2_values) {
+            *r2_values = DynamicVector::Zero(values.cols());
+        }
+        return interpolate<get_next_lower<F>()>(xyz, values, center, r2_values);
+    }
+
     auto ATB = lhs.transpose() * values;
     auto coe = ATA.fullPivHouseholderQr().solve(ATB);
 

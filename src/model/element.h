@@ -32,6 +32,7 @@ struct ElementInterface {
 
     virtual Precision volume(NodeData& node_coords)                                                              = 0;
     virtual MapMatrix stiffness(NodeData& position, Precision* buffer)                                           = 0;
+    virtual MapMatrix mass(NodeData& position, Precision* buffer)                                                = 0;
     virtual void      compute_stress_strain_nodal(NodeData& node_coords,
                                                   NodeData& displacement,
                                                   NodeData& stress,

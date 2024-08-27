@@ -13,8 +13,8 @@ namespace model {
 template<typename T = std::vector<ID>>
 struct Sets {
     std::unordered_map<std::string, T> m_sets;
-    std::string                        m_active;
     std::string                        m_all;
+    std::string                        m_active;
 
     template<typename... Args>
     Sets() : m_all(""), m_active("") {

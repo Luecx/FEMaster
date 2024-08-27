@@ -314,7 +314,7 @@ DynamicVector solve_iter(SolverDevice device,
         logging::info(true, "residual    : ", cg.error());
 
         // Finally, copy the result back into your rhs vector.
-        for (size_t i = 0; i < rhs.size(); ++i) {
+        for (int i = 0; i < rhs.size(); ++i) {
             sol[i] = eigen_sol(i);
         }
         logging::down();

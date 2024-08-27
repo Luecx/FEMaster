@@ -154,7 +154,7 @@ class Geometry:
                             elset_name = None
                     else:
                         elset_name = None
-                    elem_type = keys['TYPE']
+                    elem_type = keys['TYPE'].replace("R","")
 
                 if key_word == "*NSET":
                     nset_name = keys['NAME']

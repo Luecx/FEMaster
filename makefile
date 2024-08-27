@@ -3,9 +3,14 @@ NVCC = nvcc
 CXX = g++
 #CXX = /opt/homebrew/opt/llvm/bin/clang++
 
-CXXFLAGS = -std=c++17 -O3 -I ./include/ -fopenmp
-NVCCFLAGS = -std=c++17 -O3 -I ./include/ --expt-relaxed-constexpr
+CXXFLAGS = -std=c++17 -O3 -I /usr/local/include -fopenmp
+NVCCFLAGS = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr
 NVCCLIBS := -lcusolver -lcublas -lcusparse
+WARNFLAGS := -Wall  -Wno-maybe-uninitialized
+
+# Include the MKL libraries and flags
+MKLROOT ?= $(shell echo ${MKLROOT})
+MKL_LIBS = -Wl,--start-group $(MKLROOT)/lib/intel64/libmkl_intel_lp64.a $(MKLROOT)/lib/intel64/libmkl_sequential.a $(MKLROOT)/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl
 
 UNAME := $(shell uname)
 
@@ -40,17 +45,27 @@ ifeq ($(cuda_double_precision), 1)
 	NVCCFLAGS += -DCUDA_DOUBLE_PRECISION
 endif
 
-# check if show_array_processes is set to 1
+# Check if show_array_processes is set to 1
 ifeq ($(show_array_processes), 1)
 	CXXFLAGS  += -DSHOW_ARRAY_PROCESSES
 	NVCCFLAGS += -DSHOW_ARRAY_PROCESSES
 endif
 
-# check if debug is set to 1
+# Check if debug is set to 1
 ifeq ($(debug), 1)
 	CXXFLAGS  += -DNDEBUG
 	NVCCFLAGS += -DNDEBUG
 endif
+
+# Check if MKL is enabled (optional feature)
+ifeq ($(use_mkl), 1)
+	CXXFLAGS  += -DMKL_LP64 -m64 -DUSE_MKL -I$(MKLROOT)/include
+	NVCCFLAGS += -DMKL_LP64 -m64 -DUSE_MKL -I$(MKLROOT)/include
+	LIBS      += $(MKL_LIBS)
+endif
+
+CXXFLAGS += $(WARNFLAGS)
+NVCCFLAGS += $(WARNFLAGS)
 
 all: cpu gpu
 
@@ -62,11 +77,11 @@ gpu: $(EXE_GPU) clean-exp-lib
 
 $(EXE_CPU): $(GPP_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $^ -o $(EXE_CPU)
+	$(CXX) $(CXXFLAGS) $^ $(LIBS) -o $@
 
 $(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS)
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(GPU_CPP_OBJS) $(CU_OBJS) -o $(EXE_GPU)
+	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(GPU_CPP_OBJS) $(CU_OBJS) $(LIBS) -o $(EXE_GPU)
 
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
