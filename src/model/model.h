@@ -92,16 +92,20 @@ struct Model {
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
 
     // solving the given problem  set
-    IndexMatrix   build_unconstrained_index_matrix();
-    IndexMatrix   build_constrained_index_matrix  (DynamicVector& support_vector);
-    DynamicVector build_implicit_load_vector(const SparseMatrix& stiffness, const DynamicVector& support);
-    DynamicVector build_support_vector      (IndexMatrix& indices, std::vector<std::string> load_sets = {"SALL"});
-    DynamicVector build_load_vector         (IndexMatrix& indices, std::vector<std::string> load_sets = {"LALL"});
-    SparseMatrix  build_stiffness_matrix    (IndexMatrix& indices, ElementData stiffness_scalar = ElementData(0,0));
-    IndexVector   build_mapping_vector      (IndexMatrix& unconstrained, IndexMatrix  & constrained);
-    SparseMatrix  build_reduced_stiffness   (IndexVector& mapping      , SparseMatrix & constrained);
-    DynamicVector build_reduced_load        (IndexVector& mapping      , DynamicVector& constrained);
-    NodeData      build_global_displacement (IndexMatrix& constrained  , DynamicVector& result, IndexMatrix& unconstrained, DynamicVector& supports);
+    SystemDofIds  build_unconstrained_index_matrix();
+    // IndexMatrix   build_constrained_index_matrix  (DynamicVector& support_vector);
+    // DynamicVector build_implicit_load_vector(const SparseMatrix& stiffness, const DynamicVector& support);
+
+    // building constraints and loads for every node including non existing ones
+    NodeData    build_constraint_matrix   (std::vector<std::string> support_sets = {"SALL"});
+    NodeData    build_load_matrix         (std::vector<std::string> load_sets = {"LALL"});
+
+
+    SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
+    // IndexVector   build_mapping_vector      (IndexMatrix& unconstrained, IndexMatrix  & constrained);
+    // SparseMatrix  build_reduced_stiffness   (IndexVector& mapping      , SparseMatrix & constrained);
+    // DynamicVector build_reduced_load        (IndexVector& mapping      , DynamicVector& constrained);
+    // NodeData      build_global_displacement (IndexMatrix& constrained  , DynamicVector& result, IndexMatrix& unconstrained, DynamicVector& supports);
 
     std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);
     ElementData                    compute_compliance   (NodeData& displacement);

@@ -2,7 +2,7 @@
 // Created by Luecx on 12.06.2023.
 //
 
-#include "c3d20r.h"
+#include "c3D20r.h"
 
 namespace fem {
 namespace model {

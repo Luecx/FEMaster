@@ -5,6 +5,7 @@
 #include "../model/model.h"
 #include "../loadcase/linear_static.h"
 #include "../loadcase/linear_static_topo.h"
+#include "../loadcase/linear_eigenfreq.h"
 
 namespace fem::reader {
 
@@ -45,6 +46,8 @@ class Reader {
     void process_loadcase();
     void process_loadcase_linear_static();
     void process_loadcase_linear_static_topo();
+    void process_loadcase_eigenfreq();
+
     void process_loadcase_linear_static_support     (fem::loadcase::LinearStatic* lc);
     void process_loadcase_linear_static_load        (fem::loadcase::LinearStatic* lc);
     void process_loadcase_linear_static_solver      (fem::loadcase::LinearStatic* lc);

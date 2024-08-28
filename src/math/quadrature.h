@@ -58,8 +58,8 @@ struct Quadrature {
     public:
     Quadrature(Domain d, Order o);
 
-    template<typename T>
-    T integrate(const std::function<T(Precision, Precision, Precision)>& func) const {
+    template<typename F, typename T = std::invoke_result_t<F, Precision, Precision, Precision>>
+    T integrate(F const& func) const {
         T res = T();
         if constexpr (!std::is_arithmetic_v<T>) {
             res.setZero();

@@ -24,7 +24,7 @@ struct ElementInterface {
         ElementInterface::material = material;
     }
 
-    virtual Dofs      dofs()                                                                                     = 0;
+    virtual ElDofs    dofs()                                                                                     = 0;
     virtual Dim       dimensions()                                                                               = 0;
     virtual Dim       n_nodes()                                                                                  = 0;
     virtual Dim       n_integration_points()                                                                     = 0;
@@ -47,6 +47,7 @@ struct ElementInterface {
     virtual void      compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result)     = 0;
 };
 
+struct ElementInterface;
 using ElementPtr = std::shared_ptr<ElementInterface>;
 
 }    // namespace model

@@ -1,9 +1,11 @@
 /******************************************************************************
- * @file LinearStaticTopo.h
- * @brief LinearStaticTopo.h defines a load case that extends linear static 
- * analysis to include topology optimization parameters such as element density 
- * and penalization exponent. This class runs the analysis considering 
- * these optimization effects.
+ * @file EigenFrequencyAnalysis.h
+ * @brief EigenFrequencyAnalysis.h defines a load case for performing modal
+ * (eigenfrequency) analysis. The class computes natural frequencies and mode
+ * shapes of a structure based on the finite element model.
+ *
+ * @details The analysis returns the first N eigenfrequencies, as defined by
+ * the user, along with the corresponding mode shapes.
  *
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
@@ -14,39 +16,38 @@
 #pragma once
 
 #include "loadcase.h"
-#include "linear_static.h"
 #include "../solve/solver.h"
 
 namespace fem {
 namespace loadcase {
 
 /******************************************************************************
- * LinearStaticTopo class
- * This class represents a load case for linear static analysis with topology
- * optimization considerations. It extends the LinearStatic class, adding
- * element density and a penalization exponent to account for material
- * interpolation during topology optimization.
+ * EigenFrequencyAnalysis class
+ * This class performs modal analysis on a finite element model to compute the
+ * first N natural frequencies and associated mode shapes. It extends the
+ * LoadCase class, implementing a run function for eigenfrequency computations.
  ******************************************************************************/
-struct LinearStaticTopo : public LinearStatic {
+struct EigenFrequencyAnalysis : public LoadCase {
 
     //-------------------------------------------------------------------------
     // Constructor
     //-------------------------------------------------------------------------
     /**
-     * @brief Constructs a LinearStaticTopo load case with a given ID, writer, 
-     * and model.
+     * @brief Constructs an EigenFrequencyAnalysis load case with a given ID,
+     * writer, model, and number of eigenvalues.
      *
      * @param id The unique ID of the load case.
      * @param writer Pointer to a Writer object for output handling.
      * @param model Pointer to the finite element model.
+     * @param numEigenvalues The number of eigenfrequencies to compute.
      */
-    explicit LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model);
+    EigenFrequencyAnalysis(ID id, reader::Writer* writer, model::Model* model, int numEigenvalues=10)
+        : LoadCase(id, writer, model), numEigenvalues(numEigenvalues) {};
 
     //-------------------------------------------------------------------------
     // Data Members
     //-------------------------------------------------------------------------
-    ElementData density;  /**< Element density used for topology optimization. */
-    Precision exponent = 1;  /**< Exponent used in SIMP-like penalization schemes. */
+    int numEigenvalues;  /**< The number of eigenfrequencies to compute. */
 
 public:
 
@@ -54,8 +55,9 @@ public:
     // Run Analysis
     //-------------------------------------------------------------------------
     /**
-     * @brief Executes the linear static analysis with topology optimization 
-     * considerations. This function overrides the base run() method.
+     * @brief Executes the eigenfrequency analysis. This function overrides
+     * the base run() method and computes the first `numEigenvalues` natural
+     * frequencies and corresponding mode shapes.
      */
     void run() override;
 };

@@ -25,21 +25,21 @@ StaticMatrix<15, 1> C3D15::shape_function(Precision r, Precision s, Precision t)
     Precision two_h_m1    = 2 * h - 1;
 
     // shape function values
-    res(0)  = 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_mr - one_mg_mh * one_mr2);
-    res(1)  = 0.5 * (g * two_g_m1 * one_mr - g * one_mr2);
-    res(2)  = 0.5 * (h * two_h_m1 * one_mr - h * one_mr2);
-    res(3)  = 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_pr - one_mg_mh * one_mr2);
-    res(4)  = 0.5 * (g * two_g_m1 * one_pr - g * one_mr2);
-    res(5)  = 0.5 * (h * two_h_m1 * one_pr - h * one_mr2);
-    res(6)  = 2 * one_mg_mh * g * one_mr;
-    res(7)  = 2 * g * h * one_mr;
-    res(8)  = 2 * h * one_mg_mh * one_mr;
-    res(9)  = 2 * one_mg_mh * g * one_pr;
-    res(10) = 2 * g * h * one_pr;
-    res(11) = 2 * h * one_mg_mh * one_pr;
-    res(12) = one_mg_mh * one_mr2;
-    res(13) = g * one_mr2;
-    res(14) = h * one_mr2;
+    res(0 ,0) = 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_mr - one_mg_mh * one_mr2);
+    res(1 ,0) = 0.5 * (g * two_g_m1 * one_mr - g * one_mr2);
+    res(2 ,0) = 0.5 * (h * two_h_m1 * one_mr - h * one_mr2);
+    res(3 ,0) = 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_pr - one_mg_mh * one_mr2);
+    res(4 ,0) = 0.5 * (g * two_g_m1 * one_pr - g * one_mr2);
+    res(5 ,0) = 0.5 * (h * two_h_m1 * one_pr - h * one_mr2);
+    res(6 ,0) = 2 * one_mg_mh * g * one_mr;
+    res(7 ,0) = 2 * g * h * one_mr;
+    res(8 ,0) = 2 * h * one_mg_mh * one_mr;
+    res(9 ,0) = 2 * one_mg_mh * g * one_pr;
+    res(10,0) = 2 * g * h * one_pr;
+    res(11,0) = 2 * h * one_mg_mh * one_pr;
+    res(12,0) = one_mg_mh * one_mr2;
+    res(13,0) = g * one_mr2;
+    res(14,0) = h * one_mr2;
 
     return res;
 }
