@@ -371,7 +371,7 @@ void Reader::process_loadcase_linear_static_topo() {
 void Reader::process_loadcase_eigenfreq() {
     // read first line
     next_line();
-    loadcase::EigenFrequencyAnalysis lc {m_data.current_loadcase_num++, &m_writer, m_model.get()};
+    loadcase::LinearEigenfrequency lc {m_data.current_loadcase_num++, &m_writer, m_model.get(), 10};
     while (m_current_line.type() != END_OF_FILE) {
         while (m_current_line.type() != KEYWORD_LINE && m_current_line.type() != END_OF_FILE) {
             next_line();
@@ -379,7 +379,8 @@ void Reader::process_loadcase_eigenfreq() {
 
         logging::info(true, "   Parsing: ", m_current_line.line());
         if (m_current_line.command() == "NUMEIGENVALUES") {
-            lc.numEigenvalues = m_current_line.parse<int>("NUMEIGENVALUES", 10);
+            next_line();
+            lc.num_eigenvalues = m_current_line.get_value(0, 10);
         } else if (m_current_line.command() == "END") {
             next_line();
             break;

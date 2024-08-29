@@ -154,23 +154,38 @@ SolidElement<N>::mass(NodeData& position, Precision* buffer) {
     logging::error(material != nullptr, "no material assigned to element ", elem_id);
     logging::error(material->has_density(), "material has no density assigned at element ", elem_id);
 
+    Precision density = material->density();
+
     StaticMatrix<N, D> node_coords = this->node_coords_global(position);
 
-    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
-        [this, node_coords](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
+    std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
+        [this, node_coords, density](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det;
             StaticMatrix<D, D> jac = this->jacobian(node_coords, r, s, t);
-            StaticMatrix<N, N> mass_local = this->shape_function(r, s, t) * this->shape_function(r, s, t).transpose();
+            StaticMatrix<N, N> shape_func_mass = this->shape_function(r, s, t) * this->shape_function(r, s, t).transpose();
             det = jac.determinant();
-            return mass_local * det;
-        };
 
-    StaticMatrix<N, N> mass = integration_scheme().integrate(func);
+            // Expand the mass matrix from N x N to D * N x D * N
+            StaticMatrix<D * N, D * N> mass_local = StaticMatrix<D * N, D * N>::Zero();
 
-    MapMatrix mapped{buffer, N, N};
+            for (Index i = 0; i < N; i++) {
+                for (Index j = 0; j < N; j++) {
+                    for (Dim d = 0; d < D; d++) {
+                        mass_local(D * i + d, D * j + d) = shape_func_mass(i, j);
+                    }
+                }
+            }
+
+            return mass_local * det * density;
+    };
+
+    StaticMatrix<D * N, D * N> mass = integration_scheme().integrate(func);
+
+    MapMatrix mapped{buffer, D * N, D * N};
     mapped = mass;
     return mapped;
 }
+
 
 //-----------------------------------------------------------------------------
 // dimensions
