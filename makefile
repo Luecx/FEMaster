@@ -57,16 +57,35 @@ ifeq ($(debug), 1)
 endif
 
 #===============================================================
+# System Information (Optional Flags Based on System)
+#===============================================================
+
+UNAME := $(shell uname -s)
+
+#===============================================================
 # MKL Library Paths and Libraries
 #===============================================================
 
 MKLROOT   ?= $(shell echo ${MKLROOT})
 
+# Define MKL paths for different OS
+ifeq ($(OS),Windows_NT)
+    MKL_PATH = $(MKLROOT)/lib/intel64
+else
+    ifeq ($(UNAME),Darwin)
+        # macOS
+        MKL_PATH = $(MKLROOT)/lib
+    else
+        # Linux or other OS
+        MKL_PATH = $(MKLROOT)/lib/intel64
+    endif
+endif
+
 MKL_LIBS := \
     -Wl,--start-group \
-    $(MKLROOT)/lib/intel64/libmkl_intel_lp64.a \
-    $(MKLROOT)/lib/intel64/libmkl_sequential.a \
-    $(MKLROOT)/lib/intel64/libmkl_core.a \
+    $(MKL_PATH)/libmkl_intel_lp64.a \
+    $(MKL_PATH)/libmkl_sequential.a \
+    $(MKL_PATH)/libmkl_core.a \
     -Wl,--end-group \
     -lpthread \
     -lm \
@@ -80,12 +99,6 @@ NVCCLIBS := \
     -lcusolver \
     -lcublas \
     -lcusparse
-
-#===============================================================
-# System Information (Optional Flags Based on System)
-#===============================================================
-
-UNAME := $(shell uname)
 
 #===============================================================
 # Directories and File Paths

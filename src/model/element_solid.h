@@ -233,7 +233,7 @@ public:
      * @param node_loads The nodal loads that will be updated by the applied load.
      * @param load The external load vector.
      */
-    void apply_vload(NodeData& node_coords, NodeData& node_loads, StaticVector<3> load);
+    void apply_vload(NodeData& node_coords, NodeData& node_loads, StaticVector<3> load) override;
 
     /**
      * @brief Applies a distributed load to a specific surface of the element (not yet implemented).
@@ -243,7 +243,7 @@ public:
      * @param surface The surface index on which the distributed load is applied.
      * @param load The external load vector.
      */
-    void apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, StaticVector<3> load);
+    void apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, StaticVector<3> load) override;
 
     /**
      * @brief Computes the nodal stress and strain for the element.
@@ -253,7 +253,7 @@ public:
      * @param stress The computed nodal stress.
      * @param strain The computed nodal strain.
      */
-    void compute_stress_strain_nodal(NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain);
+    void compute_stress_strain_nodal(NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain) override;
 
     /**
      * @brief Computes the stress and strain at integration points of the element.
@@ -264,7 +264,7 @@ public:
      * @param strain The computed strain at integration points.
      * @param xyz The computed global coordinates of the integration points.
      */
-    void compute_stress_strain(NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz);
+    void compute_stress_strain(NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override;
 
     /**
      * @brief Computes the compliance (strain energy) for the element.
@@ -284,7 +284,7 @@ public:
      * @tparam ElementType The specific element type to be tested.
      */
     template<class ElementType>
-    static void test_implementation();
+    static bool test_implementation(bool print=false);
 };
 
 
