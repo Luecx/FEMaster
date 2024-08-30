@@ -1,16 +1,14 @@
 # Compiler options
 NVCC = nvcc
-CXX = g++
-CXXFLAGS = -std=c++17 -O3 -I ./include/ -fopenmp
+CXX = c++
+
+CXXFLAGS = -std=c++17 -O3 -I ./include/
 NVCCFLAGS = -std=c++17 -O3 -I ./include/ --expt-relaxed-constexpr
 NVCCLIBS := -lcusolver -lcublas -lcusparse
 
 UNAME := $(shell uname)
+IS_CLANG := $(shell $(CXX) --version | grep -q "clang"; echo $$?)
 
-ifeq ($(UNAME), Linux)
-	CXXFLAGS += -fopenmp
-	NVCCFLAGS += -Xcompiler=-fopenmp
-endif
 
 # Directories
 SRCDIR = src
