@@ -270,8 +270,9 @@ class Geometry:
                 if node is not None:
                     x, y, z = node
                     new_node_id = i * max_node_id + node_id
-                    geometry.add_node(new_node_id, x, y, z + i * spacing)
+                    geometry.add_node(new_node_id, x, y, z + i * spacing / (2 if element_order == 2 else 1))
 
+        new_element_id = 1
         # Copy elements and element sets
         for i in range(n):
             for element in self.elements:
@@ -300,8 +301,9 @@ class Geometry:
 
                         new_ids = node_ids_layer1a + node_ids_layer2a + node_ids_layer1b + node_ids_layer2b + node_ids_layerm
 
-                    new_element_id = len(geometry.elements)
+
                     geometry.add_element(new_element_id, "C3D"+str(len(new_ids)), new_ids)
+                    new_element_id += 1
         # Copy sets
         for name, ids in self.node_sets.items():
             if name == "NALL":
@@ -499,7 +501,7 @@ class Geometry:
         plt.show()
 
     @staticmethod
-    def mesh_interior(boundary_points):
+    def mesh_interior(boundary_points, second_order=False, force_quads=False):
 
         # if first and last are close, remove the last
         if np.linalg.norm(boundary_points[0] - boundary_points[-1]) < 1e-6:
@@ -530,8 +532,8 @@ class Geometry:
 
         # Mesh algorithm options (optional, can customize as needed)
         gmsh.option.setNumber("Mesh.Algorithm", 6)  # Delaunay meshing for 2D
-        gmsh.option.setNumber("Mesh.ElementOrder", 1)  # First order elements
-        gmsh.option.setNumber("Mesh.RecombineAll", 1)  # Allow recombination into quadrilaterals
+        gmsh.option.setNumber("Mesh.ElementOrder", 1 if second_order is False else 2)  # First order elements
+        gmsh.option.setNumber("Mesh.RecombineAll", 1 if force_quads else 0)  # Allow recombination into quadrilaterals
 
         # Generate the mesh
         gmsh.model.mesh.generate(2)
@@ -566,12 +568,13 @@ class Geometry:
 
         # Add nodes to the geometry
         for idx, node in enumerate(nodes):
-            geometry.add_node(idx, node[0], node[1])
+            geometry.add_node(idx+1, node[0], node[1])
 
+        elem_id = 1
         # Add elements to the geometry
         for elem_tags, nodes_per_elem in zip(element_tags, node_tags_per_element):
             for elem_tag, node_tags in zip(elem_tags, nodes_per_elem):
-                node_indices = [node_ids[n] for n in node_tags]
+                node_indices = [node_ids[n]+1 for n in node_tags]
                 if len(node_tags) == 3:
                     element_type = 'C2D3'
                 elif len(node_tags) == 4:
@@ -582,11 +585,12 @@ class Geometry:
                     element_type = 'C2D8'
                 else:
                     continue  # Skip any elements not triangular or quadrilateral
-                geometry.add_element(len(geometry.elements), element_type, node_indices)
-
+                geometry.add_element(elem_id, element_type, node_indices)
+                elem_id += 1
         # Finalize Gmsh
         gmsh.finalize()
         return geometry
+
     def __str__(self):
         ret_str = ""
         ret_str += f"Dimension: {'2D' if self.dimension == 2 else '3D'}\n"

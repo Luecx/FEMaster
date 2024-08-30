@@ -58,6 +58,7 @@ struct SolidElement : public ElementInterface{
         StaticMatrix<N, D> local_shape_der = shape_derivative(r, s, t);
         StaticMatrix<D, D> jac             = jacobian(node_coords, r, s, t);
 
+
         det = jac.determinant();
         StaticMatrix<D, D> inv = jac.inverse();
         if (check_det){
@@ -260,15 +261,6 @@ struct SolidElement : public ElementInterface{
 
             auto strains  = B * local_displacement;
             auto stresses = E * strains;
-
-//            std::cout << global_node_coords << std::endl;
-//            std::cout << jacobian(global_node_coords, r, s, t) << std::endl;
-//            std::cout << strains << std::endl;
-//            std::cout << stresses << std::endl;
-//            std::cout << B << std::endl;
-//            std::cout << local_displacement << std::endl;
-//            std::cout << r << " " << s << " " << t << std::endl;
-//            exit(0);
 
             Precision x = 0;
             Precision y = 0;

@@ -2,7 +2,7 @@ import copy
 
 import numpy as np
 
-from SpringSimulation import SpringSimulation
+from spring_sim import SpringSimulation
 
 try:
     from .geometry import Geometry
@@ -12,45 +12,42 @@ except ImportError:
     from solution import Solution
 from scipy.optimize import curve_fit
 
-def generate_beam(length, height, elem_length, elem_height, dent_func):
+
+def generate_beam(length, height, elem_length, elem_height):
     geom = Geometry()
     n_elem_x = int(length // elem_length)
     n_elem_y = int(height // elem_height)
 
-    geom.add_node_set('left_end')
-    geom.add_node_set('right_end')
-    geom.add_node_set('bottom_end')
-    geom.add_node_set('top_end')
-    geom.add_node_set('centerline')
+    geom.add_node_set('LEFT')
+    geom.add_node_set('RIGHT')
+    geom.add_node_set('BOTTOM')
+    geom.add_node_set('TOP')
+    geom.add_node_set('CENTER')
 
     # Generate nodes
-    node_id = 0
+    node_id = 1
     for i in range(n_elem_x + 1):
         for j in range(n_elem_y + 1):
             x = i * elem_length
             y = j * elem_height - height / 2
-
-            # Adjust y based on dent_func for the middle part
-            factor = y / (height / 2)
-            y += dent_func(x - length / 2) * factor
             geom.add_node(node_id, x, y)
 
             # Add to relevant sets
             if i == 0:
-                geom.add_to_node_set('left_end', node_id)
+                geom.add_node_to_set('LEFT', node_id)
             elif i == n_elem_x:
-                geom.add_to_node_set('right_end', node_id)
+                geom.add_node_to_set('RIGHT', node_id)
             if j == 0:
-                geom.add_to_node_set('bottom_end', node_id)
+                geom.add_node_to_set('BOTTOM', node_id)
             elif j == n_elem_y:
-                geom.add_to_node_set('top_end', node_id)
+                geom.add_node_to_set('TOP', node_id)
             if j == n_elem_y // 2:
-                geom.add_to_node_set('centerline', node_id)
+                geom.add_node_to_set('CENTER', node_id)
 
             node_id += 1
 
     # Generate C2D4 elements
-    elem_id = 0
+    elem_id = 1
     for i in range(n_elem_x):
         for j in range(n_elem_y):
             bottom_left = i * (n_elem_y + 1) + j
@@ -59,14 +56,14 @@ def generate_beam(length, height, elem_length, elem_height, dent_func):
             top_right = (i + 1) * (n_elem_y + 1) + j + 1
 
             # Add as C2D4
-            node_ids = [bottom_left, bottom_right, top_right, top_left]
+            node_ids = [bottom_left + 1, bottom_right + 1, top_right + 1, top_left + 1]
             geom.add_element(elem_id, 'C2D4', node_ids)
             elem_id += 1
 
     return geom
 
 
-def generate_irregular_arc(width=60, offset=100, R_inner=30, R_outer=5, angle=140, num_elements_width=10,
+def generate_arc(width=60, offset=100, R_inner=30, R_outer=5, angle=140, num_elements_width=10,
                            num_elements_inner_arc=30, num_elements_outer_arc=10, num_elements_inner_straight=10,
                            num_elements_outer_straight=10):
     # make sure angle is < 180 degrees
@@ -158,19 +155,10 @@ if __name__ == '__main__':
 
     def write_file(file_name, geom):
         geom = geom.to_second_order()
-        geom = geom.extrude(5,-1)
+        geom = geom.extrude(1,1)
         geom.write_input_deck(file_name)
 
-        nset_left = find_left_nodes(geom)[0]
-        nset_bottom = find_bottom_nodes(geom)[0]
-
         with open(file_name, "a") as f:
-            f.write("*NSET, NAME=LEFT\n")
-            for node_id in nset_left:
-                f.write("{},\n".format(node_id))
-            f.write("*NSET, NAME=BOTTOM\n")
-            for node_id in nset_bottom:
-                f.write("{},\n".format(node_id))
             f.write("""
 *MATERIAL, NAME=MAT1
 *ELASTIC, TYPE=ISO
@@ -178,28 +166,31 @@ if __name__ == '__main__':
 *SOLID SECTION, ELSET=EALL, MAT=MAT1
 
 *SUPPORT, SUPPORT_COLLECTOR=SUPPS
-BOTTOM, 0, 0, 0
+LEFT, 0, 0, 0
 *CLOAD, LOAD_COLLECTOR=LOADS
-LEFT, 0, 0, -1
+RIGHT, 0, -1, 0
 
 *LOADCASE, TYPE= LINEAR STATIC
 *SUPPORT
 SUPPS
 *LOAD
 LOADS
-*SOLVER, METHOD=DIRECT, DEVICE=GPU
+*SOLVER, METHOD=DIRECT, DEVICE=CPU
 *END""")
-    geom = generate_irregular_arc(angle=130,
-                                  num_elements_inner_arc=50,
-                                  num_elements_width=20,
-                                  num_elements_outer_arc=5,
-                                  offset=100,
-                                  num_elements_inner_straight=20,
-                                  num_elements_outer_straight=10,
-                                  R_inner=20,
-                                  R_outer=30)
 
-    write_file("test.inp", copy.deepcopy(geom))
+
+    # geom = generate_arc(angle=130,
+    #                               num_elements_inner_arc=10,
+    #                               num_elements_width=4,
+    #                               num_elements_outer_arc=5,
+    #                               offset=100,
+    #                               num_elements_inner_straight=4,
+    #                               num_elements_outer_straight=2,
+    #                               R_inner=20,
+    #                               R_outer=30)
+    geom = generate_beam(1, 1, 1, 1)
+
+    write_file("c3d8.inp", copy.deepcopy(geom))
 
     exit(0)
 
