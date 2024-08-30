@@ -17,3 +17,4 @@ topo/runs
 
 cmake-build-debug/
 
+.DS_Store
