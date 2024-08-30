@@ -92,6 +92,7 @@ UNAME := $(shell uname)
 #===============================================================
 
 SRCDIR      = src
+TESTDIR     = tests
 OBJDIR      = obj/
 GPP_OBJDIR  = $(OBJDIR)gpp/
 NVCC_OBJDIR = $(OBJDIR)nvcc/
@@ -105,10 +106,12 @@ BINDIR      = bin
 
 CPP_SRCS := $(sort $(shell find $(SRCDIR) -name '*.cpp'))
 CU_SRCS  := $(sort $(shell find $(SRCDIR) -name '*.cu'))
+TST_SRCS := $(sort $(shell find $(TESTDIR) -name '*.cpp'))
 
 GPP_OBJS     := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
 GPU_CPP_OBJS := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
 CU_OBJS      := $(CU_SRCS:$(SRCDIR)/%.cu=$(CU_OBJDIR)/%.o)
+TST_OBJS     := $(TST_SRCS:$(TESTDIR)/%.cpp=$(GPP_OBJDIR)/%.o) $(GPP_OBJS)
 
 #===============================================================
 # Executable Files
@@ -116,10 +119,8 @@ CU_OBJS      := $(CU_SRCS:$(SRCDIR)/%.cu=$(CU_OBJDIR)/%.o)
 
 EXE_CPU  := $(BINDIR)/FEMaster.exe
 EXE_GPU  := $(BINDIR)/FEMaster_gpu.exe
+EXE_TST  := $(BINDIR)/test_suite.exe
 
-#===============================================================
-# Display Compilation Flags
-#===============================================================
 #===============================================================
 # Display Compilation Flags
 #===============================================================
@@ -148,13 +149,15 @@ show_flags:
 # Build Targets
 #===============================================================
 
-all: show_flags cpu gpu
+all: show_flags cpu gpu tests
 
 cpu: show_flags $(EXE_CPU)
 
 gpu: CXXFLAGS  += -DSUPPORT_GPU
 gpu: NVCCFLAGS += -DSUPPORT_GPU
 gpu: show_flags $(EXE_GPU) clean-exp-lib
+
+tests: $(EXE_TST)
 
 #===============================================================
 # Build Rules
@@ -171,6 +174,10 @@ $(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS)
 	@mkdir -p $(@D)
 	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(GPU_CPP_OBJS) $(CU_OBJS) $(LIBS) -o $@
 
+$(EXE_TST): $(TST_OBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(TST_OBJS) -lgtest -lgtest_main -pthread -o $@
+
 # Object generation rules
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
@@ -183,6 +190,10 @@ $(CPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 $(CU_OBJDIR)/%.o: $(SRCDIR)/%.cu
 	@mkdir -p $(@D)
 	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(FEATURE_FLAGS) -c $< -o $@
+
+$(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Include the generated dependency files
 -include $(GPP_OBJS:.o=.d)
@@ -198,4 +209,3 @@ clean-exp-lib:
 
 clean:
 	rm -rf $(GPP_OBJDIR) $(NVCC_OBJDIR) $(BINDIR) $(OBJDIR)
-

@@ -148,7 +148,7 @@ class Filter:
         self.n_values = len(coords)
         self.filter_func = filter_func
         self.symmetries = symmetries
-        if pycuda_available:
+        if pycuda_available and self.sigma > 0.0:
             self.kernel = mod.get_function("filter_gaussian_kernel")
             self.kernel_min_dist = min_dist_mod.get_function("min_dist_kernel")
 
@@ -242,7 +242,7 @@ class Filter:
 
     def apply(self, values):
 
-        if not pycuda_available:
+        if not pycuda_available or self.sigma == 0.0:
             return values
 
         ghost_factor = round(len(self.coords) / self.n_values)
@@ -270,7 +270,7 @@ class Filter:
         return d_res
 
     def minimal_distance(self):
-        if not pycuda_available:
+        if not pycuda_available or self.sigma == 0.0:
             return 0
 
         d_xyz = np.array(self.coords  , dtype=np.float32)

@@ -1,47 +1,53 @@
+import copy
+
 import numpy as np
-from .geometry import Geometry
-from .solution import Solution
+
+from spring_sim import SpringSimulation
+
+try:
+    from .geometry import Geometry
+    from .solution import Solution
+except ImportError:
+    from geometry import Geometry
+    from solution import Solution
 from scipy.optimize import curve_fit
 
-def generate_beam(length, height, elem_length, elem_height, dent_func):
+
+def generate_beam(length, height, elem_length, elem_height):
     geom = Geometry()
     n_elem_x = int(length // elem_length)
     n_elem_y = int(height // elem_height)
 
-    geom.add_node_set('left_end')
-    geom.add_node_set('right_end')
-    geom.add_node_set('bottom_end')
-    geom.add_node_set('top_end')
-    geom.add_node_set('centerline')
+    geom.add_node_set('LEFT')
+    geom.add_node_set('RIGHT')
+    geom.add_node_set('BOTTOM')
+    geom.add_node_set('TOP')
+    geom.add_node_set('CENTER')
 
     # Generate nodes
-    node_id = 0
+    node_id = 1
     for i in range(n_elem_x + 1):
         for j in range(n_elem_y + 1):
             x = i * elem_length
             y = j * elem_height - height / 2
-
-            # Adjust y based on dent_func for the middle part
-            factor = y / (height / 2)
-            y += dent_func(x - length / 2) * factor
             geom.add_node(node_id, x, y)
 
             # Add to relevant sets
             if i == 0:
-                geom.add_to_node_set('left_end', node_id)
+                geom.add_node_to_set('LEFT', node_id)
             elif i == n_elem_x:
-                geom.add_to_node_set('right_end', node_id)
+                geom.add_node_to_set('RIGHT', node_id)
             if j == 0:
-                geom.add_to_node_set('bottom_end', node_id)
+                geom.add_node_to_set('BOTTOM', node_id)
             elif j == n_elem_y:
-                geom.add_to_node_set('top_end', node_id)
+                geom.add_node_to_set('TOP', node_id)
             if j == n_elem_y // 2:
-                geom.add_to_node_set('centerline', node_id)
+                geom.add_node_to_set('CENTER', node_id)
 
             node_id += 1
 
     # Generate C2D4 elements
-    elem_id = 0
+    elem_id = 1
     for i in range(n_elem_x):
         for j in range(n_elem_y):
             bottom_left = i * (n_elem_y + 1) + j
@@ -50,120 +56,201 @@ def generate_beam(length, height, elem_length, elem_height, dent_func):
             top_right = (i + 1) * (n_elem_y + 1) + j + 1
 
             # Add as C2D4
-            node_ids = [bottom_left, bottom_right, top_right, top_left]
+            node_ids = [bottom_left + 1, bottom_right + 1, top_right + 1, top_left + 1]
             geom.add_element(elem_id, 'C2D4', node_ids)
             elem_id += 1
 
-
-
     return geom
 
-# Example usage:
 
-import numpy as np
-import matplotlib.pyplot as plt
-import subprocess
-import os
-
-# Writing lines to the Input File
-def append_lines(filename, lines):
-    with open(filename, "a") as f:
-        f.write("\n".join(lines))
-        f.write("\n")
-
-# Running the FEM Solver
-def run_solver(input_filename):
-    return subprocess.run(["./bin/FEMaster.exe", input_filename])
-
-# Function to compute curvature radius based on dent function at x=0
-def curvature_radius(D):
-    f2_x0 = 2 / (D ** 2)
-    R = 1 / np.abs(f2_x0)
-    return R
+def generate_arc(width=60, offset=100, R_inner=30, R_outer=5, angle=140, num_elements_width=10,
+                           num_elements_inner_arc=30, num_elements_outer_arc=10, num_elements_inner_straight=10,
+                           num_elements_outer_straight=10):
+    # make sure angle is < 180 degrees
+    if angle >= 180:
+        raise ValueError("Angle must be less than 180 degrees")
 
 
-# Main Code
+    # 8 arrays for the 8 segments
+    end_a = []
+    end_b = []
+    inner_straight_a = []
+    inner_straight_b = []
+    inner_arc = []
+    outer_straight_a = []
+    outer_straight_b = []
+    outer_arc = []
+
+    # computer the center of the outer arc
+    dir_angle       = np.array([np.cos(np.radians(angle    )), np.sin(np.radians(angle    ))])
+    dir_angle_90    = np.array([-dir_angle[1], dir_angle[0]])
+    dir_angle_half  = np.array([np.cos(np.radians(angle / 2)), np.sin(np.radians(angle / 2))])
+    dx = (width + R_inner - R_outer)
+    dy = dx * dir_angle_half[1] / dir_angle_half[0]
+
+    outer_center = [dx, dy]
+    outer_arc_p1 = [dx + R_outer * dir_angle[0], dy + R_outer * dir_angle[1]]
+    outer_arc_p2 = [dx + R_outer               , dy]
+
+    # Generate boundary points for the inner arc (counter clock wise) at radius R_inner
+    for i in range(num_elements_inner_arc + 1):
+        theta = i * angle / num_elements_inner_arc
+        x = R_inner * np.cos(np.radians(theta))
+        y = R_inner * np.sin(np.radians(theta))
+        inner_arc.append([x, y])
+    inner_arc = np.array(inner_arc)
+
+    # Generate boundary points for the inner straight_b
+    inner_straight_b = np.linspace(inner_arc[-1],
+                                   inner_arc[-1] + (dir_angle_90 * offset), num_elements_inner_straight + 1)
+
+    # generate points for the end_b perpendicular by turning clockwise
+    end_b = np.linspace(inner_straight_b[-1], inner_straight_b[-1] + (dir_angle * width), num_elements_width + 1)
+
+    # turn right again and fill to outer_arc_p1
+    outer_straight_b = np.linspace(end_b[-1],
+                                   [outer_arc_p1[0], outer_arc_p1[1]], num_elements_outer_straight + 1)
+
+    # boudnary points for the outer arc (clock wise) at radius R_outer with base point end_b[-1]
+    for i in range(num_elements_outer_arc + 1):
+        theta = angle - i * angle / num_elements_outer_arc
+        x = R_outer * np.cos(np.radians(theta)) + outer_center[0]
+        y = R_outer * np.sin(np.radians(theta)) + outer_center[1]
+        outer_arc.append([x, y])
+    outer_arc = np.array(outer_arc)
+
+    # outer straight a just going vertically down to the x-axis (width, -offset)
+    outer_straight_a = np.linspace([outer_arc[-1][0], outer_arc[-1][1]], [width + R_inner, -offset], num_elements_outer_straight + 1)
+
+    # base point for the inner straight a is the end of the outer straight a
+    end_a = np.linspace([outer_straight_a[-1][0], outer_straight_a[-1][1]], [R_inner, -offset], num_elements_width + 1)
+
+    # back to origin
+    inner_straight_a = np.linspace([end_a[-1][0], end_a[-1][1]], [R_inner, 0], num_elements_inner_straight + 1)
+
+    # Combine all boundary points to form a closed loop
+    boundary_points = np.vstack([inner_arc, inner_straight_b, end_b, outer_straight_b, outer_arc, outer_straight_a, end_a, inner_straight_a])
+
+    # remove points that are too close to each other
+    for i in range(len(boundary_points) - 1, 0, -1):
+        if np.linalg.norm(boundary_points[i] - boundary_points[i - 1]) < 1e-6:
+            boundary_points = np.delete(boundary_points, i, axis=0)
+    # create a triangle mesh
+    geom = Geometry.mesh_interior(boundary_points)
+    return geom
+
 if __name__ == '__main__':
-    max_stresses = []
-    R_values = []
-    D_values = np.linspace(5, 0.1, 50)
 
-    for D in D_values:
-        filename = f"test_{D}.inp"
+    def find_bottom_nodes(geom):
+        nodes = np.array(geom.nodes)
+        # find all node ids that are near the bottom -> find min y value and take all within 1e-6
+        min_y = np.min(nodes[:,1])
+        return np.where(np.abs(nodes[:,1] - min_y) < 1e-6)
 
-        # Dent function
-        dent_function = lambda x: -1 * np.exp(-(x / D)**2)
+    def find_left_nodes(geom):
+        nodes = np.array(geom.nodes)
+        # find all node ids that are near the left -> find min x value and take all within 1e-6
+        min_x = np.min(nodes[:,0])
+        return np.where(np.abs(nodes[:,0] - min_x) < 1e-6)
 
-        if D == 10:
-            dent_function = lambda x: 0
+    def write_file(file_name, geom):
+        geom = geom.to_second_order()
+        geom = geom.extrude(1,1)
+        geom.write_input_deck(file_name)
 
-        # Generate the geometry
-        geom = generate_beam(20, 5, 0.3, 0.3, dent_func=dent_function)
-        geom = geom.extrude(1, 1)
-        geom.change_to_second_order()
-        geom.write_input_deck(filename)
+        with open(file_name, "a") as f:
+            f.write("""
+*MATERIAL, NAME=MAT1
+*ELASTIC, TYPE=ISO
+210000,0.3
+*SOLID SECTION, ELSET=EALL, MAT=MAT1
 
-        # Append lines to the input deck
-        lines_to_append = [
-            "*SUPPORT, SUPPORT_COLLECTOR=SUPPS",
-            "LEFT_END, 0, 0, 0",
-            "*CLOAD, LOAD_COLLECTOR=LOADS",
-            "RIGHT_END, 1, 0, 0",
-            "*MATERIAL, NAME=MAT1",
-            "*ELASTIC, TYPE=ISO",
-            "210000, 0.3",
-            "*SOLID SECTION, ELSET=EALL, MAT=MAT1",
-            "*LOAD CASE, TYPE=LINEAR STATIC",
-            "*LOAD",
-            "LOADS",
-            "*SUPPORT",
-            "SUPPS",
-            "*SOLVER, METHOD=DIRECT, DEVICE=CPU"
-            "*END"
-        ]
+*SUPPORT, SUPPORT_COLLECTOR=SUPPS
+LEFT, 0, 0, 0
+*CLOAD, LOAD_COLLECTOR=LOADS
+RIGHT, 0, -1, 0
 
-        append_lines(filename, lines_to_append)
+*LOADCASE, TYPE= LINEAR STATIC
+*SUPPORT
+SUPPS
+*LOAD
+LOADS
+*SOLVER, METHOD=DIRECT, DEVICE=CPU
+*END""")
 
-        # Run the solver
-        run_solver(filename)
 
-        # Read the solution
-        # Assuming you have a function Solution.open that returns the max Mises stress
-        sol = Solution.open(f"test_{D}.inp.res")
-        mises_stress = sol.mises(sol.get('1', 'STRESS'))
-        max_stress = np.max(mises_stress)
-        max_stresses.append(max_stress)
+    # geom = generate_arc(angle=130,
+    #                               num_elements_inner_arc=10,
+    #                               num_elements_width=4,
+    #                               num_elements_outer_arc=5,
+    #                               offset=100,
+    #                               num_elements_inner_straight=4,
+    #                               num_elements_outer_straight=2,
+    #                               R_inner=20,
+    #                               R_outer=30)
+    geom = generate_beam(1, 1, 1, 1)
 
-        # Compute the curvature radius R
-        # Assuming a function curvature_radius(dent_function, D) that returns curvature radius for each D
-        R = curvature_radius(D)
+    write_file("c3d8.inp", copy.deepcopy(geom))
 
-        R_values.append(R)
+    exit(0)
 
-    # Curve Fitting
-    def func(x, a, b):
-        return a / (x ** b) + 1
 
-    max_stresses = max_stresses[1:] / max_stresses[0]
-    R_values = R_values[1:]
+    for angle in [120,50,75,90,120,150]:
+        for offset in [100, 10,20,30,40,50]:
+            for R_inner in [10,20,30,40,50]:
 
-    params, _ = curve_fit(func, R_values, max_stresses)
+                # generate geometry
+                error = True
+                while error:
+                    try:
+                        geom = generate_irregular_arc(angle=angle,
+                                      num_elements_inner_arc=20,
+                                      num_elements_width=15,
+                                      num_elements_outer_arc=6,
+                                      offset=offset,
+                                      num_elements_inner_straight=3,
+                                      num_elements_outer_straight=10,
+                                      R_inner=R_inner,
+                                      R_outer=30)
+                        error = False
+                    except ValueError:
+                        error = True
 
-    # Parameters: a
-    a = params[0]
-    b = params[1]
 
-    # Generate fitted data for plotting
-    R_values_fit = np.linspace(np.min(R_values), np.max(R_values), 400)
-    max_stresses_fit = func(R_values_fit, a, b)
+                file_name_0 = "test_{}_{}_{}_0.inp".format(angle,offset,R_inner)
+                file_name_a = "test_{}_{}_{}_a.inp".format(angle,offset,R_inner)
+                file_name_b = "test_{}_{}_{}_b.inp".format(angle,offset,R_inner)
 
-    # Plotting
-    plt.figure()
-    plt.scatter(R_values, max_stresses, label='Data', marker='o')
-    plt.plot(R_values_fit, max_stresses_fit, label=f'Fit: a={a:.4f} b={b:.4f}' , linestyle='--')
-    plt.xlabel("Curvature Radius R at x = 0")
-    plt.ylabel("Max Mises Stress")
-    plt.title("Max Mises Stress vs Curvature Radius")
-    plt.grid(True)
-    plt.legend()
-    plt.show()
+                write_file(file_name_0, copy.deepcopy(geom))
+                # subdivide once
+                geom = geom.subdivide(1)
+                geom.equalize_node_spacing(100, 0.01)
+
+                write_file(file_name_a, copy.deepcopy(geom))
+                # subdivide once
+                geom = geom.subdivide(1, only_quads=True)
+                geom.write_input_deck(file_name_b)
+                write_file(file_name_b, copy.deepcopy(geom))
+
+                exit(0)
+
+
+    # geom = generate_irregular_arc(angle=75,
+    #                               num_elements_inner_arc=20,
+    #                               num_elements_width=15,
+    #                               num_elements_outer_arc=6,
+    #                               offset=10,
+    #                               num_elements_inner_straight=3,
+    #                               num_elements_outer_straight=10,
+    #                               R_inner=30,
+    #                               R_outer=30)
+
+    # subdivide once
+    geom = geom.subdivide(1)
+    geom.plot_2d()
+    geom.equalize_node_spacing(100, 0.01)
+    geom.plot_2d()
+    geom.write_input_deck("test1.inp")
+    geom = geom.subdivide(1)
+    geom.plot_2d()
+    geom.write_input_deck("test2.inp")
