@@ -13,11 +13,13 @@
  ******************************************************************************/
 
 #include "reduce_vec_to_vec.h"
+#include "../core/core.h"
+#include "assert.h"
 
 namespace fem { namespace mattools {
 
 DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b) {
-    assert(a.size() == b.size() && "Input vectors must have the same size.");
+    runtime_assert(a.size() == b.size(), "Input vectors must have the same size.");
 
     std::vector<double> reduced_values;
 
@@ -39,7 +41,7 @@ DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b) 
 }
 
 DynamicVector expand_vec_to_vec(const DynamicVector& reduced_vector, const DynamicVector& b) {
-    assert(reduced_vector.size() <= b.size() && "Reduced vector cannot be larger than vector b.");
+    runtime_assert(reduced_vector.size() <= b.size(),"Reduced vector cannot be larger than vector b.");
 
     // Initialize the expanded vector to be the same size as vector `b`
     DynamicVector expanded_vector = b;

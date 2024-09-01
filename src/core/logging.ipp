@@ -19,12 +19,12 @@ template<> inline std::string process<int>(int i, std::ostringstream& oss) {
 }
 
 template<> inline std::string process<float>(float f, std::ostringstream& oss) {
-    oss << std::scientific << f;
+    oss << f;
     return oss.str();
 }
 
 template<> inline std::string process<double>(double d, std::ostringstream& oss) {
-    oss << std::scientific << d;
+    oss << d;
     return oss.str();
 }
 

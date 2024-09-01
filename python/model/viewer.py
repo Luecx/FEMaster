@@ -359,12 +359,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Visualize geometry and solutions")
     parser.add_argument("--geometry", type=str, help="Path to the geometry input deck")
+
     parser.add_argument("--solution", type=str, help="Path to the solution file")
     parser.add_argument("--loadcase", type=str, default='1', help="Specify loadcase")
     parser.add_argument("--field", type=str, help="Field to display")
-    parser.add_argument("--datarange", nargs=3, help="Data range (min, max, percentile). Use True/False for percentile.")
-    parser.add_argument("--displacement", type=float, help="Displacement factor")
+
+    parser.add_argument("--disp_scalar", type=float, default=1.0, help="Displacement scaling factor")
+    parser.add_argument("--disp_field", type=str, default="displacement_xyz", help="Field to use for displacement")
+    parser.add_argument("--displacement", action='store_true', help="If set, enable displacements")
+
     parser.add_argument("--boundaries", action='store_true', help="If set, enabled boundaries of elements being displayed")
+
+    parser.add_argument("--datarange", nargs=3, help="Data range (min, max, percentile). Use True/False for percentile.")
 
     args = parser.parse_args()
 
@@ -384,6 +390,8 @@ if __name__ == '__main__':
                 print("Possible fields:")
                 for k in available_fields:
                     print(f"\t{k}")
+                print("Raw fields:")
+                print(sol)
                 sys.exit(1)
 
             print(f"Displaying field: {args.field}")
@@ -400,8 +408,23 @@ if __name__ == '__main__':
             min_val, max_val, percentile = args.datarange
             viewer.set_data_range(float(min_val), float(max_val), percentile=(percentile.lower() == 'true'))
 
-        if args.displacement and 'displacement_xyz' in available_fields:
-            viewer.set_displacement(available_fields['displacement_xyz']() * args.displacement)
+        if args.displacement:
+            # Use the specified displacement field or default to 'displacement_xyz'
+            disp_field = args.disp_field
+            if disp_field not in available_fields:
+                print(f"Error: The field '{disp_field}' is not available for the given loadcase.")
+                print("Possible fields:")
+                for k in available_fields:
+                    print(f"\t{k}")
+                sys.exit(1)
+            # Check that the displacement field has exactly 3 columns
+            disp_data = available_fields[disp_field]()
+            if disp_data.shape[1] != 3:
+                print(f"Error: The displacement field '{disp_field}' must have exactly 3 columns.")
+                sys.exit(1)
+            # Apply the displacement with the specified scalar factor
+            viewer.set_displacement(disp_data * args.disp_scalar)
+
 
 
     viewer.coordinate_system()

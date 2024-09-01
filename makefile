@@ -54,6 +54,8 @@ endif
 # Debug mode
 ifeq ($(debug), 1)
     FEATURE_FLAGS += -DNDEBUG
+    CXXFLAGS += -g
+    NVCCFLAGS += -G -g
 endif
 
 #===============================================================
@@ -61,6 +63,22 @@ endif
 #===============================================================
 
 UNAME := $(shell uname -s)
+
+#===============================================================
+# Test Libraries and Paths Based on System
+#===============================================================
+
+# Determine if the system is running on Apple Silicon
+ifeq ($(UNAME),Darwin)
+    ARCH := $(shell uname -m)
+    ifeq ($(ARCH),arm64)
+        TEST_LIBS = -L/opt/homebrew/lib -lgtest -lgtest_main -pthread
+    else
+        TEST_LIBS = -L/usr/local/lib -lgtest -lgtest_main -pthread
+    endif
+else
+    TEST_LIBS = -L/usr/local/lib -lgtest -lgtest_main -pthread
+endif
 
 #===============================================================
 # MKL Library Paths and Libraries
@@ -189,7 +207,7 @@ $(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS)
 
 $(EXE_TST): $(TST_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(TST_OBJS) -lgtest -lgtest_main -pthread -o $@
+	$(CXX) $(CXXFLAGS) $(TST_OBJS) $(TEST_LIBS) -o $@
 
 # Object generation rules
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp

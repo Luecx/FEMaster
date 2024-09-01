@@ -4,9 +4,74 @@ import numpy as np
 # Define symbols for natural coordinates
 g, h, r = sp.symbols('g h r')
 
+"""
+StaticMatrix<15, 1> C3D15::shape_function(Precision r, Precision s, Precision t) {
+    StaticMatrix<15, 1> res {};
+
+    Precision           g = r;
+    Precision           h = s;
+    r                     = t;
+
+    Precision one_mg_mh   = 1 - g - h;
+    Precision one_mr      = 1 - r;
+    Precision one_pr      = 1 + r;
+    Precision one_mr2     = 1 - r * r;
+    Precision two_g_m1    = 2 * g - 1;
+    Precision two_h_m1    = 2 * h - 1;
+
+    // shape function values
+    res(0 ,0) = 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_mr - one_mg_mh * one_mr2);
+    res(1 ,0) = 0.5 * (g * two_g_m1 * one_mr - g * one_mr2);
+    res(2 ,0) = 0.5 * (h * two_h_m1 * one_mr - h * one_mr2);
+    res(3 ,0) = 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_pr - one_mg_mh * one_mr2);
+    res(4 ,0) = 0.5 * (g * two_g_m1 * one_pr - g * one_mr2);
+    res(5 ,0) = 0.5 * (h * two_h_m1 * one_pr - h * one_mr2);
+    res(6 ,0) = 2 * one_mg_mh * g * one_mr;
+    res(7 ,0) = 2 * g * h * one_mr;
+    res(8 ,0) = 2 * h * one_mg_mh * one_mr;
+    res(9 ,0) = 2 * one_mg_mh * g * one_pr;
+    res(10,0) = 2 * g * h * one_pr;
+    res(11,0) = 2 * h * one_mg_mh * one_pr;
+    res(12,0) = one_mg_mh * one_mr2;
+    res(13,0) = g * one_mr2;
+    res(14,0) = h * one_mr2;
+
+    return res;
+}
+"""
+
 # Create the nodes with shape functions and their locations
 def node_definitions():
+
+    one_mg_mh   = 1 - g - h
+    one_mr      = 1 - r
+    one_pr      = 1 + r
+    one_mr2     = 1 - r * r
+    two_g_m1    = 2 * g - 1
+    two_h_m1    = 2 * h - 1
+
+
     nodes = [
+        {"shape_function": 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_mr - one_mg_mh * one_mr2), "location": (-1, -1, -1)},
+        {"shape_function": 0.5 * (g * two_g_m1 * one_mr - g * one_mr2), "location": (1, -1, -1)},
+        {"shape_function": 0.5 * (h * two_h_m1 * one_mr - h * one_mr2), "location": (1, 1, -1)},
+        {"shape_function": 0.5 * (one_mg_mh * (2 * one_mg_mh - 1) * one_pr - one_mg_mh * one_mr2), "location": (-1, 1, -1)},
+        {"shape_function": 0.5 * (g * two_g_m1 * one_pr - g * one_mr2), "location": (-1, -1, 1)},
+        {"shape_function": 0.5 * (h * two_h_m1 * one_pr - h * one_mr2), "location": (1, -1, 1)},
+        {"shape_function": 2 * one_mg_mh * g * one_mr, "location": (1, 1, 1)},
+        {"shape_function": 2 * g * h * one_mr, "location": (-1, 1, 1)},
+        {"shape_function": 2 * h * one_mg_mh * one_mr, "location": (-1, -1, 1)},
+        {"shape_function": 2 * one_mg_mh * g * one_pr, "location": (1, 1, 1)},
+        {"shape_function": 2 * g * h * one_pr, "location": (-1, 1, 1)},
+        {"shape_function": 2 * h * one_mg_mh * one_pr, "location": (-1, -1, 1)},
+        {"shape_function": one_mg_mh * one_mr2, "location": (-1, -1, 1)},
+        {"shape_function": g * one_mr2, "location": (1, -1, 1)},
+        {"shape_function": h * one_mr2, "location": (1, 1, 1)}
+
+    ]
+
+
+    """nodes = [
         {"shape_function": -1/8 * (1 - g) * (1 - h) * (1 - r) * (2 + g + h + r), "location": (-1, -1, -1)},
         {"shape_function": -1/8 * (1 + g) * (1 - h) * (1 - r) * (2 - g + h + r), "location": (1, -1, -1)},
         {"shape_function": -1/8 * (1 + g) * (1 + h) * (1 - r) * (2 - g - h + r), "location": (1, 1, -1)},
@@ -29,7 +94,7 @@ def node_definitions():
         {"shape_function": 1/4 * (1 - r) * (1 + r) * (1 + g) * (1 - h), "location": (1, -1, 0)},
         {"shape_function": 1/4 * (1 - r) * (1 + r) * (1 + g) * (1 + h), "location": (1, 1, 0)},
         {"shape_function": 1/4 * (1 - r) * (1 + r) * (1 - g) * (1 + h), "location": (-1, 1, 0)}
-    ]
+    ]"""
 
     return nodes
 
