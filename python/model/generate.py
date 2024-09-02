@@ -136,7 +136,7 @@ def generate_arc(width=60, offset=100, R_inner=30, R_outer=5, angle=140, num_ele
         if np.linalg.norm(boundary_points[i] - boundary_points[i - 1]) < 1e-6:
             boundary_points = np.delete(boundary_points, i, axis=0)
     # create a triangle mesh
-    geom = Geometry.mesh_interior(boundary_points)
+    geom = Geometry.mesh_interior(boundary_points, force_quads=True)
     return geom
 
 if __name__ == '__main__':
@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
     def write_file(file_name, geom):
         geom = geom.to_second_order()
-        geom = geom.extrude(1,1)
+        geom = geom.extrude(1,spacing=-10)
         geom.write_input_deck(file_name)
 
         with open(file_name, "a") as f:
@@ -179,18 +179,18 @@ LOADS
 *END""")
 
 
-    # geom = generate_arc(angle=130,
-    #                               num_elements_inner_arc=10,
-    #                               num_elements_width=4,
-    #                               num_elements_outer_arc=5,
-    #                               offset=100,
-    #                               num_elements_inner_straight=4,
-    #                               num_elements_outer_straight=2,
-    #                               R_inner=20,
-    #                               R_outer=30)
-    geom = generate_beam(1, 1, 1, 1)
+    geom = generate_arc(angle=130,
+                                  num_elements_inner_arc=10,
+                                  num_elements_width=4,
+                                  num_elements_outer_arc=5,
+                                  offset=100,
+                                  num_elements_inner_straight=4,
+                                  num_elements_outer_straight=7,
+                                  R_inner=20,
+                                  R_outer=30)
+    # geom = generate_beam(10, 1, 0.1, 0.1)
 
-    write_file("c3d8.inp", copy.deepcopy(geom))
+    write_file("./python/model/arc.inp", copy.deepcopy(geom))
 
     exit(0)
 

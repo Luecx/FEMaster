@@ -120,10 +120,29 @@ void fem::loadcase::LinearEigenfrequency::run() {
     );
 
     DynamicVector eigenvalues = eigen_result.first;
-    //DynamicMatrix mode_shapes = eigen_result.second;
+    DynamicVector eigenfreqs  = eigenvalues.array().abs().sqrt() / (2 * M_PI);
+    DynamicMatrix mode_shapes = eigen_result.second;
 
-    std::cout << eigenvalues << std::endl;
+    // Log the eigenvalues and eigenfrequencies
+    for (int i = 0; i < num_eigenvalues; i++) {
+        logging::info(true, "Eigenvalue ", std::setw(4), i+1, " : ",
+                      std::setw(20), std::fixed, Precision(eigenvalues(i)), " ,",
+                      std::setw(20), std::fixed, Precision(eigenfreqs(i)), " cycles / time period");
+    }
 
+    // write results
+    m_writer->add_loadcase(m_id);
+    m_writer->write_eigen_matrix(DynamicMatrix(eigenvalues), "EIGENVALUES");
+    m_writer->write_eigen_matrix(DynamicMatrix(eigenfreqs), "EIGENFREQUENCIES");
+    for (int i = 0; i < num_eigenvalues; i++) {
+        DynamicVector mode_shape = mode_shapes.col(i);
+        // extend mode shape to full size
+        // Step 8: Expand the reduced displacement vector to full size
+        auto shape_red = mattools::expand_vec_to_vec(mode_shape, reduced_supp_vec);
+        auto shape_mat = mattools::expand_vec_to_mat(unconstrained, shape_red);
+
+        m_writer->write_eigen_matrix(shape_mat, "MODE_SHAPE_" + std::to_string(i));
+    }
     // Step 6: Write the mode shapes to the writer
     //m_writer->add_loadcase(m_id);
     //m_writer->write_eigen_matrix(mode_shapes, "MODE_SHAPES");

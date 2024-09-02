@@ -3,8 +3,49 @@ import numpy as np
 class Solution:
     def __init__(self):
         self.loadcases = {}
+
     def get(self, loadcase, field):
         return self.loadcases[loadcase][field]
+
+    def list_fields(self, loadcase='1'):
+        fields_dict = {}
+        lc_fields = self.loadcases[loadcase]
+
+        for field, matrix in lc_fields.items():
+            dim = matrix.shape[1]
+
+            # Defining suffixes
+            suffixes = ["_x", "_y", "_z", "_yz", "_zx", "_xy"]
+
+            # Create fields for available columns in the matrix
+            for idx, suffix in enumerate(suffixes[:dim]):
+                fields_dict[field.lower() + suffix] = lambda f=field, i=idx: self.get(loadcase, f)[:, i]
+
+            # If 3 or more columns, add xyz and its magnitude
+            if dim >= 3:
+                fields_dict[field.lower() + "_xyz"] = lambda f=field: self.get(loadcase, f)[:, :3]
+                fields_dict[field.lower() + "_xyz_mag"] = lambda f=field: np.linalg.norm(self.get(loadcase, f)[:, :3], axis=1)
+
+            # If 6 or more columns, add yz, zx, xy and their magnitude
+            if dim >= 6:
+                fields_dict[field.lower() + "_yz_zx_xy"] = lambda f=field: self.get(loadcase, f)[:, 3:6]
+                fields_dict[field.lower() + "_yz_zx_xy_mag"] = lambda f=field: np.linalg.norm(self.get(loadcase, f)[:, 3:6], axis=1)
+
+            # Specific derived fields for STRESS
+            if field == "STRESS":
+                fields_dict["mises"] = lambda f=field: self.mises(self.get(loadcase, f))
+                fields_dict["principal"] = lambda f=field: self.principal(self.get(loadcase, f))
+                fields_dict["signed_mises"] = lambda f=field: self.signed_mises(self.get(loadcase, f))
+
+            # Specific derived fields for DISPLACEMENT
+            if field == "DISPLACEMENT":
+                fields_dict["displacement"] = lambda f=field: np.linalg.norm(self.get(loadcase, f)[:, :3], axis=1)
+                fields_dict["displacement_xyz"] = lambda f=field: self.get(loadcase, f)[:, :3]
+                fields_dict["rotation_x"] = lambda f=field: self.get(loadcase, f)[:, 3]
+                fields_dict["rotation_y"] = lambda f=field: self.get(loadcase, f)[:, 4]
+                fields_dict["rotation_z"] = lambda f=field: self.get(loadcase, f)[:, 5]
+
+        return fields_dict
 
     def mises(self, stress):
         sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
@@ -30,47 +71,6 @@ class Solution:
         max_absolute_principal_stress = np.max(np.abs(principal_stresses_val), axis=1)
         sign = np.sign(np.sum(principal_stresses_val * (np.abs(principal_stresses_val) == max_absolute_principal_stress[:, None]), axis=1))
         return sign * mises_stress
-
-
-    def list_fields(self, loadcase='1'):
-        fields_dict = {}
-        lc_fields = self.loadcases[str(loadcase)]
-        for field, matrix in lc_fields.items():
-            dim = matrix.shape[1]
-
-            if dim == 6:
-                if field == "STRESS":
-                    fields_dict["mises"] = lambda f=field: self.mises(self.get(loadcase, f))
-                    fields_dict["principal"] = lambda f=field: self.principal(self.get(loadcase, f))
-                    fields_dict["signed_mises"] = lambda f=field: self.signed_mises(self.get(loadcase, f))
-
-                # Check the field name and adjust suffixes accordingly
-                if field == "DISPLACEMENT":
-                    suffixes = ["_x", "_y", "_z"]
-                else:
-                    suffixes = ["_x", "_y", "_z", "_yz", "_zx", "_xy"]
-
-                for idx, suffix in enumerate(suffixes):
-                    fields_dict[field.lower() + suffix] = lambda f=field, i=idx: self.get(loadcase, f)[:,i]
-
-                if field == "DISPLACEMENT":
-                    fields_dict["displacement"] = lambda f=field: np.linalg.norm(self.get(loadcase, f)[:, :3], axis=1)
-                    fields_dict["displacement_xyz"] = lambda f=field: self.get(loadcase, f)[:,:3]
-                    fields_dict["rotation_x"] = lambda f=field: self.get(loadcase, f)[:,3]
-                    fields_dict["rotation_y"] = lambda f=field: self.get(loadcase, f)[:,4]
-                    fields_dict["rotation_z"] = lambda f=field: self.get(loadcase, f)[:,5]
-
-            elif dim == 3:
-                suffixes = ["_x", "_y", "_z"]
-                for idx, suffix in enumerate(suffixes):
-                    fields_dict[field.lower() + suffix] = lambda f=field, i=idx: self.get(loadcase, f)[:,i]
-                fields_dict[field.lower()] = lambda f=field: np.linalg.norm(self.get(loadcase, f), axis=1)
-
-            else:
-                fields_dict[field.lower()] = lambda f=field: self.get(loadcase, f)
-
-        return fields_dict
-
 
     @staticmethod
     def open(filename):
@@ -123,3 +123,8 @@ class Solution:
             for field_name, field_matrix in fields.items():
                 output += f"  - Field: {field_name}, Dimensions: {field_matrix.shape}\n"
         return output
+
+# Example usage
+# sol = Solution.open('path_to_your_file')
+# print(sol)
+# fields = sol.list_fields('1')

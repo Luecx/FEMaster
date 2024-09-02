@@ -12,6 +12,7 @@
 
 #include "reduce_mat_to_vec.h"
 #include <iostream>  // Optional: For debug output
+#include "../core/core.h"
 
 namespace fem { namespace mattools {
 

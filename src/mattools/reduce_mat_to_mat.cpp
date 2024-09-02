@@ -7,11 +7,14 @@
  ******************************************************************************/
 
 #include "reduce_mat_to_mat.h"
+#include "assert.h"
+#include "../core/core.h"
+
 
 namespace fem { namespace mattools {
 
 SparseMatrix reduce_mat_to_mat(const SparseMatrix& matrix, const DynamicVector& b) {
-    assert(matrix.rows() == b.size() && "Matrix row count must match the size of the vector.");
+    runtime_assert(matrix.rows() == b.size(), "Matrix row count must match the size of the vector.");
 
     // Step 1: Create a mapping of old indices to new indices
     std::vector<int> index_map(b.size(), -1);

@@ -112,18 +112,19 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
     }
 #endif
 
-    // use eigen to show all eigenvalues of A:
-    Eigen::SelfAdjointEigenSolver<SparseMatrix> eigen_solver(A);
-    eigen_solver.compute(A);
-    auto eigenvalues_A = eigen_solver.eigenvalues();
-    std::cout << "Eigenvalues of A:" << std::endl;
-    std::cout << eigenvalues_A << std::endl;
+    std::cout << DynamicMatrix(A) << std::endl;
+    std::cout << DynamicMatrix(B) << std::endl;
 
-    Eigen::SelfAdjointEigenSolver<SparseMatrix> eigen_solver_B(B);
-    eigen_solver_B.compute(B);
-    auto eigenvalues_B = eigen_solver_B.eigenvalues();
-    std::cout << "Eigenvalues of B:" << std::endl;
-    std::cout << eigenvalues_B << std::endl;
+    // eigenvalues of a using eigen
+    Eigen::SelfAdjointEigenSolver<SparseMatrix> eigensolver(A);
+    if (eigensolver.info() == Eigen::Success) {
+            std::cout << "The eigenvalues of A are:\n" << eigensolver.eigenvalues() << std::endl;
+    }
+    Eigen::SelfAdjointEigenSolver<SparseMatrix> eigensolver2(B);
+        if (eigensolver2.info() == Eigen::Success) {
+            std::cout << "The eigenvalues of B are:\n" << eigensolver2.eigenvalues() << std::endl;
+    }
+
 
     if (device == CPU) {
         // Start the time
