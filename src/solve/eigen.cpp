@@ -122,8 +122,6 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
     Eigen::SelfAdjointEigenSolver<SparseMatrix> eigen_solver_B(B);
     eigen_solver_B.compute(B);
     auto eigenvalues_B = eigen_solver_B.eigenvalues();
-    std::cout << "B matrix:" << std::endl;
-    std::cout << DynamicMatrix(B) << std::endl;
     std::cout << "Eigenvalues of B:" << std::endl;
     std::cout << eigenvalues_B << std::endl;
 
@@ -139,14 +137,14 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
         using BOpType = Spectra::SparseSymMatProd<Precision>;
 
         OpType op(A, B);
-        BOpType Bop(A);
+        BOpType Bop(B);
 
         // Construct the solver with the specified shift
-        Spectra::SymGEigsShiftSolver<OpType, BOpType, Spectra::GEigsMode::Buckling>
-            geigs(op, Bop, num_eigenvalues, 2 * num_eigenvalues, 1e-4);
+        Spectra::SymGEigsShiftSolver<OpType, BOpType, Spectra::GEigsMode::ShiftInvert>
+            geigs(op, Bop, num_eigenvalues, 2 * num_eigenvalues, 0);
 
         geigs.init();
-        int nconv = geigs.compute(Spectra::SortRule::LargestAlge);
+        int nconv = geigs.compute(Spectra::SortRule::LargestMagn);
 
         if (nconv < num_eigenvalues) {
             logging::warning(true, "Spectra generalized eigenvalue computation failed to converge for all eigenvalues");

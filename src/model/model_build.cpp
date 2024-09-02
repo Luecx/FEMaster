@@ -71,7 +71,7 @@ SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
         return element_mass;
     };
     auto res = mattools::assemble_matrix(elements, indices, lambda);
-    return mattools::lump_matrix(res);
+    return res;
 }
 
 

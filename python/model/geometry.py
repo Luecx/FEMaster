@@ -1,6 +1,5 @@
-from elements import *
+from .elements import *
 import re
-import meshpy.triangle as triangle
 import numpy as np
 from scipy.linalg import svd
 import matplotlib.pyplot as plt
@@ -398,6 +397,18 @@ class Geometry:
 
             geometry = next_geom
         return geometry
+
+    def compute_element_midpoints(self):
+        midpoints = [(0, 0, 0) for _ in range(len(self.elements))]
+        for i, element in enumerate(self.elements):
+            if element is None:
+                continue
+
+            element_node_ids = element.node_ids
+            element_nodes = [self.nodes[node_id] for node_id in element_node_ids]
+            center = np.mean(element_nodes, axis=0)
+            midpoints[i] = center
+        return midpoints
 
     @staticmethod
     def read_input_deck(filename):

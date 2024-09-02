@@ -23,7 +23,7 @@ def compute_histogram(data, num_bins):
 
 class Optimiser:
     def __init__(self, input_deck, desi_set, loadcases, output_folder,
-                 solver_path, method='indirect', device='gpu', exponent=2.5,
+                 solver_path=None, method='indirect', device='gpu', exponent=2.5,
                  min_density=0.01, target_density=0.2, filter_radius=None,
                  symmetry_radius=None, move_limit=0.2, symmetries={}, custom_density_adjustment=None):
 
@@ -37,6 +37,7 @@ class Optimiser:
 
         self.desi_mask = np.full(len(self.geometry.elements), False)
         self.desi_mask[self.geometry.elem_sets[self.desi_set]] = True
+
         mid_points_list = self.geometry.compute_element_midpoints()
         self.mid_points = np.array([mid_points_list[i] for i in range(len(mid_points_list)) if self.desi_mask[i] and mid_points_list[i] is not None])
 
@@ -71,9 +72,6 @@ class Optimiser:
             self.filter_radius = 10 * min_dist
         if self.symmetry_radius is None:
             self.symmetry_radius = 3 * min_dist
-
-        # check if fields are initialized
-        self.check_fields()
 
         # custom density adjustment
         if custom_density_adjustment is None:
@@ -245,6 +243,16 @@ class Optimiser:
         v.write_to_stl(file)
 
     def start(self, iterations):
+
+        print("Starting optimisation")
+        print("   elements in design set: ", np.sum(self.desi_mask))
+        print("   target density        : ", self.target_density)
+        print("   filter radius         : ", self.filter_radius)
+        print("   symmetry radius       : ", self.symmetry_radius)
+        print("   move limit            : ", self.move_limit)
+        print("   symmetry              : ", self.symmetries)
+
+
         # create density
         self.density = np.ones((len(self.desi_mask),))
         self.density[self.desi_mask] *= self.target_density
