@@ -66,8 +66,8 @@ class Optimiser:
             raise ValueError("Design set is not part of geometry")
 
         # compute default radius in case its not specified
-        distances = Filter(coords=self.mid_points, sigma=1e-8).minimal_distance()
-        min_dist = np.min(distances)
+        min_dist = Filter(coords=self.mid_points, sigma=0).minimal_distance()
+        self.closest_distance = min_dist
         if self.filter_radius is None:
             self.filter_radius = 10 * min_dist
         if self.symmetry_radius is None:
@@ -232,7 +232,7 @@ class Optimiser:
         v.set_data_range(0, 1)
         v.set_colorscheme('jet')
         v.coordinate_system()
-        v.set_boundaries()
+        # v.set_boundaries()
         v.set_grid_xy()
         v.mainloop()
 
@@ -249,9 +249,9 @@ class Optimiser:
         print("   target density        : ", self.target_density)
         print("   filter radius         : ", self.filter_radius)
         print("   symmetry radius       : ", self.symmetry_radius)
+        print("   closest distance      : ", self.closest_distance)
         print("   move limit            : ", self.move_limit)
         print("   symmetry              : ", self.symmetries)
-
 
         # create density
         self.density = np.ones((len(self.desi_mask),))
@@ -276,10 +276,8 @@ class Optimiser:
             data = self._run(iter)
             # data = self._read_output(iter)
             run_time = time.time()
-            vols = data[0]['VOLUME'].flatten()        [self.desi_mask]
-            #sens = data[0]['DENS_GRAD'].flatten()     [self.desi_mask]
-            #comp = data[0]['COMPLIANCE_ADJ'].flatten()[self.desi_mask]
-            dens = self.density                       [self.desi_mask]
+            vols = data[0]['VOLUME'].flatten()[self.desi_mask]
+            dens = self.density               [self.desi_mask]
 
             # sensitivities merged from all loadcases
             comp = np.sum([data[i]['COMPLIANCE_ADJ'].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
@@ -291,8 +289,8 @@ class Optimiser:
             sens = np.minimum(0, sens)
             sens = sens / np.max(np.abs(sens))
 
-            l1 = 1e-50
-            l2 = 1e50
+            l1 = 1e-20
+            l2 = 1e20
 
             while (l2-l1) / l1 > 1e-6:
                 lm = (l2 + l1) / 2

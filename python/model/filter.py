@@ -1,18 +1,9 @@
-import numpy as np
-
-#import pycuda if possible
-try:
-    import pycuda.autoinit
-    import pycuda.driver as drv
-    from pycuda.compiler import SourceModule
-    pycuda_available = True
-except:
-    pycuda_available = False
-
-import numpy as np
-import matplotlib.pyplot as plt
-import time
 from .symmetry import apply_symmetry
+
+import numpy as np
+from scipy.spatial import KDTree
+from scipy import sparse
+from scipy.sparse import coo_matrix, find
 from enum import Enum
 
 class FilterFunction(Enum):
@@ -20,274 +11,116 @@ class FilterFunction(Enum):
     GAUSSIAN = 2
     LINEAR   = 3
 
-if pycuda_available:
-    mod = SourceModule("""
-    __global__ void filter_gaussian_kernel(const float* xyz,
-                                      const float* val,
-                                      const int* ar1,
-                                      const int* ar2,
-                                            float* res,
-                                      const float rad,
-                                      const float sig,
-                                      const int n_nodes,
-                                      const int blocks_x,
-                                      const int blocks_y,
-                                      const int blocks_z,
-                                      const int filter_func,
-                                      const int min_values_to_filter) {
-        int n_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-        if(n_id >= n_nodes) return;
-    
-        // extract location
-        float x = xyz[3 * n_id + 0];
-        float y = xyz[3 * n_id + 1];
-        float z = xyz[3 * n_id + 2];
-    
-        // compute the block location
-        int bucket_x = x / rad;
-        int bucket_y = y / rad;
-        int bucket_z = z / rad;
-    
-        float weight = 0;
-        float value = 0;
-        int count = 0;
-        for(int bx = max(bucket_x - 1, 0); bx < min(bucket_x + 2, blocks_x); bx++){
-            for(int by = max(bucket_y - 1, 0); by < min(bucket_y + 2, blocks_y); by++){
-                for(int bz = max(bucket_z - 1, 0); bz < min(bucket_z + 2, blocks_z); bz++){
-                    int id_start = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz];
-                    int id_end   = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz + 1];
-                    for(int i = id_start; i < id_end; i++){
-                        int n_id_2 = ar2[i];
-                        
-                        float x_2 = xyz[3 * n_id_2 + 0];
-                        float y_2 = xyz[3 * n_id_2 + 1];
-                        float z_2 = xyz[3 * n_id_2 + 2];
-    
-                        float dist_squared = (x-x_2) * (x-x_2) + (y-y_2) * (y-y_2) + (z-z_2) * (z-z_2);
-    
-                        if(dist_squared < rad * rad){
-                        
-                        
-                            float wgt;
-                            if(filter_func == 1){
-                                wgt = 1;
-                            }else if(filter_func == 2){
-                                wgt = max(0.0f, sqrt(dist_squared) / sig);
-                            } else if (filter_func == 3){
-                                wgt = exp(- dist_squared / (2 * sig * sig));
-                            }
-                            count ++;
-                            weight += wgt;
-                            value  += wgt * val[n_id_2];
-                        }
-                    }
-                }
-            }
-        }
-        if (count < min_values_to_filter){
-            weight += (min_values_to_filter - count);
-        }
-        res[n_id] = value / weight;
-    }
-    """)
-
-
-    min_dist_mod = SourceModule("""
-    __global__ void min_dist_kernel(
-                                      const float* xyz,
-                                      const int* ar1,
-                                      const int* ar2,
-                                            float* res,
-                                            float rad,
-                                      const int n_nodes,
-                                      const int blocks_x,
-                                      const int blocks_y,
-                                      const int blocks_z) {
-        int n_id = blockIdx.x * blockDim.x + threadIdx.x;
-    
-        if(n_id >= n_nodes) return;
-    
-        // extract location
-        float x = xyz[3 * n_id + 0];
-        float y = xyz[3 * n_id + 1];
-        float z = xyz[3 * n_id + 2];
-    
-        // compute the block location
-        int bucket_x = x / rad;
-        int bucket_y = y / rad;
-        int bucket_z = z / rad;
-    
-        float min_dist = 1e30;
-        for(int bx = max(bucket_x - 1, 0); bx < min(bucket_x + 2, blocks_x); bx++){
-            for(int by = max(bucket_y - 1, 0); by < min(bucket_y + 2, blocks_y); by++){
-                for(int bz = max(bucket_z - 1, 0); bz < min(bucket_z + 2, blocks_z); bz++){
-                    int id_start = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz];
-                    int id_end   = ar1[bx * blocks_y * blocks_z + by * blocks_z + bz + 1];
-                    for(int i = id_start; i < id_end; i++){
-                        int n_id_2 = ar2[i];
-                        
-                        float x_2 = xyz[3 * n_id_2 + 0];
-                        float y_2 = xyz[3 * n_id_2 + 1];
-                        float z_2 = xyz[3 * n_id_2 + 2];
-    
-                        float dist_squared = (x-x_2) * (x-x_2) + (y-y_2) * (y-y_2) + (z-z_2) * (z-z_2);
-                        if (dist_squared > 1e-24)
-                            min_dist = min(dist_squared, min_dist);
-                    }
-                }
-            }
-        }
-        res[n_id] = sqrt(min_dist);
-    }
-    """)
-
 class Filter:
-    def __init__(self, coords, sigma, symmetries={}, filter_func=FilterFunction.GAUSSIAN):
+    def __init__(self, coords, sigma, symmetries={}, filter_func=FilterFunction.GAUSSIAN, epsilon=1e-3):
         self.sigma = sigma
-        self.n_values = len(coords)
+
         self.filter_func = filter_func
         self.symmetries = symmetries
-        if pycuda_available and self.sigma > 0.0:
-            self.kernel = mod.get_function("filter_gaussian_kernel")
-            self.kernel_min_dist = min_dist_mod.get_function("min_dist_kernel")
+        self.epsilon = epsilon
 
-            # precompute whatever possible
-            self.coords        = self._apply_symmetries(coords=coords)
-            self.radius        = self._compute_radius()
-            self.bounds        = self._compute_range()
-            self.grid          = self._compute_grid()
-            self.ar1, self.ar2 = self._compute_buckets()
-        else:
-            pass
+        # Precompute the coordinates with symmetries applied
+        self.n_coords = coords.shape[0]
+        self.coords = self._apply_symmetries(coords=coords)
+        self.n_coords_internal = self.coords.shape[0]
+        self.ghost_factor = self.n_coords_internal // self.n_coords
 
-    def _compute_radius(self):
-        radius = self.sigma
-        if self.filter_func == FilterFunction.LINEAR:
-            radius = self.sigma
+        # Build the KD-Tree
+        self.kd_tree = KDTree(self.coords)
+
+        # Compute the influence radius based on the filter function
+        self.influence_radius = self._compute_influence_radius()
+
+        # Precompute the sparse weight matrix
+        self.weights = self._compute_weights()
+
+    def _compute_influence_radius(self):
         if self.filter_func == FilterFunction.CONSTANT:
             radius = self.sigma
-        if self.filter_func == FilterFunction.GAUSSIAN:
+        elif self.filter_func == FilterFunction.LINEAR:
+            radius = self.sigma
+        elif self.filter_func == FilterFunction.GAUSSIAN:
             radius = 3 * self.sigma
         return radius
 
     def _apply_symmetries(self, coords):
+        # Assume `apply_symmetry` is a function that applies symmetries to the coordinates
         new_coords, _ = apply_symmetry(coords=coords,
-                                                values=np.zeros(self.n_values),
-                                                symmetries=self.symmetries)
+                                       values=np.zeros(self.n_coords),
+                                       symmetries=self.symmetries)
         return new_coords
 
-    def _compute_range(self):
-        min_x, min_y, min_z = np.min(self.coords, axis=0)
-        max_x, max_y, max_z = np.max(self.coords, axis=0)
+    def _compute_weights(self):
 
-        # step 3, adjust xyz so that min_x and so on are at 0,0,0
-        self.coords -= [min_x, min_y, min_z]
-        max_x -= min_x
-        max_y -= min_y
-        max_z -= min_z
-        return (max_x, max_y, max_z)
+        if self.influence_radius == 0:
+            return sparse.eye(self.n_coords_internal)
 
-    def _compute_bucket_count(self):
-        grid_x = int(np.floor(self.bounds[0] / self.radius)) + 1
-        grid_y = int(np.floor(self.bounds[1] / self.radius)) + 1
-        grid_z = int(np.floor(self.bounds[2] / self.radius)) + 1
-        return (grid_x, grid_y, grid_z)
+        rows = []
+        cols = []
+        data = []
 
-    def _compute_grid(self):
-        while np.prod(self._compute_bucket_count()) > len(self.coords) * 10 or np.prod(self._compute_bucket_count()) < 0:
-            self.radius *= 2
-        return self._compute_bucket_count()
+        # For each point, find the neighbors within the influence radius
+        for i, point in enumerate(self.coords[:self.n_coords]):
+            indices = self.kd_tree.query_ball_point(point, self.influence_radius)
+            for j in indices:
+                dist_squared = np.sum((self.coords[i] - self.coords[j]) ** 2)
 
-    def _compute_buckets(self):
-        buckets = np.prod(self.grid)
+                if self.filter_func == FilterFunction.CONSTANT:
+                    weight = 1.0
+                elif self.filter_func == FilterFunction.LINEAR:
+                    weight = max(0.0, (self.sigma - np.sqrt(dist_squared)) / self.sigma)
+                elif self.filter_func == FilterFunction.GAUSSIAN:
+                    weight = np.exp(-dist_squared / (2 * self.sigma**2))
 
-        # step 5, allocate arrays for the grid
-        array_1 = np.zeros(buckets + 1, dtype=int)
-        array_2 = np.zeros(len(self.coords), dtype=int)
+                rows.append(i)
+                cols.append(j)
+                data.append(weight)
 
-        # step 6, compute how many times a bucket is used
-        bucket_node_counts = np.zeros(buckets, dtype=int)
-        for m in range(len(self.coords)):
-            bucket_x = int(self.coords[m, 0] // self.radius)
-            bucket_y = int(self.coords[m, 1] // self.radius)
-            bucket_z = int(self.coords[m, 2] // self.radius)
-            bucket_idx = bucket_x * self.grid[1] * self.grid[2] \
-                       + bucket_y * self.grid[2] \
-                       + bucket_z
-            bucket_node_counts[bucket_idx] += 1
+        # Create a sparse matrix in CSR format
+        sparse_matrix = sparse.coo_matrix((data, (rows, cols)), shape=(self.n_coords, self.n_coords_internal)).tocsr()
 
-        # step 7, create a temporary large matrix which holds the indices
-        max_nodes_per_bucket = np.max(bucket_node_counts)
-        bucket_temp = -np.ones((buckets, max_nodes_per_bucket))
-        for m in range(len(self.coords)):
-            bucket_x = int(self.coords[m, 0] // self.radius)
-            bucket_y = int(self.coords[m, 1] // self.radius)
-            bucket_z = int(self.coords[m, 2] // self.radius)
-            bucket_idx = bucket_x * self.grid[1] * self.grid[2] \
-                       + bucket_y * self.grid[2] \
-                       + bucket_z
-            bucket_node_counts[bucket_idx] -= 1
-            bucket_temp[bucket_idx, bucket_node_counts[bucket_idx]] = m
+        # Normalize rows to sum to 1
+        row_sums = np.array(sparse_matrix.sum(axis=1)).flatten()
+        row_sums[row_sums == 0] = 1.0  # Prevent division by zero
+        scaling_factors = sparse.diags(1.0 / row_sums)
+        sparse_matrix = scaling_factors.dot(sparse_matrix)
 
-        # step 8, convert to the previously declared arrays
-        for m in range(buckets):
-            c = 0
-            while c < max_nodes_per_bucket and bucket_temp[m, c] >= 0:
-                array_2[array_1[m] + c] = bucket_temp[m, c]
-                c += 1
-            array_1[m + 1] = array_1[m] + c
-
-        return array_1, array_2
+        return sparse_matrix
 
     def apply(self, values):
+        """
+        Apply the filter to the values using the precomputed sparse weight matrix.
+        """
 
-        if not pycuda_available or self.sigma == 0.0:
-            return values
+        new_values = np.tile(values, self.ghost_factor)
+        return self.weights.dot(new_values)[:self.n_coords]
 
-        ghost_factor = round(len(self.coords) / self.n_values)
-        values = np.tile(values, ghost_factor)
+    def minimal_distance(self, threshold=1e-6):
+        distances, indices = self.kd_tree.query(self.coords, k=2)
+        distances = distances[:, 1]
+        distances[distances < threshold] = np.inf
+        return np.min(distances)
 
-        # create numpy arrays
-        d_xyz = np.array(self.coords  , dtype=np.float32)
-        d_val = np.array(values       , dtype=np.float32)
-        d_ar1 = np.array(self.ar1     , dtype=np.int32)
-        d_ar2 = np.array(self.ar2     , dtype=np.int32)
-        d_res = np.zeros(self.n_values, dtype=np.float32)
 
-        block_size = (256, 1, 1)
-        grid_size = (int(np.ceil(self.n_values / block_size[0])), 1, 1)
 
-        self.kernel(drv.In(d_xyz),
-                    drv.In(d_val),
-                    drv.In(d_ar1),
-                    drv.In(d_ar2),
-                    drv.Out(d_res),
-                    np.float32(self.radius ), np.float32(self.sigma  ), np.int32(self.n_values),
-                    np.int32  (self.grid[0]), np.int32  (self.grid[1]), np.int32(self.grid[2]  ),
-                    np.int32(self.filter_func.value), np.int32(0),
-                    block=block_size, grid=grid_size)
-        return d_res
-
-    def minimal_distance(self):
-        if not pycuda_available or self.sigma == 0.0:
-            return 0
-
-        d_xyz = np.array(self.coords  , dtype=np.float32)
-        d_ar1 = np.array(self.ar1     , dtype=np.int32)
-        d_ar2 = np.array(self.ar2     , dtype=np.int32)
-        d_res = np.zeros(self.n_values, dtype=np.float32)
-
-        block_size = (256, 1, 1)
-        grid_size  = (int(np.ceil(self.n_values / block_size[0])), 1, 1)
-
-        self.kernel_min_dist(drv.In(d_xyz),
-                    drv.In(d_ar1),
-                    drv.In(d_ar2),
-                    drv.Out(d_res),
-                    np.float32(self.radius),
-                    np.int32(self.n_values),
-                    np.int32(self.grid[0]), np.int32(self.grid[1]), np.int32(self.grid[2]),
-                    block=block_size, grid=grid_size)
-
-        return d_res;
+        # """
+        # Compute the minimal distance to the nearest neighbor for each point using the weight matrix.
+        # Only considers pairs where row != col.
+        # """
+        # # Extract the non-zero entries of the weight matrix
+        # rows, cols, data = find(self.weights)
+        #
+        # # Filter out entries where row == col
+        # valid_mask = rows != cols
+        # filtered_rows = rows[valid_mask]
+        # filtered_cols = cols[valid_mask]
+        # filtered_data = data[valid_mask]
+        #
+        # # Find the index of the maximum weight after filtering
+        # idx_max = np.argmax(filtered_data)
+        # max_row = filtered_rows[idx_max]
+        # max_col = filtered_cols[idx_max]
+        #
+        # # Compute the Euclidean distance between the corresponding coordinates
+        # dist = np.linalg.norm(self.coords[max_row] - self.coords[max_col])
+        # return dist
