@@ -4,6 +4,10 @@ namespace fem {
 
 namespace model {
 
+void Model::add_coupling(ID master_node, const std::string &slave_set, Dofs coupled_dofs, CouplingType type) {
+    couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
+}
+
 void Model::activate_node_set(const std::string &name) {
     node_sets.activate(name);
 }

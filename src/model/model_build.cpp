@@ -29,6 +29,13 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
             }
         }
     }
+
+    // go through all couplings and mask the master dof
+    for (auto &c: this->couplings) {
+        ID master_id = c.master_node;
+        mask(master_id) |= c.master_dofs()(0);
+    }
+
     auto res = mattools::numerate_dofs(mask);
     return res;
 }

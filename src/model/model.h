@@ -15,6 +15,7 @@ struct Model {
     // nodes and elements
     NodeData node_coords;
     std::vector<ElementPtr> elements{};
+    std::vector<Coupling>   couplings{};
 
     // sets to group nodes and elements
     Sets<std::vector<ID>> node_sets{"NALL"};
@@ -52,6 +53,9 @@ struct Model {
     inline void set_node(ID id, Precision x, Precision y, Precision z = 0);
     template<typename T, typename... Args>
     inline void set_element(ID id, Args&&... args);
+
+    // add couplings
+    inline void add_coupling(ID master_node, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
 
     // set management
     void activate_node_set   (const std::string &name);

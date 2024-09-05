@@ -99,15 +99,35 @@ else
     endif
 endif
 
-MKL_LIBS := \
-    -Wl,--start-group \
-    $(MKL_PATH)/libmkl_intel_lp64.a \
-    $(MKL_PATH)/libmkl_sequential.a \
-    $(MKL_PATH)/libmkl_core.a \
-    -Wl,--end-group \
-    -lpthread \
-    -lm \
-    -ldl
+COMPILER_VERSION = $(shell $(CXX) --version | head -n 1)
+# check if "clang" is inside the compiler version string
+ifeq (,$(findstring clang,$(COMPILER_VERSION)))
+	COMPILER = gcc
+else
+	COMPILER = clang
+endif
+
+ifeq ($(COMPILER), clang)
+    # Clang specific linker flags
+    MKL_LIBS := \
+        -Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
+        -Wl,-force_load,$(MKL_PATH)/libmkl_sequential.a \
+        -Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
+        -lpthread \
+        -lm \
+        -ldl
+else
+    # Assume GCC specific linker flags
+    MKL_LIBS := \
+        -Wl,--start-group \
+        $(MKL_PATH)/libmkl_intel_lp64.a \
+        $(MKL_PATH)/libmkl_sequential.a \
+        $(MKL_PATH)/libmkl_core.a \
+        -Wl,--end-group \
+        -lpthread \
+        -lm \
+        -ldl
+endif
 
 #===============================================================
 # CUDA Libraries
@@ -159,7 +179,7 @@ EXE_TST  := $(BINDIR)/test_suite.exe
 show_flags:
 	@echo "Compilation Flags:"
 	@echo "-------------------"
-	@echo "C++ Compiler : $(CXX)"
+	@echo "C++ Compiler : $(COMPILER_VERSION)"
 	@echo "NVCC Compiler: $(NVCC)"
 	@echo "CXXFLAGS     : $(CXXFLAGS)"
 	@echo "NVCCFLAGS    : $(NVCCFLAGS)"
