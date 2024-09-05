@@ -36,7 +36,7 @@ template<size_t B>
 using SemiStaticMatrix    = Eigen::Matrix<Precision, Eigen::Dynamic, B             >;
 using DynamicMatrix       = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
 using MapMatrix           = Eigen::Map<DynamicMatrix>;
-using SparseMatrix        = Eigen::SparseMatrix<Precision>;
+using SparseMatrix        = Eigen::SparseMatrix<Precision, Eigen::ColMajor>;
 using Triplet             = Eigen::Triplet<Precision>;
 using TripletList         = std::vector<Triplet>;
 
@@ -52,7 +52,8 @@ using BooleanMatrix = Eigen::Matrix<bool     , Eigen::Dynamic, Eigen::Dynamic>;
 
 using NodeData      = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
 using ElementData   = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
-using Dofs          = Eigen::Matrix<bool     , 6             , 1             >;
+
+using Dofs          = Eigen::Matrix<bool     , 1             , 6             >;
 
 using ElDofs       = Eigen::Matrix<bool, 1, 6>;     ///< Element DOFs: 1 row, 6 columns
 using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, 6>; ///< System DOFs: N rows, 6 columns

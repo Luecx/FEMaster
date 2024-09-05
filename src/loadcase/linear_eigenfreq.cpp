@@ -68,7 +68,7 @@ void fem::loadcase::LinearEigenfrequency::run() {
 
     // Step 2: Build the support matrix for the constraints
     auto supp_mat = Timer::measure(
-        [&]() { return this->m_model->build_constraint_matrix(supps); },
+        [&]() { return this->m_model->build_support_matrix(supps); },
         "building support vector"
     );
 

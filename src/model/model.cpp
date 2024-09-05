@@ -4,7 +4,9 @@ namespace fem {
 
 namespace model {
 
-void Model::add_coupling(ID master_node, const std::string &slave_set, Dofs coupled_dofs, CouplingType type) {
+void Model::add_coupling(const std::string &master_set, const std::string &slave_set, Dofs coupled_dofs, CouplingType type) {
+    logging::error(node_sets.get(master_set).size() == 1, "Master set must contain exactly one node");
+    ID master_node = node_sets.get(master_set)[0];
     couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
 }
 

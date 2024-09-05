@@ -33,14 +33,18 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
     // go through all couplings and mask the master dof
     for (auto &c: this->couplings) {
         ID master_id = c.master_node;
-        mask(master_id) |= c.master_dofs()(0);
+        auto master_dofs = c.master_dofs(mask);
+        for (ID dof = 0; dof < 6; dof++) {
+            mask(master_id, dof) |= master_dofs(0, dof);
+        }
     }
 
     auto res = mattools::numerate_dofs(mask);
+
     return res;
 }
 
-NodeData Model::build_constraint_matrix(std::vector<std::string> supp_sets) {
+NodeData Model::build_support_matrix(std::vector<std::string> supp_sets) {
     NodeData disp_matrix{this->max_nodes, 6};
     disp_matrix.fill(std::numeric_limits<Precision>::quiet_NaN());
 
@@ -61,6 +65,28 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     }
     return load_matrix;
 }
+
+SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices) {
+    TripletList triplets;
+    int rows = 0;
+    for (auto &c: this->couplings) {
+        auto coupling_triplets = c.get_equations(indices, node_coords, rows);
+        for (auto &t: coupling_triplets) {
+            triplets.push_back(t);
+            rows = std::max(rows, t.row());
+        }
+    }
+
+    if (rows == 0) {
+        return SparseMatrix{0, indices.maxCoeff() + 1};
+    }
+
+    SparseMatrix matrix{rows + 1, indices.maxCoeff() + 1};
+    matrix.setFromTriplets(triplets.begin(), triplets.end());
+    return matrix;
+}
+
+
 
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData stiffness_scalar) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {

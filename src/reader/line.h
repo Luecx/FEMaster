@@ -70,6 +70,10 @@ struct Line{
     template <typename T>
     T require(const std::string& key) const;
 
+    // Variadic require() function to accept multiple keys
+    template <typename T, typename... Args>
+    T require(const std::string& first_key, const Args&... other_keys) const;
+
     // "parse" function to get a value from the keys or return a default value if it does not exist.
     template <typename T>
     T parse(const std::string& key, const T& default_value) const;
@@ -129,6 +133,25 @@ T Line::require(const std::string& key) const {
     auto it = m_keys.find(key);
     logging::error(it != m_keys.end(), "Key does not exist: " + key);
     return convert_to<T>(it->second);
+}
+
+// Variadic require() function to accept multiple keys
+template <typename T, typename... Args>
+T Line::require(const std::string& first_key, const Args&... other_keys) const {
+    logging::error(m_type == KEYWORD_LINE, "The 'require' function can only be used with KEYWORD_LINE type.");
+
+    auto it = m_keys.find(first_key);
+
+    if (it != m_keys.end()) {
+        return convert_to<T>(it->second);  // Found the first key, return its value
+    } else if constexpr (sizeof...(other_keys) > 0) {
+        // Recursively check the next keys
+        return require<T>(other_keys...);
+    } else {
+        // If none of the keys exist, throw an error
+        logging::error(false, "None of the provided keys exist: " + first_key);
+        return T();  // Return a default-constructed value (this line should never be reached)
+    }
 }
 
 }

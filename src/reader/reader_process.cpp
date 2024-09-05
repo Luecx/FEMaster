@@ -39,6 +39,8 @@ void Reader::process() {
             process_solid_section();
         } else if (m_current_line.command() == "SUPPORT") {
             process_support();
+        } else if (m_current_line.command() == "COUPLING") {
+            process_coupling();
         } else if (m_current_line.command() == "CLOAD") {
             process_cload();
         } else if (m_current_line.command() == "VLOAD") {
@@ -73,105 +75,64 @@ void Reader::process_elements() {
 
     auto type = m_current_line.require<std::string>("TYPE");
 
+    auto gather_values = [&](int req_values) -> std::vector<ID> {
+        std::vector<ID> values;
+        for(int i = 1; i < m_current_line.values().size(); i++){
+            values.push_back(std::stoi(m_current_line.values()[i]));
+        }
+        while(values.size() < req_values){
+            next_line();
+            for(const auto& val : m_current_line.values()){
+                values.push_back(std::stoi(val));
+            }
+        }
+        return values;
+    };
+
     while (next_line().type() == DATA_LINE) {
         int id = std::stoi(m_current_line.values()[0]);
         if (type == "C3D4") {
-            m_model->set_element<fem::model::C3D4>(id,
-                                                    std::stoi(m_current_line.values()[1]),
-                                                    std::stoi(m_current_line.values()[2]),
-                                                    std::stoi(m_current_line.values()[3]),
-                                                    std::stoi(m_current_line.values()[4]));
+            auto values = gather_values(4);
+            m_model->set_element<fem::model::C3D4>(id, values[0], values[1], values[2], values[3]);
         } else if (type == "C3D6") {
+            auto values = gather_values(6);
             m_model->set_element<fem::model::C3D6>(id,
-                                                   std::stoi(m_current_line.values()[1]),
-                                                   std::stoi(m_current_line.values()[2]),
-                                                   std::stoi(m_current_line.values()[3]),
-                                                   std::stoi(m_current_line.values()[4]),
-                                                   std::stoi(m_current_line.values()[5]),
-                                                   std::stoi(m_current_line.values()[6]));
+                                                   values[0], values[1], values[2], values[3],
+                                                   values[4], values[5]);
         } else if (type == "C3D8") {
+            auto values = gather_values(8);
             m_model->set_element<fem::model::C3D8>(id,
-                                                   std::stoi(m_current_line.values()[1]),
-                                                   std::stoi(m_current_line.values()[2]),
-                                                   std::stoi(m_current_line.values()[3]),
-                                                   std::stoi(m_current_line.values()[4]),
-                                                   std::stoi(m_current_line.values()[5]),
-                                                   std::stoi(m_current_line.values()[6]),
-                                                   std::stoi(m_current_line.values()[7]),
-                                                   std::stoi(m_current_line.values()[8]));
+                                                   values[0], values[1], values[2], values[3],
+                                                   values[4], values[5], values[6], values[7]);
         } else if (type == "C3D10") {
+            auto values = gather_values(10);
             m_model->set_element<fem::model::C3D10>(id,
-                                                   std::stoi(m_current_line.values()[1]),
-                                                   std::stoi(m_current_line.values()[2]),
-                                                   std::stoi(m_current_line.values()[3]),
-                                                   std::stoi(m_current_line.values()[4]),
-                                                   std::stoi(m_current_line.values()[5]),
-                                                   std::stoi(m_current_line.values()[6]),
-                                                   std::stoi(m_current_line.values()[7]),
-                                                   std::stoi(m_current_line.values()[8]),
-                                                   std::stoi(m_current_line.values()[9]),
-                                                   std::stoi(m_current_line.values()[10]));
+                                                    values[0], values[1], values[2], values[3],
+                                                    values[4], values[5], values[6], values[7],
+                                                    values[8], values[9]);
         } else if (type == "C3D15") {
+            auto values = gather_values(15);
             m_model->set_element<fem::model::C3D15>(id,
-                                                    std::stoi(m_current_line.values()[1]),
-                                                    std::stoi(m_current_line.values()[2]),
-                                                    std::stoi(m_current_line.values()[3]),
-                                                    std::stoi(m_current_line.values()[4]),
-                                                    std::stoi(m_current_line.values()[5]),
-                                                    std::stoi(m_current_line.values()[6]),
-                                                    std::stoi(m_current_line.values()[7]),
-                                                    std::stoi(m_current_line.values()[8]),
-                                                    std::stoi(m_current_line.values()[9]),
-                                                    std::stoi(m_current_line.values()[10]),
-                                                    std::stoi(m_current_line.values()[11]),
-                                                    std::stoi(m_current_line.values()[12]),
-                                                    std::stoi(m_current_line.values()[13]),
-                                                    std::stoi(m_current_line.values()[14]),
-                                                    std::stoi(m_current_line.values()[15]));
+                                                    values[0], values[1], values[2], values[3],
+                                                    values[4], values[5], values[6], values[7],
+                                                    values[8], values[9], values[10], values[11],
+                                                    values[12], values[13], values[14]);
         } else if (type == "C3D20") {
+            auto values = gather_values(20);
             m_model->set_element<fem::model::C3D20>(id,
-                                                    std::stoi(m_current_line.values()[1]),
-                                                    std::stoi(m_current_line.values()[2]),
-                                                    std::stoi(m_current_line.values()[3]),
-                                                    std::stoi(m_current_line.values()[4]),
-                                                    std::stoi(m_current_line.values()[5]),
-                                                    std::stoi(m_current_line.values()[6]),
-                                                    std::stoi(m_current_line.values()[7]),
-                                                    std::stoi(m_current_line.values()[8]),
-                                                    std::stoi(m_current_line.values()[9]),
-                                                    std::stoi(m_current_line.values()[10]),
-                                                    std::stoi(m_current_line.values()[11]),
-                                                    std::stoi(m_current_line.values()[12]),
-                                                    std::stoi(m_current_line.values()[13]),
-                                                    std::stoi(m_current_line.values()[14]),
-                                                    std::stoi(m_current_line.values()[15]),
-                                                    std::stoi(m_current_line.values()[16]),
-                                                    std::stoi(m_current_line.values()[17]),
-                                                    std::stoi(m_current_line.values()[18]),
-                                                    std::stoi(m_current_line.values()[19]),
-                                                    std::stoi(m_current_line.values()[20]));
+                                                    values[0], values[1], values[2], values[3],
+                                                    values[4], values[5], values[6], values[7],
+                                                    values[8], values[9], values[10], values[11],
+                                                    values[12], values[13], values[14], values[15],
+                                                    values[16], values[17], values[18], values[19]);
         } else if (type == "C3D20R") {
+            auto values = gather_values(20);
             m_model->set_element<fem::model::C3D20R>(id,
-                                                    std::stoi(m_current_line.values()[1]),
-                                                    std::stoi(m_current_line.values()[2]),
-                                                    std::stoi(m_current_line.values()[3]),
-                                                    std::stoi(m_current_line.values()[4]),
-                                                    std::stoi(m_current_line.values()[5]),
-                                                    std::stoi(m_current_line.values()[6]),
-                                                    std::stoi(m_current_line.values()[7]),
-                                                    std::stoi(m_current_line.values()[8]),
-                                                    std::stoi(m_current_line.values()[9]),
-                                                    std::stoi(m_current_line.values()[10]),
-                                                    std::stoi(m_current_line.values()[11]),
-                                                    std::stoi(m_current_line.values()[12]),
-                                                    std::stoi(m_current_line.values()[13]),
-                                                    std::stoi(m_current_line.values()[14]),
-                                                    std::stoi(m_current_line.values()[15]),
-                                                    std::stoi(m_current_line.values()[16]),
-                                                    std::stoi(m_current_line.values()[17]),
-                                                    std::stoi(m_current_line.values()[18]),
-                                                    std::stoi(m_current_line.values()[19]),
-                                                    std::stoi(m_current_line.values()[20]));
+                                                    values[0], values[1], values[2], values[3],
+                                                    values[4], values[5], values[6], values[7],
+                                                    values[8], values[9], values[10], values[11],
+                                                    values[12], values[13], values[14], values[15],
+                                                    values[16], values[17], values[18], values[19]);
         } else {
             logging::warning(false, "Unknown element type ", type);
             return;
@@ -181,7 +142,8 @@ void Reader::process_elements() {
 
 void Reader::process_nset() {
     // read NSET, NAME=xyz
-    m_model->activate_node_set(m_current_line.require<std::string>("NAME"));
+    auto setname = m_current_line.require<std::string>("NAME", "NSET");
+    m_model->activate_node_set(setname);
     while (next_line().type() == DATA_LINE) {
         for (const auto& id : m_current_line.values()) {
             m_model->active_nodeset().push_back(std::stoi(id));
@@ -191,7 +153,7 @@ void Reader::process_nset() {
 
 void Reader::process_elset() {
     // read ELSET, NAME=xyz
-    m_model->activate_element_set(m_current_line.require<std::string>("NAME"));
+    m_model->activate_element_set(m_current_line.require<std::string>("NAME", "ELSET"));
     while (next_line().type() == DATA_LINE) {
         for (const auto& id : m_current_line.values()) {
             m_model->active_elemset().push_back(std::stoi(id));
@@ -209,7 +171,7 @@ void Reader::process_elastic() {
     // read ELASTIC, TYPE=xyz
     auto type = m_current_line.require<std::string>("TYPE");
     next_line();
-    if (type == "ISO") {
+    if (type == "ISO" || type == "ISOTROPIC") {
         auto E = std::stof(m_current_line.values()[0]);
         auto n = std::stof(m_current_line.values()[1]);
         m_model->active_material().set_elasticity<fem::material::IsotropicElasticity>(E, n);
@@ -226,7 +188,7 @@ void Reader::process_density() {
 }
 
 void Reader::process_solid_section() {
-    auto mat = m_current_line.require<std::string>("MAT");
+    auto mat = m_current_line.require<std::string>("MAT", "MATERIAL");
     auto els = m_current_line.require<std::string>("ELSET");
     m_model->solid_section(els, mat);
     next_line();
@@ -282,18 +244,49 @@ void Reader::process_support() {
 
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
-        auto lx  = m_current_line.values()[1].empty() ? NAN : std::stof(m_current_line.values()[1]);
-        auto ly  = m_current_line.values()[2].empty() ? NAN : std::stof(m_current_line.values()[2]);
-        auto lz  = m_current_line.values().size() > 3
-                       ? m_current_line.values()[3].empty() ? NAN : std::stof(m_current_line.values()[3])
-                       : NAN;
+        StaticVector<6> constraint;
+
+        for(int i = 0; i < 6; i++) {
+            bool is_given = i < m_current_line.values().size() - 1;
+            bool is_empty = !is_given || m_current_line.values()[i + 1].empty();
+
+            if (is_given && !is_empty) {
+                constraint(i) = std::stof(m_current_line.values()[i + 1]);
+            } else {
+                constraint(i) = NAN;
+            }
+        }
 
         if (m_model->nodesets().has(str)) {
-            m_model->add_support(str, StaticVector<3>(lx, ly, lz));
+            m_model->add_support(str, constraint);
         } else {
-            m_model->add_support(std::stoi(str), StaticVector<3>(lx, ly, lz));
+            m_model->add_support(std::stoi(str), constraint);
         }
     }
+}
+
+void Reader::process_coupling() {
+    // read COUPLING, MASTER=xyz, SLAVE=xyz, DOFS=xyz, TYPE=xyz
+    auto master_set = m_current_line.require<std::string>("MASTER");
+    auto slave_set  = m_current_line.require<std::string>("SLAVE");
+    auto type       = m_current_line.require<std::string>("TYPE");
+
+    next_line();
+
+    Dofs dof_mask {false, false, false, false, false, false};
+    for (int i = 0; i < 6; i++) {
+        if (i < m_current_line.values().size()) {
+            dof_mask(i) = std::stof(m_current_line.values()[i]) > 0;
+        }
+    }
+
+    if (type == "KINEMATIC") {
+        m_model->add_coupling(master_set, slave_set, dof_mask, CouplingType::KINEMATIC);
+    } else {
+        logging::warning(false, "Unknown coupling type: ", type);
+        logging::warning(false, "    Known coupling types: KINEMATIC");
+    }
+    next_line();
 }
 
 void Reader::process_loadcase() {

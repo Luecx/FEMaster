@@ -231,7 +231,7 @@ class Viewer:
                     cell = vtk.vtkQuadraticTetra()
                 elif cellType == 'C3D15':
                     cell = vtk.vtkQuadraticWedge()
-                elif cellType == 'C3D20':
+                elif cellType == 'C3D20' or cellType == 'C3D20R':
                     cell = vtk.vtkQuadraticHexahedron()
                 elif cellType == 'C2D3':
                     cell = vtk.vtkTriangle()

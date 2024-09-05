@@ -3,6 +3,7 @@
 #include "../core/core.h"
 #include "element.h"
 #include "sets.h"
+#include "../constraints/coupling.h"
 
 namespace fem {
 
@@ -55,7 +56,7 @@ struct Model {
     inline void set_element(ID id, Args&&... args);
 
     // add couplings
-    inline void add_coupling(ID master_node, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
+    void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
 
     // set management
     void activate_node_set   (const std::string &name);
@@ -99,10 +100,11 @@ struct Model {
     SystemDofIds  build_unconstrained_index_matrix();
 
     // building constraints and loads for every node including non existing ones
-    NodeData    build_constraint_matrix   (std::vector<std::string> support_sets = {"SALL"});
-    NodeData    build_load_matrix         (std::vector<std::string> load_sets = {"LALL"});
+    NodeData    build_support_matrix (std::vector<std::string> support_sets = {"SALL"});
+    NodeData    build_load_matrix    (std::vector<std::string> load_sets = {"LALL"});
 
     // matrices
+    SparseMatrix  build_constraint_matrix   (SystemDofIds& indices);
     SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 

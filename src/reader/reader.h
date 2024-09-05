@@ -42,6 +42,7 @@ class Reader {
     void process_cload();
     void process_vload();
     void process_support();
+    void process_coupling();
 
     void process_loadcase();
     void process_loadcase_linear_static();
