@@ -1,11 +1,7 @@
 
 # import geometry and solution in the same folder
-try:
-    from geometry import Geometry
-    from solution import Solution
-except:
-    from .geometry import Geometry
-    from .solution import Solution
+from .geometry import Geometry
+from .solution import Solution
 
 import vtk
 import numpy as np

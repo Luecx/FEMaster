@@ -70,10 +70,10 @@ public:
                             dr2 = -dx;
                         }
 
-                        triplets.push_back(Triplet(row, dof_slave   ,  1.0));
-                        triplets.push_back(Triplet(row, dof_master_u, -1.0));
-                        triplets.push_back(Triplet(row, dof_master_r1, dr1));
-                        triplets.push_back(Triplet(row, dof_master_r2, dr2));
+                        triplets.push_back(Triplet(row, dof_slave   , -1.0));
+                        triplets.push_back(Triplet(row, dof_master_u,  1.0));
+                        triplets.push_back(Triplet(row, dof_master_r1,-dr1));
+                        triplets.push_back(Triplet(row, dof_master_r2,-dr2));
                     }
 
                     row += 1;

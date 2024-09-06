@@ -180,11 +180,18 @@ void fem::loadcase::LinearStatic::run() {
                     full_triplets.push_back(Triplet(it.col(), it.row() + m, it.value()));
                 }
             }
+
+            // insert regularization term at the bottom right
+            for (int i = 0; i < n; i++) {
+                full_triplets.push_back(Triplet(m + i, m + i, -1e-6));
+            }
             full_matrix.setFromTriplets(full_triplets.begin(), full_triplets.end());
             return full_matrix;
          },
         "assembling full lhs matrix including stiffness and Lagrangian"
     );
+
+
 
     auto active_lagrange_rhs = DynamicVector::Zero(n);  // Lagrangian RHS initialized to zero
     auto active_lagrange_lhs = DynamicVector::Constant(n, std::numeric_limits<Precision>::quiet_NaN());  // LHS for Lagrangian

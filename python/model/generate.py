@@ -4,12 +4,8 @@ import numpy as np
 
 from spring_sim import SpringSimulation
 
-try:
-    from .geometry import Geometry
-    from .solution import Solution
-except ImportError:
-    from geometry import Geometry
-    from solution import Solution
+from geometry import Geometry
+from solution import Solution
 from scipy.optimize import curve_fit
 
 
