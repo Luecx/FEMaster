@@ -51,8 +51,9 @@ struct LinearStatic : public LoadCase {
     std::vector<std::string> loads;  /**< List of loads applied to the model. */
 
     solver::SolverDevice device = solver::CPU;    /**< Solver device used for computation (e.g., CPU, GPU). */
-    solver::SolverMethod method = solver::INDIRECT; /**< Solver method (e.g., DIRECT, INDIRECT). */
+    solver::SolverMethod method = solver::DIRECT; /**< Solver method (e.g., DIRECT, INDIRECT). */
 
+    std::string stiffness_file;
 public:
 
     //-------------------------------------------------------------------------

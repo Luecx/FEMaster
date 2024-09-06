@@ -276,6 +276,18 @@ void fem::loadcase::LinearStatic::run() {
         "Interpolating stress and strain at nodes"
     );
 
+    // output stiffness if file isnt empty. report row, col, value
+    if (!stiffness_file.empty()) {
+        std::ofstream file(stiffness_file);
+        for (int k = 0; k < active_stiffness_mat.outerSize(); ++k) {
+            for (SparseMatrix::InnerIterator it(active_stiffness_mat, k); it; ++it) {
+                file << it.row() << " " << it.col() << " " << it.value() << std::endl;
+            }
+        }
+        file.close();
+    }
+
+
     // Write results to the writer
     m_writer->add_loadcase(m_id);
     m_writer->write_eigen_matrix(global_disp_mat, "DISPLACEMENT");

@@ -49,9 +49,11 @@ class Reader {
     void process_loadcase_linear_static_topo();
     void process_loadcase_eigenfreq();
 
-    void process_loadcase_linear_static_support     (fem::loadcase::LinearStatic* lc);
-    void process_loadcase_linear_static_load        (fem::loadcase::LinearStatic* lc);
-    void process_loadcase_linear_static_solver      (fem::loadcase::LinearStatic* lc);
+    void process_loadcase_linear_static_support          (fem::loadcase::LinearStatic* lc);
+    void process_loadcase_linear_static_load             (fem::loadcase::LinearStatic* lc);
+    void process_loadcase_linear_static_solver           (fem::loadcase::LinearStatic* lc);
+    void process_loadcase_linear_static_request_stiffness(fem::loadcase::LinearStatic* lc);
+
 
     void process_loadcase_linear_static_topo_density (fem::loadcase::LinearStaticTopo* lc);
     void process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc);

@@ -22,6 +22,8 @@ class Element:
 
 
 class C2D3(Element):
+    num_nodes = 3
+
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C2D3')
 
@@ -60,6 +62,7 @@ class C2D3(Element):
             geometry.add_element(element_type='C2D3', node_ids=[n3, n6, n5])
 
 class C2D4(Element):
+    num_nodes = 4
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C2D4')
 
@@ -92,6 +95,7 @@ class C2D4(Element):
         geometry.add_element(element_type='C2D4', node_ids=[n8, nm, n7, n4])
 
 class C3D4(Element):
+    num_nodes = 4
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C3D4')
 
@@ -133,6 +137,7 @@ class C3D4(Element):
         geometry.add_element(element_type='C3D4', node_ids=[n7, n6, n10, n5])
 
 class C2D6(Element):
+    num_nodes = 6
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C2D6')
 
@@ -149,6 +154,7 @@ class C2D6(Element):
 
 
 class C2D8(Element):
+    num_nodes = 8
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C2D8')
 
@@ -166,6 +172,7 @@ class C2D8(Element):
                 (self.node_ids[3], self.node_ids[7])]
 
 class C3D6(Element):
+    num_nodes = 6
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C3D6')
 
@@ -217,6 +224,7 @@ class C3D6(Element):
         geometry.add_element(element_type='C3D6', node_ids=[n9, n7, n_center1, n12, n10, n_center2])
 
 class C3D8(Element):
+    num_nodes = 8
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C3D8')
 
@@ -280,6 +288,7 @@ class C3D8(Element):
 
 
 class C3D10(Element):
+    num_nodes = 10
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C3D10')
 
@@ -303,6 +312,7 @@ class C3D10(Element):
                 (self.node_ids[7], self.node_ids[4])]
 
 class C3D15(Element):
+    num_nodes = 15
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C3D15')
 
@@ -333,6 +343,7 @@ class C3D15(Element):
                 (self.node_ids[11], self.node_ids[6])]
 
 class C3D20(Element):
+    num_nodes = 20
     def __init__(self, element_id, node_ids):
         super().__init__(element_id, node_ids, 'C3D20')
 

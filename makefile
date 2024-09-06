@@ -84,7 +84,7 @@ endif
 # MKL Library Paths and Libraries
 #===============================================================
 
-MKLROOT   ?= $(shell echo ${MKLROOT})
+# MKLROOT   ?= $(shell echo ${MKLROOT})
 
 # Define MKL paths for different OS
 ifeq ($(OS),Windows_NT)

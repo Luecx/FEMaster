@@ -317,7 +317,9 @@ void Reader::process_loadcase_linear_static() {
             process_loadcase_linear_static_load(&lc);
         } else if (m_current_line.command() == "SOLVER") {
             process_loadcase_linear_static_solver(&lc);
-        } else if (m_current_line.command() == "END") {
+        } else if (m_current_line.command() == "REQUESTSTIFFNESS") {
+            process_loadcase_linear_static_request_stiffness(&lc);
+        }else if (m_current_line.command() == "END") {
             next_line();
             break;
         } else {
@@ -406,6 +408,15 @@ void Reader::process_loadcase_linear_static_solver(fem::loadcase::LinearStatic* 
     }
     if(m_current_line.has_key("METHOD")){
         lc->method = m_current_line.parse<std::string>("METHOD", "DIRECT") == "DIRECT" ? solver::DIRECT : solver::INDIRECT;
+    }
+    next_line();
+}
+
+void Reader::process_loadcase_linear_static_request_stiffness(fem::loadcase::LinearStatic* lc) {
+    if(m_current_line.has_key("FILE")){
+        lc->stiffness_file = m_current_line.parse<std::string>("FILE", "");
+    } else {
+        lc->stiffness_file = "stiffness_" + std::to_string(lc->id()) + ".txt";
     }
     next_line();
 }

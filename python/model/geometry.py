@@ -40,6 +40,7 @@ class Geometry:
             'C3D10': C3D10,
             'C3D15': C3D15,
             'C3D20': C3D20,
+            'C3D20R': C3D20,
         }
         if element_type not in element_classes:
             raise ValueError(f"Unsupported element type: {element_type}")
@@ -424,6 +425,7 @@ class Geometry:
             'C3D10': C3D10,
             'C3D15': C3D15,
             'C3D20': C3D20,
+            'C3D20R': C3D20,
         }
 
         with open(filename, 'r') as file:
@@ -437,10 +439,12 @@ class Geometry:
         key_word = None
         current_nset = None
         current_elset = None
+        index = 0
 
-        for line in lines:
-            line = line.strip()
+        while index < len(lines):
+            line = lines[index].strip()
             if not line or line.startswith('**'):
+                index += 1
                 continue
             if line.startswith('*'):
                 parts = re.split(r'[,=\s]+', line)
@@ -460,8 +464,10 @@ class Geometry:
                     geometry.add_element_set(current_elset)
                 else:
                     key_word = None
+                index += 1
             else:
                 if key_word is None:
+                    index += 1
                     continue
                 data = parse_line(line)
                 if key_word == '*NODE':
@@ -470,7 +476,16 @@ class Geometry:
                     if current_nset:
                         geometry.add_node_to_set(current_nset, int(node_id))
                 elif key_word == '*ELEMENT' and elem_type in element_classes:
-                    element_id, *node_ids = map(int, data)
+                    required_nodes = element_classes[elem_type].num_nodes
+                    element_data = data
+
+                    # Read more lines if the number of nodes is not enough
+                    while len(element_data) - 1 < required_nodes:
+                        index += 1
+                        extra_data = parse_line(lines[index].strip())
+                        element_data.extend(extra_data)
+
+                    element_id, *node_ids = map(int, element_data)
                     geometry.add_element(int(element_id), elem_type, [nid for nid in node_ids])
                     if current_elset:
                         geometry.add_element_to_set(current_elset, int(element_id))
@@ -480,8 +495,10 @@ class Geometry:
                 elif key_word == '*ELSET' and current_elset:
                     for eid in data:
                         geometry.add_element_to_set(current_elset, int(eid))
+                index += 1
 
         return geometry
+
 
     def plot_2d(self):
         if self.dimension != 2:
