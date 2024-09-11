@@ -183,7 +183,7 @@ void fem::loadcase::LinearStatic::run() {
 
             // insert regularization term at the bottom right
             for (int i = 0; i < n; i++) {
-                full_triplets.push_back(Triplet(m + i, m + i, -1e-6));
+                full_triplets.push_back(Triplet(m + i, m + i, -1e-4));
             }
             full_matrix.setFromTriplets(full_triplets.begin(), full_triplets.end());
             return full_matrix;
@@ -293,4 +293,6 @@ void fem::loadcase::LinearStatic::run() {
     m_writer->write_eigen_matrix(global_disp_mat, "DISPLACEMENT");
     m_writer->write_eigen_matrix(strain, "STRAIN");
     m_writer->write_eigen_matrix(stress, "STRESS");
+    m_writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
+    m_writer->write_eigen_matrix(global_supp_mat, "DOF_SUPPORTS");
 }

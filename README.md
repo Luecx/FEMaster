@@ -31,13 +31,14 @@ cd FEMaster
 ```
 
 ### Step 2: Install Required Dependencies
-This project depends on several libraries such as Eigen (for matrix operations) and Spectra (for eigenvalue problems). The following script will download and install these libraries.
+This project depends on several libraries such as Eigen (for matrix operations) and Spectra (for eigenvalue problems). It also makes use of argparse for command line arguments. The following script will download and install these libraries.
 
 ```bash
 #!/bin/bash
 
 # Create a directory to store libraries
-mkdir -p ~/libs
+sudo mkdir -p ~/libs
+sudo mkdir -p /usr/local/include
 
 # Install Eigen
 cd ~/libs
@@ -46,7 +47,11 @@ sudo cp -r eigen/Eigen /usr/local/include/
 
 # Install Spectra
 git clone https://github.com/yixuan/spectra.git
-sudo cp -r spectra/include/* /usr/local/include/
+sudo cp -r spectra/include/Spectra /usr/local/include/
+
+# install argparse
+git clone https://github.com/p-ranav/argparse.git
+sudo cp -r argparse/include/argparse /usr/local/include/
 ```
 
 Save the above script as `install_dependencies.sh`, make it executable, and run it:
