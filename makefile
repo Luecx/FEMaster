@@ -132,24 +132,44 @@ endif
 
 # Compiler-specific linking flags for MKL
 ifeq ($(COMPILER), clang)
-	MKL_LIBS := \
-		-Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
-		-Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) \
-		-Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
+    # Clang specific linker flags
+    ifeq ($(mkl_sequential), 1)
+        # Sequential MKL for Clang
+        MKL_LIBS := \
+            -Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
+            -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) \
+            -Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
+            -lpthread -lm -ldl
+    else
+        # Parallel MKL for Clang
+        MKL_LIBS := \
+            -Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
+            -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) \
+            -Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
+            -L$(MKL_PATH) -liomp5 -lpthread -lm -ldl
+    endif
 else
-	MKL_LIBS := \
-		-Wl,--start-group \
-		$(MKL_PATH)/libmkl_intel_lp64.a \
-		$(MKL_PATH)/$(MKL_LIB_FILE) \
-		$(MKL_PATH)/libmkl_core.a \
-		-Wl,--end-group
+    # GCC specific linker flags
+    ifeq ($(mkl_sequential), 1)
+        # Sequential MKL for GCC
+        MKL_LIBS := \
+            -Wl,--start-group \
+            $(MKL_PATH)/libmkl_intel_lp64.a \
+            $(MKL_PATH)/$(MKL_LIB_FILE) \
+            $(MKL_PATH)/libmkl_core.a \
+            -Wl,--end-group -lpthread -lm -ldl
+    else
+        # Parallel MKL for GCC
+        MKL_LIBS := \
+            -Wl,--start-group \
+            $(MKL_PATH)/libmkl_intel_lp64.a \
+            $(MKL_PATH)/$(MKL_LIB_FILE) \
+            $(MKL_PATH)/libmkl_core.a \
+            -Wl,--end-group \
+            -L$(MKL_PATH) -liomp5 -lpthread -lm -ldl
+    endif
 endif
 
-ifeq ($(mkl_sequential), 1)
-	MKL_LIBS += -lpthread -lm -ldl
-else
-	MKL_LIBS += -L$(MKL_PATH) -liomp5 -lpthread -lm -ldl
-endif
 
 #===============================================================
 # CUDA Libraries
