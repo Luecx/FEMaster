@@ -181,8 +181,7 @@ show_flags:
 	@echo "NVCC Compiler: $(NVCC)"
 	@echo "CXXFLAGS     : $(CXXFLAGS)"
 	@echo "NVCCFLAGS    : $(NVCCFLAGS)"
-	@echo "LIBS         :"
-	@echo "$(LIBS)" | tr ' ' '\n' | sed 's/^/    /'
+	@echo "LIBS         : $(LIBS)"
 	@echo "Feature Flags: $(FEATURE_FLAGS)"
 	@echo ""
 	@echo "Feature Flags:"
