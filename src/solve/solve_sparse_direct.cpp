@@ -1,6 +1,10 @@
 
 #include "solver.h"
 
+#ifdef USE_MKL
+#include <mkl.h>
+#endif
+
 namespace solver{
 
 DynamicVector solve_direct(SolverDevice device,
@@ -81,10 +85,14 @@ DynamicVector solve_direct(SolverDevice device,
         t.start();
 
 #ifdef USE_MKL
+        mkl_set_num_threads(global_config.max_threads);
+        int mkl_max_threads = mkl_get_max_threads();
+        logging::info(true, "MKL max threads: ", mkl_max_threads);
+
         // Use MKL PardisoLDLT solver
         logging::info(true, "Using MKL PardisoLDLT solver");
-
         Eigen::PardisoLDLT<SparseMatrix> solver {};
+
         solver.compute(mat);
         logging::error(solver.info() == Eigen::Success, "Decomposition failed with PardisoLDLT");
         DynamicVector eigen_sol = solver.solve(rhs);

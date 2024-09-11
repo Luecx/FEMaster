@@ -1,4 +1,5 @@
 #include "core/core.h"
+#include "core/logging.h"
 #include "cuda/cuda.h"
 #include "loadcase/linear_static.h"
 #include "material/material.h"
@@ -19,7 +20,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
-#include <Argparse/argparse.h>
+#include <argparse/argparse.hpp>
 #include <chrono>
 #include <functional>
 #include <iomanip>
@@ -50,9 +51,9 @@ int main(int argc, char* argv[]) {
     // Access parsed arguments
     std::string input_file = program.get<std::string>("input_file");
     int ncpus = program.get<int>("--ncpus");
-
-    std::cout << "Input file: " << input_file << std::endl;
-    std::cout << "CPU(s)    : " << ncpus << std::endl;
+    logging::info(true, "");
+    logging::info(true, "Input file: ", input_file);
+    logging::info(true, "CPU(s)    : ", ncpus);
 
     // store number of cpus in config
     global_config.max_threads = ncpus;

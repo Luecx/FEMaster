@@ -18,6 +18,7 @@ template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements, const SystemDofIds &indices, Lambda&& lambda) {
 
     Eigen::setNbThreads(1);  // Ensure Eigen only uses one thread per operation
+    mkl_set_num_threads(1);  // Ensure MKL only uses one thread per operation
 
     constexpr int MAX_LOCAL_SIZE = 128;
     constexpr int BASE_BATCH_SIZE = 1024 * 1024 * 16;
@@ -25,9 +26,9 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements, con
     SparseMatrix matrix{indices.maxCoeff() + 1, indices.maxCoeff() + 1};
 
     int num_threads = 1;
-#ifdef _OPENMP
-    num_threads = global_config.max_threads;
-#endif
+//#ifdef _OPENMP
+//    num_threads = global_config.max_threads;
+//#endif
 
     int adjusted_batch_size = BASE_BATCH_SIZE / num_threads;
 
@@ -45,11 +46,11 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements, con
         if (element == nullptr) continue;
 
         // Compute the thread ID
-#ifdef _OPENMP
-        int thread_id = omp_get_thread_num();
-#else
+//#ifdef _OPENMP
+//        int thread_id = omp_get_thread_num();
+//#else
         int thread_id = 0;
-#endif
+//#endif
 
         auto& local_triplets = triplets_per_thread[thread_id];
 
@@ -76,11 +77,11 @@ SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements, con
 
         // Flush triplets to prevent excessive memory use
         if (local_triplets.size() > adjusted_batch_size * 9 / 10) {
-            #pragma omp critical
-            {
-                matrix.insertFromTriplets(local_triplets.begin(), local_triplets.end());
-                local_triplets.clear();
-            }
+//            #pragma omp critical
+//            {
+            matrix.insertFromTriplets(local_triplets.begin(), local_triplets.end());
+            local_triplets.clear();
+//            }
         }
     }
 

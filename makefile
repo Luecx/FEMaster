@@ -10,11 +10,12 @@ CXX  = g++
 # Default Feature Flags
 #===============================================================
 
-openmp   ?= 1   # Enable/disable OpenMP
-mkl      ?= 0   # Enable/disable MKL (Math Kernel Library)
-cuda_dp  ?= 1   # Enable/disable CUDA Double Precision
-ar_pcs   ?= 0   # Enable/disable Show Array Processes
-debug    ?= 0   # Enable/disable Debug mode
+openmp         ?= 1   # Enable/disable OpenMP
+mkl            ?= 0   # Enable/disable MKL (Math Kernel Library)
+mkl_sequential ?= 0   # Enable/disable Sequential MKL
+cuda_dp        ?= 1   # Enable/disable CUDA Double Precision
+ar_pcs         ?= 0   # Enable/disable Show Array Processes
+debug          ?= 0   # Enable/disable Debug mode
 
 #===============================================================
 # General Compiler Flags
@@ -34,11 +35,24 @@ ifeq ($(openmp), 1)
     NVCCFLAGS += -Xcompiler=-fopenmp
 endif
 
+# Ensure MKL is enabled when sequential MKL is requested
+ifeq ($(mkl_sequential), 1)
+    mkl = 1
+endif
+
 # MKL support
 ifeq ($(mkl), 1)
     FEATURE_FLAGS += -DMKL_LP64
     FEATURE_FLAGS += -DUSE_MKL
-    LIBS += $(MKL_LIBS)
+    ifeq ($(mkl_sequential), 1)
+        # Use sequential MKL
+        FEATURE_FLAGS += -DUSE_MKL_SEQUENTIAL
+        LIBS += $(MKL_LIBS)
+    else
+        # Use parallel MKL
+        FEATURE_FLAGS += -DUSE_MKL_PARALLEL
+        LIBS += $(MKL_LIBS)
+    endif
 endif
 
 # CUDA Double Precision support
@@ -81,10 +95,20 @@ else
 endif
 
 #===============================================================
-# MKL Library Paths and Libraries
+# Compiler
 #===============================================================
 
-# MKLROOT   ?= $(shell echo ${MKLROOT})
+COMPILER_VERSION = $(shell $(CXX) --version | head -n 1)
+# check if "clang" is inside the compiler version string
+ifeq (,$(findstring clang,$(COMPILER_VERSION)))
+	COMPILER = gcc
+else
+	COMPILER = clang
+endif
+
+#===============================================================
+# MKL Library Paths and Libraries
+#===============================================================
 
 # Define MKL paths for different OS
 ifeq ($(OS),Windows_NT)
@@ -99,34 +123,32 @@ else
     endif
 endif
 
-COMPILER_VERSION = $(shell $(CXX) --version | head -n 1)
-# check if "clang" is inside the compiler version string
-ifeq (,$(findstring clang,$(COMPILER_VERSION)))
-	COMPILER = gcc
+# Define names for the parallel vs sequential file
+ifeq ($(mkl_sequential), 1)
+	MKL_LIB_FILE = libmkl_sequential.a
 else
-	COMPILER = clang
+	MKL_LIB_FILE = libmkl_intel_thread.a
 endif
 
+# Compiler-specific linking flags for MKL
 ifeq ($(COMPILER), clang)
-    # Clang specific linker flags
-    MKL_LIBS := \
-        -Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
-        -Wl,-force_load,$(MKL_PATH)/libmkl_sequential.a \
-        -Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
-        -lpthread \
-        -lm \
-        -ldl
+	MKL_LIBS := \
+		-Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
+		-Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) \
+		-Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
 else
-    # Assume GCC specific linker flags
-    MKL_LIBS := \
-        -Wl,--start-group \
-        $(MKL_PATH)/libmkl_intel_lp64.a \
-        $(MKL_PATH)/libmkl_sequential.a \
-        $(MKL_PATH)/libmkl_core.a \
-        -Wl,--end-group \
-        -lpthread \
-        -lm \
-        -ldl
+	MKL_LIBS := \
+		-Wl,--start-group \
+		$(MKL_PATH)/libmkl_intel_lp64.a \
+		$(MKL_PATH)/$(MKL_LIB_FILE) \
+		$(MKL_PATH)/libmkl_core.a \
+		-Wl,--end-group
+endif
+
+ifeq ($(mkl_sequential), 1)
+	MKL_LIBS += -lpthread -lm -ldl
+else
+	MKL_LIBS += -L$(MKL_PATH) -liomp5 -lpthread -lm -ldl
 endif
 
 #===============================================================
@@ -191,6 +213,7 @@ show_flags:
 	@echo "-------------------"
 	@echo "OpenMP               : $(if $(findstring -fopenmp, $(CXXFLAGS)),Enabled,Disabled)"
 	@echo "MKL                  : $(if $(findstring -DUSE_MKL, $(FEATURE_FLAGS)),Enabled,Disabled)"
+	@echo "MKL Type             : $(if $(findstring -DUSE_MKL_SEQUENTIAL, $(FEATURE_FLAGS)),Sequential,Parallel)"
 	@echo "CUDA Double Precision: $(if $(findstring -DCUDA_DOUBLE_PRECISION, $(FEATURE_FLAGS)),Enabled,Disabled)"
 	@echo "Show Array Processes : $(if $(findstring -DSHOW_ARRAY_PROCESSES, $(FEATURE_FLAGS)),Enabled,Disabled)"
 	@echo "Debug                : $(if $(findstring -DNDEBUG, $(FEATURE_FLAGS)),Enabled,Disabled)"
