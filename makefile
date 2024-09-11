@@ -111,65 +111,21 @@ endif
 #===============================================================
 
 # Define MKL paths for different OS
-ifeq ($(OS),Windows_NT)
-    MKL_PATH = $(MKLROOT)/lib/intel64
-else
-    ifeq ($(UNAME),Darwin)
-        # macOS
-        MKL_PATH = $(MKLROOT)/lib
-    else
-        # Linux or other OS
-        MKL_PATH = $(MKLROOT)/lib/intel64
-    endif
+MKL_PATH := $(MKLROOT)/lib/intel64
+ifeq ($(OS),Darwin)
+    MKL_PATH := $(MKLROOT)/lib
 endif
 
-# Define names for the parallel vs sequential file
-ifeq ($(mkl_sequential), 1)
-	MKL_LIB_FILE = libmkl_sequential.a
-else
-	MKL_LIB_FILE = libmkl_intel_thread.a
-endif
+# Define MKL library file (sequential or parallel)
+MKL_LIB_FILE := libmkl_$(if $(mkl_sequential),sequential,intel_thread).a
 
-# Compiler-specific linking flags for MKL
+# Compiler-specific MKL linking flags
+MKL_COMMON_LIBS := $(MKL_PATH)/libmkl_intel_lp64.a $(MKL_PATH)/libmkl_core.a -lpthread -lm -ldl
 ifeq ($(COMPILER), clang)
-    # Clang specific linker flags
-    ifeq ($(mkl_sequential), 1)
-        # Sequential MKL for Clang
-        MKL_LIBS := \
-            -Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
-            -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) \
-            -Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
-            -lpthread -lm -ldl
-    else
-        # Parallel MKL for Clang
-        MKL_LIBS := \
-            -Wl,-force_load,$(MKL_PATH)/libmkl_intel_lp64.a \
-            -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) \
-            -Wl,-force_load,$(MKL_PATH)/libmkl_core.a \
-            -L$(MKL_PATH) -liomp5 -lpthread -lm -ldl
-    endif
+    MKL_LIBS := -Wl,-force_load,$(MKL_COMMON_LIBS) -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) $(if $(mkl_sequential),, -L$(MKL_PATH) -liomp5)
 else
-    # GCC specific linker flags
-    ifeq ($(mkl_sequential), 1)
-        # Sequential MKL for GCC
-        MKL_LIBS := \
-            -Wl,--start-group \
-            $(MKL_PATH)/libmkl_intel_lp64.a \
-            $(MKL_PATH)/$(MKL_LIB_FILE) \
-            $(MKL_PATH)/libmkl_core.a \
-            -Wl,--end-group -lpthread -lm -ldl
-    else
-        # Parallel MKL for GCC
-        MKL_LIBS := \
-            -Wl,--start-group \
-            $(MKL_PATH)/libmkl_intel_lp64.a \
-            $(MKL_PATH)/$(MKL_LIB_FILE) \
-            $(MKL_PATH)/libmkl_core.a \
-            -Wl,--end-group \
-            -L$(MKL_PATH) -liomp5 -lpthread -lm -ldl
-    endif
+    MKL_LIBS := -Wl,--start-group $(MKL_COMMON_LIBS) $(MKL_PATH)/$(MKL_LIB_FILE) -Wl,--end-group $(if $(mkl_sequential),, -L$(MKL_PATH) -liomp5)
 endif
-
 
 #===============================================================
 # CUDA Libraries
