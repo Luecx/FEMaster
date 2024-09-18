@@ -30,6 +30,10 @@ struct ElementInterface {
     virtual Dim       n_integration_points()                                                                     = 0;
     virtual ID*       nodes()                                                                                    = 0;
 
+    // iterator to iterate over nodes
+    inline ID* begin() {  return nodes(); }
+    inline ID* end() { return nodes() + n_nodes(); }
+
     virtual Precision volume(NodeData& node_coords)                                                              = 0;
     virtual MapMatrix stiffness(NodeData& position, Precision* buffer)                                           = 0;
     virtual MapMatrix mass(NodeData& position, Precision* buffer)                                                = 0;

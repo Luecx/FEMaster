@@ -100,7 +100,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData st
 
 SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
-        auto element_mass = el->mass(node_coords, storage);
+        MapMatrix element_mass = el->mass(node_coords, storage);
         return element_mass;
     };
     auto res = mattools::assemble_matrix(elements, indices, lambda);

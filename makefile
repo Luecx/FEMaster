@@ -117,15 +117,16 @@ ifeq ($(OS),Darwin)
 endif
 
 # Define MKL library file (sequential or parallel)
-MKL_LIB_FILE := libmkl_$(if $(mkl_sequential),sequential,intel_thread).a
+MKL_LIB_FILE := libmkl_$(if $(filter 1,$(mkl_sequential)),sequential,intel_thread).a
 
 # Compiler-specific MKL linking flags
 MKL_COMMON_LIBS := $(MKL_PATH)/libmkl_intel_lp64.a $(MKL_PATH)/libmkl_core.a -lpthread -lm -ldl
 ifeq ($(COMPILER), clang)
-    MKL_LIBS := -Wl,-force_load,$(MKL_COMMON_LIBS) -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) $(if $(mkl_sequential),, -L$(MKL_PATH) -liomp5)
+    MKL_LIBS := -Wl,-force_load,$(MKL_COMMON_LIBS) -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) $(if $(filter 0,$(mkl_sequential)), -L$(MKL_PATH) -liomp5)
 else
-    MKL_LIBS := -Wl,--start-group $(MKL_COMMON_LIBS) $(MKL_PATH)/$(MKL_LIB_FILE) -Wl,--end-group $(if $(mkl_sequential),, -L$(MKL_PATH) -liomp5)
+    MKL_LIBS := -Wl,--start-group $(MKL_COMMON_LIBS) $(MKL_PATH)/$(MKL_LIB_FILE) -Wl,--end-group $(if $(filter 0,$(mkl_sequential)), -L$(MKL_PATH) -liomp5)
 endif
+
 
 #===============================================================
 # CUDA Libraries

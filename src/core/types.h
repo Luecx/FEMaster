@@ -45,17 +45,17 @@ using StaticVector  = Eigen::Matrix<Precision, A, 1>;
 using DynamicVector = Eigen::Matrix<Precision, Eigen::Dynamic, 1>;
 
 using IndexVector   = Eigen::Matrix<ID       , Eigen::Dynamic, 1>;
-using IndexMatrix   = Eigen::Matrix<ID       , Eigen::Dynamic, Eigen::Dynamic>;
+using IndexMatrix   = Eigen::Matrix<ID       , Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 using BooleanVector = Eigen::Matrix<bool     , Eigen::Dynamic, 1>;
 using BooleanMatrix = Eigen::Matrix<bool     , Eigen::Dynamic, Eigen::Dynamic>;
 
-using NodeData      = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
-using ElementData   = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
+using NodeData      = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using ElementData   = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 using Dofs          = Eigen::Matrix<bool     , 1             , 6             >;
 
 using ElDofs       = Eigen::Matrix<bool, 1, 6>;     ///< Element DOFs: 1 row, 6 columns
-using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, 6>; ///< System DOFs: N rows, 6 columns
-using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6>; ///< System DOF IDs: N rows, 6 columns
+using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, 6, Eigen::RowMajor>; ///< System DOFs: N rows, 6 columns
+using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6, Eigen::RowMajor>; ///< System DOF IDs: N rows, 6 columns
 
