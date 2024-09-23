@@ -104,7 +104,7 @@ struct Model {
     NodeData    build_load_matrix    (std::vector<std::string> load_sets = {"LALL"});
 
     // matrices
-    SparseMatrix  build_constraint_matrix   (SystemDofIds& indices);
+    SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness=1.0);
     SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 

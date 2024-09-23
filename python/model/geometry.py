@@ -1,13 +1,16 @@
 from .elements import *
+
+from scipy.sparse import coo_matrix
+from scipy.sparse import csr_matrix
+from scipy.sparse import lil_matrix
+
 import re
 import numpy as np
-from scipy.linalg import svd
-import matplotlib.pyplot as plt
-import matplotlib
-import matplotlib.tri as tri
-from mpl_toolkits.mplot3d import Axes3D
 import copy
 import gmsh
+import scipy.sparse
+import matplotlib.pyplot as plt
+
 
 class Geometry:
     def __init__(self, dimension=3):
@@ -93,7 +96,7 @@ class Geometry:
                         edges |= {edge}
         return edges
 
-    def create_midpoints(self):
+    def compute_edge_midpoints(self):
         edge_midpoints = {}
         # Collect all edges and create midpoints
         for element in self.elements:
@@ -114,6 +117,18 @@ class Geometry:
                         edge_midpoints[(id1, id2)] = new_node_id
                         edge_midpoints[(id2, id1)] = new_node_id
         return edge_midpoints
+
+    def compute_element_midpoints(self):
+        midpoints = [(0, 0, 0) for _ in range(len(self.elements))]
+        for i, element in enumerate(self.elements):
+            if element is None:
+                continue
+
+            element_node_ids = element.node_ids
+            element_nodes = [self.nodes[node_id] for node_id in element_node_ids]
+            center = np.mean(element_nodes, axis=0)
+            midpoints[i] = center
+        return midpoints
 
     def get_boundary_node_ids(self):
         if self.dimension != 2:
@@ -234,8 +249,6 @@ class Geometry:
 
             self.nodes = new_node_pos
 
-
-
     def to_second_order(self):
         # Create a new Geometry object for the second-order elements
         geometry = Geometry(self.dimension)
@@ -246,7 +259,7 @@ class Geometry:
         geometry.elem_sets = {name: ids.copy() for name, ids in self.elem_sets.items()}
         geometry.elements = copy.deepcopy(self.elements)
 
-        edge_midpoints = geometry.create_midpoints()
+        edge_midpoints = geometry.compute_edge_midpoints()
 
         # Convert elements to second order and replace inplace
         for i in range(len(self.elements)):
@@ -323,6 +336,37 @@ class Geometry:
 
         return geometry
 
+    def subdivide(self, n=1, only_quads=False):
+        # Determine element order
+        element_order = self.determine_element_order()
+        if element_order == 0:
+            raise ValueError("Element order could not be determined or no elements are present.")
+        if element_order == 2:
+            raise ValueError("Subdivision is not supported for second-order elements.")
+
+        geometry = Geometry(self.dimension)
+        geometry.nodes = self.nodes.copy()
+        geometry.node_sets = {name: ids.copy() for name, ids in self.node_sets.items()}
+        geometry.elem_sets = {name: ids.copy() for name, ids in self.elem_sets.items()}
+        geometry.elements = copy.deepcopy(self.elements)
+
+        for i in range(n):
+            next_geom = Geometry(geometry.dimension)
+            next_geom.nodes = geometry.nodes.copy()
+            next_geom.node_sets = {name: ids.copy() for name, ids in geometry.node_sets.items()}
+            next_geom.elem_sets = {name: ids.copy() for name, ids in geometry.elem_sets.items()}
+            next_geom.elements = copy.deepcopy(geometry.elements)
+
+            midpoints = next_geom.compute_edge_midpoints()
+
+            for i in range(len(next_geom.elements)):
+                element = next_geom.elements[i]
+                if element is not None:
+                    element.subdivide(midpoints, next_geom, only_quads=only_quads)
+
+            geometry = next_geom
+        return geometry
+
     def write_input_deck(self, filename):
         with open(filename, 'w') as file:
             # Write nodes
@@ -367,49 +411,6 @@ class Geometry:
                 if name != "EALL":
                     file.write(f"*ELSET, NAME={name}\n")
                     file.write(',\n'.join(map(str, [id for id in ids])) + '\n')
-
-    def subdivide(self, n=1, only_quads=False):
-        # Determine element order
-        element_order = self.determine_element_order()
-        if element_order == 0:
-            raise ValueError("Element order could not be determined or no elements are present.")
-        if element_order == 2:
-            raise ValueError("Subdivision is not supported for second-order elements.")
-
-        geometry = Geometry(self.dimension)
-        geometry.nodes = self.nodes.copy()
-        geometry.node_sets = {name: ids.copy() for name, ids in self.node_sets.items()}
-        geometry.elem_sets = {name: ids.copy() for name, ids in self.elem_sets.items()}
-        geometry.elements = copy.deepcopy(self.elements)
-
-        for i in range(n):
-            next_geom = Geometry(geometry.dimension)
-            next_geom.nodes = geometry.nodes.copy()
-            next_geom.node_sets = {name: ids.copy() for name, ids in geometry.node_sets.items()}
-            next_geom.elem_sets = {name: ids.copy() for name, ids in geometry.elem_sets.items()}
-            next_geom.elements = copy.deepcopy(geometry.elements)
-
-            midpoints = next_geom.create_midpoints()
-
-            for i in range(len(next_geom.elements)):
-                element = next_geom.elements[i]
-                if element is not None:
-                    element.subdivide(midpoints, next_geom, only_quads=only_quads)
-
-            geometry = next_geom
-        return geometry
-
-    def compute_element_midpoints(self):
-        midpoints = [(0, 0, 0) for _ in range(len(self.elements))]
-        for i, element in enumerate(self.elements):
-            if element is None:
-                continue
-
-            element_node_ids = element.node_ids
-            element_nodes = [self.nodes[node_id] for node_id in element_node_ids]
-            center = np.mean(element_nodes, axis=0)
-            midpoints[i] = center
-        return midpoints
 
     @staticmethod
     def read_input_deck(filename):
@@ -499,6 +500,62 @@ class Geometry:
 
         return geometry
 
+    def connectivity_node_to_element(self):
+        node_elements = {i: [] for i in range(len(self.nodes))}
+
+        for i, element in enumerate(self.elements):
+            if element is not None:
+                for node_id in element.node_ids:
+                    node_elements[node_id].append(i)
+        return node_elements
+
+    def connectivity_element_to_element(self):
+        node_elements = self.connectivity_node_to_element()
+        n_elements = len(self.elements)
+
+        # Initialize a sparse adjacency matrix (lil_matrix allows efficient incremental construction)
+        element_elements = lil_matrix((n_elements, n_elements), dtype=np.int8)
+
+        for node, elements in node_elements.items():
+            for element in elements:
+                for connected_element in elements:
+                    if element != connected_element:
+                        element_elements[element, connected_element] = 1
+
+        return element_elements.tocsr()  # Convert to CSR format for more efficient access later
+
+    def element_element_distance_matrix(self):
+        element_elements  = self.connectivity_element_to_element()
+        element_midpoints = self.compute_element_midpoints()
+        n_elements = len(self.elements)
+
+        # List to store the row, column, and distance entries
+        rows = []
+        cols = []
+        distances = []
+
+        for i in range(n_elements):
+            rows.append(i)
+            cols.append(i)
+            distances.append(0.0)  # Diagonal elements (self-distance)
+
+            # Only compute distances for connected elements
+            connected_elements = element_elements[i]
+            for j in connected_elements:
+                if j > i:  # Avoid redundant calculations by ensuring j > i
+                    distance = np.linalg.norm(element_midpoints[i] - element_midpoints[j])
+                    rows.append(i)
+                    cols.append(j)
+                    distances.append(distance)
+
+                    # Symmetric matrix, so mirror the distance
+                    rows.append(j)
+                    cols.append(i)
+                    distances.append(distance)
+
+        # Create a sparse matrix in COO format and convert to CSR for efficiency
+        element_distances = coo_matrix((distances, (rows, cols)), shape=(n_elements, n_elements)).tocsr()
+        return element_distances
 
     def plot_2d(self):
         if self.dimension != 2:
@@ -631,3 +688,4 @@ class Geometry:
         for name, ids in self.elem_sets.items():
             ret_str += "  {}: {} elements\n".format(name, len(ids))
         return ret_str
+

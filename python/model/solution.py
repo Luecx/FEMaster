@@ -47,6 +47,23 @@ class Solution:
 
         return fields_dict
 
+    def list_fields_reduced(self, loadcase='1'):
+        fields_dict = {}
+        lc_fields = self.loadcases[loadcase]
+
+        for field, matrix in lc_fields.items():
+            # Specific derived fields for STRESS
+            if field == "STRESS":
+                fields_dict["mises"] = lambda f=field: self.mises(self.get(loadcase, f))
+                fields_dict["principal"] = lambda f=field: self.principal(self.get(loadcase, f))
+                fields_dict["signed_mises"] = lambda f=field: self.signed_mises(self.get(loadcase, f))
+            if field == "DISPLACEMENT":
+                fields_dict["displacement_xyz"] = lambda f=field: self.get(loadcase, f)[:, :3]
+            # Store the raw data for other fields
+            fields_dict[field.lower()] = lambda f=field: self.get(loadcase, f)
+
+        return fields_dict
+
     def mises(self, stress):
         sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
         return np.sqrt(0.5 * ((sigma_x - sigma_y)**2 +

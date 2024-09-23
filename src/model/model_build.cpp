@@ -66,7 +66,7 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     return load_matrix;
 }
 
-SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices) {
+SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness) {
     TripletList triplets;
     int rows = 0;
     for (auto &c: this->couplings) {
@@ -83,6 +83,7 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices) {
 
     SparseMatrix matrix{rows + 1, indices.maxCoeff() + 1};
     matrix.setFromTriplets(triplets.begin(), triplets.end());
+    matrix *= characteristic_stiffness;
     return matrix;
 }
 

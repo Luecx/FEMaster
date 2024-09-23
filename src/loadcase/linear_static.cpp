@@ -149,9 +149,12 @@ void fem::loadcase::LinearStatic::run() {
         "constructing active stiffness matrix"
     );
 
+    // compute characteristic stiffness by taking the mean of the diagonal
+    Precision characteristic_stiffness = active_stiffness_mat.diagonal().mean();
+
     // Step 5: Construct the active Lagrangian constraint matrix
     auto active_lagrange_mat = Timer::measure(
-        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat); },  // Fixed method name
+        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, characteristic_stiffness); },
         "constructing active Lagrangian matrix"
     );
 
@@ -183,15 +186,13 @@ void fem::loadcase::LinearStatic::run() {
 
             // insert regularization term at the bottom right
             for (int i = 0; i < n; i++) {
-                full_triplets.push_back(Triplet(m + i, m + i, -1e-4));
+                full_triplets.push_back(Triplet(m + i, m + i, - characteristic_stiffness / 1e6));
             }
             full_matrix.setFromTriplets(full_triplets.begin(), full_triplets.end());
             return full_matrix;
          },
         "assembling full lhs matrix including stiffness and Lagrangian"
     );
-
-
 
     auto active_lagrange_rhs = DynamicVector::Zero(n);  // Lagrangian RHS initialized to zero
     auto active_lagrange_lhs = DynamicVector::Constant(n, std::numeric_limits<Precision>::quiet_NaN());  // LHS for Lagrangian
