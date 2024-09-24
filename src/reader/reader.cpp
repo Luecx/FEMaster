@@ -6,20 +6,20 @@
 namespace fem::reader{
 
 Line& Reader::next_line() {
-    m_current_line = m_file.next();
+    m_current_line = m_file.next_line();
     return m_current_line;
 }
 
-
-Reader::Reader(const std::string& file_path)
+Reader::Reader(const std::string& file_path, const std::string& output_path)
     :
     m_file(file_path),
     m_file_path(file_path),
-    m_writer(file_path + ".res") {}
+    m_writer(output_path),
+    m_output_path(output_path){}
 
 void Reader::read() {
     m_file   = File(m_file_path);
-    m_writer = Writer(m_file_path + ".res");
+    m_writer = Writer(m_output_path);
 
     // First stage
     analyse();

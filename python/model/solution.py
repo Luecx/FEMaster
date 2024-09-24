@@ -49,20 +49,28 @@ class Solution:
 
     def list_fields_reduced(self, loadcase='1'):
         fields_dict = {}
-        lc_fields = self.loadcases[loadcase]
 
-        for field, matrix in lc_fields.items():
-            # Specific derived fields for STRESS
-            if field == "STRESS":
-                fields_dict["mises"] = lambda f=field: self.mises(self.get(loadcase, f))
-                fields_dict["principal"] = lambda f=field: self.principal(self.get(loadcase, f))
-                fields_dict["signed_mises"] = lambda f=field: self.signed_mises(self.get(loadcase, f))
-            if field == "DISPLACEMENT":
-                fields_dict["displacement_xyz"] = lambda f=field: self.get(loadcase, f)[:, :3]
-            # Store the raw data for other fields
-            fields_dict[field.lower()] = lambda f=field: self.get(loadcase, f)
+        # Set the prefix for field names
+        if loadcase is None:
+            loadcases = self.loadcases.items()
+        else:
+            loadcases = [(loadcase, self.loadcases[loadcase])]
+
+        for lc, lc_fields in loadcases:
+            prefix = f"LC{lc}_" if loadcase is None else ""
+            for field, matrix in lc_fields.items():
+                # Specific derived fields for STRESS
+                if field == "STRESS":
+                    fields_dict[f"{prefix}mises"] = lambda f=field, lc=lc: self.mises(self.get(lc, f))
+                    fields_dict[f"{prefix}principal"] = lambda f=field, lc=lc: self.principal(self.get(lc, f))
+                    fields_dict[f"{prefix}signed_mises"] = lambda f=field, lc=lc: self.signed_mises(self.get(lc, f))
+                if field == "DISPLACEMENT":
+                    fields_dict[f"{prefix}displacement_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
+                # Store the raw data for other fields
+                fields_dict[f"{prefix}{field.lower()}"] = lambda f=field, lc=lc: self.get(lc, f)
 
         return fields_dict
+
 
     def mises(self, stress):
         sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T

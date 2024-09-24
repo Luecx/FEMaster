@@ -172,7 +172,7 @@ class Optimiser:
         output_path = os.path.join(self.output_folder, 'iterations', str(iteration))
 
         # create file path
-        file_path = os.path.join(output_path, 'model.inp.res')
+        file_path = os.path.join(output_path, 'model.res')
 
         # open file and return loadcase 1
         sol = Solution.open(file_path)
@@ -185,7 +185,7 @@ class Optimiser:
         # create output path
         output_path = os.path.join(self.output_folder, 'iterations', str(iteration))
         os.remove(os.path.join(output_path, 'model.inp'))
-        os.remove(os.path.join(output_path, 'model.inp.res'))
+        os.remove(os.path.join(output_path, 'model.res'))
 
     def save(self, file_path):
         state = vars(self)

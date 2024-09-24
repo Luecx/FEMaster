@@ -8,32 +8,32 @@ fem::reader::Writer::Writer(const std::string& filename) {
     this->open(filename);
 }
 fem::reader::Writer::~Writer() {
-    if (out_file.is_open()) {
-        out_file.close();
+    if (file_path.is_open()) {
+        file_path.close();
     }
 }
 fem::reader::Writer& fem::reader::Writer::operator=(fem::reader::Writer&& other) noexcept {
     if (this != &other) {
         close();
-        out_file = std::move(other.out_file);
+        file_path = std::move(other.file_path);
     }
     return *this;
 }
 void fem::reader::Writer::open(const std::string& filename) {
     close();
-    out_file.open(filename);
-    logging::error(out_file.is_open(), "Failed to open file: ", filename);
+    file_path.open(filename);
+    logging::error(file_path.is_open(), "Failed to open file: ", filename);
 }
 void fem::reader::Writer::close() {
-    if (out_file.is_open()) {
-        out_file.close();
+    if (file_path.is_open()) {
+        file_path.close();
     }
 }
 void fem::reader::Writer::add_loadcase(int id) {
-    out_file << "LC " << id << std::endl;
+    file_path << "LC " << id << std::endl;
 }
 void fem::reader::Writer::write_eigen_matrix(const DynamicMatrix& matrix, const std::string& field_name) {
-    out_file << "FIELD, NAME=" << field_name << ", COLS=" << matrix.cols() << std::endl;
-    out_file << matrix << std::endl;
-    out_file << "END FIELD" << std::endl;
+    file_path << "FIELD, NAME=" << field_name << ", COLS=" << matrix.cols() << ", ROWS=" << matrix.rows() << std::endl;
+    file_path << matrix << std::endl;
+    file_path << "END FIELD" << std::endl;
 }

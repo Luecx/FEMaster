@@ -53,9 +53,12 @@ void fem::loadcase::LinearStaticTopo::run() {
         "constructing active stiffness matrix"
     );
 
+    // compute characteristic stiffness by taking the mean of the diagonal
+    Precision characteristic_stiffness = active_stiffness_mat.diagonal().mean();
+
     // Step 5: Construct the active Lagrangian constraint matrix
     auto active_lagrange_mat = Timer::measure(
-        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat); },  // Fixed method name
+        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, characteristic_stiffness); },  // Fixed method name
         "constructing active Lagrangian matrix"
     );
 
@@ -83,6 +86,11 @@ void fem::loadcase::LinearStaticTopo::run() {
                     full_triplets.push_back(Triplet(it.row() + m, it.col(), it.value()));
                     full_triplets.push_back(Triplet(it.col(), it.row() + m, it.value()));
                 }
+            }
+
+            // insert regularization term at the bottom right
+            for (int i = 0; i < n; i++) {
+                full_triplets.push_back(Triplet(m + i, m + i, - characteristic_stiffness / 1e6));
             }
             full_matrix.setFromTriplets(full_triplets.begin(), full_triplets.end());
             return full_matrix;
@@ -188,6 +196,7 @@ void fem::loadcase::LinearStaticTopo::run() {
     m_writer->write_eigen_matrix(compliance_adj   , "COMPLIANCE_ADJ");
     m_writer->write_eigen_matrix(dens_grad        , "DENS_GRAD");
     m_writer->write_eigen_matrix(volumes          , "VOLUME");
+    m_writer->write_eigen_matrix(density          , "DENSITY");
 
 /**
     logging::info(true, "");

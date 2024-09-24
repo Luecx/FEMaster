@@ -12,7 +12,7 @@ namespace reader {
 
 class Writer {
 private:
-    std::ofstream out_file;
+    std::ofstream file_path;
 
 public:
     // Constructor
@@ -23,7 +23,7 @@ public:
 
     // Move constructor
     Writer(Writer&& other) noexcept
-            : out_file(std::move(other.out_file)) {
+            : file_path(std::move(other.file_path)) {
     }
 
     // Move assignment operator

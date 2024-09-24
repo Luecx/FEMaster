@@ -7,9 +7,6 @@
 
 namespace fem::reader {
 
-bool relevant(LineType lt) {
-    return lt == KEYWORD_LINE || lt == DATA_LINE;
-}
 Line& fem::reader::Line::operator=(const std::string& line) {
     // reset fields
     m_line = line;

@@ -13,6 +13,21 @@ import matplotlib.pyplot as plt
 
 
 class Geometry:
+
+    element_classes = {
+        'C2D3': C2D3,
+        'C2D4': C2D4,
+        'C2D6': C2D6,
+        'C2D8': C2D8,
+        'C3D4': C3D4,
+        'C3D6': C3D6,
+        'C3D8': C3D8,
+        'C3D10': C3D10,
+        'C3D15': C3D15,
+        'C3D20': C3D20,
+        'C3D20R': C3D20,
+    }
+
     def __init__(self, dimension=3):
         self.dimension = dimension  # 2 for 2D, 3 for 3D
         self.nodes = []
@@ -32,26 +47,13 @@ class Geometry:
 
     def add_element(self, element_id=-1, element_type=None, node_ids=None):
         # Create the appropriate element type
-        element_classes = {
-            'C2D3': C2D3,
-            'C2D4': C2D4,
-            'C2D6': C2D6,
-            'C2D8': C2D8,
-            'C3D4': C3D4,
-            'C3D6': C3D6,
-            'C3D8': C3D8,
-            'C3D10': C3D10,
-            'C3D15': C3D15,
-            'C3D20': C3D20,
-            'C3D20R': C3D20,
-        }
-        if element_type not in element_classes:
+        if element_type not in Geometry.element_classes:
             raise ValueError(f"Unsupported element type: {element_type}")
 
         if element_id == -1:
             element_id = len(self.elements)
 
-        element = element_classes[element_type](element_id, node_ids)
+        element = Geometry.element_classes[element_type](element_id, node_ids)
 
         # Resize elements list if necessary
         if element_id >= len(self.elements):
@@ -376,18 +378,7 @@ class Geometry:
                     file.write(f"{id},{node[0]},{node[1]},{node[2]}\n")
 
             # Write elements by type
-            element_classes = {
-                'C2D3': [],
-                'C2D4': [],
-                'C2D6': [],
-                'C2D8': [],
-                'C3D4': [],
-                'C3D6': [],
-                'C3D8': [],
-                'C3D10': [],
-                'C3D15': [],
-                'C3D20': [],
-            }
+            element_classes = {k : [] for k in Geometry.element_classes.keys()}
 
             for element in self.elements:
                 if element is not None:
@@ -415,90 +406,115 @@ class Geometry:
     @staticmethod
     def read_input_deck(filename):
         geometry = Geometry()
-        element_classes = {
-            'C2D3': C2D3,
-            'C2D4': C2D4,
-            'C2D6': C2D6,
-            'C2D8': C2D8,
-            'C3D4': C3D4,
-            'C3D6': C3D6,
-            'C3D8': C3D8,
-            'C3D10': C3D10,
-            'C3D15': C3D15,
-            'C3D20': C3D20,
-            'C3D20R': C3D20,
-        }
-
         with open(filename, 'r') as file:
             lines = file.readlines()
 
+        def preprocess_line(line):
+            """Convert the line to upper case, remove spaces, and replace them with commas."""
+            return re.sub(r'\s+', ',', line.strip().upper())
+
+        def is_command(line):
+            """Check if the line starts with '*' indicating a command."""
+            return line.startswith('*')
+
+        def require(key_names, parts, default=None, options=None):
+            """Extract a key value from the parts based on the provided key names."""
+            for key in key_names:
+                if key in parts:
+                    key_index = parts.index(key)
+                    if key_index + 1 < len(parts):
+                        if options is not None and parts[key_index + 1] not in options:
+                            raise ValueError(f"Invalid value for {key}: {parts[key_index + 1]} \n\tExpected: {options}")
+                        return parts[key_index + 1]
+            return default
+
         def parse_line(line, dtype=float):
-            # removing trailing commas and spaces and \n
-            line = re.sub(r',\s*$', '', line)
+            """Parse a line of data into a list of values, converting to a specified type."""
+            line = re.sub(r',\s*$', '', line)  # Remove trailing commas and spaces
             return list(map(dtype, re.split(r'[,\s]+', line.strip())))
 
-        key_word = None
-        current_nset = None
-        current_elset = None
+        key_word        = None
+        current_nset    = None
+        current_elset   = None
         index = 0
 
         while index < len(lines):
-            line = lines[index].strip()
-            if not line or line.startswith('**'):
+            line = preprocess_line(lines[index])
+
+            if not line or line.startswith('**'):  # Skip comments or empty lines
                 index += 1
                 continue
-            if line.startswith('*'):
+
+            if is_command(line):
                 parts = re.split(r'[,=\s]+', line)
                 key_word = parts[0].upper()
+
+                # Process different commands
                 if key_word == '*NODE':
-                    current_nset = parts[2] if len(parts) > 2 and parts[1] == 'NSET' else 'NALL'
+                    current_nset = require(["NSET", "NAME"], parts, default='NALL')
                     geometry.add_node_set(current_nset)
+
                 elif key_word == '*ELEMENT':
-                    elem_type = parts[2] if len(parts) > 2 and parts[1] == 'TYPE' else None
-                    current_elset = parts[4] if len(parts) > 4 and parts[3] == 'ELSET' else 'EALL'
+                    elem_type = require(["TYPE"], parts, options=Geometry.element_classes.keys())
+                    current_elset = require(["ELSET", "NAME"], parts, default='EALL')
                     geometry.add_element_set(current_elset)
+
                 elif key_word == '*NSET':
-                    current_nset = parts[2] if len(parts) > 2 and parts[1] == 'NAME' else None
+                    current_nset = require(["NAME", "NSET"], parts)
                     geometry.add_node_set(current_nset)
+
                 elif key_word == '*ELSET':
-                    current_elset = parts[2] if len(parts) > 2 and parts[1] == 'NAME' else None
+                    current_elset = require(["NAME", "ELSET"], parts)
                     geometry.add_element_set(current_elset)
+
                 else:
-                    key_word = None
+                    key_word = None  # Unknown command
                 index += 1
+
             else:
                 if key_word is None:
                     index += 1
                     continue
+
                 data = parse_line(line)
+
+                # Process node data
                 if key_word == '*NODE':
                     node_id, *coords = data
                     geometry.add_node(int(node_id), *coords)
                     if current_nset:
                         geometry.add_node_to_set(current_nset, int(node_id))
-                elif key_word == '*ELEMENT' and elem_type in element_classes:
-                    required_nodes = element_classes[elem_type].num_nodes
+
+                # Process element data
+                elif key_word == '*ELEMENT' and elem_type in Geometry.element_classes:
+                    required_nodes = Geometry.element_classes[elem_type].num_nodes
                     element_data = data
 
                     # Read more lines if the number of nodes is not enough
                     while len(element_data) - 1 < required_nodes:
                         index += 1
-                        extra_data = parse_line(lines[index].strip())
+                        extra_data = parse_line(preprocess_line(lines[index]))
                         element_data.extend(extra_data)
 
                     element_id, *node_ids = map(int, element_data)
                     geometry.add_element(int(element_id), elem_type, [nid for nid in node_ids])
                     if current_elset:
                         geometry.add_element_to_set(current_elset, int(element_id))
+
+                # Process NSET data
                 elif key_word == '*NSET' and current_nset:
                     for nid in data:
                         geometry.add_node_to_set(current_nset, int(nid))
+
+                # Process ELSET data
                 elif key_word == '*ELSET' and current_elset:
                     for eid in data:
                         geometry.add_element_to_set(current_elset, int(eid))
+
                 index += 1
 
         return geometry
+
 
     def connectivity_node_to_element(self):
         node_elements = {i: [] for i in range(len(self.nodes))}

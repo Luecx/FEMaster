@@ -26,13 +26,14 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <filesystem>
 
 int main(int argc, char* argv[]) {
     // Set up argparse
     argparse::ArgumentParser program("FEM Solver");
 
     program.add_argument("input_file")
-        .help("Path to the input file");
+        .help("Path to the input file (.inp is optional).");
 
     program.add_argument("--ncpus")
         .default_value(1)
@@ -51,15 +52,37 @@ int main(int argc, char* argv[]) {
     // Access parsed arguments
     std::string input_file = program.get<std::string>("input_file");
     int ncpus = program.get<int>("--ncpus");
+
+    // Ensure the input file has ".inp" extension
+    if (input_file.find(".inp") == std::string::npos) {
+        input_file += ".inp";
+    }
+
+    // Check if input file exists
+    if (!std::filesystem::exists(input_file)) {
+        std::cerr << "Error: Input file '" << input_file << "' does not exist." << std::endl;
+        return 1;
+    }
+
+    // Create the output file by replacing ".inp" with ".res"
+    std::string output_file = input_file;
+    size_t pos = output_file.find(".inp");
+    if (pos != std::string::npos) {
+        output_file.replace(pos, 4, ".res");
+    }
+
+    // Logging input and output file information
     logging::info(true, "");
     logging::info(true, "Input file: ", input_file);
+    logging::info(true, "Output file: ", output_file);
     logging::info(true, "CPU(s)    : ", ncpus);
+    logging::info(true, "");
 
-    // store number of cpus in config
+    // Store number of CPUs in config
     global_config.max_threads = ncpus;
 
-
-    fem::reader::Reader reader{input_file};
+    // Read the input file using the reader
+    fem::reader::Reader reader{input_file, output_file};
     reader.read();
 
     return 0;

@@ -13,36 +13,42 @@
 namespace fem {
 namespace reader {
 
-enum LineType{
-    COMMENT = -1,
-    EMPTY_LINE = 0,
-    KEYWORD_LINE = 1,
-    DATA_LINE = 2,
-    END_OF_FILE = 3,
+/******************************************************************************
+ * @brief Enum representing the type of line parsed from the input.
+ ******************************************************************************/
+enum LineType {
+    COMMENT = -1,  ///< Line is a comment.
+    EMPTY_LINE = 0, ///< Line is empty or whitespace.
+    KEYWORD_LINE = 1, ///< Line contains a keyword with associated keys.
+    DATA_LINE = 2, ///< Line contains data values.
+    END_OF_FILE = 3, ///< End of file marker.
 };
 
-bool relevant(LineType lt);
+/******************************************************************************
+ * @brief Represents a single line in the input file, handling comments,
+ * keywords, and data.
+ *
+ * This struct can parse the line into relevant data, such as keyword commands
+ * and associated keys, or raw data values. It supports access and querying
+ * of the parsed information, and type-safe conversions of values.
+ ******************************************************************************/
+struct Line {
+private:
+    std::string m_line; ///< Raw line data.
+    std::vector<std::string> m_values; ///< Parsed values for DATA_LINE.
+    std::unordered_map<std::string, std::string> m_keys; ///< Parsed keys for KEYWORD_LINE.
+    std::string m_command; ///< Command associated with a KEYWORD_LINE.
+    LineType m_type = EMPTY_LINE; ///< The type of the line.
 
-struct Line{
-    private:
-    // raw line data
-    std::string m_line;
-
-    // in case of a DATA_LINE, store the values
-    std::vector<std::string> m_values;
-
-    // in case of a KEYWORD_LINE; store the keys
-    std::unordered_map<std::string, std::string> m_keys{};
-
-    // store the command name in case of a keyword
-    std::string m_command{};
-
-    // store the type of the current line
-    LineType m_type = EMPTY_LINE;
-
-    public:
-
-    // Private helper function to convert string to T
+    //-------------------------------------------------------------------------
+    // Private helper function
+    //-------------------------------------------------------------------------
+    /**
+     * @brief Converts a string to a specified type T.
+     *
+     * @param s The string to convert.
+     * @return The value of type T.
+     */
     template <typename T>
     T convert_to(const std::string& s) const {
         T value;
@@ -52,43 +58,135 @@ struct Line{
         return value;
     }
 
+public:
+    //-------------------------------------------------------------------------
+    // Assignment operator to set the line content and parse its type.
+    //-------------------------------------------------------------------------
+    /**
+     * @brief Assign a string to the Line object, parsing its type.
+     *
+     * @param line The string representing the line content.
+     * @return Reference to the Line object after assignment.
+     */
     Line& operator=(const std::string& line);
 
-
+    //-------------------------------------------------------------------------
     // Getter functions
+    //-------------------------------------------------------------------------
+    /**
+     * @brief Get the raw line content.
+     *
+     * @return Reference to the raw line string.
+     */
     const std::string& line() const;
 
+    /**
+     * @brief Get the parsed values (for DATA_LINE type).
+     *
+     * @return Reference to the vector of values.
+     */
     const std::vector<std::string>& values() const;
 
+    /**
+     * @brief Check if a specific key exists in the KEYWORD_LINE.
+     *
+     * @param key The key to check.
+     * @return True if the key exists, false otherwise.
+     */
     bool has_key(const std::string& key) const;
 
+    /**
+     * @brief Get the command name for KEYWORD_LINE.
+     *
+     * @return The command string.
+     */
     const std::string& command() const;
 
+    /**
+     * @brief Get the type of the line (COMMENT, EMPTY_LINE, etc.).
+     *
+     * @return The LineType value.
+     */
     LineType type() const;
 
-    // "require" function to get a value from the keys and throw an error if it does not exist.
+    /**
+     * @brief Check if the line is relevant (not a comment or empty line).
+     *
+     * @return True if the line is relevant, false otherwise.
+     */
+    bool ignorable() const {
+        return m_type == COMMENT || m_type == EMPTY_LINE;
+    }
+
+    //-------------------------------------------------------------------------
+    // Parsing functions for keys and values
+    //-------------------------------------------------------------------------
+    /**
+     * @brief Get a required key value and throw an error if the key doesn't exist.
+     *
+     * @param key The key to lookup.
+     * @return The value associated with the key.
+     */
     template <typename T>
     T require(const std::string& key) const;
 
-    // Variadic require() function to accept multiple keys
+    /**
+     * @brief Get a required value by checking multiple keys. Throws an error
+     * if none of the keys exist.
+     *
+     * @param first_key The first key to lookup.
+     * @param other_keys Additional keys to check.
+     * @return The value associated with the first existing key.
+     */
     template <typename T, typename... Args>
     T require(const std::string& first_key, const Args&... other_keys) const;
 
-    // "parse" function to get a value from the keys or return a default value if it does not exist.
+    /**
+     * @brief Get a value from the keys or return a default value if the key doesn't exist.
+     *
+     * @param key The key to lookup.
+     * @param default_value The value to return if the key is not found.
+     * @return The value associated with the key, or the default value.
+     */
     template <typename T>
     T parse(const std::string& key, const T& default_value) const;
 
-    // "count_values" function to get the number of values
+    /**
+     * @brief Get the number of values (for DATA_LINE type).
+     *
+     * @return The number of values.
+     */
     size_t count_values() const;
 
-    // "get_value" function to get a specific value from the list of values
+    /**
+     * @brief Get a specific value from the list of parsed values.
+     *
+     * @param index The index of the value in the list.
+     * @param default_value The value to return if the index is out of bounds.
+     * @return The value at the specified index, or the default value.
+     */
     template <typename T>
     T get_value(size_t index, const T& default_value) const;
 
-    // sets the end of file status to this line
+    //-------------------------------------------------------------------------
+    // Setters
+    //-------------------------------------------------------------------------
+    /**
+     * @brief Sets the end of file status to this line.
+     */
     void eof();
 
-    friend std::ostream& operator<<(std::ostream& os, const Line& line){
+    //-------------------------------------------------------------------------
+    // Output operator
+    //-------------------------------------------------------------------------
+    /**
+     * @brief Output the line information to an output stream.
+     *
+     * @param os The output stream.
+     * @param line The Line object to output.
+     * @return Reference to the output stream.
+     */
+    friend std::ostream& operator<<(std::ostream& os, const Line& line) {
         os << "Line   : " << line.line() << "\n";
         os << "Type   : " << line.type() << "\n";
 
@@ -110,6 +208,8 @@ struct Line{
         return os;
     }
 };
+
+// Implementation of templated methods
 template<typename T>
 T Line::get_value(size_t index, const T& default_value) const {
     logging::error(m_type == DATA_LINE, "The 'get_value' function can only be used with DATA_LINE type.");

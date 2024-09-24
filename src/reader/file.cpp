@@ -36,6 +36,13 @@ Line& fem::reader::File::next() {
     return m_line;
 }
 
+Line& fem::reader::File::next_line() {
+    do {
+        m_line = next();
+    } while (m_line.ignorable());
+    return m_line;
+}
+
 bool fem::reader::File::is_eof() {
     return m_line.type() == END_OF_FILE;
 }

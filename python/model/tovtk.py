@@ -1,13 +1,23 @@
 import vtk
 import numpy as np
+import argparse
 from vtk.util.numpy_support import numpy_to_vtk
 from .geometry import Geometry
 from .solution import Solution
 
 class Convert:
-    def __init__(self, geometry_path, solution_path, output_filename="output.vtk"):
+    def __init__(self, geometry_path, solution_path=None, output_filename=None):
         self.geometry = Geometry.read_input_deck(geometry_path)
+
+        # Deduce solution path if not provided
+        if solution_path is None:
+            solution_path = geometry_path.replace(".inp", ".res")
         self.solution = Solution.open(solution_path)
+
+        # Deduce output filename if not provided
+        if output_filename is None:
+            output_filename = geometry_path.replace(".inp", ".vtk")
+
         self.output_filename = output_filename
         self.ugrid = None
 
@@ -57,7 +67,8 @@ class Convert:
                     cell.GetPointIds().SetId(j, nodeId)
 
                 self.ugrid.InsertNextCell(cell.GetCellType(), cell.GetPointIds())
-
+            else:
+                self.ugrid.InsertNextCell(0, vtk.vtkIdList())
     def _write_vtk(self):
         # Write the geometry and solution data to a VTK file
         writer = vtk.vtkUnstructuredGridWriter()
@@ -90,11 +101,27 @@ class Convert:
         # Write the unstructured grid with solution fields to VTK file
         self._write_vtk()
 
-if __name__ == '__main__':
-    # Example usage:
-    geometry_path = "res/haken_analysis_2/v1.inp"
-    solution_path = "res/haken_analysis_2/v1.inp.res"
-    output_filename = "output1.vtk"
 
-    converter = Convert(geometry_path, solution_path, output_filename)
+def main():
+    parser = argparse.ArgumentParser(description="Convert geometry and solution data to VTK format.")
+    parser.add_argument("geometry_path", help="Path to the geometry input file (.inp).")
+    parser.add_argument(
+        "--solution_path",
+        help="Path to the solution file (.res). If not provided, deduced from the input file by replacing '.inp' with '.res'.",
+        default=None,
+    )
+    parser.add_argument(
+        "--output",
+        help="Output VTK file name. If not provided, deduced from the input file by replacing '.inp' with '.vtk'.",
+        default=None
+    )
+
+    args = parser.parse_args()
+
+    # Create the converter instance and perform the conversion
+    converter = Convert(geometry_path=args.geometry_path, solution_path=args.solution_path, output_filename=args.output)
     converter.convert()
+
+
+if __name__ == '__main__':
+    main()

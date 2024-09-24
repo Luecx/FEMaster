@@ -19,6 +19,7 @@ class Reader {
     File        m_file;
     std::string m_file_path;
     Writer      m_writer;
+    std::string m_output_path;
     Line        m_current_line;
     ProblemData m_data;
 
@@ -59,7 +60,7 @@ class Reader {
     void process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc);
 
     public:
-    Reader(const std::string& file_path);
+    Reader(const std::string& file_path, const std::string& output_path);
 
     void read();
 };

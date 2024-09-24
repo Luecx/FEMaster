@@ -24,6 +24,7 @@ class File {
     File(const std::string& file);
 
     Line& next();
+    Line& next_line();
 
     bool is_eof();
 };
