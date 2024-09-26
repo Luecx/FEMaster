@@ -327,9 +327,20 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
             ip_strain.setZero();
 
             compute_stress_strain(node_coords, displacement, ip_stress, ip_strain, ip_xyz);
-
-            auto res1 = fem::math::interpolate::interpolate(ip_xyz, ip_stress, global_node_coords.row(n), fem::math::interpolate::InterpolationFunction::QUADRATIC);
-            auto res2 = fem::math::interpolate::interpolate(ip_xyz, ip_strain, global_node_coords.row(n), fem::math::interpolate::InterpolationFunction::QUADRATIC);
+            auto res1 =
+                fem::math::interpolate::interpolate(ip_xyz,
+                                                    ip_stress,
+                                                    global_node_coords.row(n),
+                                                    nullptr,
+                                                    0.7,
+                                                    fem::math::interpolate::InterpolationFunction::QUADRATIC);
+            auto res2 =
+                fem::math::interpolate::interpolate(ip_xyz,
+                                                    ip_strain,
+                                                    global_node_coords.row(n),
+                                                    nullptr,
+                                                    0.7,
+                                                    fem::math::interpolate::InterpolationFunction::QUADRATIC);
 
             for (int j = 0; j < n_strain; j++) {
 
