@@ -297,10 +297,6 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
 
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det, false);
 
-        logging::warning(det > 0, "negative determinant encountered in element ", elem_id,
-                         "\ndet        : ", det,
-                         "\nCoordinates: ", global_node_coords);
-
         logging::error(det < 1e10, "invalid determinant encountered in element ", elem_id,
                                "\ndet        : ", det,
                                "\nCoordinates: ", global_node_coords);
@@ -336,6 +332,14 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
             auto res2 = fem::math::interpolate::interpolate(ip_xyz, ip_strain, global_node_coords.row(n));
 
             for (int j = 0; j < n_strain; j++) {
+
+                // if any nan or inf values produced, error
+                if (std::isnan(res1(j)) || std::isinf(res1(j))) {
+                    logging::error(false, "invalid stress encountered in element ", elem_id,
+                                   "\nStrains: ", res2,
+                                   "\nStresses: ", res1);
+                }
+
                 stress(node_id, j) += res1(j);
                 strain(node_id, j) += res2(j);
             }
