@@ -297,11 +297,22 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
 
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det, false);
 
+        logging::error(det < 1e10, "invalid determinant encountered in element ", elem_id,
+                               "\ndet        : ", det,
+                               "\nCoordinates: ", local_node_coords);
+
         if (det > 0) {
             StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
 
             auto strains = B * local_displacement;
             auto stresses = E * strains;
+
+            // if any nan
+            if (stresses.hasNaN()) {
+                logging::error(false, "invalid stress encountered in element ", elem_id,
+                               "\nStrains: ", strains,
+                               "\nStresses: ", stresses);
+            }
 
             for (int j = 0; j < n_strain; j++) {
                 strain(node_id, j) += strains(j);

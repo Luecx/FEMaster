@@ -79,6 +79,7 @@ void Reader::process_elements() {
 
     auto type = m_current_line.require<std::string>("TYPE");
 
+
     auto gather_values = [&](int req_values) -> std::vector<ID> {
         std::vector<ID> values;
         for(int i = 1; i < m_current_line.values().size(); i++){
@@ -94,6 +95,7 @@ void Reader::process_elements() {
     };
 
     while (next_line().type() == DATA_LINE) {
+
         int id = std::stoi(m_current_line.values()[0]);
         if (type == "C3D4") {
             auto values = gather_values(4);

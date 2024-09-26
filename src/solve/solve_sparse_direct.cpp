@@ -71,7 +71,7 @@ DynamicVector solve_direct(SolverDevice device,
 
         logging::info(true, "Solving finished");
         logging::info(true, "Elapsed time: " + std::to_string(t.elapsed()) + " ms");
-        logging::info(true, "residual2   : ", (rhs - mat * sol).norm() / (rhs.norm()));
+        logging::info(true, "residual    : ", (rhs - mat * sol).norm() / (rhs.norm()));
 
         // destroy matrix descriptor
         runtime_check_cuda(cusparseDestroyMatDescr(descr));
@@ -113,7 +113,7 @@ DynamicVector solve_direct(SolverDevice device,
         t.stop();
         logging::info(true, "Solving finished");
         logging::info(true, "Elapsed time: " + std::to_string(t.elapsed()) + " ms");
-        logging::info(true, "residual2   : ", (rhs - mat * eigen_sol).norm() / (rhs.norm()));
+        logging::info(true, "residual    : ", (rhs - mat * eigen_sol).norm() / (rhs.norm()));
 
         // Finally, copy the result back into your sol vector.
         for (int i = 0; i < rhs.size(); ++i) {

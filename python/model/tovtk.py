@@ -76,7 +76,7 @@ class Convert:
         writer.SetInputData(self.ugrid)
 
         # Add solution fields to the VTK file
-        fields_dict = self.solution.list_fields_reduced()
+        fields_dict = self.solution.list_fields_reduced(None)
 
         for field_name, field_func in fields_dict.items():
             field_data = field_func()

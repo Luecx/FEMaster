@@ -161,6 +161,14 @@ class Optimiser:
         with open(log_path, 'w') as log_file:
             result = subprocess.run([self.solver, model_path, "--ncpus", str(self.ncpus)], stdout=log_file, stderr=log_file)
 
+        # if the residual is too large, exit
+        with open(log_path, 'r') as log_file:
+            for line in log_file:
+                if "residual" in line.lower():
+                    residual = float(line.split()[-1])
+                    if residual > 1e-2:
+                        raise Exception("Residual too large:", residual)
+
         # Check for errors in execution
         if result.returncode != 0:
             with open(log_path, 'r') as log_file:
