@@ -227,8 +227,14 @@ DynamicMatrix
         results(0, i) = evaluate<F>(coe.col(i), adjusted_center);
     }
 
-    // check for any nan or inf, if so, try again
-    for (int )
+    // if any nan or inf, redo with lower order
+    for (int i = 0; i < results.cols(); i++) {
+        for (int j = 0; j < results.rows(); i++) {
+            if (std::isnan(results(j, i)) || std::isinf(results(j, i))) {
+                return interpolate<get_next_lower<F>()>(xyz, values, center, r2_values);
+            }
+        }
+    }
 
     if (r2_values) {
         DynamicMatrix predicted_vals = compute_predicted_values<F>(coe, adjusted_xyz);
