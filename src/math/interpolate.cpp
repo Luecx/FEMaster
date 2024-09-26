@@ -229,7 +229,7 @@ DynamicMatrix
 
     // if any nan or inf, redo with lower order
     for (int i = 0; i < results.cols(); i++) {
-        for (int j = 0; j < results.rows(); i++) {
+        for (int j = 0; j < results.rows(); j++) {
             if (std::isnan(results(j, i)) || std::isinf(results(j, i))) {
                 return interpolate<get_next_lower<F>()>(xyz, values, center, r2_values);
             }
