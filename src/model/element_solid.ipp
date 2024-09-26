@@ -297,6 +297,10 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
 
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det, false);
 
+        logging::warning(det > 0, "negative determinant encountered in element ", elem_id,
+                         "\ndet        : ", det,
+                         "\nCoordinates: ", local_node_coords);
+
         logging::error(det < 1e10, "invalid determinant encountered in element ", elem_id,
                                "\ndet        : ", det,
                                "\nCoordinates: ", local_node_coords);
