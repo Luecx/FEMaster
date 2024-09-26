@@ -227,6 +227,9 @@ DynamicMatrix
         results(0, i) = evaluate<F>(coe.col(i), adjusted_center);
     }
 
+    // check for any nan or inf, if so, try again
+    for (int )
+
     if (r2_values) {
         DynamicMatrix predicted_vals = compute_predicted_values<F>(coe, adjusted_xyz);
         *r2_values                   = compute_r2(predicted_vals, values);
