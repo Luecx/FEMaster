@@ -246,7 +246,7 @@ DynamicMatrix interpolate(const NodeData&        xyz,
                           const NodeData&        values,
                           const StaticVector<3>& center,
                           DynamicVector*         r2_values,
-                          float                  v,
+                          float                  accuracy_factor,
                           InterpolationFunction  max_accuracy) {
     float adjusted_rows = xyz.rows() * accuracy_factor;
 
