@@ -299,11 +299,11 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
 
         logging::warning(det > 0, "negative determinant encountered in element ", elem_id,
                          "\ndet        : ", det,
-                         "\nCoordinates: ", local_node_coords);
+                         "\nCoordinates: ", global_node_coords);
 
         logging::error(det < 1e10, "invalid determinant encountered in element ", elem_id,
                                "\ndet        : ", det,
-                               "\nCoordinates: ", local_node_coords);
+                               "\nCoordinates: ", global_node_coords);
 
         if (det > 0) {
             StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
