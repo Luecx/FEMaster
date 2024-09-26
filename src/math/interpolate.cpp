@@ -211,7 +211,7 @@ DynamicMatrix
     auto ATA = lhs.transpose() * lhs;
     auto determinant = ATA.determinant();
 
-    if (determinant < 1e-10) {
+    if (determinant < 1e-10 || determinant > 1e20) {
         // If the determinant is too small, we cannot solve the system.
         // In this case, we will try to use a simpler interpolation method.
         if (r2_values) {
@@ -246,7 +246,7 @@ DynamicMatrix interpolate(const NodeData&        xyz,
                           const NodeData&        values,
                           const StaticVector<3>& center,
                           DynamicVector*         r2_values,
-                          float                  accuracy_factor,
+                          float                  v,
                           InterpolationFunction  max_accuracy) {
     float adjusted_rows = xyz.rows() * accuracy_factor;
 
