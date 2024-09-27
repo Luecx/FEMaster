@@ -1,18 +1,26 @@
 /******************************************************************************
- * @file SolidElement.hpp
- * @brief Defines the SolidElement template class, which serves as a base 
- * class for solid finite elements in a 3D space, with methods to calculate 
- * shape functions, strain-displacement matrices, Jacobians, and stiffness/mass 
- * matrices.
+* @file surface.hpp
+ * @brief Defines the SurfaceInterface template class, which serves as a base
+ * class for surface finite elements in both 2D and 3D spaces. It provides
+ * methods for calculating shape functions, projecting points onto the surface,
+ * computing local coordinates, and integrating functions across the surface.
  *
- * @tparam N The number of nodes associated with the solid element.
+ * @tparam N The number of nodes associated with the surface element.
  *
- * @details This class provides a generic interface for solid elements in FEM. 
- * It defines functions for computing shape functions and derivatives, global 
- * and local node coordinates, Jacobians, strain-displacement matrices, 
- * stiffness/mass matrices, and various element-related computations.
+ * @details This class provides a generic interface for surface elements in FEM.
+ * It defines functions for computing shape functions and derivatives,
+ * projecting points in 3D space to the surface, computing local coordinates
+ * for projected points, and performing surface integration using a lambda
+ * function. Derived classes should implement the specific shape functions
+ * for different surface element types (e.g., triangular, quadrilateral,
+ * first- or second-order).
  *
- * @date Created on 12.06.2023
+ * The surface types supported include triangular and quadrilateral elements
+ * with varying order (e.g., S3D3, S3D4, S3D6, S3D8), and the interface provides
+ * a framework for computing element-surface interactions and enabling complex
+ * tie constraints in FEM. This is not to be confused with SHELL elements
+ *
+ * @date Created on 27.09.2024
  * @author Finn Eggers
  ******************************************************************************/
 
@@ -26,9 +34,9 @@ namespace fem::model {
 /******************************************************************************
  * @class SolidElement
  * @brief Base class template for a solid element in finite element analysis.
- * 
+ *
  * @tparam N The number of nodes in the element.
- * 
+ *
  * @details This class defines general methods that a solid element must
  * implement, including methods for calculating shape functions, Jacobians,
  * stiffness matrices, and mass matrices. Derived classes should provide
@@ -36,7 +44,7 @@ namespace fem::model {
  ******************************************************************************/
 template<Index N>
 struct SolidElement : public ElementInterface {
-    
+
     //-------------------------------------------------------------------------
     // Member Variables
     //-------------------------------------------------------------------------
