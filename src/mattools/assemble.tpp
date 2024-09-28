@@ -33,7 +33,9 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
                                             Lambda&& compute_local_matrix) {
     // Ensure Eigen and MKL use only one thread
     Eigen::setNbThreads(1);
+#ifdef USE_MKL
     mkl_set_num_threads(1);
+#endif
 
     // Determine the size of the global matrix
     int global_size = indices.maxCoeff() + 1;
@@ -94,6 +96,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 }
 
 
+#ifdef _OPENMP
 /**
  * @brief Assembles the global sparse matrix from local element matrices using multiple threads.
  * Each thread computes local matrices and assembles them into its own global matrix.
@@ -189,17 +192,21 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     // The final result is in thread_matrices[0]
     return thread_matrices[0];
 }
-
+#endif
 
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
                              const SystemDofIds& indices,
                              Lambda&& compute_local_matrix) {
+#ifndef _OPENMP
+    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix);
+#else
     if (global_config.max_threads > 1) {
         return assemble_matrix_multithreaded(elements, indices, compute_local_matrix);
     } else {
         return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix);
     }
+#endif
 }
 
 } } // namespace fem::mattools
