@@ -127,7 +127,6 @@ else
     MKL_LIBS := -Wl,--start-group $(MKL_COMMON_LIBS) $(MKL_PATH)/$(MKL_LIB_FILE) -Wl,--end-group $(if $(filter 0,$(mkl_sequential)), -L$(MKL_PATH) -liomp5)
 endif
 
-
 #===============================================================
 # CUDA Libraries
 #===============================================================
@@ -154,10 +153,13 @@ BINDIR      = bin
 # Source and Object Files
 #===============================================================
 
-CPP_SRCS := $(sort $(shell find $(SRCDIR) -name '*.cpp'))
-CU_SRCS  := $(sort $(shell find $(SRCDIR) -name '*.cu'))
-TST_SRCS := $(sort $(shell find $(TESTDIR) -name '*.cpp'))
+# Define main source file and exclude it for test builds
+MAIN_SRC    := $(SRCDIR)/main.cpp
+CPP_SRCS    := $(filter-out $(MAIN_SRC), $(sort $(shell find $(SRCDIR) -name '*.cpp')))
+CU_SRCS     := $(sort $(shell find $(SRCDIR) -name '*.cu'))
+TST_SRCS    := $(sort $(shell find $(TESTDIR) -name '*.cpp'))
 
+# Object files
 GPP_OBJS     := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
 GPU_CPP_OBJS := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
 CU_OBJS      := $(CU_SRCS:$(SRCDIR)/%.cu=$(CU_OBJDIR)/%.o)
@@ -185,15 +187,6 @@ show_flags:
 	@echo "LIBS         : $(LIBS)"
 	@echo "Feature Flags: $(FEATURE_FLAGS)"
 	@echo ""
-	@echo "Feature Flags:"
-	@echo "-------------------"
-	@echo "OpenMP               : $(if $(findstring -fopenmp, $(CXXFLAGS)),Enabled,Disabled)"
-	@echo "MKL                  : $(if $(findstring -DUSE_MKL, $(FEATURE_FLAGS)),Enabled,Disabled)"
-	@echo "MKL Type             : $(if $(findstring -DUSE_MKL_SEQUENTIAL, $(FEATURE_FLAGS)),Sequential,Parallel)"
-	@echo "CUDA Double Precision: $(if $(findstring -DCUDA_DOUBLE_PRECISION, $(FEATURE_FLAGS)),Enabled,Disabled)"
-	@echo "Show Array Processes : $(if $(findstring -DSHOW_ARRAY_PROCESSES, $(FEATURE_FLAGS)),Enabled,Disabled)"
-	@echo "Debug                : $(if $(findstring -DNDEBUG, $(FEATURE_FLAGS)),Enabled,Disabled)"
-
 
 #===============================================================
 # Build Targets
@@ -216,17 +209,17 @@ tests: $(EXE_TST)
 CXXFLAGS   += -MMD -MP
 NVCCFLAGS  += -MMD -MP
 
-$(EXE_CPU): $(GPP_OBJS)
+$(EXE_CPU): $(GPP_OBJS) $(MAIN_SRC:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) $^ $(LIBS) -o $@
 
-$(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS)
+$(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS) $(MAIN_SRC:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(GPU_CPP_OBJS) $(CU_OBJS) $(LIBS) -o $@
+	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $^ $(LIBS) -o $@
 
 $(EXE_TST): $(TST_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(TST_OBJS) $(TEST_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $^ $(TEST_LIBS) -o $@
 
 # Object generation rules
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp

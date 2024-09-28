@@ -57,7 +57,7 @@ struct SurfaceInterface {
     // ------------
     virtual StaticVector<3> local_to_global(const StaticVector<2>& local, const NodeData& node_coords_system) const {
         auto node_coords_global = this->node_coords_global(node_coords_system);
-        StaticVector<3> res{};
+        StaticVector<3> res{0,0,0};
         for (Index i = 0; i < N; i++) {
             res += node_coords_global.row(i) * shape_function(local(0), local(1))(i);
         }

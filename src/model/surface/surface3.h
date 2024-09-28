@@ -40,24 +40,42 @@ struct Surface3 : public SurfaceInterface<3> {
         return local_coords;
     }
 
+    // Function signature for the method in your class
     StaticVector<2> global_to_local(const StaticVector<3>& global, const NodeData& node_coords_system, bool clip) const override {
+        // Local coordinate vector to return
         StaticVector<2> local;
+
+        // Retrieve node coordinates (adjust node_coords row selection based on your class)
         auto node_coords = this->node_coords_global(node_coords_system);
 
-        StaticVector<3> v0 = node_coords.row(2) - node_coords.row(0);  // Node 3 - Node 1
-        StaticVector<3> v1 = node_coords.row(1) - node_coords.row(0);  // Node 2 - Node 1
-        StaticVector<3> v2 = global - node_coords.row(0).transpose();  // From Node 1 to point
+        // Define vectors spanning the plane from the first node
+        StaticVector<3> v0 = node_coords.row(1) - node_coords.row(0);  // Node 2 - Node 1
+        StaticVector<3> v1 = node_coords.row(2) - node_coords.row(0);  // Node 3 - Node 1
+        StaticVector<3> v2 = global - node_coords.row(0).transpose();  // From Node 1 to the point
 
-        Precision d00 = v0.dot(v0);
-        Precision d01 = v0.dot(v1);
-        Precision d11 = v1.dot(v1);
-        Precision d20 = v2.dot(v0);
-        Precision d21 = v2.dot(v1);
-        Precision denom = d00 * d11 - d01 * d01;
+        // Step 1: Project `v2` onto the plane defined by `v0` and `v1`
+        // Calculate the normal vector to the plane
+        StaticVector<3> normal = v0.cross(v1).normalized();
 
-        local(0) = (d00 * d21 - d01 * d20) / denom;  // r
-        local(1) = (d11 * d20 - d01 * d21) / denom;  // s
+        // Project `v2` onto the plane: projected_vector = v2 - (v2 • normal) * normal
+        StaticVector<3> v2_proj = v2 - (v2.dot(normal)) * normal;
 
+        // Step 2: Convert to local coordinates in the plane spanned by `v0` and `v1` using Normal Equations
+        // Set up matrix U = [v0 | v1]
+        StaticMatrix<3, 2> U;
+        U.col(0) = v0;
+        U.col(1) = v1;
+
+        // Calculate U^T * U
+        Eigen::Matrix<Precision, 2, 2> UtU = U.transpose() * U;
+
+        // Calculate U^T * v2_proj
+        StaticVector<2> Utv2_proj = U.transpose() * v2_proj;
+
+        // Step 3: Use matrix inversion to solve the equation: local = (U^T * U)^(-1) * (U^T * v2_proj)
+        local = UtU.inverse() * Utv2_proj;
+
+        // Step 4: Clip the coordinates if needed (if the point is outside the triangle)
         if (clip) {
             if (local(0) < 0 || local(1) < 0 || local(0) + local(1) > 1) {
                 local = closest_point_on_triangle_edges(global, node_coords);
@@ -89,7 +107,6 @@ struct Surface3 : public SurfaceInterface<3> {
         StaticVector<3> v2 = global - p0;
 
         Precision t = v2.dot(edge) / edge.squaredNorm();
-
         t = std::max(0.0, std::min(1.0, t));
         StaticVector<3> closest_point = p0 + t * edge;
         return std::make_tuple(closest_point, t);
