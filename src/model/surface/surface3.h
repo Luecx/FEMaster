@@ -49,33 +49,6 @@ struct Surface3 : public SurfaceInterface<3> {
         return local_coords;
     }
 
-    StaticVector<2> closest_point_on_triangle_edges(const StaticVector<3>& global, const StaticMatrix<3, 3>& node_coords) const {
-        auto res1 = closest_point_on_edge(global, node_coords.row(0), node_coords.row(1));
-        auto res2 = closest_point_on_edge(global, node_coords.row(1), node_coords.row(2));
-        auto res3 = closest_point_on_edge(global, node_coords.row(2), node_coords.row(0));
-
-        Precision d1 = (std::get<0>(res1) - global).squaredNorm();
-        Precision d2 = (std::get<0>(res2) - global).squaredNorm();
-        Precision d3 = (std::get<0>(res3) - global).squaredNorm();
-
-        Precision best_dist = std::min({d1, d2, d3});
-
-        if (d1 == best_dist) return {std::get<1>(res1), 0};
-        if (d2 == best_dist) return {1 - std::get<1>(res2), std::get<1>(res2)};
-        return {0, 1-std::get<1>(res3)};
-    }
-
-    std::tuple<StaticVector<3>, Precision> closest_point_on_edge(
-        const StaticVector<3>& global, const StaticVector<3>& p0, const StaticVector<3>& p1) const {
-        StaticVector<3> edge = p1 - p0;
-        StaticVector<3> v2 = global - p0;
-
-        Precision t = v2.dot(edge) / edge.squaredNorm();
-        t = std::max(0.0, std::min(1.0, t));
-        StaticVector<3> closest_point = p0 + t * edge;
-        return std::make_tuple(closest_point, t);
-    }
-
     const quadrature::Quadrature& integration_scheme() const override {
         static const quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TRI, quadrature::ORDER_LINEAR};
         return quad;
