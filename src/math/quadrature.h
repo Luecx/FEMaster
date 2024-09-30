@@ -26,6 +26,8 @@ enum Domain {
     DOMAIN_ISO_HEX,
     DOMAIN_ISO_TET,
     DOMAIN_ISO_WEDGE,
+    DOMAIN_ISO_LINE_A, // 1D line element with range [-1, 1]
+    DOMAIN_ISO_LINE_B, // 1D line element with range [0, 1]
 };
 
 struct Point {
@@ -37,6 +39,7 @@ struct Point {
     Point() {}
     Point(Precision r, Precision s, Precision t, Precision w);
     Point(Precision r, Precision s, Precision w);
+    Point(Precision r, Precision w);
 
     template<typename T>
     T operator()(const std::function<T(Precision, Precision, Precision)>& func) const {

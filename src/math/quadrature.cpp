@@ -61,10 +61,49 @@ Point::Point(Precision r, Precision s, Precision w)
     , s(s)
     , t(0)
     , w(w) {}
+Point::Point(Precision r, Precision w)
+    : r(r)
+    , s(0)
+    , t(0)
+    , w(w) {}
 
 Quadrature::Quadrature(Domain d, Order o)
     : domain(d), order(o) {
     points.resize(n_points(o, d));
+
+    if (d == DOMAIN_ISO_LINE_A) {
+        if (o == ORDER_CONSTANT || o == ORDER_LINEAR)
+            points = {Point(0.0, 2.0)};
+        else if (o == ORDER_QUADRATIC || o == ORDER_CUBIC){
+            points[0] = Point(-1.0/sqrt(3.0), 1.0);
+            points[1] = Point( 1.0/sqrt(3.0), 1.0);
+        }
+        else if (o == ORDER_QUARTIC || o == ORDER_QUINTIC){
+            points[0] = Point(-sqrt(3.0/5.0), 5.0/9.0);
+            points[1] = Point( 0.0, 8.0/9.0);
+            points[2] = Point( sqrt(3.0/5.0), 5.0/9.0);
+        }
+        else {
+            runtime_check(false, "not supported");
+        }
+    }
+
+    if (d == DOMAIN_ISO_LINE_B) {
+        if (o == ORDER_CONSTANT || o == ORDER_LINEAR)
+            points = {Point(0.5, 1.0)};
+        else if (o == ORDER_QUADRATIC || o == ORDER_CUBIC){
+            points[0] = Point(0.5 - 0.5/sqrt(3.0), 0.5);
+            points[1] = Point(0.5 + 0.5/sqrt(3.0), 0.5);
+        }
+        else if (o == ORDER_QUARTIC || o == ORDER_QUINTIC){
+            points[0] = Point(0.5 - 0.5*sqrt(3.0/5.0), 5.0/18.0);
+            points[1] = Point(0.5, 8.0/18.0);
+            points[2] = Point(0.5 + 0.5*sqrt(3.0/5.0), 5.0/18.0);
+        }
+        else {
+            runtime_check(false, "not supported");
+        }
+    }
 
     if (d == DOMAIN_ISO_TRI){
         if (o == ORDER_LINEAR || o == ORDER_CONSTANT){
@@ -72,8 +111,8 @@ Quadrature::Quadrature(Domain d, Order o)
         }
 
         else if (o == ORDER_QUADRATIC){
-            points[0] = Point(1.0/6.0, 1.0/6.0, 1.0/6.0),
-            points[1] = Point(2.0/3.0, 1.0/6.0, 1.0/6.0),
+            points[0] = Point(1.0/6.0, 1.0/6.0, 1.0/6.0);
+            points[1] = Point(2.0/3.0, 1.0/6.0, 1.0/6.0);
             points[2] = Point(1.0/6.0, 2.0/3.0, 1.0/6.0);
         }
 

@@ -1,28 +1,3 @@
-/******************************************************************************
-* @file surface.hpp
- * @brief Defines the SurfaceInterface template class, which serves as a base
- * class for surface finite elements in both 2D and 3D spaces. It provides
- * methods for calculating shape functions, projecting points onto the surface,
- * computing local coordinates, and integrating functions across the surface.
- *
- * @tparam N The number of nodes associated with the surface element.
- *
- * @details This class provides a generic interface for surface elements in FEM.
- * It defines functions for computing shape functions and derivatives,
- * projecting points in 3D space to the surface, computing local coordinates
- * for projected points, and performing surface integration using a lambda
- * function. Derived classes should implement the specific shape functions
- * for different surface element types (e.g., triangular, quadrilateral,
- * first- or second-order).
- *
- * The surface types supported include triangular and quadrilateral elements
- * with varying order (e.g., S3D3, S3D4, S3D6, S3D8), and the interface provides
- * a framework for computing element-surface interactions and enabling complex
- * tie constraints in FEM. This is not to be confused with SHELL elements
- *
- * @date Created on 27.09.2024
- * @author Finn Eggers
- ******************************************************************************/
 
 #pragma once
 

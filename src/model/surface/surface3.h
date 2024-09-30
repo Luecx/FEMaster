@@ -1,6 +1,7 @@
 #pragma once
 
 #include "surface.h"
+#include "../line/line2b.h"
 
 #include <array>
 #include <tuple>
@@ -32,57 +33,20 @@ struct Surface3 : public SurfaceInterface<3> {
         return dN;
     }
 
+    StaticMatrix<3, 3> shape_second_derivative(Precision r, Precision s) const override {
+        StaticMatrix<3, 3> ddN;
+        ddN << 0, 0, 0,
+               0, 0, 0,
+               0, 0, 0;
+        return ddN;
+    }
+
     StaticMatrix<3, 2> node_coords_local() const override {
         StaticMatrix<3, 2> local_coords;
         local_coords << 0.0, 0.0,   // Node 1
                         1.0, 0.0,   // Node 2
                         0.0, 1.0;   // Node 3
         return local_coords;
-    }
-
-    // Function signature for the method in your class
-    StaticVector<2> global_to_local(const StaticVector<3>& global, const NodeData& node_coords_system, bool clip) const override {
-        // Local coordinate vector to return
-        StaticVector<2> local;
-
-        // Retrieve node coordinates (adjust node_coords row selection based on your class)
-        auto node_coords = this->node_coords_global(node_coords_system);
-
-        // Define vectors spanning the plane from the first node
-        StaticVector<3> v0 = node_coords.row(1) - node_coords.row(0);  // Node 2 - Node 1
-        StaticVector<3> v1 = node_coords.row(2) - node_coords.row(0);  // Node 3 - Node 1
-        StaticVector<3> v2 = global - node_coords.row(0).transpose();  // From Node 1 to the point
-
-        // Step 1: Project `v2` onto the plane defined by `v0` and `v1`
-        // Calculate the normal vector to the plane
-        StaticVector<3> normal = v0.cross(v1).normalized();
-
-        // Project `v2` onto the plane: projected_vector = v2 - (v2 • normal) * normal
-        StaticVector<3> v2_proj = v2 - (v2.dot(normal)) * normal;
-
-        // Step 2: Convert to local coordinates in the plane spanned by `v0` and `v1` using Normal Equations
-        // Set up matrix U = [v0 | v1]
-        StaticMatrix<3, 2> U;
-        U.col(0) = v0;
-        U.col(1) = v1;
-
-        // Calculate U^T * U
-        Eigen::Matrix<Precision, 2, 2> UtU = U.transpose() * U;
-
-        // Calculate U^T * v2_proj
-        StaticVector<2> Utv2_proj = U.transpose() * v2_proj;
-
-        // Step 3: Use matrix inversion to solve the equation: local = (U^T * U)^(-1) * (U^T * v2_proj)
-        local = UtU.inverse() * Utv2_proj;
-
-        // Step 4: Clip the coordinates if needed (if the point is outside the triangle)
-        if (clip) {
-            if (local(0) < 0 || local(1) < 0 || local(0) + local(1) > 1) {
-                local = closest_point_on_triangle_edges(global, node_coords);
-            }
-        }
-
-        return local;
     }
 
     StaticVector<2> closest_point_on_triangle_edges(const StaticVector<3>& global, const StaticMatrix<3, 3>& node_coords) const {
@@ -116,6 +80,33 @@ struct Surface3 : public SurfaceInterface<3> {
         static const quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TRI, quadrature::ORDER_LINEAR};
         return quad;
     }
+
+    StaticVector<2> closest_point_on_boundary(const StaticVector<3>& global, const StaticMatrix<3, 3>& node_coords) const {
+        Line2B line1({0, 1});
+        Line2B line2({1, 2});
+        Line2B line3({2, 0});
+
+        Precision line1_p = line1.global_to_local(global, node_coords);
+        Precision line2_p = line2.global_to_local(global, node_coords);
+        Precision line3_p = line3.global_to_local(global, node_coords);
+
+        StaticVector<3> p1 = line1.local_to_global(line1_p, node_coords);
+        StaticVector<3> p2 = line2.local_to_global(line2_p, node_coords);
+        StaticVector<3> p3 = line3.local_to_global(line3_p, node_coords);
+
+        Precision d1 = (p1 - global).squaredNorm();
+        Precision d2 = (p2 - global).squaredNorm();
+        Precision d3 = (p3 - global).squaredNorm();
+
+        if (d1 < d2 && d1 < d3) return {line1_p, 0};
+        if (d3 < d1 && d3 < d2) return {0, line3_p};
+        return {1-line2_p, line2_p};
+    }
+
+    bool in_bounds(const StaticVector<2>& local) const {
+        return local(0) >= 0 && local(1) >= 0 && local(0) + local(1) <= 1;
+    }
+
 };
 
 }  // namespace fem::model
