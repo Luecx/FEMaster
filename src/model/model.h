@@ -66,18 +66,18 @@ struct Model {
     void activate_material   (const std::string& name);
 
     // load management
-    void add_cload      (const std::string& nset, StaticVector<3> load);
-    void add_cload      (ID id, StaticVector<3> load);
-    void add_vload      (const std::string& elset, StaticVector<3> load);
-    void add_vload      (ID id, StaticVector<3> load);
+    void add_cload      (const std::string& nset, Vec3 load);
+    void add_cload      (ID id, Vec3 load);
+    void add_vload      (const std::string& elset, Vec3 load);
+    void add_vload      (ID id, Vec3 load);
 
     // support managment
     void add_support    (const std::string& nset, StaticVector<6> constraint);
-    void add_support    (const std::string& nset, StaticVector<3> displacement);
-    void add_support_rot(const std::string& nset, StaticVector<3> rotation);
+    void add_support    (const std::string& nset, Vec3 displacement);
+    void add_support_rot(const std::string& nset, Vec3 rotation);
     void add_support    (ID id, StaticVector<6> constraint);
-    void add_support    (ID id, StaticVector<3> displacement);
-    void add_support_rot(ID id, StaticVector<3> rotation);
+    void add_support    (ID id, Vec3 displacement);
+    void add_support_rot(ID id, Vec3 rotation);
     void add_support    (ID id, Dim dim, Precision displacement = 0);
 
     // access to active sets

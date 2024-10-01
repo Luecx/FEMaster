@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
                     0.0, 1.0, 0.0;
     fem::model::Surface3 surface{{0, 1, 2}};
 
-    auto point = StaticVector<3>{3,4,2};
+    auto point = Vec3{3,4,2};
     auto local_coords1 = surface.global_to_local({3,4,2}, node_coords, false);
     auto local_coords2 = surface.global_to_local({3,4,2}, node_coords, true);
 

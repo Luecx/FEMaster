@@ -58,11 +58,11 @@ constexpr InterpolationFunction get_next_lower() {
  *
  * \example
  * DynamicVector coefficients = {2, 3, 4};
- * StaticVector<3> point = {1, 2, 3};
+ * Vec3 point = {1, 2, 3};
  * Precision result = evaluate<LINEAR>(coefficients, point);
  */
 template<InterpolationFunction F>
-inline Precision evaluate(const DynamicVector& coeff, const StaticVector<3>& center) {
+inline Precision evaluate(const DynamicVector& coeff, const Vec3& center) {
     Precision result = 0;
 
     int       idx    = 0;
@@ -152,7 +152,7 @@ DynamicVector compute_r2(const DynamicMatrix& predicted_values, const NodeData& 
 
 template<InterpolationFunction F>
 DynamicMatrix
-    interpolate(const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values) {
+    interpolate(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values) {
     
     NodeData adjusted_xyz = xyz;
     // Subtract center from each row of xyz
@@ -163,7 +163,7 @@ DynamicMatrix
     }
 
     // Subtract center from center (which makes it a zero vector)
-    StaticVector<3> adjusted_center = center;
+    Vec3 adjusted_center = center;
     for (int j = 0; j < 3; ++j) {
         adjusted_center(j) -= center(j);
     }
@@ -244,16 +244,16 @@ DynamicMatrix
     return results;
 }
 
-template DynamicMatrix interpolate<CONSTANT> (const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<LINEAR>   (const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<BILINEAR> (const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<QUADRATIC>(const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<BILINQUAD>(const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<CUBIC>    (const NodeData& xyz, const NodeData& values, const StaticVector<3>& center, DynamicVector* r2_values);
+template DynamicMatrix interpolate<CONSTANT> (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
+template DynamicMatrix interpolate<LINEAR>   (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
+template DynamicMatrix interpolate<BILINEAR> (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
+template DynamicMatrix interpolate<QUADRATIC>(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
+template DynamicMatrix interpolate<BILINQUAD>(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
+template DynamicMatrix interpolate<CUBIC>    (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
 
 DynamicMatrix interpolate(const NodeData&        xyz,
                           const NodeData&        values,
-                          const StaticVector<3>& center,
+                          const Vec3& center,
                           DynamicVector*         r2_values,
                           float                  accuracy_factor,
                           InterpolationFunction  max_accuracy) {
@@ -290,7 +290,7 @@ float Interpolator::get_accuracy() const {
 }
 DynamicMatrix Interpolator::operator()(const NodeData&        xyz,
                                        const NodeData&        values,
-                                       const StaticVector<3>& center,
+                                       const Vec3& center,
                                        DynamicVector*         r2_values) {
     return interpolate(xyz, values, center, r2_values, accuracy, method);
 }

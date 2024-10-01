@@ -35,13 +35,13 @@ enum InterpolationFunction {
  * \example
  * NodeData nodes = {{1,2,3}, {2,3,4}};
  * NodeData vals = {{5}, {6}};
- * StaticVector<3> point = {1.5, 2.5, 3.5};
+ * Vec3 point = {1.5, 2.5, 3.5};
  * DynamicMatrix result = interpolate<LINEAR>(nodes, vals, point);
  */
 template<InterpolationFunction F>
 DynamicMatrix interpolate(const NodeData&        xyz,
                           const NodeData&        values,
-                          const StaticVector<3>& center,
+                          const Vec3& center,
                           DynamicVector*         r2_values = nullptr);
 
 /**
@@ -63,14 +63,14 @@ DynamicMatrix interpolate(const NodeData&        xyz,
  * @example
  * NodeData xyz = ...; // Get some node data
  * NodeData values = ...; // Corresponding values for the nodes
- * StaticVector<3> center = {x, y, z}; // Some point in space
+ * Vec3 center = {x, y, z}; // Some point in space
  * DynamicVector r2;
  * auto result = fem::math::interpolate::interpolate(xyz, values, center, &r2, 1.0, InterpolationFunction::BILINEAR);
  * // Result now contains interpolated values at the center point.
  */
 DynamicMatrix interpolate(const NodeData&        xyz,
                           const NodeData&        values,
-                          const StaticVector<3>& center,
+                          const Vec3& center,
                           DynamicVector*         r2_values       = nullptr,
                           float                  accuracy_factor = 1,
                           InterpolationFunction  max_accuracy    = InterpolationFunction::CUBIC);
@@ -100,7 +100,7 @@ class Interpolator {
     // Perform interpolation
     DynamicMatrix operator()(const NodeData&        xyz,
                              const NodeData&        values,
-                             const StaticVector<3>& center,
+                             const Vec3& center,
                              DynamicVector*         r2_values = nullptr);
 };
 

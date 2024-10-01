@@ -46,8 +46,8 @@ struct ElementInterface {
                                             NodeData& stress,
                                             NodeData& strain,
                                             NodeData& xyz)                                                       = 0;
-    virtual void      apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, StaticVector<3> load) = 0;
-    virtual void      apply_vload(NodeData& node_coords, NodeData& node_loads,             StaticVector<3> load) = 0;
+    virtual void      apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, Vec3 load) = 0;
+    virtual void      apply_vload(NodeData& node_coords, NodeData& node_loads,             Vec3 load) = 0;
     virtual void      compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result)     = 0;
 };
 

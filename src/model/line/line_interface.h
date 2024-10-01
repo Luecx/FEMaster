@@ -145,7 +145,7 @@ struct LineInterface {
 
         // Integrate to compute the length
         return quadrature.integrate([&](Precision r, Precision, Precision) -> Precision {
-            StaticVector<3> dx_dr = StaticVector<3>::Zero();
+            Vec3 dx_dr = Vec3::Zero();
             Eigen::Matrix<Precision, N, 1> dN_dr = this->shape_derivative(r);
 
             for (Index i = 0; i < N; i++) {
@@ -166,7 +166,7 @@ struct LineInterface {
      *          minimizes the distance between the point 'p' and the position vector of the line element. Multiple
      *          initial guesses are used to ensure convergence to the global minimum distance.
      */
-    Precision global_to_local(const StaticVector<3>& p, const NodeData& node_coords_system, bool clip=true) const {
+    Precision global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip=true) const {
         constexpr int max_iter = 32;
         constexpr Precision eps = 1e-12;
         std::vector<Precision> initial_guesses;
@@ -197,9 +197,9 @@ struct LineInterface {
                 Eigen::Matrix<Precision, N, 1> d2N_dr2 = shape_second_derivative(r);
 
                 // Compute position x(r) and its derivatives dx/dr and d²x/dr²
-                StaticVector<3> x_r = StaticVector<3>::Zero();
-                StaticVector<3> dx_dr = StaticVector<3>::Zero();
-                StaticVector<3> d2x_dr2 = StaticVector<3>::Zero();
+                Vec3 x_r = Vec3::Zero();
+                Vec3 dx_dr = Vec3::Zero();
+                Vec3 d2x_dr2 = Vec3::Zero();
 
                 for (Index i = 0; i < N; i++) {
                     x_r += N_vals(i) * node_coords_global.row(i);
@@ -208,7 +208,7 @@ struct LineInterface {
                 }
 
                 // Compute the difference vector
-                StaticVector<3> diff = x_r - p;
+                Vec3 diff = x_r - p;
 
                 // Compute the derivative of the squared distance
                 Precision dD_dr = diff.dot(dx_dr);
@@ -235,7 +235,7 @@ struct LineInterface {
             }
 
             // Compute the squared distance for this r
-            StaticVector<3> x_r = this->local_to_global(r, node_coords_system);
+            Vec3 x_r = this->local_to_global(r, node_coords_system);
             Precision distance_squared = (x_r - p).squaredNorm();
 
             // Update the best r if this is the minimum distance so far and within bounds
@@ -253,14 +253,14 @@ struct LineInterface {
      *
      * @param r Local coordinate along the line element.
      * @param node_coords_system Node coordinates in the global coordinate system.
-     * @return StaticVector<3> Global coordinate corresponding to the local coordinate 'r'.
+     * @return Vec3 Global coordinate corresponding to the local coordinate 'r'.
      *
      * @details This function computes the global position vector at a given local coordinate 'r' by evaluating
      *          the shape functions at 'r' and summing the contributions from each node.
      */
-    StaticVector<3> local_to_global(Precision r, const NodeData& node_coords_system) const {
+    Vec3 local_to_global(Precision r, const NodeData& node_coords_system) const {
         auto node_coords_global = this->node_coords_global(node_coords_system);
-        StaticVector<3> res = StaticVector<3>::Zero();
+        Vec3 res = Vec3::Zero();
         Eigen::Matrix<Precision, N, 1> N_vals = shape_function(r);
         for (Index i = 0; i < N; i++) {
             res += N_vals(i) * node_coords_global.row(i);

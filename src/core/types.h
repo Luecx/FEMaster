@@ -44,6 +44,11 @@ template<size_t A>
 using StaticVector  = Eigen::Matrix<Precision, A, 1>;
 using DynamicVector = Eigen::Matrix<Precision, Eigen::Dynamic, 1>;
 
+using Vec2          = StaticVector<2>;
+using Vec3          = StaticVector<3>;
+using Vec4          = StaticVector<4>;
+using Vec6          = StaticVector<6>;
+
 using IndexVector   = Eigen::Matrix<ID       , Eigen::Dynamic, 1>;
 using IndexMatrix   = Eigen::Matrix<ID       , Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 

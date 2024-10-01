@@ -29,12 +29,12 @@ void Model::activate_material(const std::string &name){
     materials.activate(name);
 }
 
-void Model::add_cload(const std::string& nset, StaticVector<3> load){
+void Model::add_cload(const std::string& nset, Vec3 load){
     for(ID id:node_sets.get(nset)){
         add_cload(id, load);
     }
 }
-void Model::add_cload(const ID id, StaticVector<3> load){
+void Model::add_cload(const ID id, Vec3 load){
     for(int i = 0; i < 3; i++){
         load_sets.current()(id,i) += load(i);
         if(!load_sets.is_default_set())
@@ -42,12 +42,12 @@ void Model::add_cload(const ID id, StaticVector<3> load){
     }
 }
 
-void Model::add_vload(const std::string& elset, StaticVector<3> load){
+void Model::add_vload(const std::string& elset, Vec3 load){
     for(ID id:elem_sets.get(elset)){
         add_vload(id, load);
     }
 }
-void Model::add_vload(const ID id, StaticVector<3> load){
+void Model::add_vload(const ID id, Vec3 load){
     elements[id]->apply_vload(node_coords, load_sets.current(), load);
     if(!load_sets.is_default_set())
         elements[id]->apply_vload(node_coords, load_sets.all(), load);
@@ -58,7 +58,7 @@ void Model::add_support(const std::string& nset, const StaticVector<6> constrain
         add_support(id, constraint);
     }
 }
-void Model::add_support(const std::string& nset, const StaticVector<3> displacement){
+void Model::add_support(const std::string& nset, const Vec3 displacement){
     for(ID id:node_sets.get(nset)){
         add_support(id, displacement);
     }
@@ -70,19 +70,19 @@ void Model::add_support(const ID id, const StaticVector<6> constraint){
             support_sets.all()(id,i) = constraint(i);
     }
 }
-void Model::add_support(const ID id, const StaticVector<3> displacement){
+void Model::add_support(const ID id, const Vec3 displacement){
     for(int i = 0; i < 3; i++){
         support_sets.current()(id,i) = displacement(i);
         if(!support_sets.is_default_set())
             support_sets.all()(id,i) = displacement(i);
     }
 }
-void Model::add_support_rot(const std::string& nset, const StaticVector<3> rotation){
+void Model::add_support_rot(const std::string& nset, const Vec3 rotation){
     for(ID id:node_sets.get(nset)){
         add_support_rot(id, rotation);
     }
 }
-void Model::add_support_rot(const ID id, const StaticVector<3> rotation){
+void Model::add_support_rot(const ID id, const Vec3 rotation){
     for(int i = 3; i < 6; i++){
         support_sets.current()(id,i) = rotation(i);
         if(!support_sets.is_default_set())

@@ -246,7 +246,7 @@ SolidElement<N>::volume(NodeData& node_coords) {
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::apply_vload(NodeData& node_coords, NodeData& node_loads, StaticVector<3> load) {
+SolidElement<N>::apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load) {
     StaticMatrix<N, D> node_coords_glob = this->node_coords_global(node_coords);
 
     std::function<StaticMatrix<N, 1>(Precision, Precision, Precision)> func =
@@ -272,7 +272,7 @@ SolidElement<N>::apply_vload(NodeData& node_coords, NodeData& node_loads, Static
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, StaticVector<3> load) {
+SolidElement<N>::apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, Vec3 load) {
     logging::error(false, "Not implemented yet");
 }
 

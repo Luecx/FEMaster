@@ -213,9 +213,9 @@ void Reader::process_cload() {
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
         if (m_model->nodesets().has(str)) {
-            m_model->add_cload(str, StaticVector<3>(lx, ly, lz));
+            m_model->add_cload(str, Vec3(lx, ly, lz));
         } else {
-            m_model->add_cload(std::stoi(m_current_line.values()[0]), StaticVector<3>(lx, ly, lz));
+            m_model->add_cload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
         }
     }
 }
@@ -233,9 +233,9 @@ void Reader::process_vload() {
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
         if (m_model->elemsets().has(str)) {
-            m_model->add_vload(str, StaticVector<3>(lx, ly, lz));
+            m_model->add_vload(str, Vec3(lx, ly, lz));
         } else {
-            m_model->add_vload(std::stoi(m_current_line.values()[0]), StaticVector<3>(lx, ly, lz));
+            m_model->add_vload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
         }
     }
 }

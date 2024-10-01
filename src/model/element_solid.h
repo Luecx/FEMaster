@@ -216,7 +216,7 @@ public:
      * @param node_loads The nodal loads that will be updated by the applied load.
      * @param load The external load vector.
      */
-    void apply_vload(NodeData& node_coords, NodeData& node_loads, StaticVector<3> load) override;
+    void apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override;
 
     /**
      * @brief Applies a distributed load to a specific surface of the element (not yet implemented).
@@ -226,7 +226,7 @@ public:
      * @param surface The surface index on which the distributed load is applied.
      * @param load The external load vector.
      */
-    void apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, StaticVector<3> load) override;
+    void apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, Vec3 load) override;
 
     /**
      * @brief Computes the nodal stress and strain for the element.
