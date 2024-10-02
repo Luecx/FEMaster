@@ -31,12 +31,24 @@
 #include "../element_solid.h"
 #include "../../math/quadrature.h"
 #include <functional>
+#include <memory>
 #include <Eigen/Dense>
 
 namespace fem::model {
 
+struct SurfaceInterface {
+    int n_edges;
+    int n_nodes;
+    int n_nodes_per_edge;
+
+    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const {return Vec3::Zero();};
+    virtual Vec2 global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const {return Vec2::Zero();};
+    virtual bool in_bounds(const Vec2& local) const {return false;};
+    virtual Precision area(const NodeData& node_coords_system) const {return 0;};
+};
+
 /******************************************************************************
- * @class SurfaceInterface
+ * @class Surface
  * @brief Base class template for a surface element in finite element analysis.
  *
  * @tparam N The number of nodes in the surface element.
@@ -47,7 +59,7 @@ namespace fem::model {
  *          performing projection of 3D points to the surface, and conducting surface integration.
  ******************************************************************************/
 template<Index N>
-struct SurfaceInterface {
+struct Surface : public SurfaceInterface {
 
     static constexpr Index num_edges = (N > 4 ? N / 2:N);
     static constexpr Index num_nodes = N;
@@ -63,7 +75,11 @@ struct SurfaceInterface {
      *
      * @param pNodeIds Array of node IDs for the surface element.
      */
-    SurfaceInterface(const std::array<ID, N>& pNodeIds) : nodeIds(pNodeIds) {}
+    Surface(const std::array<ID, N>& pNodeIds) : nodeIds(pNodeIds) {
+        this->n_edges = num_edges;
+        this->n_nodes = num_nodes;
+        this->n_nodes_per_edge = num_nodes_per_edge;
+    }
 
     /**
      * @brief Compute the shape functions at a given local coordinate (r, s).
@@ -139,7 +155,7 @@ struct SurfaceInterface {
      *          by evaluating the shape functions at (r, s) and summing the contributions
      *          from each node's global coordinates.
      */
-    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const {
+    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
         Vec3 res = Vec3::Zero();
         for (Index i = 0; i < N; i++) {
@@ -161,7 +177,7 @@ struct SurfaceInterface {
      *          initial guesses are used to ensure convergence to the global minimum distance. If the solution is out of bounds
      *          and clip is true, the function will check the boundaries using the corresponding line elements.
      */
-    Vec2 global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip = false) const {
+    Vec2 global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip = false) const override {
 
         constexpr int max_iter = 32;
         constexpr Precision eps = 1e-12;
@@ -252,7 +268,6 @@ struct SurfaceInterface {
             }
 
             if (!clip || in_bounds({r,s})) {
-
                 // Compute the squared distance for this (r, s)
                 Vec3 x_rs_final = this->local_to_global({r, s}, node_coords_system);
                 Precision distance_squared = (x_rs_final - p).squaredNorm();
@@ -363,5 +378,6 @@ struct SurfaceInterface {
     virtual const quadrature::Quadrature& integration_scheme() const = 0;
 
 };
+
 
 } // namespace fem::model

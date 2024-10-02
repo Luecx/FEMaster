@@ -3,7 +3,7 @@
  * @brief Defines the Surface4 class for a quadrilateral surface element.
  *
  * @details The Surface4 class represents a 4-node quadrilateral surface element
- *          (S3D4). It inherits from the SurfaceInterface<4> base class and provides
+ *          (S3D4). It inherits from the Surface<4> base class and provides
  *          shape function definitions, shape derivatives, and integration schemes
  *          specific to quadrilateral elements. The class supports operations such
  *          as projection onto the surface, computation of local coordinates, and
@@ -34,11 +34,11 @@ namespace fem::model {
  *          element, and determining the closest point on the element's
  *          boundary.
  ******************************************************************************/
-struct Surface4 : public SurfaceInterface<4> {
+struct Surface4 : public Surface<4> {
 
-    using SurfaceInterface<4>::num_nodes;
-    using SurfaceInterface<4>::num_edges;
-    using SurfaceInterface<4>::num_nodes_per_edge;
+    using Surface<4>::num_nodes;
+    using Surface<4>::num_edges;
+    using Surface<4>::num_nodes_per_edge;
 
     /**
      * @brief Constructor for the Surface4 class.

@@ -18,7 +18,7 @@
  * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
  */
 fem::model::Surface3::Surface3(const std::array<ID, 3>& pNodeIds)
-    : SurfaceInterface<3>(pNodeIds) {}
+    : Surface<3>(pNodeIds) {}
 
 /**
  * @brief Compute the shape functions for the triangular element.

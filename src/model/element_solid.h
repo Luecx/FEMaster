@@ -3,8 +3,11 @@
 
 #include "element.h"
 #include "../math/interpolate.h"
+#include "./surface/surface.h"
 
 namespace fem::model {
+
+using SurfacePtr = std::shared_ptr<SurfaceInterface>;
 
 /******************************************************************************
  * @class SolidElement
@@ -193,6 +196,14 @@ public:
      * @return ID* A pointer to the array of node IDs.
      */
     ID* nodes() override;
+
+    /**
+     * @brief Returns a shared pointer to a surface.
+     *
+     * @param surface_id The ID of the surface.
+     * @return SurfacePtr A shared pointer to the surface.
+     */
+    virtual SurfacePtr surface(ID surface_id) {return nullptr;};
 
     /**
      * @brief Returns the number of integration points in the quadrature scheme.

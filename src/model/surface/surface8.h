@@ -22,18 +22,18 @@ namespace fem::model {
  * @class Surface8
  * @brief Represents a quadrilateral surface element with 8 nodes (S3D8).
  *
- * @details The Surface8 class is derived from the `SurfaceInterface<8>` base
+ * @details The Surface8 class is derived from the `Surface<8>` base
  *          class. It provides shape function definitions, shape derivatives,
  *          and boundary checks for a quadratic quadrilateral surface element.
  *          The class supports operations such as projecting points onto the
  *          surface, computing local coordinates, and performing surface integration
  *          using a higher-order quadrature scheme.
  ******************************************************************************/
-struct Surface8 : public SurfaceInterface<8> {
+struct Surface8 : public Surface<8> {
 
-    using SurfaceInterface<8>::num_nodes;
-    using SurfaceInterface<8>::num_edges;
-    using SurfaceInterface<8>::num_nodes_per_edge;
+    using Surface<8>::num_nodes;
+    using Surface<8>::num_edges;
+    using Surface<8>::num_nodes_per_edge;
     /**
      * @brief Constructor for the Surface8 class.
      *

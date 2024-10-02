@@ -18,7 +18,7 @@
  * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
  */
 fem::model::Surface4::Surface4(const std::array<ID, 4>& pNodeIds)
-    : SurfaceInterface<4>(pNodeIds) {}
+    : Surface<4>(pNodeIds) {}
 
 /**
  * @brief Compute the shape functions for the quadrilateral element.

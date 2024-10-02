@@ -3,7 +3,7 @@
  * @brief Derived class for a triangular surface element with 3 nodes (S3D3).
  *
  * @details This file defines the `Surface3` class, which inherits from the
- *          `SurfaceInterface<3>` base class. It represents a triangular
+ *          `Surface<3>` base class. It represents a triangular
  *          surface element with three nodes, used primarily for surface
  *          integrals and projecting points onto surfaces. It provides
  *          shape functions, shape function derivatives, and surface
@@ -34,10 +34,10 @@ namespace fem::model {
  *          It supports common surface operations such as projection to the
  *          element, finding local coordinates, and computing surface areas.
  ******************************************************************************/
-struct Surface3 : public SurfaceInterface<3> {
-    using SurfaceInterface<3>::num_nodes;
-    using SurfaceInterface<3>::num_edges;
-    using SurfaceInterface<3>::num_nodes_per_edge;
+struct Surface3 : public Surface<3> {
+    using Surface<3>::num_nodes;
+    using Surface<3>::num_edges;
+    using Surface<3>::num_nodes_per_edge;
 
     /**
      * @brief Constructor for the Surface3 class.

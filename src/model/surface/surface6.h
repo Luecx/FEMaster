@@ -21,17 +21,17 @@ namespace fem::model {
  * @class Surface6
  * @brief Represents a triangular surface element with 6 nodes (S3D6).
  *
- * @details The Surface6 class is derived from the `SurfaceInterface<6>` base
+ * @details The Surface6 class is derived from the `Surface<6>` base
  *          class. It implements shape functions, derivatives, and boundary
  *          checks for a quadratic triangular surface element. The class
  *          supports operations such as projecting points onto the surface,
  *          computing local coordinates, and performing surface integration
  *          using a higher-order quadrature scheme.
  ******************************************************************************/
-struct Surface6 : public SurfaceInterface<6> {
-    using SurfaceInterface<6>::num_nodes;
-    using SurfaceInterface<6>::num_edges;
-    using SurfaceInterface<6>::num_nodes_per_edge;
+struct Surface6 : public Surface<6> {
+    using Surface<6>::num_nodes;
+    using Surface<6>::num_edges;
+    using Surface<6>::num_nodes_per_edge;
 
     /**
      * @brief Constructor for the Surface6 class.

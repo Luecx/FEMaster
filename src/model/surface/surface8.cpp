@@ -20,7 +20,7 @@ namespace fem::model {
  * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
  */
 fem::model::Surface8::Surface8(const std::array<ID, 8>& pNodeIds)
-    : SurfaceInterface<8>(pNodeIds) {}
+    : Surface<8>(pNodeIds) {}
 
 /**
  * @brief Compute the shape functions for the 8-node quadrilateral element.

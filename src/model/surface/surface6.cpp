@@ -20,7 +20,7 @@ namespace fem::model {
  * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
  */
 fem::model::Surface6::Surface6(const std::array<ID, 6>& pNodeIds)
-    : SurfaceInterface<6>(pNodeIds) {}
+    : Surface<6>(pNodeIds) {}
 
 /**
  * @brief Compute the shape functions for the 6-node triangular element.
@@ -69,9 +69,9 @@ StaticMatrix<6, 3> Surface6::shape_second_derivative(Precision r, Precision s) c
     StaticMatrix<6, 3> ddN;
 
     // N1 = 1 - 3(r + s) + 2(r + s)^2
-    ddN(0, 0) = 2;              // ∂²N1/∂r²
-    ddN(0, 1) = 2;              // ∂²N1/∂s²
-    ddN(0, 2) = 2;              // ∂²N1/∂(rs)
+    ddN(0, 0) = 4;              // ∂²N1/∂r²
+    ddN(0, 1) = 4;              // ∂²N1/∂s²
+    ddN(0, 2) = 4;              // ∂²N1/∂(rs)
 
     // N2 = r(2r - 1)
     ddN(1, 0) = 4;              // ∂²N2/∂r²
