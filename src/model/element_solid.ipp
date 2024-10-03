@@ -272,8 +272,18 @@ SolidElement<N>::apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 l
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, Vec3 load) {
-    logging::error(false, "Not implemented yet");
+SolidElement<N>::apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface_id, Vec3 load) {
+    auto ptr = surface(surface_id);
+    logging::error(ptr != nullptr, "surface ", surface_id, " not found in element ", elem_id);
+    auto nodal_contributions = ptr->shape_function_integral(node_coords);
+
+    // go through the node ids
+    for (Index i = 0; i < ptr->n_nodes; i++) {
+        auto n_id = ptr->nodes()[i];
+        node_loads(n_id, 0) += nodal_contributions(i) * load(0);
+        node_loads(n_id, 1) += nodal_contributions(i) * load(1);
+        node_loads(n_id, 2) += nodal_contributions(i) * load(2);
+    }
 }
 
 //-----------------------------------------------------------------------------

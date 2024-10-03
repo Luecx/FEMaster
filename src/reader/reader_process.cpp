@@ -47,6 +47,8 @@ void Reader::process() {
             process_coupling();
         } else if (m_current_line.command() == "CLOAD") {
             process_cload();
+        } else if (m_current_line.command() == "DLOAD") {
+            process_dload();
         } else if (m_current_line.command() == "VLOAD") {
             process_vload();
         } else if (m_current_line.command() == "LOADCASE") {
@@ -216,6 +218,27 @@ void Reader::process_cload() {
             m_model->add_cload(str, Vec3(lx, ly, lz));
         } else {
             m_model->add_cload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
+        }
+    }
+}
+
+void Reader::process_dload() {
+    // read CLOAD, LOAD_COLLECTOR=xyz
+    // NSET, lx, ly, lz
+    // id, lx, ly, lz
+    // ...
+    m_model->activate_load_set(m_current_line.require<std::string>("LOAD_COLLECTOR"));
+    while (next_line().type() == DATA_LINE) {
+        auto str = m_current_line.values()[0];
+        auto si  = std::stoi(m_current_line.values()[1]);
+        auto lx  = std::stof(m_current_line.values()[2]);
+        auto ly  = std::stof(m_current_line.values()[3]);
+        auto lz  = m_current_line.values().size() > 4 ? std::stof(m_current_line.values()[4]) : 0;
+
+        if (m_model->nodesets().has(str)) {
+            m_model->add_dload(str, si, Vec3(lx, ly, lz));
+        } else {
+            m_model->add_dload(std::stoi(m_current_line.values()[0]), si, Vec3(lx, ly, lz));
         }
     }
 }

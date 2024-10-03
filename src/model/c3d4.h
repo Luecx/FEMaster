@@ -15,6 +15,10 @@
 
 #include "element.h"
 #include "element_solid.h"
+#include "surface/surface8.h"
+#include "surface/surface6.h"
+#include "surface/surface4.h"
+#include "surface/surface3.h"
 
 namespace fem { namespace model {
 
@@ -90,6 +94,16 @@ struct C3D4 : public SolidElement<4> {
     const quadrature::Quadrature& integration_scheme() override {
         const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TET, quadrature::ORDER_LINEAR};
         return quad;
+    }
+
+    SurfacePtr surface(ID surface_id) {
+        switch (surface_id) {
+            case 1: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 0], node_ids[ 1], node_ids[ 2]});
+            case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 0], node_ids[ 3], node_ids[ 1]});
+            case 3: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 1], node_ids[ 3], node_ids[ 2]});
+            case 4: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 2], node_ids[ 3], node_ids[ 0]});
+            default: return nullptr;  // Invalid surface ID
+        }
     }
 };
 

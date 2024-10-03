@@ -41,6 +41,7 @@ class Reader {
     void process_density();
     void process_solid_section();
     void process_cload();
+    void process_dload();
     void process_vload();
     void process_support();
     void process_coupling();

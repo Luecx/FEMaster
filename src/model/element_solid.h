@@ -7,8 +7,6 @@
 
 namespace fem::model {
 
-using SurfacePtr = std::shared_ptr<SurfaceInterface>;
-
 /******************************************************************************
  * @class SolidElement
  * @brief Base class template for a solid element in finite element analysis.

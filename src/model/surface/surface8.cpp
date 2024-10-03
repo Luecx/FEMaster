@@ -56,11 +56,12 @@ StaticMatrix<8, 2> Surface8::shape_derivative(Precision r, Precision s) const {
     dN(0, 0) =  0.25 * (-2*r - s) * (s - 1);  dN(0, 1) =  0.25 * (-r - 2*s) * (r - 1);  // dN1/dr, dN1/ds
     dN(1, 0) =  0.25 * (-2*r + s) * (s - 1);  dN(1, 1) =  0.25 * (-r + 2*s) * (r + 1);  // dN2/dr, dN2/ds
     dN(2, 0) =  0.25 * ( 2*r + s) * (s + 1);  dN(2, 1) =  0.25 * (r + 1) * (r + 2*s);   // dN3/dr, dN3/ds
-    dN(3, 0) =  0.25 * (-2*r - s) * (s + 1);  dN(3, 1) =  0.25 * (r - 1) * (r - 2*s);   // dN4/dr, dN4/ds
+    dN(3, 0) =  0.25 * ( 2*r - s) * (s + 1);  dN(3, 1) =  0.25 * (r - 1) * (r - 2*s);   // dN4/dr, dN4/ds
     dN(4, 0) =  r * (s - 1);                  dN(4, 1) =  0.5 * (r*r - 1);              // dN5/dr, dN5/ds
     dN(5, 0) =  0.5 * (1 - s*s);              dN(5, 1) = -1.0 * s * (r + 1);            // dN6/dr, dN6/ds
     dN(6, 0) = -r * (1 + s);                  dN(6, 1) =  0.5 * (1 - r*r);              // dN7/dr, dN7/ds
     dN(7, 0) =  0.5 * (s*s - 1);              dN(7, 1) =  1.0 * s * (r - 1);            // dN8/dr, dN8/ds
+
 
     return dN;
 }

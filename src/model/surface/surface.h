@@ -27,12 +27,12 @@
 
 #pragma once
 
-#include "../element.h"
-#include "../element_solid.h"
 #include "../../math/quadrature.h"
 #include <functional>
 #include <memory>
 #include <Eigen/Dense>
+#include <iostream>
+
 
 namespace fem::model {
 
@@ -45,7 +45,12 @@ struct SurfaceInterface {
     virtual Vec2 global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const {return Vec2::Zero();};
     virtual bool in_bounds(const Vec2& local) const {return false;};
     virtual Precision area(const NodeData& node_coords_system) const {return 0;};
+    virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const {return DynamicVector::Zero(0);};
+    virtual ID* nodes() {return nullptr;};
+
 };
+
+using SurfacePtr = std::shared_ptr<SurfaceInterface>;
 
 /******************************************************************************
  * @class Surface
@@ -296,6 +301,41 @@ struct Surface : public SurfaceInterface {
     }
 
     /**
+     * @brief Computes the integral of each shape function over the global surface area of the element.
+     *
+     * @param node_coords_system Node coordinates in the global coordinate system.
+     * @return StaticMatrix<N, 1> Vector of integrated shape function values over the global surface area.
+     *
+     * @details The integral of shape functions is computed using numerical integration over the parametric
+     *          domain of the surface element, with the Jacobian determinant to map to the global space.
+     *          This can be useful for calculating distributed load contributions or surface mass properties.
+     */
+    DynamicVector shape_function_integral(const NodeData& node_coords_system) const {
+        auto node_coords_global = this->node_coords_global(node_coords_system);
+
+        // Define the integrand for computing the integral of each shape function over the global surface
+        std::function<StaticMatrix<N, 1>(Precision, Precision, Precision)> integrand = [&](Precision r, Precision s, Precision) -> StaticMatrix<N, 1> {
+            // Compute the shape function at the given local coordinates (r, s)
+            StaticMatrix<N, 1> shape_func = shape_function(r, s);
+
+            // Compute the 3x2 Jacobian matrix at (r, s)
+            auto jac = jacobian(node_coords_global, r, s);
+
+            // Compute the determinant of the Jacobian, which represents the local-to-global area scaling factor
+            Precision detJ = (jac.col(0).cross(jac.col(1))).norm();
+
+            // Multiply the shape function values by the determinant to integrate over the global surface area
+            return shape_func * detJ;
+        };
+
+        // Perform numerical integration using the specified integration scheme
+        StaticMatrix<N, 1> shape_function_integral = StaticMatrix<N, 1>::Zero();
+        shape_function_integral = integration_scheme().integrate(integrand);
+
+        return DynamicVector{shape_function_integral};
+    }
+
+    /**
      * @brief finds the closest point on the boundary.
      *
      */
@@ -377,6 +417,14 @@ struct Surface : public SurfaceInterface {
      */
     virtual const quadrature::Quadrature& integration_scheme() const = 0;
 
+    /**
+     * @brief Get the node IDs associated with the surface element.
+     *
+     * @return pointer to the node ids
+     */
+    ID* nodes() override {
+        return nodeIds.data();
+    }
 };
 
 
