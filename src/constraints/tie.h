@@ -11,11 +11,15 @@ class Tie {
 
     std::string master_set;
     std::string slave_set;
+    Precision distance;
+    bool adjust;
 
     public:
-    Tie(const std::string& masterSet, const std::string& slaveSet)
+    Tie(const std::string& masterSet, const std::string& slaveSet, Precision distance, bool adjust)
         : master_set(masterSet)
-        , slave_set(slaveSet) {}
+        , slave_set(slaveSet)
+        , distance(distance)
+        , adjust(adjust) {}
 
     TripletList get_equations(SystemDofIds& system_nodal_dofs,
                               model::Sets<std::vector<ID>>& surface_sets,
@@ -44,14 +48,21 @@ class Tie {
                 auto s_ptr = surfaces.at(s_id);
                 if (s_ptr == nullptr) continue;
 
+                // initial check. if no node is close enough, skip the surface
+                for (int local_id = 0; local_id < s_ptr->n_nodes; local_id ++) {
+                    ID master_node_id = s_ptr->nodes()[local_id];
+                    auto mapped = s_ptr ->local_to_global(s_ptr -> global_to_local(node_pos, node_coords), node_coords);
+                    auto dist = (node_pos - mapped).norm();
+                    if (dist < distance) break;
+                }
+
                 auto local = s_ptr -> global_to_local(node_pos, node_coords);
                 auto mapped = s_ptr ->local_to_global(local, node_coords);
 
                 // compute distance
                 auto dist = (node_pos - mapped).norm();
 
-                // TODO: discard any surfaces which are too far away
-                // ...
+                if (dist > distance) continue;
 
                 if (dist < best_dist) {
                     best_id = s_id;
@@ -59,8 +70,18 @@ class Tie {
                     best_local = local;
                 }
             }
+            // skip if none found
+            if (best_dist > distance) continue;
 
             auto s_ptr = surfaces.at(best_id);
+
+            // adjust if required
+            if (adjust) {
+                auto mapped = s_ptr ->local_to_global(best_local, node_coords);
+                node_coords(id, 0) = mapped(0);
+                node_coords(id, 1) = mapped(1);
+                node_coords(id, 2) = mapped(2);
+            }
 
             // compute which nodes to couple in the first place
             Dofs dofs_mask{};

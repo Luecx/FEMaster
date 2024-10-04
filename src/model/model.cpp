@@ -10,12 +10,12 @@ void Model::add_coupling(const std::string &master_set, const std::string &slave
     couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
 }
 
-void Model::add_tie(const std::string& master_set, const std::string& slave_set) {
+void Model::add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust) {
     // check that the sets exist for the surfaces
     logging::error(surface_sets.has(master_set), "Master set ", master_set, " is not a defined surface set");
     logging::error(node_sets   .has(slave_set) , "Slave set " , slave_set , " is not a defined node set");
 
-    ties.push_back(constraint::Tie(master_set, slave_set));
+    ties.push_back(constraint::Tie(master_set, slave_set, distance, adjust));
 }
 
 

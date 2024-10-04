@@ -158,8 +158,6 @@ void fem::loadcase::LinearStatic::run() {
         "constructing active Lagrangian matrix"
     );
 
-    std::cout << DynamicMatrix(active_lagrange_mat) << std::endl;
-
     int m   = active_stiffness_mat.rows();                   // Number of active DOFs
     int n   = active_lagrange_mat.rows();                    // Number of Lagrangian multipliers
     int nnz = active_stiffness_mat.nonZeros() + 2 * active_lagrange_mat.nonZeros();

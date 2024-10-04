@@ -68,7 +68,7 @@ struct Model {
 
     // add couplings
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
-    void add_tie(const std::string& master_set, const std::string& slave_set);
+    void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
 
     // set management
     void activate_node_set   (const std::string &name);
