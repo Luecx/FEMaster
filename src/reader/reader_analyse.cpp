@@ -18,6 +18,8 @@ void Reader::analyse() {
             analyse_nodes();
         } else if (m_current_line.command() == "ELEMENT") {
             analyse_elements();
+        } else if (m_current_line.command() == "SURFACE") {
+            analyse_surfaces();
         } else {
             next_line();
         }
@@ -35,5 +37,12 @@ void Reader::analyse_elements() {
         m_data.highest_element_id = std::max(m_data.highest_element_id, element_id);
     }
 }
+void Reader::analyse_surfaces() {
+    while (next_line().type() == DATA_LINE) {
+        int surface_id            = std::stoi(m_current_line.values()[0]);
+        m_data.highest_surface_id = std::max(m_data.highest_surface_id, surface_id);
+    }
+}
+
 
 }    // namespace fem::reader

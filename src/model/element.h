@@ -2,6 +2,7 @@
 
 #include "../core/core.h"
 #include "../material/material.h"
+#include "surface/surface.h"
 #include "../math/quadrature.h"
 
 #include <array>
@@ -24,31 +25,36 @@ struct ElementInterface {
         ElementInterface::material = material;
     }
 
-    virtual ElDofs    dofs()                                                                                     = 0;
-    virtual Dim       dimensions()                                                                               = 0;
-    virtual Dim       n_nodes()                                                                                  = 0;
-    virtual Dim       n_integration_points()                                                                     = 0;
-    virtual ID*       nodes()                                                                                    = 0;
+    virtual ElDofs dofs()                 = 0;
+    virtual Dim    dimensions()           = 0;
+    virtual Dim    n_nodes()              = 0;
+    virtual Dim    n_integration_points() = 0;
+    virtual ID*    nodes()                = 0;
 
     // iterator to iterate over nodes
-    inline ID* begin() {  return nodes(); }
-    inline ID* end() { return nodes() + n_nodes(); }
+    inline ID* begin() {
+        return nodes();
+    }
+    inline ID* end() {
+        return nodes() + n_nodes();
+    }
 
-    virtual Precision volume(NodeData& node_coords)                                                              = 0;
-    virtual MapMatrix stiffness(NodeData& position, Precision* buffer)                                           = 0;
-    virtual MapMatrix mass(NodeData& position, Precision* buffer)                                                = 0;
-    virtual void      compute_stress_strain_nodal(NodeData& node_coords,
-                                                  NodeData& displacement,
-                                                  NodeData& stress,
-                                                  NodeData& strain)                                              = 0;
-    virtual void      compute_stress_strain(NodeData& node_coords,
-                                            NodeData& displacement,
-                                            NodeData& stress,
-                                            NodeData& strain,
-                                            NodeData& xyz)                                                       = 0;
-    virtual void      apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, Vec3 load) = 0;
-    virtual void      apply_vload(NodeData& node_coords, NodeData& node_loads,             Vec3 load) = 0;
-    virtual void      compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result)     = 0;
+    virtual SurfacePtr surface(ID surface_id)                                                                 = 0;
+    virtual Precision  volume(NodeData& node_coords)                                                          = 0;
+    virtual MapMatrix  stiffness(NodeData& position, Precision* buffer)                                       = 0;
+    virtual MapMatrix  mass(NodeData& position, Precision* buffer)                                            = 0;
+    virtual void       compute_stress_strain_nodal(NodeData& node_coords,
+                                                   NodeData& displacement,
+                                                   NodeData& stress,
+                                                   NodeData& strain)                                          = 0;
+    virtual void       compute_stress_strain(NodeData& node_coords,
+                                             NodeData& displacement,
+                                             NodeData& stress,
+                                             NodeData& strain,
+                                             NodeData& xyz)                                                   = 0;
+    virtual void       apply_dload(NodeData& node_coords, NodeData& node_loads, ID surface, Vec3 load)        = 0;
+    virtual void       apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load)                    = 0;
+    virtual void       compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) = 0;
 };
 
 struct ElementInterface;

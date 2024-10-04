@@ -9,7 +9,6 @@ inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     node_sets.add(id);
 }
 
-
 template<typename T, typename... Args>
 inline void Model::set_element(ID id, Args&&... args) {
     logging::error(id < max_elements,
@@ -24,4 +23,18 @@ inline void Model::set_element(ID id, Args&&... args) {
 
     this->elements[id] = el;
     this->elem_sets.add(id);
+}
+
+inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
+    logging::error(id < max_surfaces,
+                   "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
+
+    auto elptr = elements[element_id];
+    logging::error(elptr != nullptr, "element with id=", element_id, " has not been defined");
+    auto surfptr = elptr->surface(surface_id);
+    logging::error(surfptr != nullptr, "surface with id=", surface_id, " has not been defined for element with id=", element_id);
+    logging::error(this->surfaces[id] == nullptr, "surface with id=", id, " has already been defined");
+
+    this->surfaces[id] = surfptr;
+    this->surface_sets.add(id);
 }

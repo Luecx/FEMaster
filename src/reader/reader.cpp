@@ -26,7 +26,8 @@ void Reader::read() {
 
     // create the model
     m_model = std::make_shared<fem::model::Model>(m_data.highest_node_id + 1,
-                                                  m_data.highest_element_id + 1);
+                                                  m_data.highest_element_id + 1,
+                                                  m_data.highest_surface_id + 1);
 
     // Reset File for the next stage
     m_file = File(m_file_path);

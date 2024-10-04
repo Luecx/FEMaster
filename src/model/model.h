@@ -2,6 +2,7 @@
 
 #include "../core/core.h"
 #include "element.h"
+#include "surface/surface.h"
 #include "sets.h"
 #include "../constraints/coupling.h"
 
@@ -12,15 +13,18 @@ namespace model{
 struct Model {
     const ID max_nodes;
     const ID max_elements;
+    const ID max_surfaces;
 
     // nodes and elements
     NodeData node_coords;
     std::vector<ElementPtr> elements{};
+    std::vector<SurfacePtr> surfaces{};
     std::vector<Coupling>   couplings{};
 
     // sets to group nodes and elements
     Sets<std::vector<ID>> node_sets{"NALL"};
     Sets<std::vector<ID>> elem_sets{"EALL"};
+    Sets<std::vector<ID>> surface_sets{"SFALL"};
 
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
@@ -31,9 +35,10 @@ struct Model {
     Sets<material::Material> materials;
 
     // constructor which defines max elements and max nodes
-    Model(ID max_nodes, ID max_elems) :
+    Model(ID max_nodes, ID max_elems, ID max_surfaces) :
         max_nodes   (max_nodes),
         max_elements(max_elems),
+        max_surfaces(max_surfaces),
         node_coords (max_nodes, 3),
         load_sets   ("LALL", max_nodes, 6),
         support_sets("SALL", max_nodes, 6){
@@ -48,12 +53,14 @@ struct Model {
 
         // resize elements to avoid later reallocation
         elements.resize(max_elems);
+        surfaces.resize(max_surfaces);
     }
 
     // adding nodes and elements
     inline void set_node(ID id, Precision x, Precision y, Precision z = 0);
     template<typename T, typename... Args>
     inline void set_element(ID id, Args&&... args);
+    inline void set_surface(ID id, ID element_id, ID surface_id);
 
     // add couplings
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);

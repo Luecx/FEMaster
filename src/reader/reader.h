@@ -14,6 +14,7 @@ class Reader {
     struct ProblemData {
         int highest_node_id = -1;
         int highest_element_id = -1;
+        int highest_surface_id = -1;
         int current_loadcase_num = 1;
     };
     File        m_file;
@@ -30,6 +31,7 @@ class Reader {
     void analyse();
     void analyse_nodes();
     void analyse_elements();
+    void analyse_surfaces();
 
     void process();
     void process_nodes();
