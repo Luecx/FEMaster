@@ -5,6 +5,7 @@
 #include "surface/surface.h"
 #include "sets.h"
 #include "../constraints/coupling.h"
+#include "../constraints/tie.h"
 
 namespace fem {
 
@@ -19,12 +20,15 @@ struct Model {
     NodeData node_coords;
     std::vector<ElementPtr> elements{};
     std::vector<SurfacePtr> surfaces{};
-    std::vector<Coupling>   couplings{};
+
+    // constraints
+    std::vector<Coupling>        couplings{};
+    std::vector<constraint::Tie> ties{};
 
     // sets to group nodes and elements
-    Sets<std::vector<ID>> node_sets{"NALL"};
-    Sets<std::vector<ID>> elem_sets{"EALL"};
-    Sets<std::vector<ID>> surface_sets{"SFALL"};
+    Sets<std::vector<ID>> node_sets{SET_NODE_ALL};
+    Sets<std::vector<ID>> elem_sets{SET_ELEM_ALL};
+    Sets<std::vector<ID>> surface_sets{SET_SURF_ALL};
 
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
@@ -64,10 +68,12 @@ struct Model {
 
     // add couplings
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
+    void add_tie(const std::string& master_set, const std::string& slave_set);
 
     // set management
     void activate_node_set   (const std::string &name);
     void activate_element_set(const std::string &name);
+    void activate_surface_set(const std::string &name);
     void activate_load_set   (const std::string &name);
     void activate_support_set(const std::string &name);
     void activate_material   (const std::string& name);
@@ -95,9 +101,11 @@ struct Model {
     NodeData&           active_supports();
     std::vector<ID>&    active_nodeset();
     std::vector<ID>&    active_elemset();
+    std::vector<ID>&    active_surfset();
 
     Sets<std::vector<ID>>&  nodesets();
     Sets<std::vector<ID>>&  elemsets();
+    Sets<std::vector<ID>>&  surfsets();
 
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);
@@ -109,8 +117,8 @@ struct Model {
     SystemDofIds  build_unconstrained_index_matrix();
 
     // building constraints and loads for every node including non existing ones
-    NodeData    build_support_matrix (std::vector<std::string> support_sets = {"SALL"});
-    NodeData    build_load_matrix    (std::vector<std::string> load_sets = {"LALL"});
+    NodeData    build_support_matrix (std::vector<std::string> support_sets = {SET_SUPP_ALL});
+    NodeData    build_load_matrix    (std::vector<std::string> load_sets = {SET_LOAD_ALL});
 
     // matrices
     SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness=1.0);

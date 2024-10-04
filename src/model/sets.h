@@ -10,6 +10,13 @@
 namespace fem {
 namespace model {
 
+// default set names
+#define SET_NODE_ALL "NALL"
+#define SET_ELEM_ALL "EALL"
+#define SET_SURF_ALL "SFALL"
+#define SET_LOAD_ALL "LALL"
+#define SET_SUPP_ALL "SALL"
+
 template<typename T = std::vector<ID>>
 struct Sets {
     std::unordered_map<std::string, T> m_sets;

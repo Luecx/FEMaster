@@ -29,10 +29,14 @@ void Reader::process() {
             process_nodes();
         } else if (m_current_line.command() == "ELEMENT") {
             process_elements();
+        } else if (m_current_line.command() == "SURFACE") {
+            process_surfaces();
         } else if (m_current_line.command() == "NSET") {
             process_nset();
         } else if (m_current_line.command() == "ELSET") {
             process_elset();
+        } else if (m_current_line.command() == "SFSET") {
+            process_sfset();
         } else if (m_current_line.command() == "MATERIAL") {
             process_material();
         } else if (m_current_line.command() == "ELASTIC") {
@@ -45,6 +49,8 @@ void Reader::process() {
             process_support();
         } else if (m_current_line.command() == "COUPLING") {
             process_coupling();
+        } else if (m_current_line.command() == "TIE") {
+            process_tie();
         } else if (m_current_line.command() == "CLOAD") {
             process_cload();
         } else if (m_current_line.command() == "DLOAD") {
@@ -148,6 +154,25 @@ void Reader::process_elements() {
     }
 }
 
+void Reader::process_surfaces() {
+    m_model->activate_element_set(m_current_line.parse<std::string>("SFSET", ""));
+
+    while(next_line().type() == DATA_LINE) {
+        int id = std::stoi(m_current_line.values()[0]);
+        int elem_id = std::stoi(m_current_line.values()[1]);
+
+        // surfacee may be indicated with an S like S1, S2, ...
+        int surf_side;
+        if (m_current_line.values()[2][0] == 'S') {
+            surf_side = std::stoi(m_current_line.values()[2].substr(1));
+        } else {
+            surf_side = std::stoi(m_current_line.values()[2]);
+        }
+
+        m_model->set_surface(id, elem_id, surf_side);
+    }
+}
+
 void Reader::process_nset() {
     // read NSET, NAME=xyz
     auto setname = m_current_line.require<std::string>("NAME", "NSET");
@@ -165,6 +190,16 @@ void Reader::process_elset() {
     while (next_line().type() == DATA_LINE) {
         for (const auto& id : m_current_line.values()) {
             m_model->active_elemset().push_back(std::stoi(id));
+        }
+    }
+}
+
+void Reader::process_sfset() {
+    // read ELSET, NAME=xyz
+    m_model->activate_surface_set(m_current_line.require<std::string>("NAME", "SFSET"));
+    while (next_line().type() == DATA_LINE) {
+        for (const auto& id : m_current_line.values()) {
+            m_model->active_surfset().push_back(std::stoi(id));
         }
     }
 }
@@ -315,6 +350,15 @@ void Reader::process_coupling() {
         logging::warning(false, "Unknown coupling type: ", type);
         logging::warning(false, "    Known coupling types: KINEMATIC");
     }
+    next_line();
+}
+
+void Reader::process_tie() {
+    // read COUPLING, MASTER=xyz, SLAVE=xyz
+    auto master_set = m_current_line.require<std::string>("MASTER");
+    auto slave_set  = m_current_line.require<std::string>("SLAVE");
+
+    m_model->add_tie(master_set, slave_set);
     next_line();
 }
 

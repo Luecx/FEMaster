@@ -37,14 +37,30 @@
 namespace fem::model {
 
 struct SurfaceInterface {
-    int n_edges;
-    int n_nodes;
-    int n_nodes_per_edge;
+    const int n_edges;
+    const int n_nodes;
+    const int n_nodes_per_edge;
+
+    /**
+     * @brief Constructor for SurfaceInterface
+     *
+     * @param nEdges Number of edges in the surface.
+     * @param nNodes Number of nodes in the surface.
+     * @param nNodesPerEdge Number of nodes per edge.
+     */
+    SurfaceInterface(int nEdges=0, int nNodes=0, int nNodesPerEdge=0)
+        : n_edges(nEdges), n_nodes(nNodes), n_nodes_per_edge(nNodesPerEdge) {}
+
+    /**
+     * @brief Virtual destructor to ensure proper polymorphic behavior.
+     */
+    virtual ~SurfaceInterface() = default;
 
     virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const {return Vec3::Zero();};
     virtual Vec2 global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const {return Vec2::Zero();};
     virtual bool in_bounds(const Vec2& local) const {return false;};
     virtual Precision area(const NodeData& node_coords_system) const {return 0;};
+    virtual DynamicVector shape_function(const Vec2& local) const {return DynamicVector::Zero(0);};
     virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const {return DynamicVector::Zero(0);};
     virtual ID* nodes() {return nullptr;};
 
@@ -76,15 +92,14 @@ struct Surface : public SurfaceInterface {
     std::array<ID, N> nodeIds;
 
     /**
-     * @brief Constructor for SurfaceInterface.
+     * @brief Constructor for Surface.
      *
      * @param pNodeIds Array of node IDs for the surface element.
      */
-    Surface(const std::array<ID, N>& pNodeIds) : nodeIds(pNodeIds) {
-        this->n_edges = num_edges;
-        this->n_nodes = num_nodes;
-        this->n_nodes_per_edge = num_nodes_per_edge;
-    }
+    Surface(const std::array<ID, N>& pNodeIds)
+        : SurfaceInterface(num_edges, num_nodes, num_nodes_per_edge), nodeIds(pNodeIds) {}
+
+    virtual ~Surface() = default;
 
     /**
      * @brief Compute the shape functions at a given local coordinate (r, s).
@@ -94,6 +109,13 @@ struct Surface : public SurfaceInterface {
      * @return StaticMatrix<N, 1> Vector of shape function values at (r, s).
      */
     virtual StaticMatrix<N, 1> shape_function(Precision r, Precision s) const = 0;
+
+    /**
+     * @brief Gives a dynamic vector for outside use which is a bit slower.
+     */
+    virtual DynamicVector shape_function(const Vec2& local) const override {
+        return DynamicVector(shape_function(local(0),local(1)));
+    }
 
     /**
      * @brief Compute the first derivative of shape functions at a given local coordinate (r, s).

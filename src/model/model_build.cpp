@@ -77,6 +77,14 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
         }
     }
 
+    for (auto &t: this->ties) {
+        auto tie_triplets = t.get_equations(indices, surface_sets, node_sets, surfaces, node_coords, rows);
+        for(auto &t: tie_triplets) {
+            triplets.push_back(t);
+            rows = std::max(rows, t.row());
+        }
+    }
+
     if (rows == 0) {
         return SparseMatrix{0, indices.maxCoeff() + 1};
     }

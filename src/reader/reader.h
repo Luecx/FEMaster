@@ -36,8 +36,10 @@ class Reader {
     void process();
     void process_nodes();
     void process_elements();
+    void process_surfaces();
     void process_nset();
-    void process_elset() ;
+    void process_elset();
+    void process_sfset();
     void process_material() ;
     void process_elastic() ;
     void process_density();
@@ -46,7 +48,9 @@ class Reader {
     void process_dload();
     void process_vload();
     void process_support();
+
     void process_coupling();
+    void process_tie();
 
     void process_loadcase();
     void process_loadcase_linear_static();

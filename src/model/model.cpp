@@ -10,11 +10,23 @@ void Model::add_coupling(const std::string &master_set, const std::string &slave
     couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
 }
 
+void Model::add_tie(const std::string& master_set, const std::string& slave_set) {
+    // check that the sets exist for the surfaces
+    logging::error(surface_sets.has(master_set), "Master set ", master_set, " is not a defined surface set");
+    logging::error(node_sets   .has(slave_set) , "Slave set " , slave_set , " is not a defined node set");
+
+    ties.push_back(constraint::Tie(master_set, slave_set));
+}
+
+
 void Model::activate_node_set(const std::string &name) {
     node_sets.activate(name);
 }
 void Model::activate_element_set(const std::string &name) {
     elem_sets.activate(name);
+}
+void Model::activate_surface_set(const std::string &name) {
+    surface_sets.activate(name);
 }
 void Model::activate_load_set(const std::string &name) {
     load_sets.activate(name, max_nodes, 6);
@@ -119,6 +131,9 @@ std::vector<ID>& Model::active_nodeset(){
 std::vector<ID>& Model::active_elemset(){
     return elem_sets.current();
 }
+std::vector<ID>& Model::active_surfset() {
+    return surface_sets.current();
+}
 
 Sets<std::vector<ID>>&  Model::nodesets(){
     return node_sets;
@@ -126,6 +141,10 @@ Sets<std::vector<ID>>&  Model::nodesets(){
 
 Sets<std::vector<ID>>&  Model::elemsets(){
     return elem_sets;
+}
+
+Sets<std::vector<ID>>&  Model::surfsets() {
+    return surface_sets;
 }
 
 void Model::solid_section(const std::string& set, const std::string& material){
@@ -137,8 +156,9 @@ void Model::solid_section(const std::string& set, const std::string& material){
 
 std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     ostream << "Model (dim = " << model.element_dims << ")\n";
-    ostream << "\tmax_nodes = " << model.max_nodes << '\n';
-    ostream << "\tmax_elements = " << model.max_elements << '\n';
+    ostream << "\tmax nodes = " << model.max_nodes << '\n';
+    ostream << "\tmax elements = " << model.max_elements << '\n';
+    ostream << "\tmax surfaces = " << model.max_surfaces << '\n';
 
     ostream << "\tNode sets:\n";
     for (const auto& set : model.node_sets.m_sets) {
@@ -147,6 +167,11 @@ std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
 
     ostream << "\tElement sets:\n";
     for (const auto& set : model.elem_sets.m_sets) {
+        ostream << "\t\t" << set.first << ": " << set.second.size() << '\n';
+    }
+
+    ostream << "\tSurface sets:\n";
+    for (const auto& set : model.surface_sets.m_sets) {
         ostream << "\t\t" << set.first << ": " << set.second.size() << '\n';
     }
 
