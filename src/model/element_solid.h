@@ -201,7 +201,7 @@ public:
      * @param surface_id The ID of the surface.
      * @return SurfacePtr A shared pointer to the surface.
      */
-    virtual SurfacePtr surface(ID surface_id) {return nullptr;};
+    virtual SurfacePtr surface(ID surface_id) override {return nullptr;};
 
     /**
      * @brief Returns the number of integration points in the quadrature scheme.

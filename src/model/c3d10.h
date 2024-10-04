@@ -19,7 +19,7 @@ struct C3D10 : public SolidElement<10>{
 
     StaticMatrix<10, 3> node_coords_local() override;
 
-    SurfacePtr surface(ID surface_id) {
+    SurfacePtr surface(ID surface_id) override {
         switch (surface_id) {
             case 1: return std::make_shared<Surface6>(std::array<ID, 6>{node_ids[0], node_ids[1], node_ids[2], node_ids[4], node_ids[5], node_ids[6]});
             case 2: return std::make_shared<Surface6>(std::array<ID, 6>{node_ids[0], node_ids[3], node_ids[1], node_ids[7], node_ids[8], node_ids[4]});

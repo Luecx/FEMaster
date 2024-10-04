@@ -310,7 +310,7 @@ struct Surface : public SurfaceInterface {
      *          domain of the surface element, with the Jacobian determinant to map to the global space.
      *          This can be useful for calculating distributed load contributions or surface mass properties.
      */
-    DynamicVector shape_function_integral(const NodeData& node_coords_system) const {
+    DynamicVector shape_function_integral(const NodeData& node_coords_system) const override{
         auto node_coords_global = this->node_coords_global(node_coords_system);
 
         // Define the integrand for computing the integral of each shape function over the global surface
@@ -343,7 +343,7 @@ struct Surface : public SurfaceInterface {
 
     /**
      */
-    virtual bool in_bounds(const Vec2& local) const = 0;
+    virtual bool in_bounds(const Vec2& local) const override = 0;
 
     /**
      * @brief Compute the area of the surface element.
@@ -355,7 +355,7 @@ struct Surface : public SurfaceInterface {
      *          by integrating the magnitude of the cross product of the tangent vectors
      *          at each integration point.
      */
-    Precision area(const NodeData& node_coords_system) const {
+    Precision area(const NodeData& node_coords_system) const override{
         auto node_coords_global = this->node_coords_global(node_coords_system);
 
         // Define the integrand for computing surface area

@@ -96,7 +96,7 @@ struct C3D4 : public SolidElement<4> {
         return quad;
     }
 
-    SurfacePtr surface(ID surface_id) {
+    SurfacePtr surface(ID surface_id) override {
         switch (surface_id) {
             case 1: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 0], node_ids[ 1], node_ids[ 2]});
             case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 0], node_ids[ 3], node_ids[ 1]});

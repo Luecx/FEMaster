@@ -17,7 +17,7 @@ struct C3D20 : public SolidElement<20>{
         return quad;
     }
 
-    SurfacePtr surface(ID surface_id) {
+    SurfacePtr surface(ID surface_id) override {
         switch (surface_id) {
             case 1: return std::make_shared<Surface8>(std::array<ID, 8>{node_ids[ 0], node_ids[ 1], node_ids[ 2], node_ids[ 3],
                                                                          node_ids[ 8], node_ids[ 9], node_ids[10], node_ids[11]});
