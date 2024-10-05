@@ -2,6 +2,7 @@
 
 #include "elasticity.h"
 #include "isotropic_elasticity.h"
+#include "orthotropic_elasticity.h"
 
 #include <memory>
 #include <string>

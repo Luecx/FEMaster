@@ -1,0 +1,608 @@
+\chapter{Geometric Entities}
+\label{chap:geometric_entities}
+
+FEMaster is built around three core geometric entities: \textbf{nodes}, \textbf{elements}, and \textbf{surfaces}. These entities serve as the building blocks for defining the geometry and topology of a finite element model. Each entity has a unique ID-based referencing system that allows for efficient and flexible model setup. This chapter details the structure, definition, and properties of each geometric entity, including their usage and syntax in the input file.
+\section{Nodes (*NODE)}
+Nodes are the fundamental points that define the geometry of a finite element model. Each node is associated with a set of coordinates that determine its position in space. Nodes are referenced by a unique ID and are used to construct elements and define boundary conditions. Additionally, each node can have rotational degrees of freedom (DOFs), although these are not specified directly in the node definitions. The translational DOFs are defined by the provided $x$, $y$, and $z$ coordinates, while rotational DOFs are automatically included in the solution process if the specific element or constraint requires them.
+
+\subsection{Syntax}
+Nodes are defined using the following format in the input file:
+
+\begin{codeBlock}
+*NODE, NSET=NODES
+1, 0.0, 0.0, 0.0
+2, 1.0, 0.0, 0.0
+3, 0.0, 1.0, 0.0
+4, 1.0, 1.0, 0.0
+\end{codeBlock}
+
+The first value corresponds to the node ID, followed by its $x$, $y$, and $z$ coordinates.
+The optional parameter `NSET` is used to group nodes into logical sets, which can be referenced later in the input file.
+
+Values for node coordinates can be omitted if not explicitly needed, using commas to separate them. For example:
+
+\begin{codeBlock}
+*NODE
+5, , 5.0,
+\end{codeBlock}
+
+This syntax creates a node with ID 5, $x$ = 0, $y$ = 5, and $z$ = 0. Omitted values are treated as zeros by default.
+
+\subsection{Node Sets (*NSET)}
+Node sets can also be created manually using the `NSET` command, which allows for flexible grouping of node IDs.
+Both of the following commands are valid and equivalent:
+
+\begin{codeBlock}
+*NSET, NAME=NODE_GROUP
+1, 2, 3, 4
+\end{codeBlock}
+
+\begin{codeBlock}
+*NSET, NSET=NODE_GROUP
+1, 2, 3, 4
+\end{codeBlock}
+
+Node sets can then be referenced in constraints, boundary conditions, or other commands that require specifying a group of nodes.
+
+\subsection{Rotational Degrees of Freedom}
+Even though the user only provides the translational coordinates in the input file, FEMaster supports rotational DOFs for nodes. These rotational DOFs are utilized in the solution when elements or constraints involve rotational terms, such as beam or shell elements. The results output file may include both translational and rotational solutions for each node, depending on the analysis type and the defined elements.
+
+\newpage
+
+
+
+
+
+
+
+
+\section{Elements (*ELEMENT)}
+
+Elements connect multiple nodes to form the primary components of a finite element model. Each element represents a region of the model's geometry, allowing for the computation of properties such as displacements, stresses, and strains. FEMaster supports a variety of solid elements for 3D analysis, providing flexibility and accuracy depending on the chosen element type.
+
+
+\subsection{Element Types}
+
+FEMaster currently supports the following 3D element types:
+\begin{itemize}
+    \item \textbf{C3D4}: 4-node linear tetrahedral element.
+    \item \textbf{C3D6}: 6-node linear triangular prism (wedge) element.
+    \item \textbf{C3D8}: 8-node linear hexahedral (brick) element.
+    \item \textbf{C3D10}: 10-node quadratic tetrahedral element.
+    \item \textbf{C3D15}: 15-node quadratic triangular prism (wedge) element.
+    \item \textbf{C3D20}: 20-node quadratic hexahedral (brick) element.
+    \item \textbf{C3D20R}: 20-node reduced integration hexahedral element.
+\end{itemize}
+
+\subsection{Syntax}
+Elements are defined using the `*ELEMENT` keyword in the input file,
+followed by the element type. Each new line will then define elements by an id and the node IDs that define the element.
+ The format is as follows:
+
+\begin{codeBlock}
+*ELEMENT, TYPE=C3D8, ELSET=PART1
+1, 1, 2, 3, 4, 5, 6, 7, 8
+2, 2, 6, 7, 3, 10, 11, 12, 8
+\end{codeBlock}
+
+For some elements, the amount of nodes can be excessively large, and the input file can become cluttered.
+To avoid this, line breaks during element definitions is allowed, as shown below:
+
+\begin{codeBlock}
+*ELEMENT, TYPE=C3D20, ELSET=PART2
+1, 1, 2, 3, 4, 5, 6, 7, 8,
+   9, 10, 11, 12, 13, 14, 15, 16,
+    17, 18, 19, 20
+\end{codeBlock}
+
+\subsection{Element Sets (*ELSET)}
+
+Element sets can also be created manually using the `ELSET` command, which allows for flexible grouping of element IDs.
+Both of the following commands are valid and equivalent:
+
+\begin{codeBlock}
+*ELSET, NAME=ELEMENT_GROUP
+1, 2, 3, 4
+\end{codeBlock}
+
+\begin{codeBlock}
+*ELSET, ELSET=ELEMENT_GROUP
+1, 2, 3, 4
+\end{codeBlock}
+
+Element sets can then be referenced in constraints, boundary conditions, or other commands that require specifying a group of elements.
+
+\subsection{Theory}
+
+\subsubsection{Element Definition and Shape Functions}
+
+A general element in FEMaster is defined using nodal coordinates and shape functions. Shape functions are mathematical functions used to interpolate the displacement, strain, or stress fields within an element. They are defined in terms of local coordinates \((r, s, t)\), which map the element's geometry to a standard reference element. The shape functions are expressed as \( N_i(r, s, t) \), where \( i \) refers to the shape function associated with the \(i\)-th node.
+
+For an element with \( n \) nodes, the position of any point within the element can be interpolated using the nodal coordinates \( \mathbf{x}_i \) and the shape functions \( N_i(r, s, t) \):
+
+\[
+\mathbf{x}(r, s, t) = \sum_{i=1}^{n} N_i(r, s, t) \, \mathbf{x}_i
+\]
+
+where:
+\begin{itemize}
+    \item \( \mathbf{x}(r, s, t) \) is the global position of the point defined by local coordinates \( (r, s, t) \).
+    \item \( \mathbf{x}_i \) are the global coordinates of the \(i\)-th node.
+    \item \( N_i(r, s, t) \) are the shape functions, which vary depending on the element type.
+\end{itemize}
+
+\subsubsection{Types of Shape Functions}
+
+FEMaster follows the general principles outlined in the Abaqus theory manual for defining shape functions. Depending on the element type, the shape functions can be linear (e.g., C3D4, C3D8) or quadratic (e.g., C3D10, C3D20). Linear shape functions provide a simpler interpolation scheme and are often used for coarse meshes, while quadratic shape functions offer improved accuracy for complex geometries.
+
+\subsubsection{Element Stiffness Matrix Computation}
+
+The element stiffness matrix \(\mathbf{K}_e\) is a fundamental component in the finite element method. It describes the resistance of the element to deformation and is derived from the strain-displacement and material property relationships. The stiffness matrix for an element is computed as:
+
+\[
+\mathbf{K}_e = \int_{V} \mathbf{B}^T \mathbf{D} \mathbf{B} \, dV
+\]
+
+where:
+\begin{itemize}
+    \item \( \mathbf{B} \) is the strain-displacement matrix, derived from the shape function derivatives.
+    \item \( \mathbf{D} \) is the material stiffness matrix, which depends on material properties such as Young's modulus and Poisson's ratio.
+    \item \( dV \) is the differential volume element, calculated as \( dV = \left| \det(\mathbf{J}) \right| \, dr \, ds \, dt \).
+    \item \( \mathbf{J} \) is the Jacobian matrix, defined by:
+\end{itemize}
+
+\[
+\mathbf{J} =
+\begin{bmatrix}
+\frac{\partial x}{\partial r} & \frac{\partial y}{\partial r} & \frac{\partial z}{\partial r} \\
+\frac{\partial x}{\partial s} & \frac{\partial y}{\partial s} & \frac{\partial z}{\partial s} \\
+\frac{\partial x}{\partial t} & \frac{\partial y}{\partial t} & \frac{\partial z}{\partial t}
+\end{bmatrix}
+\]
+
+The Jacobian matrix transforms the local element coordinates \((r, s, t)\) to global coordinates \((x, y, z)\), allowing for the accurate evaluation of the volume element and other quantities.
+
+\subsubsection{Numerical Integration for Stiffness Matrix}
+
+For complex elements, the stiffness matrix is typically evaluated using numerical integration techniques such as Gaussian quadrature. The integral is approximated by a sum over a set of sample points \((r_i, s_i, t_i)\) with corresponding weights \( w_i \):
+
+\[
+\mathbf{K}_e \approx \sum_{i=1}^{n} \mathbf{B}^T(r_i, s_i, t_i) \, \mathbf{D} \, \mathbf{B}(r_i, s_i, t_i) \, w_i \, \left| \det(\mathbf{J}(r_i, s_i, t_i)) \right|
+\]
+
+This formula enables the computation of the stiffness matrix even for elements with complex shapes and material properties, ensuring accurate representation of the element's behavior.
+
+\subsubsection{Summary of Stiffness Matrix Computation Steps}
+
+\begin{enumerate}
+    \item \textbf{Compute Shape Function Derivatives}: Calculate the first derivatives of the shape functions \( \frac{\partial N_i}{\partial r}, \frac{\partial N_i}{\partial s}, \frac{\partial N_i}{\partial t} \).
+    \item \textbf{Calculate the Jacobian Matrix}: Use the shape function derivatives and nodal coordinates to form the Jacobian matrix \( \mathbf{J} \).
+    \item \textbf{Evaluate the Strain-Displacement Matrix}: Compute the strain-displacement matrix \( \mathbf{B} \) using the Jacobian matrix.
+    \item \textbf{Form the Stiffness Matrix}: Integrate \( \mathbf{B}^T \mathbf{D} \mathbf{B} \) over the volume using numerical integration points.
+    \item \textbf{Assemble into the Global Stiffness Matrix}: Once the element stiffness matrices are computed, they are assembled into the global stiffness matrix for the entire model.
+\end{enumerate}
+
+The elements implemented with the amount of integration points is listed below:
+
+\begin{itemize}
+    \item \textbf{C3D4}: 1 integration point
+    \item \textbf{C3D6}: 2 integration points
+    \item \textbf{C3D8}: 8 integration points
+    \item \textbf{C3D10}: 4 integration points
+    \item \textbf{C3D15}: 9 integration points
+    \item \textbf{C3D20}: 27 integration points
+    \item \textbf{C3D20R}: 8 integration points
+\end{itemize}
+
+
+\newpage
+
+
+\section{Surfaces (*SURFACE)}
+Surfaces are specialized geometric entities derived from the faces of 3D elements. They are used to apply boundary conditions, loads, and constraint definitions. Unlike nodes and elements, surface types (triangular or quadrilateral) cannot be directly chosen by the user. Instead, they are automatically created based on the connectivity of the underlying element and its associated face.
+
+FEMaster creates the following surface types based on the element face configuration:
+
+\begin{itemize}
+    \item \textbf{Surface3}: A 3-node triangular surface created from a triangular face of tetrahedral or wedge elements.
+    \item \textbf{Surface4}: A 4-node quadrilateral surface created from a quadrilateral face of hexahedral or wedge elements.
+    \item \textbf{Surface6}: A 6-node quadratic triangular surface created from a higher-order triangular face with mid-side nodes.
+    \item \textbf{Surface8}: An 8-node quadratic quadrilateral surface created from a higher-order quadrilateral face with mid-side nodes.
+\end{itemize}
+
+
+\subsection{Syntax}
+Surfaces are defined using the `*SURFACE` keyword in the input file. The format is as follows:
+
+\begin{codeBlock}
+*SURFACE, SFSET=MASTER_SURFACE
+1, 1, S2
+2, 2, S3
+\end{codeBlock}
+
+Each surface definition includes:
+
+\begin{itemize}
+    \item A unique surface ID.
+    \item The element ID of the parent element.
+    \item The element side ID, which specifies which face of the element is used (e.g., `S1`, `S2`, `S3`).
+\end{itemize}
+
+\subsection{Surface Sets (*SFSET)}
+
+Surface sets can also be created manually using the `SFSET` command, which allows for flexible grouping of surface IDs.
+Both of the following commands are valid and equivalent:
+
+\begin{codeBlock}
+*SFSET, NAME=SURFACE_GROUP
+1, 2, 3, 4
+\end{codeBlock}
+
+\begin{codeBlock}
+*SFSET, SFSET=SURFACE_GROUP
+1, 2, 3, 4
+\end{codeBlock}
+
+Surface sets can then be referenced in constraints, boundary conditions, or other commands that require specifying a group of surfaces.
+
+\subsection{Theory}
+
+\subsubsection{Shape Functions}
+
+Surfaces define the 3d point using interpolation of the corner nodes based on the local coordinates $(r, s)$.
+The interpolation works by defining a shape function for each corner node and then interpolating the point using these shape functions.
+Sampling at some random point on the surface works by:
+
+\[
+x(r, s) = \sum_{i=1}^{n} N_i(r, s) x_i
+\]
+
+where $x_i$ are the coordinates of the corner nodes and $N_i(r, s)$ are the shape functions.
+The surface type (e.g., Surface3, Surface4) is automatically determined based on the number of nodes on the selected element face.
+
+Each surface type in FEMaster uses specific shape functions to interpolate values across its local coordinate system.
+These shape functions are crucial for defining displacement fields and mapping between local and global coordinates.
+Below is a detailed description of the shape functions, along with their first and second derivatives for each supported surface type.
+
+\paragraph{Surface3}
+For a 3-node triangular surface, the shape functions are defined as:
+
+\[
+N_1(r, s) = 1 - r - s, \quad N_2(r, s) = r, \quad N_3(r, s) = s
+\]
+
+The first derivatives are:
+
+\[
+\frac{\partial N}{\partial r} =
+\begin{bmatrix}
+-1 \\
+1 \\
+0
+\end{bmatrix}, \quad
+\frac{\partial N}{\partial s} =
+\begin{bmatrix}
+-1 \\
+0 \\
+1
+\end{bmatrix}
+\]
+
+The second derivatives are:
+
+\[
+\frac{\partial^2 N}{\partial r^2} =
+\begin{bmatrix}
+0 \\
+0 \\
+0
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial s^2} =
+\begin{bmatrix}
+0 \\
+0 \\
+0
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial r \partial s} =
+\begin{bmatrix}
+0 \\
+0 \\
+0
+\end{bmatrix}
+\]
+
+\paragraph{Surface4} For a 4-node quadrilateral surface, the shape functions are defined as:
+
+\[
+\begin{aligned}
+N_1(r, s) &= 0.25 (1 - r)(1 - s) \\
+N_2(r, s) &= 0.25 (1 + r)(1 - s) \\
+N_3(r, s) &= 0.25 (1 + r)(1 + s) \\
+N_4(r, s) &= 0.25 (1 - r)(1 + s)
+\end{aligned}
+\]
+
+The first derivatives are:
+
+\[
+\frac{\partial N}{\partial r} =
+\begin{bmatrix}
+-0.25 (1 - s) \\
+0.25 (1 - s) \\
+0.25 (1 + s) \\
+-0.25 (1 + s)
+\end{bmatrix}, \quad
+\frac{\partial N}{\partial s} =
+\begin{bmatrix}
+-0.25 (1 - r) \\
+-0.25 (1 + r) \\
+0.25 (1 + r) \\
+0.25 (1 - r)
+\end{bmatrix}
+\]
+
+The second derivatives are:
+
+\[
+\frac{\partial^2 N}{\partial r^2} =
+\begin{bmatrix}
+0 \\
+0 \\
+0 \\
+0
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial s^2} =
+\begin{bmatrix}
+0 \\
+0 \\
+0 \\
+0
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial r \partial s} =
+\begin{bmatrix}
+0.25 \\
+-0.25 \\
+0.25 \\
+-0.25
+\end{bmatrix}
+\]
+\paragraph{Surface6} For a 6-node quadratic triangular surface, the shape functions are defined as:
+
+\[
+\begin{aligned}
+N_1(r, s) &= 1 - 3(r + s) + 2(r + s)^2 \\
+N_2(r, s) &= r(2r - 1) \\
+N_3(r, s) &= s(2s - 1) \\
+N_4(r, s) &= 4r(1 - r - s) \\
+N_5(r, s) &= 4rs \\
+N_6(r, s) &= 4s(1 - r - s)
+\end{aligned}
+\]
+
+The first derivatives are:
+
+\[
+\frac{\partial N}{\partial r} =
+\begin{bmatrix}
+-3 + 4(r + s) \\
+4r - 1 \\
+0 \\
+4 - 8r - 4s \\
+4s \\
+-4s
+\end{bmatrix}, \quad
+\frac{\partial N}{\partial s} =
+\begin{bmatrix}
+-3 + 4(r + s) \\
+0 \\
+4s - 1 \\
+-4r \\
+4r \\
+4 - 4r - 8s
+\end{bmatrix}
+\]
+
+The second derivatives are:
+
+\[
+\frac{\partial^2 N}{\partial r^2} =
+\begin{bmatrix}
+4 \\
+4 \\
+0 \\
+-8 \\
+0 \\
+0
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial s^2} =
+\begin{bmatrix}
+4 \\
+0 \\
+4 \\
+0 \\
+0 \\
+-8
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial r \partial s} =
+\begin{bmatrix}
+4 \\
+0 \\
+0 \\
+-4 \\
+4 \\
+-4
+\end{bmatrix}
+\]
+\paragraph{Surface8} For an 8-node quadratic quadrilateral surface, the shape functions are defined as:
+
+\[
+\begin{aligned}
+N_1(r, s) &= 0.25(1 - r)(1 - s)(-1 - r - s) \\
+N_2(r, s) &= 0.25(1 + r)(1 - s)(-1 + r - s) \\
+N_3(r, s) &= 0.25(1 + r)(1 + s)(-1 + r + s) \\
+N_4(r, s) &= 0.25(1 - r)(1 + s)(-1 - r + s) \\
+N_5(r, s) &= 0.5(1 - r^2)(1 - s) \\
+N_6(r, s) &= 0.5(1 + r)(1 - s^2) \\
+N_7(r, s) &= 0.5(1 - r^2)(1 + s) \\
+N_8(r, s) &= 0.5(1 - r)(1 - s^2)
+\end{aligned}
+\]
+
+The first derivatives are:
+
+\[
+\frac{\partial N}{\partial r} =
+\begin{bmatrix}
+0.25(-2r - s)(s - 1) \\
+0.25(-2r + s)(s - 1) \\
+0.25(2r + s)(s + 1) \\
+0.25(2r - s)(s + 1) \\
+r(s - 1) \\
+0.5(1 - s^2) \\
+-r(1 + s) \\
+0.5(s^2 - 1)
+\end{bmatrix}, \quad
+\frac{\partial N}{\partial s} =
+\begin{bmatrix}
+0.25(-r - 2s)(r - 1) \\
+0.25(-r + 2s)(r + 1) \\
+0.25(r + 2s)(r + 1) \\
+0.25(r - 2s)(r - 1) \\
+0.5(r^2 - 1) \\
+-s(r + 1) \\
+0.5(1 - r^2) \\
+s(r - 1)
+\end{bmatrix}
+\]
+
+The second derivatives are:
+\[
+\frac{\partial^2 N}{\partial r^2} =
+\begin{bmatrix}
+0.5 (1 - s) \\
+0.5 (1 - s) \\
+0.5 (s + 1) \\
+0.5 (s + 1) \\
+s - 1 \\
+0 \\
+- (s + 1) \\
+0
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial s^2} =
+\begin{bmatrix}
+0.5 (1 - r) \\
+0.5 (r + 1) \\
+0.5 (r + 1) \\
+0.5 (1 - r) \\
+0 \\
+-(r + 1) \\
+0 \\
+r - 1
+\end{bmatrix}, \quad
+\frac{\partial^2 N}{\partial r \partial s} =
+\begin{bmatrix}
+-0.5 (r + s) + 0.25 \\
+-0.5 (r - s) - 0.25 \\
+0.5 (r + s) + 0.25 \\
+0.5 (r - s) - 0.25 \\
+r \\
+-s \\
+-r \\
+s
+\end{bmatrix}
+\]
+
+\newpage
+\subsubsection{Mapping Points to the Surface}
+Mapping a global point onto a surface involves finding the local $(r, s)$ coordinates that minimize the distance to the point. FEMaster uses a Newton-Raphson method to iteratively find the best fit $(r, s)$ values. The procedure involves calculating the first and second derivatives of the shape functions for the given surface type:
+
+\[
+\frac{\partial N_i}{\partial r}, \quad \frac{\partial N_i}{\partial s}, \quad \frac{\partial^2 N_i}{\partial r^2}, \quad \frac{\partial^2 N_i}{\partial s^2}, \quad \frac{\partial^2 N_i}{\partial r \partial s}
+\]
+
+These derivatives are used to construct a system of equations that minimize the residual distance between the surface and the target point. Boundary edges are represented by internal first and second-order line elements that are used to check if the Newton iteration goes out of bounds. In such cases, the algorithm switches to a boundary search using these line elements.
+The code implements the following pseudo-code to map a point to the surface:
+
+\begin{algorithm}[H]
+\caption{Mapping Global Point to Surface}
+\KwIn{Global point $\mathbf{p}$, Node coordinates $\text{node\_coords\_global}$, Element type $N$, Boolean $clip$}
+\KwOut{Local coordinates $(r, s)$ minimizing distance to $\mathbf{p}$}
+\BlankLine
+\textbf{Step 1: Initialize} \\
+$\text{starting\_coords\_list} \gets \text{pick\_starting\_coords}(N)$ \;
+$\text{max\_iter} \gets 32$ \;
+$\text{eps} \gets 10^{-12}$ \;
+$\text{min\_distance\_squared} \gets \infty$ \;
+%$\text{best\_coords} \gets \text{starting\_coords\_list}[0]$ \;
+
+\BlankLine
+\textbf{Step 2: Perform Newton-Raphson Iteration for Each Initial Guess} \\
+\For{each $\text{initial\_guess} \in \text{starting\_coords\_list}$}{
+    $r, s \gets \text{initial\_guess}$ \;
+    \For{$\text{iter} = 0$ \textbf{to} $\text{max\_iter}$}{
+        \textbf{Compute shape functions and derivatives} \;
+        $\mathbf{N} \gets \text{shape\_function}(r, s)$ \;
+        $\frac{\partial \mathbf{N}}{\partial r}, \frac{\partial \mathbf{N}}{\partial s} \gets \text{shape\_derivatives}(r, s)$ \;
+        $\frac{\partial^2 \mathbf{N}}{\partial r^2}, \frac{\partial^2 \mathbf{N}}{\partial s^2}, \frac{\partial^2 \mathbf{N}}{\partial r \partial s} \gets \text{shape\_second\_derivative}(r, s)$ \;
+        \textbf{Compute surface position and derivatives} \;
+        $\mathbf{x}_{rs} = \sum_{i=1}^{N} \mathbf{x}_i N_i, \quad \frac{\partial \mathbf{x}}{\partial r} = \sum_{i=1}^{N} \mathbf{x}_i \frac{\partial N_i}{\partial r}, \quad \frac{\partial \mathbf{x}}{\partial s} = \sum_{i=1}^{N} \mathbf{x}_i \frac{\partial N_i}{\partial s},$ \;
+        $\frac{\partial^2 \mathbf{x}}{\partial r^2} = \sum_{i=1}^{N} \mathbf{x}_i \frac{\partial^2 N_i}{\partial r^2}, \quad \frac{\partial^2 \mathbf{x}}{\partial s^2} = \sum_{i=1}^{N} \mathbf{x}_i \frac{\partial^2 N_i}{\partial s^2}, \quad \frac{\partial^2 \mathbf{x}}{\partial r \partial s} = \sum_{i=1}^{N} \mathbf{x}_i \frac{\partial^2 N_i}{\partial r \partial s}$ \;
+
+        \textbf{Compute distance and its derivatives} \;
+        $\mathbf{diff} \gets \mathbf{x}_{rs} - \mathbf{p}$ \;
+        $\frac{\partial D}{\partial r} \gets \mathbf{diff} \cdot \frac{\partial \mathbf{x}}{\partial r}$ \;
+        $\frac{\partial D}{\partial s} \gets \mathbf{diff} \cdot \frac{\partial \mathbf{x}}{\partial s}$ \;
+
+        \textbf{Compute the Hessian matrix} \;
+        $H_{11} \gets \frac{\partial \mathbf{x}}{\partial r} \cdot \frac{\partial \mathbf{x}}{\partial r} + \mathbf{diff} \cdot \frac{\partial^2 \mathbf{x}}{\partial r^2}$ \;
+        $H_{22} \gets \frac{\partial \mathbf{x}}{\partial s} \cdot \frac{\partial \mathbf{x}}{\partial s} + \mathbf{diff} \cdot \frac{\partial^2 \mathbf{x}}{\partial s^2}$ \;
+        $H_{12} \gets \frac{\partial \mathbf{x}}{\partial r} \cdot \frac{\partial \mathbf{x}}{\partial s} + \mathbf{diff} \cdot \frac{\partial^2 \mathbf{x}}{\partial r \partial s}$ \;
+
+        \textbf{Solve the linear system} \;
+        $\Delta r, \Delta s \gets H^{-1} \cdot \left[ - \frac{\partial D}{\partial r}, - \frac{\partial D}{\partial s} \right]^T$ \;
+
+        \textbf{Update coordinates} \;
+        $r \gets r + \Delta r$ \;
+        $s \gets s + \Delta s$ \;
+
+        \If{$\|\Delta r, \Delta s\| < \text{eps}$}{
+            \textbf{break} \;
+        }
+    }
+    \textbf{Check if $(r, s)$ is within bounds and update best coordinates} \;
+    \If{$\text{in\_bounds}(r, s)$ \textbf{or not} $clip$}{
+        $\text{distance\_squared} \gets \|\mathbf{x}_{rs} - \mathbf{p}\|^2$ \;
+        \If{$\text{distance\_squared} < \text{min\_distance\_squared}$}{
+            $\text{min\_distance\_squared} \gets \text{distance\_squared}$ \;
+            $\text{best\_coords} \gets (r, s)$ \;
+        }
+    }
+}
+\If{clip}{
+    $\text{best\_coords\_edge} \gets \text{closest\_point\_on\_boundary}(\mathbf{p}, \text{node\_coords\_global})$ \;
+    $\text{distance\_squared} \gets \|\text{local\_to\_global}(\text{best\_coords\_edge}) - \mathbf{p}\|^2$ \;
+    \If{$\text{distance\_squared} < \text{min\_distance\_squared}$}{
+        $\text{best\_coords} \gets \text{best\_coords\_edge}$ \;
+    }
+}
+\Return{$\text{best\_coords}$} \;
+\end{algorithm}
+
+\subsubsection{Integration across the surface}
+The integration across the surface is done using the Gaussian quadrature method.
+Based on the element, an appropriate number of integration points are chosen which can accurately integrate the respective shape functions.
+The amount of integration points is displayed in the following list:
+
+\begin{itemize}
+    \item \textbf{Surface3}: 1 integration point
+    \item \textbf{Surface4}: 1 integration points
+    \item \textbf{Surface6}: 3 integration points
+    \item \textbf{Surface8}: 4 integration points
+\end{itemize}
+
+Integration is then carried out by:
+
+\[
+\int_{\text{surface}} f(\mathbf{x}) \, dA \approx \sum_{i=1}^{n} f(\mathbf{x}(r_i, s_i)) \, w_i \, \bigg| \frac{\partial \mathbf{x}}{\partial r} \times \frac{\partial \mathbf{x}}{\partial s} \bigg|_{(r_i, s_i)}
+\]
+

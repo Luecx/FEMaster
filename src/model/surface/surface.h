@@ -63,7 +63,7 @@ struct SurfaceInterface {
     virtual DynamicVector shape_function(const Vec2& local) const {return DynamicVector::Zero(0);};
     virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const {return DynamicVector::Zero(0);};
     virtual ID* nodes() {return nullptr;};
-
+    virtual void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) = 0;
 };
 
 using SurfacePtr = std::shared_ptr<SurfaceInterface>;
@@ -446,6 +446,27 @@ struct Surface : public SurfaceInterface {
      */
     ID* nodes() override {
         return nodeIds.data();
+    }
+
+    /**
+     * @brief Apply distributed load to the surface element.
+     *
+     * @param node_coords Node coordinates in the global system.
+     * @param node_loads Node loads in the global system.
+     * @param load Vector of the distributed load to be applied.
+     */
+    virtual void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override {
+
+        auto nodal_contributions = shape_function_integral(node_coords);
+
+        // go through the node ids
+        for (Index i = 0; i < n_nodes; i++) {
+            auto n_id = nodes()[i];
+            node_loads(n_id, 0) += nodal_contributions(i) * load(0);
+            node_loads(n_id, 1) += nodal_contributions(i) * load(1);
+            node_loads(n_id, 2) += nodal_contributions(i) * load(2);
+        }
+
     }
 };
 

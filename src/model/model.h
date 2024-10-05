@@ -81,8 +81,8 @@ struct Model {
     // load management
     void add_cload      (const std::string& nset, Vec3 load);
     void add_cload      (ID id, Vec3 load);
-    void add_dload      (const std::string& nset, ID surface_id, Vec3 load);
-    void add_dload      (ID id, ID surface_id, Vec3 load);
+    void add_dload      (const std::string& sfset, Vec3 load);
+    void add_dload      (ID id, Vec3 load);
     void add_vload      (const std::string& elset, Vec3 load);
     void add_vload      (ID id, Vec3 load);
 

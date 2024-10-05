@@ -1,0 +1,108 @@
+\chapter{Boundary Conditions}
+\label{chap:bc}
+
+Boundary conditions (BCs) are essential in finite element analysis to define how a structure interacts with its environment and how loads are applied to it. This chapter explains the three main types of loads supported—`VLOAD`, `CLOAD`, and `DLOAD`—as well as the syntax for applying constraints using `*SUPPORT`. Boundary conditions and loads are grouped into *collectors* for easy management and reusability, enabling consistent application across multiple steps in an analysis.
+
+\section{Load Types}
+
+\subsection{Volume Load (*VLOAD)}
+
+`VLOAD` is used to apply distributed loads to elements. This type of load is defined using three components: \( F_x, F_y, F_z \), which represent forces acting along the x, y, and z directions, respectively. `VLOAD` can be applied either to individual element IDs or to entire element sets. It is suitable for defining gravitational loads, body forces, or thermal forces distributed over the volume of elements.
+
+\subsubsection{Syntax:}
+\begin{codeBlock}
+*VLOAD, LOAD_COLLECTOR=COLLECTOR_NAME
+ELEMENT_ID, F_x, F_y, F_z
+ELEMENT_SET_NAME, F_x, F_y, F_z
+\end{codeBlock}
+
+\textbf{Example:}
+\begin{codeBlock}
+*VLOAD, LOAD_COLLECTOR=GRAVITY
+10, 0, -9.81, 0
+11, 0, -9.81, 0
+ELSET1, 0, -9.81, 0
+\end{codeBlock}
+
+\subsection{Concentrated Load (*CLOAD)}
+
+`CLOAD` is used to apply concentrated loads to nodes. It supports six components: three translational forces \( F_x, F_y, F_z \) and three optional rotational moments \( M_x, M_y, M_z \).
+
+\subsubsection{Syntax}
+
+\begin{codeBlock}
+*CLOAD, LOAD_COLLECTOR=COLLECTOR_NAME
+NODE_ID, F_x, F_y, F_z, M_x, M_y, M_z
+\end{codeBlock}
+
+\textbf{Example:}
+
+\begin{codeBlock}
+*CLOAD, LOAD_COLLECTOR=LOADS
+15, 0, 0, 1
+16, 0, 0, 1
+17, 0, 0, 1
+18, 0, 0, 1
+\end{codeBlock}
+
+\subsection{Distributed Load (*DLOAD)}
+
+`DLOAD` is used to apply distributed loads to surfaces. This load type is suitable for defining pressure loads or other distributed forces acting over surface areas.
+
+\subsubsection{Syntax}
+
+\begin{codeBlock}
+*DLOAD, LOAD_COLLECTOR=COLLECTOR_NAME
+SURFACE_ID, F_x, F_y, F_z
+SURFACE_SET_NAME, F_x, F_y, F_z
+\end{codeBlock}
+
+\textbf{Example:}
+\begin{codeBlock}
+*DLOAD, LOAD_COLLECTOR=PRESSURE
+20, 0, 0, -10
+SURFSET1, 0, 0, -10
+\end{codeBlock}
+
+\section{Boundary Conditions (*SUPPORT)}
+
+Boundary conditions specify which degrees of freedom (DOF) are fixed or constrained at a particular node. The `*SUPPORT` keyword is used to define constraints on any combination of the six available DOFs: three translational (\( u_x, u_y, u_z \)) and three rotational (\( \theta_x, \theta_y, \theta_z \)).
+
+\subsection{Syntax}
+\begin{codeBlock}
+*SUPPORT, SUPPORT_COLLECTOR=COLLECTOR_NAME
+NODE_ID, u_x, u_y, u_z, \theta_x, \theta_y, \theta_z
+\end{codeBlock}
+
+\textbf{Example:}
+\begin{codeBlock}
+*SUPPORT, SUPPORT_COLLECTOR=BCS
+1, 0, 0, 0, 0, 0, 0
+2, 0, 0, 0, 0, 0, 0
+3, 0, 0, 0, 0, 0, 0
+4, 0, 0, 0, 0, 0, 0
+\end{codeBlock}
+
+\section{Load Case Management}
+
+Once loads and supports are grouped into collectors, they can be easily referenced in different load cases within a step.
+Load cases define how the loads and supports are applied, enabling different scenarios.
+
+\subsection{Syntax}
+\begin{codeBlock}
+*LOADCASE, TYPE=LINEAR STATIC
+*LOAD
+LOAD_COLLECTOR_1
+LOAD_COLLECTOR_2
+*SUPPORT
+SUPPORT_COLLECTOR_1
+SUPPORT_COLLECTOR_2
+\end{codeBlock}
+
+\section{Conclusion}
+
+Boundary conditions and loads are fundamental to setting up a finite element analysis.
+The use of `VLOAD`, `CLOAD`, and `DLOAD` allows for a wide range of loading scenarios,
+while the `*SUPPORT` keyword enables precise control over node constraints.
+By grouping these into collectors, users can efficiently manage and apply conditions across multiple steps,
+enhancing flexibility and reusability in complex analyses.

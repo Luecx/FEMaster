@@ -1,0 +1,138 @@
+\chapter{Material Properties}
+\label{chap:material_properties}
+
+Material properties are fundamental to the analysis and simulation of mechanical systems. They define how materials respond to external loads and are crucial in predicting the behavior of structures under various conditions. This chapter discusses the implementation of material models, focusing on isotropic and orthotropic elasticity. Currently, our system supports isotropic and orthotropic materials; however, orthotropic materials cannot be rotated yet.
+
+\section{Isotropic Elasticity (*ELASTIC, TYPE=ISOTROPIC)}
+
+An isotropic material has identical properties in all directions. This uniformity simplifies the stress-strain relationship, making isotropic materials widely used in engineering applications.
+
+\subsection{Constitutive Equations}
+
+The constitutive equation for isotropic elasticity relates stress $\boldsymbol{\sigma}$ and strain $\boldsymbol{\varepsilon}$ through Hooke's Law:
+
+\[
+\boldsymbol{\sigma} = \mathbf{C} : \boldsymbol{\varepsilon}
+\]
+
+where $\mathbf{C}$ is the fourth-order elasticity tensor. In matrix form for three-dimensional analysis, the stress-strain relationship becomes:
+
+\[
+\begin{bmatrix}
+\sigma_{xx} \\
+\sigma_{yy} \\
+\sigma_{zz} \\
+\sigma_{xy} \\
+\sigma_{yz} \\
+\sigma_{zx}
+\end{bmatrix}
+=
+\begin{bmatrix}
+C_{11} & C_{12} & C_{12} & 0 & 0 & 0 \\
+C_{12} & C_{11} & C_{12} & 0 & 0 & 0 \\
+C_{12} & C_{12} & C_{11} & 0 & 0 & 0 \\
+0      & 0      & 0      & C_{44} & 0 & 0 \\
+0      & 0      & 0      & 0 & C_{44} & 0 \\
+0      & 0      & 0      & 0 & 0 & C_{44}
+\end{bmatrix}
+\begin{bmatrix}
+\varepsilon_{xx} \\
+\varepsilon_{yy} \\
+\varepsilon_{zz} \\
+2\varepsilon_{xy} \\
+2\varepsilon_{yz} \\
+2\varepsilon_{zx}
+\end{bmatrix}
+\]
+
+The stiffness coefficients are defined as:
+
+\[
+\begin{aligned}
+C_{11} &= \frac{E(1 - \nu)}{(1 + \nu)(1 - 2\nu)} \\
+C_{12} &= \frac{E\nu}{(1 + \nu)(1 - 2\nu)} \\
+C_{44} &= \frac{E}{2(1 + \nu)}
+\end{aligned}
+\]
+
+\subsection{Syntax}
+
+To define an isotropic material in the input file, use the following syntax:
+
+\begin{codeBlock}
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+E, v
+*DENSITY
+1
+\end{codeBlock}
+
+\section{Orthotropic Elasticity (*ELASTIC, TYPE=ORTHOTROPIC)}
+
+Orthotropic materials have different properties along three mutually perpendicular axes. This anisotropy is common in composite materials and requires a more complex constitutive model.
+
+\subsection{Constitutive Equations}
+
+The stress-strain relationship for orthotropic materials in 3D is given by:
+
+\[
+\boldsymbol{\sigma} = \mathbf{C} \boldsymbol{\varepsilon}
+\]
+
+The stiffness matrix $\mathbf{C}$ for orthotropic materials is:
+
+\[
+\mathbf{C} =
+\begin{bmatrix}
+C_{11} & C_{12} & C_{13} & 0      & 0      & 0 \\
+C_{12} & C_{22} & C_{23} & 0      & 0      & 0 \\
+C_{13} & C_{23} & C_{33} & 0      & 0      & 0 \\
+0      & 0      & 0      & C_{44} & 0      & 0 \\
+0      & 0      & 0      & 0      & C_{55} & 0 \\
+0      & 0      & 0      & 0      & 0      & C_{66}
+\end{bmatrix}
+\]
+
+The stiffness coefficients are calculated using the material constants:
+
+\[
+\begin{aligned}
+C_{11} &= \frac{1 - v_{23} v_{32}}{E_1 D} \\
+C_{22} &= \frac{1 - v_{31} v_{13}}{E_2 D} \\
+C_{33} &= \frac{1 - v_{12} v_{21}}{E_3 D} \\
+C_{12} &= \frac{v_{21} + v_{31} v_{23}}{E_1 D} \\
+C_{13} &= \frac{v_{31} + v_{21} v_{32}}{E_1 D} \\
+C_{23} &= \frac{v_{32} + v_{31} v_{12}}{E_2 D} \\
+C_{44} &= G_{23} \\
+C_{55} &= G_{31} \\
+C_{66} &= G_{12}
+\end{aligned}
+\]
+
+where:
+
+\[
+D = 1 - v_{12} v_{21} - v_{23} v_{32} - v_{31} v_{13} - 2 v_{12} v_{23} v_{31}
+\]
+
+\subsection{Syntax}
+
+Define an orthotropic material using:
+
+\begin{codeBlock}
+*MATERIAL, NAME=COMPOSITE
+*ELASTIC, TYPE=ORTHOTROPIC
+E1, E2, E3, G23, G31, G12, v23, v31, v12
+*DENSITY
+\rho
+\end{codeBlock}
+
+\subsection{Limitations}
+
+Currently, orthotropic materials cannot be rotated. The principal material axes must align with the global coordinate system. Future updates may include the ability to define material orientations.
+
+\section{Conclusion}
+
+The accurate representation of material properties is essential for reliable simulation results. Isotropic materials offer simplicity and are suitable for homogeneous materials like metals. Orthotropic materials provide the flexibility to model anisotropic behaviors found in composites and wood. Understanding the constitutive equations and their implementation allows for the extension and customization of material models to meet specific analysis requirements.
+
+Future developments will focus on enhancing the orthotropic material model by enabling rotation of material axes, allowing for more complex and realistic simulations of anisotropic materials.

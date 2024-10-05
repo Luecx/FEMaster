@@ -1,0 +1,105 @@
+
+\chapter{Introduction}
+
+\section{Introduction}
+Welcome to the FEMaster User Manual. This document serves as a comprehensive guide to understanding and utilizing FEMaster, a finite element solver developed with a syntax similar to Abaqus but with several distinct features and improvements.
+
+This manual is structured to help both new and experienced users navigate the solver’s functionalities, input structure, and command syntax. Each section introduces core aspects of FEMaster, making it easier to dive into specific features for customized use.
+
+\subsection{Scope}
+FEMaster is designed for solving a variety of structural mechanics problems, including static, dynamic, and thermal analyses. It supports custom element formulations and allows for flexible input definitions tailored to complex geometries. The solver is open-source, lightweight, and primarily focused on solid mechanics applications, offering a streamlined experience for handling complex 3D models.
+
+\subsection{Features}
+FEMaster includes the following features:
+\begin{itemize}
+    \item Custom input syntax inspired by Abaqus.
+    \item Support for 3D structural elements.
+    \item Multi-threading capabilities for efficient parallel processing.
+    \item Utilisation of the graphical processing unit (GPU) for accelerated computations.
+    \item A variety of constraints.
+    \item Modular solver components for flexibility.
+    \item Robust error handling and detailed logging.
+    \item Integration with ParaView for post-processing.
+\end{itemize}
+
+\section{Getting Started}
+This section provides a step-by-step guide to setting up and running a basic FEMaster analysis.
+
+\subsection{Installation}
+FEMaster is distributed as a standalone executable along with the necessary libraries. To install:
+\begin{enumerate}
+    \item Download the latest release from the repository.
+    \item Extract the contents to your desired directory.
+    \item Set the environment variables as described in the README.
+    \item Ensure the solver's path is included in your system's PATH variable.
+\end{enumerate}
+
+\subsection{Basic Analysis Setup}
+To perform a basic analysis, users need to create an input file with nodes, elements, materials, and boundary conditions. Refer to Section~\ref{sec:element_types} for the structure of a standard input deck.
+
+\section{Core Concepts}
+\label{sec:core_concepts}
+FEMaster is a lightweight, open-source finite element solver developed for solid mechanics problems. Its syntax is inspired by traditional FEM software like Abaqus but offers a streamlined and simplified structure that makes it easy to set up and run complex simulations. Designed to be user-friendly, fast, and highly scalable, FEMaster supports multi-threading capabilities to handle large-scale models efficiently.
+
+The solver primarily supports 3D solid elements and is ideal for researchers and engineers looking for a flexible tool to conduct static analyses. While shell and beam elements are not yet supported, these features are planned for future updates.
+
+\subsection{Element Types}
+\label{sec:element_types}
+FEMaster supports a range of 3D solid elements, each tailored for different types of analyses. The current set of supported elements includes:
+
+\begin{itemize}
+    \item \textbf{C3D4}: A linear tetrahedral element with four nodes, used for general 3D applications.
+    \item \textbf{C3D6}: A linear wedge element with six nodes, commonly used as a transition element between tetrahedral and hexahedral meshes.
+    \item \textbf{C3D8}: A linear hexahedral element with eight nodes, suitable for most 3D problems.
+    \item \textbf{C3D10}: A quadratic tetrahedral element with ten nodes, providing higher accuracy for curved geometries.
+    \item \textbf{C3D15}: A quadratic wedge element with fifteen nodes, offering improved performance for complex geometries.
+    \item \textbf{C3D20}: A quadratic hexahedral element with twenty nodes, offering excellent performance for higher-order solutions.
+    \item \textbf{C3D20R}: A reduced integration version of the C3D20, minimizing computational cost while maintaining reasonable accuracy.
+\end{itemize}
+
+\textbf{Note:} Shell and beam elements are currently not supported but will be added in future updates.
+
+\subsection{Geometric Entities}
+\label{sec:geometric_entities}
+FEMaster is built around three core geometric entities: \textbf{nodes}, \textbf{elements}, and \textbf{surfaces}. Each of these entities has its own ID-based referencing system to ensure efficient and straightforward model setup:
+
+\begin{itemize}
+    \item \textbf{Nodes}: Represent discrete points in the structure, defined by their unique IDs and coordinates.
+    \item \textbf{Elements}: Connect multiple nodes to form the fundamental building blocks of a FEM model. The element definitions vary based on the chosen element type (e.g., C3D8, C3D20).
+    \item \textbf{Surfaces}: Automatically derived from element definitions. They play a crucial role in defining constraints, loads, and boundary conditions.
+\end{itemize}
+
+\subsection{Material Properties}
+\label{sec:material_properties}
+Defining accurate material properties is crucial for realistic simulations. FEMaster currently supports only isotropic materials, defined using properties such as Young's Modulus, Poisson's Ratio, and density. While other material types, including orthotropic and hyperelastic formulations, are planned for future versions, isotropic materials provide a solid foundation for most structural mechanics problems.
+
+\subsection{Constraints}
+FEMaster includes two primary types of constraints: \textbf{tie constraints} and \textbf{kinematic coupling constraints}. Tie constraints enable the rigid attachment of two surfaces, ensuring that they move together as a single unit. Kinematic coupling constraints tie the movement of a set of nodes to the movement of a reference node, allowing for coordinated motion.
+
+\subsection{Steps and Analysis Types}
+FEMaster supports the following step types for different types of analyses:
+
+\begin{itemize}
+    \item \textbf{Linear Static Step}: This is the standard step type for performing static structural analysis under applied loads. It computes displacements and stresses for the given set of boundary conditions and constraints.
+    \item \textbf{Linear Static Topology Step}: Similar to the linear static step, but it accepts element densities as input and returns optimized densities along with the sensitivity gradients for each element.
+    \item \textbf{Eigenfrequency Step}: Solves for the natural frequencies and mode shapes of the structure. Currently, this step does not support constraints, but future updates are planned to include this capability.
+\end{itemize}
+
+\subsection{Load Application}
+To define loads, FEMaster provides the following commands:
+
+\begin{itemize}
+    \item \textbf{VLOAD}: Defines a volumetric load applied to a set of elements. Useful for modeling body forces such as gravitational effects.
+    \item \textbf{DLOAD}: Defines a surface pressure load on element surfaces. Ideal for applying uniform or varying pressure distributions.
+    \item \textbf{CLOAD}: Defines a concentrated point load applied directly to a node.
+\end{itemize}
+
+\section{Why Use FEMaster?}
+FEMaster offers a balance between simplicity and power. It enables users to set up simulations with minimal configuration while still providing advanced capabilities like custom constraints and a robust material modeling framework. The tool is well-suited for:
+
+\begin{itemize}
+    \item \textbf{Academic Research}: Its open-source nature and lightweight architecture make it ideal for extending and adapting to new element formulations or custom simulation techniques. 
+    \item \textbf{Industry Applications}: With support for multi-threading, FEMaster can quickly solve complex models, making it suitable for prototyping and optimization tasks.
+    \item \textbf{Education}: FEMaster’s clear syntax and straightforward configuration make it an excellent tool for teaching the principles of finite element analysis.
+\end{itemize}
+

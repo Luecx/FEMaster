@@ -1,0 +1,93 @@
+\chapter{Constraints}
+\label{chap:constraints}
+
+Constraints in finite element analysis (FEA) are a critical component for defining how different regions of a model interact or how boundaries influence the system. They enforce certain relationships between nodes, elements, or surfaces to ensure that the solution adheres to predefined conditions, allowing complex interactions like load transfer or restricted movement. This chapter covers the two main types of constraints currently implemented: kinematic couplings and tie constraints.
+
+\section{Kinematic Couplings (*COUPLING, TYPE=KINEMATIC)}
+
+Kinematic couplings are used to control the motion of a group of nodes (the \textit{slave set}) by connecting them to a single reference node (the \textit{master set}). This type of constraint is often employed to model rigid body motion, where all nodes in the slave set move as if they are rigidly connected to the master node, preserving relative distances and rotations.
+
+\subsection{Kinematic Coupling Equations}
+
+The kinematic coupling equations ensure that each node \( \mathbf{x}_i \) in the slave set follows the motion of the master node \( \mathbf{x}_m \). This relationship can be expressed as:
+
+\[
+\mathbf{x}_i = \mathbf{x}_m + \mathbf{R}_m \cdot \mathbf{r}_i
+\]
+
+where:
+\begin{itemize}
+    \item \( \mathbf{x}_i \) is the position of the \( i \)-th slave node.
+    \item \( \mathbf{x}_m \) is the position of the master node.
+    \item \( \mathbf{R}_m \) is the rotation matrix defining the orientation of the master node.
+    \item \( \mathbf{r}_i \) is the relative position vector of the slave node in the local coordinate system of the master node.
+\end{itemize}
+
+The constraint can also be written in terms of displacements and rotations:
+
+\[
+\mathbf{u}_i = \mathbf{u}_m + \boldsymbol{\omega}_m \times \mathbf{r}_i
+\]
+
+where:
+\begin{itemize}
+    \item \( \mathbf{u}_i \) is the displacement of the slave node.
+    \item \( \mathbf{u}_m \) is the displacement of the master node.
+    \item \( \boldsymbol{\omega}_m \) is the rotation vector (angular displacement) of the master node.
+\end{itemize}
+
+\subsection{Syntax}
+
+To define a kinematic coupling in the input file, use the following syntax:
+
+\begin{codeBlock}
+*COUPLING, TYPE=KINEMATIC, MASTER=MASTER_SET, SLAVE=SLAVE_SET
+1, 1, 1, , 1, 1
+\end{codeBlock}
+
+Both the master and slave must be defined as sets. The master set must contain exactly one node. The line following the `*COUPLING` command indicates which degrees of freedom (DOF) to couple, using 1 to include the DOF and leaving empty values to exclude specific DOFs. The DOFs are defined in the order: \( u_x, u_y, u_z, \theta_x, \theta_y, \theta_z \).
+For example, to exclude rotation around the x-axis, the line would be: `1, 1, 1, , 0, 1`.
+
+\section{Tie Constraints (*TIE)}
+
+Tie constraints are used to connect two regions of a model by tying the motion of a \textit{slave set} of nodes to a \textit{master surface}. This constraint is often used in contact simulations or to couple non-matching meshes, where the nodes of the slave set may not correspond directly to the nodes of the master surface. Tie constraints ensure continuity of displacement across the interface, allowing for load transfer and interaction between regions.
+
+\subsection{Tie Constraint Equations}
+
+The tie constraint enforces that the displacement of a slave node matches the interpolated displacement of the master surface at the corresponding closest point:
+
+\[
+\mathbf{u}_s = \mathbf{u}_m(\xi, \eta)
+\]
+
+If a slave node does not lie exactly on the master surface, the constraint interpolates the motion of the master surface using shape functions:
+
+\[
+\mathbf{u}_m(\xi, \eta) = \sum_{i=1}^{N} N_i(\xi, \eta) \mathbf{u}_{mi}
+\]
+
+where:
+\begin{itemize}
+    \item \( N_i(\xi, \eta) \) are the shape functions of the master surface element.
+    \item \( \mathbf{u}_{mi} \) are the displacements of the \( i \)-th node of the master surface element.
+    \item \( N \) is the number of nodes in the master element.
+\end{itemize}
+
+\subsection{Syntax}
+
+To define a tie constraint in the input file, use the following syntax:
+
+\begin{codeBlock}
+*TIE, MASTER=SURFACE_SET, SLAVE=NODE_SET, DISTANCE=0.2, ADJUST=YES
+\end{codeBlock}
+
+The master set must be defined as a surface set, while the slave set must be defined as a node set.
+The `DISTANCE` parameter specifies the maximum distance between the slave node and the master surface for the constraint to be applied.
+To speed up computations, the mapping is done by first comparing to the nodes of the master surface. Only surfaces which has nodes that are within the distance will be even considered. It then takes the closest surface.
+The `ADJUST` parameter determines whether the slave nodes are projected onto the master surface if they are outside the specified distance.
+
+\section{Conclusion}
+
+Kinematic couplings and tie constraints are essential tools for defining interactions and boundary conditions in finite element models. Kinematic couplings are best suited for modeling rigid body motion or attaching regions to a reference node. Tie constraints are ideal for connecting non-matching meshes or modeling bonded contact between parts. Understanding the mathematical foundations and practical considerations of these constraints is key to building accurate and efficient simulations.
+
+Future developments may include additional constraint types, such as contact pairs or more sophisticated multi-point constraints, to further extend the capabilities of the solver.

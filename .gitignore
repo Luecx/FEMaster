@@ -16,6 +16,8 @@ projects/
 *.inp
 *.out
 *.res
+*.aux
+*.log
 
 cmake-build-debug/
 

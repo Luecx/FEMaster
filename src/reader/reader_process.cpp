@@ -219,6 +219,18 @@ void Reader::process_elastic() {
         auto n = std::stof(m_current_line.values()[1]);
         m_model->active_material().set_elasticity<fem::material::IsotropicElasticity>(E, n);
     }
+    if (type == "ORTHO" || type == "ORTHOTROPIC") {
+        auto E1 = std::stof(m_current_line.values()[0]);
+        auto E2 = std::stof(m_current_line.values()[1]);
+        auto E3 = std::stof(m_current_line.values()[2]);
+        auto G23 = std::stof(m_current_line.values()[3]);
+        auto G13 = std::stof(m_current_line.values()[4]);
+        auto G12 = std::stof(m_current_line.values()[5]);
+        auto nu23 = std::stof(m_current_line.values()[6]);
+        auto nu13 = std::stof(m_current_line.values()[7]);
+        auto nu12 = std::stof(m_current_line.values()[8]);
+        m_model->active_material().set_elasticity<fem::material::OrthotropicElasticity>(E1, E2, E3, G23, G13, G12, nu23, nu13, nu12);
+    }
     next_line();
 }
 
@@ -258,22 +270,21 @@ void Reader::process_cload() {
 }
 
 void Reader::process_dload() {
-    // read CLOAD, LOAD_COLLECTOR=xyz
-    // NSET, lx, ly, lz
+    // read DLOAD, LOAD_COLLECTOR=xyz
+    // SFSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
     m_model->activate_load_set(m_current_line.require<std::string>("LOAD_COLLECTOR"));
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
-        auto si  = std::stoi(m_current_line.values()[1]);
-        auto lx  = std::stof(m_current_line.values()[2]);
-        auto ly  = std::stof(m_current_line.values()[3]);
-        auto lz  = m_current_line.values().size() > 4 ? std::stof(m_current_line.values()[4]) : 0;
+        auto lx  = std::stof(m_current_line.values()[1]);
+        auto ly  = std::stof(m_current_line.values()[2]);
+        auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
         if (m_model->nodesets().has(str)) {
-            m_model->add_dload(str, si, Vec3(lx, ly, lz));
+            m_model->add_dload(str, Vec3(lx, ly, lz));
         } else {
-            m_model->add_dload(std::stoi(m_current_line.values()[0]), si, Vec3(lx, ly, lz));
+            m_model->add_dload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
         }
     }
 }

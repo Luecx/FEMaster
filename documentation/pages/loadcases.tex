@@ -1,0 +1,149 @@
+\chapter{Load Cases}
+\label{chap:loadcases}
+
+FEMaster supports three types of load cases for finite element analysis: \textbf{Linear Static}, \textbf{Linear Static Topo}, and \textbf{Eigenfrequency}. Each load case type serves a distinct purpose in analyzing and optimizing structural properties under various conditions. This chapter details the different load case types, the commands that can be defined for each, and the specific results they produce.
+
+\section{Available Commands}
+Each load case in FEMaster can be customized using a set of predefined commands. This section provides an overview of the available commands and their corresponding syntax.
+
+\subsection{*SUPPORT}
+The \texttt{*SUPPORT} command defines the support conditions for nodes. Supports are used to constrain specific degrees of freedom (DOF) at selected nodes, such as fixing a node in space or preventing rotation. Support conditions are typically grouped into support collectors for easier referencing.
+
+\begin{codeBlock}
+*SUPPORT
+SUP_COL_1
+SUP_COL_2
+\end{codeBlock}
+
+Each line references a support collector that defines the DOFs constrained for a set of nodes.
+
+\subsection{*LOAD}
+The \texttt{*LOAD} command specifies the external loads applied to nodes or elements. Loads can include forces, moments, or distributed pressures. Similar to supports, load definitions are grouped into load collectors for referencing.
+
+\begin{codeBlock}
+*LOAD
+LOAD_COL_1
+LOAD_COL_2
+\end{codeBlock}
+
+Each line references a load collector that contains the detailed load specifications, such as forces or moments.
+
+\subsection{*SOLVER}
+The \texttt{*SOLVER} command specifies the numerical solver to use for the current load case.
+It can include options for direct (\texttt{DIRECT}) or iterative solvers (\texttt{INDIRECT}) and hardware preferences such as CPU (\texttt{CPU}) or GPU (\texttt{GPU}).
+
+\begin{codeBlock}
+*SOLVER, METHOD=DIRECT, DEVICE=CPU
+\end{codeBlock}
+
+The example above selects a direct solver using the CPU for computations.
+
+\subsection{*DENSITY}
+The \texttt{*DENSITY} command defines the material density values for elements during topology optimization. It is used in Linear Static Topo cases to compute density gradients and compliance values. Each line specifies the element ID and its associated density value.
+
+\begin{codeBlock}
+*DENSITY
+el_id_1, density_1
+el_id_2, density_2
+el_id_3, density_3
+\end{codeBlock}
+
+This format allows setting different density values for individual elements based on their IDs.
+
+\subsection{*EXPONENT}
+The \texttt{*EXPONENT} command sets the penalization exponent for the topology optimization formulation. The exponent influences the stiffness-density relationship, affecting the optimized material distribution. A higher exponent results in a stiffer material distribution.
+
+\begin{codeBlock}
+*EXPONENT
+3
+\end{codeBlock}
+
+This example sets the penalization exponent to 3, commonly used in SIMP (Solid Isotropic Material with Penalization) topology optimization.
+
+\subsection{*NUMEIGENVALUES}
+The \texttt{*NUMEIGENVALUES} command specifies the number of eigenvalues to compute for an eigenfrequency analysis. This determines the number of mode shapes and natural frequencies extracted from the structure.
+
+\begin{codeBlock}
+*NUMEIGENVALUES
+10
+\end{codeBlock}
+
+This example sets the number of eigenvalues to 10, meaning that the solver will compute the first 10 natural frequencies and their corresponding mode shapes.
+
+
+\section{Linear Static Analysis}
+\label{sec:linear_static}
+
+The Linear Static analysis \texttt{*LOAD CASE, TYPE=LINEAR STATIC} is used to compute the static response of a
+structure under applied loads and support conditions. This analysis type solves for displacements,
+strains, and stresses throughout the structure, assuming linear elastic material behavior.
+The following commands are supported in this load case:
+
+\begin{itemize}
+    \item \texttt{*SUPPORT}
+    \item \texttt{*LOAD}
+    \item \texttt{*SOLVER}
+\end{itemize}
+
+\subsection{Output Fields}
+The results of a Linear Static analysis include the following fields, which are written to the results file:
+
+\begin{itemize}
+    \item \textbf{DISPLACEMENT}: The nodal displacement values in each degree of freedom.
+    \item \textbf{STRAIN}: The strain values computed at each element.
+    \item \textbf{STRESS}: The stress values computed at each element.
+    \item \textbf{DOF\_LOADS}: The external loads applied at each degree of freedom.
+    \item \textbf{DOF\_SUPPORTS}: The boundary conditions at the constrained degrees of freedom.
+\end{itemize}
+
+\section{Linear Static Topology Optimization}
+\label{sec:linear_static_topo}
+
+The Linear Static Topology Optimization analysis (\texttt{*LOAD CASE, TYPE=LINEAR STATIC TOPO})
+extends the Linear Static case by introducing additional parameters and results related to material distribution. It is used to optimize the structure's material layout, minimizing compliance or maximizing stiffness for a given volume fraction. The following commands are supported:
+
+\begin{itemize}
+    \item \texttt{*SUPPORT}
+    \item \texttt{*LOAD}
+    \item \texttt{*SOLVER}
+    \item \texttt{*DENSITY}
+    \item \texttt{*EXPONENT}
+\end{itemize}
+
+\subsection{Output Fields}
+The output for Linear Static Topo includes some of the fields from the Linear Static analysis and additional fields related to the optimization results:
+
+\begin{itemize}
+    \item \textbf{DISPLACEMENT}: The nodal displacement values in each degree of freedom.
+    \item \textbf{STRAIN}: The strain values computed at each element.
+    \item \textbf{STRESS}: The stress values computed at each element.
+    \item \textbf{COMPLIANCE\_RAW}: The raw compliance values for each element.
+    \item \textbf{COMPLIANCE\_ADJ}: The adjusted compliance values after penalization.
+    \item \textbf{DENS\_GRAD}: The density gradients used in the optimization.
+    \item \textbf{VOLUME}: The volume of each element.
+    \item \textbf{DENSITY}: The material density distribution across the structure.
+\end{itemize}
+
+\section{Eigenfrequency Analysis}
+\label{sec:eigenfrequency_analysis}
+
+Eigenfrequency analysis (\texttt{*LOAD CASE, TYPE=EIGENFREQUENCY}) is used to determine the natural frequencies and
+mode shapes of a structure. This type of analysis is essential for understanding the dynamic behavior of a structure,
+such as identifying resonance frequencies. The following commands are supported:
+
+\begin{itemize}
+    \item \texttt{*SUPPORT}
+    \item \texttt{*NUMEIGENVALUES}
+\end{itemize}
+
+\subsection{Output Fields}
+The results of an Eigenfrequency analysis include the following fields:
+
+\begin{itemize}
+    \item \textbf{MODE\_SHAPE\_I}: The $I$-th mode shape vector, representing the deformation pattern of the structure at the $i$-th natural frequency.
+    \item \textbf{EIGENVALUES}: The computed eigenvalues corresponding to the squared natural frequencies of the structure.
+    \item \textbf{EIGENFREQUENCIES}: The natural frequencies of the structure in Hz, derived from the eigenvalues.
+\end{itemize}
+
+\newpage
+
