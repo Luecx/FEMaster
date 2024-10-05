@@ -111,21 +111,6 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
         // ...
     }
 #endif
-
-    std::cout << DynamicMatrix(A) << std::endl;
-    std::cout << DynamicMatrix(B) << std::endl;
-
-    // eigenvalues of a using eigen
-    Eigen::SelfAdjointEigenSolver<SparseMatrix> eigensolver(A);
-    if (eigensolver.info() == Eigen::Success) {
-            std::cout << "The eigenvalues of A are:\n" << eigensolver.eigenvalues() << std::endl;
-    }
-    Eigen::SelfAdjointEigenSolver<SparseMatrix> eigensolver2(B);
-        if (eigensolver2.info() == Eigen::Success) {
-            std::cout << "The eigenvalues of B are:\n" << eigensolver2.eigenvalues() << std::endl;
-    }
-
-
     if (device == CPU) {
         // Start the time
         Timer t {};
@@ -142,7 +127,7 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
 
         // Construct the solver with the specified shift
         Spectra::SymGEigsShiftSolver<OpType, BOpType, Spectra::GEigsMode::ShiftInvert>
-            geigs(op, Bop, num_eigenvalues, 2 * num_eigenvalues, 0);
+            geigs(op, Bop, num_eigenvalues, std::min((int)(2 * num_eigenvalues), (int)A.rows()), 0);
 
         geigs.init();
         int nconv = geigs.compute(Spectra::SortRule::LargestMagn);
