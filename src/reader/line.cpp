@@ -55,6 +55,7 @@ Line& fem::reader::Line::operator=(const std::string& line) {
         } else {
             m_type = DATA_LINE;
             m_line = std::regex_replace(m_line, std::regex(" +"), "");    // replace multiple spaces with a single space
+            std::transform(m_line.begin(), m_line.end(), m_line.begin(), ::toupper);    // convert to upper case
             std::stringstream ss(m_line);
             std::string       item;
             while (std::getline(ss, item, ',')) {

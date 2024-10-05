@@ -33,8 +33,25 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
     logging::error(elptr != nullptr, "element with id=", element_id, " has not been defined");
     auto surfptr = elptr->surface(surface_id);
     logging::error(surfptr != nullptr, "surface with id=", surface_id, " has not been defined for element with id=", element_id);
+
+    // allow negative id = automatically assign id
+    if (id < 0) {
+        id = surfaces.size();
+        surfaces.reserve(id + 128);
+        surfaces.resize(id+1);
+    }
+
     logging::error(this->surfaces[id] == nullptr, "surface with id=", id, " has already been defined");
 
     this->surfaces[id] = surfptr;
     this->surface_sets.add(id);
+}
+
+
+inline void Model::set_surface(const std::string& elset, ID surface_id) {
+    logging::error(elem_sets.has(elset), "element set with name=", elset, " has not been defined");
+
+    for (const auto& el_id: elem_sets.get(elset)) {
+        set_surface(-1, el_id, surface_id);
+    }
 }

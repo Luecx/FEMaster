@@ -65,6 +65,7 @@ struct Model {
     template<typename T, typename... Args>
     inline void set_element(ID id, Args&&... args);
     inline void set_surface(ID id, ID element_id, ID surface_id);
+    inline void set_surface(const std::string& elset, ID surface_id);
 
     // add couplings
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);

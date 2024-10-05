@@ -35,9 +35,9 @@ namespace loadcase {
 * @param writer Pointer to a Writer object for output handling.
 * @param model Pointer to the finite element model.
 * @param numEigenvalues The number of eigenvalues (natural frequencies) to compute.
-*/
+ */
 fem::loadcase::LinearEigenfrequency::LinearEigenfrequency(ID id, reader::Writer* writer, model::Model* model, int numEigenvalues)
-   : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
+    : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
 
 /**
 * @brief Executes the linear eigenfrequency analysis, solving for natural frequencies
@@ -48,54 +48,66 @@ fem::loadcase::LinearEigenfrequency::LinearEigenfrequency(ID id, reader::Writer*
 * 2. Build the support matrix based on boundary conditions.
 * 3. Construct the stiffness matrix, mass matrix, and Lagrangian matrix.
 * 4. Assemble the augmented system matrices.
-* 5. Solve the constrained eigenvalue problem.
-* 6. Write the mode shapes to the output writer.
-*/
+* 5. Apply Lagrangian multipliers for constraints.
+* 6. Solve the constrained eigenvalue problem.
+* 7. Write the mode shapes to the output writer.
+ */
 void fem::loadcase::LinearEigenfrequency::run() {
+
     // Begin logging
     logging::info(true, "");
     logging::info(true, "");
-    logging::info(true,
-                  "================================================================================================");
+    logging::info(true, "================================================================================================");
     logging::info(true, "LINEAR EIGENFREQUENCY");
-    logging::info(true,
-                  "================================================================================================");
+    logging::info(true, "================================================================================================");
     logging::info(true, "");
 
-    // Step 1: Generate active DOF index matrix
-    auto active_dof_idx_mat = Timer::measure([&]() { return this->m_model->build_unconstrained_index_matrix(); },
-                                             "generating active_dof_idx_mat index matrix");
+    // Step 1: Generate active_dof_idx_mat index matrix
+    auto active_dof_idx_mat = Timer::measure(
+        [&]() { return this->m_model->build_unconstrained_index_matrix(); },  // Fixed method name
+        "generating active_dof_idx_mat index matrix"
+    );
 
     // Step 2: Build the global support matrix (includes all DOFs)
-    auto global_supp_mat =
-        Timer::measure([&]() { return this->m_model->build_support_matrix(supps); }, "building global support matrix");
+    auto global_supp_mat = Timer::measure(
+        [&]() { return this->m_model->build_support_matrix(supps); },  // Fixed parameter name
+        "building global support matrix"
+    );
 
-    // Step 3: Construct the global stiffness matrix for active DOFs
-    auto active_stiffness_mat =
-        Timer::measure([&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat); },
-                       "constructing active stiffness matrix");
+    // Step 3: Build the global load matrix based on applied loads (includes all DOFs)
+    auto global_load_mat = Timer::measure(
+        [&]() { return this->m_model->build_load_matrix(); },
+        "building global load matrix"
+    );
 
-    // Step 4: Construct the global lumped mass matrix for active DOFs
-    auto active_mass_mat = Timer::measure([&]() { return this->m_model->build_lumped_mass_matrix(active_dof_idx_mat); },
-                                          "constructing lumped mass matrix");
+    // Step 4: Construct the active stiffness matrix for active DOFs
+    auto active_stiffness_mat = Timer::measure(
+        [&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat); },
+        "constructing active stiffness matrix"
+    );
+    auto active_mass_mat = Timer::measure(
+        [&]() { return this->m_model->build_lumped_mass_matrix(active_dof_idx_mat); },
+        "constructing mass matrix"
+    );
 
-    // Compute characteristic stiffness by taking the mean of the diagonal
+    // compute characteristic stiffness by taking the mean of the diagonal
     Precision characteristic_stiffness = active_stiffness_mat.diagonal().mean();
 
     // Step 5: Construct the active Lagrangian constraint matrix
-    auto active_lagrange_mat =
-        Timer::measure([&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, characteristic_stiffness); },
-                       "constructing active Lagrangian matrix");
+    auto active_lagrange_mat = Timer::measure(
+        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, characteristic_stiffness); },
+        "constructing active Lagrangian matrix"
+    );
 
-    int m   = active_stiffness_mat.rows();    // Number of active DOFs
-    int n   = active_lagrange_mat.rows();     // Number of Lagrangian multipliers
+    int m   = active_stiffness_mat.rows();                   // Number of active DOFs
+    int n   = active_lagrange_mat.rows();                    // Number of Lagrangian multipliers
     int nnz = active_stiffness_mat.nonZeros() + 2 * active_lagrange_mat.nonZeros();
 
-    // Step 6: Assemble the full system matrices (stiffness + Lagrangian)
-    auto augmented_stiffness_mat = Timer::measure(
+    // Step 6: Assemble the full system matrix (stiffness + Lagrangian)
+    auto active_lhs_mat = Timer::measure(
         [&]() {
             SparseMatrix full_matrix(m + n, m + n);
-            TripletList  full_triplets;
+            TripletList full_triplets;
             full_triplets.reserve(nnz);
 
             // Insert stiffness matrix into full system matrix
@@ -113,67 +125,78 @@ void fem::loadcase::LinearEigenfrequency::run() {
                 }
             }
 
-            // Insert regularization term at the bottom-right
+            // insert regularization term at the bottom right
             for (int i = 0; i < n; i++) {
-                full_triplets.push_back(Triplet(m + i, m + i, -characteristic_stiffness / 1e6));
+                full_triplets.push_back(Triplet(m + i, m + i, - characteristic_stiffness / 1e6));
             }
             full_matrix.setFromTriplets(full_triplets.begin(), full_triplets.end());
             return full_matrix;
         },
-        "assembling full stiffness matrix including Lagrangian");
+        "assembling full lhs matrix including stiffness and Lagrangian"
+    );
+    // resize the mass matrix
+    active_mass_mat.conservativeResize(m + n, m + n);
 
-    // Construct the augmented mass matrix
-    auto augmented_mass_mat = Timer::measure(
-        [&]() {
-            SparseMatrix mass_matrix(m + n, m + n);
-            TripletList  mass_triplets;
-            mass_triplets.reserve(active_mass_mat.nonZeros());
+    auto active_lagrange_rhs = DynamicVector::Zero(n);  // Lagrangian RHS initialized to zero
+    auto active_lagrange_lhs = DynamicVector::Constant(n, std::numeric_limits<Precision>::quiet_NaN());  // LHS for Lagrangian
 
-            // Insert mass matrix into the top-left block
-            for (int k = 0; k < active_mass_mat.outerSize(); ++k) {
-                for (SparseMatrix::InnerIterator it(active_mass_mat, k); it; ++it) {
-                    mass_triplets.push_back(Triplet(it.row(), it.col(), it.value()));
-                }
-            }
+    auto active_rhs_vec = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
+    auto active_lhs_vec = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_supp_mat);
 
-            mass_matrix.setFromTriplets(mass_triplets.begin(), mass_triplets.end());
-            return mass_matrix;
-        },
-        "assembling full mass matrix");
+    // Extend RHS and LHS vectors for Lagrangian DOFs
+    DynamicVector full_rhs_vec(m + n);
+    DynamicVector full_lhs_vec(m + n);
+    full_rhs_vec << active_rhs_vec, active_lagrange_rhs;  // Combine active RHS with Lagrangian RHS
+    full_lhs_vec << active_lhs_vec, active_lagrange_lhs;  // Combine active LHS with Lagrangian LHS
 
-    augmented_stiffness_mat.makeCompressed();
-    augmented_mass_mat.makeCompressed();
+    auto sol_rhs = mattools::reduce_vec_to_vec(full_rhs_vec, full_lhs_vec);
+
+    // Step 9: Reduce full system matrix and RHS vector to handle constrained DOFs
+    auto sol_stiffess_mat = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_mat(active_lhs_mat, full_lhs_vec); },
+        "reducing stiffness matrix to solver-ready form"
+    );
+    auto sol_mass_mat = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_mat(active_mass_mat, full_lhs_vec); },
+        "reducing mass matrix to solver-ready form"
+    );
+
+
+    // Compress the stiffness matrix for efficient solving
+    sol_mass_mat.makeCompressed();
+    sol_stiffess_mat.makeCompressed();
+
+    // Log system overview
+    logging::info(true, "");
+    logging::info(true, "Overview");
+    logging::up();
+    logging::info(true, "max nodes         : ", m_model->max_nodes);
+    logging::info(true, "system total DOFs : ", active_dof_idx_mat.maxCoeff() + 1);
+    logging::info(true, "lagrange DOFs     : ", n);
+    logging::info(true, "total DOFs        : ", active_dof_idx_mat.maxCoeff() + 1 + n);
+    logging::info(true, "constrained DOFs  : ", active_dof_idx_mat.maxCoeff() + 1 + n - sol_rhs.rows());
+    logging::info(true, "final DOFs        : ", sol_rhs.rows());
+    logging::down();
+
 
     // Step 7: Solve the constrained eigenvalue problem
     auto eigen_result = Timer::measure(
         [&]() {
             return solver::compute_eigenvalues(solver::CPU,
-                                               augmented_stiffness_mat,
-                                               augmented_mass_mat,
+                                               sol_stiffess_mat,
+                                               sol_mass_mat,
                                                num_eigenvalues,
                                                true);
         },
         "solving constrained eigenvalue problem");
 
     DynamicVector eigenvalues = eigen_result.first;
-    DynamicVector eigenfreqs  = eigenvalues.array().abs().sqrt() / (2 * M_PI);
+    DynamicVector eigenfreqs = eigenvalues.array().abs().sqrt() / (2 * M_PI);
     DynamicMatrix mode_shapes = eigen_result.second;
 
     // Log the eigenvalues and eigenfrequencies
     for (int i = 0; i < num_eigenvalues; i++) {
-        logging::info(true,
-                      "Eigenvalue ",
-                      std::setw(4),
-                      i + 1,
-                      " : ",
-                      std::setw(20),
-                      std::fixed,
-                      Precision(eigenvalues(i)),
-                      " ,",
-                      std::setw(20),
-                      std::fixed,
-                      Precision(eigenfreqs(i)),
-                      " cycles / time period");
+        logging::info(true, "Eigenvalue ", std::setw(4), i + 1, " : ", std::setw(20), std::fixed, Precision(eigenvalues(i)), " ,", std::setw(20), std::fixed, Precision(eigenfreqs(i)), " cycles / time period");
     }
 
     // Write results
@@ -182,13 +205,10 @@ void fem::loadcase::LinearEigenfrequency::run() {
     m_writer->write_eigen_matrix(DynamicMatrix(eigenfreqs), "EIGENFREQUENCIES");
     for (int i = 0; i < num_eigenvalues; i++) {
         // Extract mode shape without Lagrange multipliers
-        DynamicVector mode_shape_active =
-            mode_shapes.col(i).head(m);    // Only take the first 'm' entries, corresponding to displacements
+        DynamicVector mode_shape_active = mode_shapes.col(i).head(m);
 
         // Expand mode shape to full displacement vector size
-        auto expanded_mode_shape =
-            mattools::expand_vec_to_vec(mode_shape_active,
-                                        DynamicVector::Constant(m, std::numeric_limits<Precision>::quiet_NaN()));
+        auto expanded_mode_shape = mattools::expand_vec_to_vec(mode_shape_active, active_lhs_vec);
 
         // Convert to matrix form for output
         auto shape_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, expanded_mode_shape);

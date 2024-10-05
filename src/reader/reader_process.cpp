@@ -155,21 +155,60 @@ void Reader::process_elements() {
 }
 
 void Reader::process_surfaces() {
-    m_model->activate_element_set(m_current_line.parse<std::string>("SFSET", ""));
+    // Activate the specified element set (if any) before processing surfaces.
+    m_model->activate_surface_set(m_current_line.parse<std::string>("SFSET", ""));
 
     while(next_line().type() == DATA_LINE) {
-        int id = std::stoi(m_current_line.values()[0]);
-        int elem_id = std::stoi(m_current_line.values()[1]);
+        // Read the number of parts in the current line.
+        int num_values = static_cast<int>(m_current_line.values().size());
 
-        // surfacee may be indicated with an S like S1, S2, ...
-        int surf_side;
-        if (m_current_line.values()[2][0] == 'S') {
-            surf_side = std::stoi(m_current_line.values()[2].substr(1));
-        } else {
-            surf_side = std::stoi(m_current_line.values()[2]);
+        int id = -1; // Default value for ID if not specified.
+        int elem_id = -1;
+        int surf_side = -1;
+        std::string set_name;
+
+        if (num_values == 3) {
+            // Three parts: ID, elementID, sideID
+            id = std::stoi(m_current_line.values()[0]);
+            elem_id = std::stoi(m_current_line.values()[1]);
+            if (m_current_line.values()[2][0] == 'S') {
+                surf_side = std::stoi(m_current_line.values()[2].substr(1));
+            } else {
+                surf_side = std::stoi(m_current_line.values()[2]);
+            }
+
+            m_model->set_surface(id, elem_id, surf_side);
+
+        } else if (num_values == 2) {
+            // Two parts: Either elementID/elementSet and sideID
+            const std::string &first_value = m_current_line.values()[0];
+
+            // Determine if the first value is a numeric element ID or a set name.
+            bool is_numeric = std::all_of(first_value.begin(), first_value.end(), ::isdigit);
+
+            if (is_numeric) {
+                // First value is element ID
+                elem_id = std::stoi(first_value);
+                if (m_current_line.values()[1][0] == 'S') {
+                    surf_side = std::stoi(m_current_line.values()[1].substr(1));
+                } else {
+                    surf_side = std::stoi(m_current_line.values()[1]);
+                }
+
+                m_model->set_surface(id, elem_id, surf_side);
+            } else {
+                // First value is element set name
+                set_name = first_value;
+                if (m_current_line.values()[1][0] == 'S') {
+                    surf_side = std::stoi(m_current_line.values()[1].substr(1));
+                } else {
+                    surf_side = std::stoi(m_current_line.values()[1]);
+                }
+
+                // Use the set name to define the surface.
+                m_model->set_surface(set_name, surf_side);
+            }
         }
-
-        m_model->set_surface(id, elem_id, surf_side);
     }
 }
 
@@ -281,7 +320,9 @@ void Reader::process_dload() {
         auto ly  = std::stof(m_current_line.values()[2]);
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
-        if (m_model->nodesets().has(str)) {
+        std::cout << *m_model << std::endl;
+
+        if (m_model->surfsets().has(str)) {
             m_model->add_dload(str, Vec3(lx, ly, lz));
         } else {
             m_model->add_dload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
@@ -462,6 +503,8 @@ void Reader::process_loadcase_eigenfreq() {
         if (m_current_line.command() == "NUMEIGENVALUES") {
             next_line();
             lc.num_eigenvalues = m_current_line.get_value(0, 10);
+        } else if (m_current_line.command() == "SUPPORT") {
+            process_loadcase_eigenfreq_support(&lc);
         } else if (m_current_line.command() == "END") {
             next_line();
             break;
@@ -472,6 +515,14 @@ void Reader::process_loadcase_eigenfreq() {
     }
 
     lc.run();
+}
+
+void Reader::process_loadcase_eigenfreq_support(fem::loadcase::LinearEigenfrequency* lc) {
+    while (next_line().type() == DATA_LINE) {
+        for (auto str : m_current_line.values()) {
+            lc->supps.push_back(str);
+        }
+    }
 }
 
 void Reader::process_loadcase_linear_static_support(fem::loadcase::LinearStatic* lc) {

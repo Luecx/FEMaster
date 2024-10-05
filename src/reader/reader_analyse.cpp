@@ -39,8 +39,11 @@ void Reader::analyse_elements() {
 }
 void Reader::analyse_surfaces() {
     while (next_line().type() == DATA_LINE) {
-        int surface_id            = std::stoi(m_current_line.values()[0]);
-        m_data.highest_surface_id = std::max(m_data.highest_surface_id, surface_id);
+        try {
+            int surface_id            = std::stoi(m_current_line.values()[0]);
+            m_data.highest_surface_id = std::max(m_data.highest_surface_id, surface_id);
+        } catch (const std::invalid_argument& e) {
+        }
     }
 }
 
