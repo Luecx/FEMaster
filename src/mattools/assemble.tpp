@@ -114,8 +114,9 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
                                            Lambda&& compute_local_matrix) {
     // Ensure Eigen and MKL use only one thread each
     Eigen::setNbThreads(1);
+#ifdef USE_MKL
     mkl_set_num_threads(1);
-
+#endif
     // Determine the number of threads for parallel execution
     int num_threads = global_config.max_threads;  // Assuming global_config.max_threads is defined
 

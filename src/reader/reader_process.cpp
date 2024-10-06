@@ -320,8 +320,6 @@ void Reader::process_dload() {
         auto ly  = std::stof(m_current_line.values()[2]);
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
-        std::cout << *m_model << std::endl;
-
         if (m_model->surfsets().has(str)) {
             m_model->add_dload(str, Vec3(lx, ly, lz));
         } else {
