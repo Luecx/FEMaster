@@ -40,6 +40,11 @@ void copyright() {
 #else
     std::cout << "*           OPENMP Supported      : No                               *\n";
 #endif
+#ifdef USE_MKL
+    std::cout << "*           MKL Supported         : Yes                              *\n";
+#else
+    std::cout << "*           MKL Supported         : No                               *\n";
+#endif
     std::cout << "*                                                                    *\n";
     std::cout << "**********************************************************************\n";
 }
