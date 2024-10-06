@@ -228,6 +228,22 @@ Each surface definition includes:
     \item The element side ID, which specifies which face of the element is used (e.g., `S1`, `S2`, `S3`).
 \end{itemize}
 
+Alternatively surfaces can be defined without an ID in which case the ID will be automatically assigned.
+
+\begin{codeBlock}
+*SURFACE, SFSET=MASTER_SURFACE
+1, S2
+2, S3
+\end{codeBlock}
+
+Instead of defining the element id, one can also define the element set that contains the elements that the surface is created from.
+
+\begin{codeBlock}
+*SURFACE, SFSET=MASTER_SURFACE
+ELSET_1, S2
+ELSET_2, S3
+\end{codeBlock}
+
 \subsection{Surface Sets (*SFSET)}
 
 Surface sets can also be created manually using the `SFSET` command, which allows for flexible grouping of surface IDs.
@@ -513,6 +529,34 @@ s
 \]
 
 \newpage
+
+\subsubsection{Integration across the surface}
+The integration across the surface is done using the Gaussian quadrature method.
+Based on the element, an appropriate number of integration points are chosen which can accurately integrate the respective shape functions.
+The amount of integration points is displayed in the following list:
+
+\begin{itemize}
+    \item \textbf{Surface3}: 1 integration point
+    \item \textbf{Surface4}: 1 integration points
+    \item \textbf{Surface6}: 3 integration points
+    \item \textbf{Surface8}: 4 integration points
+\end{itemize}
+
+Integration is then carried out by:
+
+\[
+    \int_{\text{surface}} f(\mathbf{x}) \, dA \approx \sum_{i=1}^{n} f(\mathbf{x}(r_i, s_i)) \, w_i \, \bigg| \frac{\partial \mathbf{x}}{\partial r} \times \frac{\partial \mathbf{x}}{\partial s} \bigg|_{(r_i, s_i)}
+\]
+
+where:
+\begin{itemize}
+    \item \( f(\mathbf{x}) \) is the function to be integrated.
+    \item \( \mathbf{x}(r_i, s_i) \) is the global position of the integration point.
+    \item \( w_i \) are the integration weights.
+    \item \( \frac{\partial \mathbf{x}}{\partial r} \) and \( \frac{\partial \mathbf{x}}{\partial s} \) are the derivatives of the surface position with respect to the local coordinates.
+    \item \( \bigg| \frac{\partial \mathbf{x}}{\partial r} \times \frac{\partial \mathbf{x}}{\partial s} \bigg| \) is the surface area element.
+\end{itemize}
+
 \subsubsection{Mapping Points to the Surface}
 Mapping a global point onto a surface involves finding the local $(r, s)$ coordinates that minimize the distance to the point. FEMaster uses a Newton-Raphson method to iteratively find the best fit $(r, s)$ values. The procedure involves calculating the first and second derivatives of the shape functions for the given surface type:
 
@@ -587,22 +631,4 @@ $\text{min\_distance\_squared} \gets \infty$ \;
 }
 \Return{$\text{best\_coords}$} \;
 \end{algorithm}
-
-\subsubsection{Integration across the surface}
-The integration across the surface is done using the Gaussian quadrature method.
-Based on the element, an appropriate number of integration points are chosen which can accurately integrate the respective shape functions.
-The amount of integration points is displayed in the following list:
-
-\begin{itemize}
-    \item \textbf{Surface3}: 1 integration point
-    \item \textbf{Surface4}: 1 integration points
-    \item \textbf{Surface6}: 3 integration points
-    \item \textbf{Surface8}: 4 integration points
-\end{itemize}
-
-Integration is then carried out by:
-
-\[
-\int_{\text{surface}} f(\mathbf{x}) \, dA \approx \sum_{i=1}^{n} f(\mathbf{x}(r_i, s_i)) \, w_i \, \bigg| \frac{\partial \mathbf{x}}{\partial r} \times \frac{\partial \mathbf{x}}{\partial s} \bigg|_{(r_i, s_i)}
-\]
 
