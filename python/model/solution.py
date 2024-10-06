@@ -64,8 +64,14 @@ class Solution:
                     fields_dict[f"{prefix}mises"] = lambda f=field, lc=lc: self.mises(self.get(lc, f))
                     fields_dict[f"{prefix}principal"] = lambda f=field, lc=lc: self.principal(self.get(lc, f))
                     fields_dict[f"{prefix}signed_mises"] = lambda f=field, lc=lc: self.signed_mises(self.get(lc, f))
+
+                    fields_dict[f"{prefix}principal_dir_1"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 0,:]
+                    fields_dict[f"{prefix}principal_dir_2"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 1,:]
+                    fields_dict[f"{prefix}principal_dir_3"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 2,:]
                 if field == "DISPLACEMENT":
                     fields_dict[f"{prefix}displacement_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
+                if "MODE_SHAPE" in field:
+                    fields_dict[f"{prefix}{field.lower()}_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
                 # Store the raw data for other fields
                 fields_dict[f"{prefix}{field.lower()}"] = lambda f=field, lc=lc: self.get(lc, f)
 
@@ -88,6 +94,25 @@ class Solution:
                                       [tau_zx[i], tau_yz[i], sigma_z[i]]])
             eigvals, _ = np.linalg.eig(stress_tensor)
             principal_stresses[i] = np.sort(eigvals)
+        return principal_stresses
+
+    def principal_directions(self, stress):
+        """Compute the principal stress directions for each stress tensor."""
+        sigma_x, sigma_y, sigma_z, tau_yz, tau_zx, tau_xy = stress.T
+        principal_stresses = np.zeros((sigma_x.shape[0], 3, 3))  # Shape: (num_elements, 3 principal directions, 3 components)
+
+        for i in range(sigma_x.shape[0]):
+            # Construct the stress tensor for the current element/point
+            stress_tensor = np.array([[sigma_x[i], tau_xy[i], tau_zx[i]],
+                                      [tau_xy[i], sigma_y[i], tau_yz[i]],
+                                      [tau_zx[i], tau_yz[i], sigma_z[i]]])
+
+            # Compute the eigenvalues and eigenvectors
+            eigenvals, eigvecs = np.linalg.eig(stress_tensor)
+
+            # Store the principal directions (eigenvectors)
+            principal_stresses[i] = eigvecs * eigenvals
+
         return principal_stresses
 
     def signed_mises(self, stress):

@@ -42,7 +42,6 @@ opt.set_filter(3)
 opt.set_move_limit(0.2)
 opt.start(30)
 
-
 # opt = topo.Optimiser(input_deck="../res/topo_bridge_1/Job-2.inp",
 #                 desi_set="EALL",
 #                 loadcases=[{"load_cols": ["LOADS"], "supp_cols": ["SUPPS"]}],
