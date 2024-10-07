@@ -1,0 +1,153 @@
+\chapter{Numerical Solution Methodology}
+\label{chap:solver}
+
+This chapter presents the mathematical foundations of the numerical solution strategy implemented in our FEM solver. The standard finite element method seeks to find the displacement field \(\boldsymbol{u}\) by solving a linear system of the form:
+
+\begin{equation}
+\mathbf{K} \boldsymbol{u} = \boldsymbol{f}
+\end{equation}
+
+where:
+
+- \(\mathbf{K}\) is the global stiffness matrix,
+- \(\boldsymbol{u}\) is the displacement vector,
+- \(\boldsymbol{f}\) is the external force vector.
+
+For systems without constraints, this equation is symmetric positive definite (SPD), allowing for efficient numerical solutions using standard techniques such as Cholesky decomposition. However, for constrained systems, a more generalized approach is required. In these cases, we incorporate a Lagrangian formulation that extends the problem to include additional constraint equations.
+
+\section{Lagrangian Formulation for Constraints}
+
+To enforce constraints, a Lagrangian multiplier vector \(\boldsymbol{\lambda}\) is introduced. Consider the constraint matrix \(\mathbf{C}\), which captures the relationships between certain degrees of freedom that must be enforced. The extended system of equations is then formulated as:
+
+\begin{equation}
+\mathcal{L}(\boldsymbol{u}, \boldsymbol{\lambda}) = \frac{1}{2} \boldsymbol{u}^T \mathbf{K} \boldsymbol{u} - \boldsymbol{u}^T \boldsymbol{f} + \boldsymbol{\lambda}^T \mathbf{C} \boldsymbol{u}
+\end{equation}
+
+Minimizing the Lagrangian \(\mathcal{L}\) with respect to \(\boldsymbol{u}\) and \(\boldsymbol{\lambda}\) yields the following system of equations:
+
+\begin{equation}
+\begin{bmatrix}
+\mathbf{K} & \mathbf{C}^T \\
+\mathbf{C} & \mathbf{0}
+\end{bmatrix}
+\begin{bmatrix}
+\boldsymbol{u} \\
+\boldsymbol{\lambda}
+\end{bmatrix}
+=
+\begin{bmatrix}
+\boldsymbol{f} \\
+\boldsymbol{0}
+\end{bmatrix}
+\end{equation}
+
+This new system is not symmetric positive definite due to the presence of the zero block in the bottom-right corner.
+It is symmetric but indefinite, making standard SPD solvers unsuitable.
+Consequently, direct solvers or specialized iterative methods for saddle-point problems are typically required.
+
+\section{Modifications for Numerical Stability}
+
+Due to the presence of the zero-block, the positive definiteness of the matrix on the left-hand-side is not given.
+To mitigate this, a small negative diagonal regularization term is added to the bottom-right corner of the matrix. The modified matrix system is:
+
+\begin{equation}
+\begin{bmatrix}
+\mathbf{K} & \mathbf{C}^T \\
+\mathbf{C} & \mathbf{0}
+\end{bmatrix}
+\quad \longrightarrow \quad
+\begin{bmatrix}
+\mathbf{K} & \mathbf{C}^T \\
+\mathbf{C} & -\varepsilon_0 \mathbf{I}
+\end{bmatrix}
+\end{equation}
+
+where \(\varepsilon_0\) is a small positive value, typically scaled based on the characteristic stiffness of the system.
+The characteristic stiffness, \( K_{\text{mean}} \), is defined as the average of the diagonal entries of \(\mathbf{K}\):
+
+\begin{equation}
+K_{\text{mean}} = \frac{1}{n} \sum_{i=1}^{n} K_{ii}
+\end{equation}
+
+with \( n \) being the number of degrees of freedom in the original system. Using the characteristic stiffness $K_{\text{mean}}$, one can express
+\(\varepsilon_0\) as \(\varepsilon = K_{\text{mean}} \varepsilon\) where \(\varepsilon\) is a constant
+and can be reused independent of the actual stiffness of the system. As of now, the value of \(\varepsilon\) is set to \(10^{-6}\).
+The modified system then becomes:
+
+\begin{equation}
+\begin{bmatrix}
+\mathbf{K} & \mathbf{C}^T \\
+\mathbf{C} & -\varepsilon K_{\text{mean}} \mathbf{I}
+\end{bmatrix}
+\begin{bmatrix}
+\boldsymbol{u} \\
+\boldsymbol{\lambda}
+\end{bmatrix}
+=
+\begin{bmatrix}
+\boldsymbol{f} \\
+\boldsymbol{0}
+\end{bmatrix}
+\end{equation}
+
+where \(\varepsilon\) is typically set to \( 10^{-6} \).
+This small negative diagonal term in the bottom-right corner ensures that the matrix remains solvable and reduces numerical instabilities.
+
+\section{Frequency Analysis}
+
+In frequency analysis, we aim to determine the natural frequencies and mode shapes of the structure. This requires solving a generalized eigenvalue problem of the form:
+
+\begin{equation}
+\mathbf{K} \boldsymbol{u} = \omega^2 \mathbf{M} \boldsymbol{u}
+\end{equation}
+
+where:
+
+- \(\omega\) is the natural frequency,
+- \(\mathbf{M}\) is the mass matrix.
+
+This equation can be rewritten as:
+
+\begin{equation}
+(\mathbf{K} - \omega^2 \mathbf{M}) \boldsymbol{u} = \boldsymbol{0}
+\end{equation}
+
+In the presence of constraints, the Lagrangian formulation can be used to modify the eigenvalue problem. The extended system becomes:
+
+\begin{equation}
+\begin{bmatrix}
+\mathbf{K} - \omega^2 \mathbf{M} & \mathbf{C}^T \\
+\mathbf{C} & \mathbf{0}
+\end{bmatrix}
+\quad \longrightarrow \quad
+\begin{bmatrix}
+\mathbf{K} - \omega^2 \mathbf{M} & \mathbf{C}^T \\
+\mathbf{C} & -\varepsilon \mathbf{I}
+\end{bmatrix}
+\end{equation}
+
+Again, this system is not symmetric positive definite and may suffer from numerical instabilities. The same stabilization technique is applied by adding a small negative diagonal term scaled by the characteristic stiffness to the bottom-right corner:
+
+\begin{equation}
+\begin{bmatrix}
+\mathbf{K} - \omega^2 \mathbf{M} & \mathbf{C}^T \\
+\mathbf{C} & -\varepsilon K_{\text{mean}} \mathbf{I}
+\end{bmatrix}
+\begin{bmatrix}
+\boldsymbol{u} \\
+\boldsymbol{\lambda}
+\end{bmatrix}
+=
+\begin{bmatrix}
+\boldsymbol{0} \\
+\boldsymbol{0}
+\end{bmatrix}
+\end{equation}
+
+This regularization maintains the system's solvability while preserving the overall physical characteristics of the solution.
+
+\section{Conclusion}
+
+The inclusion of constraints via Lagrange multipliers extends the capabilities of the solver but necessitates careful handling to maintain numerical stability. For frequency analysis, the Lagrangian approach can similarly be used to incorporate constraints into the generalized eigenvalue problem. The addition of a small negative diagonal term stabilizes both static and dynamic analyses, enabling robust solutions for complex systems with multiple constraints.
+
+Future enhancements will focus on improving the solver's robustness and expanding its applicability to a broader class of dynamic problems.
