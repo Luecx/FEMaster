@@ -18,9 +18,11 @@
 \usepackage{booktabs}          % For creating tables
 \usepackage[ruled,vlined]{algorithm2e}
 
-\usepackage{listings}  % Package for code listings
-\usepackage{xcolor}    % Package for custom colors
+\usepackage{listings}          % Package for code listings
+\usepackage{xcolor}            % Package for custom colors
+\usepackage[backend=biber,style=numeric,citestyle=numeric]{biblatex}  % Bibliography package
 
+\addbibresource{biblio.bib}    % Link to the bibliography file
 
 % Title and author details
 \title{FEMaster User Manual}
@@ -105,7 +107,7 @@
 \tableofcontents
 \newpage
 
-
+% Include other sections
 \include{pages/core_usage}
 \include{pages/geometric_entities}
 \include{pages/material}
@@ -114,5 +116,10 @@
 \include{pages/loadcases}
 \include{pages/solving}
 
+% Bibliography Section
+\newpage
+\chapter*{Bibliography}
+\addcontentsline{toc}{chapter}{Bibliography}  % Include in the table of contents
+\printbibliography
 
 \end{document}

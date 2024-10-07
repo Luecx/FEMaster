@@ -45,7 +45,7 @@ This new system is not symmetric positive definite due to the presence of the ze
 It is symmetric but indefinite, making standard SPD solvers unsuitable.
 Consequently, direct solvers or specialized iterative methods for saddle-point problems are typically required.
 
-\section{Modifications for Numerical Stability}
+\section{Modifications for solving Constrained Systems}
 
 Due to the presence of the zero-block, the positive definiteness of the matrix on the left-hand-side is not given.
 To mitigate this, a small negative diagonal regularization term is added to the bottom-right corner of the matrix. The modified matrix system is:
@@ -63,6 +63,9 @@ To mitigate this, a small negative diagonal regularization term is added to the 
 \end{equation}
 
 where \(\varepsilon_0\) is a small positive value, typically scaled based on the characteristic stiffness of the system.
+This system is now Symmetric quasi-definite, ensuring that the matrix remains solvable and has a factorization in the form $LDL^T$. \textcite{Vanderbei1995}
+
+
 The characteristic stiffness, \( K_{\text{mean}} \), is defined as the average of the diagonal entries of \(\mathbf{K}\):
 
 \begin{equation}
