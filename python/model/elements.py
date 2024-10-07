@@ -287,6 +287,13 @@ class C3D8(Element):
         geometry.add_element(element_type='C3D8', node_ids=[n16, n_center, n_center, n20, n_center, n_center, n15, n8])
 
 
+class C3D5(C3D8):
+    num_nodes = 5
+    def __init__(self, element_id, node_ids):
+        super().__init__(element_id, [node_ids[0], node_ids[1], node_ids[2], node_ids[3]
+                                            , node_ids[4], node_ids[4], node_ids[4], node_ids[4]])
+
+
 class C3D10(Element):
     num_nodes = 10
     def __init__(self, element_id, node_ids):

@@ -20,6 +20,7 @@ class Geometry:
         'C2D6': C2D6,
         'C2D8': C2D8,
         'C3D4': C3D4,
+        'C3D5': C3D5,
         'C3D6': C3D6,
         'C3D8': C3D8,
         'C3D10': C3D10,
