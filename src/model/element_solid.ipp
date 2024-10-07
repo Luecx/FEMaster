@@ -32,11 +32,14 @@ SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_global)
         B(0, r1) = shape_der_global(j, 0);  // dx/dr
         B(1, r2) = shape_der_global(j, 1);  // dy/ds
         B(2, r3) = shape_der_global(j, 2);  // dz/dt
+
         B(3, r1) = shape_der_global(j, 1);  // dy/dr
-        B(3, r2) = shape_der_global(j, 0);  // dx/ds
-        B(4, r1) = shape_der_global(j, 2);  // dz/dr
-        B(4, r3) = shape_der_global(j, 0);  // dx/dt
-        B(5, r2) = shape_der_global(j, 2);  // dz/ds
+        B(3, r2) = shape_der_global(j, 2);  // dz/ds
+
+        B(4, r1) = shape_der_global(j, 0);  // dz/dr
+        B(4, r3) = shape_der_global(j, 2);  // dx/dt
+
+        B(5, r2) = shape_der_global(j, 0);  // dx/ds
         B(5, r3) = shape_der_global(j, 1);  // dy/dt
     }
     
