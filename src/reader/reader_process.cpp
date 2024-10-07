@@ -108,6 +108,11 @@ void Reader::process_elements() {
         if (type == "C3D4") {
             auto values = gather_values(4);
             m_model->set_element<fem::model::C3D4>(id, values[0], values[1], values[2], values[3]);
+        } else if (type == "C3D5") {
+            auto values = gather_values(5);
+            m_model->set_element<fem::model::C3D8>(id,
+                                                   values[0], values[1], values[2], values[3],
+                                                   values[4], values[4], values[4], values[4]);
         } else if (type == "C3D6") {
             auto values = gather_values(6);
             m_model->set_element<fem::model::C3D6>(id,
