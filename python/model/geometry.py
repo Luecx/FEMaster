@@ -252,7 +252,7 @@ class Geometry:
 
             self.nodes = new_node_pos
 
-    def to_second_order(self):
+    def as_second_order(self):
         # Create a new Geometry object for the second-order elements
         geometry = Geometry(self.dimension)
 
@@ -271,7 +271,7 @@ class Geometry:
                 geometry.elements[i] = element.to_second_order(edge_midpoints)
         return geometry
 
-    def extrude(self, n, spacing=1):
+    def extruded(self, n, spacing=1):
         # Determine element order
         element_order = self.determine_element_order()
         if element_order == 0:
@@ -339,7 +339,7 @@ class Geometry:
 
         return geometry
 
-    def subdivide(self, n=1, only_quads=False):
+    def subdivided(self, n=1, only_quads=False):
         # Determine element order
         element_order = self.determine_element_order()
         if element_order == 0:
@@ -516,7 +516,6 @@ class Geometry:
 
         return geometry
 
-
     def connectivity_node_to_element(self):
         node_elements = {i: [] for i in range(len(self.nodes))}
 
@@ -603,9 +602,38 @@ class Geometry:
         plt.show()
 
     @staticmethod
-    def mesh_interior(boundary_points, second_order=False, force_quads=False):
+    def mesh_interior(boundary_points, second_order=False, mesh_type=0):
+        """
+        Generate a 2D mesh for a given set of boundary points.
 
-        # if first and last are close, remove the last
+        Parameters
+        ----------
+        boundary_points : list of list
+            List of 2D points defining the boundary of the mesh in [x, y] format.
+        second_order : bool, optional
+            Whether to generate second-order elements. Default is False.
+        mesh_type : int, optional
+            Type of elements to generate:
+                0 - Triangles only (default)
+                1 - Mixed mesh (triangles and quadrilaterals)
+                2 - Quadrilaterals only
+
+        Returns
+        -------
+        geometry : Geometry object
+            Geometry object containing the generated mesh nodes and elements.
+
+        Notes
+        -----
+        Gmsh will generate 9-node quadrilateral elements for second-order quads by default.
+        This function automatically converts 9-node elements to 8-node elements by removing
+        the center node. The resulting mesh will always contain C2D3, C2D4, C2D6, or C2D8 elements.
+        """
+
+        import gmsh
+        import numpy as np
+
+        # Remove last point if it's a duplicate of the first point
         if np.linalg.norm(boundary_points[0] - boundary_points[-1]) < 1e-6:
             boundary_points = boundary_points[:-1]
 
@@ -629,19 +657,24 @@ class Geometry:
         curve_loop_tag = gmsh.model.geo.addCurveLoop(line_tags)
         surface_tag = gmsh.model.geo.addPlaneSurface([curve_loop_tag])
 
-        # Synchronize necessary before meshing
+        # Synchronize before meshing
         gmsh.model.geo.synchronize()
 
-        # Mesh algorithm options (optional, can customize as needed)
+        # Set global meshing options
         gmsh.option.setNumber("Mesh.Algorithm", 6)  # Delaunay meshing for 2D
-        gmsh.option.setNumber("Mesh.ElementOrder", 1 if second_order is False else 2)  # First order elements
-        gmsh.option.setNumber("Mesh.RecombineAll", 1 if force_quads else 0)  # Allow recombination into quadrilaterals
+        gmsh.option.setNumber("Mesh.ElementOrder", 1 if not second_order else 2)  # First or second order elements
+
+        # Handle mesh type: 0 = Triangles only, 1 = Mixed (tri + quad), 2 = Quad only
+        if mesh_type in {1, 2}:  # Enable recombination for mixed or quad-only mesh
+            gmsh.model.geo.mesh.setRecombine(2, surface_tag)
+
+        # Synchronize again after recombination settings
+        gmsh.model.geo.synchronize()
 
         # Generate the mesh
         gmsh.model.mesh.generate(2)
-        # gmsh.fltk.run()
 
-        # Extracting nodes and elements
+        # Extract nodes and elements
         node_data = gmsh.model.mesh.getNodes()
         nodes = node_data[1].reshape((-1, 3))
 
@@ -650,9 +683,9 @@ class Geometry:
         # Manually define the number of nodes per element type
         element_node_count = {
             2: 3,  # 3-node triangle
-            3: 4,  # 4-node quadrangle
+            3: 4,  # 4-node quadrilateral
             9: 6,  # 6-node second-order triangle
-            10: 9, # 9-node second-order quadrangle
+            10: 9,  # 9-node second-order quadrilateral
         }
 
         # Convert flattened node tags to list of lists of node tags per element
@@ -670,28 +703,34 @@ class Geometry:
 
         # Add nodes to the geometry
         for idx, node in enumerate(nodes):
-            geometry.add_node(idx+1, node[0], node[1])
+            geometry.add_node(idx + 1, node[0], node[1])
 
         elem_id = 1
         # Add elements to the geometry
         for elem_tags, nodes_per_elem in zip(element_tags, node_tags_per_element):
             for elem_tag, node_tags in zip(elem_tags, nodes_per_elem):
-                node_indices = [node_ids[n]+1 for n in node_tags]
+                node_indices = [node_ids[n] + 1 for n in node_tags]
+
+                # Identify element type based on the number of nodes and create geometry
                 if len(node_tags) == 3:
-                    element_type = 'C2D3'
+                    element_type = 'C2D3'  # 3-node triangle
                 elif len(node_tags) == 4:
-                    element_type = 'C2D4'
+                    element_type = 'C2D4'  # 4-node quadrilateral
                 elif len(node_tags) == 6:
-                    element_type = 'C2D6'
-                elif len(node_tags) == 8:
-                    element_type = 'C2D8'
+                    element_type = 'C2D6'  # 6-node second-order triangle
+                elif len(node_tags) == 9:
+                    element_type = 'C2D8'  # Always convert 9-node to 8-node quadrilateral
+                    node_indices = node_indices[:8]
                 else:
-                    continue  # Skip any elements not triangular or quadrilateral
+                    raise ValueError(f"Unsupported element type with {len(node_tags)} nodes.")
+
                 geometry.add_element(elem_id, element_type, node_indices)
                 elem_id += 1
+
         # Finalize Gmsh
         gmsh.finalize()
         return geometry
+
 
     def __str__(self):
         ret_str = ""
