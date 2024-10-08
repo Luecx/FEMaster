@@ -23,7 +23,7 @@ import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
 # imports from the same directory
-from .geometry import Geometry
+from ..geometry import Geometry
 from .solution import Solution
 
 class Converter:
