@@ -1,12 +1,7 @@
 import copy
-
 import numpy as np
 
-from spring_sim import SpringSimulation
-
-from geometry import Geometry
-from solution import Solution
-from scipy.optimize import curve_fit
+from .geometry import Geometry
 
 def generate_beam(length, height, elem_length, elem_height):
     geom = Geometry()
