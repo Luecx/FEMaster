@@ -7,8 +7,8 @@ import numpy as np
 
 from .filter import Filter, FilterFunction
 from .viewer import Viewer
-from .geometry import Geometry
-from .solution import Solution
+from ..geometry import Geometry
+from ..solution import Solution
 import time
 import dill as pickle
 import matplotlib.pyplot as plt
