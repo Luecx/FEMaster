@@ -1,0 +1,170 @@
+\chapter{Examples}
+
+
+
+\section{Example 1: Simple C3D6 Wedge loaded on both ends}
+\begin{codeBlock}
+*Node
+1,  0.,  0.,  0.
+2, 10.,  0.,  0.
+3,  5.,  0.,  10.
+4,  0., 10.,  0.
+5, 10., 10.,  0.
+6,  5., 10., 10.
+
+*Element, type=C3D6
+1,  1,  2,  3,  4,  5,  6
+
+*Material, name=MAT
+*Elastic, TYPE=ISO
+1., 0.
+
+*SOLID SECTION, ELSET=EALL, MAT=MAT
+
+*CLOAD, LOAD_COLLECTOR=LOADS
+4, 0, 1, 0
+5, 0, 1, 0
+6, 0, 1, 0
+
+*SUPPORT, SUPPORT_COLLECTOR=SUPPS
+1, 0, 0, 0
+2, 0, 0, 0
+3, 0, 0, 0
+
+*LOADCASE, TYPE=LINEAR STATIC
+
+*LOAD
+LOADS
+*SUPPORT
+SUPPS
+
+*SOLVER, METHOD=DIRECT, DEVICE=CPU
+*END
+\end{codeBlock}
+
+\newpage
+
+\section{Example 2: C3D20 under frequency analysis}
+
+\begin{codeBlock}
+*Node
+      1,          -5.,          -5.,          10.
+      2,          -5.,           5.,          10.
+      3,          -5.,          -5.,           0.
+      4,          -5.,           5.,           0.
+      5,           5.,          -5.,          10.
+      6,           5.,           5.,          10.
+      7,           5.,          -5.,           0.
+      8,           5.,           5.,           0.
+      9,           5.,          -5.,           5.
+     10,           5.,           0.,           0.
+     11,           5.,           5.,           5.
+     12,           5.,           0.,          10.
+     13,          -5.,           0.,          10.
+     14,          -5.,           5.,           5.
+     15,          -5.,           0.,           0.
+     16,          -5.,          -5.,           5.
+     17,           0.,           5.,          10.
+     18,           0.,          -5.,          10.
+     19,           0.,           5.,           0.
+     20,           0.,          -5.,           0.
+*Element, type=C3D20
+1,  5,  6,  8,  7,  1,  2,  4,  3, 12, 11, 10,
+9, 13, 14, 15, 16, 18, 17, 19, 20
+
+** MATERIALS
+**
+*Material, name=MAT1
+*Density
+1.,
+*Elastic, TYPE=ISO
+1.,0.,
+**
+
+*Solid Section, elset=EALL, MAT=MAT1
+
+*LOADCASE, TYPE=EIGENFREQ
+*NUMEIGENVALUES
+10
+
+*SUPPORT
+SUPPS
+
+*END
+\end{codeBlock}
+\newpage
+
+
+
+
+
+\section{Example 3: Coupling example}
+
+\begin{codeBlock}
+*NODE, NSET=BODY
+1, 0.0, 0.0, 0.0
+2, 0.0, 0.0, 1.0
+3, 0.0, 1.0, 0.0
+4, 0.0, 1.0, 1.0
+5, 1.0, 0.0, 0.0
+6, 1.0, 0.0, 1.0
+7, 1.0, 1.0, 0.0
+8, 1.0, 1.0, 1.0
+
+*NODE, NSET=REF
+9, -1.0, 0.5, 0.5
+
+*ELEMENT, TYPE=C3D8, ELSET=EALL
+1,5, 6, 8, 7 , 1, 2, 4, 3
+
+*NSET, NAME=SLAVE
+1, 2, 3, 4
+
+*COUPLING, MASTER=REF, SLAVE=SLAVE, TYPE=KINEMATIC
+1.0, 1.0, 1.0, 1.0, 1.0, 1.0
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISO
+1, 0
+*DENSITY
+1
+*SOLID SECTION, ELSET=EALL, MAT=STEEL
+
+*CLOAD, LOAD_COLLECTOR=LOADS
+5, 1.0, 0.0, 0.0
+6, 1.0, 0.0, 0.0
+7, 1.0, 0.0, 0.0
+8, 1.0, 0.0, 0.0
+*SUPPORT, SUPPORT_COLLECTOR=BC
+9, 0, 0, 0, 0, 0, 0
+
+*LOADCASE, TYPE=LINEAR STATIC
+*LOAD
+LOADS
+*SUPPORT
+BC
+*SOLVER, METHOD=DIRECT
+*END
+\end{codeBlock}
+\newpage
+
+
+
+\section{Example 4: Connector example with orientation}
+
+\begin{codeBlock}
+**
+**
+**
+*ORIENTATION, TYPE=RECTANGULAR, DEFINITION=VECTOR, NAME=CSY
+0, 0, 1, 0, 1, 0
+**
+**
+**
+*CONNECTOR, TYPE=BEAM, COORDINATE SYSTEM=CSY, NSET1=M1, NSET2=M2
+**
+**
+\end{codeBlock}
+
+\newpage
+

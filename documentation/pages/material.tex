@@ -1,11 +1,39 @@
 \chapter{Material Properties}
 \label{chap:material_properties}
 
-Material properties are fundamental to the analysis and simulation of mechanical systems. They define how materials respond to external loads and are crucial in predicting the behavior of structures under various conditions. This chapter discusses the implementation of material models, focusing on isotropic and orthotropic elasticity. Currently, our system supports isotropic and orthotropic materials; however, orthotropic materials cannot be rotated yet.
+Material properties are fundamental to the analysis and simulation of mechanical systems.
+They define how materials respond to external loads and are crucial in predicting the behavior of structures under various conditions.
+This chapter discusses the implementation of material models, focusing on isotropic and orthotropic elasticity.
+Currently, our system supports isotropic and orthotropic materials; however, orthotropic materials cannot be rotated yet.
 
-\section{Isotropic Elasticity (*ELASTIC, TYPE=ISOTROPIC)}
+Beside elastic properties, also density is required to define a material for some types of simulations. This will also be explained below.
+Any material is defined using the \texttt{*MATERIAL} keyword, followed by the material name.
 
-An isotropic material has identical properties in all directions. This uniformity simplifies the stress-strain relationship, making isotropic materials widely used in engineering applications.
+\begin{codeBlock}
+*MATERIAL, NAME=MATERIAL_NAME
+...
+...
+\end{codeBlock}
+
+After the initial \texttt{*MATERIAL} command, the material properties are defined using specific material models.
+
+\section{Material Density \texttt{(*DENSITY)}}
+
+Material density is a fundamental property required for dynamic simulations and mass calculations.
+It is defined using the \texttt{*DENSITY} keyword, followed by the density value on the next line
+
+\begin{codeBlock}
+*DENSITY
+\rho
+\end{codeBlock}
+
+where \(\rho\) is the material density. Be careful about proper scaling. For example when using steel and millimeter units,
+the density is \(7.85 \times 10^{-9}\) ton/mm\(^3\).
+
+\section{Isotropic Elasticity \texttt{(*ELASTIC, TYPE=ISOTROPIC)}}
+
+An isotropic material has identical properties in all directions.
+This uniformity simplifies the stress-strain relationship, making isotropic materials widely used in engineering applications.
 
 \subsection{Constitutive Equations}
 
@@ -67,7 +95,7 @@ E, v
 1
 \end{codeBlock}
 
-\section{Orthotropic Elasticity (*ELASTIC, TYPE=ORTHOTROPIC)}
+\section{Orthotropic Elasticity \texttt{(*ELASTIC, TYPE=ORTHOTROPIC)}}
 
 Orthotropic materials have different properties along three mutually perpendicular axes. This anisotropy is common in composite materials and requires a more complex constitutive model.
 

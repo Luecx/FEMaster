@@ -443,6 +443,10 @@ void Reader::process_connector() {
         ctype = ConnectorType::Beam;
     } else if (type == "HINGE") {
         ctype = ConnectorType::Hinge;
+    } else if (type == "CYLINDRICAL") {
+        ctype = ConnectorType::Cylindrical;
+    } else if (type == "TRANSLATOR") {
+        ctype = ConnectorType::Translator;
     } else {
         logging::error(false, "Unknown connector type: ", type);
     }

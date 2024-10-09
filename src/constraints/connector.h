@@ -7,6 +7,8 @@
 
 #include "../cos/coordinate_system.h"
 #include "../core/types.h"
+#include "../core/logging.h"
+#include <iostream>
 
 /**
  * @enum ConnectorType
@@ -23,7 +25,9 @@
 enum ConnectorType : int {
     None  = 0b000000,     ///< No DOFs are constrained.
     Beam  = 0b111111,     ///< All 6 DOFs are constrained.
-    Hinge = 0b111011      ///< All DOFs except rotation around X (bit 3 is 0).
+    Hinge = 0b111011,      ///< All DOFs except rotation around X (bit 3 is 0).
+    Cylindrical = 0b011011, ///< Translation and rotation around X are allowed.
+    Translator = 0b011111, ///< Only translation in x direction is allowed.
 };
 
 /**
@@ -104,10 +108,20 @@ public:
 
             // Add the constraint equation to the triplet list
             for (int j = 0; j < 3; j++) {
+
+                auto dof_id_n1 = system_nodal_dofs(node_1_id_, 3 * (i / 3) + j);
+                auto dof_id_n2 = system_nodal_dofs(node_2_id_, 3 * (i / 3) + j);
+
+                if (dof_id_n1 < 0 || dof_id_n2 < 0) {
+                    logging::warning(false, "Invalid DOF indices for node ", node_1_id_, " and ", node_2_id_,
+                        ". Constraint may not work as intended.");
+                    continue;
+                }
+
                 // i / 3 gives either the offset for the translational or rotational DOFs
                 // and j is the index for the x, y, z components of the global DOF direction
-                triplets.push_back(Triplet(row, i / 3 + j, global_dof_direction(j)));
-                triplets.push_back(Triplet(row, i / 3 + j, -global_dof_direction(j)));
+                triplets.push_back(Triplet(row, dof_id_n1, global_dof_direction(j)));
+                triplets.push_back(Triplet(row, dof_id_n2, -global_dof_direction(j)));
             }
 
             row++; // Move to the next row for the next constraint

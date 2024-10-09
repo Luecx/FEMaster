@@ -2,7 +2,7 @@
 \label{chap:geometric_entities}
 
 FEMaster is built around three core geometric entities: \textbf{nodes}, \textbf{elements}, and \textbf{surfaces}. These entities serve as the building blocks for defining the geometry and topology of a finite element model. Each entity has a unique ID-based referencing system that allows for efficient and flexible model setup. This chapter details the structure, definition, and properties of each geometric entity, including their usage and syntax in the input file.
-\section{Nodes (*NODE)}
+\section{Nodes \texttt{(*NODE)}}
 Nodes are the fundamental points that define the geometry of a finite element model. Each node is associated with a set of coordinates that determine its position in space. Nodes are referenced by a unique ID and are used to construct elements and define boundary conditions. Additionally, each node can have rotational degrees of freedom (DOFs), although these are not specified directly in the node definitions. The translational DOFs are defined by the provided $x$, $y$, and $z$ coordinates, while rotational DOFs are automatically included in the solution process if the specific element or constraint requires them.
 
 \subsection{Syntax}
@@ -28,7 +28,7 @@ Values for node coordinates can be omitted if not explicitly needed, using comma
 
 This syntax creates a node with ID 5, $x$ = 0, $y$ = 5, and $z$ = 0. Omitted values are treated as zeros by default.
 
-\subsection{Node Sets (*NSET)}
+\subsection{Node Sets \texttt{(*NSET)}}
 Node sets can also be created manually using the `NSET` command, which allows for flexible grouping of node IDs.
 Both of the following commands are valid and equivalent:
 
@@ -56,7 +56,7 @@ Even though the user only provides the translational coordinates in the input fi
 
 
 
-\section{Elements (*ELEMENT)}
+\section{Elements \texttt{(*ELEMENT)}}
 
 Elements connect multiple nodes to form the primary components of a finite element model. Each element represents a region of the model's geometry, allowing for the computation of properties such as displacements, stresses, and strains. FEMaster supports a variety of solid elements for 3D analysis, providing flexibility and accuracy depending on the chosen element type.
 
@@ -95,7 +95,7 @@ To avoid this, line breaks during element definitions is allowed, as shown below
     17, 18, 19, 20
 \end{codeBlock}
 
-\subsection{Element Sets (*ELSET)}
+\subsection{Element Sets \texttt{(*ELSET)}}
 
 Element sets can also be created manually using the `ELSET` command, which allows for flexible grouping of element IDs.
 Both of the following commands are valid and equivalent:
@@ -198,7 +198,7 @@ The elements implemented with the amount of integration points is listed below:
 \newpage
 
 
-\section{Surfaces (*SURFACE)}
+\section{Surfaces \texttt{(*SURFACE)}}
 Surfaces are specialized geometric entities derived from the faces of 3D elements. They are used to apply boundary conditions, loads, and constraint definitions. Unlike nodes and elements, surface types (triangular or quadrilateral) cannot be directly chosen by the user. Instead, they are automatically created based on the connectivity of the underlying element and its associated face.
 
 FEMaster creates the following surface types based on the element face configuration:
@@ -244,7 +244,7 @@ ELSET_1, S2
 ELSET_2, S3
 \end{codeBlock}
 
-\subsection{Surface Sets (*SFSET)}
+\subsection{Surface Sets \texttt{(*SFSET)}}
 
 Surface sets can also be created manually using the `SFSET` command, which allows for flexible grouping of surface IDs.
 Both of the following commands are valid and equivalent:

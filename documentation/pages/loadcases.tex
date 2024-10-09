@@ -6,7 +6,7 @@ FEMaster supports three types of load cases for finite element analysis: \textbf
 \section{Available Commands}
 Each load case in FEMaster can be customized using a set of predefined commands. This section provides an overview of the available commands and their corresponding syntax.
 
-\subsection{*SUPPORT}
+\subsection{\texttt{*SUPPORT}}
 The \texttt{*SUPPORT} command defines the support conditions for nodes. Supports are used to constrain specific degrees of freedom (DOF) at selected nodes, such as fixing a node in space or preventing rotation. Support conditions are typically grouped into support collectors for easier referencing.
 
 \begin{codeBlock}
@@ -17,7 +17,7 @@ SUP_COL_2
 
 Each line references a support collector that defines the DOFs constrained for a set of nodes.
 
-\subsection{*LOAD}
+\subsection{\texttt{*LOAD}}
 The \texttt{*LOAD} command specifies the external loads applied to nodes or elements. Loads can include forces, moments, or distributed pressures. Similar to supports, load definitions are grouped into load collectors for referencing.
 
 \begin{codeBlock}
@@ -28,7 +28,7 @@ LOAD_COL_2
 
 Each line references a load collector that contains the detailed load specifications, such as forces or moments.
 
-\subsection{*SOLVER}
+\subsection{\texttt{*SOLVER}}
 The \texttt{*SOLVER} command specifies the numerical solver to use for the current load case.
 It can include options for direct (\texttt{DIRECT}) or iterative solvers (\texttt{INDIRECT}) and hardware preferences such as CPU (\texttt{CPU}) or GPU (\texttt{GPU}).
 
@@ -38,7 +38,7 @@ It can include options for direct (\texttt{DIRECT}) or iterative solvers (\textt
 
 The example above selects a direct solver using the CPU for computations.
 
-\subsection{*DENSITY}
+\subsection{\texttt{*DENSITY}}
 The \texttt{*DENSITY} command defines the material density values for elements during topology optimization. It is used in Linear Static Topo cases to compute density gradients and compliance values. Each line specifies the element ID and its associated density value.
 
 \begin{codeBlock}
@@ -50,7 +50,7 @@ el_id_3, density_3
 
 This format allows setting different density values for individual elements based on their IDs.
 
-\subsection{*EXPONENT}
+\subsection{\texttt{*EXPONENT}}
 The \texttt{*EXPONENT} command sets the penalization exponent for the topology optimization formulation. The exponent influences the stiffness-density relationship, affecting the optimized material distribution. A higher exponent results in a stiffer material distribution.
 
 \begin{codeBlock}
@@ -60,7 +60,7 @@ The \texttt{*EXPONENT} command sets the penalization exponent for the topology o
 
 This example sets the penalization exponent to 3, commonly used in SIMP (Solid Isotropic Material with Penalization) topology optimization.
 
-\subsection{*NUMEIGENVALUES}
+\subsection{\texttt{*NUMEIGENVALUES}}
 The \texttt{*NUMEIGENVALUES} command specifies the number of eigenvalues to compute for an eigenfrequency analysis. This determines the number of mode shapes and natural frequencies extracted from the structure.
 
 \begin{codeBlock}

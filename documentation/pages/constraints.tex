@@ -3,7 +3,7 @@
 
 Constraints in finite element analysis (FEA) are a critical component for defining how different regions of a model interact or how boundaries influence the system. They enforce certain relationships between nodes, elements, or surfaces to ensure that the solution adheres to predefined conditions, allowing complex interactions like load transfer or restricted movement. This chapter covers the two main types of constraints currently implemented: kinematic couplings and tie constraints.
 
-\section{Kinematic Couplings (*COUPLING, TYPE=KINEMATIC)}
+\section{Kinematic Couplings \texttt{(*COUPLING, TYPE=KINEMATIC)}}
 
 Kinematic couplings are used to control the motion of a group of nodes (the \textit{slave set}) by connecting them to a single reference node (the \textit{master set}). This type of constraint is often employed to model rigid body motion, where all nodes in the slave set move as if they are rigidly connected to the master node, preserving relative distances and rotations.
 
@@ -48,7 +48,7 @@ To define a kinematic coupling in the input file, use the following syntax:
 Both the master and slave must be defined as sets. The master set must contain exactly one node. The line following the `*COUPLING` command indicates which degrees of freedom (DOF) to couple, using 1 to include the DOF and leaving empty values to exclude specific DOFs. The DOFs are defined in the order: \( u_x, u_y, u_z, \theta_x, \theta_y, \theta_z \).
 For example, to exclude rotation around the x-axis, the line would be: `1, 1, 1, , 0, 1`.
 
-\section{Tie Constraints (*TIE)}
+\section{Tie Constraints \texttt{(*TIE)}}
 
 Tie constraints are used to connect two regions of a model by tying the motion of a \textit{slave set} of nodes to a \textit{master surface}. This constraint is often used in contact simulations or to couple non-matching meshes, where the nodes of the slave set may not correspond directly to the nodes of the master surface. Tie constraints ensure continuity of displacement across the interface, allowing for load transfer and interaction between regions.
 
@@ -85,6 +85,55 @@ The master set must be defined as a surface set, while the slave set must be def
 The `DISTANCE` parameter specifies the maximum distance between the slave node and the master surface for the constraint to be applied.
 To speed up computations, the mapping is done by first comparing to the nodes of the master surface. Only surfaces which has nodes that are within the distance will be even considered. It then takes the closest surface.
 The `ADJUST` parameter determines whether the slave nodes are projected onto the master surface if they are outside the specified distance.
+
+
+
+
+\section{Connector Elements (\texttt{*CONNECTOR})}
+
+Connector elements link two nodes by constraining specific degrees of freedom (DOFs) between them. This type of constraint is useful for modeling connections like beams, hinges, or cylindrical joints, where the motion of one node is partially or fully dependent on the motion of the other node. Connector elements can represent various mechanical joints and constraints, providing flexibility in defining interactions between parts of the model.
+
+\subsection{Connector Equations}
+
+Each connector defines a relationship between the constrained DOFs of two nodes, using a specified local coordinate system. The constraint equations can be written as:
+
+\[
+\mathbf{u}_{n1,i} = \mathbf{u}_{n2,i} + \mathbf{C}_{\text{local}} \cdot \mathbf{d}_i
+\]
+
+where:
+\begin{itemize}
+    \item \( \mathbf{u}_{n1,i} \) and \( \mathbf{u}_{n2,i} \) are the displacements or rotations of the \( i \)-th DOF for nodes 1 and 2.
+    \item \( \mathbf{C}_{\text{local}} \) is the transformation matrix that maps the local coordinate system of the connector to the global coordinate system.
+    \item \( \mathbf{d}_i \) is the local direction of the constrained motion.
+\end{itemize}
+
+\subsection{Connector Types}
+
+The available connector types include:
+\begin{itemize}
+\item \textbf{Beam}: All 6 DOFs are coupled.
+\item \textbf{Hinge}: All DOFs except for rotation around the local x-axis are constrained / coupled.
+ \item \textbf{Cylindrical}: Translation and rotation around the local x-axis are allowed.
+ \item \textbf{Translator}: Only translation in the local x-direction is allowed.
+ \end{itemize}
+
+\subsection{Syntax}
+
+To define a connector element in the input file, use the following syntax:
+
+\begin{codeBlock}
+*CONNECTOR, TYPE=BEAM, COORDINATE SYSTEM=CSY, NSET1=M1, NSET2=M2
+\end{codeBlock}
+
+where: \begin{itemize}
+\item \texttt{TYPE}: Specifies the type of the connector, such as BEAM, HINGE, or CYLINDRICAL,... The full list is given above.
+\item \texttt{COORDINATE SYSTEM}: The name of the coordinate system that defines the local axes for the connector.
+\item \texttt{NSET1 and NSET2}: The node sets for the two nodes to be linked by the connector. Each set must contain exactly one node.
+\end{itemize}
+
+Commonly connectors are used to connect two reference nodes which are kinematically coupled to other nodes.
+For example when using \texttt{TYPE=HINGE}, one can numerically simulate a realistic hinge which would allow for rotation.
 
 \section{Conclusion}
 

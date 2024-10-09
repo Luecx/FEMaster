@@ -22,7 +22,7 @@
 \usepackage{xcolor}            % Package for custom colors
 \usepackage[backend=biber,style=numeric,citestyle=numeric]{biblatex}  % Bibliography package
 
-\addbibresource{biblio.bib}    % Link to the bibliography file
+% \addbibresource{biblio.bib}    % Link to the bibliography file
 
 % Title and author details
 \title{FEMaster User Manual}
@@ -111,15 +111,17 @@
 \include{pages/core_usage}
 \include{pages/geometric_entities}
 \include{pages/material}
+\include{pages/coordinate_systems}
 \include{pages/constraints}
 \include{pages/bc}
 \include{pages/loadcases}
 \include{pages/solving}
+\include{pages/examples}
 
 % Bibliography Section
 \newpage
 %\chapter*{Bibliography}
 %\addcontentsline{toc}{chapter}{Bibliography}  % Include in the table of contents
-\printbibliography
+% \printbibliography
 
 \end{document}

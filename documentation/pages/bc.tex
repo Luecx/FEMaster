@@ -5,7 +5,7 @@ Boundary conditions (BCs) are essential in finite element analysis to define how
 
 \section{Load Types}
 
-\subsection{Volume Load (*VLOAD)}
+\subsection{Volume Load \texttt{(*VLOAD)}}
 
 `VLOAD` is used to apply distributed loads to elements. This type of load is defined using three components: \( F_x, F_y, F_z \), which represent forces acting along the x, y, and z directions, respectively. `VLOAD` can be applied either to individual element IDs or to entire element sets. It is suitable for defining gravitational loads, body forces, or thermal forces distributed over the volume of elements.
 
@@ -24,7 +24,7 @@ ELEMENT_SET_NAME, F_x, F_y, F_z
 ELSET1, 0, -9.81, 0
 \end{codeBlock}
 
-\subsection{Concentrated Load (*CLOAD)}
+\subsection{Concentrated Load \texttt{(*CLOAD)}}
 
 `CLOAD` is used to apply concentrated loads to nodes. It supports six components: three translational forces \( F_x, F_y, F_z \) and three optional rotational moments \( M_x, M_y, M_z \).
 
@@ -45,7 +45,7 @@ NODE_ID, F_x, F_y, F_z, M_x, M_y, M_z
 18, 0, 0, 1
 \end{codeBlock}
 
-\subsection{Distributed Load (*DLOAD)}
+\subsection{Distributed Load \texttt{(*DLOAD)}}
 
 `DLOAD` is used to apply distributed loads to surfaces. This load type is suitable for defining pressure loads or other distributed forces acting over surface areas.
 
@@ -64,7 +64,7 @@ SURFACE_SET_NAME, F_x, F_y, F_z
 SURFSET1, 0, 0, -10
 \end{codeBlock}
 
-\section{Boundary Conditions (*SUPPORT)}
+\section{Boundary Conditions \texttt{(*SUPPORT)}}
 
 Boundary conditions specify which degrees of freedom (DOF) are fixed or constrained at a particular node. The `*SUPPORT` keyword is used to define constraints on any combination of the six available DOFs: three translational (\( u_x, u_y, u_z \)) and three rotational (\( \theta_x, \theta_y, \theta_z \)).
 

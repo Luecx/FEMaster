@@ -2,6 +2,10 @@
 REM Name of the LaTeX file (without extension)
 set file_name=document
 
+REM Remove auxiliary and temporary files generated during compilation
+del /Q %file_name%.aux %file_name%.log %file_name%.out %file_name%.toc %file_name%.bbl %file_name%.blg %file_name%.bcf %file_name%.run.xml
+del /Q pages\*.aux
+
 REM Step 1: Compile the LaTeX file using pdflatex (first run to generate .aux files)
 pdflatex %file_name%.tex
 
