@@ -49,6 +49,8 @@ class Reader {
     void process_vload();
     void process_support();
 
+    void process_coordinate_system();
+    void process_connector();
     void process_coupling();
     void process_tie();
 

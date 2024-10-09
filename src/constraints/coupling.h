@@ -31,8 +31,10 @@ public:
 
     TripletList get_equations(SystemDofIds& system_nodal_dofs, NodeData& node_coords, int row_offset) {
         TripletList triplets{};
-        int row = row_offset;
+        Index row = row_offset;
         for (ID slave_node : slave_nodes) {
+
+
             for (int i = 0; i < 6; i++) {
                 if (coupled_dofs(i)) {
 
@@ -47,6 +49,7 @@ public:
                         triplets.push_back(Triplet(row, dof_master, -1.0));
                     } else {
                         auto dof_slave  = system_nodal_dofs(slave_node, i);
+
                         if (dof_slave < 0)
                             continue;
                         ID dof_master_u = system_nodal_dofs(master_node, i);

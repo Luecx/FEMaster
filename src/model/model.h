@@ -6,6 +6,8 @@
 #include "sets.h"
 #include "../constraints/coupling.h"
 #include "../constraints/tie.h"
+#include "../constraints/connector.h"
+#include "../cos/coordinate_system.h"
 
 namespace fem {
 
@@ -21,14 +23,18 @@ struct Model {
     std::vector<ElementPtr> elements{};
     std::vector<SurfacePtr> surfaces{};
 
+
     // constraints
+    std::vector<Connector>       connectors{};
     std::vector<Coupling>        couplings{};
     std::vector<constraint::Tie> ties{};
 
-    // sets to group nodes and elements
+    // sets to group nodes and elements and everything that has a name
     Sets<std::vector<ID>> node_sets{SET_NODE_ALL};
     Sets<std::vector<ID>> elem_sets{SET_ELEM_ALL};
     Sets<std::vector<ID>> surface_sets{SET_SURF_ALL};
+
+    Sets<cos::CoordinateSystemPtr> coordinate_systems;
 
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
@@ -67,7 +73,12 @@ struct Model {
     inline void set_surface(ID id, ID element_id, ID surface_id);
     inline void set_surface(const std::string& elset, ID surface_id);
 
+    // setting coordinate systems
+    template<typename T, typename... Args>
+    inline void add_coordinate_system(const std::string& name, Args&&... args);
+
     // add couplings
+    void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, ConnectorType type);
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
     void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
 

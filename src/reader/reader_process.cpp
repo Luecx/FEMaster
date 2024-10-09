@@ -9,6 +9,7 @@
 #include "../model/c3d6.h"
 #include "../model/c3d8.h"
 #include "reader.h"
+#include "../cos/rectangular_system.h"
 
 namespace fem::reader {
 void Reader::process() {
@@ -47,6 +48,10 @@ void Reader::process() {
             process_solid_section();
         } else if (m_current_line.command() == "SUPPORT") {
             process_support();
+        } else if (m_current_line.command() == "ORIENTATION") {
+            process_coordinate_system();
+        } else if (m_current_line.command() == "CONNECTOR") {
+            process_connector();
         } else if (m_current_line.command() == "COUPLING") {
             process_coupling();
         } else if (m_current_line.command() == "TIE") {
@@ -383,6 +388,70 @@ void Reader::process_support() {
         }
     }
 }
+
+void Reader::process_coordinate_system() {
+
+    auto type = m_current_line.require<std::string>("TYPE");
+    auto definition = m_current_line.parse<std::string>("DEFINITION", "VECTOR");
+    auto name = m_current_line.require<std::string>("NAME");
+
+    next_line();
+
+    if (type == "RECTANGULAR") {
+        if (m_current_line.count_values() == 3) {
+            auto x = std::stof(m_current_line.values()[0]);
+            auto y = std::stof(m_current_line.values()[1]);
+            auto z = std::stof(m_current_line.values()[2]);
+            m_model->add_coordinate_system<cos::RectangularSystem>(name, Vec3{x,y,z});
+        } else if (m_current_line.count_values() == 6) {
+            auto x1 = std::stof(m_current_line.values()[0]);
+            auto y1 = std::stof(m_current_line.values()[1]);
+            auto z1 = std::stof(m_current_line.values()[2]);
+            auto x2 = std::stof(m_current_line.values()[3]);
+            auto y2 = std::stof(m_current_line.values()[4]);
+            auto z2 = std::stof(m_current_line.values()[5]);
+            m_model->add_coordinate_system<cos::RectangularSystem>(name, Vec3{x1,y1,z1}, Vec3{x2,y2,z2});
+        } else if (m_current_line.count_values() == 6) {
+            auto x1 = std::stof(m_current_line.values()[0]);
+            auto y1 = std::stof(m_current_line.values()[1]);
+            auto z1 = std::stof(m_current_line.values()[2]);
+            auto x2 = std::stof(m_current_line.values()[3]);
+            auto y2 = std::stof(m_current_line.values()[4]);
+            auto z2 = std::stof(m_current_line.values()[5]);
+            auto x3 = std::stof(m_current_line.values()[6]);
+            auto y3 = std::stof(m_current_line.values()[7]);
+            auto z3 = std::stof(m_current_line.values()[8]);
+            m_model->add_coordinate_system<cos::RectangularSystem>(name, Vec3{x1,y1,z1}, Vec3{x2,y2,z2}, Vec3{x3,y3,z3});
+        } else {
+            logging::error(false, "Cannot create coordinate system with", m_current_line.count_values(),
+                " values. Needs to be 3, 6 or 9.");
+        }
+    } else {
+        logging::error(false, "Unknown coordinate system type: ", type);
+    }
+    next_line();
+}
+
+void Reader::process_connector() {
+    auto type = m_current_line.require<std::string>("TYPE");
+    auto nset1 = m_current_line.require<std::string>("NSET1");
+    auto nset2 = m_current_line.require<std::string>("NSET2");
+    auto coord = m_current_line.require<std::string>("COORDINATESYSTEM");
+
+    ConnectorType ctype = ConnectorType::None;
+    if (type == "BEAM") {
+        ctype = ConnectorType::Beam;
+    } else if (type == "HINGE") {
+        ctype = ConnectorType::Hinge;
+    } else {
+        logging::error(false, "Unknown connector type: ", type);
+    }
+
+    m_model->add_connector(nset1, nset2, coord, ctype);
+
+    next_line();
+}
+
 
 void Reader::process_coupling() {
     // read COUPLING, MASTER=xyz, SLAVE=xyz, DOFS=xyz, TYPE=xyz

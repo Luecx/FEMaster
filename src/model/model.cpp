@@ -4,6 +4,22 @@ namespace fem {
 
 namespace model {
 
+void Model::add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, ConnectorType type) {
+    logging::error(node_sets.has(set1), "Node set ", set1, " does not exist");
+    logging::error(node_sets.has(set2), "Node set ", set2, " does not exist");
+
+    logging::error(coordinate_systems.has(coordinate_system), "Coordinate system ", coordinate_system, " does not exist");
+
+    // can only contain exactly one node
+    logging::error(node_sets.get(set1).size() == 1, "Set 1 must contain exactly one node");
+    logging::error(node_sets.get(set2).size() == 1, "Set 2 must contain exactly one node");
+
+    ID id1 = node_sets.get(set1)[0];
+    ID id2 = node_sets.get(set2)[0];
+
+    connectors.push_back(Connector{id1, id2, coordinate_systems.get(coordinate_system), type});
+}
+
 void Model::add_coupling(const std::string &master_set, const std::string &slave_set, Dofs coupled_dofs, CouplingType type) {
     logging::error(node_sets.get(master_set).size() == 1, "Master set must contain exactly one node");
     ID master_node = node_sets.get(master_set)[0];

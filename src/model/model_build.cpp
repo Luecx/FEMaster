@@ -68,9 +68,9 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
 
 SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness) {
     TripletList triplets;
-    int rows = 0;
+    int rows = -1;
     for (auto &c: this->couplings) {
-        auto coupling_triplets = c.get_equations(indices, node_coords, rows);
+        auto coupling_triplets = c.get_equations(indices, node_coords, rows + 1);
         for (auto &t: coupling_triplets) {
             triplets.push_back(t);
             rows = std::max(rows, t.row());
@@ -78,8 +78,16 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
     }
 
     for (auto &t: this->ties) {
-        auto tie_triplets = t.get_equations(indices, surface_sets, node_sets, surfaces, node_coords, rows);
+        auto tie_triplets = t.get_equations(indices, surface_sets, node_sets, surfaces, node_coords, rows + 1);
         for(auto &t: tie_triplets) {
+            triplets.push_back(t);
+            rows = std::max(rows, t.row());
+        }
+    }
+
+    for (auto &t : this->connectors) {
+        auto connector_triplets = t.get_equations(indices, node_coords, rows + 1);
+        for (auto &t: connector_triplets) {
             triplets.push_back(t);
             rows = std::max(rows, t.row());
         }
