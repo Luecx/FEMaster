@@ -1,4 +1,4 @@
-# FEMaster
+# FEMaster [![CodeFactor](https://www.codefactor.io/repository/github/luecx/femaster/badge)](https://www.codefactor.io/repository/github/luecx/femaster)
 
 **FEMaster** is a powerful tool designed for solving linear finite element (FE) problems. It supports linear analysis and linear frequency extraction using high-performance algorithms and optional GPU acceleration. FEMaster offers various customization features, including support for multi-core processing via OpenMP, optional integration with the Math Kernel Library (MKL) for optimized performance, and CUDA for leveraging GPU computations. This tool is ideal for engineers and researchers looking to perform fast and efficient FE analysis on large-scale problems.
 
