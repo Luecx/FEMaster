@@ -81,25 +81,25 @@ struct LineInterface {
      * @brief Compute the shape functions at a given local coordinate.
      *
      * @param r Local coordinate (parametric coordinate along the line element).
-     * @return Eigen::Matrix<Precision, N, 1> Vector of shape function values at coordinate r.
+     * @return StaticMatrix<N,1> Vector of shape function values at coordinate r.
      */
-    virtual Eigen::Matrix<Precision, N, 1> shape_function(Precision r) const = 0;
+    virtual StaticMatrix<N, 1> shape_function(Precision r) const = 0;
 
     /**
      * @brief Compute the first derivative of shape functions at a given local coordinate.
      *
      * @param r Local coordinate (parametric coordinate along the line element).
-     * @return Eigen::Matrix<Precision, N, 1> Vector of first derivatives of shape functions at coordinate r.
+     * @return StaticMatrix<N, 1> Vector of first derivatives of shape functions at coordinate r.
      */
-    virtual Eigen::Matrix<Precision, N, 1> shape_derivative(Precision r) const = 0;
+    virtual StaticMatrix<N, 1> shape_derivative(Precision r) const = 0;
 
     /**
      * @brief Compute the second derivative of shape functions at a given local coordinate.
      *
      * @param r Local coordinate (parametric coordinate along the line element).
-     * @return Eigen::Matrix<Precision, N, 1> Vector of second derivatives of shape functions at coordinate r.
+     * @return StaticMatrix<N, 1> Vector of second derivatives of shape functions at coordinate r.
      */
-    virtual Eigen::Matrix<Precision, N, 1> shape_second_derivative(Precision r) const = 0;
+    virtual StaticMatrix<N, 1> shape_second_derivative(Precision r) const = 0;
 
     /**
      * @brief Retrieve the global coordinates of the nodes associated with the line element.
@@ -146,7 +146,7 @@ struct LineInterface {
         // Integrate to compute the length
         return quadrature.integrate([&](Precision r, Precision, Precision) -> Precision {
             Vec3 dx_dr = Vec3::Zero();
-            Eigen::Matrix<Precision, N, 1> dN_dr = this->shape_derivative(r);
+            StaticMatrix<N, 1> dN_dr = this->shape_derivative(r);
 
             for (Index i = 0; i < N; i++) {
                 dx_dr += dN_dr(i) * node_coords_global.row(i);
@@ -192,9 +192,9 @@ struct LineInterface {
 
             for (Index iter = 0; iter < max_iter; iter++) {
                 // Compute shape functions and derivatives at current r
-                Eigen::Matrix<Precision, N, 1> N_vals = shape_function(r);
-                Eigen::Matrix<Precision, N, 1> dN_dr = shape_derivative(r);
-                Eigen::Matrix<Precision, N, 1> d2N_dr2 = shape_second_derivative(r);
+                StaticMatrix<N, 1> N_vals = shape_function(r);
+                StaticMatrix<N, 1> dN_dr = shape_derivative(r);
+                StaticMatrix<N, 1> d2N_dr2 = shape_second_derivative(r);
 
                 // Compute position x(r) and its derivatives dx/dr and d²x/dr²
                 Vec3 x_r = Vec3::Zero();
@@ -261,7 +261,7 @@ struct LineInterface {
     Vec3 local_to_global(Precision r, const NodeData& node_coords_system) const {
         auto node_coords_global = this->node_coords_global(node_coords_system);
         Vec3 res = Vec3::Zero();
-        Eigen::Matrix<Precision, N, 1> N_vals = shape_function(r);
+        StaticMatrix<N, 1> N_vals = shape_function(r);
         for (Index i = 0; i < N; i++) {
             res += N_vals(i) * node_coords_global.row(i);
         }

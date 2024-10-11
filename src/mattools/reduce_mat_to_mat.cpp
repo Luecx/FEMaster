@@ -28,14 +28,14 @@ SparseMatrix reduce_mat_to_mat(const SparseMatrix& matrix, const DynamicVector& 
 
     // Step 2: Prepare a new reduced sparse matrix
     SparseMatrix reduced_matrix(new_index, new_index);  // Size based on number of NaNs in b
-    std::vector<Eigen::Triplet<double>> tripletList;
+    std::vector<Eigen::Triplet<Precision>> tripletList;
 
     // Step 3: Iterate over the original matrix and add elements to the reduced matrix
     for (int k = 0; k < matrix.outerSize(); ++k) {
         for (SparseMatrix::InnerIterator it(matrix, k); it; ++it) {
             int row = it.row();
             int col = it.col();
-            double value = it.value();
+            Precision value = it.value();
 
             // Check if both row and column should be kept
             if (index_map[row] != -1 && index_map[col] != -1) {

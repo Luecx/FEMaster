@@ -21,7 +21,11 @@ typedef uint8_t Dim;
 typedef uint64_t Index;
 
 // use double for all normal computations and cast to solver precision during solving
+#ifdef DOUBLE_PRECISION
 typedef double Precision;
+#else
+typedef float Precision;
+#endif
 
 #ifdef CUDA_DOUBLE_PRECISION
 typedef double CudaPrecision;

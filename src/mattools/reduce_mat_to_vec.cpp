@@ -17,7 +17,7 @@
 namespace fem { namespace mattools {
 
 DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const NodeData& bc_matrix) {
-    std::vector<double> active_dofs;
+    std::vector<Precision> active_dofs;
 
     // Iterate through all rows and columns of the SystemDofIds matrix
     for (int i = 0; i < dof_ids.rows(); ++i) {

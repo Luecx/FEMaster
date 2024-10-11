@@ -78,7 +78,7 @@ std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
 }
 
 
-std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice device,
+std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
                                                                 SparseMatrix& A,
                                                                 const SparseMatrix& B,
                                                                 int num_eigenvalues,
@@ -87,8 +87,8 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
                    "Matrices A and B must be square and of the same dimension");
 
     const auto N = A.cols();
-    Eigen::VectorXd eigenvalues(num_eigenvalues);
-    Eigen::MatrixXd eigenvectors(N, num_eigenvalues);
+    DynamicVector eigenvalues(num_eigenvalues);
+    DynamicMatrix eigenvectors(N, num_eigenvalues);
     eigenvalues.setZero();
     eigenvectors.setZero();
 
@@ -157,7 +157,7 @@ std::pair<Eigen::VectorXd, Eigen::MatrixXd> compute_eigenvalues(SolverDevice dev
     logging::down();
 
     // Return the eigenvalues and eigenvectors if requested
-    return {eigenvalues, return_vectors ? eigenvectors : Eigen::MatrixXd{}};
+    return {eigenvalues, return_vectors ? eigenvectors : DynamicMatrix(0,0)};
 }
 
 

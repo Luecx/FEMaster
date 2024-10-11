@@ -95,6 +95,7 @@ public:
      * @return const quadrature::Quadrature& The quadrature rule.
      */
     virtual const quadrature::Quadrature& integration_scheme() = 0;
+    virtual const quadrature::Quadrature& integration_scheme_mass() {return this->integration_scheme();}
 
     //-------------------------------------------------------------------------
     // Strain-Displacement Matrix and Jacobian

@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "../core/types.h"
 #include <Eigen/Dense>
 #include <string>
 #include <memory>
@@ -44,14 +45,14 @@ public:
      * @param global_point Point in the global coordinate system.
      * @return Point in the local coordinate system.
      */
-    virtual Eigen::Vector3d to_local(const Eigen::Vector3d& global_point) const = 0;
+    virtual Vec3 to_local(const Vec3& global_point) const = 0;
 
     /**
      * @brief Transform a point from local to global coordinates.
      * @param local_point Point in the local coordinate system.
      * @return Point in the global coordinate system.
      */
-    virtual Eigen::Vector3d to_global(const Eigen::Vector3d& local_point) const = 0;
+    virtual Vec3 to_global(const Vec3& local_point) const = 0;
 
     /**
      * @brief Get the name of the coordinate system.

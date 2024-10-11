@@ -1,5 +1,5 @@
 /******************************************************************************
- * @file assemble.cpp
+ * @file assemble.tpp
  * @brief Provides the implementation of the assemble_matrix function for system
  * matrices in FEM, using user-defined lambda functions.
  *
@@ -41,7 +41,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
     int global_size = indices.maxCoeff() + 1;
 
     // Prepare a single triplet list and a sparse matrix
-    std::vector<Eigen::Triplet<double>> triplets;
+    TripletList triplets;
     SparseMatrix global_matrix(global_size, global_size);
 
     // Define batch size for squashing the buffer
@@ -56,7 +56,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
         // Local storage for the element's local matrix
         constexpr int MAX_LOCAL_MATRIX_SIZE = 128;  // Maximum size of local matrices
-        alignas(64) double local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
+        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
 
         // Compute the local matrix for the current element
         auto local_matrix = compute_local_matrix(element, local_matrix_storage);
@@ -73,7 +73,7 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
                     for (int jdof = 0; jdof < dofs_per_node; ++jdof) {
                         int global_row = indices(element->nodes()[i], idof);
                         int global_col = indices(element->nodes()[j], jdof);
-                        double value = local_matrix(i * dofs_per_node + idof, j * dofs_per_node + jdof);
+                        Precision value = local_matrix(i * dofs_per_node + idof, j * dofs_per_node + jdof);
 
                         // Add the computed value to the triplet list
                         triplets.emplace_back(global_row, global_col, value);
@@ -127,7 +127,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     std::vector<SparseMatrix> thread_matrices(num_threads, SparseMatrix(global_size, global_size));
 
     // Each thread will collect triplets for its own matrix
-    std::vector<std::vector<Eigen::Triplet<double>>> thread_triplets(num_threads);
+    std::vector<std::vector<Eigen::Triplet<Precision>>> thread_triplets(num_threads);
 
     // Define batch size for squashing the buffer
     constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
@@ -148,7 +148,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
 
         // Local storage for the element's local matrix
         constexpr int MAX_LOCAL_MATRIX_SIZE = 128;  // Maximum size of local matrices
-        alignas(64) double local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
+        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
 
         // Compute the local matrix for the current element
         auto local_matrix = compute_local_matrix(element, local_matrix_storage);
@@ -165,7 +165,7 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
                     for (int jdof = 0; jdof < dofs_per_node; ++jdof) {
                         int global_row = indices(element->nodes()[i], idof);
                         int global_col = indices(element->nodes()[j], jdof);
-                        double value = local_matrix(i * dofs_per_node + idof, j * dofs_per_node + jdof);
+                        Precision value = local_matrix(i * dofs_per_node + idof, j * dofs_per_node + jdof);
 
                         // Add the computed value to the thread-local triplet list
                         local_triplets.emplace_back(global_row, global_col, value);

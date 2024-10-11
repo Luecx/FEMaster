@@ -21,7 +21,7 @@ namespace fem { namespace mattools {
 DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b) {
     runtime_assert(a.size() == b.size(), "Input vectors must have the same size.");
 
-    std::vector<double> reduced_values;
+    std::vector<Precision> reduced_values;
 
     // Iterate over both vectors
     for (size_t i = 0; i < a.size(); ++i) {

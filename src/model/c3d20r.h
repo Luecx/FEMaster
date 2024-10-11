@@ -17,6 +17,10 @@ struct C3D20R : public SolidElement<20>{
         return quad;
     }
 
+    const quadrature::Quadrature& integration_scheme_mass() override {
+        const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUARTIC};
+        return quad;
+    }
 
     SurfacePtr surface(ID surface_id) override {
         switch (surface_id) {

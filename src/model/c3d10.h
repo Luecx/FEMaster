@@ -33,6 +33,11 @@ struct C3D10 : public SolidElement<10>{
         const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUADRATIC};
         return quad;
     }
+
+    const quadrature::Quadrature& integration_scheme_mass() override {
+        const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUARTIC};
+        return quad;
+    }
 };
 
 } }

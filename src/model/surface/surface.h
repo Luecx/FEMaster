@@ -275,14 +275,14 @@ struct Surface : public SurfaceInterface {
                 Precision d2D_drds = dx_dr.dot(dx_ds) + diff.dot(d2x_drds);
 
                 // Solve the 2x2 linear system to get Newton-Raphson updates
-                Eigen::Matrix2d H;
+                StaticMatrix<2, 2> H;
                 H << d2D_dr2, d2D_drds,
                      d2D_drds, d2D_ds2;
 
-                Eigen::Vector2d grad;
+                Vec2 grad;
                 grad << dD_dr, dD_ds;
 
-                Eigen::Vector2d delta = H.ldlt().solve(-grad);
+                Vec2 delta = H.ldlt().solve(-grad);
 
                 // Update r and s
                 r += delta(0);

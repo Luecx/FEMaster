@@ -18,7 +18,7 @@ SparseMatrix lump_matrix(const SparseMatrix& matrix) {
     SparseMatrix lumped_matrix(rows, rows);
 
     // Vector to store the row sums
-    Eigen::VectorXd row_sums(rows);
+    DynamicVector row_sums(rows);
 
     // Iterate over each row and sum the non-zero elements
     for (int i = 0; i < rows; ++i) {
