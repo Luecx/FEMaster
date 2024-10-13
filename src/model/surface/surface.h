@@ -81,7 +81,6 @@ using SurfacePtr = std::shared_ptr<SurfaceInterface>;
  ******************************************************************************/
 template<Index N>
 struct Surface : public SurfaceInterface {
-
     static constexpr Index num_edges = (N > 4 ? N / 2:N);
     static constexpr Index num_nodes = N;
     static constexpr Index num_nodes_per_edge = N > 4 ? 3:2;
@@ -113,7 +112,7 @@ struct Surface : public SurfaceInterface {
     /**
      * @brief Gives a dynamic vector for outside use which is a bit slower.
      */
-    virtual DynamicVector shape_function(const Vec2& local) const override {
+    DynamicVector shape_function(const Vec2& local) const override {
         return DynamicVector(shape_function(local(0),local(1)));
     }
 
@@ -153,7 +152,7 @@ struct Surface : public SurfaceInterface {
      * @details The Jacobian matrix is used for transformations between local and global coordinates.
      *          It is calculated by multiplying the shape function derivatives with the node coordinates.
      */
-    virtual StaticMatrix<3, 2> jacobian(const StaticMatrix<N, 3>& node_coords, Precision r, Precision s) const {
+    StaticMatrix<3, 2> jacobian(const StaticMatrix<N, 3>& node_coords, Precision r, Precision s) const {
         StaticMatrix<N, 2> local_shape_derivative = shape_derivative(r, s);
         StaticMatrix<3, 2> jacobian {};
 
@@ -182,7 +181,7 @@ struct Surface : public SurfaceInterface {
      *          by evaluating the shape functions at (r, s) and summing the contributions
      *          from each node's global coordinates.
      */
-    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const override {
+    Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
         Vec3 res = Vec3::Zero();
         for (Index i = 0; i < N; i++) {
@@ -205,7 +204,6 @@ struct Surface : public SurfaceInterface {
      *          and clip is true, the function will check the boundaries using the corresponding line elements.
      */
     Vec2 global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip = false) const override {
-
         constexpr int max_iter = 32;
         constexpr Precision eps = 1e-12;
 
@@ -240,7 +238,6 @@ struct Surface : public SurfaceInterface {
             Precision s = initial_guess(1);
 
             for (Index iter = 0; iter < max_iter; iter++) {
-
                 auto shape_func = shape_function(r, s);
                 auto shape_deriv = shape_derivative(r, s);
                 auto shape_second_deriv = shape_second_derivative(r, s);
@@ -364,10 +361,6 @@ struct Surface : public SurfaceInterface {
     virtual Vec2 closest_point_on_boundary(const Vec3& global, const StaticMatrix<N, 3>& node_coords) const = 0;
 
     /**
-     */
-    virtual bool in_bounds(const Vec2& local) const override = 0;
-
-    /**
      * @brief Compute the area of the surface element.
      *
      * @param node_coords_system Node coordinates in the global system.
@@ -455,8 +448,7 @@ struct Surface : public SurfaceInterface {
      * @param node_loads Node loads in the global system.
      * @param load Vector of the distributed load to be applied.
      */
-    virtual void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override {
-
+    void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override {
         auto nodal_contributions = shape_function_integral(node_coords);
 
         // go through the node ids
@@ -466,7 +458,6 @@ struct Surface : public SurfaceInterface {
             node_loads(n_id, 1) += nodal_contributions(i) * load(1);
             node_loads(n_id, 2) += nodal_contributions(i) * load(2);
         }
-
     }
 };
 

@@ -108,7 +108,6 @@ void Reader::process_elements() {
     };
 
     while (next_line().type() == DATA_LINE) {
-
         int id = std::stoi(m_current_line.values()[0]);
         if (type == "C3D4") {
             auto values = gather_values(4);
@@ -390,10 +389,9 @@ void Reader::process_support() {
 }
 
 void Reader::process_coordinate_system() {
-
-    auto type = m_current_line.require<std::string>("TYPE");
+    auto type       = m_current_line.require<std::string>("TYPE");
     auto definition = m_current_line.parse<std::string>("DEFINITION", "VECTOR");
-    auto name = m_current_line.require<std::string>("NAME");
+    auto name       = m_current_line.require<std::string>("NAME");
 
     next_line();
 
