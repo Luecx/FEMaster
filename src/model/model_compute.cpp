@@ -39,8 +39,8 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
         for(int j = 0; j < 6; j++){
             bool inv_stress = std::isnan(stress(i, j)) || std::isinf(stress(i, j));
             bool inv_strain = std::isnan(strain(i, j)) || std::isinf(strain(i, j));
-            logging::error(!inv_strain, "Node ", i, " has nan or inf strain");
-            logging::error(!inv_stress, "Node ", i, " has nan or inf stress");
+            logging::error(!inv_strain, "Node ", i, " has nan or inf strain. Node Usage=", count(i));
+            logging::error(!inv_stress, "Node ", i, " has nan or inf stress. Node Usage=", count(i));
         }
     }
 
