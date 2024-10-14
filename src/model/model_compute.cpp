@@ -33,6 +33,17 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
             }
         }
     }
+
+    // check for any nan or inf and then display the node id
+    for(int i = 0; i < max_nodes; i++){
+        for(int j = 0; j < 6; j++){
+            bool inv_stress = std::isnan(stress(i, j)) || std::isinf(stress(i, j));
+            bool inv_strain = std::isnan(strain(i, j)) || std::isinf(strain(i, j));
+            logging::error(!inv_strain, "Node ", i, " has nan or inf strain");
+            logging::error(!inv_stress, "Node ", i, " has nan or inf stress");
+        }
+    }
+
     return {stress, strain};
 
 //    size_t n_ip = 0;

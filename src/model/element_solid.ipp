@@ -309,6 +309,14 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
             }
 
             for (int j = 0; j < n_strain; j++) {
+
+				// check for any inf
+				if (std::isinf(strains(j)) || std::isinf(stresses(j))) {
+					logging::error(false, "invalid stress encountered in element ", elem_id,
+                                   "\nStrains: ", strains,
+                                   "\nStresses: ", stresses);
+				}
+
                 strain(node_id, j) += strains(j);
                 stress(node_id, j) += stresses(j);
             }
