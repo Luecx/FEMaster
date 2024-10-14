@@ -72,6 +72,8 @@ ifeq ($(debug), 1)
     NVCCFLAGS += -G -g
 endif
 
+FEATURE_FLAGS += -DDOUBLE_PRECISION
+
 #===============================================================
 # System Information (Optional Flags Based on System)
 #===============================================================
