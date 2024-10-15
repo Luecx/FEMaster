@@ -48,15 +48,7 @@ class Tie {
                 auto s_ptr = surfaces.at(s_id);
                 if (s_ptr == nullptr) continue;
 
-                // initial check. if no node is close enough, skip the surface
-                for (int local_id = 0; local_id < s_ptr->n_nodes; local_id ++) {
-                    ID master_node_id = s_ptr->nodes()[local_id];
-                    auto mapped = s_ptr ->local_to_global(s_ptr -> global_to_local(node_pos, node_coords), node_coords);
-                    auto dist = (node_pos - mapped).norm();
-                    if (dist < distance) break;
-                }
-
-                auto local = s_ptr -> global_to_local(node_pos, node_coords);
+                auto local = s_ptr -> global_to_local(node_pos, node_coords, true);;
                 auto mapped = s_ptr ->local_to_global(local, node_coords);
 
                 // compute distance
@@ -96,6 +88,7 @@ class Tie {
             }
 
             auto nodal_contributions = s_ptr->shape_function(best_local);
+            // divide
 
             for(ID dof_id = 0; dof_id < 6; dof_id ++) {
                 if (dofs_mask(dof_id) == false) continue;
