@@ -35,7 +35,7 @@ struct C3D20R : public SolidElement<20>{
             case 5: return std::make_shared<Surface8>(std::array<ID, 8>{node_ids[ 2], node_ids[ 3], node_ids[ 7], node_ids[ 6],
                                                                         node_ids[10], node_ids[19], node_ids[14], node_ids[18]});
             case 6: return std::make_shared<Surface8>(std::array<ID, 8>{node_ids[ 3], node_ids[ 0], node_ids[ 4], node_ids[ 7],
-                                                                        node_ids[11], node_ids[12], node_ids[15], node_ids[19]});
+                                                                        node_ids[11], node_ids[16], node_ids[15], node_ids[19]});
             default: return nullptr;  // Invalid surface ID
         }
     }
