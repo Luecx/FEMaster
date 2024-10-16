@@ -31,7 +31,6 @@ DynamicVector solve_direct(SolverDevice device,
 #ifdef SUPPORT_GPU
     if (device == GPU) {
         // init gpu if not init yet
-        std::cout << "trying to create cuda" << std::endl;
         cuda::manager.create_cuda();
 
         cuda::CudaCSR mat_gpu{mat};

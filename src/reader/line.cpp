@@ -49,6 +49,8 @@ Line& fem::reader::Line::operator=(const std::string& line) {
                     size_t pos = item.find("=");
                     if (pos != std::string::npos) {
                         m_keys[item.substr(0, pos)] = item.substr(pos + 1);
+                    } else {
+                        m_keys[item] = "";
                     }
                 }
             }

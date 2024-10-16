@@ -223,31 +223,75 @@ void Reader::process_surfaces() {
 
 void Reader::process_nset() {
     // read NSET, NAME=xyz
-    auto setname = m_current_line.require<std::string>("NAME", "NSET");
+    bool generate = m_current_line.has_key("GENERATE");
+    auto setname  = m_current_line.require<std::string>("NAME", "NSET");
     m_model->activate_node_set(setname);
     while (next_line().type() == DATA_LINE) {
-        for (const auto& id : m_current_line.values()) {
-            m_model->active_nodeset().push_back(std::stoi(id));
+        if (generate) {
+            // require exactly 3 values, not more, not less
+            if (m_current_line.count_values() != 3) {
+                logging::error(false, "GENERATE requires exactly 3 values.");
+            }
+            ID id1 = std::stoi(m_current_line.values()[0]);
+            ID id2 = std::stoi(m_current_line.values()[1]);
+            ID inc = std::stoi(m_current_line.values()[2]);
+            for (ID i = id1; i <= id2; i += inc) {
+                m_model->active_nodeset().push_back(i);
+            }
+        } else {
+            for (const auto& id : m_current_line.values()) {
+                m_model->active_nodeset().push_back(std::stoi(id));
+            }
         }
     }
 }
 
 void Reader::process_elset() {
     // read ELSET, NAME=xyz
+    bool generate = m_current_line.has_key("GENERATE");
+
     m_model->activate_element_set(m_current_line.require<std::string>("NAME", "ELSET"));
     while (next_line().type() == DATA_LINE) {
-        for (const auto& id : m_current_line.values()) {
-            m_model->active_elemset().push_back(std::stoi(id));
+
+        if (generate) {
+            // require exactly 3 values, not more, not less
+            if (m_current_line.count_values() != 3) {
+                logging::error(false, "GENERATE requires exactly 3 values.");
+            }
+            ID id1 = std::stoi(m_current_line.values()[0]);
+            ID id2 = std::stoi(m_current_line.values()[1]);
+            ID inc = std::stoi(m_current_line.values()[2]);
+            for (ID i = id1; i <= id2; i += inc) {
+                m_model->active_elemset().push_back(i);
+            }
+        } else {
+            for (const auto& id : m_current_line.values()) {
+                m_model->active_elemset().push_back(std::stoi(id));
+            }
         }
     }
 }
 
 void Reader::process_sfset() {
     // read ELSET, NAME=xyz
+    bool generate = m_current_line.has_key("GENERATE");
     m_model->activate_surface_set(m_current_line.require<std::string>("NAME", "SFSET"));
     while (next_line().type() == DATA_LINE) {
-        for (const auto& id : m_current_line.values()) {
-            m_model->active_surfset().push_back(std::stoi(id));
+        if (generate) {
+            // require exactly 3 values, not more, not less
+            if (m_current_line.count_values() != 3) {
+                logging::error(false, "GENERATE requires exactly 3 values.");
+            }
+            ID id1 = std::stoi(m_current_line.values()[0]);
+            ID id2 = std::stoi(m_current_line.values()[1]);
+            ID inc = std::stoi(m_current_line.values()[2]);
+            for (ID i = id1; i <= id2; i += inc) {
+                m_model->active_surfset().push_back(i);
+            }
+        } else {
+            for (const auto& id : m_current_line.values()) {
+                m_model->active_surfset().push_back(std::stoi(id));
+            }
         }
     }
 }

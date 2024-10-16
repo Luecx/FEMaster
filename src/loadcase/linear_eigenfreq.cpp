@@ -205,7 +205,8 @@ void fem::loadcase::LinearEigenfrequency::run() {
     m_writer->write_eigen_matrix(DynamicMatrix(eigenfreqs), "EIGENFREQUENCIES");
     for (int i = 0; i < num_eigenvalues; i++) {
         // Extract mode shape without Lagrange multipliers
-        DynamicVector mode_shape_active = mode_shapes.col(i).head(m);
+        DynamicVector solution = mode_shapes.col(i);
+        DynamicVector mode_shape_active = solution.head(solution.size() - n);
 
         // Expand mode shape to full displacement vector size
         auto expanded_mode_shape = mattools::expand_vec_to_vec(mode_shape_active, active_lhs_vec);
