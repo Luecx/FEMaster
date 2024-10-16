@@ -62,12 +62,12 @@ class Solution:
                 # Specific derived fields for STRESS
                 if field == "STRESS":
                     fields_dict[f"{prefix}mises"] = lambda f=field, lc=lc: self.mises(self.get(lc, f))
-                    fields_dict[f"{prefix}principal"] = lambda f=field, lc=lc: self.principal(self.get(lc, f))
-                    fields_dict[f"{prefix}signed_mises"] = lambda f=field, lc=lc: self.signed_mises(self.get(lc, f))
+                    # fields_dict[f"{prefix}principal"] = lambda f=field, lc=lc: self.principal(self.get(lc, f))
+                    # fields_dict[f"{prefix}signed_mises"] = lambda f=field, lc=lc: self.signed_mises(self.get(lc, f))
 
-                    fields_dict[f"{prefix}principal_dir_1"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 0,:]
-                    fields_dict[f"{prefix}principal_dir_2"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 1,:]
-                    fields_dict[f"{prefix}principal_dir_3"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 2,:]
+                    # fields_dict[f"{prefix}principal_dir_1"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 0,:]
+                    # fields_dict[f"{prefix}principal_dir_2"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 1,:]
+                    # fields_dict[f"{prefix}principal_dir_3"] = lambda f=field, lc=lc: self.principal_directions(self.get(lc, f))[:, 2,:]
                 if field == "DISPLACEMENT":
                     fields_dict[f"{prefix}displacement_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
                 if "MODE_SHAPE" in field:
@@ -124,13 +124,21 @@ class Solution:
 
     @staticmethod
     def open(filename):
+        import tqdm
+
         loadcases = {}
         current_loadcase = None
         current_field_name = None
         matrix = []
 
         with open(filename, 'r') as file:
-            for line in file:
+
+            lines = file.readlines()
+            # init progress bar
+            pbar = tqdm.tqdm(total=len(lines), desc="Reading solution file")
+
+            for line in lines:
+                pbar.update(1)
                 line = line.strip()
 
                 # Check for a loadcase marker
@@ -161,6 +169,8 @@ class Solution:
 
             if current_loadcase:
                 loadcases[current_loadcase] = fields
+
+        pbar.close()
 
         sol = Solution()
         sol.loadcases = loadcases

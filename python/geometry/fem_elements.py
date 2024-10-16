@@ -20,6 +20,8 @@ class Element:
     def subdivide(self, edge_nodes, geometry, only_quads=False):
         raise NotImplementedError("This method should be implemented by subclasses")
 
+    def mirror_ids(self):
+        raise NotImplementedError("This method should be implemented by subclasses")
 
 class C2D3(Element):
     num_nodes = 3
@@ -61,6 +63,9 @@ class C2D3(Element):
             geometry.add_element(element_type='C2D3', node_ids=[n4, n5, n6])
             geometry.add_element(element_type='C2D3', node_ids=[n3, n6, n5])
 
+    def mirror_ids(self):
+        self.node_ids = self.node_ids[::-1]
+
 class C2D4(Element):
     num_nodes = 4
     def __init__(self, element_id, node_ids):
@@ -93,6 +98,9 @@ class C2D4(Element):
         geometry.add_element(element_type='C2D4', node_ids=[n5, n2, n6, nm])
         geometry.add_element(element_type='C2D4', node_ids=[nm, n6, n3, n7])
         geometry.add_element(element_type='C2D4', node_ids=[n8, nm, n7, n4])
+
+    def mirror_ids(self):
+        self.node_ids = self.node_ids[::-1]
 
 class C3D4(Element):
     num_nodes = 4
@@ -136,6 +144,9 @@ class C3D4(Element):
         geometry.add_element(element_type='C3D4', node_ids=[n5, n7, n8, n10])
         geometry.add_element(element_type='C3D4', node_ids=[n7, n6, n10, n5])
 
+    def mirror_ids(self):
+        self.node_ids = [self.node_ids[2], self.node_ids[3], self.node_ids[1], self.node_ids[0]]
+
 class C2D6(Element):
     num_nodes = 6
     def __init__(self, element_id, node_ids):
@@ -152,6 +163,10 @@ class C2D6(Element):
                 (self.node_ids[2], self.node_ids[5]),
                 (self.node_ids[5], self.node_ids[0])]
 
+
+    def mirror_ids(self):
+        self.node_ids = [self.node_ids[2], self.node_ids[1], self.node_ids[0],
+                         self.node_ids[4], self.node_ids[3], self.node_ids[5]]
 
 class C2D8(Element):
     num_nodes = 8
@@ -170,6 +185,10 @@ class C2D8(Element):
                 (self.node_ids[1], self.node_ids[5]),
                 (self.node_ids[2], self.node_ids[6]),
                 (self.node_ids[3], self.node_ids[7])]
+
+    def mirror_ids(self):
+        self.node_ids = [self.node_ids[3], self.node_ids[2], self.node_ids[1], self.node_ids[0],
+                         self.node_ids[6], self.node_ids[5], self.node_ids[4], self.node_ids[7]]
 
 class C3D6(Element):
     num_nodes = 6
@@ -222,6 +241,10 @@ class C3D6(Element):
         geometry.add_element(element_type='C3D6', node_ids=[n7, n8, n_center1, n10, n11, n_center2])
         geometry.add_element(element_type='C3D6', node_ids=[n8, n9, n_center1, n11, n12, n_center2])
         geometry.add_element(element_type='C3D6', node_ids=[n9, n7, n_center1, n12, n10, n_center2])
+
+    def mirror_ids(self):
+        self.node_ids = [self.node_ids[2], self.node_ids[1], self.node_ids[0],
+                         self.node_ids[5], self.node_ids[4], self.node_ids[3]]
 
 class C3D8(Element):
     num_nodes = 8
@@ -287,6 +310,10 @@ class C3D8(Element):
         geometry.add_element(element_type='C3D8', node_ids=[n16, n_center, n_center, n20, n_center, n_center, n15, n8])
 
 
+    def mirror_ids(self):
+        self.node_ids = [self.node_ids[3], self.node_ids[2], self.node_ids[1], self.node_ids[0],
+                         self.node_ids[7], self.node_ids[6], self.node_ids[5], self.node_ids[4]]
+
 class C3D5(C3D8):
     num_nodes = 5
     def __init__(self, element_id, node_ids):
@@ -318,6 +345,12 @@ class C3D10(Element):
                 (self.node_ids[6], self.node_ids[7]),
                 (self.node_ids[7], self.node_ids[4])]
 
+    def mirror_ids(self):
+        # mirroring using: 3 2 1 4 6 5 7 10 9 8
+        self.node_ids = [self.node_ids[2], self.node_ids[1], self.node_ids[0], self.node_ids[3],
+                         self.node_ids[5], self.node_ids[4], self.node_ids[6], self.node_ids[9],
+                         self.node_ids[8], self.node_ids[7]]
+
 class C3D15(Element):
     num_nodes = 15
     def __init__(self, element_id, node_ids):
@@ -348,6 +381,13 @@ class C3D15(Element):
                 (self.node_ids[9], self.node_ids[10]),
                 (self.node_ids[10], self.node_ids[11]),
                 (self.node_ids[11], self.node_ids[6])]
+
+    def mirror_ids(self):
+        # mirroring using: 3 2 1 6 5 4, 8 7 9 11 10 12, 15 14 13
+        self.node_ids = [self.node_ids[2], self.node_ids[1], self.node_ids[0], self.node_ids[5],
+                            self.node_ids[4], self.node_ids[3], self.node_ids[7], self.node_ids[6],
+                            self.node_ids[8], self.node_ids[10], self.node_ids[9], self.node_ids[11],
+                            self.node_ids[14], self.node_ids[13], self.node_ids[12]]
 
 class C3D20(Element):
     num_nodes = 20
@@ -382,3 +422,10 @@ class C3D20(Element):
                 (self.node_ids[13], self.node_ids[14]),
                 (self.node_ids[14], self.node_ids[15])]
 
+    def mirror_ids(self):
+        # mirroring using: 4, 3, 2, 1, 8, 7, 6, 5 | 11, 10, 9, 12, 15, 14, 13, 16 | 20, 19, 18, 17
+        self.node_ids = [self.node_ids[3], self.node_ids[2], self.node_ids[1], self.node_ids[0],
+                            self.node_ids[7], self.node_ids[6], self.node_ids[5], self.node_ids[4],
+                            self.node_ids[10], self.node_ids[9], self.node_ids[8], self.node_ids[11],
+                            self.node_ids[14], self.node_ids[13], self.node_ids[12], self.node_ids[15],
+                            self.node_ids[19], self.node_ids[18], self.node_ids[17], self.node_ids[16]]

@@ -2,6 +2,7 @@
 def read_input_deck(filename):
     from .fem_geometry import Geometry
     import re
+    import tqdm
 
     geometry = Geometry()
     with open(filename, 'r') as file:
@@ -36,7 +37,13 @@ def read_input_deck(filename):
     current_elset   = None
     index = 0
 
+    # init progress bar
+    pbar = tqdm.tqdm(total=len(lines), desc="Reading input deck")
+
     while index < len(lines):
+        # since we skip a few indices, set the pbar value to the index
+        pbar.update(index - pbar.n)
+
         line = preprocess_line(lines[index])
 
         if not line or line.startswith('**'):  # Skip comments or empty lines
@@ -111,4 +118,5 @@ def read_input_deck(filename):
 
             index += 1
 
+    pbar.close()
     return geometry

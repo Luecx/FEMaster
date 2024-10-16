@@ -158,6 +158,81 @@ class Geometry:
                 geometry.elements[i] = element.to_second_order(edge_midpoints)
         return geometry
 
+    def mirrored(self, plane, location, copy=True):
+        geometry = Geometry(self.dimension)
+        geometry.nodes = self.nodes.copy()
+        geometry.node_sets = {name: ids.copy() for name, ids in self.node_sets.items()}
+        geometry.elem_sets = {name: ids.copy() for name, ids in self.elem_sets.items()}
+        geometry.elements = copy.deepcopy(self.elements)
+
+        axis_idx = ['yz', 'xz', 'xy'].index(plane)
+
+        if not copy:
+            # mirror all nodes and elements inplace
+            for node in geometry.nodes:
+                if node is not None:
+                    node[axis_idx] = 2 * location - node[axis_idx]
+            for element in geometry.elements:
+                if element is not None:
+                    element.mirror_ids()
+
+
+        else:
+            node_map = {}
+            for idx,node in enumerate(geometry.nodes):
+                if node is not None:
+
+                    # check if its close, if so, map to itself
+                    if np.abs(node[axis_idx] - location) < 1e-6:
+                        node_map[idx] = idx
+                    else:
+                        new_coords = node.copy()
+                        new_coords[axis_idx] = 2 * location - new_coords[axis_idx]
+                        nid = geometry.add_node(x = new_coords[0], y = new_coords[1], z = new_coords[2])
+                        node_map[idx] = nid
+
+            for elem_id, element in enumerate(geometry.elements):
+                if element is not None:
+                    new_node_ids = [node_map[nid] for nid in element.node_ids]
+                    geometry.elements[elem_id] = element.__class__(element.element_id, new_node_ids)
+                    geometry.elements[elem_id].mirror_ids()
+
+            # copy sets
+            for setname in geometry.node_sets:
+                # create copied set
+                new_set_name = setname + "_mirrored"
+                geometry.add_node_set(new_set_name)
+                for idx, nid in enumerate(geometry.node_sets[setname]):
+                    geometry.add_node_to_set(new_set_name, node_map[nid])
+
+            for setname in geometry.elem_sets:
+                # create copied set
+                new_set_name = setname + "_mirrored"
+                geometry.add_element_set(new_set_name)
+                for idx, eid in enumerate(geometry.elem_sets[setname]):
+                    geometry.add_element_to_set(new_set_name, eid)
+
+
+        return geometry
+
+
+        # # check if axis is correct
+        # if plane not in ['yz', 'xz', 'xy']:
+        #     raise ValueError(f"Unsupported plane: {plane}, use 'yz', 'xz' or 'xy'")
+        #
+        # # copy all nodes that are outside of the plane
+        # for node_id in range(len(self.nodes)):
+        #     node = self.nodes[node_id]
+        #     if node is None:
+        #         continue
+        #
+        #     if node[axis_idx] - location != 0:
+        #         geometry.add_node(node_id, *node)
+
+
+
+
+
     def plot_2d(self):
         if self.dimension != 2:
             raise ValueError("Plotting is only supported for 2D geometries.")
