@@ -54,17 +54,10 @@ DynamicMatrix compute_active_dof_vectors(const IndexMatrix& active_dof_idx_mat, 
         for(int j = 0; j < active_dof_idx_mat.rows(); j++) {
             sys_matrix(j, i) = 1;
         }
-        std::cout << sys_matrix << std::endl;
 
         // compute a vector
         auto active_dof_vector  = mattools::reduce_mat_to_vec(active_dof_idx_mat, sys_matrix);
-
-        std::cout << active_dof_vector.transpose() << std::endl;
-
         auto reduced_dof_vector = mattools::reduce_vec_to_vec(active_dof_vector, active_lhs_vec);
-
-        std::cout << reduced_dof_vector.transpose() << std::endl;
-        std::cout << m << std::endl;
 
         // store in the active_dof_vectors matrix
         active_dof_vectors.col(i) = reduced_dof_vector;
