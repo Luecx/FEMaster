@@ -40,6 +40,82 @@ fem::loadcase::LinearEigenfrequency::LinearEigenfrequency(ID id, reader::Writer*
     : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
 
 /**
+ * function to compute the vectors which have 1 at the active dofs for each respective axis
+ * In total this is a Nx6 matrix where N is the number of active dofs. The first column is
+ * 1 at the x-axis, the second at the y-axis and the third at the z-axis. The next three columns
+ * are the same but for the rotation around the x, y and z axis.
+ */
+DynamicMatrix compute_active_dof_vectors(const IndexMatrix& active_dof_idx_mat, const int m, const DynamicVector& active_lhs_vec) {
+    DynamicMatrix active_dof_vectors(m, 6);
+
+    for (int i = 0; i < 6; i++) {
+        DynamicMatrix sys_matrix = DynamicMatrix::Zero(active_dof_idx_mat.rows(), 6);
+        // assign 1 to the respective column
+        for(int j = 0; j < active_dof_idx_mat.rows(); j++) {
+            sys_matrix(j, i) = 1;
+        }
+        std::cout << sys_matrix << std::endl;
+
+        // compute a vector
+        auto active_dof_vector  = mattools::reduce_mat_to_vec(active_dof_idx_mat, sys_matrix);
+
+        std::cout << active_dof_vector.transpose() << std::endl;
+
+        auto reduced_dof_vector = mattools::reduce_vec_to_vec(active_dof_vector, active_lhs_vec);
+
+        std::cout << reduced_dof_vector.transpose() << std::endl;
+        std::cout << m << std::endl;
+
+        // store in the active_dof_vectors matrix
+        active_dof_vectors.col(i) = reduced_dof_vector;
+    }
+
+    return active_dof_vectors;
+}
+
+/**
+ * @brief Compute the participation of each active dof in each mode
+ *
+ * @param mass_matrix
+ * @param eigen_vectors
+ * @param active_dof_idx_mat
+ * @return
+ */
+DynamicMatrix compute_participation(SparseMatrix& mass_matrix, DynamicMatrix& eigen_vectors, const IndexMatrix& active_dof_idx_mat, int m, DynamicVector& active_lhs_vec) {
+    int num_modes = eigen_vectors.cols();
+    int num_participations = 6;
+
+    // 6 for each participation and last column for the modal mass
+    DynamicMatrix result = DynamicMatrix::Zero(num_modes, num_participations+1);
+
+    // compute the active dof vectors
+    auto active_dof_vectors = compute_active_dof_vectors(active_dof_idx_mat, m, active_lhs_vec);
+
+    std::cout << active_dof_vectors << std::endl;
+
+    // extend each vector to the size of the eigen vectors
+    active_dof_vectors.conservativeResize(eigen_vectors.rows(), 6);
+
+    // for each eigen vector compute the participation
+    for (int i = 0; i < num_modes; i++) {
+        // extract the eigen vector
+        auto eigen_vector = eigen_vectors.col(i);
+
+        // compute the participation
+        auto modal_mass = eigen_vector.transpose() * (mass_matrix * eigen_vector);
+
+        // compute the participation
+        for (int j = 0; j < 6; j++) {
+            auto participation = active_dof_vectors.col(j).transpose() * (mass_matrix * eigen_vector);
+            result(i, j) = participation(0);
+        }
+        result(i, 6) = modal_mass(0);
+    }
+
+    return result;
+}
+
+/**
 * @brief Executes the linear eigenfrequency analysis, solving for natural frequencies
 * and mode shapes of the model.
 *
@@ -161,7 +237,6 @@ void fem::loadcase::LinearEigenfrequency::run() {
         "reducing mass matrix to solver-ready form"
     );
 
-
     // Compress the stiffness matrix for efficient solving
     sol_mass_mat.makeCompressed();
     sol_stiffess_mat.makeCompressed();
@@ -178,7 +253,6 @@ void fem::loadcase::LinearEigenfrequency::run() {
     logging::info(true, "final DOFs        : ", sol_rhs.rows());
     logging::down();
 
-
     // Step 7: Solve the constrained eigenvalue problem
     auto eigen_result = Timer::measure(
         [&]() {
@@ -191,12 +265,31 @@ void fem::loadcase::LinearEigenfrequency::run() {
         "solving constrained eigenvalue problem");
 
     DynamicVector eigenvalues = eigen_result.first;
-    DynamicVector eigenfreqs = eigenvalues.array().abs().sqrt() / (2 * M_PI);
+    DynamicVector eigenfreqs  = eigenvalues.array().abs().sqrt() / (2 * M_PI);
     DynamicMatrix mode_shapes = eigen_result.second;
 
+    // Compute the participation of each active dof in each mode
+    auto participations = compute_participation(sol_mass_mat, mode_shapes, active_dof_idx_mat, sol_rhs.rows(), active_lhs_vec);
+
+    logging::info(true, std::setw(42), "", std::setw(38), "PARTICIPATION");
+    logging::info(true,
+                  std::setw(4), "Idx",
+                  std::setw(20), "Eigenvalue",
+                  std::setw(18), "Eigenfreq",
+                  std::setw(12), "x", std::setw(8), "y", std::setw(8), "z",
+                  std::setw(8), "rx", std::setw(8), "ry", std::setw(8), "rz");
     // Log the eigenvalues and eigenfrequencies
-    for (int i = 0; i < num_eigenvalues; i++) {
-        logging::info(true, "Eigenvalue ", std::setw(4), i + 1, " : ", std::setw(20), std::fixed, Precision(eigenvalues(i)), " ,", std::setw(20), std::fixed, Precision(eigenfreqs(i)), " cycles / time period");
+    for (int i = num_eigenvalues-1; i >= 0; i--) {
+        Index idx = num_eigenvalues - i - 1;
+        logging::info(true, std::setw(4), idx+1,
+                      std::setw(20), std::fixed, std::setprecision(6), Precision(eigenvalues(i)),
+                      std::setw(18), std::fixed, std::setprecision(6), Precision(eigenfreqs(i)),
+                      std::setw(12), std::fixed, std::setprecision(3), Precision(participations(i, 0)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 1)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 2)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 3)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 4)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 5)));
     }
 
     // Write results
@@ -204,6 +297,8 @@ void fem::loadcase::LinearEigenfrequency::run() {
     m_writer->write_eigen_matrix(DynamicMatrix(eigenvalues), "EIGENVALUES");
     m_writer->write_eigen_matrix(DynamicMatrix(eigenfreqs), "EIGENFREQUENCIES");
     for (int i = 0; i < num_eigenvalues; i++) {
+
+        Index idx = num_eigenvalues - i-1;
         // Extract mode shape without Lagrange multipliers
         DynamicVector solution = mode_shapes.col(i);
         DynamicVector mode_shape_active = solution.head(solution.size() - n);
@@ -215,7 +310,7 @@ void fem::loadcase::LinearEigenfrequency::run() {
         auto shape_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, expanded_mode_shape);
 
         // Write the expanded mode shape to file
-        m_writer->write_eigen_matrix(shape_mat, "MODE_SHAPE_" + std::to_string(i));
+        m_writer->write_eigen_matrix(shape_mat, "MODE_SHAPE_" + std::to_string(idx+1));
     }
 
     // Log the completion of the eigenfrequency analysis

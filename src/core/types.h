@@ -20,6 +20,7 @@ typedef  int32_t ID;
 typedef uint8_t Dim;
 typedef uint64_t Index;
 
+#define DOUBLE_PRECISION
 // use double for all normal computations and cast to solver precision during solving
 #ifdef DOUBLE_PRECISION
 typedef double Precision;
