@@ -84,8 +84,6 @@ DynamicMatrix compute_participation(SparseMatrix& mass_matrix, DynamicMatrix& ei
     // compute the active dof vectors
     auto active_dof_vectors = compute_active_dof_vectors(active_dof_idx_mat, m, active_lhs_vec);
 
-    std::cout << active_dof_vectors << std::endl;
-
     // extend each vector to the size of the eigen vectors
     active_dof_vectors.conservativeResize(eigen_vectors.rows(), 6);
 
