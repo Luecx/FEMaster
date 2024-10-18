@@ -77,7 +77,7 @@ void Reader::process_nodes() {
     m_model->activate_node_set(m_current_line.parse<std::string>("NSET", ""));
 
     while (next_line().type() == DATA_LINE) {
-        int node_id = std::stoi(m_current_line.values()[0]);
+        int node_id = m_current_line.get_value(0, 0);
         Precision x = (Precision) std::stod(m_current_line.values()[1]);
         Precision y = (Precision) std::stod(m_current_line.values()[2]);
         Precision z = m_current_line.values().size() > 3 ? (Precision) std::stod(m_current_line.values()[3]) : 0;
@@ -108,7 +108,7 @@ void Reader::process_elements() {
     };
 
     while (next_line().type() == DATA_LINE) {
-        int id = std::stoi(m_current_line.values()[0]);
+        int id = m_current_line.get_value(0, 0);
         if (type == "C3D4") {
             auto values = gather_values(4);
             m_model->set_element<fem::model::C3D4>(id, values[0], values[1], values[2], values[3]);
@@ -178,12 +178,12 @@ void Reader::process_surfaces() {
 
         if (num_values == 3) {
             // Three parts: ID, elementID, sideID
-            id = std::stoi(m_current_line.values()[0]);
-            elem_id = std::stoi(m_current_line.values()[1]);
+            id      = m_current_line.get_value(0, 0);
+            elem_id = m_current_line.get_value(1, 0);
             if (m_current_line.values()[2][0] == 'S') {
                 surf_side = std::stoi(m_current_line.values()[2].substr(1));
             } else {
-                surf_side = std::stoi(m_current_line.values()[2]);
+                surf_side = m_current_line.get_value(2, 0);
             }
 
             m_model->set_surface(id, elem_id, surf_side);
@@ -201,7 +201,7 @@ void Reader::process_surfaces() {
                 if (m_current_line.values()[1][0] == 'S') {
                     surf_side = std::stoi(m_current_line.values()[1].substr(1));
                 } else {
-                    surf_side = std::stoi(m_current_line.values()[1]);
+                    surf_side = m_current_line.get_value(1, 0);
                 }
 
                 m_model->set_surface(id, elem_id, surf_side);
@@ -211,7 +211,7 @@ void Reader::process_surfaces() {
                 if (m_current_line.values()[1][0] == 'S') {
                     surf_side = std::stoi(m_current_line.values()[1].substr(1));
                 } else {
-                    surf_side = std::stoi(m_current_line.values()[1]);
+                    surf_side = m_current_line.get_value(1, 0);
                 }
 
                 // Use the set name to define the surface.
@@ -228,13 +228,13 @@ void Reader::process_nset() {
     m_model->activate_node_set(setname);
     while (next_line().type() == DATA_LINE) {
         if (generate) {
-            // require exactly 3 values, not more, not less
-            if (m_current_line.count_values() != 3) {
-                logging::error(false, "GENERATE requires exactly 3 values.");
-            }
-            ID id1 = std::stoi(m_current_line.values()[0]);
-            ID id2 = std::stoi(m_current_line.values()[1]);
-            ID inc = std::stoi(m_current_line.values()[2]);
+            // require exactly 2 or 3 values, not more, not less
+            logging::warning(m_current_line.count_values() == 2
+                            || m_current_line.count_values() == 3, "GENERATE requires exactly 2 or 3 values.");
+
+            ID id1 = m_current_line.get_value(0, 0);
+            ID id2 = m_current_line.get_value(1, 0);
+            ID inc = m_current_line.get_value(2, 1);
             for (ID i = id1; i <= id2; i += inc) {
                 m_model->active_nodeset().push_back(i);
             }
@@ -254,13 +254,13 @@ void Reader::process_elset() {
     while (next_line().type() == DATA_LINE) {
 
         if (generate) {
-            // require exactly 3 values, not more, not less
-            if (m_current_line.count_values() != 3) {
-                logging::error(false, "GENERATE requires exactly 3 values.");
-            }
-            ID id1 = std::stoi(m_current_line.values()[0]);
-            ID id2 = std::stoi(m_current_line.values()[1]);
-            ID inc = std::stoi(m_current_line.values()[2]);
+            // require exactly 2 or 3 values, not more, not less
+            logging::warning(m_current_line.count_values() == 2
+                            || m_current_line.count_values() == 3, "GENERATE requires exactly 2 or 3 values.");
+
+            ID id1 = m_current_line.get_value(0, 0);
+            ID id2 = m_current_line.get_value(1, 0);
+            ID inc = m_current_line.get_value(2, 1);
             for (ID i = id1; i <= id2; i += inc) {
                 m_model->active_elemset().push_back(i);
             }
@@ -278,13 +278,13 @@ void Reader::process_sfset() {
     m_model->activate_surface_set(m_current_line.require<std::string>("NAME", "SFSET"));
     while (next_line().type() == DATA_LINE) {
         if (generate) {
-            // require exactly 3 values, not more, not less
-            if (m_current_line.count_values() != 3) {
-                logging::error(false, "GENERATE requires exactly 3 values.");
-            }
-            ID id1 = std::stoi(m_current_line.values()[0]);
-            ID id2 = std::stoi(m_current_line.values()[1]);
-            ID inc = std::stoi(m_current_line.values()[2]);
+            // require exactly 2 or 3 values, not more, not less
+            logging::warning(m_current_line.count_values() == 2
+                            || m_current_line.count_values() == 3, "GENERATE requires exactly 2 or 3 values.");
+
+            ID id1 = m_current_line.get_value(0, 0);
+            ID id2 = m_current_line.get_value(1, 0);
+            ID inc = m_current_line.get_value(2, 1);
             for (ID i = id1; i <= id2; i += inc) {
                 m_model->active_surfset().push_back(i);
             }
@@ -307,20 +307,20 @@ void Reader::process_elastic() {
     auto type = m_current_line.require<std::string>("TYPE");
     next_line();
     if (type == "ISO" || type == "ISOTROPIC") {
-        auto E = std::stof(m_current_line.values()[0]);
-        auto n = std::stof(m_current_line.values()[1]);
+        auto E = m_current_line.get_value(0, 0.0f);
+        auto n = m_current_line.get_value(1, 0.0f);
         m_model->active_material().set_elasticity<fem::material::IsotropicElasticity>(E, n);
     }
     if (type == "ORTHO" || type == "ORTHOTROPIC") {
-        auto E1 = std::stof(m_current_line.values()[0]);
-        auto E2 = std::stof(m_current_line.values()[1]);
-        auto E3 = std::stof(m_current_line.values()[2]);
-        auto G23 = std::stof(m_current_line.values()[3]);
-        auto G13 = std::stof(m_current_line.values()[4]);
-        auto G12 = std::stof(m_current_line.values()[5]);
-        auto nu23 = std::stof(m_current_line.values()[6]);
-        auto nu13 = std::stof(m_current_line.values()[7]);
-        auto nu12 = std::stof(m_current_line.values()[8]);
+        auto E1 = m_current_line.get_value(0, 0.0f);
+        auto E2 = m_current_line.get_value(1, 0.0f);
+        auto E3 = m_current_line.get_value(2, 0.0f);
+        auto G23 = m_current_line.get_value(3, 0.0f);
+        auto G13 = m_current_line.get_value(4, 0.0f);
+        auto G12 = m_current_line.get_value(5, 0.0f);
+        auto nu23 = m_current_line.get_value(6, 0.0f);
+        auto nu13 = m_current_line.get_value(7, 0.0f);
+        auto nu12 = m_current_line.get_value(8, 0.0f);
         m_model->active_material().set_elasticity<fem::material::OrthotropicElasticity>(E1, E2, E3, G23, G13, G12, nu23, nu13, nu12);
     }
     next_line();
@@ -329,7 +329,7 @@ void Reader::process_elastic() {
 void Reader::process_density() {
     // read DENSITY
     next_line();
-    auto v = std::stof(m_current_line.values()[0]);
+    auto v = m_current_line.get_value(0, 0.0f);
     m_model->active_material().set_density(v);
     next_line();
 }
@@ -349,8 +349,8 @@ void Reader::process_cload() {
     m_model->activate_load_set(m_current_line.require<std::string>("LOAD_COLLECTOR"));
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
-        auto lx  = std::stof(m_current_line.values()[1]);
-        auto ly  = std::stof(m_current_line.values()[2]);
+        auto lx  = m_current_line.get_value(1, 0.0f);
+        auto ly  = m_current_line.get_value(2, 0.0f);
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
         if (m_model->nodesets().has(str)) {
@@ -369,8 +369,8 @@ void Reader::process_dload() {
     m_model->activate_load_set(m_current_line.require<std::string>("LOAD_COLLECTOR"));
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
-        auto lx  = std::stof(m_current_line.values()[1]);
-        auto ly  = std::stof(m_current_line.values()[2]);
+        auto lx  = m_current_line.get_value(1, 0.0f);
+        auto ly  = m_current_line.get_value(2, 0.0f);
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
         if (m_model->surfsets().has(str)) {
@@ -389,8 +389,8 @@ void Reader::process_vload() {
     m_model->activate_load_set(m_current_line.require<std::string>("LOAD_COLLECTOR"));
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
-        auto lx  = std::stof(m_current_line.values()[1]);
-        auto ly  = std::stof(m_current_line.values()[2]);
+        auto lx  = m_current_line.get_value(1, 0.0f);
+        auto ly  = m_current_line.get_value(2, 0.0f);
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
         if (m_model->elemsets().has(str)) {
@@ -441,28 +441,28 @@ void Reader::process_coordinate_system() {
 
     if (type == "RECTANGULAR") {
         if (m_current_line.count_values() == 3) {
-            auto x = std::stof(m_current_line.values()[0]);
-            auto y = std::stof(m_current_line.values()[1]);
-            auto z = std::stof(m_current_line.values()[2]);
+            auto x = m_current_line.get_value(0, 0.0f);
+            auto y = m_current_line.get_value(1, 0.0f);
+            auto z = m_current_line.get_value(2, 0.0f);
             m_model->add_coordinate_system<cos::RectangularSystem>(name, Vec3{x,y,z});
         } else if (m_current_line.count_values() == 6) {
-            auto x1 = std::stof(m_current_line.values()[0]);
-            auto y1 = std::stof(m_current_line.values()[1]);
-            auto z1 = std::stof(m_current_line.values()[2]);
-            auto x2 = std::stof(m_current_line.values()[3]);
-            auto y2 = std::stof(m_current_line.values()[4]);
-            auto z2 = std::stof(m_current_line.values()[5]);
+            auto x1 = m_current_line.get_value(0, 0.0f);
+            auto y1 = m_current_line.get_value(1, 0.0f);
+            auto z1 = m_current_line.get_value(2, 0.0f);
+            auto x2 = m_current_line.get_value(3, 0.0f);
+            auto y2 = m_current_line.get_value(4, 0.0f);
+            auto z2 = m_current_line.get_value(5, 0.0f);
             m_model->add_coordinate_system<cos::RectangularSystem>(name, Vec3{x1,y1,z1}, Vec3{x2,y2,z2});
         } else if (m_current_line.count_values() == 6) {
-            auto x1 = std::stof(m_current_line.values()[0]);
-            auto y1 = std::stof(m_current_line.values()[1]);
-            auto z1 = std::stof(m_current_line.values()[2]);
-            auto x2 = std::stof(m_current_line.values()[3]);
-            auto y2 = std::stof(m_current_line.values()[4]);
-            auto z2 = std::stof(m_current_line.values()[5]);
-            auto x3 = std::stof(m_current_line.values()[6]);
-            auto y3 = std::stof(m_current_line.values()[7]);
-            auto z3 = std::stof(m_current_line.values()[8]);
+            auto x1 = m_current_line.get_value(0, 0.0f);
+            auto y1 = m_current_line.get_value(1, 0.0f);
+            auto z1 = m_current_line.get_value(2, 0.0f);
+            auto x2 = m_current_line.get_value(3, 0.0f);
+            auto y2 = m_current_line.get_value(4, 0.0f);
+            auto z2 = m_current_line.get_value(5, 0.0f);
+            auto x3 = m_current_line.get_value(6, 0.0f);
+            auto y3 = m_current_line.get_value(7, 0.0f);
+            auto z3 = m_current_line.get_value(8, 0.0f);
             m_model->add_coordinate_system<cos::RectangularSystem>(name, Vec3{x1,y1,z1}, Vec3{x2,y2,z2}, Vec3{x3,y3,z3});
         } else {
             logging::error(false, "Cannot create coordinate system with", m_current_line.count_values(),
@@ -679,15 +679,15 @@ void Reader::process_loadcase_linear_static_request_stiffness(fem::loadcase::Lin
 
 void Reader::process_loadcase_linear_static_topo_density(fem::loadcase::LinearStaticTopo* lc) {
     while (next_line().type() == DATA_LINE) {
-        auto id         = std::stoi(m_current_line.values()[0]);
-        auto ds         = std::stof(m_current_line.values()[1]);
+        auto id         = m_current_line.get_value(0, 0);
+        auto ds         = m_current_line.get_value(1, 0.0f);
 
         lc->density(id) = ds;
     }
 }
 void Reader::process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc) {
     next_line();
-    auto exp     = std::stof(m_current_line.values()[0]);
+    auto exp     = m_current_line.get_value(0, 0.0f);
     lc->exponent = exp;
     next_line();
 }
