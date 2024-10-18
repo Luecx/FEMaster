@@ -14,7 +14,6 @@ openmp         ?= 1   # Enable/disable OpenMP
 mkl            ?= 0   # Enable/disable MKL (Math Kernel Library)
 mkl_sequential ?= 0   # Enable/disable Sequential MKL
 cuda_dp        ?= 1   # Enable/disable CUDA Double Precision
-ar_pcs         ?= 0   # Enable/disable Show Array Processes
 debug          ?= 0   # Enable/disable Debug mode
 
 #===============================================================
@@ -51,9 +50,6 @@ NVCCFLAGS     += $(if $(filter 1,$(debug)),-G -g)
 
 # cuda double precision
 FEATURE_FLAGS += $(if $(filter 1,$(cuda_dp)),-DCUDA_DOUBLE_PRECISION)
-
-# array processes
-FEATURE_FLAGS += $(if $(filter 1,$(ar_pcs)),-DSHOW_ARRAY_PROCESSES)
 
 # double precision
 FEATURE_FLAGS += $(if $(filter 1,$(double_precision)),-DDOUBLE_PRECISION)

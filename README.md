@@ -126,13 +126,13 @@ make clean
 
 Several build flags allow you to enable or disable features as needed:
 
-| Flag        | Default | Description                                              |
-|-------------|---------|----------------------------------------------------------|
-| `openmp`    | 1       | Enables/disables OpenMP for multi-core support            |
-| `mkl`       | 0       | Enables/disables MKL integration for optimized performance |
-| `cuda_dp`   | 1       | Enables/disables CUDA double precision                    |
-| `ar_pcs`    | 0       | Enables/disables array process debug information          |
-| `debug`     | 0       | Enables/disables debug mode                               |
+| Flag               | Default | Description                                                                                |
+|--------------------|---------|--------------------------------------------------------------------------------------------|
+| `openmp`           | 1       | Enables/disables OpenMP for multi-core support                                             |
+| `mkl`              | 0       | Enables/disables MKL integration for optimized performance. If possible, enable this!      |
+| `cuda_dp`          | 1       | Enables/disables CUDA double precision. Only relevant for GPU version. Always recommended. |
+| `double_precision` | 1       | Enables/disables single/double precision computation. Always prefer double precision!      |
+| `debug`            | 0       | Enables/disables debug mode                                                                |
 
 You can override these options during compilation by passing them as environment variables. For example, to disable OpenMP and enable MKL:
 
