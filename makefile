@@ -30,49 +30,34 @@ WARNFLAGS  = -Wall -Wno-maybe-uninitialized
 #===============================================================
 
 # OpenMP support
-ifeq ($(openmp), 1)
-    CXXFLAGS  += -fopenmp
-    NVCCFLAGS += -Xcompiler=-fopenmp
-endif
+CXXFLAGS  += $(if $(filter 1,$(openmp)),-fopenmp)
+NVCCFLAGS += $(if $(filter 1,$(openmp)),-Xcompiler=-fopenmp)
 
 # Ensure MKL is enabled when sequential MKL is requested
-ifeq ($(mkl_sequential), 1)
-    mkl = 1
-endif
+mkl := $(if $(filter 1,$(mkl_sequential)),1,$(mkl))
 
 # MKL support
-ifeq ($(mkl), 1)
-    FEATURE_FLAGS += -DMKL_LP64
-    FEATURE_FLAGS += -DUSE_MKL
-    ifeq ($(mkl_sequential), 1)
-        # Use sequential MKL
-        FEATURE_FLAGS += -DUSE_MKL_SEQUENTIAL
-        LIBS += $(MKL_LIBS)
-    else
-        # Use parallel MKL
-        FEATURE_FLAGS += -DUSE_MKL_PARALLEL
-        LIBS += $(MKL_LIBS)
-    endif
-endif
+FEATURE_FLAGS += $(if $(filter 1,$(mkl)),-DMKL_LP64)
+FEATURE_FLAGS += $(if $(filter 1,$(mkl)),-DUSE_MKL)
 
-# CUDA Double Precision support
-ifeq ($(cuda_dp), 1)
-    FEATURE_FLAGS += -DCUDA_DOUBLE_PRECISION
-endif
-
-# Show Array Processes for debugging
-ifeq ($(ar_pcs), 1)
-    FEATURE_FLAGS += -DSHOW_ARRAY_PROCESSES
-endif
+# Sequential or parallel MKL
+FEATURE_FLAGS += $(if $(filter 1,$(mkl_sequential)),-DUSE_MKL_SEQUENTIAL)
+LIBS          += $(if $(filter 1,$(mkl_sequential)),$(MKL_LIBS),$(if $(filter 1,$(mkl)),$(MKL_LIBS)))
 
 # Debug mode
-ifeq ($(debug), 1)
-    FEATURE_FLAGS += -DNDEBUG
-    CXXFLAGS += -g
-    NVCCFLAGS += -G -g
-endif
+FEATURE_FLAGS += $(if $(filter 1,$(debug)),-DNDEBUG)
+CXXFLAGS      += $(if $(filter 1,$(debug)),-g)
+NVCCFLAGS     += $(if $(filter 1,$(debug)),-G -g)
 
-FEATURE_FLAGS += -DDOUBLE_PRECISION
+# cuda double precision
+FEATURE_FLAGS += $(if $(filter 1,$(cuda_dp)),-DCUDA_DOUBLE_PRECISION)
+
+# array processes
+FEATURE_FLAGS += $(if $(filter 1,$(ar_pcs)),-DSHOW_ARRAY_PROCESSES)
+
+# double precision
+FEATURE_FLAGS += $(if $(filter 1,$(double_precision)),-DDOUBLE_PRECISION)
+
 
 #===============================================================
 # System Information (Optional Flags Based on System)
