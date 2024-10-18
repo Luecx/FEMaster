@@ -18,6 +18,7 @@ projects/
 *.res
 *.aux
 *.log
+*.vtk
 
 cmake-build-debug/
 

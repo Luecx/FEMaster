@@ -164,7 +164,7 @@ class Solution:
                 elif current_field_name:
                     temp = list(map(float, line.split()))
                     # replace nans with zeros
-                    temp = [0 if np.isnan(x) else x for x in temp]
+                    # temp = [0 if np.isnan(x) else x for x in temp]
                     matrix.append(temp)
 
             if current_loadcase:
