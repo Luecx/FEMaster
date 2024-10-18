@@ -84,8 +84,9 @@ DynamicMatrix compute_participation(SparseMatrix& mass_matrix, DynamicMatrix& ei
     // compute the active dof vectors
     auto active_dof_vectors = compute_active_dof_vectors(active_dof_idx_mat, m, active_lhs_vec);
 
-    // extend each vector to the size of the eigen vectors
+    // extend each vector to the size of the eigen vectors and fill with 0
     active_dof_vectors.conservativeResize(eigen_vectors.rows(), 6);
+    active_dof_vectors.block(m, 0, active_dof_vectors.rows() - m, 6) = DynamicMatrix::Zero(active_dof_vectors.rows() - m, 6);
 
     // for each eigen vector compute the participation
     for (int i = 0; i < num_modes; i++) {
@@ -260,7 +261,7 @@ void fem::loadcase::LinearEigenfrequency::run() {
     DynamicMatrix mode_shapes = eigen_result.second;
 
     // Compute the participation of each active dof in each mode
-    auto participations = compute_participation(sol_mass_mat, mode_shapes, active_dof_idx_mat, sol_rhs.rows(), active_lhs_vec);
+    auto participations = compute_participation(sol_mass_mat, mode_shapes, active_dof_idx_mat, sol_rhs.rows() - n, active_lhs_vec);
 
     logging::info(true, std::setw(42), "", std::setw(38), "PARTICIPATION");
     logging::info(true,
