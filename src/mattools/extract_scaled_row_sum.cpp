@@ -28,13 +28,18 @@ DynamicVector extract_scaled_row_sum(const SparseMatrix& matrix, const DynamicMa
     for (int i = 0; i < scale_vector.size(); ++i) {
         // Check if the current value in the scale_vector is not NaN
         if (!std::isnan(scale_vector(i))) {
+
+            if (scale_vector(i) == 0) {
+                continue;
+            }
+
             // Extract the corresponding row from the sparse matrix
             SparseMatrix::InnerIterator it(matrix, i);
 
             // Iterate over the non-zero elements in the sparse row
             while (it) {
                 // Add the scaled value of the row entry to the result
-                result(it.col()) += it.value() * scale_vector(i);
+                result(it.row()) += it.value() * scale_vector(i);
                 ++it;
             }
         }
