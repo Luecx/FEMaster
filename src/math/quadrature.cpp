@@ -17,40 +17,63 @@ constexpr size_t n_dims(Order O, Domain D) {
          : D == DOMAIN_ISO_HEX ? 3
          : D == DOMAIN_ISO_TET ? 3
          : D == DOMAIN_ISO_WEDGE ? 3
+         : D == DOMAIN_ISO_LINE_A ? 1
+         : D == DOMAIN_ISO_LINE_B ? 1
+         : D == DOMAIN_ISO_PYRAMID ? 3
          : 3;
 }
-
 constexpr size_t n_points(Order O, Domain D) {
-    return   (D == DOMAIN_ISO_TRI)  ?((O == ORDER_CONSTANT       ) ? 1
-                                    : (O == ORDER_LINEAR         ) ? 1
-                                    : (O == ORDER_QUADRATIC      ) ? 3
-                                    : (O == ORDER_CUBIC          ) ? 4
-                                                                   : 0)
-           : (D == DOMAIN_ISO_QUAD) ?((O == ORDER_CONSTANT       ) ? 1
-                                    : (O == ORDER_LINEAR         ) ? 1
-                                    : (O == ORDER_QUADRATIC      ) ? 4
-                                    : (O == ORDER_CUBIC          ) ? 4
-                                    : (O == ORDER_QUARTIC        ) ? 9
-                                    : (O == ORDER_QUINTIC        ) ? 9
-                                                                   : 0)
-           : (D == DOMAIN_ISO_HEX)  ?((O == ORDER_CONSTANT       ) ? 1
-                                    : (O == ORDER_LINEAR         ) ? 1
-                                    : (O == ORDER_QUADRATIC      ) ? 8
-                                    : (O == ORDER_CUBIC          ) ? 8
-                                    : (O == ORDER_QUARTIC        ) ? 27
-                                    : (O == ORDER_QUINTIC        ) ? 27
-                                                                   : 0)
-           : (D == DOMAIN_ISO_TET)  ?((O == ORDER_CONSTANT       ) ? 1
-                                    : (O == ORDER_LINEAR         ) ? 1
-                                    : (O == ORDER_QUADRATIC      ) ? 4
-                                    : (O == ORDER_CUBIC          ) ? 5
-                                    : (O == ORDER_QUARTIC        ) ? 8
-                                    : (O == ORDER_QUINTIC        ) ? 15
-                                                                   : 0)
-           : (D == DOMAIN_ISO_WEDGE)?((O == ORDER_SUPER_LINEAR   ) ? 2
-                                    : (O == ORDER_SUPER_QUADRATIC) ? 9
-                                                                   : 0)
-           : 0;
+    return   (D == DOMAIN_ISO_TRI)       ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 3
+                                          : (O == ORDER_CUBIC          ) ? 4
+                                                                         : 0)
+           : (D == DOMAIN_ISO_QUAD)      ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 4
+                                          : (O == ORDER_CUBIC          ) ? 4
+                                          : (O == ORDER_QUARTIC        ) ? 9
+                                          : (O == ORDER_QUINTIC        ) ? 9
+                                                                         : 0)
+           : (D == DOMAIN_ISO_HEX)       ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 8
+                                          : (O == ORDER_CUBIC          ) ? 8
+                                          : (O == ORDER_QUARTIC        ) ? 27
+                                          : (O == ORDER_QUINTIC        ) ? 27
+                                                                         : 0)
+           : (D == DOMAIN_ISO_PYRAMID)   ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 8
+                                          : (O == ORDER_CUBIC          ) ? 8
+                                          : (O == ORDER_QUARTIC        ) ? 27
+                                          : (O == ORDER_QUINTIC        ) ? 27
+                                                                         : 0)
+           : (D == DOMAIN_ISO_TET)     ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 4
+                                          : (O == ORDER_CUBIC          ) ? 5
+                                          : (O == ORDER_QUARTIC        ) ? 8
+                                          : (O == ORDER_QUINTIC        ) ? 15
+                                                                         : 0)
+           : (D == DOMAIN_ISO_WEDGE)     ? ((O == ORDER_SUPER_LINEAR   ) ? 2
+                                          : (O == ORDER_SUPER_QUADRATIC) ? 9
+                                                                         : 0)
+           : (D == DOMAIN_ISO_LINE_A)    ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 2
+                                          : (O == ORDER_CUBIC          ) ? 2
+                                          : (O == ORDER_QUARTIC        ) ? 3
+                                          : (O == ORDER_QUINTIC        ) ? 3
+                                                                         : 0)
+           : (D == DOMAIN_ISO_LINE_B)    ? ((O == ORDER_CONSTANT       ) ? 1
+                                          : (O == ORDER_LINEAR         ) ? 1
+                                          : (O == ORDER_QUADRATIC      ) ? 2
+                                          : (O == ORDER_CUBIC          ) ? 2
+                                          : (O == ORDER_QUARTIC        ) ? 3
+                                          : (O == ORDER_QUINTIC        ) ? 3
+                                                                         : 0)
+                                       : 0;
 }
 
 Point::Point(Precision r, Precision s, Precision t, Precision w)
@@ -245,6 +268,86 @@ Quadrature::Quadrature(Domain d, Order o)
                         c ++;
                     }
                 }
+            }
+        }
+
+        else {
+            runtime_check(false, "not supported");
+        }
+    }
+
+    if (d == DOMAIN_ISO_PYRAMID){
+        if (o == ORDER_LINEAR || o == ORDER_CONSTANT){
+            points[0] = Point(0.0, 0.0, 1.0 / 3.0, 4.0 / 3.0);
+        }
+
+        else if (o == ORDER_QUADRATIC || o == ORDER_CUBIC) {
+            Precision z_lower = 0.122514822655441;
+            Precision z_upper = 0.544151844011225;
+            Precision w_lower = 0.100785882079825;
+            Precision w_upper = 0.232547451253500;
+
+            Precision x_upper = 0.263184055569713;
+            Precision x_lower = 0.506616303349787;
+
+            points[0] = Point( x_upper,  x_upper, z_upper, w_upper);
+            points[1] = Point(-x_upper,  x_upper, z_upper, w_upper);
+            points[2] = Point(-x_upper, -x_upper, z_upper, w_upper);
+            points[3] = Point( x_upper, -x_upper, z_upper, w_upper);
+
+            points[4] = Point( x_lower,  x_lower, z_lower, w_lower);
+            points[5] = Point(-x_lower,  x_lower, z_lower, w_lower);
+            points[6] = Point(-x_lower, -x_lower, z_lower, w_lower);
+            points[7] = Point( x_lower, -x_lower, z_lower, w_lower);
+        }
+
+
+        else if (o == ORDER_QUARTIC || o == ORDER_QUINTIC) {
+            // Gr, Gs, and Gt values as arrays
+            Precision gr[] = { -0.228504305653967, -0.505808707853924, -0.718055741319888,
+                               -0.228504305653967, -0.505808707853924, -0.718055741319888,
+                               -0.228504305653967, -0.505808707853924, -0.718055741319888,
+                                0.000000000000000,  0.000000000000000,  0.000000000000000,
+                                0.000000000000000,  0.000000000000000,  0.000000000000000,
+                                0.000000000000000,  0.000000000000000,  0.000000000000000,
+                                0.228504305653967,  0.505808707853924,  0.718055741319888,
+                                0.228504305653967,  0.505808707853924,  0.718055741319888,
+                                0.228504305653967,  0.505808707853924,  0.718055741319888 };
+
+            Precision gs[] = { -0.228504305653967, -0.505808707853924, -0.718055741319888,
+                                0.000000000000000,  0.000000000000000,  0.000000000000000,
+                                0.228504305653967,  0.505808707853924,  0.718055741319888,
+                               -0.228504305653967, -0.505808707853924, -0.718055741319888,
+                                0.000000000000000,  0.000000000000000,  0.000000000000000,
+                                0.228504305653967,  0.505808707853924,  0.718055741319888,
+                               -0.228504305653967, -0.505808707853924, -0.718055741319888,
+                                0.000000000000000,  0.000000000000000,  0.000000000000000,
+                                0.228504305653967,  0.505808707853924,  0.718055741319888 };
+
+            Precision gt[] = {  0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150,
+                                0.705002209888498,  0.347003766038352,  0.072994024073150 };
+
+            // Weights (from the table)
+            Precision weights[] = { 0.009244044138451, 0.045137737425885, 0.048498876871879,
+                                    0.014790470621521, 0.072220379881415, 0.0775982029950066,
+                                    0.009244044138451, 0.045137737425885, 0.048498876871879,
+                                    0.014790470621521, 0.072220379881415, 0.0775982029950066,
+                                    0.023664752994434, 0.115552607810264, 0.124157124792009,
+                                    0.014790470621521, 0.072220379881415, 0.0775982029950066,
+                                    0.009244044138451, 0.045137737425885, 0.048498876871879,
+                                    0.014790470621521, 0.072220379881415, 0.0775982029950066,
+                                    0.009244044138451, 0.045137737425885, 0.048498876871879};
+
+            // Loop to fill in the points
+            for (int i = 0; i < 27; ++i) {
+                points[i] = Point(gr[i], gs[i], gt[i], weights[i]);
             }
         }
 

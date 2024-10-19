@@ -28,6 +28,7 @@ enum Domain {
     DOMAIN_ISO_WEDGE,
     DOMAIN_ISO_LINE_A, // 1D line element with range [-1, 1]
     DOMAIN_ISO_LINE_B, // 1D line element with range [0, 1]
+    DOMAIN_ISO_PYRAMID,
 };
 
 struct Point {

@@ -291,6 +291,10 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
 
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det, false);
 
+        // some elements may have inf or nan determinant. if so, extrapolate
+        if (std::isnan(det) || std::isinf(det)) {
+            det = 0;
+        }
         logging::error(det < 1e10, "invalid determinant encountered in element ", elem_id,
                                "\ndet        : ", det,
                                "\nCoordinates: ", global_node_coords);
@@ -309,13 +313,12 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
             }
 
             for (int j = 0; j < n_strain; j++) {
-
-				// check for any inf
-				if (std::isinf(strains(j)) || std::isinf(stresses(j))) {
-					logging::error(false, "invalid stress encountered in element ", elem_id,
-                                   "\nStrains: ", strains,
-                                   "\nStresses: ", stresses);
-				}
+                // check for any inf
+                if (std::isinf(strains(j)) || std::isinf(stresses(j))) {
+                        logging::error(false, "invalid stress encountered in element ", elem_id,
+                   "\nStrains: ", strains,
+                   "\nStresses: ", stresses);
+                }
 
                 strain(node_id, j) += strains(j);
                 stress(node_id, j) += stresses(j);
