@@ -6,7 +6,7 @@ import subprocess
 import numpy as np
 
 from .filter import Filter, FilterFunction
-from .viewer import Viewer
+# from .viewer import Viewer
 from ..geometry import Geometry
 from ..solution import Solution
 import time

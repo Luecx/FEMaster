@@ -78,9 +78,9 @@ void Reader::process_nodes() {
 
     while (next_line().type() == DATA_LINE) {
         int node_id = m_current_line.get_value(0, 0);
-        Precision x = (Precision) std::stod(m_current_line.values()[1]);
-        Precision y = (Precision) std::stod(m_current_line.values()[2]);
-        Precision z = m_current_line.values().size() > 3 ? (Precision) std::stod(m_current_line.values()[3]) : 0;
+        Precision x = m_current_line.get_value(1, (Precision) 0);
+        Precision y = m_current_line.get_value(2, (Precision) 0);
+        Precision z = m_current_line.get_value(3, (Precision) 0);
         m_model->set_node(node_id, x, y, z);
     }
 }

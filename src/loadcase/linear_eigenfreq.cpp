@@ -79,7 +79,7 @@ DynamicMatrix compute_participation(SparseMatrix& mass_matrix, DynamicMatrix& ei
     int num_participations = 6;
 
     // 6 for each participation and last column for the modal mass
-    DynamicMatrix result = DynamicMatrix::Zero(num_modes, num_participations+1);
+    DynamicMatrix result = DynamicMatrix::Zero(num_modes, num_participations);
 
     // compute the active dof vectors
     auto active_dof_vectors = compute_active_dof_vectors(active_dof_idx_mat, m, active_lhs_vec);
@@ -101,10 +101,21 @@ DynamicMatrix compute_participation(SparseMatrix& mass_matrix, DynamicMatrix& ei
             auto participation = active_dof_vectors.col(j).transpose() * (mass_matrix * eigen_vector);
             result(i, j) = participation(0);
         }
-        result(i, 6) = modal_mass(0);
     }
 
     return result;
+}
+
+int compute_scaling_factor(DynamicMatrix& values) {
+    // take the maximum absolute value
+    Precision max_coeff = values.array().abs().maxCoeff();
+    Precision min_scaling = 1/max_coeff;
+    Precision scaling_base = std::log10(min_scaling);
+
+    // round it up
+    scaling_base = std::ceil(scaling_base);
+
+    return int(scaling_base);
 }
 
 /**
@@ -262,8 +273,10 @@ void fem::loadcase::LinearEigenfrequency::run() {
 
     // Compute the participation of each active dof in each mode
     auto participations = compute_participation(sol_mass_mat, mode_shapes, active_dof_idx_mat, sol_rhs.rows() - n, active_lhs_vec);
+    auto participation_scaling = compute_scaling_factor(participations);
+    auto partic_sca = participations * std::pow(10, participation_scaling);
 
-    logging::info(true, std::setw(42), "", std::setw(38), "PARTICIPATION");
+    logging::info(true, std::setw(42), "", std::setw(33), "PARTICIPATION", " (x10^",participation_scaling,")");
     logging::info(true,
                   std::setw(4), "Idx",
                   std::setw(20), "Eigenvalue",
@@ -276,12 +289,12 @@ void fem::loadcase::LinearEigenfrequency::run() {
         logging::info(true, std::setw(4), idx+1,
                       std::setw(20), std::fixed, std::setprecision(6), Precision(eigenvalues(i)),
                       std::setw(18), std::fixed, std::setprecision(6), Precision(eigenfreqs(i)),
-                      std::setw(12), std::fixed, std::setprecision(3), Precision(participations(i, 0)),
-                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 1)),
-                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 2)),
-                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 3)),
-                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 4)),
-                      std::setw(8) , std::fixed, std::setprecision(3), Precision(participations(i, 5)));
+                      std::setw(12), std::fixed, std::setprecision(3), Precision(partic_sca(i, 0)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(partic_sca(i, 1)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(partic_sca(i, 2)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(partic_sca(i, 3)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(partic_sca(i, 4)),
+                      std::setw(8) , std::fixed, std::setprecision(3), Precision(partic_sca(i, 5)));
     }
 
     // Write results

@@ -244,6 +244,9 @@ class Geometry:
                     node2 = self.nodes[edge[1]]
                     plt.plot([node1[0], node2[0]], [node1[1], node2[1]], 'b-')
 
+        # aspect ratio = 1
+        plt.gca().set_aspect('equal', adjustable='box')
+
         plt.show()
 
     def __str__(self):

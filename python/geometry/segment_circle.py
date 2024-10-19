@@ -15,7 +15,7 @@ import numpy as np
 from .segment import Segment
 
 class CircleSegment(Segment):
-    def __init__(self, start, end, direction, subdivisions, name=None):
+    def __init__(self, center, start_point, angles, subdivisions, name=None):
         """
         Initialize a circular arc segment.
 
@@ -24,8 +24,15 @@ class CircleSegment(Segment):
         direction : int
             Direction of the arc (1 for counterclockwise, -1 for clockwise).
         """
-        super().__init__(start, end, subdivisions, name)
-        self.direction = direction
+        self.center = center
+        self.start_angle = np.arctan2(start_point[1] - center[1], start_point[0] - center[0])
+        self.end_angle   = self.start_angle + angles
+        self.angles      = angles
+        self.radius      = np.sqrt((start_point[0] - self.center[0]) ** 2 + (start_point[1] - self.center[1]) ** 2)
+        self.end_point   = [self.center[0] + np.cos(self.end_angle) * self.radius,
+                            self.center[1] + np.sin(self.end_angle) * self.radius]
+
+        super().__init__(start_point, self.end_point, subdivisions, name)
 
     def get_points(self):
         """
@@ -36,19 +43,15 @@ class CircleSegment(Segment):
         points : list of [float, float]
             List of coordinates defining the arc segment.
         """
-        # Compute center and radius
-        mid_x = (self.start[0] + self.end[0]) / 2
-        mid_y = (self.start[1] + self.end[1]) / 2
-        radius = np.sqrt((self.end[0] - mid_x)**2 + (self.end[1] - mid_y)**2)
+        angles = np.linspace(self.start_angle, self.end_angle, self.subdivisions)
+        # remove first and last
+        angles = angles[1:-1]
 
-        # Angle between start and end
-        start_angle = np.arctan2(self.start[1] - mid_y, self.start[0] - mid_x)
-        end_angle = np.arctan2(self.end[1] - mid_y, self.end[0] - mid_x)
+        # compute points for each angle
+        points = [[self.center[0] + self.radius * np.cos(k),
+                   self.center[1] + self.radius * np.sin(k)] for k in angles]
 
-        if self.direction == -1:
-            start_angle, end_angle = end_angle, start_angle
-
-        # Generate points along the arc
-        angles = np.linspace(start_angle, end_angle, self.subdivisions + 1)
-        points = [[mid_x + radius * np.cos(angle), mid_y + radius * np.sin(angle)] for angle in angles]
+        # append the start and end point
+        points.insert(0, self.start)
+        points.append(self.end)
         return points
