@@ -15,7 +15,7 @@ mkl            ?= 0   # Enable/disable MKL (Math Kernel Library)
 mkl_sequential ?= 0   # Enable/disable Sequential MKL
 cuda_dp        ?= 1   # Enable/disable CUDA Double Precision
 debug          ?= 0   # Enable/disable Debug mode
-
+double_precision ?= 1 # Enable/disable Double Precision
 #===============================================================
 # General Compiler Flags
 #===============================================================

@@ -18,7 +18,8 @@ struct C3D13 : public SolidElement<13>{
     }
 
     SurfacePtr surface(ID surface_id) override {
-        raise std::runtime_error("Not implemented");
+        return nullptr;
+        // raise std::runtime_error("Not implemented");
     }
 
     StaticMatrix<13, 1> shape_function(Precision r, Precision s, Precision t) override;
