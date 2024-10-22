@@ -27,14 +27,14 @@ constexpr Point domain_iso_line_b_points_3[] = {
 };
 
 
-REGISTER_SCHEME(DOMAIN_ISO_LINE_A, ORDER_CONSTANT, domain_iso_line_b_points_1);
-REGISTER_SCHEME(DOMAIN_ISO_LINE_A, ORDER_LINEAR  , domain_iso_line_b_points_1);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_CONSTANT, domain_iso_line_b_points_1);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_LINEAR  , domain_iso_line_b_points_1);
 
-REGISTER_SCHEME(DOMAIN_ISO_LINE_A, ORDER_QUADRATIC, domain_iso_line_b_points_2);
-REGISTER_SCHEME(DOMAIN_ISO_LINE_A, ORDER_CUBIC    , domain_iso_line_b_points_2);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUADRATIC, domain_iso_line_b_points_2);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_CUBIC    , domain_iso_line_b_points_2);
 
-REGISTER_SCHEME(DOMAIN_ISO_LINE_A, ORDER_QUARTIC  , domain_iso_line_b_points_3);
-REGISTER_SCHEME(DOMAIN_ISO_LINE_A, ORDER_QUINTIC  , domain_iso_line_b_points_3);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUARTIC  , domain_iso_line_b_points_3);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUINTIC  , domain_iso_line_b_points_3);
 
 } // namespace quadrature
 } // namespace fem

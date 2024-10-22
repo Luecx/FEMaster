@@ -8,14 +8,14 @@ using namespace fem::math;
 
 // ORDER_LINEAR or ORDER_CONSTANT
 constexpr Point domain_iso_pyramid_points_1[] = {
-    Point(0.0, 0.0, 1.0 / 3.0, 4.0 / 3.0)
+    Point(0.0, 0.0, 1.0 / 4.0, 4.0 / 3.0)
 };
 
 // ORDER_QUADRATIC or ORDER_CUBIC
 constexpr Precision z_lower = 0.122514822655441;
 constexpr Precision z_upper = 0.544151844011225;
-constexpr Precision w_lower = 0.100785882079825;
-constexpr Precision w_upper = 0.232547451253500;
+constexpr Precision w_lower = 0.232547451253500;
+constexpr Precision w_upper = 0.100785882079825;
 constexpr Precision x_upper = 0.263184055569713;
 constexpr Precision x_lower = 0.506616303349787;
 

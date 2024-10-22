@@ -65,8 +65,9 @@ constexpr Point domain_iso_tet_points_15[] = {
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_CONSTANT  , domain_iso_tet_points_1);
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_LINEAR    , domain_iso_tet_points_1);
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUADRATIC , domain_iso_tet_points_4);
-REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_CUBIC     , domain_iso_tet_points_5);
-REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUARTIC   , domain_iso_tet_points_8);
+//REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_CUBIC     , domain_iso_tet_points_5);
+REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_CUBIC     , domain_iso_tet_points_8);
+REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUARTIC   , domain_iso_tet_points_15);
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUINTIC   , domain_iso_tet_points_15);
 
 } // namespace quadrature

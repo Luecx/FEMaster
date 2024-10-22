@@ -5,6 +5,10 @@
 #ifndef FEMASTER_CSQRT_H
 #define FEMASTER_CSQRT_H
 
+#include "../core/core.h"
+#include "../core/types.h"
+#include <limits>
+
 namespace fem :: math {
 
 Precision constexpr csqrt_iter(Precision x, Precision curr, Precision prev) {

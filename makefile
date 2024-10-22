@@ -183,7 +183,7 @@ gpu: CXXFLAGS  += -DSUPPORT_GPU
 gpu: NVCCFLAGS += -DSUPPORT_GPU
 gpu: show_flags $(EXE_GPU) clean-exp-lib
 
-tests: $(EXE_TST)
+tests: show_flags $(EXE_TST)
 
 #===============================================================
 # Build Rules
@@ -202,7 +202,7 @@ $(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS) $(MAIN_SRC:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/
 
 $(EXE_TST): $(TST_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $^ $(TEST_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) $^ $(TEST_LIBS) -o $@
 
 # Object generation rules
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
@@ -219,7 +219,7 @@ $(CU_OBJDIR)/%.o: $(SRCDIR)/%.cu
 
 $(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@
 
 # Include the generated dependency files
 -include $(GPP_OBJS:.o=.d)

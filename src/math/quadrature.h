@@ -7,6 +7,7 @@
 #include <map>
 #include <vector>
 #include <tuple>
+#include <iostream>
 
 namespace fem {
 
@@ -24,14 +25,14 @@ enum Order {
 };
 
 enum Domain {
-    DOMAIN_ISO_TRI,
-    DOMAIN_ISO_QUAD,
-    DOMAIN_ISO_HEX,
-    DOMAIN_ISO_TET,
-    DOMAIN_ISO_WEDGE,
-    DOMAIN_ISO_LINE_A,
-    DOMAIN_ISO_LINE_B,
-    DOMAIN_ISO_PYRAMID,
+    DOMAIN_ISO_TRI = 1,
+    DOMAIN_ISO_QUAD = 2,
+    DOMAIN_ISO_HEX = 3,
+    DOMAIN_ISO_TET = 4,
+    DOMAIN_ISO_WEDGE = 5,
+    DOMAIN_ISO_LINE_A = 6,
+    DOMAIN_ISO_LINE_B = 7,
+    DOMAIN_ISO_PYRAMID = 8,
 };
 
 struct Point {
@@ -127,6 +128,7 @@ struct Quadrature {
         }
         for (Index i = 0; i < count(); i++) {
             res += get_point(i)(func);
+
         }
         return res;
     }
