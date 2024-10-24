@@ -34,8 +34,20 @@ namespace cos {
  */
 class CoordinateSystem {
 public:
+
+    Vec3 axis_1{0,0,0}; ///< First axis of the local coordinate system in global coordinates.
+    Vec3 axis_2{0,0,0}; ///< Second axis of the local coordinate system in global coordinates.
+    Vec3 axis_3{0,0,0}; ///< Third axis of the local coordinate system in global coordinates.
+
     /// Default constructor
     CoordinateSystem() = default;
+
+    /// Constructor with three axes
+    CoordinateSystem(Vec3 axis_1, Vec3 axis_2, Vec3 axis_3) {
+        this->axis_1 = axis_1;
+        this->axis_2 = axis_2;
+        this->axis_3 = axis_3;
+    };
 
     /// Virtual destructor
     virtual ~CoordinateSystem() = default;

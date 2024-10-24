@@ -1,7 +1,9 @@
-from geometry import *
-from topopt import *
+from python.geometry import *
+from python.topopt import *
 
 import numpy as np
+
+
 inner_radius = 5
 outer_radius = 15
 thickness = 12
@@ -30,7 +32,7 @@ inner2 = SegmentGroup([
 ])
 
 geom = Geometry.mesh_interior([outer, inner1, inner2])
-geom = geom.extruded(1, spacing=0.1)
+geom = geom.extruded(1, spacing=-0.1)
 geom = geom.as_second_order()
 
 # create two new center nodes
@@ -62,23 +64,26 @@ with open("my_deck.inp", 'a') as myfile:
     myfile.write("TOP, 0, -1, 0\n")
     myfile.write("\n")
     myfile.write("*Support, support_collector=supp\n")
-    myfile.write("INNER_1, 0, 0, 0,  , 0, 0\n")
-    myfile.write("INNER_2,  , 0, 0,  , 0, 0\n")
+    myfile.write("MASTER_1, 0, 0, 0, 0, 0, ,\n")
+    myfile.write("MASTER_2,  , 0, 0, 0, 0, ,\n")
     myfile.write("\n")
 
 # create optimization problem
 optimiser = Optimiser(
     input_deck="my_deck.inp",
     desi_set="EALL",
-    loadcases=[{'load_cols': ['loads'], 'supp_cols': [1.0]}],
-    output_folder="./my_deck_opt/",
-    solver_path="../bin/FEMaster.exe",
+    loadcases=[{'load_cols': ['loads'], 'supp_cols': ['supp']}],
+    output_folder="./my_deck_opt2/",
+    solver_path="./bin/FEMaster.exe",
     method='direct',
     device='cpu',
     exponent=2.5,
     min_density=0.01,
-    target_density=0.2,
-    filter_radius=3)
+    target_density=0.25,
+    filter_radius=1.5,
+    move_limit=0.2,
+    symmetries={'yz': distance / 2},
+    symmetry_radius=0.5)
 
 optimiser.start(50)
 

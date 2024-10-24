@@ -33,10 +33,13 @@ public:
      * @param z_axis Unit vector of the z-axis in the global coordinate system.
      */
     RectangularSystem(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis)
-        : x_axis_(x_axis), y_axis_(y_axis), z_axis_(z_axis) {
+        : CoordinateSystem(x_axis, y_axis, z_axis), x_axis_(x_axis), y_axis_(y_axis), z_axis_(z_axis) {
         orthogonalize();
         normalize();
         compute_transformations();
+        axis_1 = x_axis_;
+        axis_2 = y_axis_;
+        axis_3 = z_axis_;
     }
 
     /**
@@ -49,6 +52,9 @@ public:
         orthogonalize();
         normalize();
         compute_transformations();
+        axis_1 = x_axis_;
+        axis_2 = y_axis_;
+        axis_3 = z_axis_;
     }
 
     /**
@@ -60,6 +66,9 @@ public:
         orthogonalize();
         normalize();
         compute_transformations();
+        axis_1 = x_axis_;
+        axis_2 = y_axis_;
+        axis_3 = z_axis_;
     }
 
     /**
