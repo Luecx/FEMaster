@@ -4,7 +4,7 @@ namespace fem {
 
 namespace model {
 
-void Model::add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, ConnectorType type) {
+void Model::add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type) {
     logging::error(node_sets.has(set1), "Node set ", set1, " does not exist");
     logging::error(node_sets.has(set2), "Node set ", set2, " does not exist");
 
@@ -17,10 +17,10 @@ void Model::add_connector(const std::string& set1, const std::string& set2, cons
     ID id1 = node_sets.get(set1)[0];
     ID id2 = node_sets.get(set2)[0];
 
-    connectors.push_back(Connector{id1, id2, coordinate_systems.get(coordinate_system), type});
+    connectors.push_back({id1, id2, coordinate_systems.get(coordinate_system), type});
 }
 
-void Model::add_coupling(const std::string &master_set, const std::string &slave_set, Dofs coupled_dofs, CouplingType type) {
+void Model::add_coupling(const std::string &master_set, const std::string &slave_set, Dofs coupled_dofs, constraint::CouplingType type) {
     logging::error(node_sets.get(master_set).size() == 1, "Master set must contain exactly one node");
     ID master_node = node_sets.get(master_set)[0];
     couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
@@ -31,7 +31,7 @@ void Model::add_tie(const std::string& master_set, const std::string& slave_set,
     logging::error(surface_sets.has(master_set), "Master set ", master_set, " is not a defined surface set");
     logging::error(node_sets   .has(slave_set) , "Slave set " , slave_set , " is not a defined node set");
 
-    ties.push_back(constraint::Tie(master_set, slave_set, distance, adjust));
+    ties.push_back({master_set, slave_set, distance, adjust});
 }
 
 

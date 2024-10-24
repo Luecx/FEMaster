@@ -480,15 +480,15 @@ void Reader::process_connector() {
     auto nset2 = m_current_line.require<std::string>("NSET2");
     auto coord = m_current_line.require<std::string>("COORDINATESYSTEM");
 
-    ConnectorType ctype = ConnectorType::None;
+    constraint::ConnectorType ctype = constraint::ConnectorType::None;
     if (type == "BEAM") {
-        ctype = ConnectorType::Beam;
+        ctype = constraint::ConnectorType::Beam;
     } else if (type == "HINGE") {
-        ctype = ConnectorType::Hinge;
+        ctype = constraint::ConnectorType::Hinge;
     } else if (type == "CYLINDRICAL") {
-        ctype = ConnectorType::Cylindrical;
+        ctype = constraint::ConnectorType::Cylindrical;
     } else if (type == "TRANSLATOR") {
-        ctype = ConnectorType::Translator;
+        ctype = constraint::ConnectorType::Translator;
     } else {
         logging::error(false, "Unknown connector type: ", type);
     }
@@ -515,7 +515,7 @@ void Reader::process_coupling() {
     }
 
     if (type == "KINEMATIC") {
-        m_model->add_coupling(master_set, slave_set, dof_mask, CouplingType::KINEMATIC);
+        m_model->add_coupling(master_set, slave_set, dof_mask, constraint::CouplingType::KINEMATIC);
     } else {
         logging::warning(false, "Unknown coupling type: ", type);
         logging::warning(false, "    Known coupling types: KINEMATIC");

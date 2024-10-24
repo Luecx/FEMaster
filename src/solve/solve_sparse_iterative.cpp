@@ -3,7 +3,7 @@
 
 #include <iomanip>
 
-namespace solver{
+namespace fem::solver{
 
 #ifdef SUPPORT_GPU
 

@@ -1,7 +1,7 @@
 #include "orthotropic_elasticity.h"
 
 
-StaticMatrix<3, 3> fem::material::OrthotropicElasticity::get_2d() {
+fem::StaticMatrix<3, 3> fem::material::OrthotropicElasticity::get_2d() {
     auto vyx = vxy * Ey / Ex;  // Reciprocal Poisson's ratio
 
     auto denom = 1 - vxy * vyx;  // Denominator term in stiffness matrix
@@ -16,7 +16,7 @@ StaticMatrix<3, 3> fem::material::OrthotropicElasticity::get_2d() {
     );
 }
 
-StaticMatrix<6, 6> fem::material::OrthotropicElasticity::get_3d() {
+fem::StaticMatrix<6, 6> fem::material::OrthotropicElasticity::get_3d() {
     auto vyx = vxy * Ey / Ex;
     auto vzy = vyz * Ez / Ey;
     auto vxz = vzx * Ex / Ez;

@@ -1,6 +1,6 @@
 #include "isotropic_elasticity.h"
 
-StaticMatrix<3, 3> fem::material::IsotropicElasticity::get_2d() {
+fem::StaticMatrix<3, 3> fem::material::IsotropicElasticity::get_2d() {
 
     Precision scalar = youngs / (1 - poisson * poisson);
 
@@ -10,7 +10,7 @@ StaticMatrix<3, 3> fem::material::IsotropicElasticity::get_2d() {
          {0               , 0               , (1 - poisson) / 2 * scalar}});
 }
 
-StaticMatrix<6, 6> fem::material::IsotropicElasticity::get_3d() {
+fem::StaticMatrix<6, 6> fem::material::IsotropicElasticity::get_3d() {
     Precision scalar = youngs / ((1 + poisson) * (1 - 2 * poisson));
     Precision mu = (1 - 2 * poisson);
 

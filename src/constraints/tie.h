@@ -1,4 +1,22 @@
-#pragma once
+/******************************************************************************
+* @file tie.h
+* @brief Defines the Tie constraint class for coupling slave and master surfaces
+* in FEM. The Tie class finds the closest points on master surfaces for nodes
+* in a slave set and generates the equations required for coupling their DOFs.
+*
+* The class supports adjusting slave node positions to match master surfaces and
+* couples their degrees of freedom (DOFs) based on shape functions of the master
+* surface elements.
+*
+* @note The coupling is performed only for the DOFs that are active in both the
+* slave and master nodes.
+*
+* @see tie.cpp
+* @author Finn Eggers
+* @date 24.10.2024
+******************************************************************************/
+
+#pragma once  // Ensures this file is only included once during compilation
 
 #include "../model/sets.h"
 #include "../model/surface/surface.h"
@@ -6,112 +24,56 @@
 namespace fem {
 namespace constraint {
 
-
+/******************************************************************************
+* @class Tie
+* @brief Implements the tie constraint for coupling slave and master surfaces in FEM.
+*
+* The Tie class searches for the closest points on master surfaces for each node
+* in the slave set and couples their DOFs. If adjustment is enabled, it modifies
+* the slave node positions to match the master surface.
+******************************************************************************/
 class Tie {
+   std::string master_set;  ///< Name of the master set (surface set)
+   std::string slave_set;   ///< Name of the slave set (node set)
+   Precision distance;      ///< Maximum allowed distance for coupling
+   bool adjust;             ///< Whether to adjust slave nodes to match the master surface
 
-    std::string master_set;
-    std::string slave_set;
-    Precision distance;
-    bool adjust;
+   public:
+   /******************************************************************************
+    * @brief Constructor for the Tie class.
+    *
+    * Initializes the Tie object with the master and slave sets, coupling distance,
+    * and whether node positions should be adjusted.
+    *
+    * @param masterSet Name of the master set.
+    * @param slaveSet Name of the slave set.
+    * @param distance Maximum allowed distance between master and slave nodes.
+    * @param adjust Boolean flag indicating whether to adjust slave node positions.
+    ******************************************************************************/
+   Tie(const std::string& masterSet, const std::string& slaveSet, Precision distance, bool adjust);
 
-    public:
-    Tie(const std::string& masterSet, const std::string& slaveSet, Precision distance, bool adjust)
-        : master_set(masterSet)
-        , slave_set(slaveSet)
-        , distance(distance)
-        , adjust(adjust) {}
-
-    TripletList get_equations(SystemDofIds& system_nodal_dofs,
-                              model::Sets<std::vector<ID>>& surface_sets,
-                              model::Sets<std::vector<ID>>& node_sets,
-                              std::vector<model::SurfacePtr>& surfaces,
-                              NodeData& node_coords,
-                              int row_offset) {
-        TripletList result{};
-
-        const std::vector<ID>& surface_ids = surface_sets.get(master_set);
-
-        // go through each node in the slave set
-        for(ID id:node_sets.get(slave_set)) {
-
-            Vec3 node_pos;
-            node_pos(0) = node_coords(id, 0);
-            node_pos(1) = node_coords(id, 1);
-            node_pos(2) = node_coords(id, 2);
-
-            Precision best_dist = 1e36;
-            ID best_id;
-            Vec2 best_local;
-
-            // find the closest surface
-            for(ID s_id:surface_ids) {
-                auto s_ptr = surfaces.at(s_id);
-                if (s_ptr == nullptr) continue;
-
-                auto local = s_ptr -> global_to_local(node_pos, node_coords, true);;
-                auto mapped = s_ptr ->local_to_global(local, node_coords);
-
-                // compute distance
-                auto dist = (node_pos - mapped).norm();
-
-                if (dist > distance) continue;
-
-                if (dist < best_dist) {
-                    best_id = s_id;
-                    best_dist = dist;
-                    best_local = local;
-                }
-            }
-            // skip if none found
-            if (best_dist > distance) continue;
-
-            auto s_ptr = surfaces.at(best_id);
-
-            // adjust if required
-            if (adjust) {
-                auto mapped = s_ptr ->local_to_global(best_local, node_coords);
-                node_coords(id, 0) = mapped(0);
-                node_coords(id, 1) = mapped(1);
-                node_coords(id, 2) = mapped(2);
-            }
-
-            // compute which nodes to couple in the first place
-            Dofs dofs_mask{};
-            for(int i = 0; i < 6; i++) {
-                dofs_mask(0, i) = system_nodal_dofs(id, i) >= 0;
-            }
-            for (int local_id = 0; local_id < s_ptr->n_nodes; local_id ++) {
-                ID master_node_id = s_ptr->nodes()[local_id];
-                for(ID dof_id = 0; dof_id < 6; dof_id ++) {
-                    dofs_mask(0, dof_id) &= (system_nodal_dofs(master_node_id, dof_id) >= 0);
-                }
-            }
-
-            auto nodal_contributions = s_ptr->shape_function(best_local);
-            // divide
-
-            for(ID dof_id = 0; dof_id < 6; dof_id ++) {
-                if (dofs_mask(dof_id) == false) continue;
-
-                // set 1 for the current dof at the slave node
-                result.push_back(Triplet(row_offset, system_nodal_dofs(id, dof_id), 1));
-
-                // go through each node in the surface and couple the respective dofs
-                for (int local_id = 0; local_id < s_ptr->n_nodes; local_id ++) {
-                    ID master_node_id = s_ptr->nodes()[local_id];
-
-                    Precision weight = nodal_contributions(local_id);
-
-                    result.push_back(Triplet(row_offset, system_nodal_dofs(master_node_id, dof_id), -weight));
-                }
-                row_offset ++;
-            }
-        }
-
-        return result;
-    }
-
+   /******************************************************************************
+    * @brief Generates the coupling equations for the tie constraint.
+    *
+    * This function iterates over the slave nodes, finds the closest point on the
+    * master surface, and generates the coupling equations for the respective DOFs.
+    * Optionally adjusts the slave node positions to match the master surface.
+    *
+    * @param system_nodal_dofs System-wide DOF IDs for all nodes.
+    * @param surface_sets Set of surface IDs for the master set.
+    * @param node_sets Set of node IDs for the slave set.
+    * @param surfaces List of surfaces to search for the closest master points.
+    * @param node_coords Coordinates of all nodes in the system.
+    * @param row_offset Row offset for inserting the equations into the global system.
+    * @return TripletList A list of triplets representing the coupling equations.
+    ******************************************************************************/
+   TripletList get_equations(SystemDofIds& system_nodal_dofs,
+                             model::Sets<std::vector<ID>>& surface_sets,
+                             model::Sets<std::vector<ID>>& node_sets,
+                             std::vector<model::SurfacePtr>& surfaces,
+                             NodeData& node_coords,
+                             int row_offset);
 };
 
-}
-}
+}  // namespace constraint
+}  // namespace fem

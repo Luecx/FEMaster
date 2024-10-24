@@ -12,12 +12,13 @@
 
 #include "surface4.h"
 
+namespace fem::model {
 /**
  * @brief Constructor for the Surface4 class (quadrilateral surface element with 4 nodes).
  *
  * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
  */
-fem::model::Surface4::Surface4(const std::array<ID, 4>& pNodeIds)
+Surface4::Surface4(const std::array<ID, 4>& pNodeIds)
     : Surface<4>(pNodeIds) {}
 
 /**
@@ -27,7 +28,7 @@ fem::model::Surface4::Surface4(const std::array<ID, 4>& pNodeIds)
  * @param s Local coordinate in the parametric space.
  * @return StaticMatrix<4, 1> Vector of shape function values.
  */
-StaticMatrix<4, 1> fem::model::Surface4::shape_function(Precision r, Precision s) const {
+StaticMatrix<4, 1> Surface4::shape_function(Precision r, Precision s) const {
     StaticMatrix<4, 1> N;
     N(0, 0) = 0.25 * (1 - r) * (1 - s);  // Shape function for node 1
     N(1, 0) = 0.25 * (1 + r) * (1 - s);  // Shape function for node 2
@@ -43,7 +44,7 @@ StaticMatrix<4, 1> fem::model::Surface4::shape_function(Precision r, Precision s
  * @param s Local coordinate in the parametric space.
  * @return StaticMatrix<4, 2> Matrix of shape function derivatives.
  */
-StaticMatrix<4, 2> fem::model::Surface4::shape_derivative(Precision r, Precision s) const {
+StaticMatrix<4, 2> Surface4::shape_derivative(Precision r, Precision s) const {
     StaticMatrix<4, 2> dN;
     dN(0, 0) = -0.25 * (1 - s);  dN(0, 1) = -0.25 * (1 - r);  // dN1/dr, dN1/ds
     dN(1, 0) =  0.25 * (1 - s);  dN(1, 1) = -0.25 * (1 + r);  // dN2/dr, dN2/ds
@@ -59,7 +60,7 @@ StaticMatrix<4, 2> fem::model::Surface4::shape_derivative(Precision r, Precision
  * @param s Local coordinate in the parametric space.
  * @return StaticMatrix<4, 3> Matrix of second-order shape function derivatives.
  */
-StaticMatrix<4, 3> fem::model::Surface4::shape_second_derivative(Precision r, Precision s) const {
+StaticMatrix<4, 3> Surface4::shape_second_derivative(Precision r, Precision s) const {
     StaticMatrix<4, 3> ddN;
     ddN << 0, 0,  0.25,  // d²N1/dr², d²N1/ds², d²N1/(drds)
            0, 0, -0.25,  // d²N2/dr², d²N2/ds², d²N2/(drds)
@@ -73,7 +74,7 @@ StaticMatrix<4, 3> fem::model::Surface4::shape_second_derivative(Precision r, Pr
  *
  * @return StaticMatrix<4, 2> Local coordinates of the nodes.
  */
-StaticMatrix<4, 2> fem::model::Surface4::node_coords_local() const {
+StaticMatrix<4, 2> Surface4::node_coords_local() const {
     StaticMatrix<4, 2> local_coords;
     local_coords << -1.0, -1.0,  // Node 1
                      1.0, -1.0,  // Node 2
@@ -87,7 +88,7 @@ StaticMatrix<4, 2> fem::model::Surface4::node_coords_local() const {
  *
  * @return const quadrature::Quadrature& Quadrature scheme for the quadrilateral element.
  */
-const fem::quadrature::Quadrature& fem::model::Surface4::integration_scheme() const {
+const fem::quadrature::Quadrature& Surface4::integration_scheme() const {
     static const quadrature::Quadrature quad{quadrature::DOMAIN_ISO_QUAD, quadrature::ORDER_LINEAR};
     return quad;
 }
@@ -99,7 +100,7 @@ const fem::quadrature::Quadrature& fem::model::Surface4::integration_scheme() co
  * @param node_coords Coordinates of the element nodes.
  * @return Vec2 Local coordinates of the closest boundary point.
  */
-Vec2 fem::model::Surface4::closest_point_on_boundary(const Vec3& global, const StaticMatrix<4, 3>& node_coords) const {
+Vec2 Surface4::closest_point_on_boundary(const Vec3& global, const StaticMatrix<4, 3>& node_coords) const {
     // Boundary checks using line elements defined between nodes
     Line2A line1({0, 1});  // Line from node 1 to node 2
     Line2A line2({1, 2});  // Line from node 2 to node 3
@@ -137,6 +138,9 @@ Vec2 fem::model::Surface4::closest_point_on_boundary(const Vec3& global, const S
  * @param local Local coordinates (r, s).
  * @return bool True if the point is within bounds, false otherwise.
  */
-bool fem::model::Surface4::in_bounds(const Vec2& local) const {
+bool Surface4::in_bounds(const Vec2& local) const {
     return local(0) >= -1 && local(0) <= 1 && local(1) >= -1 && local(1) <= 1;
 }
+
+}  // namespace fem::model
+

@@ -72,14 +72,14 @@
      }
 
      // Logging input and output file information
-     logging::info(true, "");
-     logging::info(true, "Input file: ", input_file);
-     logging::info(true, "Output file: ", output_file);
-     logging::info(true, "CPU(s)    : ", ncpus);
-     logging::info(true, "");
+     fem::logging::info(true, "");
+     fem::logging::info(true, "Input file: ", input_file);
+     fem::logging::info(true, "Output file: ", output_file);
+     fem::logging::info(true, "CPU(s)    : ", ncpus);
+     fem::logging::info(true, "");
 
      // Store number of CPUs in config
-     global_config.max_threads = ncpus;
+     fem::global_config.max_threads = ncpus;
 
      // Read the input file using the reader
      fem::reader::Reader reader{input_file, output_file};

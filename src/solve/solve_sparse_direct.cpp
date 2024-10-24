@@ -5,7 +5,7 @@
 #include <mkl.h>
 #endif
 
-namespace solver{
+namespace fem::solver{
 
 DynamicVector solve_direct(SolverDevice device,
                           SparseMatrix& mat,

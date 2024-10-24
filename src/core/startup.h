@@ -5,7 +5,9 @@
 #ifndef FEMASTER_STARTUP_H
 #define FEMASTER_STARTUP_H
 
-namespace {
+namespace fem{
+
+namespace{
 
 struct Startup{
     Startup();
@@ -13,6 +15,7 @@ struct Startup{
 
 extern Startup startup;
 
+}
 }
 
 #endif    // FEMASTER_STARTUP_H

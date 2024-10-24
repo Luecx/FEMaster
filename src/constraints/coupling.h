@@ -1,124 +1,94 @@
-//
-// Created by Finn Eggers on 04.09.24.
-//
+/******************************************************************************
+* @file coupling.h
+* @brief Defines the Coupling class for handling kinematic couplings in FEM.
+*
+* The Coupling class provides functionality to couple master and slave nodes
+* based on specified degrees of freedom (DOFs). It supports coupling translations
+* and rotations, and generates the necessary coupling equations for FEM systems.
+*
+* @note Additional coupling types can be added as needed.
+*
+* @see coupling.cpp
+* @author Finn Eggers
+* @date 04.09.2024
+******************************************************************************/
 
-#ifndef FEMASTER_COUPLING_H
-#define FEMASTER_COUPLING_H
+#pragma once  // Ensures this file is only included once during compilation
 
 #include "../model/sets.h"
 #include "../core/types.h"
 
+namespace fem {
+namespace constraint {
+
+/******************************************************************************
+* @enum CouplingType
+* @brief Defines the available types of couplings in FEM.
+*
+* Currently, only kinematic coupling is supported, but additional types can be
+* added in the future.
+******************************************************************************/
 enum class CouplingType {
-    KINEMATIC,
-    // TODO: Add more coupling types
+   KINEMATIC,  ///< Kinematic coupling between master and slave nodes
+   // TODO: Add more coupling types
 };
 
+/******************************************************************************
+* @class Coupling
+* @brief Implements a coupling constraint between master and slave nodes.
+*
+* The Coupling class generates the necessary equations to couple the degrees
+* of freedom (DOFs) of slave nodes with a master node, based on a specified
+* coupling type and the system's DOF configurations.
+******************************************************************************/
 class Coupling {
 
-public:
-    ID master_node;
-    std::vector<ID> slave_nodes;
-    Dofs coupled_dofs;
-    CouplingType type;
+   public:
+   ID master_node;              ///< Master node ID
+   std::vector<ID> slave_nodes; ///< List of slave node IDs
+   Dofs coupled_dofs;           ///< DOFs that are to be coupled (6 DOFs per node)
+   CouplingType type;           ///< Type of coupling (e.g., kinematic)
 
+   public:
+   /******************************************************************************
+    * @brief Constructor for the Coupling class.
+    *
+    * Initializes the coupling constraint with a master node, a set of slave nodes,
+    * the degrees of freedom to couple, and the type of coupling.
+    *
+    * @param master_node The ID of the master node.
+    * @param slave_nodes A vector of IDs representing the slave nodes.
+    * @param coupled_dofs A Dofs object specifying the DOFs to couple.
+    * @param type The type of coupling to apply (e.g., kinematic).
+    ******************************************************************************/
+   Coupling(ID master_node, std::vector<ID> slave_nodes, Dofs coupled_dofs, CouplingType type);
 
-public:
-    Coupling(ID master_node, std::vector<ID> slave_nodes, Dofs coupled_dofs, CouplingType type) :
-        master_node(master_node),
-        slave_nodes(slave_nodes),
-        coupled_dofs(coupled_dofs),
-        type(type) {}
+   /******************************************************************************
+    * @brief Generates the coupling equations for the coupled DOFs.
+    *
+    * This function generates the necessary equations to couple the slave node
+    * DOFs with the master node, based on translations and rotations. The
+    * equations are returned as a list of triplets, representing matrix entries
+    * in a sparse system.
+    *
+    * @param system_nodal_dofs The global DOF IDs for all nodes in the system.
+    * @param node_coords The coordinates of all nodes in the system.
+    * @param row_offset The row offset for inserting the equations into the global system.
+    * @return TripletList A list of triplets representing the coupling equations.
+    ******************************************************************************/
+   TripletList get_equations(SystemDofIds& system_nodal_dofs, NodeData& node_coords, int row_offset);
 
-    TripletList get_equations(SystemDofIds& system_nodal_dofs, NodeData& node_coords, int row_offset) {
-        TripletList triplets{};
-        Index row = row_offset;
-        for (ID slave_node : slave_nodes) {
-
-
-            for (int i = 0; i < 6; i++) {
-                if (coupled_dofs(i)) {
-
-                    // if its a rotational dof, simply couple it with a single value of 1
-                    if (i >= 3) {
-                        auto dof_master = system_nodal_dofs(master_node, i);
-                        auto dof_slave  = system_nodal_dofs(slave_node, i);
-                        // if the slave does not have this dof, skip
-                        if (dof_slave < 0)
-                            continue;
-                        triplets.push_back(Triplet(row, dof_slave ,  1.0));
-                        triplets.push_back(Triplet(row, dof_master, -1.0));
-                    } else {
-                        auto dof_slave  = system_nodal_dofs(slave_node, i);
-
-                        if (dof_slave < 0)
-                            continue;
-                        ID dof_master_u = system_nodal_dofs(master_node, i);
-                        ID dof_master_r1 = system_nodal_dofs(master_node, (i+1) % 3 + 3);
-                        ID dof_master_r2 = system_nodal_dofs(master_node, (i+2) % 3 + 3);
-
-                        Precision dz = node_coords(slave_node,2) - node_coords(master_node,2);
-                        Precision dy = node_coords(slave_node,1) - node_coords(master_node,1);
-                        Precision dx = node_coords(slave_node,0) - node_coords(master_node,0);
-
-                        Precision dr1;
-                        Precision dr2;
-                        if (i == 0) {
-                            dr1 = dz;
-                            dr2 = -dy;
-                        } else if (i == 1) {
-                            dr1 = dx;
-                            dr2 = -dz;
-                        } else {
-                            dr1 = dy;
-                            dr2 = -dx;
-                        }
-
-                        triplets.push_back(Triplet(row, dof_slave   , -1.0));
-                        triplets.push_back(Triplet(row, dof_master_u,  1.0));
-                        triplets.push_back(Triplet(row, dof_master_r1,-dr1));
-                        triplets.push_back(Triplet(row, dof_master_r2,-dr2));
-                    }
-
-                    row += 1;
-                }
-            }
-        }
-        return triplets;
-    }
-
-    Dofs master_dofs(SystemDofs system_dof_mask) {
-        // We will initialize the slave DOFs as all false (not active)
-        Dofs slave_dofs = {false, false, false, false, false, false};
-
-        // Check the slave nodes' DOFs to see which are active
-        for (ID slave_node : slave_nodes) {
-            for (int i = 0; i < 6; i++) {
-                slave_dofs(i) |= system_dof_mask(slave_node, i);
-            }
-        }
-
-        // Now we construct the master DOFs based on the coupling and slave DOFs
-        // Translations only depend on the respective DOFs being coupled and active in the slaves
-        bool x_translation_needed = coupled_dofs(0) && slave_dofs(0); // x translation
-        bool y_translation_needed = coupled_dofs(1) && slave_dofs(1); // y translation
-        bool z_translation_needed = coupled_dofs(2) && slave_dofs(2); // z translation
-
-        // Rotations depend on being coupled or necessary due to translations in other axes
-        bool x_rotation_needed = (coupled_dofs(3) && slave_dofs(3)) || (slave_dofs(1) || slave_dofs(2));  // x rotation needed if y or z translation is active in slaves
-        bool y_rotation_needed = (coupled_dofs(4) && slave_dofs(4)) || (slave_dofs(0) || slave_dofs(2));  // y rotation needed if x or z translation is active in slaves
-        bool z_rotation_needed = (coupled_dofs(5) && slave_dofs(5)) || (slave_dofs(0) || slave_dofs(1));  // z rotation needed if x or y translation is active in slaves
-
-        return Dofs{
-                x_translation_needed,  // x translation: coupled and at least one slave has x translation
-                y_translation_needed,  // y translation: coupled and at least one slave has y translation
-                z_translation_needed,  // z translation: coupled and at least one slave has z translation
-                x_rotation_needed,     // x rotation: coupled or needed because y or z translations are active
-                y_rotation_needed,     // y rotation: coupled or needed because x or z translations are active
-                z_rotation_needed      // z rotation: coupled or needed because x or y translations are active
-        };
-    }
-
+   /******************************************************************************
+    * @brief Computes the necessary DOFs for the master node based on the coupling.
+    *
+    * This function determines which degrees of freedom (DOFs) are required for the
+    * master node, based on the coupled DOFs and the active DOFs in the slave nodes.
+    *
+    * @param system_dof_mask A mask of active DOFs for all nodes in the system.
+    * @return Dofs A Dofs object indicating which DOFs are required for the master node.
+    ******************************************************************************/
+   Dofs master_dofs(SystemDofs system_dof_mask);
 };
 
-
-#endif //FEMASTER_COUPLING_H
+}  // namespace constraint
+}  // namespace fem

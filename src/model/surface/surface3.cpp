@@ -12,12 +12,14 @@
 
 #include "surface3.h"
 
+namespace fem::model {
+
 /**
  * @brief Constructor for the Surface3 class (triangular surface element with 3 nodes).
  *
  * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
  */
-fem::model::Surface3::Surface3(const std::array<ID, 3>& pNodeIds)
+Surface3::Surface3(const std::array<ID, 3>& pNodeIds)
     : Surface<3>(pNodeIds) {}
 
 /**
@@ -27,7 +29,7 @@ fem::model::Surface3::Surface3(const std::array<ID, 3>& pNodeIds)
  * @param s Local coordinate in the parametric space.
  * @return StaticMatrix<3, 1> Vector of shape function values.
  */
-StaticMatrix<3, 1> fem::model::Surface3::shape_function(Precision r, Precision s) const {
+StaticMatrix<3, 1> Surface3::shape_function(Precision r, Precision s) const {
     StaticMatrix<3, 1> N;
     N(0, 0) = 1 - r - s;    // Shape function for node 1
     N(1, 0) = r;            // Shape function for node 2
@@ -42,7 +44,7 @@ StaticMatrix<3, 1> fem::model::Surface3::shape_function(Precision r, Precision s
  * @param s Local coordinate in the parametric space.
  * @return StaticMatrix<3, 2> Matrix of shape function derivatives.
  */
-StaticMatrix<3, 2> fem::model::Surface3::shape_derivative(Precision r, Precision s) const {
+StaticMatrix<3, 2> Surface3::shape_derivative(Precision r, Precision s) const {
     StaticMatrix<3, 2> dN;
     dN(0, 0) = -1;
     dN(0, 1) = -1;    // dN1/dr, dN1/ds
@@ -60,7 +62,7 @@ StaticMatrix<3, 2> fem::model::Surface3::shape_derivative(Precision r, Precision
  * @param s Local coordinate in the parametric space.
  * @return StaticMatrix<3, 3> Zero matrix for second-order derivatives.
  */
-StaticMatrix<3, 3> fem::model::Surface3::shape_second_derivative(Precision r, Precision s) const {
+StaticMatrix<3, 3> Surface3::shape_second_derivative(Precision r, Precision s) const {
     StaticMatrix<3, 3> ddN;
     ddN << 0, 0, 0, 0, 0, 0, 0, 0, 0;
     return ddN;
@@ -71,7 +73,7 @@ StaticMatrix<3, 3> fem::model::Surface3::shape_second_derivative(Precision r, Pr
  *
  * @return StaticMatrix<3, 2> Matrix of local node coordinates.
  */
-StaticMatrix<3, 2> fem::model::Surface3::node_coords_local() const {
+StaticMatrix<3, 2> Surface3::node_coords_local() const {
     StaticMatrix<3, 2> local_coords;
     local_coords << 0.0, 0.0,    // Node 1
                     1.0, 0.0,    // Node 2
@@ -84,7 +86,7 @@ StaticMatrix<3, 2> fem::model::Surface3::node_coords_local() const {
  *
  * @return const quadrature::Quadrature& Quadrature scheme for the triangular element.
  */
-const fem::quadrature::Quadrature& fem::model::Surface3::integration_scheme() const {
+const fem::quadrature::Quadrature& Surface3::integration_scheme() const {
     static const quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TRI, quadrature::ORDER_LINEAR};
     return quad;
 }
@@ -96,7 +98,7 @@ const fem::quadrature::Quadrature& fem::model::Surface3::integration_scheme() co
  * @param node_coords Coordinates of the element nodes.
  * @return Vec2 Local coordinates of the closest boundary point.
  */
-Vec2 fem::model::Surface3::closest_point_on_boundary(const StaticVector<3>& global, const StaticMatrix<3, 3>& node_coords) const {
+Vec2 Surface3::closest_point_on_boundary(const StaticVector<3>& global, const StaticMatrix<3, 3>& node_coords) const {
     // Implement boundary projections using line elements
     // Line elements are defined between nodes
     Line2B line1({0, 1});
@@ -130,6 +132,8 @@ Vec2 fem::model::Surface3::closest_point_on_boundary(const StaticVector<3>& glob
  * @param local Local coordinates (r, s).
  * @return bool True if the point is within bounds, false otherwise.
  */
-bool fem::model::Surface3::in_bounds(const Vec2& local) const {
+bool Surface3::in_bounds(const Vec2& local) const {
     return local(0) >= 0 && local(1) >= 0 && local(0) + local(1) <= 1;
 }
+
+}  // namespace fem::model

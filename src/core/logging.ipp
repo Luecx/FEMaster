@@ -4,7 +4,7 @@
 #include <type_traits>
 #include <iomanip>
 
-namespace logging{
+namespace fem::logging{
 
 
 template<typename T>

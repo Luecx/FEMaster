@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>  // For std::pair
 
-namespace solver {
+namespace fem::solver {
 
 /******************************************************************************
  * @brief Extracts eigenvalues (and optionally eigenvectors) from a matrix using a method on the specified device.
@@ -48,4 +48,4 @@ std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
                                                             int num_eigenvalues,
                                                             bool return_vectors = false);
 
-}  // namespace solver
+}  // namespace fem::solver

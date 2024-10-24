@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace logging{
+namespace fem::logging{
 inline int indentation_level = 0;
 
 inline void up() {
@@ -30,8 +30,7 @@ template<typename... Args> inline void warning(bool condition, Args... args);
 template<typename... Args> inline void info(bool condition, Args... args);
 template<typename... Args> inline void error(bool condition, Args... args);
 
-}
-
+} // namespace fem::logging
 
 #include "logging.ipp"
 

@@ -1,134 +1,94 @@
-//
-// Created by f_eggers on 08.10.2024.
-//
+/******************************************************************************
+* @file connector.h
+* @brief Defines the Connector class for applying constraints between nodes using a connector element.
+*
+* The Connector class links two nodes and constrains specific degrees of freedom (DOFs) using a
+* custom coordinate system. The constrained DOFs are defined by the connector type, which can
+* represent various physical connections such as beams or hinges.
+*
+* @details This class supports connectors that constrain translations and/or rotations in specific
+* directions based on the connector type, which is defined using a bitmask.
+*
+* @see connector.cpp
+* @author Finn Eggers
+* @date 08.10.2024
+******************************************************************************/
 
-#ifndef CONNECTOR_H
-#define CONNECTOR_H
+#pragma once  // Ensures this file is only included once during compilation
 
-#include "../cos/coordinate_system.h"
-#include "../core/types.h"
-#include "../core/logging.h"
-#include <iostream>
+#include "../cos/coordinate_system.h"  // For custom coordinate system handling
+#include "../core/types.h"             // For general types (ID, Triplet, etc.)
+#include "../core/logging.h"           // For logging warnings and errors
+#include <iostream>                    // For standard I/O operations (optional)
 
-/**
- * @enum ConnectorType
- * @brief Enum for defining different types of connectors using bitwise integer representations.
- *
- * @details Each connector type is defined using a bitmask, where each bit represents a DOF:
- *          - Bit 0: Translation-X
- *          - Bit 1: Translation-Y
- *          - Bit 2: Translation-Z
- *          - Bit 3: Rotation-X
- *          - Bit 4: Rotation-Y
- *          - Bit 5: Rotation-Z
- */
+namespace fem::constraint {
+
+/******************************************************************************
+* @enum ConnectorType
+* @brief Enum for defining different types of connectors using bitwise integer representations.
+*
+* Each connector type is represented using a bitmask, where each bit represents a degree of freedom (DOF):
+* - Bit 0: Translation-X
+* - Bit 1: Translation-Y
+* - Bit 2: Translation-Z
+* - Bit 3: Rotation-X
+* - Bit 4: Rotation-Y
+* - Bit 5: Rotation-Z
+******************************************************************************/
 enum ConnectorType : int {
-    None  = 0b000000,     ///< No DOFs are constrained.
-    Beam  = 0b111111,     ///< All 6 DOFs are constrained.
-    Hinge = 0b111011,      ///< All DOFs except rotation around X (bit 3 is 0).
-    Cylindrical = 0b011011, ///< Translation and rotation around X are allowed.
-    Translator = 0b011111, ///< Only translation in x direction is allowed.
+   None        = 0b000000,    ///< No DOFs are constrained.
+   Beam        = 0b111111,    ///< All 6 DOFs are constrained.
+   Hinge       = 0b111011,    ///< All DOFs except rotation around X (bit 3 is 0).
+   Cylindrical = 0b011011,    ///< Translation and rotation around X are allowed.
+   Translator  = 0b011111,    ///< Only translation in the X direction is allowed.
 };
 
-/**
- * @class Connector
- * @brief Class for representing a connector element that links two nodes.
- *
- * @details This class constrains specific degrees of freedom (DOFs) between
- *          two nodes using a custom coordinate system. Each DOF can be independently
- *          constrained based on the user-defined `constrained_dofs_` vector.
- */
+/******************************************************************************
+* @class Connector
+* @brief Class for representing a connector element that links two nodes.
+*
+* The Connector class constrains specific degrees of freedom (DOFs) between two nodes
+* using a custom coordinate system. The DOFs to be constrained are defined by the
+* connector type, which determines the physical connection behavior (e.g., beam or hinge).
+******************************************************************************/
 class Connector {
-    fem::cos::CoordinateSystemPtr coordinate_system_; ///< Pointer to the custom coordinate system.
-    ConnectorType connector_type_;          ///< Type of connector element.
-    Dofs constrained_dofs_;                 ///< Vector indicating which DOFs are constrained.
-    ID node_1_id_;                          ///< ID of the first node.
-    ID node_2_id_;                          ///< ID of the second node.
+   fem::cos::CoordinateSystemPtr coordinate_system_;    ///< Pointer to the custom coordinate system for transforming DOFs.
+   ConnectorType                 connector_type_;       ///< Type of the connector (e.g., Beam, Hinge).
+   Dofs                          constrained_dofs_;     ///< Vector indicating which DOFs are constrained (6 DOFs).
+   ID                            node_1_id_;            ///< ID of the first node.
+   ID                            node_2_id_;            ///< ID of the second node.
 
-public:
-    /**
-     * @brief Constructor for the Connector class.
-     * @param node_1_id ID of the first node.
-     * @param node_2_id ID of the second node.
-     * @param coordinate_system Pointer to the custom coordinate system.
-     * @param constrained_dofs Boolean vector indicating which DOFs are constrained.
-     */
-    Connector(ID node_1_id, ID node_2_id, fem::cos::CoordinateSystemPtr coordinate_system,  ConnectorType connector_type)
-        : coordinate_system_(coordinate_system), connector_type_(connector_type),
-        constrained_dofs_({
-                !!(connector_type_ & 0b100000),
-                !!(connector_type_ & 0b010000),
-                !! (connector_type_ & 0b001000),
-                !! (connector_type_ & 0b000100),
-                !! (connector_type_ & 0b000010),
-                !! (connector_type_ & 0b000001)}),
-    node_1_id_(node_1_id), node_2_id_(node_2_id) {
+   public:
+   /******************************************************************************
+    * @brief Constructor for the Connector class.
+    *
+    * Initializes a Connector object that links two nodes and constrains the specified
+    * degrees of freedom (DOFs) based on the connector type. The coordinate system
+    * is used to transform the local DOF directions to the global system.
+    *
+    * @param node_1_id ID of the first node.
+    * @param node_2_id ID of the second node.
+    * @param coordinate_system Pointer to the custom coordinate system for the connector.
+    * @param connector_type The type of the connector, which defines the constrained DOFs.
+    ******************************************************************************/
+   Connector(ID node_1_id, ID node_2_id, fem::cos::CoordinateSystemPtr coordinate_system, ConnectorType connector_type);
 
-    }
+   virtual ~Connector() = default;    ///< Default destructor for the Connector class.
 
-    virtual ~Connector() = default;
-
-    /**
-     * @brief Generate the constraint equations for the connector element.
-     * @param system_nodal_dofs The global system DOF IDs for each node.
-     * @param node_coords The coordinates of all nodes.
-     * @param row_offset The starting row for the constraint equations.
-     * @return A list of triplets representing the constraint equations.
-     */
-    TripletList get_equations(SystemDofIds& system_nodal_dofs, NodeData& /* node_coords */, int row_offset) {
-        TripletList triplets{}; // Initialize the triplet list for constraint equations.
-        int row = row_offset;   // Row index starts from the given offset.
-
-        // Loop through each degree of freedom (DOF)
-        for (int i = 0; i < 6; i++) {
-            if (!constrained_dofs_(i))
-                continue; // Skip unconstrained DOFs.
-
-            // Get the global system DOF indices for the two nodes
-            auto dof_1 = system_nodal_dofs(node_1_id_, i);
-            auto dof_2 = system_nodal_dofs(node_2_id_, i);
-
-            // Skip if any of the DOFs are invalid (-1 means unconstrained in the system)
-            if (dof_1 < 0 || dof_2 < 0)
-                continue;
-
-            // Determine the local axis based on whether it's a translational or rotational DOF
-            Vec3 local_dof_direction;
-            if (i < 3) {
-                // Translational DOFs (0: X, 1: Y, 2: Z)
-                local_dof_direction = Vec3::Unit(i);
-            } else {
-                // Rotational DOFs (3: RX, 4: RY, 5: RZ)
-                local_dof_direction = Vec3::Unit(i - 3); // Adjust to correct local rotational axis
-            }
-            // could also use Vec3::Unit(i % 3);
-
-            // Transform the local DOF direction to the global coordinate system
-            Vec3 global_dof_direction = coordinate_system_->to_global(local_dof_direction);
-
-            // Add the constraint equation to the triplet list
-            for (int j = 0; j < 3; j++) {
-
-                auto dof_id_n1 = system_nodal_dofs(node_1_id_, 3 * (i / 3) + j);
-                auto dof_id_n2 = system_nodal_dofs(node_2_id_, 3 * (i / 3) + j);
-
-                if (dof_id_n1 < 0 || dof_id_n2 < 0) {
-                    logging::warning(false, "Invalid DOF indices for node ", node_1_id_, " and ", node_2_id_,
-                        ". Constraint may not work as intended.");
-                    continue;
-                }
-
-                // i / 3 gives either the offset for the translational or rotational DOFs
-                // and j is the index for the x, y, z components of the global DOF direction
-                triplets.push_back(Triplet(row, dof_id_n1, global_dof_direction(j)));
-                triplets.push_back(Triplet(row, dof_id_n2, -global_dof_direction(j)));
-            }
-
-            row++; // Move to the next row for the next constraint
-        }
-
-        return triplets; // Return the list of equations.
-    }
+   /******************************************************************************
+    * @brief Generates the constraint equations for the connector element.
+    *
+    * This method generates the constraint equations between the two nodes based
+    * on the specified constrained degrees of freedom (DOFs) and their global
+    * system DOF indices. The equations are transformed using the custom coordinate
+    * system for accurate coupling in the global system.
+    *
+    * @param system_nodal_dofs The global system DOF IDs for each node.
+    * @param node_coords The coordinates of all nodes (unused in this implementation).
+    * @param row_offset The starting row for inserting the constraint equations.
+    * @return TripletList A list of triplets representing the constraint equations.
+    ******************************************************************************/
+   TripletList get_equations(SystemDofIds& system_nodal_dofs, NodeData& node_coords, int row_offset);
 };
 
-#endif //CONNECTOR_H
+}    // namespace fem::constraint

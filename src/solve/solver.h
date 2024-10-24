@@ -9,7 +9,7 @@
 
 #include <string>
 
-namespace solver {
+namespace fem::solver {
 
 /******************************************************************************
  * @brief Solves a linear system using a direct solver on the specified device.

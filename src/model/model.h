@@ -25,9 +25,9 @@ struct Model {
 
 
     // constraints
-    std::vector<Connector>       connectors{};
-    std::vector<Coupling>        couplings{};
-    std::vector<constraint::Tie> ties{};
+    std::vector<constraint::Connector>       connectors{};
+    std::vector<constraint::Coupling>        couplings{};
+    std::vector<constraint::Tie>             ties{};
 
     // sets to group nodes and elements and everything that has a name
     Sets<std::vector<ID>> node_sets{SET_NODE_ALL};
@@ -78,8 +78,8 @@ struct Model {
     inline void add_coordinate_system(const std::string& name, Args&&... args);
 
     // add couplings
-    void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, ConnectorType type);
-    void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, CouplingType type);
+    void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
+    void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type);
     void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
 
     // set management

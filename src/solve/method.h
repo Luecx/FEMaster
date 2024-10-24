@@ -15,7 +15,7 @@
 
 #pragma once
 
-namespace solver {
+namespace fem::solver {
 
 /******************************************************************************
  * @enum SolverMethod

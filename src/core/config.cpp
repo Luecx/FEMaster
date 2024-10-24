@@ -3,4 +3,4 @@
 //
 #include "config.h"
 
-Config global_config{};
+fem::Config fem::global_config{};

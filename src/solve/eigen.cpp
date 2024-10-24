@@ -7,7 +7,7 @@
 #include <Spectra/MatOp/SymShiftInvert.h>
 #include <Spectra/MatOp/SparseSymMatProd.h>
 
-namespace solver {
+namespace fem::solver {
 
 std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
                                                             SparseMatrix& mat,
@@ -161,4 +161,4 @@ std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
 }
 
 
-}  // namespace solver
+}  // namespace fem::solver
