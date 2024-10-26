@@ -351,12 +351,16 @@ void Reader::process_cload() {
         auto str = m_current_line.values()[0];
         auto lx  = m_current_line.get_value(1, 0.0f);
         auto ly  = m_current_line.get_value(2, 0.0f);
-        auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
+        auto lz  = m_current_line.get_value(3, 0.0f);
+
+        auto mx  = m_current_line.get_value(4, 0.0f);
+        auto my  = m_current_line.get_value(5, 0.0f);
+        auto mz  = m_current_line.get_value(6, 0.0f);
 
         if (m_model->nodesets().has(str)) {
-            m_model->add_cload(str, Vec3(lx, ly, lz));
+            m_model->add_cload(str, Vec6(lx, ly, lz, mx, my, mz));
         } else {
-            m_model->add_cload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
+            m_model->add_cload(std::stoi(m_current_line.values()[0]), Vec6(lx, ly, lz, mx, my, mz));
         }
     }
 }

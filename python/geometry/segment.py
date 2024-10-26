@@ -12,33 +12,29 @@
 ################################################################################
 """
 
-from abc import ABC, abstractmethod
-
 import numpy as np
 
-class Segment(ABC):
-    _counter = 0  # Class-level counter to generate unique names
+class Segment:
+    _counter = 0
 
-    def __init__(self, start, end, subdivisions, name=None):
-        """
-        Initialize a base segment with start and end points, subdivisions, and an optional name.
+    def __init__(self, function, t_start=0, t_end=1, n_subdivisions=None, n_points=None, name=None):
 
-        Parameters:
-        -----------
-        start : list or tuple of float
-            Coordinates of the starting point [x, y].
-        end : list or tuple of float
-            Coordinates of the end point [x, y].
-        subdivisions : int
-            Number of subdivisions for discretizing the segment.
-        name : str, optional
-            Name of the segment, useful for node sets or boundary naming.
-            If None, a unique name is assigned automatically.
-        """
-        self.start = start
-        self.end = end
-        self.subdivisions = subdivisions
+        # function to evaluate the segment
+        self.func = function
 
+        # starting points and t-values coreesponding to the start and end points
+        self.t_start = None
+        self.t_end = None
+        self.p_start = None
+        self.p_end = None
+
+        # set the variables above
+        self.truncate(t_start, t_end)
+
+        # number of subdivisions and points
+        self.set_detail(n_subdivisions, n_points)
+
+        # name and id
         Segment._counter += 1
         self.id = Segment._counter
 
@@ -48,58 +44,91 @@ class Segment(ABC):
         else:
             self.name = name
 
-    @abstractmethod
-    def get_points(self):
-        """
-        Abstract method to be implemented by subclasses to return a list of points
-        representing the discretized segment.
+    @staticmethod
+    def equal_points(point1, point2, tolerance=1e-6):
+        return np.linalg.norm(np.array(point1) - np.array(point2)) <= tolerance
 
-        Returns:
-        --------
-        points : list of [float, float]
-            List of coordinates defining the segment.
-        """
-        pass
+    @staticmethod
+    def inbetween_points(point, point1, point2, tolerance=1e-6):
+        # Convert points to numpy arrays
+        p = np.array(point)
+        p1 = np.array(point1)
+        p2 = np.array(point2)
+
+        # Calculate the vectors
+        v10 = p - p1  # Vector from point1 to point
+        v12 = p2 - p1  # Vector from point1 to point2
+
+        # Check if the point is along the line segment within tolerance
+        proj_length = np.dot(v10, v12) / np.dot(v12, v12)  # Projection of v10 on v12
+        if proj_length < -tolerance or proj_length > 1 + tolerance:
+            return False  # Not in the segment
+
+        # Check if the point is within the tolerance distance from the line segment
+        closest_point = p1 + proj_length * v12
+        distance = np.linalg.norm(p - closest_point)
+
+        return distance <= tolerance
 
     def contains(self, point, tolerance=1e-6):
-        """
-        Check if a point is approximately on this segment using a piecewise linear approximation.
-
-        Parameters:
-        -----------
-        point : list or tuple of float
-            Coordinates of the point [x, y].
-        tolerance : float, optional
-            Tolerance for determining if the point is on the segment.
-
-        Returns:
-        --------
-        is_on_segment : bool
-            True if the point is on the segment, False otherwise.
-        """
-        point = np.array(point)
-        segment_points = self.get_points()
-
-        # Check each consecutive pair of points as a straight line segment
-        for i in range(len(segment_points) - 1):
-            start = np.array(segment_points[i])
-            end = np.array(segment_points[i + 1])
-
-            # Compute the vector from start to end and from start to the point
-            line_vec = end - start
-            point_vec = point - start
-
-            # Check if the cross product is approximately zero (collinearity check)
-            if np.abs(np.cross(line_vec, point_vec)) > tolerance:
-                continue
-
-            # Check if the point is within the segment bounds using dot product
-            if np.dot(point_vec, line_vec) < 0 or np.dot(point_vec, line_vec) > np.dot(line_vec, line_vec):
-                continue
-
-            return True
-
+        points = self.get_points()
+        for i in range(len(points) - 1):
+            if self.inbetween_points(point, points[i], points[i+1], tolerance):
+                return True
         return False
 
-    def get_id(self):
-        return self.id
+    def get_points(self):
+        points = [self.at(t) for t in np.linspace(self.t_start, self.t_end, self.n_points)]
+        points[0]  = self.p_start
+        points[-1] = self.p_end
+        return points
+
+    def at(self, t):
+        return self.func(t)
+
+    def truncate(self, t_start=0, t_end=1):
+        self.t_start = t_start
+        self.t_end = t_end
+
+        self.p_start = np.asarray(self.at(t_start))
+        self.p_end   = np.asarray(self.at(t_end))
+
+    def set_function(self, function):
+        self.func = function
+        self.truncate(self.t_start, self.t_end)
+
+    def set_detail(self, n_subdivisions=None, n_points=None):
+        if n_subdivisions is not None and n_points is not None:
+            raise ValueError("Only one of 'n_subdivisions' or 'n_points' can be provided.")
+        if n_subdivisions is None and n_points is None:
+            raise ValueError("Either 'n_subdivisions' or 'n_points' must be provided.")
+        if n_subdivisions is not None:
+            self.n_subdivisions = n_subdivisions
+            self.n_points = n_subdivisions + 1
+        else:
+            self.n_points = n_points
+            self.n_subdivisions = n_points - 1
+
+        if self.n_subdivisions < 1:
+            self.n_subdivisions = 1
+            self.n_points = 2
+
+    def tangent(self, t):
+        dir = self.at(t + 1e-6) - self.at(t - 1e-6)
+        return dir / np.linalg.norm(dir)
+
+    def perpendicular(self, t):
+        tan = self.tangent(t)
+        return np.array([-tan[1], tan[0]])
+
+    def plot(self, ax=None, **kwargs):
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        points = self.get_points()
+        x, y = zip(*points)
+        ax.plot(x, y, **kwargs)
+        ax.scatter(x, y, color='black')
+        plt.show()

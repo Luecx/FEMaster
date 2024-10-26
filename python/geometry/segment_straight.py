@@ -15,15 +15,28 @@ import numpy as np
 from .segment import Segment
 
 class StraightSegment(Segment):
-    def get_points(self):
+    def __init__(self, start, end, n_subdivisions=None, n_points=None, name=None):
         """
-        Generates equally spaced points between the start and end points.
+        Initialize a straight line segment with start and end points.
 
-        Returns:
-        --------
-        points : list of [float, float]
-            List of coordinates along the straight segment.
+        Parameters:
+        -----------
+        start : list or tuple of float
+            Coordinates of the start point [x, y].
+        end : list or tuple of float
+            Coordinates of the end point [x, y].
         """
-        x_vals = np.linspace(self.start[0], self.end[0], self.subdivisions + 1)
-        y_vals = np.linspace(self.start[1], self.end[1], self.subdivisions + 1)
-        return [[x, y] for x, y in zip(x_vals, y_vals)]
+        # Define the linear function for the segment
+        def linear_function(t):
+            return np.array([
+                start[0] + t * (end[0] - start[0]),
+                start[1] + t * (end[1] - start[1])
+            ])
+
+        # Initialize the base class with the linear function
+        super().__init__(linear_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions,
+                         n_points=n_points, name=name)
+
+        # Store the start and end points for reference
+        self.start = start
+        self.end = end

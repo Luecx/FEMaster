@@ -14,89 +14,77 @@
 """
 
 from .segment import Segment
+from .segment_filet import Filet
 import numpy as np
 
 class SegmentGroup(Segment):
-    def __init__(self, segments, name=None, tolerance=1e-6):
-        """
-        Initialize a SegmentGroup with a list of segments.
+    def __init__(self, segments, name=None):
+        # Store segments and check if the group forms a closed loop
+        self.segments   = segments
+        self.closed     = self.is_closed()
 
-        Parameters:
-        -----------
-        segments : list of Segment
-            A list of segment objects (e.g., StraightSegment, CurvedSegment, CircleSegment).
-        name : str, optional
-            Name of the segment group. If None, a unique name will be assigned.
-        tolerance : float, optional
-            Tolerance for comparing points to determine continuity and closure.
-        """
-        # Start and end are determined by the first and last segments in the group
-        start = segments[0].start if segments else [0, 0]
-        end = segments[-1].end if segments else [0, 0]
-        subdivisions = sum([seg.subdivisions for seg in segments])
+        at,total_subdivisions = self._create_function()
 
-        super().__init__(start, end, subdivisions, name)
-        self.segments = segments
-        self.closed = self.is_closed(tolerance)
-        self.tolerance = tolerance
+        # Initialize the Segment base class
+        super().__init__(function=at, t_start=0, t_end=1, n_subdivisions=total_subdivisions, name=name)
 
     def is_closed(self, tolerance=1e-6):
         """
-        Determine if the segment group forms a closed loop.
-
-        Parameters:
-        -----------
-        tolerance : float
-            Tolerance for comparing points to determine if the first and last points are the same.
-
-        Returns:
-        --------
-        closed : bool
-            True if the first segment's start point is within tolerance of the last segment's end point.
+        Check if the segment group forms a closed loop.
         """
         if not self.segments:
             return False
-        return self._points_within_tolerance(self.segments[0].start, self.segments[-1].end, tolerance)
+        return Segment.equal_points(self.segments[0].p_start, self.segments[-1].p_end, tolerance)
 
-    def _points_within_tolerance(self, point1, point2, tolerance):
+    def insert_filet(self, seg_id_1, radius, n_subdivisions=5):
         """
-        Check if two points are within a given tolerance.
-
-        Parameters:
-        -----------
-        point1 : list or tuple of float
-            The first point [x, y].
-        point2 : list or tuple of float
-            The second point [x, y].
-        tolerance : float
-            The tolerance value for comparison.
-
-        Returns:
-        --------
-        within_tolerance : bool
-            True if the points are within the specified tolerance, False otherwise.
+        Insert a filet between two segments in the group.
         """
-        return np.linalg.norm(np.array(point1) - np.array(point2)) <= tolerance
+        # Get the segments
+        seg_id_2 = (seg_id_1 + 1) % len(self.segments)
+        seg1 = self.segments[seg_id_1]
+        seg2 = self.segments[seg_id_2]
 
-    def get_points(self):
+        filet = Filet(seg1, seg2, radius, n_subdivisions=n_subdivisions)
+        ## update t values
+        seg1.truncate(seg1.t_start, filet.t1)
+        seg2.truncate(filet.t2    , seg2.t_end)
+
+
+        ## Insert the filet
+        self.segments.insert(seg_id_2, filet)
+        func, total_subdivisions = self._create_function()
+        self.set_function(func)
+        self.set_detail(n_subdivisions=total_subdivisions)
+
+    def _create_function(self):
+        # Map each segment to its proportional t_start and t_end within the group
+        segment_ranges     = []
+        total_subdivisions = sum(seg.n_subdivisions for seg in self.segments)
+        cumulative_start   = 0
+        for seg in self.segments:
+            seg_fraction = seg.n_subdivisions / total_subdivisions
+            segment_ranges.append((cumulative_start, cumulative_start + seg_fraction))
+            cumulative_start += seg_fraction
+        self.segment_ranges = segment_ranges
+
+        # functor
+        def at(t):
+            for (seg, (t_start, t_end)) in zip(self.segments, segment_ranges):
+                if t_start -1e-12 <= t <= t_end + 1e-12:
+                    local_t = (t - t_start) / (t_end - t_start)
+                    local_t = seg.t_start + local_t * (seg.t_end - seg.t_start)
+                    return seg.at(local_t)
+            return self.segments[-1].at(1)
+
+        return at, total_subdivisions
+
+    def __str__(self):
         """
-        Generate a complete list of points for the entire segment group.
-
-        Returns:
-        --------
-        points : list of [float, float]
-            List of coordinates defining all segments in order.
+        print all segments with their id, name, t_start, t_end and class name
+        :return:
         """
-        points = []
-        for segment in self.segments:
-            segment_points = segment.get_points()
-            # Check if the current segment start is close enough to the last added point
-            if points and self._points_within_tolerance(segment_points[0], points[-1], self.tolerance):
-                points.extend(segment_points[1:])
-            else:
-                points.extend(segment_points)
-
-        if self.closed:
-            points[-1] = points[0]
-
-        return points
+        s = ""
+        for i, seg in enumerate(self.segments):
+            s += f"Segment {i}: {seg.name} ({seg.t_start}, {seg.t_end})\n"
+        return s

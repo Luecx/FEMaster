@@ -62,6 +62,11 @@ void Model::add_cload(const std::string& nset, Vec3 load){
         add_cload(id, load);
     }
 }
+void Model::add_cload(const std::string& nset, Vec6 load){
+    for(ID id:node_sets.get(nset)){
+        add_cload(id, load);
+    }
+}
 void Model::add_cload(const ID id, Vec3 load){
     for(int i = 0; i < 3; i++){
         load_sets.current()(id,i) += load(i);
@@ -69,6 +74,14 @@ void Model::add_cload(const ID id, Vec3 load){
             load_sets.all()(id,i) += load(i);
     }
 }
+void Model::add_cload(const ID id, Vec6 load) {
+    for(int i = 0; i < 6; i++){
+        load_sets.current()(id,i) += load(i);
+        if(!load_sets.is_default_set())
+            load_sets.all()(id,i) += load(i);
+    }
+}
+
 
 void Model::add_dload(const std::string& sfset, Vec3 load) {
     for(ID id:surface_sets.get(sfset)){

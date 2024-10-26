@@ -36,7 +36,6 @@ def mesh_interior(segment_groups, second_order=False, mesh_type=0, tolerance=1e-
     curve_loops = []
     internal_curves = []
 
-
     # error if any of the segments are not closed
     # TODO: fix this
     for group in segment_groups:
@@ -77,13 +76,7 @@ def mesh_interior(segment_groups, second_order=False, mesh_type=0, tolerance=1e-
                 tag2 = line_tags[i + 1]
                 gmsh.model.geo.addLine(tag1, tag2)
 
-    gmsh.model.geo.addPlaneSurface(curve_loops)
-
-    # show a list of functions that can be used
-    print(dir(gmsh.model.geo))
-
-    # # Create a surface with holes using the curve loops
-    # surface_tag = gmsh.model.geo.addPlaneSurface(curve_loops)
+    surface_tag = gmsh.model.geo.addPlaneSurface(curve_loops)
 
     # Synchronize before meshing
     gmsh.model.geo.synchronize()
