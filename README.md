@@ -8,8 +8,9 @@
 - [Dependencies](#dependencies)
 - [Optional Features](#optional-features)
 - [Usage](#usage)
-    - [Compiling the Project](#compiling-the-project)
-    - [Compilation Options](#compilation-options)
+  - [Compiling the Project](#compiling-the-project)
+  - [Build Configuration](#build-configuration)
+  - [Compilation Options](#compilation-options)
 - [Testing](#testing)
 - [Contributing](#contributing)
 - [License](#license)
@@ -20,7 +21,7 @@
 - **CUDA Support**: Optional GPU acceleration with CUDA.
 - **OpenMP**: Enable multi-threaded execution for faster computations.
 - **MKL Integration**: Use Intel's Math Kernel Library (MKL) for optimized performance.
-- **Cross-platform Support**: Compatible with Linux, macOS, and Windows.
+- **Cross-platform Support**: Compatible with Linux, macOS, and Windows (including Apple Silicon support).
 
 ## Installation
 
@@ -75,86 +76,98 @@ For GPU acceleration, you can install the CUDA toolkit. Download and install it 
 
 ## Dependencies
 
-FEMaster relies on the following libraries for core functionality:
+### Required Dependencies
 - **Eigen**: For matrix operations (download from [Eigen website](https://eigen.tuxfamily.org/dox/))
 - **Spectra**: For eigenvalue computations (download from [Spectra GitHub](https://github.com/yixuan/spectra))
 
-Optional dependencies:
-- **MKL**: Intel's Math Kernel Library for optimized performance.
-- **CUDA**: NVIDIA's toolkit for GPU acceleration.
+### Optional Dependencies
+- **MKL**: Intel's Math Kernel Library for optimized performance
+- **CUDA**: NVIDIA's toolkit for GPU acceleration
+- **Google Test**: For running the test suite
 
 ## Optional Features
 
-- **OpenMP**: Enabled by default for multi-core processing.
-- **MKL**: Can be optionally enabled for high-performance linear algebra routines.
-- **CUDA Double Precision**: Can be enabled for high-precision GPU computation.
+The project supports several optional features that can be enabled or disabled during compilation:
+
+| Feature | Description |
+|---------|-------------|
+| OpenMP | Multi-threading support for parallel computation |
+| MKL | Intel Math Kernel Library integration |
+| Sequential MKL | Single-threaded MKL operation |
+| CUDA Double Precision | High-precision GPU computation |
+| Double Precision | Double-precision floating-point computation |
+| Debug Mode | Enhanced debugging information |
 
 ## Usage
 
 ### Compiling the Project
 
-FEMaster can be compiled in different modes depending on the desired features (CPU-only, GPU acceleration, etc.). You can customize the build with flags for OpenMP, MKL, and CUDA support.
+FEMaster provides several make targets for different build configurations:
 
-#### General Compilation Command
 ```bash
-make all
+make all      # Build everything (CPU, GPU, and tests)
+make cpu      # Build CPU-only version
+make gpu      # Build GPU-enabled version
+make tests    # Build test suite
+make clean    # Remove build artifacts
+make info     # Display build configuration
+make help     # Show available make targets
 ```
 
-This command will compile both the CPU-only and GPU-accelerated versions of the code.
+### Build Configuration
 
-#### Building CPU-Only Version
+You can view your current build configuration using:
+
 ```bash
-make cpu
+make info
 ```
 
-#### Building GPU Version (with CUDA support)
-```bash
-make gpu
-```
-
-#### Running the Tests
-```bash
-make tests
-```
-
-#### Clean Compiled Files
-```bash
-make clean
-```
+This will display information about:
+- Project name
+- Platform and architecture
+- Compiler version
+- Compiler flags
+- Feature flags (MKL, OpenMP, Debug mode)
 
 ### Compilation Options
 
-Several build flags allow you to enable or disable features as needed:
+The following build flags can be configured during compilation:
 
-| Flag               | Default | Description                                                                                |
-|--------------------|---------|--------------------------------------------------------------------------------------------|
-| `openmp`           | 1       | Enables/disables OpenMP for multi-core support                                             |
-| `mkl`              | 0       | Enables/disables MKL integration for optimized performance. If possible, enable this!      |
-| `cuda_dp`          | 1       | Enables/disables CUDA double precision. Only relevant for GPU version. Always recommended. |
-| `double_precision` | 1       | Enables/disables single/double precision computation. Always prefer double precision!      |
-| `debug`            | 0       | Enables/disables debug mode                                                                |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `openmp` | 1 | Enable/disable OpenMP support |
+| `mkl` | 0 | Enable/disable MKL integration |
+| `mkl_sequential` | 0 | Enable/disable Sequential MKL |
+| `cuda_dp` | 1 | Enable/disable CUDA double precision |
+| `debug` | 0 | Enable/disable debug mode |
+| `double_precision` | 1 | Enable/disable double precision |
 
-You can override these options during compilation by passing them as environment variables. For example, to disable OpenMP and enable MKL:
+To use these flags, append them to your make command:
 
 ```bash
-make cpu openmp=0 mkl=1
+make cpu openmp=0 mkl=1              # Build CPU version without OpenMP but with MKL
+make gpu cuda_dp=1 double_precision=1 # Build GPU version with double precision
+make all debug=1                     # Build everything in debug mode
 ```
 
-### Sample Compilation Process
-```bash
-make cpu            # Compile for CPU execution
-make gpu            # Compile for GPU execution (CUDA required)
-make all mkl=1      # Compile with MKL support enabled
-```
+### Platform-Specific Features
+
+The build system automatically detects and adapts to different platforms:
+- Supports both x86_64 and ARM64 architectures
+- Automatic detection of Clang vs GCC
+- Platform-specific library paths (especially for Apple Silicon)
+- Appropriate MKL configuration based on platform
 
 ## Testing
 
-To run the test suite, use the following command:
+The project uses Google Test for its test suite. To run the tests:
+
 ```bash
 make tests
+./bin/FEMaster_test
 ```
 
-The tests are built using Google Test, and they ensure that the functionality of the FEMaster code is working correctly across different configurations.
+Test binaries are automatically configured for your platform, including proper library paths for both Intel and Apple Silicon machines.
 
 ## Contributing
 

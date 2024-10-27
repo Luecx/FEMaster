@@ -1,4 +1,10 @@
 #===============================================================
+# Project Settings
+#===============================================================
+
+PROJECT_NAME = "FEMaster"
+
+#===============================================================
 # Compiler Options and Configurations
 #===============================================================
 
@@ -10,11 +16,11 @@ CXX  = g++
 # Default Feature Flags
 #===============================================================
 
-openmp         ?= 1   # Enable/disable OpenMP
-mkl            ?= 0   # Enable/disable MKL (Math Kernel Library)
-mkl_sequential ?= 0   # Enable/disable Sequential MKL
-cuda_dp        ?= 1   # Enable/disable CUDA Double Precision
-debug          ?= 0   # Enable/disable Debug mode
+openmp           ?= 1   # Enable/disable OpenMP
+mkl              ?= 0   # Enable/disable MKL (Math Kernel Library)
+mkl_sequential   ?= 0   # Enable/disable Sequential MKL
+cuda_dp          ?= 1   # Enable/disable CUDA Double Precision
+debug            ?= 0   # Enable/disable Debug mode
 double_precision ?= 1 # Enable/disable Double Precision
 #===============================================================
 # General Compiler Flags
@@ -152,38 +158,50 @@ TST_OBJS     := $(TST_SRCS:$(TESTDIR)/%.cpp=$(GPP_OBJDIR)/%.o) $(GPP_OBJS)
 # Executable Files
 #===============================================================
 
-EXE_CPU  := $(BINDIR)/FEMaster.exe
-EXE_GPU  := $(BINDIR)/FEMaster_gpu.exe
-EXE_TST  := $(BINDIR)/test_suite.exe
+# Change the executable definitions to remove .exe
+EXE_CPU  := $(BINDIR)/$(PROJECT_NAME)
+EXE_GPU  := $(BINDIR)/$(PROJECT_NAME)_gpu
+EXE_TST  := $(BINDIR)/$(PROJECT_NAME)_test
 
-#===============================================================
-# Display Compilation Flags
-#===============================================================
+# Add these new utility targets at the end of your makefile
+info:
+	@echo "Build Configuration:"
+	@echo "  Project        : $(PROJECT_NAME)"
+	@echo "  Platform       : $(UNAME) ($(shell uname -m))"
+	@echo "  Compiler       : $(COMPILER_VERSION)"
+	@echo "  C++ Flags      : $(CXXFLAGS)"
+	@echo "  NVCC Flags     : $(NVCCFLAGS)"
+	@echo "  MKL Enabled    : $(mkl)"
+	@echo "  OpenMP Enabled : $(openmp)"
+	@echo "  Debug Mode     : $(debug)"
 
-show_flags:
-	@echo "Compilation Flags:"
-	@echo "-------------------"
-	@echo "C++ Compiler : $(COMPILER_VERSION)"
-	@echo "NVCC Compiler: $(NVCC)"
-	@echo "CXXFLAGS     : $(CXXFLAGS)"
-	@echo "NVCCFLAGS    : $(NVCCFLAGS)"
-	@echo "LIBS         : $(LIBS)"
-	@echo "Feature Flags: $(FEATURE_FLAGS)"
-	@echo ""
+clean:
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(OBJDIR) $(BINDIR)
+
+help:
+	@echo "Available targets:"
+	@echo "  all    : Build everything (default)"
+	@echo "  cpu    : Build CPU-only version"
+	@echo "  gpu    : Build GPU-enabled version"
+	@echo "  tests  : Build test suite"
+	@echo "  clean  : Remove build artifacts"
+	@echo "  info   : Show build configuration"
+	@echo "  help   : Show this help message"
 
 #===============================================================
 # Build Targets
 #===============================================================
 
-all: show_flags cpu gpu tests
+all: info cpu gpu tests
 
-cpu: show_flags $(EXE_CPU)
+cpu: info $(EXE_CPU)
 
 gpu: CXXFLAGS  += -DSUPPORT_GPU
 gpu: NVCCFLAGS += -DSUPPORT_GPU
-gpu: show_flags $(EXE_GPU) clean-exp-lib
+gpu: info $(EXE_GPU) clean-exp-lib
 
-tests: show_flags $(EXE_TST)
+tests: info $(EXE_TST)
 
 #===============================================================
 # Build Rules
@@ -233,5 +251,3 @@ $(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
 clean-exp-lib:
 	@-rm -f $(BINDIR)/*.exp $(BINDIR)/*.lib
 
-clean:
-	rm -rf $(GPP_OBJDIR) $(NVCC_OBJDIR) $(BINDIR) $(OBJDIR)
