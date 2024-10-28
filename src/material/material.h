@@ -21,6 +21,7 @@ struct Material {
 
     // Density of the material, default value is -1 indicating it's not set
     Precision m_density = -1;
+    Precision m_thermal_expansion = -1;
 
     public:
 
@@ -46,14 +47,26 @@ struct Material {
         m_density = density;
     }
 
+    void set_thermal_expansion(Precision thermal_expansion){
+        m_thermal_expansion = thermal_expansion;
+    }
+
     // Function to check if the density has been set (value is greater than 0)
     bool has_density() const {
         return m_density > 0;
     }
 
+    bool has_thermal_expansion() const {
+        return m_thermal_expansion > 0;
+    }
+
     // Function to get the density of the material
     Precision density() const {
         return m_density;
+    }
+
+    Precision thermal_expansion() const {
+        return m_thermal_expansion;
     }
 };
 }    // namespace material

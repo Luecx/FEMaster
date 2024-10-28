@@ -40,14 +40,19 @@ class Reader {
     void process_nset();
     void process_elset();
     void process_sfset();
+
     void process_material() ;
     void process_elastic() ;
     void process_density();
+    void process_thermal_expansion();
+
     void process_solid_section();
     void process_cload();
     void process_dload();
     void process_vload();
+    void process_tload();
     void process_support();
+    void process_temperature();
 
     void process_coordinate_system();
     void process_connector();

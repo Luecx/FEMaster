@@ -229,6 +229,11 @@ public:
     void apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override;
 
     /**
+     * @brief Applies a thermal load to the element.
+     */
+    void apply_tload(NodeData& node_coords, NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override;
+
+    /**
      * @brief Computes the nodal stress and strain for the element.
      *
      * @param node_coords The global nodal coordinates for the element.

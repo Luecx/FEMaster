@@ -105,6 +105,21 @@ void Model::add_vload(const ID id, Vec3 load){
         elements[id]->apply_vload(node_coords, load_sets.all(), load);
 }
 
+void Model::add_tload(std::string& temp_field, Precision ref_temp) {
+    logging::error(_fields_temperature.has(temp_field), "Temperature field ", temp_field, " does not exist");
+
+    NodeData& temp = _fields_temperature.get(temp_field);
+
+    for(ElementPtr& elem:elements){
+        if (elem == nullptr)
+            continue;
+
+        elem->apply_tload(node_coords, load_sets.current(), temp, ref_temp);
+        if(!load_sets.is_default_set())
+            elem->apply_tload(node_coords, load_sets.all(), temp, ref_temp);
+    }
+}
+
 void Model::add_support(const std::string& nset, const StaticVector<6> constraint){
     for(ID id:node_sets.get(nset)){
         add_support(id, constraint);
@@ -143,6 +158,15 @@ void Model::add_support_rot(const ID id, const Vec3 rotation){
 }
 void Model::add_support(const ID id, const Dim dim, const Precision displacement){
     support_sets.current()(id,dim) = displacement;
+}
+
+void Model::set_field_temperature(const std::string& name, const ID id, Precision value) {
+    if (!_fields_temperature.has(name)) {
+        _fields_temperature.activate(name, max_nodes, 1);
+        _fields_temperature.current().fill(std::numeric_limits<Precision>::quiet_NaN());
+    }
+    _fields_temperature.activate(name, max_nodes, 1);
+    _fields_temperature.current()(id) = value;
 }
 
 material::Material& Model::active_material(){

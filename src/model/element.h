@@ -52,7 +52,12 @@ struct ElementInterface {
                                              NodeData& stress,
                                              NodeData& strain,
                                              NodeData& xyz)                                                   = 0;
-    virtual void       apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load)                    = 0;
+    virtual void       apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load) {
+        logging::error(false, "Volumetric load not implemented for this element type");
+    }
+    virtual void       apply_tload(NodeData& node_coords, NodeData& node_loads, NodeData& node_temp, Precision ref_temp) {
+        logging::error(false, "Thermal load not implemented for this element type");
+    };
     virtual void       compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) = 0;
 };
 

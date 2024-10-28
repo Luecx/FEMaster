@@ -44,10 +44,14 @@ void Reader::process() {
             process_elastic();
         } else if (m_current_line.command() == "DENSITY") {
             process_density();
+        } else if (m_current_line.command() == "THERMALEXPANSION") {
+            process_thermal_expansion();
         } else if (m_current_line.command() == "SOLIDSECTION") {
             process_solid_section();
         } else if (m_current_line.command() == "SUPPORT") {
             process_support();
+        } else if (m_current_line.command() == "TEMPERATURE") {
+            process_temperature();
         } else if (m_current_line.command() == "ORIENTATION") {
             process_coordinate_system();
         } else if (m_current_line.command() == "CONNECTOR") {
@@ -62,6 +66,8 @@ void Reader::process() {
             process_dload();
         } else if (m_current_line.command() == "VLOAD") {
             process_vload();
+        } else if (m_current_line.command() == "TLOAD") {
+            process_tload();
         } else if (m_current_line.command() == "LOADCASE") {
             process_loadcase();
         } else {
@@ -334,6 +340,14 @@ void Reader::process_density() {
     next_line();
 }
 
+void Reader::process_thermal_expansion() {
+    // read THERMAL EXPANSION
+    next_line();
+    auto v = m_current_line.get_value(0, 0.0f);
+    m_model->active_material().set_thermal_expansion(v);
+    next_line();
+}
+
 void Reader::process_solid_section() {
     auto mat = m_current_line.require<std::string>("MAT", "MATERIAL");
     auto els = m_current_line.require<std::string>("ELSET");
@@ -405,6 +419,17 @@ void Reader::process_vload() {
     }
 }
 
+void Reader::process_tload() {
+    // read TLOAD, LOAD_COLLECTOR=xyz, temperature field=xyz, reference temperature=xyz
+    auto lod_col  = m_current_line.require<std::string>("LOAD_COLLECTOR");
+    auto temp_fi  = m_current_line.require<std::string>("TEMPERATUREFIELD");
+    auto ref_temp = m_current_line.require<Precision  >("REFERENCETEMPERATURE");
+
+    m_model->activate_load_set(lod_col);
+    m_model->add_tload(temp_fi, ref_temp);
+    next_line();
+}
+
 void Reader::process_support() {
     // read SUPPORT, SUPPORT_COLLECTOR=xyz
     // NSET, lx, ly, lz
@@ -432,6 +457,27 @@ void Reader::process_support() {
             m_model->add_support(str, constraint);
         } else {
             m_model->add_support(std::stoi(str), constraint);
+        }
+    }
+}
+
+void Reader::process_temperature() {
+    // read TEMPERATURE, NAME=xyz
+    // NSET, value
+    // id, value
+    // ...
+    auto name = m_current_line.require<std::string>("NAME");
+
+    while (next_line().type() == DATA_LINE) {
+        auto str   = m_current_line.values()[0];
+        auto value = m_current_line.get_value(1, 0.0f);
+
+        if (m_model->nodesets().has(str)) {
+            for (auto id : m_model->nodesets().get(str)) {
+                m_model->set_field_temperature(name, id, value);
+            }
+        } else {
+            m_model->set_field_temperature(name, std::stoi(str), value);
         }
     }
 }

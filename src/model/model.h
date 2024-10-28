@@ -23,7 +23,6 @@ struct Model {
     std::vector<ElementPtr> elements{};
     std::vector<SurfacePtr> surfaces{};
 
-
     // constraints
     std::vector<constraint::Connector>       connectors{};
     std::vector<constraint::Coupling>        couplings{};
@@ -39,10 +38,13 @@ struct Model {
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
-    // storage for all the load collectors
+    // storage for all the sets
     Sets<NodeData> load_sets;
     Sets<NodeData> support_sets;
     Sets<material::Material> materials;
+
+    // storage for other fields
+    Sets<NodeData> _fields_temperature;
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces) :
@@ -99,6 +101,7 @@ struct Model {
     void add_dload      (ID id, Vec3 load);
     void add_vload      (const std::string& elset, Vec3 load);
     void add_vload      (ID id, Vec3 load);
+    void add_tload      (std::string& temp_field, Precision ref_temp);
 
     // support managment
     void add_support    (const std::string& nset, StaticVector<6> constraint);
@@ -108,6 +111,9 @@ struct Model {
     void add_support    (ID id, Vec3 displacement);
     void add_support_rot(ID id, Vec3 rotation);
     void add_support    (ID id, Dim dim, Precision displacement = 0);
+
+    // filling in fields
+    void set_field_temperature(const std::string& name, const ID id, Precision value);
 
     // access to active sets
     material::Material& active_material();
