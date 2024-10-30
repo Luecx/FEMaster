@@ -24,7 +24,7 @@ DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b) 
     std::vector<Precision> reduced_values;
 
     // Iterate over both vectors
-    for (size_t i = 0; i < a.size(); ++i) {
+    for (Index i = 0; i < (Index)a.size(); ++i) {
         // If the value in `b` is NaN, keep the corresponding value from `a`
         if (std::isnan(b(i))) {
             reduced_values.push_back(a(i));
@@ -33,7 +33,7 @@ DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b) 
 
     // Copy reduced values into a DynamicVector (Eigen::VectorXd)
     DynamicVector reduced_vector(reduced_values.size());
-    for (int i = 0; i < reduced_values.size(); ++i) {
+    for (Index i = 0; i < (Index)reduced_values.size(); ++i) {
         reduced_vector(i) = reduced_values[i];
     }
 
@@ -49,7 +49,7 @@ DynamicVector expand_vec_to_vec(const DynamicVector& reduced_vector, const Dynam
     int reduced_index = 0;
 
     // Iterate through the `b` vector
-    for (size_t i = 0; i < b.size(); ++i) {
+    for (Index i = 0; i < (Index)b.size(); ++i) {
         // If the value in `b` is NaN, replace it with the next value from the reduced vector
         if (std::isnan(b(i)) && reduced_index < reduced_vector.size()) {
             expanded_vector(i) = reduced_vector(reduced_index);

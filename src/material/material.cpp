@@ -5,5 +5,5 @@
 #include "material.h"
 
 namespace fem {
-namespace material {}    // namespace material
+namespace material {}    // namespace _material
 }    // namespace fem

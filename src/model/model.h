@@ -2,6 +2,7 @@
 
 #include "../core/core.h"
 #include "element/element.h"
+#include "element/element_structural.h"
 #include "geometry/surface/surface.h"
 #include "sets.h"
 #include "../constraints/coupling.h"
@@ -24,9 +25,9 @@ struct Model {
     std::vector<SurfacePtr> surfaces{};
 
     // constraints
-    std::vector<constraint::Connector>       connectors{};
-    std::vector<constraint::Coupling>        couplings{};
-    std::vector<constraint::Tie>             ties{};
+    std::vector<constraint::Connector>       _connectors {};
+    std::vector<constraint::Coupling>        _couplings {};
+    std::vector<constraint::Tie>             _ties {};
 
     // sets to group nodes and elements and everything that has a name
     Sets<std::vector<ID>> node_sets{SET_NODE_ALL};
@@ -39,29 +40,27 @@ struct Model {
     Dim element_dims = 0;
 
     // storage for all the sets
-    Sets<NodeData> load_sets;
-    Sets<NodeData> support_sets;
-    Sets<material::Material> materials;
+    Sets<NodeData>           _load_sets;
+    Sets<NodeData>           _support_sets;
+    Sets<material::Material> _materials;
 
     // storage for other fields
-    Sets<NodeData> _fields_temperature;
+    Sets<NodeData>   _fields_temperature;
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces) :
         max_nodes   (max_nodes),
         max_elements(max_elems),
         max_surfaces(max_surfaces),
-        node_coords (max_nodes, 3),
-        load_sets   ("LALL", max_nodes, 6),
-        support_sets("SALL", max_nodes, 6){
+        node_coords (max_nodes, 3), _load_sets("LALL", max_nodes, 6), _support_sets("SALL", max_nodes, 6){
 
         // clear node coords
         node_coords.setZero();
 
         // clear sets to make sure
-        load_sets   .current().setZero();
-        support_sets.current().setZero();
-        support_sets.current().fill(std::numeric_limits<Precision>::quiet_NaN());
+        _load_sets.current().setZero();
+        _support_sets.current().setZero();
+        _support_sets.current().fill(std::numeric_limits<Precision>::quiet_NaN());
 
         // resize elements to avoid later reallocation
         elements.resize(max_elems);
@@ -79,7 +78,7 @@ struct Model {
     template<typename T, typename... Args>
     inline void add_coordinate_system(const std::string& name, Args&&... args);
 
-    // add couplings
+    // add _couplings for structural problems
     void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type);
     void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
@@ -91,29 +90,6 @@ struct Model {
     void activate_load_set   (const std::string &name);
     void activate_support_set(const std::string &name);
     void activate_material   (const std::string& name);
-
-    // load management
-    void add_cload      (const std::string& nset, Vec3 load);
-    void add_cload      (const std::string& nset, Vec6 load);
-    void add_cload      (ID id, Vec3 load);
-    void add_cload      (ID id, Vec6 load);
-    void add_dload      (const std::string& sfset, Vec3 load);
-    void add_dload      (ID id, Vec3 load);
-    void add_vload      (const std::string& elset, Vec3 load);
-    void add_vload      (ID id, Vec3 load);
-    void add_tload      (std::string& temp_field, Precision ref_temp);
-
-    // support managment
-    void add_support    (const std::string& nset, StaticVector<6> constraint);
-    void add_support    (const std::string& nset, Vec3 displacement);
-    void add_support_rot(const std::string& nset, Vec3 rotation);
-    void add_support    (ID id, StaticVector<6> constraint);
-    void add_support    (ID id, Vec3 displacement);
-    void add_support_rot(ID id, Vec3 rotation);
-    void add_support    (ID id, Dim dim, Precision displacement = 0);
-
-    // filling in fields
-    void set_field_temperature(const std::string& name, const ID id, Precision value);
 
     // access to active sets
     material::Material& active_material();
@@ -127,11 +103,29 @@ struct Model {
     Sets<std::vector<ID>>&  elemsets();
     Sets<std::vector<ID>>&  surfsets();
 
+    // -------------------- STRUCTURAL --------------------
+    // load management
+    void add_cload      (const std::string& nset, Vec6 load);
+    void add_cload      (ID id, Vec6 load);
+    void add_dload      (const std::string& sfset, Vec3 load);
+    void add_dload      (ID id, Vec3 load);
+    void add_vload      (const std::string& elset, Vec3 load);
+    void add_vload      (ID id, Vec3 load);
+    void add_tload      (std::string& temp_field, Precision ref_temp);
+
+    // support managment
+    void add_support    (const std::string& nset, StaticVector<6> constraint);
+    void add_support    (ID id, StaticVector<6> constraint);
+
+    // filling in fields
+    void set_field_temperature(const std::string& name, const ID id, Precision value);
+
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);
 
     // stream output to console
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
+
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();

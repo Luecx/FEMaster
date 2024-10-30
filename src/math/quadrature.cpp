@@ -21,7 +21,7 @@ Point Quadrature::get_point(ID n) const {
     return scheme.points[n];
 }
 
-ID Quadrature::count() const {
+Index Quadrature::count() const {
     return scheme.points.size();
 }
 

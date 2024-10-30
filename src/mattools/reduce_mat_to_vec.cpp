@@ -31,7 +31,7 @@ DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const NodeData& bc_
 
     // Copy active DOFs into a DynamicVector (Eigen::VectorXd)
     DynamicVector reduced_vector(active_dofs.size());
-    for (int i = 0; i < active_dofs.size(); ++i) {
+    for (Index i = 0; i < active_dofs.size(); ++i) {
         reduced_vector(i) = active_dofs[i];
     }
 

@@ -6,7 +6,7 @@
 * custom coordinate system. The constrained DOFs are defined by the connector type, which can
 * represent various physical connections such as beams or hinges.
 *
-* @details This class supports connectors that constrain translations and/or rotations in specific
+* @details This class supports _connectors that constrain translations and/or rotations in specific
 * directions based on the connector type, which is defined using a bitmask.
 *
 * @see connector.cpp
@@ -25,7 +25,7 @@ namespace fem::constraint {
 
 /******************************************************************************
 * @enum ConnectorType
-* @brief Enum for defining different types of connectors using bitwise integer representations.
+* @brief Enum for defining different types of _connectors using bitwise integer representations.
 *
 * Each connector type is represented using a bitmask, where each bit represents a degree of freedom (DOF):
 * - Bit 0: Translation-X

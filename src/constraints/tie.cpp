@@ -104,7 +104,7 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
        for(int i = 0; i < 6; i++) {
            dofs_mask(0, i) = system_nodal_dofs(id, i) >= 0;
        }
-       for (int local_id = 0; local_id < s_ptr->n_nodes; local_id++) {
+       for (ID local_id = 0; local_id < (ID)s_ptr->n_nodes; local_id++) {
            ID master_node_id = s_ptr->nodes()[local_id];
            for(ID dof_id = 0; dof_id < 6; dof_id++) {
                dofs_mask(0, dof_id) &= (system_nodal_dofs(master_node_id, dof_id) >= 0);
@@ -126,7 +126,7 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
            result.push_back(Triplet(row_offset, system_nodal_dofs(id, dof_id), 1));
 
            // Couple with the master nodes
-           for (int local_id = 0; local_id < s_ptr->n_nodes; local_id++) {
+           for (ID local_id = 0; local_id < (ID)s_ptr->n_nodes; local_id++) {
                ID master_node_id = s_ptr->nodes()[local_id];
                Precision weight = nodal_contributions(local_id);
 

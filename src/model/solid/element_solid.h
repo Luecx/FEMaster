@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "../element/element.h"
+#include "../element/element_structural.h"
 #include "../../math/interpolate.h"
 #include "../geometry/surface/surface.h"
 
@@ -19,7 +19,7 @@ namespace fem::model {
  * concrete implementations of the shape functions and integration schemes.
  ******************************************************************************/
 template<Index N>
-struct SolidElement : public ElementInterface {
+struct SolidElement : public StructuralElement {
 
     //-------------------------------------------------------------------------
     // Member Variables
@@ -46,7 +46,7 @@ public:
      * @param p_node_ids An array containing the IDs of the nodes that define the element.
      */
     SolidElement(ID p_elem_id, std::array<ID, N> p_node_ids)
-        : ElementInterface(p_elem_id)
+        : StructuralElement(p_elem_id)
         , node_ids(p_node_ids) {}
 
     //-------------------------------------------------------------------------
@@ -202,7 +202,7 @@ public:
      * @param surface_id The ID of the surface.
      * @return SurfacePtr A shared pointer to the surface.
      */
-    virtual SurfacePtr surface(ID surface_id) override {return nullptr;};
+    virtual SurfacePtr surface(ID surface_id) override = 0;
 
     /**
      * @brief Returns the number of integration points in the quadrature scheme.

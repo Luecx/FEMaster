@@ -4,6 +4,7 @@
 #include "../../material/material.h"
 #include "../geometry/surface/surface.h"
 #include "../../math/quadrature.h"
+#include "element_types.h"
 
 #include <array>
 
@@ -11,18 +12,24 @@ namespace fem {
 
 namespace model {
 
-struct ElementInterface {
+struct ElementInterface : public std::enable_shared_from_this<ElementInterface> {
     const ID elem_id = 0;
 
     protected:
-    material::Material* material = nullptr;
+    // storing the type of this element
+    ElementTypeFlags _flags;
+
+    material::Material* _material = nullptr;
 
     public:
     ElementInterface(ID p_elem_id)
         : elem_id(p_elem_id) {}
 
+    virtual ~ElementInterface() = default;
+
+
     void set_material(material::Material* material) {
-        ElementInterface::material = material;
+        ElementInterface::_material = material;
     }
 
     virtual ElDofs dofs()                 = 0;
@@ -30,6 +37,8 @@ struct ElementInterface {
     virtual Dim    n_nodes()              = 0;
     virtual Dim    n_integration_points() = 0;
     virtual ID*    nodes()                = 0;
+
+    virtual SurfacePtr surface(ID surface_id) = 0;
 
     // iterator to iterate over nodes
     inline ID* begin() {
@@ -39,26 +48,23 @@ struct ElementInterface {
         return nodes() + n_nodes();
     }
 
-    virtual SurfacePtr surface(ID surface_id)                                                                 = 0;
-    virtual Precision  volume(NodeData& node_coords)                                                          = 0;
-    virtual MapMatrix  stiffness(NodeData& position, Precision* buffer)                                       = 0;
-    virtual MapMatrix  mass(NodeData& position, Precision* buffer)                                            = 0;
-    virtual void       compute_stress_strain_nodal(NodeData& node_coords,
-                                                   NodeData& displacement,
-                                                   NodeData& stress,
-                                                   NodeData& strain)                                          = 0;
-    virtual void       compute_stress_strain(NodeData& node_coords,
-                                             NodeData& displacement,
-                                             NodeData& stress,
-                                             NodeData& strain,
-                                             NodeData& xyz)                                                   = 0;
-    virtual void       apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load) {
-        logging::error(false, "Volumetric load not implemented for this element type");
+    // cast to a specific type
+    // Templated function for casting to a specific type
+    template <typename T>
+    std::shared_ptr<T> as() {
+        return std::dynamic_pointer_cast<T>(shared_from_this());
     }
-    virtual void       apply_tload(NodeData& node_coords, NodeData& node_loads, NodeData& node_temp, Precision ref_temp) {
-        logging::error(false, "Thermal load not implemented for this element type");
-    };
-    virtual void       compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) = 0;
+
+
+    void _set_type(ElementType flags) {
+        _flags |= flags;
+    }
+
+    // Function to check if the element is of a specific type
+    bool is_type(ElementType type) const {
+        return (_flags & type) != 0;
+    }
+
 };
 
 struct ElementInterface;

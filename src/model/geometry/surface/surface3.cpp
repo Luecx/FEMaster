@@ -45,6 +45,8 @@ StaticMatrix<3, 1> Surface3::shape_function(Precision r, Precision s) const {
  * @return StaticMatrix<3, 2> Matrix of shape function derivatives.
  */
 StaticMatrix<3, 2> Surface3::shape_derivative(Precision r, Precision s) const {
+    (void) r;
+    (void) s;
     StaticMatrix<3, 2> dN;
     dN(0, 0) = -1;
     dN(0, 1) = -1;    // dN1/dr, dN1/ds
@@ -63,6 +65,8 @@ StaticMatrix<3, 2> Surface3::shape_derivative(Precision r, Precision s) const {
  * @return StaticMatrix<3, 3> Zero matrix for second-order derivatives.
  */
 StaticMatrix<3, 3> Surface3::shape_second_derivative(Precision r, Precision s) const {
+    (void) r;
+    (void) s;
     StaticMatrix<3, 3> ddN;
     ddN << 0, 0, 0, 0, 0, 0, 0, 0, 0;
     return ddN;

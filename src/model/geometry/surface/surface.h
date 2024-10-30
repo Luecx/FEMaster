@@ -37,9 +37,9 @@
 namespace fem::model {
 
 struct SurfaceInterface {
-    const int n_edges;
-    const int n_nodes;
-    const int n_nodes_per_edge;
+    const Index n_edges;
+    const Index n_nodes;
+    const Index n_nodes_per_edge;
 
     /**
      * @brief Constructor for SurfaceInterface
@@ -48,7 +48,7 @@ struct SurfaceInterface {
      * @param nNodes Number of nodes in the surface.
      * @param nNodesPerEdge Number of nodes per edge.
      */
-    SurfaceInterface(int nEdges=0, int nNodes=0, int nNodesPerEdge=0)
+    SurfaceInterface(Index nEdges=0, Index nNodes=0, Index nNodesPerEdge=0)
         : n_edges(nEdges), n_nodes(nNodes), n_nodes_per_edge(nNodesPerEdge) {}
 
     /**
@@ -56,13 +56,13 @@ struct SurfaceInterface {
      */
     virtual ~SurfaceInterface() = default;
 
-    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const {return Vec3::Zero();};
-    virtual Vec2 global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const {return Vec2::Zero();};
-    virtual bool in_bounds(const Vec2& local) const {return false;};
-    virtual Precision area(const NodeData& node_coords_system) const {return 0;};
-    virtual DynamicVector shape_function(const Vec2& local) const {return DynamicVector::Zero(0);};
-    virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const {return DynamicVector::Zero(0);};
-    virtual ID* nodes() {return nullptr;};
+    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const = 0;
+    virtual Vec2 global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const = 0;
+    virtual bool in_bounds(const Vec2& local) const = 0;
+    virtual Precision area(const NodeData& node_coords_system) const = 0;
+    virtual DynamicVector shape_function(const Vec2& local) const = 0;
+    virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const = 0;
+    virtual ID* nodes() = 0;
     virtual void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) = 0;
 };
 

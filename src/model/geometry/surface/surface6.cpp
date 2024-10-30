@@ -66,6 +66,9 @@ StaticMatrix<6, 2> Surface6::shape_derivative(Precision r, Precision s) const {
  * @return StaticMatrix<6, 3> Matrix of second-order shape function derivatives.
  */
 StaticMatrix<6, 3> Surface6::shape_second_derivative(Precision r, Precision s) const {
+    (void) r;
+    (void) s;
+
     StaticMatrix<6, 3> ddN;
 
     // N1 = 1 - 3(r + s) + 2(r + s)^2

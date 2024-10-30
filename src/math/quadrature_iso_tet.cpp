@@ -21,14 +21,14 @@ constexpr Point domain_iso_tet_points_4[] = {
     Point(p2, p2, p1, 1.0 / 4.0 / 6.0)
 };
 
-// ORDER_CUBIC
-constexpr Point domain_iso_tet_points_5[] = {
-    Point(1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, -4.0 / 5.0  / 6.0),
-    Point(1.0 / 2.0, 1.0 / 6.0, 1.0 / 6.0,  9.0 / 20.0 / 6.0),
-    Point(1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0,  9.0 / 20.0 / 6.0),
-    Point(1.0 / 6.0, 1.0 / 6.0, 1.0 / 2.0,  9.0 / 20.0 / 6.0),
-    Point(1.0 / 6.0, 1.0 / 2.0, 1.0 / 6.0,  9.0 / 20.0 / 6.0)
-};
+//// ORDER_CUBIC
+//constexpr Point domain_iso_tet_points_5[] = {
+//    Point(1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, -4.0 / 5.0  / 6.0),
+//    Point(1.0 / 2.0, 1.0 / 6.0, 1.0 / 6.0,  9.0 / 20.0 / 6.0),
+//    Point(1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0,  9.0 / 20.0 / 6.0),
+//    Point(1.0 / 6.0, 1.0 / 6.0, 1.0 / 2.0,  9.0 / 20.0 / 6.0),
+//    Point(1.0 / 6.0, 1.0 / 2.0, 1.0 / 6.0,  9.0 / 20.0 / 6.0)
+//};
 
 // ORDER_QUARTIC (8-point Gauss rule)
 constexpr Point domain_iso_tet_points_8[] = {

@@ -17,13 +17,13 @@ void Model::add_connector(const std::string& set1, const std::string& set2, cons
     ID id1 = node_sets.get(set1)[0];
     ID id2 = node_sets.get(set2)[0];
 
-    connectors.push_back({id1, id2, coordinate_systems.get(coordinate_system), type});
+    _connectors.push_back({id1, id2, coordinate_systems.get(coordinate_system), type});
 }
 
 void Model::add_coupling(const std::string &master_set, const std::string &slave_set, Dofs coupled_dofs, constraint::CouplingType type) {
     logging::error(node_sets.get(master_set).size() == 1, "Master set must contain exactly one node");
     ID master_node = node_sets.get(master_set)[0];
-    couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
+    _couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
 }
 
 void Model::add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust) {
@@ -31,7 +31,7 @@ void Model::add_tie(const std::string& master_set, const std::string& slave_set,
     logging::error(surface_sets.has(master_set), "Master set ", master_set, " is not a defined surface set");
     logging::error(node_sets   .has(slave_set) , "Slave set " , slave_set , " is not a defined node set");
 
-    ties.push_back({master_set, slave_set, distance, adjust});
+    _ties.push_back({master_set, slave_set, distance, adjust});
 }
 
 
@@ -45,43 +45,30 @@ void Model::activate_surface_set(const std::string &name) {
     surface_sets.activate(name);
 }
 void Model::activate_load_set(const std::string &name) {
-    load_sets.activate(name, max_nodes, 6);
-    load_sets.current().setZero();
+    _load_sets.activate(name, max_nodes, 6);
+    _load_sets.current().setZero();
 }
 void Model::activate_support_set(const std::string &name) {
-    support_sets.activate(name, max_nodes, 6);
-    support_sets.current().setZero();
-    support_sets.current().fill(std::numeric_limits<Precision>::quiet_NaN());
+    _support_sets.activate(name, max_nodes, 6);
+    _support_sets.current().setZero();
+    _support_sets.current().fill(std::numeric_limits<Precision>::quiet_NaN());
 }
 void Model::activate_material(const std::string &name){
-    materials.activate(name);
+    _materials.activate(name);
 }
 
-void Model::add_cload(const std::string& nset, Vec3 load){
-    for(ID id:node_sets.get(nset)){
-        add_cload(id, load);
-    }
-}
 void Model::add_cload(const std::string& nset, Vec6 load){
     for(ID id:node_sets.get(nset)){
         add_cload(id, load);
     }
 }
-void Model::add_cload(const ID id, Vec3 load){
-    for(int i = 0; i < 3; i++){
-        load_sets.current()(id,i) += load(i);
-        if(!load_sets.is_default_set())
-            load_sets.all()(id,i) += load(i);
-    }
-}
 void Model::add_cload(const ID id, Vec6 load) {
     for(int i = 0; i < 6; i++){
-        load_sets.current()(id,i) += load(i);
-        if(!load_sets.is_default_set())
-            load_sets.all()(id,i) += load(i);
+        _load_sets.current()(id,i) += load(i);
+        if(!_load_sets.is_default_set())
+            _load_sets.all()(id,i) += load(i);
     }
 }
-
 
 void Model::add_dload(const std::string& sfset, Vec3 load) {
     for(ID id:surface_sets.get(sfset)){
@@ -89,9 +76,9 @@ void Model::add_dload(const std::string& sfset, Vec3 load) {
     }
 }
 void Model::add_dload(ID id, Vec3 load){
-    surfaces[id]->apply_dload(node_coords, load_sets.current(), load);
-    if(!load_sets.is_default_set())
-        surfaces[id]->apply_dload(node_coords, load_sets.all(), load);
+    surfaces[id]->apply_dload(node_coords, _load_sets.current(), load);
+    if(!_load_sets.is_default_set())
+        surfaces[id]->apply_dload(node_coords, _load_sets.all(), load);
 }
 
 void Model::add_vload(const std::string& elset, Vec3 load){
@@ -100,9 +87,14 @@ void Model::add_vload(const std::string& elset, Vec3 load){
     }
 }
 void Model::add_vload(const ID id, Vec3 load){
-    elements[id]->apply_vload(node_coords, load_sets.current(), load);
-    if(!load_sets.is_default_set())
-        elements[id]->apply_vload(node_coords, load_sets.all(), load);
+    if (elements[id] == nullptr) return;
+    if (!elements[id] ->is_type(StructuralType))
+        return;
+    auto sel = elements[id]->as<StructuralElement>();
+
+    sel->apply_vload(node_coords, _load_sets.current(), load);
+    if(!_load_sets.is_default_set())
+        sel->apply_vload(node_coords, _load_sets.all(), load);
 }
 
 void Model::add_tload(std::string& temp_field, Precision ref_temp) {
@@ -113,10 +105,13 @@ void Model::add_tload(std::string& temp_field, Precision ref_temp) {
     for(ElementPtr& elem:elements){
         if (elem == nullptr)
             continue;
+        if(!elem->is_type(StructuralType))
+            continue;
+        auto sel = elem->as<StructuralElement>();
 
-        elem->apply_tload(node_coords, load_sets.current(), temp, ref_temp);
-        if(!load_sets.is_default_set())
-            elem->apply_tload(node_coords, load_sets.all(), temp, ref_temp);
+        sel->apply_tload(node_coords, _load_sets.current(), temp, ref_temp);
+        if(!_load_sets.is_default_set())
+            sel->apply_tload(node_coords, _load_sets.all(), temp, ref_temp);
     }
 }
 
@@ -125,39 +120,12 @@ void Model::add_support(const std::string& nset, const StaticVector<6> constrain
         add_support(id, constraint);
     }
 }
-void Model::add_support(const std::string& nset, const Vec3 displacement){
-    for(ID id:node_sets.get(nset)){
-        add_support(id, displacement);
-    }
-}
 void Model::add_support(const ID id, const StaticVector<6> constraint){
     for(int i = 0; i < 6; i++){
-        support_sets.current()(id,i) = constraint(i);
-        if(!support_sets.is_default_set())
-            support_sets.all()(id,i) = constraint(i);
+        _support_sets.current()(id,i) = constraint(i);
+        if(!_support_sets.is_default_set())
+            _support_sets.all()(id,i) = constraint(i);
     }
-}
-void Model::add_support(const ID id, const Vec3 displacement){
-    for(int i = 0; i < 3; i++){
-        support_sets.current()(id,i) = displacement(i);
-        if(!support_sets.is_default_set())
-            support_sets.all()(id,i) = displacement(i);
-    }
-}
-void Model::add_support_rot(const std::string& nset, const Vec3 rotation){
-    for(ID id:node_sets.get(nset)){
-        add_support_rot(id, rotation);
-    }
-}
-void Model::add_support_rot(const ID id, const Vec3 rotation){
-    for(int i = 3; i < 6; i++){
-        support_sets.current()(id,i) = rotation(i);
-        if(!support_sets.is_default_set())
-            support_sets.all()(id,i) = rotation(i);
-    }
-}
-void Model::add_support(const ID id, const Dim dim, const Precision displacement){
-    support_sets.current()(id,dim) = displacement;
 }
 
 void Model::set_field_temperature(const std::string& name, const ID id, Precision value) {
@@ -170,13 +138,13 @@ void Model::set_field_temperature(const std::string& name, const ID id, Precisio
 }
 
 material::Material& Model::active_material(){
-    return materials.current();
+    return _materials.current();
 }
 NodeData& Model::active_loads(){
-    return load_sets.current();
+    return _load_sets.current();
 }
 NodeData& Model::active_supports(){
-    return support_sets.current();
+    return _support_sets.current();
 }
 std::vector<ID>& Model::active_nodeset(){
     return node_sets.current();
@@ -201,7 +169,7 @@ Sets<std::vector<ID>>&  Model::surfsets() {
 }
 
 void Model::solid_section(const std::string& set, const std::string& material){
-    material::Material* mat_ptr = &materials.get(material);
+    material::Material* mat_ptr = &_materials.get(material);
     for(ID id:elem_sets.get(set)){
         elements[id]->set_material(mat_ptr);
     }
@@ -229,22 +197,22 @@ std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     }
 
     ostream << "\tLoad sets:\n";
-    for (const auto& set : model.load_sets.m_sets) {
+    for (const auto& set : model._load_sets.m_sets) {
         ostream << "\t\t" << set.first << '\n';
         ostream << "\t\t\t" << "count=" << set.second.count() << '\n';
     }
 
     ostream << "\tSupport sets:\n";
-    for (const auto& set : model.support_sets.m_sets) {
+    for (const auto& set : model._support_sets.m_sets) {
         ostream << "\t\t" << set.first << '\n';
         ostream << "\t\t\t" << "count=" << set.second.count() << '\n';
     }
 
     ostream << "\tMaterial sets:\n";
-    for (const auto& set : model.materials.m_sets) {
+    for (const auto& set : model._materials.m_sets) {
         ostream << "\t\t" << set.first << '\n';
         if(set.second.has_density()) {
-            ostream << "\t\t\tdensity=" << set.second.density() << '\n';
+            ostream << "\t\t\tdensity=" << set.second.get_density() << '\n';
         }
         if(set.second.has_elasticity()) {
             ostream << "\t\t\telastic" << '\n';

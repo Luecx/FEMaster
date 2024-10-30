@@ -16,5 +16,5 @@ struct IsotropicElasticity : Elasticity {
     fem::StaticMatrix<6, 6> get_3d() override;
 };
 
-}    // namespace material
+}    // namespace _material
 }    // namespace fem

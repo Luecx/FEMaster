@@ -7,21 +7,38 @@
 #include <memory>
 #include <string>
 
+#define MATERIAL_SCALAR_FIELD(name) \
+    private:                                \
+    Precision m_##name = -1;      \
+    public:                                \
+    bool has_##name () const {           \
+        return m_##name != -1;    \
+    }                               \
+                                        \
+    void set_##name (Precision value ) {   \
+        m_##name = value; \
+    }                               \
+                                    \
+    Precision get_##name () const {           \
+        return m_##name ;                               \
+    }                                   \
+\
+
 // Defining the fem namespace (abbreviation for finite element method)
 namespace fem {
-// Defining the material namespace, used to separate the classes and functions related to material properties
+// Defining the _material namespace, used to separate the classes and functions related to _material properties
 namespace material {
 
-// Material struct defines the properties and methods related to a material in the context of finite element analysis
-struct Material {
+// Material struct defines the properties and methods related to a _material in the context of finite element analysis
+    struct Material {
     private:
 
-    // Pointer to an object of type Elasticity, used to store the elasticity properties of the material
+    // Pointer to an object of type Elasticity, used to store the elasticity properties of the _material
     ElasticityPtr m_elastic = nullptr;
 
-    // Density of the material, default value is -1 indicating it's not set
-    Precision m_density = -1;
-    Precision m_thermal_expansion = -1;
+    MATERIAL_SCALAR_FIELD(thermal_capacity)
+    MATERIAL_SCALAR_FIELD(thermal_expansion)
+    MATERIAL_SCALAR_FIELD(density)
 
     public:
 
@@ -37,37 +54,11 @@ struct Material {
         return this->m_elastic != nullptr;
     }
 
-    // Function to get the elasticity of the material
+    // Function to get the elasticity of the _material
     ElasticityPtr elasticity() const {
         return m_elastic;
     }
 
-    // sets the density of this object. if called without any arguments, it unsets the density
-    void set_density(Precision density){
-        m_density = density;
-    }
-
-    void set_thermal_expansion(Precision thermal_expansion){
-        m_thermal_expansion = thermal_expansion;
-    }
-
-    // Function to check if the density has been set (value is greater than 0)
-    bool has_density() const {
-        return m_density > 0;
-    }
-
-    bool has_thermal_expansion() const {
-        return m_thermal_expansion > 0;
-    }
-
-    // Function to get the density of the material
-    Precision density() const {
-        return m_density;
-    }
-
-    Precision thermal_expansion() const {
-        return m_thermal_expansion;
-    }
 };
-}    // namespace material
+}    // namespace _material
 }    // namespace fem

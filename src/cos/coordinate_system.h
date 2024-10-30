@@ -1,14 +1,14 @@
 /******************************************************************************
  * @file coordinate_system.hpp
  * @brief Defines the CoordinateSystem base class and RectangularSystem derived class for local
- *        coordinate systems used in rigid connectors. It provides methods for transforming
+ *        coordinate systems used in rigid _connectors. It provides methods for transforming
  *        points and vectors between global and local coordinate frames.
  *
  * @details The `CoordinateSystem` class serves as the base class for different local coordinate
  *          system implementations. It provides pure virtual methods for transforming points
  *          from global to local coordinates and vice versa. The `RectangularSystem` class
  *          defines a rectangular Cartesian coordinate system using two orthogonal vectors.
- *          This class is used for defining local reference frames in rigid connectors.
+ *          This class is used for defining local reference frames in rigid _connectors.
  *
  * @date Created on 08.10.2024
  * @author Finn Eggers
@@ -26,7 +26,7 @@ namespace cos {
 
 /**
  * @class CoordinateSystem
- * @brief Base class for representing local coordinate systems in FEM connectors.
+ * @brief Base class for representing local coordinate systems in FEM _connectors.
  *
  * @details The CoordinateSystem class provides a virtual interface for defining
  *          local coordinate systems. Derived classes must implement the transformation

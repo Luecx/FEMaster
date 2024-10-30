@@ -93,8 +93,7 @@ DynamicMatrix compute_participation(SparseMatrix& mass_matrix, DynamicMatrix& ei
         // extract the eigen vector
         auto eigen_vector = eigen_vectors.col(i);
 
-        // compute the participation
-        auto modal_mass = eigen_vector.transpose() * (mass_matrix * eigen_vector);
+        //auto modal_mass = eigen_vector.transpose() * (mass_matrix * eigen_vector);
 
         // compute the participation
         for (int j = 0; j < 6; j++) {

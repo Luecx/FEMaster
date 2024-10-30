@@ -18,9 +18,12 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 
     for(auto el: elements){
         if(el == nullptr) continue;
-        el->compute_stress_strain_nodal(node_coords, displacement, stress, strain);
-        for(int i = 0; i < el->n_nodes(); i++){
-            ID id = el->nodes()[i];
+        if(!el->is_type(StructuralType))
+            continue;
+        auto sel = el->as<StructuralElement>();
+        sel->compute_stress_strain_nodal(node_coords, displacement, stress, strain);
+        for(int i = 0; i < sel->n_nodes(); i++){
+            ID id = sel->nodes()[i];
             count(id) ++;
         }
     }
@@ -154,7 +157,10 @@ ElementData Model::compute_compliance(NodeData& displacement){
     for (size_t idx = 0; idx < elements.size(); idx++) {
         auto el = elements[idx];
         if (el == nullptr) continue;
-        el->compute_compliance(node_coords, displacement, compliance);
+        if(!el->is_type(StructuralType))
+            continue;
+        auto sel = el->as<StructuralElement>();
+        sel->compute_compliance(node_coords, displacement, compliance);
     }
 
     return compliance;
@@ -168,7 +174,9 @@ ElementData Model::compute_volumes(){
     for (size_t idx = 0; idx < elements.size(); idx++) {
         auto el = elements[idx];
         if (el == nullptr) continue;
-        volumes(el->elem_id) = el->volume(node_coords);
+        if (el->is_type(StructuralType)) {
+            volumes(el->elem_id) = el->as<StructuralElement>()->volume(node_coords);
+        }
     }
 
     return volumes;

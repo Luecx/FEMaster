@@ -99,9 +99,9 @@ void Reader::process_elements() {
     auto type = m_current_line.require<std::string>("TYPE");
 
 
-    auto gather_values = [&](int req_values) -> std::vector<ID> {
+    auto gather_values = [&](Index req_values) -> std::vector<ID> {
         std::vector<ID> values;
-        for(int i = 1; i < m_current_line.values().size(); i++){
+        for(Index i = 1; i < m_current_line.values().size(); i++){
             values.push_back(std::stoi(m_current_line.values()[i]));
         }
         while(values.size() < req_values){
@@ -114,7 +114,7 @@ void Reader::process_elements() {
     };
 
     while (next_line().type() == DATA_LINE) {
-        int id = m_current_line.get_value(0, 0);
+        ID id = m_current_line.get_value(0, 0);
         if (type == "C3D4") {
             auto values = gather_values(4);
             m_model->set_element<fem::model::C3D4>(id, values[0], values[1], values[2], values[3]);
@@ -409,7 +409,7 @@ void Reader::process_vload() {
         auto str = m_current_line.values()[0];
         auto lx  = m_current_line.get_value(1, 0.0f);
         auto ly  = m_current_line.get_value(2, 0.0f);
-        auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
+        auto lz  = m_current_line.get_value(3, 0.0f);
 
         if (m_model->elemsets().has(str)) {
             m_model->add_vload(str, Vec3(lx, ly, lz));
@@ -442,7 +442,7 @@ void Reader::process_support() {
         auto str = m_current_line.values()[0];
         StaticVector<6> constraint;
 
-        for(int i = 0; i < 6; i++) {
+        for(Dim i = 0; i < 6; i++) {
             bool is_given = i < m_current_line.values().size() - 1;
             bool is_empty = !is_given || m_current_line.values()[i + 1].empty();
 
@@ -558,7 +558,7 @@ void Reader::process_coupling() {
     next_line();
 
     Dofs dof_mask {false, false, false, false, false, false};
-    for (int i = 0; i < 6; i++) {
+    for (Dim i = 0; i < 6; i++) {
         if (i < m_current_line.values().size()) {
             dof_mask(i) = std::stof(m_current_line.values()[i]) > 0;
         }

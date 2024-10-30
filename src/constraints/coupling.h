@@ -1,6 +1,6 @@
 /******************************************************************************
 * @file coupling.h
-* @brief Defines the Coupling class for handling kinematic couplings in FEM.
+* @brief Defines the Coupling class for handling kinematic _couplings in FEM.
 *
 * The Coupling class provides functionality to couple master and slave nodes
 * based on specified degrees of freedom (DOFs). It supports coupling translations
@@ -23,7 +23,7 @@ namespace constraint {
 
 /******************************************************************************
 * @enum CouplingType
-* @brief Defines the available types of couplings in FEM.
+* @brief Defines the available types of _couplings in FEM.
 *
 * Currently, only kinematic coupling is supported, but additional types can be
 * added in the future.

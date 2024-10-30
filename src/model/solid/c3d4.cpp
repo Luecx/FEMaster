@@ -71,6 +71,10 @@ StaticMatrix<4, 1> C3D4::shape_function(Precision r, Precision s, Precision t) {
  * evaluated at the local coordinates.
  */
 StaticMatrix<4, 3> C3D4::shape_derivative(Precision r, Precision s, Precision t) {
+    (void) r;
+    (void) s;
+    (void) t;
+
     StaticMatrix<4, 3> local_shape_derivative {};
     local_shape_derivative.setZero();
 

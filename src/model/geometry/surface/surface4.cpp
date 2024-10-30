@@ -61,6 +61,8 @@ StaticMatrix<4, 2> Surface4::shape_derivative(Precision r, Precision s) const {
  * @return StaticMatrix<4, 3> Matrix of second-order shape function derivatives.
  */
 StaticMatrix<4, 3> Surface4::shape_second_derivative(Precision r, Precision s) const {
+    (void) r;
+    (void) s;
     StaticMatrix<4, 3> ddN;
     ddN << 0, 0,  0.25,  // d²N1/dr², d²N1/ds², d²N1/(drds)
            0, 0, -0.25,  // d²N2/dr², d²N2/ds², d²N2/(drds)

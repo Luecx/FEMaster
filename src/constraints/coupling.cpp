@@ -1,6 +1,6 @@
 /******************************************************************************
 * @file coupling.cpp
-* @brief Implements the Coupling class for handling kinematic couplings in FEM.
+* @brief Implements the Coupling class for handling kinematic _couplings in FEM.
 *
 * This file contains the implementation of the `get_equations` and `master_dofs`
 * methods, which generate the coupling equations and determine the necessary DOFs

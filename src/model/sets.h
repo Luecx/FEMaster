@@ -56,7 +56,7 @@ struct Sets {
         return m_sets[m_all];
     }
     T& current() {
-        logging::error(!m_active.empty(), "active set is not defined for current material");
+        logging::error(!m_active.empty(), "active set is not defined for current _material");
         return m_sets[m_active];
     }
     bool has(const std::string& key){

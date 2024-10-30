@@ -134,7 +134,7 @@ struct Quadrature {
     }
 
     Point get_point(ID n) const;
-    ID    count() const;
+    Index count() const;
 };
 
 }    // namespace quadrature

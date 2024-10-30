@@ -126,8 +126,8 @@ SolidElement<N>::dofs() {
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness(NodeData& position, Precision* buffer) {
-    logging::error(material != nullptr, "no material assigned to element ", elem_id);
-    logging::error(material->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
+    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
+    logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
 
     StaticMatrix<N, D> node_coords = this->node_coords_global(position);
 
@@ -135,7 +135,7 @@ SolidElement<N>::stiffness(NodeData& position, Precision* buffer) {
         [this, &node_coords](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det;
             StaticMatrix<n_strain, D * N> B = this->strain_displacements(node_coords, r, s, t, det);
-            StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
+            StaticMatrix<n_strain, n_strain> E = this->_material->elasticity()->template get<D>();
             StaticMatrix<D * N, D * N> res = B.transpose() * (E * B) * det;
             return StaticMatrix<D * N, D * N>(res);
         };
@@ -154,10 +154,10 @@ SolidElement<N>::stiffness(NodeData& position, Precision* buffer) {
 template<Index N>
 MapMatrix
 SolidElement<N>::mass(NodeData& position, Precision* buffer) {
-    logging::error(material != nullptr, "no material assigned to element ", elem_id);
-    logging::error(material->has_density(), "material has no density assigned at element ", elem_id);
+    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
+    logging::error(_material->has_density(), "_material has no density assigned at element ", elem_id);
 
-    Precision density = material->density();
+    Precision density = _material->get_density();
 
     StaticMatrix<N, D> node_coords = this->node_coords_global(position);
 
@@ -281,16 +281,16 @@ SolidElement<N>::apply_tload(NodeData& node_coords, NodeData& node_loads, NodeDa
     StaticMatrix<N, 1> node_temp_glob   = this->nodal_data<1>(node_temp);
 
     // adjust the temperature field to the reference temperature if its nan or inf
-    for (Index i = 0; i < node_temp_glob.size(); i++) {
+    for (Index i = 0; i < (Index)node_temp_glob.size(); i++) {
         if (std::isnan(node_temp_glob(i)) || std::isinf(node_temp_glob(i))) {
             node_temp_glob(i) = ref_temp;
         }
     }
 
-    // error out if no material is assigned
-    logging::error(material != nullptr, "no material assigned to element ", elem_id);
-    logging::error(material->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
-    logging::error(material->has_thermal_expansion(), "material has no thermal expansion assigned at element ", elem_id);
+    // error out if no _material is assigned
+    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
+    logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
+    logging::error(_material->has_thermal_expansion(), "_material has no thermal expansion assigned at element ", elem_id);
 
     std::function<StaticMatrix<D*N,1>(Precision, Precision, Precision)> func =
         [this, node_coords_glob, &node_temp_glob, &ref_temp](Precision r, Precision s, Precision t) -> StaticMatrix<D*N,1> {
@@ -300,11 +300,11 @@ SolidElement<N>::apply_tload(NodeData& node_coords, NodeData& node_loads, NodeDa
         Precision temp = shape_func.dot(node_temp_glob);
 
         // create strain vector
-        Precision strain_value = material->thermal_expansion() * (temp - ref_temp);
+        Precision strain_value = _material->get_thermal_expansion() * (temp - ref_temp);
         Vec6 strain{strain_value, strain_value, strain_value, 0, 0, 0};
 
         // stress tensor
-        auto mat_matrix = material->elasticity()->template get<D>();
+        auto mat_matrix = _material->elasticity()->template get<D>();
         auto stress = mat_matrix * strain;
 
         // compute strain-displacement matrix
@@ -357,7 +357,7 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
                                "\nCoordinates: ", global_node_coords);
 
         if (det > 0) {
-            StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
+            StaticMatrix<n_strain, n_strain> E = this->_material->elasticity()->template get<D>();
 
             auto strains = B * local_displacement;
             auto stresses = E * strains;
@@ -433,7 +433,7 @@ SolidElement<N>::compute_stress_strain(NodeData& node_coords, NodeData& displace
 
     auto scheme = this->integration_scheme();
 
-    for (int n = 0; n < scheme.count(); n++) {
+    for (Index n = 0; n < scheme.count(); n++) {
         Precision r = scheme.get_point(n).r;
         Precision s = scheme.get_point(n).s;
         Precision t = scheme.get_point(n).t;
@@ -441,7 +441,7 @@ SolidElement<N>::compute_stress_strain(NodeData& node_coords, NodeData& displace
 
         StaticMatrix<N, 1> shape_func = this->shape_function(r, s, t);
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det);
-        StaticMatrix<n_strain, n_strain> E = this->material->elasticity()->template get<D>();
+        StaticMatrix<n_strain, n_strain> E = this->_material->elasticity()->template get<D>();
 
         auto strains = B * local_displacement;
         auto stresses = E * strains;

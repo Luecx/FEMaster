@@ -107,7 +107,7 @@ fem::loadcase::LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::
  *
  * 9. **Compute stresses and strains**:
  *    Using the full displacement vector, stresses and strains are computed at the nodes
- *    of the model. These are derived from the displacement field using material properties
+ *    of the model. These are derived from the displacement field using _material properties
  *    and the finite element method (FEM).
  *
  * 10. **Write the results**:

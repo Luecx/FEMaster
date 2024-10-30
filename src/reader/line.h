@@ -193,10 +193,8 @@ public:
         if (line.type() == KEYWORD_LINE) {
             os << "Command: " << line.command() << "\n";
             os << "Keys   :\n";
-            int i = 0;
             for (const auto& pair : line.m_keys) {
                 os << std::right << std::setw(24) << pair.first << ": " << pair.second << "\n";
-                ++i;
             }
         } else if (line.type() == DATA_LINE) {
             os << "Values :\n";
