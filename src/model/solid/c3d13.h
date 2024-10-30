@@ -1,11 +1,10 @@
 #pragma once
 
-#include "element.h"
 #include "element_solid.h"
-#include "surface/surface8.h"
-#include "surface/surface6.h"
-#include "surface/surface4.h"
-#include "surface/surface3.h"
+#include "../geometry/surface/surface8.h"
+#include "../geometry/surface/surface6.h"
+#include "../geometry/surface/surface4.h"
+#include "../geometry/surface/surface3.h"
 
 namespace fem { namespace model {
 

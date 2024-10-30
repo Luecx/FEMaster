@@ -1,13 +1,13 @@
 //
 // Created by Finn Eggers on 05.09.23.
 //
-#include "../model/c3d10.h"
-#include "../model/c3d15.h"
-#include "../model/c3d20.h"
-#include "../model/c3d20r.h"
-#include "../model/c3d4.h"
-#include "../model/c3d6.h"
-#include "../model/c3d8.h"
+#include "../model/solid/c3d10.h"
+#include "../model/solid/c3d15.h"
+#include "../model/solid/c3d20.h"
+#include "../model/solid/c3d20r.h"
+#include "../model/solid/c3d4.h"
+#include "../model/solid/c3d6.h"
+#include "../model/solid/c3d8.h"
 #include "reader.h"
 #include "../cos/rectangular_system.h"
 

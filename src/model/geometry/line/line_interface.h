@@ -26,10 +26,8 @@
 #include <Eigen/Dense>
 #include <functional>
 
-#include "../element.h"
-#include "../element_solid.h"
-#include "../../math/quadrature.h"
-#include "../../core/types.h"
+#include "../../../math/quadrature.h"
+#include "../../../core/types.h"
 
 namespace fem::model {
 

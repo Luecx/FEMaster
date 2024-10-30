@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../core/core.h"
-#include "element.h"
-#include "surface/surface.h"
+#include "element/element.h"
+#include "geometry/surface/surface.h"
 #include "sets.h"
 #include "../constraints/coupling.h"
 #include "../constraints/tie.h"

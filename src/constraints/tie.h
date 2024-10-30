@@ -19,7 +19,7 @@
 #pragma once  // Ensures this file is only included once during compilation
 
 #include "../model/sets.h"
-#include "../model/surface/surface.h"
+#include "../model/geometry/surface/surface.h"
 
 namespace fem {
 namespace constraint {

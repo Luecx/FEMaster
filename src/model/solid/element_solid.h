@@ -1,9 +1,9 @@
 
 #pragma once
 
-#include "element.h"
-#include "../math/interpolate.h"
-#include "./surface/surface.h"
+#include "../element/element.h"
+#include "../../math/interpolate.h"
+#include "../geometry/surface/surface.h"
 
 namespace fem::model {
 

@@ -15,7 +15,7 @@
 #pragma once
 
 #include "../core/types.h"
-#include "../model/element.h"
+#include "../model/element/element.h"
 #include <Eigen/Sparse>
 #include <vector>
 #include <memory>  // for std::shared_ptr

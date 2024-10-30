@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../core/core.h"
-#include "../material/material.h"
-#include "surface/surface.h"
-#include "../math/quadrature.h"
+#include "../../core/core.h"
+#include "../../material/material.h"
+#include "../geometry/surface/surface.h"
+#include "../../math/quadrature.h"
 
 #include <array>
 

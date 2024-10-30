@@ -27,8 +27,8 @@
 
 #pragma once
 
-#include "../../math/quadrature.h"
-#include "../../core/core.h"
+#include "../../../math/quadrature.h"
+#include "../../../core/core.h"
 #include <functional>
 #include <memory>
 #include <Eigen/Dense>

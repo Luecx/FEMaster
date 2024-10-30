@@ -1,89 +1,71 @@
- #include "core/core.h"
- #include "core/logging.h"
- #include "cuda/cuda.h"
- #include "loadcase/linear_static.h"
- #include "material/material.h"
- #include "math/interpolate.h"
- #include "math/quadrature.h"
- #include "model/c3d10.h"
- #include "model/c3d15.h"
- #include "model/c3d20.h"
- #include "model/c3d4.h"
- #include "model/c3d6.h"
- #include "model/c3d8.h"
- #include "model/element.h"
- #include "model/model.h"
- #include "reader/file.h"
- #include "reader/line.h"
- #include "reader/reader.h"
- #include "solve/solver.h"
 
- #include <Eigen/Core>
- #include <Eigen/Sparse>
- #include <argparse/argparse.hpp>
- #include <chrono>
- #include <functional>
- #include <iomanip>
- #include <iostream>
- #include <random>
- #include <filesystem>
+#include "reader/reader.h"
+#include "core/logging.h"
 
- int main(int argc, char* argv[]) {
-     // Set up argparse
-     argparse::ArgumentParser program("FEM Solver");
+#include <argparse/argparse.hpp>
+#include <chrono>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <filesystem>
 
-     program.add_argument("input_file")
-         .help("Path to the input file (.inp is optional).");
+int main(int argc, char* argv[]) {
+    // Set up argparse
+    argparse::ArgumentParser program("FEM Solver");
 
-     program.add_argument("--ncpus")
-         .default_value(1)
-         .scan<'i', int>()
-         .help("Number of CPUs to use (default: 1)");
+    program.add_argument("input_file")
+        .help("Path to the input file (.inp is optional).");
 
-     // Parse arguments
-     try {
-         program.parse_args(argc, argv);
-     } catch (const std::runtime_error& err) {
-         std::cerr << err.what() << std::endl;
-         std::cerr << program;
-         return 1;
-     }
+    program.add_argument("--ncpus")
+        .default_value(1)
+        .scan<'i', int>()
+        .help("Number of CPUs to use (default: 1)");
 
-     // Access parsed arguments
-     std::string input_file = program.get<std::string>("input_file");
-     int ncpus = program.get<int>("--ncpus");
+    // Parse arguments
+    try {
+        program.parse_args(argc, argv);
+    } catch (const std::runtime_error& err) {
+        std::cerr << err.what() << std::endl;
+        std::cerr << program;
+        return 1;
+    }
 
-     // Ensure the input file has ".inp" extension
-     if (input_file.find(".inp") == std::string::npos) {
-         input_file += ".inp";
-     }
+    // Access parsed arguments
+    std::string input_file = program.get<std::string>("input_file");
+    int ncpus = program.get<int>("--ncpus");
 
-     // Check if input file exists
-     if (!std::filesystem::exists(input_file)) {
-         std::cerr << "Error: Input file '" << input_file << "' does not exist." << std::endl;
-         return 1;
-     }
+    // Ensure the input file has ".inp" extension
+    if (input_file.find(".inp") == std::string::npos) {
+        input_file += ".inp";
+    }
 
-     // Create the output file by replacing ".inp" with ".res"
-     std::string output_file = input_file;
-     size_t pos = output_file.find(".inp");
-     if (pos != std::string::npos) {
-         output_file.replace(pos, 4, ".res");
-     }
+    // Check if input file exists
+    if (!std::filesystem::exists(input_file)) {
+        std::cerr << "Error: Input file '" << input_file << "' does not exist." << std::endl;
+        return 1;
+    }
 
-     // Logging input and output file information
-     fem::logging::info(true, "");
-     fem::logging::info(true, "Input file: ", input_file);
-     fem::logging::info(true, "Output file: ", output_file);
-     fem::logging::info(true, "CPU(s)    : ", ncpus);
-     fem::logging::info(true, "");
+    // Create the output file by replacing ".inp" with ".res"
+    std::string output_file = input_file;
+    size_t pos = output_file.find(".inp");
+    if (pos != std::string::npos) {
+        output_file.replace(pos, 4, ".res");
+    }
 
-     // Store number of CPUs in config
-     fem::global_config.max_threads = ncpus;
+    // Logging input and output file information
+    fem::logging::info(true, "");
+    fem::logging::info(true, "Input file: ", input_file);
+    fem::logging::info(true, "Output file: ", output_file);
+    fem::logging::info(true, "CPU(s)    : ", ncpus);
+    fem::logging::info(true, "");
 
-     // Read the input file using the reader
-     fem::reader::Reader reader{input_file, output_file};
-     reader.read();
+    // Store number of CPUs in config
+    fem::global_config.max_threads = ncpus;
 
-     return 0;
- }
+    // Read the input file using the reader
+    fem::reader::Reader reader{input_file, output_file};
+    reader.read();
+
+    return 0;
+}
