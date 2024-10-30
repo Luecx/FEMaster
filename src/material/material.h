@@ -60,5 +60,8 @@ namespace material {
     }
 
 };
+
+#undef MATERIAL_SCALAR_FIELD
+
 }    // namespace _material
 }    // namespace fem
