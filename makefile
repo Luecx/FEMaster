@@ -26,9 +26,9 @@ double_precision ?= 1 # Enable/disable Double Precision
 # General Compiler Flags
 #===============================================================
 
-CXXFLAGS   = -std=c++17 -O3 -I /usr/local/include
-NVCCFLAGS  = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr
-WARNFLAGS  = -Wall -Wno-maybe-uninitialized
+WARNFLAGS  = -Wall -Wno-uninitialized -Wpedantic -Wall -Wextra
+CXXFLAGS   = -std=c++17 -O3 -I /usr/local/include $(WARNFLAGS)
+NVCCFLAGS  = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr $(WARNFLAGS)
 
 #===============================================================
 # Custom Feature Flags (Conditional Flags)
