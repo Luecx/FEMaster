@@ -21,7 +21,7 @@ struct Elasticity {
             return get_3d();
         }
         throw std::out_of_range("indexing _material elasticity outside of valid dimensions which is 2 or 3");
-    };
+    }
 };
 
 using ElasticityPtr = std::shared_ptr<Elasticity>;
