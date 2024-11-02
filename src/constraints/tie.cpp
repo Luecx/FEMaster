@@ -23,7 +23,9 @@ namespace constraint {
 * distance for coupling, and the flag indicating whether slave node positions
 * should be adjusted.
 ******************************************************************************/
-Tie::Tie(const std::string& masterSet, const std::string& slaveSet, Precision distance, bool adjust)
+Tie::Tie(const model::SurfaceRegion::Ptr masterSet,
+         const model::NodeRegion::Ptr slaveSet,
+         Precision distance, bool adjust)
    : master_set(masterSet)
    , slave_set(slaveSet)
    , distance(distance)
@@ -46,18 +48,13 @@ Tie::Tie(const std::string& masterSet, const std::string& slaveSet, Precision di
 * @return TripletList A list of triplets representing the coupling equations.
 ******************************************************************************/
 TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
-                              model::Sets<std::vector<ID>>& surface_sets,
-                              model::Sets<std::vector<ID>>& node_sets,
                               std::vector<model::SurfacePtr>& surfaces,
                               NodeData& node_coords,
                               int row_offset) {
    TripletList result{};
 
-   // Retrieve the master surface IDs
-   const std::vector<ID>& surface_ids = surface_sets.get(master_set);
-
    // Iterate through each node in the slave set
-   for(ID id : node_sets.get(slave_set)) {
+   for(ID id : *slave_set) {
        Vec3 node_pos;
        node_pos(0) = node_coords(id, 0);
        node_pos(1) = node_coords(id, 1);
@@ -68,7 +65,7 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
        Vec2 best_local;
 
        // Find the closest surface on the master set
-       for(ID s_id : surface_ids) {
+       for(ID s_id : *master_set) {
            auto s_ptr = surfaces.at(s_id);
            if (s_ptr == nullptr) continue;
 

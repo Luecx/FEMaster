@@ -1,14 +1,16 @@
 #pragma once
 
+#include "../constraints/connector.h"
+#include "../constraints/coupling.h"
+#include "../constraints/tie.h"
 #include "../core/core.h"
+#include "../cos/coordinate_system.h"
 #include "element/element.h"
 #include "element/element_structural.h"
 #include "geometry/surface/surface.h"
-#include "sets.h"
-#include "../constraints/coupling.h"
-#include "../constraints/tie.h"
-#include "../constraints/connector.h"
-#include "../cos/coordinate_system.h"
+#include "sets/dict.h"
+#include "sets/region.h"
+#include "sets/sets.h"
 
 namespace fem {
 
@@ -30,37 +32,33 @@ struct Model {
     std::vector<constraint::Tie>             _ties {};
 
     // sets to group nodes and elements and everything that has a name
-    Sets<std::vector<ID>> node_sets{SET_NODE_ALL};
-    Sets<std::vector<ID>> elem_sets{SET_ELEM_ALL};
-    Sets<std::vector<ID>> surface_sets{SET_SURF_ALL};
+    Sets<NodeRegion>     node_sets    {SET_NODE_ALL};
+    Sets<ElementRegion>  elem_sets    {SET_ELEM_ALL};
+    Sets<SurfaceRegion>  surface_sets {SET_SURF_ALL};
 
-    Sets<cos::CoordinateSystemPtr> coordinate_systems;
+    // Sets<cos::CoordinateSystem> coordinate_systems;
+    Dict<cos::CoordinateSystem> coordinate_systems;
 
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
     // storage for all the sets
-    Sets<NodeData>           _load_sets;
-    Sets<NodeData>           _support_sets;
-    Sets<material::Material> _materials;
+    Dict<NodeData>           _load_sets   {};
+    Dict<NodeData>           _support_sets{};
+    Dict<material::Material> _materials;
 
     // storage for other fields
-    Sets<NodeData>   _fields_temperature;
+    Dict<NodeData>   _fields_temperature;
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces) :
         max_nodes   (max_nodes),
         max_elements(max_elems),
         max_surfaces(max_surfaces),
-        node_coords (max_nodes, 3), _load_sets("LALL", max_nodes, 6), _support_sets("SALL", max_nodes, 6){
+        node_coords (max_nodes, 3){
 
         // clear node coords
         node_coords.setZero();
-
-        // clear sets to make sure
-        _load_sets.current().setZero();
-        _support_sets.current().setZero();
-        _support_sets.current().fill(std::numeric_limits<Precision>::quiet_NaN());
 
         // resize elements to avoid later reallocation
         elements.resize(max_elems);
@@ -82,26 +80,6 @@ struct Model {
     void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
     void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type);
     void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
-
-    // set management
-    void activate_node_set   (const std::string &name);
-    void activate_element_set(const std::string &name);
-    void activate_surface_set(const std::string &name);
-    void activate_load_set   (const std::string &name);
-    void activate_support_set(const std::string &name);
-    void activate_material   (const std::string& name);
-
-    // access to active sets
-    material::Material& active_material();
-    NodeData&           active_loads();
-    NodeData&           active_supports();
-    std::vector<ID>&    active_nodeset();
-    std::vector<ID>&    active_elemset();
-    std::vector<ID>&    active_surfset();
-
-    Sets<std::vector<ID>>&  nodesets();
-    Sets<std::vector<ID>>&  elemsets();
-    Sets<std::vector<ID>>&  surfsets();
 
     // -------------------- STRUCTURAL --------------------
     // load management
@@ -131,8 +109,8 @@ struct Model {
     SystemDofIds  build_unconstrained_index_matrix();
 
     // building constraints and loads for every node including non existing ones
-    NodeData    build_support_matrix (std::vector<std::string> support_sets = {SET_SUPP_ALL});
-    NodeData    build_load_matrix    (std::vector<std::string> load_sets = {SET_LOAD_ALL});
+    NodeData    build_support_matrix (std::vector<std::string> support_sets = {});
+    NodeData    build_load_matrix    (std::vector<std::string> load_sets = {});
 
     // matrices
     SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness=1.0);

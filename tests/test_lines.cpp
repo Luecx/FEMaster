@@ -1,11 +1,13 @@
 // Include necessary headers
-#include "../src/model/line/line2a.h"
-#include "../src/model/line/line2b.h"
-#include "../src/model/line/line3a.h"
-#include "../src/model/line/line3b.h"
+#include "../src/model/geometry/line/line2a.h"
+#include "../src/model/geometry/line/line2b.h"
+#include "../src/model/geometry/line/line3a.h"
+#include "../src/model/geometry/line/line3b.h"
 #include <Eigen/Dense>
 #include <gtest/gtest.h>
 #include <random>
+
+using namespace fem;
 
 // Create a type list of the line types to test
 typedef ::testing::Types<

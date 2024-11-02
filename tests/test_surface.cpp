@@ -1,6 +1,8 @@
-#include "../src/model/surface/surface3.h"  // Include path relative to the src folder
+#include "../src/model/geometry/surface/surface3.h"  // Include path relative to the src folder
 #include <Eigen/Dense>
 #include <gtest/gtest.h>
+
+using namespace fem;
 
 // Test fixture class for Surface3
 class Surface3Test : public ::testing::Test {

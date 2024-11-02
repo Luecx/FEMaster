@@ -3,7 +3,7 @@
 namespace fem::model {
 
 StaticMatrix<3,1> Line3B::shape_function(Precision r) const {
-    r = 2.0 * r - 1.0;  // Map from [0, 1] to [-1, 1]
+    r = 2.0 * r - 1.0;  // Sets from [0, 1] to [-1, 1]
     StaticMatrix<3,1> N;
     N(0) = 0.5 * r * (r - 1);  // N1
     N(1) = 0.5 * r * (r + 1);  // N2
@@ -12,7 +12,7 @@ StaticMatrix<3,1> Line3B::shape_function(Precision r) const {
 }
 
 StaticMatrix<3,1> Line3B::shape_derivative(Precision r) const {
-    r = 2.0 * r - 1.0;  // Map from [0, 1] to [-1, 1]
+    r = 2.0 * r - 1.0;  // Sets from [0, 1] to [-1, 1]
     StaticMatrix<3,1> dN;
     dN(0) = r - 0.5;   // dN1/dr
     dN(1) = r + 0.5;   // dN2/dr

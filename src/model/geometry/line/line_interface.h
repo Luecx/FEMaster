@@ -247,7 +247,7 @@ struct LineInterface {
     }
 
     /**
-     * @brief Map a local coordinate 'r' to the corresponding global coordinate on the line element.
+     * @brief Sets a local coordinate 'r' to the corresponding global coordinate on the line element.
      *
      * @param r Local coordinate along the line element.
      * @param node_coords_system Node coordinates in the global coordinate system.

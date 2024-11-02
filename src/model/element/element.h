@@ -19,7 +19,7 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     // storing the type of this element
     ElementTypeFlags _flags;
 
-    material::Material* _material = nullptr;
+    material::Material::Ptr _material = nullptr;
 
     public:
     ElementInterface(ID p_elem_id)
@@ -28,8 +28,8 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     virtual ~ElementInterface() = default;
 
 
-    void set_material(material::Material* material) {
-        ElementInterface::_material = material;
+    void set_material(material::Material::Ptr material) {
+        _material = material;
     }
 
     virtual ElDofs dofs()                 = 0;

@@ -171,7 +171,7 @@ struct Surface : public SurfaceInterface {
     }
 
     /**
-     * @brief Map a local coordinate to its corresponding global position on the surface.
+     * @brief Sets a local coordinate to its corresponding global position on the surface.
      *
      * @param local Vector containing the local coordinates (r, s).
      * @param node_coords_system Node coordinates in the global system.

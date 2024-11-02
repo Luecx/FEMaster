@@ -19,7 +19,9 @@ namespace fem::constraint {
 * Initializes a Connector object with the specified nodes, coordinate system, and connector type.
 * The constrained degrees of freedom (DOFs) are derived from the connector type using bitmasking.
 ******************************************************************************/
-Connector::Connector(ID node_1_id, ID node_2_id, fem::cos::CoordinateSystemPtr coordinate_system, ConnectorType connector_type)
+Connector::Connector(ID node_1_id,
+                     ID node_2_id,
+                     fem::cos::CoordinateSystem::Ptr coordinate_system, ConnectorType connector_type)
    : coordinate_system_(coordinate_system),
    connector_type_(connector_type),
    constrained_dofs_({!!(connector_type_ & 0b100000),    // Translation-X

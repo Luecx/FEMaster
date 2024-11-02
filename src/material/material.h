@@ -24,13 +24,13 @@
     }                                   \
 \
 
-// Defining the fem namespace (abbreviation for finite element method)
 namespace fem {
-// Defining the _material namespace, used to separate the classes and functions related to _material properties
 namespace material {
 
 // Material struct defines the properties and methods related to a _material in the context of finite element analysis
-    struct Material {
+struct Material {
+    using Ptr = std::shared_ptr<Material>;
+
     private:
 
     // Pointer to an object of type Elasticity, used to store the elasticity properties of the _material

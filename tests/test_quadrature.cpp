@@ -4,6 +4,7 @@
 #include "../src/math/quadrature.h"
 #include <gtest/gtest.h>
 
+using namespace fem;
 using namespace fem::math;
 using namespace fem::quadrature;
 

@@ -49,8 +49,8 @@ NodeData Model::build_support_matrix(std::vector<std::string> supp_sets) {
     disp_matrix.fill(std::numeric_limits<Precision>::quiet_NaN());
 
     for (auto &key: supp_sets) {
-        NodeData &data = this->_support_sets.get(key);
-        mattools::assemble_bc(disp_matrix, data, mattools::DuplicateHandling::SET);
+        auto data = this->_support_sets.get(key);
+        mattools::assemble_bc(disp_matrix, *data, mattools::DuplicateHandling::SET);
     }
     return disp_matrix;
 }
@@ -60,8 +60,8 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     load_matrix.setZero();
 
     for (auto &key: load_sets) {
-        NodeData &data = this->_load_sets.get(key);
-        mattools::assemble_bc(load_matrix, data, mattools::DuplicateHandling::ADD);
+        auto data = this->_load_sets.get(key);
+        mattools::assemble_bc(load_matrix, *data, mattools::DuplicateHandling::ADD);
     }
     return load_matrix;
 }
@@ -78,7 +78,7 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
     }
 
     for (auto &t: this->_ties) {
-        auto tie_triplets = t.get_equations(indices, surface_sets, node_sets, surfaces, node_coords, rows + 1);
+        auto tie_triplets = t.get_equations(indices, surfaces, node_coords, rows + 1);
         for(auto &tri: tie_triplets) {
             triplets.push_back(tri);
             rows = std::max(rows, tri.row());

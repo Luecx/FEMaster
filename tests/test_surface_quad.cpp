@@ -1,9 +1,11 @@
-#include "../src/model/surface/surface4.h"   // Include path relative to the src folder
-#include "../src/model/surface/surface8.h"   // Include Surface8 for testing
+#include "../src/model/geometry/surface/surface4.h"   // Include path relative to the src folder
+#include "../src/model/geometry/surface/surface8.h"   // Include Surface8 for testing
 #include <Eigen/Dense>
 #include <gtest/gtest.h>
 #include <cstdlib>  // for rand()
 #include <ctime>    // for time()
+
+using namespace fem;
 
 // Test fixture class for Surface4 and Surface8 using a template
 template <typename SurfaceType>

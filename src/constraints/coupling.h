@@ -15,8 +15,8 @@
 
 #pragma once  // Ensures this file is only included once during compilation
 
-#include "../model/sets.h"
 #include "../core/types.h"
+#include "../model/sets/region.h"
 
 namespace fem {
 namespace constraint {
@@ -45,7 +45,7 @@ class Coupling {
 
    public:
    ID master_node;              ///< Master node ID
-   std::vector<ID> slave_nodes; ///< List of slave node IDs
+   model::NodeRegion::Ptr slave_nodes; ///< List of slave node IDs
    Dofs coupled_dofs;           ///< DOFs that are to be coupled (6 DOFs per node)
    CouplingType type;           ///< Type of coupling (e.g., kinematic)
 
@@ -61,7 +61,7 @@ class Coupling {
     * @param coupled_dofs A Dofs object specifying the DOFs to couple.
     * @param type The type of coupling to apply (e.g., kinematic).
     ******************************************************************************/
-   Coupling(ID master_node, std::vector<ID> slave_nodes, Dofs coupled_dofs, CouplingType type);
+   Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type);
 
    /******************************************************************************
     * @brief Generates the coupling equations for the coupled DOFs.

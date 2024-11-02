@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include "../src/core/core.h"
 
+using namespace fem;
 using namespace fem::math;
 
 // test the csqrt function

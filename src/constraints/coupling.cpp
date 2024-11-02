@@ -22,7 +22,7 @@ namespace constraint {
 * Initializes the coupling constraint with the specified master node, slave nodes,
 * DOFs to couple, and the type of coupling.
 ******************************************************************************/
-Coupling::Coupling(ID master_node, std::vector<ID> slave_nodes, Dofs coupled_dofs, CouplingType type)
+Coupling::Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type)
    : master_node(master_node),
    slave_nodes(slave_nodes),
    coupled_dofs(coupled_dofs),
@@ -47,7 +47,7 @@ TripletList Coupling::get_equations(SystemDofIds& system_nodal_dofs, NodeData& n
    TripletList triplets{};
    Index row = row_offset;
 
-   for (ID slave_node : slave_nodes) {
+   for (ID slave_node : *slave_nodes) {
        for (int i = 0; i < 6; i++) {
            if (coupled_dofs(i)) {
                if (i >= 3) {
@@ -109,7 +109,7 @@ Dofs Coupling::master_dofs(SystemDofs system_dof_mask) {
    Dofs slave_dofs = {false, false, false, false, false, false};
 
    // Determine which DOFs are active for the slave nodes
-   for (ID slave_node : slave_nodes) {
+   for (ID slave_node : *slave_nodes) {
        for (int i = 0; i < 6; i++) {
            slave_dofs(i) |= system_dof_mask(slave_node, i);
        }

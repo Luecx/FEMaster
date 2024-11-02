@@ -52,11 +52,11 @@ enum ConnectorType : int {
 * connector type, which determines the physical connection behavior (e.g., beam or hinge).
 ******************************************************************************/
 class Connector {
-   fem::cos::CoordinateSystemPtr coordinate_system_;    ///< Pointer to the custom coordinate system for transforming DOFs.
-   ConnectorType                 connector_type_;       ///< Type of the connector (e.g., Beam, Hinge).
-   Dofs                          constrained_dofs_;     ///< Vector indicating which DOFs are constrained (6 DOFs).
-   ID                            node_1_id_;            ///< ID of the first node.
-   ID                            node_2_id_;            ///< ID of the second node.
+   fem::cos::CoordinateSystem::Ptr coordinate_system_;    ///< Pointer to the custom coordinate system for transforming DOFs.
+   ConnectorType                   connector_type_;       ///< Type of the connector (e.g., Beam, Hinge).
+   Dofs                            constrained_dofs_;     ///< Vector indicating which DOFs are constrained (6 DOFs).
+   ID                              node_1_id_;            ///< ID of the first node.
+   ID                              node_2_id_;            ///< ID of the second node.
 
    public:
    /******************************************************************************
@@ -71,7 +71,10 @@ class Connector {
     * @param coordinate_system Pointer to the custom coordinate system for the connector.
     * @param connector_type The type of the connector, which defines the constrained DOFs.
     ******************************************************************************/
-   Connector(ID node_1_id, ID node_2_id, fem::cos::CoordinateSystemPtr coordinate_system, ConnectorType connector_type);
+   Connector(ID node_1_id,
+             ID node_2_id,
+             fem::cos::CoordinateSystem::Ptr coordinate_system,
+             ConnectorType connector_type);
 
    virtual ~Connector() = default;    ///< Default destructor for the Connector class.
 

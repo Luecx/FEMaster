@@ -34,6 +34,7 @@ namespace cos {
  */
 class CoordinateSystem {
 public:
+    using Ptr = std::shared_ptr<CoordinateSystem>;
 
     Vec3 axis_1{0,0,0}; ///< First axis of the local coordinate system in global coordinates.
     Vec3 axis_2{0,0,0}; ///< Second axis of the local coordinate system in global coordinates.
@@ -82,7 +83,6 @@ protected:
     std::string name_; ///< Name of the coordinate system.
 };
 
-using CoordinateSystemPtr = std::shared_ptr<CoordinateSystem>;
 
 } // namespace fem
 } // namespace fem::cos

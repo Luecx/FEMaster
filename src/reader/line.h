@@ -172,7 +172,7 @@ public:
     // Setters
     //-------------------------------------------------------------------------
     /**
-     * @brief Sets the end of file status to this line.
+     * @brief Sets__OLD the end of file status to this line.
      */
     void eof();
 

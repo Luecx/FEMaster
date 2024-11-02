@@ -51,7 +51,7 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
 inline void Model::set_surface(const std::string& elset, ID surface_id) {
     logging::error(elem_sets.has(elset), "element set with name=", elset, " has not been defined");
 
-    for (const auto& el_id: elem_sets.get(elset)) {
+    for (const auto& el_id: *elem_sets.get(elset)) {
         set_surface(-1, el_id, surface_id);
     }
 }
@@ -60,8 +60,5 @@ template<typename T, typename... Args>
 inline void Model::add_coordinate_system(const std::string& name, Args&&... args) {
 
     logging::error(!coordinate_systems.has(name), "coordinate system with name=", name, " has already been defined");
-    cos::CoordinateSystemPtr cos = std::make_shared<T>(args...);
-    coordinate_systems.m_sets.emplace(std::piecewise_construct,
-                                       std::forward_as_tuple(name),
-                                       std::forward_as_tuple(cos));
+    coordinate_systems.activate<T>(name, args...);
 }

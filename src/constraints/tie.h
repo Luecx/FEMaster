@@ -18,8 +18,8 @@
 
 #pragma once  // Ensures this file is only included once during compilation
 
-#include "../model/sets.h"
 #include "../model/geometry/surface/surface.h"
+#include "../model/sets/region.h"
 
 namespace fem {
 namespace constraint {
@@ -33,8 +33,8 @@ namespace constraint {
 * the slave node positions to match the master surface.
 ******************************************************************************/
 class Tie {
-   std::string master_set;  ///< Name of the master set (surface set)
-   std::string slave_set;   ///< Name of the slave set (node set)
+   model::SurfaceRegion::Ptr master_set;      ///< Name of the master set (surface set)
+   model::NodeRegion::Ptr slave_set;          ///< Name of the slave set (node set)
    Precision distance;      ///< Maximum allowed distance for coupling
    bool adjust;             ///< Whether to adjust slave nodes to match the master surface
 
@@ -50,7 +50,9 @@ class Tie {
     * @param distance Maximum allowed distance between master and slave nodes.
     * @param adjust Boolean flag indicating whether to adjust slave node positions.
     ******************************************************************************/
-   Tie(const std::string& masterSet, const std::string& slaveSet, Precision distance, bool adjust);
+   Tie(const model::SurfaceRegion::Ptr masterSet,
+       const model::NodeRegion::Ptr slaveSet,
+       Precision distance, bool adjust);
 
    /******************************************************************************
     * @brief Generates the coupling equations for the tie constraint.
@@ -68,8 +70,6 @@ class Tie {
     * @return TripletList A list of triplets representing the coupling equations.
     ******************************************************************************/
    TripletList get_equations(SystemDofIds& system_nodal_dofs,
-                             model::Sets<std::vector<ID>>& surface_sets,
-                             model::Sets<std::vector<ID>>& node_sets,
                              std::vector<model::SurfacePtr>& surfaces,
                              NodeData& node_coords,
                              int row_offset);
