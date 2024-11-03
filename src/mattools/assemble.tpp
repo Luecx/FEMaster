@@ -132,6 +132,13 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     // Define batch size for squashing the buffer
     constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
 
+    for (int i = 0; i < num_threads; ++i) {
+        thread_triplets[i].reserve(BATCH_SIZE);  // Reserve space for 16M triplets
+    }
+
+    Timer timer;
+    timer.start();
+
     // Main parallel loop over elements
     #pragma omp parallel for schedule(static, 1024) num_threads(num_threads)
     for (size_t elem_idx = 0; elem_idx < elements.size(); ++elem_idx) {
@@ -181,15 +188,35 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
         }
     }
 
-#pragma omp parallel for num_threads(num_threads)
+    timer.stop();
+    logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
+    timer.start();
+
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
     for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
         thread_matrices[thread_id].insertFromTriplets(thread_triplets[thread_id].begin(),
                                                       thread_triplets[thread_id].end());
     }
+    timer.stop();
+    logging::info(true, "Time for last insertion   : ", timer.elapsed(), " ms");
+    timer.start();
 
-    for(int i = 1; i < num_threads; i++) {
-        thread_matrices[0] += thread_matrices[i];
+    // Parallel reduction in stages
+    int current_num_threads = num_threads;
+    while (current_num_threads > 1) {
+        int half = (current_num_threads + 1) / 2;
+
+#pragma omp parallel for num_threads(half)
+        for (int i = 0; i < half; ++i) {
+            if (i + half < current_num_threads) {
+                thread_matrices[i] += thread_matrices[i + half];
+            }
+        }
+        current_num_threads = half;
     }
+
+    timer.stop();
+    logging::info(true, "Time for reducing matrices: ", timer.elapsed(), " ms");
     // The final result is in thread_matrices[0]
     return thread_matrices[0];
 }
