@@ -9,8 +9,6 @@ vtk/
 topo/solver
 topo/runs
 
-projects/
-
 *.pyc
 *.exe
 *.inp
