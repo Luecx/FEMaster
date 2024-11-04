@@ -3,7 +3,7 @@ from scipy.optimize import minimize
 import numpy as np
 
 class Filet(Segment):
-    def __init__(self, segment1, segment2, radius, n_subdivisions=None, n_points=None, name=None):
+    def __init__(self, segment1, segment2, radius, n_subdivisions=None, name=None):
         self.segment1 = segment1
         self.segment2 = segment2
         self.radius = radius
@@ -26,7 +26,7 @@ class Filet(Segment):
         filet_function = lambda t: self._arc_point(arc_center, p1, p2, t)
 
         # Initialize Segment with the arc as the filet
-        super().__init__(filet_function, 0, 1, n_subdivisions=n_subdivisions, n_points=n_points, name=name)
+        super().__init__(filet_function, 0, 1, n_subdivisions=n_subdivisions, name=name)
 
     def _optimize_t_values(self):
         def objective(t_values):

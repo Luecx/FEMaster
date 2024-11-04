@@ -15,7 +15,7 @@ import numpy as np
 from .segment import Segment
 
 class CircleSegment(Segment):
-    def __init__(self, center, start_point, angles, n_subdivisions=None, n_points=None, name=None):
+    def __init__(self, center, start_point, angles, n_subdivisions=None, name=None):
         """
         Initialize a circular arc segment with a center, start point, and angle.
 
@@ -42,5 +42,4 @@ class CircleSegment(Segment):
             return np.array([x, y])
 
         # Initialize the base class with the circular function
-        super().__init__(circular_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions,
-                         n_points=n_points, name=name)
+        super().__init__(circular_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions, name=name)

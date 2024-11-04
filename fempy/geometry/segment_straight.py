@@ -15,7 +15,7 @@ import numpy as np
 from .segment import Segment
 
 class StraightSegment(Segment):
-    def __init__(self, start, end, n_subdivisions=None, n_points=None, name=None):
+    def __init__(self, start, end, n_subdivisions=None, name=None):
         """
         Initialize a straight line segment with start and end points.
 
@@ -34,8 +34,7 @@ class StraightSegment(Segment):
             ])
 
         # Initialize the base class with the linear function
-        super().__init__(linear_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions,
-                         n_points=n_points, name=name)
+        super().__init__(linear_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions, name=name)
 
         # Store the start and end points for reference
         self.start = start

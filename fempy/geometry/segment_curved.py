@@ -15,7 +15,7 @@ import numpy as np
 from .segment import Segment
 
 class CurvedSegment(Segment):
-    def __init__(self, start, end, mid, n_subdivisions=None, n_points=None, name=None):
+    def __init__(self, start, end, mid, n_subdivisions=None, name=None):
         """
         Initialize a curved segment with a start, end, and mid-point.
 
@@ -31,8 +31,7 @@ class CurvedSegment(Segment):
             return np.array([x, y])
 
         # Initialize the base class with the spline function
-        super().__init__(spline_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions,
-                         n_points=n_points, name=name)
+        super().__init__(spline_function, t_start=0, t_end=1, n_subdivisions=n_subdivisions,name=name)
 
         # Store the mid-point for reference
         self.mid = mid
