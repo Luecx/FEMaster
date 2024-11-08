@@ -171,7 +171,7 @@ void Reader::process_elements() {
 
 void Reader::process_surfaces() {
     // Activate the specified element set (if any) before processing surfaces.
-    m_model->surface_sets.activate(m_current_line.require<std::string>("SFSET", "SALL"));
+    m_model->surface_sets.activate(m_current_line.require<std::string>("SFSET", "NAME"));
 
     while(next_line().type() == DATA_LINE) {
         // Read the number of parts in the current line.
