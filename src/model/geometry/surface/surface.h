@@ -66,7 +66,7 @@ struct SurfaceInterface {
     virtual void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) = 0;
 };
 
-using SurfacePtr = std::shared_ptr<SurfaceInterface>;
+using SurfacePtr = std::unique_ptr<SurfaceInterface>;
 
 /******************************************************************************
  * @class Surface

@@ -3,6 +3,7 @@
 
 #include "../element/element_structural.h"
 #include "../../math/interpolate.h"
+#include "../collection/dict.h"
 #include "../geometry/surface/surface.h"
 
 namespace fem::model {
@@ -39,12 +40,6 @@ public:
     //-------------------------------------------------------------------------
     // Constructor
     //-------------------------------------------------------------------------
-    /**
-     * @brief Constructs a SolidElement with the given element ID and node IDs.
-     *
-     * @param p_elem_id The unique ID of the element.
-     * @param p_node_ids An array containing the IDs of the nodes that define the element.
-     */
     SolidElement(ID p_elem_id, std::array<ID, N> p_node_ids)
         : StructuralElement(p_elem_id)
         , node_ids(p_node_ids) {}
@@ -52,85 +47,31 @@ public:
     //-------------------------------------------------------------------------
     // Pure Virtual Methods
     //-------------------------------------------------------------------------
-    /**
-     * @brief Computes the shape functions at the given local coordinates.
-     *
-     * @param r Local coordinate along the r-direction.
-     * @param s Local coordinate along the s-direction.
-     * @param t Local coordinate along the t-direction.
-     * @return StaticMatrix<N, 1> The computed shape function values.
-     */
+
     virtual StaticMatrix<N, 1> shape_function(Precision r, Precision s, Precision t) = 0;
-
-    /**
-     * @brief Computes the derivatives of the shape functions with respect to the local coordinates.
-     *
-     * @param r Local coordinate along the r-direction.
-     * @param s Local coordinate along the s-direction.
-     * @param t Local coordinate along the t-direction.
-     * @return StaticMatrix<N, D> The computed shape function derivatives.
-     */
     virtual StaticMatrix<N, D> shape_derivative(Precision r, Precision s, Precision t) = 0;
-
-    /**
-     * @brief Returns the local coordinates of the nodes in the element.
-     *
-     * @return StaticMatrix<N, D> The local coordinates of the nodes.
-     */
     virtual StaticMatrix<N, D> node_coords_local() = 0;
 
-    /**
-     * @brief Returns the global coordinates of the nodes based on provided nodal data.
-     *
-     * @param node_coords The global nodal data.
-     * @return StaticMatrix<N, D> The global coordinates of the nodes.
-     */
-    virtual StaticMatrix<N, D> node_coords_global(NodeData& node_coords) {
+    template<Dim K>
+    StaticVector<K> interpolate(StaticMatrix<N, K> values, Precision r, Precision s, Precision t);
+
+    StaticMatrix<N, D> node_coords_global(NodeData& node_coords) {
         return this->nodal_data<D>(node_coords);
     }
 
-    /**
-     * @brief Returns the quadrature integration scheme to be used for integration over the element.
-     *
-     * @return const quadrature::Quadrature& The quadrature rule.
-     */
     virtual const quadrature::Quadrature& integration_scheme() = 0;
     virtual const quadrature::Quadrature& integration_scheme_mass() {return this->integration_scheme();}
 
     //-------------------------------------------------------------------------
     // Strain-Displacement Matrix and Jacobian
     //-------------------------------------------------------------------------
-    /**
-     * @brief Computes the strain-displacement matrix (B-matrix) based on the shape function derivatives in global coordinates.
-     *
-     * @param shape_der_global The shape function derivatives in global coordinates.
-     * @return StaticMatrix<n_strain, D * N> The computed strain-displacement matrix.
-     */
-    virtual StaticMatrix<n_strain, D * N> strain_displacement(const StaticMatrix<N, D>& shape_der_global);
 
-    /**
-     * @brief Computes the strain-displacement matrix (B-matrix) and determinant of the Jacobian.
-     *
-     * @param node_coords The coordinates of the element nodes.
-     * @param r Local coordinate along the r-direction.
-     * @param s Local coordinate along the s-direction.
-     * @param t Local coordinate along the t-direction.
-     * @param det Output variable for the determinant of the Jacobian.
-     * @param check_det Flag to indicate whether to check for a positive determinant.
-     * @return StaticMatrix<n_strain, D * N> The computed strain-displacement matrix.
-     */
-    virtual StaticMatrix<n_strain, D * N> strain_displacements(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t, Precision& det, bool check_det = true);
-
-    /**
-     * @brief Computes the Jacobian matrix at the given local coordinates.
-     *
-     * @param node_coords The coordinates of the element nodes.
-     * @param r Local coordinate along the r-direction.
-     * @param s Local coordinate along the s-direction.
-     * @param t Local coordinate along the t-direction.
-     * @return StaticMatrix<D, D> The Jacobian matrix.
-     */
-    virtual StaticMatrix<D, D> jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t);
+    StaticMatrix<n_strain, D * N> strain_displacement(const StaticMatrix<N, D>& shape_der_global);
+    StaticMatrix<n_strain, D * N> strain_displacements(const StaticMatrix<N, D>& node_coords,
+          Precision r, Precision s, Precision t, Precision& det, bool check_det = true);
+    StaticMatrix<D, D> jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t);
+    StaticMatrix<n_strain, n_strain> mat_matrix(const StaticMatrix<N, D>& node_coords,
+          Precision r, Precision s, Precision t);
 
     //-------------------------------------------------------------------------
     // Helper Functions
@@ -157,111 +98,22 @@ public:
      */
     ElDofs dofs() override;
 
-    /**
-     * @brief Computes the stiffness matrix for the element.
-     *
-     * @param position The nodal positions for the element.
-     * @param buffer A buffer to store the stiffness matrix.
-     * @return MapMatrix The computed stiffness matrix.
-     */
     MapMatrix stiffness(NodeData& position, Precision* buffer) override;
-
-    /**
-     * @brief Computes the mass matrix for the element.
-     *
-     * @param position The nodal positions for the element.
-     * @param buffer A buffer to store the mass matrix.
-     * @return MapMatrix The computed mass matrix.
-     */
     MapMatrix mass(NodeData& position, Precision* buffer) override;
 
-    /**
-     * @brief Returns the dimensionality of the element (typically 3D).
-     *
-     * @return Dim The dimensionality of the element.
-     */
     Dim dimensions() override;
-
-    /**
-     * @brief Returns the number of nodes in the element.
-     *
-     * @return Dim The number of nodes in the element.
-     */
     Dim n_nodes() override;
-
-    /**
-     * @brief Returns the array of node IDs for the element.
-     *
-     * @return ID* A pointer to the array of node IDs.
-     */
     ID* nodes() override;
-
-    /**
-     * @brief Returns a shared pointer to a surface.
-     *
-     * @param surface_id The ID of the surface.
-     * @return SurfacePtr A shared pointer to the surface.
-     */
     virtual SurfacePtr surface(ID surface_id) override = 0;
-
-    /**
-     * @brief Returns the number of integration points in the quadrature scheme.
-     *
-     * @return Dim The number of integration points.
-     */
     Dim n_integration_points() override;
 
-    /**
-     * @brief Computes the volume of the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @return Precision The computed volume.
-     */
     Precision volume(NodeData& node_coords) override;
 
-    /**
-     * @brief Applies a volume load to the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param node_loads The nodal loads that will be updated by the applied load.
-     * @param load The external load vector.
-     */
-    void apply_vload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override;
-
-    /**
-     * @brief Applies a thermal load to the element.
-     */
-    void apply_tload(NodeData& node_coords, NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override;
-
-    /**
-     * @brief Computes the nodal stress and strain for the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param displacement The nodal displacement data.
-     * @param stress The computed nodal stress.
-     * @param strain The computed nodal strain.
-     */
+    void apply_vload                (NodeData& node_coords, NodeData& node_loads, Vec3 load) override;
+    void apply_tload                (NodeData& node_coords, NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override;
     void compute_stress_strain_nodal(NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain) override;
-
-    /**
-     * @brief Computes the stress and strain at integration points of the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param displacement The nodal displacement data.
-     * @param stress The computed stress at integration points.
-     * @param strain The computed strain at integration points.
-     * @param xyz The computed global coordinates of the integration points.
-     */
-    void compute_stress_strain(NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override;
-
-    /**
-     * @brief Computes the compliance (strain energy) for the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param displacement The nodal displacement data.
-     * @param result The computed compliance value.
-     */
-    void compute_compliance(NodeData& node_coords, NodeData& displacement, ElementData& result) override;
+    void compute_stress_strain      (NodeData& node_coords, NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override;
+    void compute_compliance         (NodeData& node_coords, NodeData& displacement, ElementData& result) override;
 
     //-------------------------------------------------------------------------
     // Testing Functions
@@ -273,6 +125,7 @@ public:
      */
     template<class ElementType>
     static bool test_implementation(bool print=false);
+
 };
 
 

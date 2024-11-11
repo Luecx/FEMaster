@@ -61,12 +61,12 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
        node_pos(2) = node_coords(id, 2);
 
        Precision best_dist = 1e36;
-       ID best_id;
+       ID best_id = -1;
        Vec2 best_local;
 
        // Find the closest surface on the master set
        for(ID s_id : *master_set) {
-           auto s_ptr = surfaces.at(s_id);
+           auto& s_ptr = surfaces.at(s_id);
            if (s_ptr == nullptr) continue;
 
            auto local = s_ptr->global_to_local(node_pos, node_coords, true);
@@ -86,7 +86,7 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
        // Skip if no suitable surface was found
        if (best_dist > distance) continue;
 
-       auto s_ptr = surfaces.at(best_id);
+       auto& s_ptr = surfaces.at(best_id);
 
        // Adjust slave node position if required
        if (adjust) {

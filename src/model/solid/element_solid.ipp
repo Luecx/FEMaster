@@ -11,9 +11,24 @@
 
 #pragma once
 
-#include "element_solid.h"
+#include "../../cos/rectangular_system.h"
 
 namespace fem::model {
+
+//-----------------------------------------------------------------------------
+// Interpolation
+//-----------------------------------------------------------------------------
+template<Index N>
+template<Dim K>
+StaticVector<K> SolidElement<N>::interpolate(StaticMatrix<N, K> values, Precision r, Precision s, Precision t) {
+    StaticVector<N> wgt = shape_function(r,s,t);
+    StaticVector<K> res {};
+    res.setZero();
+    for (Index i = 0; i < K; i++) {
+        res += wgt(i) * values.col(i);
+    }
+    return res;
+}
 
 //-----------------------------------------------------------------------------
 // strain_displacement
@@ -91,6 +106,25 @@ SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Pr
     return jacobian;
 }
 
+template<Index N>
+StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
+SolidElement<N>::mat_matrix(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t) {
+    logging::error(_elem_data_dict != nullptr, "no _elem_data_dict assigned to element ", elem_id);
+    logging::error(_node_data_dict != nullptr, "no _node_data_dict assigned to element ", elem_id);
+    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
+    logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
+
+    // get the orientation
+    if (_elem_data_dict->has(MAT_ANGLES)) {
+        Vec3 orient_angles = _elem_data_dict->get(MAT_ANGLES).row(this->elem_id);
+        Vec3 location      = this->interpolate(node_coords);
+        cos::RectangularSystem local_system(orient_angles(0), orient_angles(1), orient_angles(2));
+        return _material->elasticity()->template get_transformed<D>(local_system.get_axes(Vec3(0,0,0)));
+    }
+    return _material->elasticity()->template get<D>();
+}
+
+
 //-----------------------------------------------------------------------------
 // nodal_data
 //-----------------------------------------------------------------------------
@@ -134,8 +168,8 @@ SolidElement<N>::stiffness(NodeData& position, Precision* buffer) {
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, &node_coords](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det;
+            StaticMatrix<n_strain, n_strain> E = mat_matrix(node_coords, r, s, t);
             StaticMatrix<n_strain, D * N> B = this->strain_displacements(node_coords, r, s, t, det);
-            StaticMatrix<n_strain, n_strain> E = this->_material->elasticity()->template get<D>();
             StaticMatrix<D * N, D * N> res = B.transpose() * (E * B) * det;
             return StaticMatrix<D * N, D * N>(res);
         };
@@ -304,8 +338,8 @@ SolidElement<N>::apply_tload(NodeData& node_coords, NodeData& node_loads, NodeDa
         Vec6 strain{strain_value, strain_value, strain_value, 0, 0, 0};
 
         // stress tensor
-        auto mat_matrix = _material->elasticity()->template get<D>();
-        auto stress = mat_matrix * strain;
+        StaticMatrix<n_strain, n_strain> E = mat_matrix(node_coords_glob, r, s, t);
+        auto stress = E * strain;
 
         // compute strain-displacement matrix
         Precision det;
@@ -357,7 +391,7 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& node_coords, NodeData& di
                                "\nCoordinates: ", global_node_coords);
 
         if (det > 0) {
-            StaticMatrix<n_strain, n_strain> E = this->_material->elasticity()->template get<D>();
+            StaticMatrix<n_strain, n_strain> E = this->mat_matrix(global_node_coords, r, s, t);
 
             auto strains = B * local_displacement;
             auto stresses = E * strains;
@@ -441,7 +475,7 @@ SolidElement<N>::compute_stress_strain(NodeData& node_coords, NodeData& displace
 
         StaticMatrix<N, 1> shape_func = this->shape_function(r, s, t);
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det);
-        StaticMatrix<n_strain, n_strain> E = this->_material->elasticity()->template get<D>();
+        StaticMatrix<n_strain, n_strain> E = this->mat_matrix(global_node_coords, r, s, t);
 
         auto strains = B * local_displacement;
         auto stresses = E * strains;

@@ -20,12 +20,12 @@ struct C3D8 : public SolidElement<8>{
 
     SurfacePtr surface(ID surface_id) override {
         switch (surface_id) {
-            case 1: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 0], node_ids[ 1], node_ids[ 2], node_ids[ 3]});
-            case 2: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 4], node_ids[ 5], node_ids[ 6], node_ids[ 7]});
-            case 3: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 0], node_ids[ 1], node_ids[ 5], node_ids[ 4]});
-            case 4: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 1], node_ids[ 2], node_ids[ 6], node_ids[ 5]});
-            case 5: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 2], node_ids[ 3], node_ids[ 7], node_ids[ 6]});
-            case 6: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 3], node_ids[ 0], node_ids[ 4], node_ids[ 7]});
+            case 1: return std::make_unique<Surface4>(std::array<ID, 4>{node_ids[ 0], node_ids[ 1], node_ids[ 2], node_ids[ 3]});
+            case 2: return std::make_unique<Surface4>(std::array<ID, 4>{node_ids[ 4], node_ids[ 5], node_ids[ 6], node_ids[ 7]});
+            case 3: return std::make_unique<Surface4>(std::array<ID, 4>{node_ids[ 0], node_ids[ 1], node_ids[ 5], node_ids[ 4]});
+            case 4: return std::make_unique<Surface4>(std::array<ID, 4>{node_ids[ 1], node_ids[ 2], node_ids[ 6], node_ids[ 5]});
+            case 5: return std::make_unique<Surface4>(std::array<ID, 4>{node_ids[ 2], node_ids[ 3], node_ids[ 7], node_ids[ 6]});
+            case 6: return std::make_unique<Surface4>(std::array<ID, 4>{node_ids[ 3], node_ids[ 0], node_ids[ 4], node_ids[ 7]});
             default: return nullptr;  // Invalid surface ID
         }
     }

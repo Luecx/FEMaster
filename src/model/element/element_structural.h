@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../data/elem_data_dict.h"
 #include "element.h"
 
 namespace fem::model {

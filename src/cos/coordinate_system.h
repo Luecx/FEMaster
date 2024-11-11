@@ -36,19 +36,8 @@ class CoordinateSystem {
 public:
     using Ptr = std::shared_ptr<CoordinateSystem>;
 
-    Vec3 axis_1{0,0,0}; ///< First axis of the local coordinate system in global coordinates.
-    Vec3 axis_2{0,0,0}; ///< Second axis of the local coordinate system in global coordinates.
-    Vec3 axis_3{0,0,0}; ///< Third axis of the local coordinate system in global coordinates.
-
     /// Default constructor
     CoordinateSystem() = default;
-
-    /// Constructor with three axes
-    CoordinateSystem(Vec3 axis_1, Vec3 axis_2, Vec3 axis_3) {
-        this->axis_1 = axis_1;
-        this->axis_2 = axis_2;
-        this->axis_3 = axis_3;
-    };
 
     /// Virtual destructor
     virtual ~CoordinateSystem() = default;
@@ -66,6 +55,15 @@ public:
      * @return Point in the global coordinate system.
      */
     virtual Vec3 to_global(const Vec3& local_point) const = 0;
+
+    /**
+     * @brief Computes the local axes at a local point given in the global coordinate system
+     * Especially relevant for non-orthogonal coordinate systems like cylindrical or spherical
+     * The input is the point in local coordinates. The output will be a matrix with the first row being the
+     * first axis in global coordinates, the second row being the second axis in global coordinates and the third
+     * in global coordinates.
+     */
+    virtual StaticMatrix<3,3> get_axes(const Vec3& local_point) const = 0;
 
     /**
      * @brief Get the name of the coordinate system.

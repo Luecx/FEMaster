@@ -27,7 +27,7 @@ void Model::add_coupling(const std::string &master_set, const std::string &slave
     logging::error(node_sets.get(master_set)->size() == 1, "Master set must contain exactly one node");
     ID master_node = node_sets.get(master_set)->first();
 
-    _couplings.push_back({master_node, node_sets.get(slave_set), coupled_dofs, type});
+    _couplings.emplace_back(master_node, node_sets.get(slave_set), coupled_dofs, type);
 }
 
 void Model::add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust) {
@@ -37,7 +37,7 @@ void Model::add_tie(const std::string& master_set, const std::string& slave_set,
 
     NodeRegion::Ptr    slave_ptr  = node_sets.get(slave_set);
     SurfaceRegion::Ptr master_ptr = surface_sets.get(master_set);
-    _ties.push_back(constraint::Tie{master_ptr, slave_ptr, distance, adjust});
+    _ties.emplace_back(constraint::Tie{master_ptr, slave_ptr, distance, adjust});
 }
 
 

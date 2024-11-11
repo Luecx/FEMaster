@@ -6,6 +6,9 @@
 #include "../../math/quadrature.h"
 #include "element_types.h"
 
+#include "../data/node_data_dict.h"
+#include "../data/elem_data_dict.h"
+
 #include <array>
 
 namespace fem {
@@ -20,6 +23,8 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     ElementTypeFlags _flags;
 
     material::Material::Ptr _material = nullptr;
+    NodeDataDict::Ptr       _node_data_dict = nullptr;
+    ElemDataDict::Ptr       _elem_data_dict = nullptr;
 
     public:
     ElementInterface(ID p_elem_id)
@@ -27,9 +32,14 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
 
     virtual ~ElementInterface() = default;
 
-
     void set_material(material::Material::Ptr material) {
         _material = material;
+    }
+    void set_node_data_dict(NodeDataDict::Ptr node_data) {
+        _node_data_dict = node_data;
+    }
+    void set_elem_data_dict(ElemDataDict::Ptr elem_data) {
+        _elem_data_dict = elem_data;
     }
 
     virtual ElDofs dofs()                 = 0;
@@ -55,12 +65,9 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
         return std::dynamic_pointer_cast<T>(shared_from_this());
     }
 
-
     void _set_type(ElementType flags) {
         _flags |= flags;
     }
-
-    // Function to check if the element is of a specific type
     bool is_type(ElementType type) const {
         return (_flags & type) != 0;
     }
@@ -68,7 +75,7 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
 };
 
 struct ElementInterface;
-using ElementPtr = std::shared_ptr<ElementInterface>;
+using ElementPtr = std::unique_ptr<ElementInterface>;
 
 }    // namespace model
 

@@ -45,7 +45,7 @@ Connector::Connector(ID node_1_id,
 * @param row_offset The starting row for inserting the constraint equations.
 * @return TripletList A list of triplets representing the constraint equations.
 ******************************************************************************/
-TripletList Connector::get_equations(SystemDofIds& system_nodal_dofs, NodeData& /* node_coords */, int row_offset) {
+TripletList Connector::get_equations(SystemDofIds& system_nodal_dofs, NodeData& node_coords, int row_offset) {
    TripletList triplets {};         // Initialize the triplet list for constraint equations.
    int         row = row_offset;    // Row index starts from the given offset.
 
@@ -62,18 +62,13 @@ TripletList Connector::get_equations(SystemDofIds& system_nodal_dofs, NodeData& 
        if (dof_1 < 0 || dof_2 < 0)
            continue;
 
-       // Determine the local axis based on whether it's a translational or rotational DOF
-       Vec3 local_dof_direction;
-       if (i < 3) {
-           // Translational DOFs (0: X, 1: Y, 2: Z)
-           local_dof_direction = Vec3::Unit(i);
-       } else {
-           // Rotational DOFs (3: RX, 4: RY, 5: RZ)
-           local_dof_direction = Vec3::Unit(i - 3);    // Adjust to correct local rotational axis
-       }
+       Vec3 position;
+       position(0) = node_coords(node_1_id_, 0);
+       position(1) = node_coords(node_1_id_, 1);
+       position(2) = node_coords(node_1_id_, 2);
+       Vec3 local_pos = coordinate_system_->to_local(position);
 
-       // Transform the local DOF direction to the global coordinate system
-       Vec3 global_dof_direction = coordinate_system_->to_global(local_dof_direction);
+       Vec3 global_dof_direction = coordinate_system_->get_axes(local_pos).row((i < 3) ? i : i-3);
 
        // Add the constraint equation to the triplet list
        for (int j = 0; j < 3; j++) {

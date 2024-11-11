@@ -3,6 +3,8 @@
 #include "coordinate_system.h"
 #include "../core/types.h"
 
+#include <cmath>
+
 namespace fem {
 namespace cos {
 
@@ -33,13 +35,43 @@ public:
      * @param z_axis Unit vector of the z-axis in the global coordinate system.
      */
     RectangularSystem(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis)
-        : CoordinateSystem(x_axis, y_axis, z_axis), x_axis_(x_axis), y_axis_(y_axis), z_axis_(z_axis) {
+        : CoordinateSystem(), x_axis_(x_axis), y_axis_(y_axis), z_axis_(z_axis) {
         orthogonalize();
         normalize();
         compute_transformations();
-        axis_1 = x_axis_;
-        axis_2 = y_axis_;
-        axis_3 = z_axis_;
+    }
+
+    /**
+     * @brief Constructor for the RectangularSystem class using Euler-angles.
+     */
+    RectangularSystem(Precision rot_x, Precision rot_y, Precision rot_z) {
+        using std::cos;
+        using std::sin;
+
+        StaticMatrix<3, 3> rot_x_mat;
+        rot_x_mat << 1, 0, 0,
+                    0, cos(rot_x), -sin(rot_x),
+                    0, sin(rot_x), cos(rot_x);
+
+        StaticMatrix<3, 3> rot_y_mat;
+        rot_y_mat << cos(rot_y), 0, sin(rot_y),
+                    0, 1, 0,
+                    -sin(rot_y), 0, cos(rot_y);
+
+        StaticMatrix<3, 3> rot_z_mat;
+        rot_z_mat << cos(rot_z), -sin(rot_z), 0,
+                     sin(rot_z), cos(rot_z), 0,
+                      0, 0, 1;
+
+        StaticMatrix<3, 3> rot_mat = rot_x_mat * rot_y_mat * rot_z_mat;
+
+        x_axis_ = rot_mat.col(0);
+        y_axis_ = rot_mat.col(1);
+        z_axis_ = rot_mat.col(2);
+
+        orthogonalize();
+        normalize();
+        compute_transformations();
     }
 
     /**
@@ -52,9 +84,6 @@ public:
         orthogonalize();
         normalize();
         compute_transformations();
-        axis_1 = x_axis_;
-        axis_2 = y_axis_;
-        axis_3 = z_axis_;
     }
 
     /**
@@ -66,9 +95,6 @@ public:
         orthogonalize();
         normalize();
         compute_transformations();
-        axis_1 = x_axis_;
-        axis_2 = y_axis_;
-        axis_3 = z_axis_;
     }
 
     /**
@@ -120,6 +146,13 @@ public:
      */
     Vec3 to_global(const Vec3& local_point) const override {
         return local_to_global_ * local_point;
+    }
+
+    /**
+     *
+     */
+    StaticMatrix<3, 3> get_axes(const Vec3& local_point) const override {
+        return local_to_global_;
     }
 };
 

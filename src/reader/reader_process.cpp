@@ -650,6 +650,8 @@ void Reader::process_loadcase_linear_static_topo() {
             process_loadcase_linear_static_topo_exponent(&lc);
         } else if (m_current_line.command() == "DENSITY") {
             process_loadcase_linear_static_topo_density(&lc);
+        } else if (m_current_line.command() == "ORIENTATION") {
+            process_loadcase_linear_static_topo_orient(&lc);
         } else if (m_current_line.command() == "END") {
             next_line();
             break;
@@ -739,11 +741,23 @@ void Reader::process_loadcase_linear_static_topo_density(fem::loadcase::LinearSt
         lc->density(id) = ds;
     }
 }
+
 void Reader::process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc) {
     next_line();
     auto exp     = m_current_line.get_value(0, 0.0f);
     lc->exponent = exp;
     next_line();
+}
+
+void Reader::process_loadcase_linear_static_topo_orient(fem::loadcase::LinearStaticTopo* lc) {
+    while (next_line().type() == DATA_LINE) {
+        auto id         = m_current_line.get_value(0, 0);
+        Precision angle_x = m_current_line.get_value(1, 0.0f);
+        Precision angle_y = m_current_line.get_value(2, 0.0f);
+        Precision angle_z = m_current_line.get_value(3, 0.0f);
+
+        lc->angles.row(id) = Vec3(angle_x, angle_y, angle_z);
+    }
 }
 
 }    // namespace fem::reader

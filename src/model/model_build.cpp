@@ -103,14 +103,11 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
     return matrix;
 }
 
-
-
-SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData stiffness_scalar) {
+SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
         if (el->is_type(StructuralType)) {
             auto sel = el->as<StructuralElement>();
             MapMatrix stiff = sel->stiffness(node_coords, storage);
-            stiff *= (stiffness_scalar.rows() > 0) ? stiffness_scalar(sel->elem_id, 0) : 1.0;
             return stiff;
         } else {
             MapMatrix mat{storage, 0, 0};

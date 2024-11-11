@@ -8,9 +8,11 @@
 #include "element/element.h"
 #include "element/element_structural.h"
 #include "geometry/surface/surface.h"
-#include "sets/dict.h"
-#include "sets/region.h"
-#include "sets/sets.h"
+#include "collection/dict.h"
+#include "collection/sets.h"
+#include "region/region.h"
+#include "data/elem_data_dict.h"
+#include "data/node_data_dict.h"
 
 namespace fem {
 
@@ -25,6 +27,10 @@ struct Model {
     NodeData node_coords;
     std::vector<ElementPtr> elements{};
     std::vector<SurfacePtr> surfaces{};
+
+    // more data for the nodes and elements which easy node / element can use to access fields
+    ElemDataDict::Ptr element_data = std::make_shared<ElemDataDict>();
+    NodeDataDict::Ptr nodal_data   = std::make_shared<NodeDataDict>();
 
     // constraints
     std::vector<constraint::Connector>       _connectors {};
@@ -48,7 +54,7 @@ struct Model {
     Dict<material::Material> _materials;
 
     // storage for other fields
-    Dict<NodeData>   _fields_temperature;
+    Dict<NodeData> _fields_temperature;
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces) :
@@ -114,7 +120,7 @@ struct Model {
 
     // matrices
     SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness=1.0);
-    SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
+    SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices);
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 
     std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);

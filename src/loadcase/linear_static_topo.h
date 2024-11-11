@@ -46,6 +46,7 @@ struct LinearStaticTopo : public LinearStatic {
     // Data Members
     //-------------------------------------------------------------------------
     ElementData density;  /**< Element density used for topology optimization. */
+    ElementData angles ;  /**< Material orientation used for topology optimization subject to change. */
     Precision exponent = 1;  /**< Exponent used in SIMP-like penalization schemes. */
 
 public:

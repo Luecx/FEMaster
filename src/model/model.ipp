@@ -21,7 +21,9 @@ inline void Model::set_element(ID id, Args&&... args) {
               id, " has ", el->dimensions(), " while all other elements have ", element_dims, " dimensions");
     logging::error(this->elements[id] == nullptr, "element with id=", id, " has already been defined");
 
-    this->elements[id] = el;
+    this->elements[id] = std::move(el);
+    this->elements[id]->set_elem_data_dict(element_data);
+    this->elements[id]->set_node_data_dict(nodal_data);
     this->elem_sets.add(id);
 }
 
@@ -29,7 +31,7 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
     logging::error(id < max_surfaces,
                    "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
 
-    auto elptr = elements[element_id];
+    auto& elptr = elements[element_id];
     logging::error(elptr != nullptr, "element with id=", element_id, " has not been defined");
     auto surfptr = elptr->surface(surface_id);
     logging::error(surfptr != nullptr, "surface with id=", surface_id, " has not been defined for element with id=", element_id);
@@ -43,7 +45,7 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
 
     logging::error(this->surfaces[id] == nullptr, "surface with id=", id, " has already been defined");
 
-    this->surfaces[id] = surfptr;
+    this->surfaces[id] = std::move(surfptr);
     this->surface_sets.add(id);
 }
 

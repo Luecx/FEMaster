@@ -13,8 +13,9 @@
 #include <set>
 
 fem::loadcase::LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
-    : LinearStatic(id, writer, model), density(model->max_elements, 1) {
+    : LinearStatic(id, writer, model), density(model->max_elements, 1), angles(model->max_elements, 3) {
     density.setOnes();
+    angles.setZero();
 }
 
 void fem::loadcase::LinearStaticTopo::run() {
@@ -26,6 +27,10 @@ void fem::loadcase::LinearStaticTopo::run() {
     logging::info(true, "LINEAR STATIC TOPO");
     logging::info(true, "================================================================================================");
     logging::info(true, "");
+
+    // assign fields to the element data
+    m_model->element_data->get(model::TOPO_DENSITY) = density;
+    m_model->element_data->get(model::MAT_ANGLES) = angles;
 
     auto stiffness_scalar = density.array().pow(exponent);
 
@@ -49,7 +54,7 @@ void fem::loadcase::LinearStaticTopo::run() {
 
     // Step 4: Construct the active stiffness matrix for active DOFs
     auto active_stiffness_mat = Timer::measure(
-        [&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat, stiffness_scalar); },
+        [&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing active stiffness matrix"
     );
 
@@ -197,4 +202,7 @@ void fem::loadcase::LinearStaticTopo::run() {
     m_writer->write_eigen_matrix(dens_grad        , "DENS_GRAD");
     m_writer->write_eigen_matrix(volumes          , "VOLUME");
     m_writer->write_eigen_matrix(density          , "DENSITY");
+
+    m_model->element_data->remove(model::TOPO_DENSITY);
+    m_model->element_data->remove(model::MAT_ANGLES);
 }
