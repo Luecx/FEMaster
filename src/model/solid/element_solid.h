@@ -56,30 +56,7 @@ public:
      * In case of topology optimization, it checks for fields which would account for rotation
      * and scaling of the material matrix.
      */
-    StaticMatrix<n_strain, n_strain> material_matrix(Precision r, Precision s, Precision t) {
-
-        logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
-        logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
-
-        Precision scaling = 1;
-        if(this->_model_data->elem_data.has(TOPO_STIFFNESS)) {
-            scaling = this->_model_data->elem_data.get(TOPO_STIFFNESS)(this->elem_id);
-        }
-
-        if(this->_model_data->elem_data.has(TOPO_ANGLES)) {
-            Vec3 angles = this->_model_data->elem_data.get(TOPO_ANGLES).row(this->elem_id);
-            cos::RectangularSystem rot = cos::RectangularSystem(angles(0), angles(1), angles(2));
-
-            Vec3 point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
-            Vec3 point_local  = rot.to_local(point_global);
-
-            auto result = this->_material->elasticity()->template get_transformed<D>(rot.get_axes(point_local));
-            return scaling * result;
-        } else {
-            return scaling * this->_material->elasticity()->template get<D>();
-        }
-
-    }
+    StaticMatrix<n_strain, n_strain> material_matrix(Precision r, Precision s, Precision t);
 
     /**
      * @brief Computes the shape functions at the given local coordinates.
@@ -304,6 +281,14 @@ public:
      * @param result The computed compliance value.
      */
     void compute_compliance(NodeData& displacement, ElementData& result) override;
+
+    /**
+     * @brief Computes the derivative of the compliance w.r.t the three angles defined as TOPO_ANGLES.
+     * If its not defined, the derivative is zero.
+     * @param displacement
+     * @param result
+     */
+    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result);
 
     //-------------------------------------------------------------------------
     // Testing Functions

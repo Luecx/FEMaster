@@ -20,30 +20,56 @@ namespace fem::model {
 //-----------------------------------------------------------------------------
 template<Index N>
 StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
-SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_global) {
+    SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_global) {
     StaticMatrix<n_strain, D * N> B {};
     B.setZero();
-    
+
     for (Index j = 0; j < N; j++) {
-        Dim r1 = j * 3;
-        Dim r2 = r1 + 1;
-        Dim r3 = r1 + 2;
-        
-        B(0, r1) = shape_der_global(j, 0);  // dx/dr
-        B(1, r2) = shape_der_global(j, 1);  // dy/ds
-        B(2, r3) = shape_der_global(j, 2);  // dz/dt
+        Dim r1   = j * 3;
+        Dim r2   = r1 + 1;
+        Dim r3   = r1 + 2;
 
-        B(3, r2) = shape_der_global(j, 2);  // dy/dr
-        B(3, r3) = shape_der_global(j, 1);  // dz/ds
+        B(0, r1) = shape_der_global(j, 0);    // dx/dr
+        B(1, r2) = shape_der_global(j, 1);    // dy/ds
+        B(2, r3) = shape_der_global(j, 2);    // dz/dt
 
-        B(4, r1) = shape_der_global(j, 2);  // dz/dr
-        B(4, r3) = shape_der_global(j, 0);  // dx/dt
+        B(3, r2) = shape_der_global(j, 2);    // dy/dr
+        B(3, r3) = shape_der_global(j, 1);    // dz/ds
 
-        B(5, r1) = shape_der_global(j, 1);  // dx/ds
-        B(5, r2) = shape_der_global(j, 0);  // dy/dt
+        B(4, r1) = shape_der_global(j, 2);    // dz/dr
+        B(4, r3) = shape_der_global(j, 0);    // dx/dt
+
+        B(5, r1) = shape_der_global(j, 1);    // dx/ds
+        B(5, r2) = shape_der_global(j, 0);    // dy/dt
     }
-    
+
     return B;
+}
+
+template<Index N>
+StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
+    SolidElement<N>::material_matrix(Precision r, Precision s, Precision t) {
+
+    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
+    logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
+
+    Precision scaling = 1;
+    if (this->_model_data->elem_data.has(TOPO_STIFFNESS)) {
+        scaling = this->_model_data->elem_data.get(TOPO_STIFFNESS)(this->elem_id);
+    }
+
+    if (this->_model_data->elem_data.has(TOPO_ANGLES)) {
+        Vec3                   angles       = this->_model_data->elem_data.get(TOPO_ANGLES).row(this->elem_id);
+        cos::RectangularSystem rot          = cos::RectangularSystem::euler(angles(0), angles(1), angles(2));
+
+        Vec3                   point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
+        Vec3                   point_local  = rot.to_local(point_global);
+
+        auto result = this->_material->elasticity()->template get_transformed<D>(rot.get_axes(point_local));
+        return scaling * result;
+    } else {
+        return scaling * this->_material->elasticity()->template get<D>();
+    }
 }
 
 template<Index N>

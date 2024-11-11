@@ -63,39 +63,6 @@ public:
     }
 
     /**
-     * @brief Constructor for the RectangularSystem class using Euler-angles.
-     */
-    RectangularSystem(Precision rot_x, Precision rot_y, Precision rot_z) {
-        using std::cos;
-        using std::sin;
-
-        StaticMatrix<3, 3> rot_x_mat;
-        rot_x_mat << 1, 0, 0,
-                    0, cos(rot_x), -sin(rot_x),
-                    0, sin(rot_x), cos(rot_x);
-
-        StaticMatrix<3, 3> rot_y_mat;
-        rot_y_mat << cos(rot_y), 0, sin(rot_y),
-                    0, 1, 0,
-                    -sin(rot_y), 0, cos(rot_y);
-
-        StaticMatrix<3, 3> rot_z_mat;
-        rot_z_mat << cos(rot_z), -sin(rot_z), 0,
-                     sin(rot_z), cos(rot_z), 0,
-                      0, 0, 1;
-
-        StaticMatrix<3, 3> rot_mat = rot_x_mat * rot_y_mat * rot_z_mat;
-
-        x_axis_ = rot_mat.col(0);
-        y_axis_ = rot_mat.col(1);
-        z_axis_ = rot_mat.col(2);
-
-        orthogonalize();
-        normalize();
-        compute_transformations();
-    }
-
-    /**
      * @brief Normalize the axes to unit vectors.
      *
      * @details This function ensures that all the axes are of unit length.
@@ -149,6 +116,85 @@ public:
     StaticMatrix<3,3> get_axes(const Vec3& local_point) const override {
         (void) local_point;
         return local_to_global_;
+    }
+
+    static StaticMatrix<3, 3> rotation_x(Precision angle) {
+        StaticMatrix<3, 3> rot;
+        rot << 1, 0, 0,
+               0, std::cos(angle), -std::sin(angle),
+               0, std::sin(angle), std::cos(angle);
+        return rot;
+    }
+
+    static StaticMatrix<3, 3> rotation_y(Precision angle) {
+        StaticMatrix<3, 3> rot;
+        rot << std::cos(angle), 0, std::sin(angle),
+               0, 1, 0,
+               -std::sin(angle), 0, std::cos(angle);
+        return rot;
+    }
+
+    static StaticMatrix<3, 3> rotation_z(Precision angle) {
+        StaticMatrix<3, 3> rot;
+        rot << std::cos(angle), -std::sin(angle), 0,
+               std::sin(angle), std::cos(angle), 0,
+               0, 0, 1;
+        return rot;
+    }
+
+    static StaticMatrix<3, 3> rotation_x_derivative(Precision angle) {
+        StaticMatrix<3, 3> rot;
+        rot << 0, 0, 0,
+               0, -std::sin(angle), -std::cos(angle),
+               0,  std::cos(angle), -std::sin(angle);
+        return rot;
+    }
+
+    static StaticMatrix<3, 3> rotation_y_derivative(Precision angle) {
+        StaticMatrix<3, 3> rot;
+        rot << -std::sin(angle), 0, std::cos(angle),
+               0, 0, 0,
+               -std::cos(angle), 0, -std::sin(angle);
+        return rot;
+    }
+
+    static StaticMatrix<3, 3> rotation_z_derivative(Precision angle) {
+        StaticMatrix<3, 3> rot;
+        rot << -std::sin(angle), -std::cos(angle), 0,
+               std::cos(angle), -std::sin(angle), 0,
+               0, 0, 0;
+        return rot;
+    }
+
+    /**
+    * @brief Constructor for the RectangularSystem class using Euler-angles.
+    */
+    static RectangularSystem euler(Precision rot_x, Precision rot_y, Precision rot_z) {
+        using std::cos;
+        using std::sin;
+        StaticMatrix<3, 3> rot_x_mat = rotation_x(rot_x);
+        StaticMatrix<3, 3> rot_y_mat = rotation_y(rot_y);
+        StaticMatrix<3, 3> rot_z_mat = rotation_z(rot_z);
+
+        StaticMatrix<3, 3> rot_mat = rot_x_mat * rot_y_mat * rot_z_mat;
+
+        Vec3 x_axis_ = rot_mat.col(0);
+        Vec3 y_axis_ = rot_mat.col(1);
+        Vec3 z_axis_ = rot_mat.col(2);
+        RectangularSystem sys{x_axis_, y_axis_, z_axis_};
+        return sys;
+    }
+
+    static StaticMatrix<3,3> derivative_rot_x(Precision rot_x, Precision rot_y, Precision rot_z) {
+        return rotation_x_derivative(rot_x) * rotation_y(rot_y) * rotation_z(rot_z);
+    }
+
+    static StaticMatrix<3,3> derivative_rot_y(Precision rot_x, Precision rot_y, Precision rot_z) {
+        return rotation_x(rot_x) * rotation_y_derivative(rot_y) * rotation_z(rot_z);
+    }
+
+    static StaticMatrix<3,3> derivative_rot_z(Precision rot_x, Precision rot_y, Precision rot_z) {
+        return rotation_x(rot_x) * rotation_y(rot_y) * rotation_z_derivative(rot_z);
     }
 };
 
