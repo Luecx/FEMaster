@@ -18,7 +18,6 @@ namespace fem::model {
 
 template <typename T>
 struct Sets {
-
     // Deduce the contained type by extracting it from Collection<T>::_data
     using ValueType = typename T::value_type;
     using TPtr      = typename T::Ptr;

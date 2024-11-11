@@ -14,11 +14,11 @@ namespace model {
 
 SystemDofIds Model::build_unconstrained_index_matrix() {
     // first build a boolean matrix of which dofs are present in the system
-    SystemDofs mask{this->max_nodes, 6};
+    SystemDofs mask{this->_data->max_nodes, 6};
     mask.fill(false);
 
     // go through each elements and mask the dofs for all the nodes
-    for (auto &e: elements) {
+    for (auto &e: _data->elements) {
         if (e != nullptr) {
             auto dofs = e->dofs();
             for (ID node_local_id = 0; node_local_id < e->n_nodes(); node_local_id++) {
@@ -45,7 +45,7 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
 }
 
 NodeData Model::build_support_matrix(std::vector<std::string> supp_sets) {
-    NodeData disp_matrix{this->max_nodes, 6};
+    NodeData disp_matrix{this->_data->max_nodes, 6};
     disp_matrix.fill(std::numeric_limits<Precision>::quiet_NaN());
 
     for (auto &key: supp_sets) {
@@ -56,7 +56,7 @@ NodeData Model::build_support_matrix(std::vector<std::string> supp_sets) {
 }
 
 NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
-    NodeData load_matrix{this->max_nodes, 6};
+    NodeData load_matrix{this->_data->max_nodes, 6};
     load_matrix.setZero();
 
     for (auto &key: load_sets) {
@@ -70,7 +70,7 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
     TripletList triplets;
     int rows = -1;
     for (auto &c: this->_couplings) {
-        auto coupling_triplets = c.get_equations(indices, node_coords, rows + 1);
+        auto coupling_triplets = c.get_equations(indices, _data->get(NodeDataEntries::POSITION), rows + 1);
         for (auto &tri: coupling_triplets) {
             triplets.push_back(tri);
             rows = std::max(rows, tri.row());
@@ -78,7 +78,7 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
     }
 
     for (auto &t: this->_ties) {
-        auto tie_triplets = t.get_equations(indices, surfaces, node_coords, rows + 1);
+        auto tie_triplets = t.get_equations(indices, _data->surfaces, _data->get(NodeDataEntries::POSITION), rows + 1);
         for(auto &tri: tie_triplets) {
             triplets.push_back(tri);
             rows = std::max(rows, tri.row());
@@ -86,7 +86,7 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
     }
 
     for (auto &t : this->_connectors) {
-        auto connector_triplets = t.get_equations(indices, node_coords, rows + 1);
+        auto connector_triplets = t.get_equations(indices, _data->get(NodeDataEntries::POSITION), rows + 1);
         for (auto &tri: connector_triplets) {
             triplets.push_back(tri);
             rows = std::max(rows, tri.row());
@@ -109,7 +109,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData st
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
         if (el->is_type(StructuralType)) {
             auto sel = el->as<StructuralElement>();
-            MapMatrix stiff = sel->stiffness(node_coords, storage);
+            MapMatrix stiff = sel->stiffness(storage);
             stiff *= (stiffness_scalar.rows() > 0) ? stiffness_scalar(sel->elem_id, 0) : 1.0;
             return stiff;
         } else {
@@ -117,7 +117,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData st
             return mat;
         }
     };
-    auto res = mattools::assemble_matrix(elements, indices, lambda);
+    auto res = mattools::assemble_matrix(_data->elements, indices, lambda);
     return res;
 }
 
@@ -125,14 +125,14 @@ SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
         if (el->is_type(StructuralType)) {
             auto sel = el->as<StructuralElement>();
-            MapMatrix element_mass = sel->mass(node_coords, storage);
+            MapMatrix element_mass = sel->mass(storage);
             return element_mass;
         } else {
             MapMatrix mat{storage, 0, 0};
             return mat;
         }
     };
-    auto res = mattools::assemble_matrix(elements, indices, lambda);
+    auto res = mattools::assemble_matrix(_data->elements, indices, lambda);
     return res;
 }
 

@@ -4,7 +4,10 @@
 #include "../../material/material.h"
 #include "../geometry/surface/surface.h"
 #include "../../math/quadrature.h"
+
 #include "element_types.h"
+
+#include "../model_data.h"
 
 #include <array>
 
@@ -19,7 +22,9 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     // storing the type of this element
     ElementTypeFlags _flags;
 
+    public:
     material::Material::Ptr _material = nullptr;
+    ModelDataPtr _model_data;
 
     public:
     ElementInterface(ID p_elem_id)
@@ -66,9 +71,6 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     }
 
 };
-
-struct ElementInterface;
-using ElementPtr = std::shared_ptr<ElementInterface>;
 
 }    // namespace model
 

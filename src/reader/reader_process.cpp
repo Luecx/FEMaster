@@ -80,7 +80,7 @@ void Reader::process() {
 void Reader::process_nodes() {
     // read NODE
     // check if NSET is defined, if not, use NALL
-    m_model->node_sets.activate(m_current_line.parse<std::string>("NSET", "NALL"));
+    m_model->_data->node_sets.activate(m_current_line.parse<std::string>("NSET", "NALL"));
 
     while (next_line().type() == DATA_LINE) {
         int node_id = m_current_line.get_value(0, 0);
@@ -94,7 +94,7 @@ void Reader::process_nodes() {
 void Reader::process_elements() {
     // read ELEMENT
     // check if ELSET is defined, if not, use EALL
-    m_model->elem_sets.activate(m_current_line.parse<std::string>("ELSET", "EALL"));
+    m_model->_data->elem_sets.activate(m_current_line.parse<std::string>("ELSET", "EALL"));
 
     auto type = m_current_line.require<std::string>("TYPE");
 
@@ -171,7 +171,7 @@ void Reader::process_elements() {
 
 void Reader::process_surfaces() {
     // Activate the specified element set (if any) before processing surfaces.
-    m_model->surface_sets.activate(m_current_line.require<std::string>("SFSET", "NAME"));
+    m_model->_data->surface_sets.activate(m_current_line.require<std::string>("SFSET", "NAME"));
 
     while(next_line().type() == DATA_LINE) {
         // Read the number of parts in the current line.
@@ -231,7 +231,7 @@ void Reader::process_nset() {
     // read NSET, NAME=xyz
     bool generate = m_current_line.has_key("GENERATE");
     auto setname  = m_current_line.require<std::string>("NAME", "NSET");
-    m_model->node_sets.activate(setname);
+    m_model->_data->node_sets.activate(setname);
     while (next_line().type() == DATA_LINE) {
         if (generate) {
             // require exactly 2 or 3 values, not more, not less
@@ -242,11 +242,11 @@ void Reader::process_nset() {
             ID id2 = m_current_line.get_value(1, 0);
             ID inc = m_current_line.get_value(2, 1);
             for (ID i = id1; i <= id2; i += inc) {
-                m_model->node_sets.get()->add(i);
+                m_model->_data->node_sets.get()->add(i);
             }
         } else {
             for (const auto& id : m_current_line.values()) {
-                m_model->node_sets.get()->add(std::stoi(id));
+                m_model->_data->node_sets.get()->add(std::stoi(id));
             }
         }
     }
@@ -256,7 +256,7 @@ void Reader::process_elset() {
     // read ELSET, NAME=xyz
     bool generate = m_current_line.has_key("GENERATE");
 
-    m_model->elem_sets.activate(m_current_line.require<std::string>("NAME", "ELSET"));
+    m_model->_data->elem_sets.activate(m_current_line.require<std::string>("NAME", "ELSET"));
     while (next_line().type() == DATA_LINE) {
 
         if (generate) {
@@ -268,11 +268,11 @@ void Reader::process_elset() {
             ID id2 = m_current_line.get_value(1, 0);
             ID inc = m_current_line.get_value(2, 1);
             for (ID i = id1; i <= id2; i += inc) {
-                m_model->elem_sets.get()->add(i);
+                m_model->_data->elem_sets.get()->add(i);
             }
         } else {
             for (const auto& id : m_current_line.values()) {
-                m_model->elem_sets.get()->add(std::stoi(id));
+                m_model->_data->elem_sets.get()->add(std::stoi(id));
             }
         }
     }
@@ -281,7 +281,7 @@ void Reader::process_elset() {
 void Reader::process_sfset() {
     // read ELSET, NAME=xyz
     bool generate = m_current_line.has_key("GENERATE");
-    m_model->surface_sets.activate(m_current_line.require<std::string>("NAME", "SFSET"));
+    m_model->_data->surface_sets.activate(m_current_line.require<std::string>("NAME", "SFSET"));
 
     while (next_line().type() == DATA_LINE) {
         if (generate) {
@@ -293,11 +293,11 @@ void Reader::process_sfset() {
             ID id2 = m_current_line.get_value(1, 0);
             ID inc = m_current_line.get_value(2, 1);
             for (ID i = id1; i <= id2; i += inc) {
-                m_model->surface_sets.get()->add(i);
+                m_model->_data->surface_sets.get()->add(i);
             }
         } else {
             for (const auto& id : m_current_line.values()) {
-                m_model->surface_sets.get()->add(std::stoi(id));
+                m_model->_data->surface_sets.get()->add(std::stoi(id));
             }
         }
     }
@@ -305,7 +305,7 @@ void Reader::process_sfset() {
 
 void Reader::process_material() {
     // read MATERIAL, NAME=xyz
-    m_model->_materials.activate(m_current_line.require<std::string>("NAME"));
+    m_model->_data->materials.activate(m_current_line.require<std::string>("NAME"));
     next_line();
 }
 
@@ -316,7 +316,7 @@ void Reader::process_elastic() {
     if (type == "ISO" || type == "ISOTROPIC") {
         auto E = m_current_line.get_value(0, 0.0f);
         auto n = m_current_line.get_value(1, 0.0f);
-        m_model->_materials.get()->set_elasticity<fem::material::IsotropicElasticity>(E, n);
+        m_model->_data->materials.get()->set_elasticity<fem::material::IsotropicElasticity>(E, n);
     }
     if (type == "ORTHO" || type == "ORTHOTROPIC") {
         auto E1 = m_current_line.get_value(0, 0.0f);
@@ -328,7 +328,7 @@ void Reader::process_elastic() {
         auto nu23 = m_current_line.get_value(6, 0.0f);
         auto nu13 = m_current_line.get_value(7, 0.0f);
         auto nu12 = m_current_line.get_value(8, 0.0f);
-        m_model->_materials.get()->set_elasticity<fem::material::OrthotropicElasticity>(
+        m_model->_data->materials.get()->set_elasticity<fem::material::OrthotropicElasticity>(
             E1, E2, E3, G23, G13, G12, nu23, nu13, nu12);
     }
     next_line();
@@ -338,7 +338,7 @@ void Reader::process_density() {
     // read DENSITY
     next_line();
     auto v = m_current_line.get_value(0, 0.0f);
-    m_model->_materials.get()->set_density(v);
+    m_model->_data->materials.get()->set_density(v);
     next_line();
 }
 
@@ -346,7 +346,7 @@ void Reader::process_thermal_expansion() {
     // read THERMAL EXPANSION
     next_line();
     auto v = m_current_line.get_value(0, 0.0f);
-    m_model->_materials.get()->set_thermal_expansion(v);
+    m_model->_data->materials.get()->set_thermal_expansion(v);
     next_line();
 }
 
@@ -362,7 +362,7 @@ void Reader::process_cload() {
     // NSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
-    m_model->_load_sets.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->max_nodes, 6);
+    m_model->_load_sets.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->_data->max_nodes, 6);
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
         auto lx  = m_current_line.get_value(1, 0.0f);
@@ -373,7 +373,7 @@ void Reader::process_cload() {
         auto my  = m_current_line.get_value(5, 0.0f);
         auto mz  = m_current_line.get_value(6, 0.0f);
 
-        if (m_model->node_sets.has(str)) {
+        if (m_model->_data->node_sets.has(str)) {
             m_model->add_cload(str, Vec6(lx, ly, lz, mx, my, mz));
         } else {
             m_model->add_cload(std::stoi(m_current_line.values()[0]), Vec6(lx, ly, lz, mx, my, mz));
@@ -386,7 +386,7 @@ void Reader::process_dload() {
     // SFSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
-    m_model->_load_sets.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->max_nodes, 6);
+    m_model->_load_sets.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->_data->max_nodes, 6);
 
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
@@ -394,7 +394,7 @@ void Reader::process_dload() {
         auto ly  = m_current_line.get_value(2, 0.0f);
         auto lz  = m_current_line.values().size() > 3 ? std::stof(m_current_line.values()[3]) : 0;
 
-        if (m_model->surface_sets.has(str)) {
+        if (m_model->_data->surface_sets.has(str)) {
             m_model->add_dload(str, Vec3(lx, ly, lz));
         } else {
             m_model->add_dload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
@@ -407,14 +407,14 @@ void Reader::process_vload() {
     // NSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
-    m_model->_load_sets.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->max_nodes, 6);
+    m_model->_load_sets.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->_data->max_nodes, 6);
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
         auto lx  = m_current_line.get_value(1, 0.0f);
         auto ly  = m_current_line.get_value(2, 0.0f);
         auto lz  = m_current_line.get_value(3, 0.0f);
 
-        if (m_model->elem_sets.has(str)) {
+        if (m_model->_data->elem_sets.has(str)) {
             m_model->add_vload(str, Vec3(lx, ly, lz));
         } else {
             m_model->add_vload(std::stoi(m_current_line.values()[0]), Vec3(lx, ly, lz));
@@ -428,7 +428,7 @@ void Reader::process_tload() {
     auto temp_fi  = m_current_line.require<std::string>("TEMPERATUREFIELD");
     auto ref_temp = m_current_line.require<Precision  >("REFERENCETEMPERATURE");
 
-    m_model->_load_sets.activate(lod_col, m_model->max_nodes, 6);
+    m_model->_load_sets.activate(lod_col, m_model->_data->max_nodes, 6);
     m_model->add_tload(temp_fi, ref_temp);
     next_line();
 }
@@ -439,7 +439,7 @@ void Reader::process_support() {
     // id, lx, ly, lz
     // ...
     // use empty field if no support
-    m_model->_support_sets.activate(m_current_line.require<std::string>("SUPPORT_COLLECTOR"), m_model->max_nodes, 6);
+    m_model->_support_sets.activate(m_current_line.require<std::string>("SUPPORT_COLLECTOR"), m_model->_data->max_nodes, 6);
     m_model->_support_sets.get()->fill(std::numeric_limits<Precision>::quiet_NaN());
 
     while (next_line().type() == DATA_LINE) {
@@ -457,7 +457,7 @@ void Reader::process_support() {
             }
         }
 
-        if (m_model->node_sets.has(str)) {
+        if (m_model->_data->node_sets.has(str)) {
             m_model->add_support(str, constraint);
         } else {
             m_model->add_support(std::stoi(str), constraint);
@@ -476,8 +476,8 @@ void Reader::process_temperature() {
         auto str   = m_current_line.values()[0];
         auto value = m_current_line.get_value(1, 0.0f);
 
-        if (m_model->node_sets.has(str)) {
-            for (auto id : *m_model->node_sets.get(str)) {
+        if (m_model->_data->node_sets.has(str)) {
+            for (auto id : *m_model->_data->node_sets.get(str)) {
                 m_model->set_field_temperature(name, id, value);
             }
         } else {

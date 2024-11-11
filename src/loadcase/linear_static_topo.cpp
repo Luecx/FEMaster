@@ -13,7 +13,7 @@
 #include <set>
 
 fem::loadcase::LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
-    : LinearStatic(id, writer, model), density(model->max_elements, 1) {
+    : LinearStatic(id, writer, model), density(model->_data->max_elems, 1) {
     density.setOnes();
 }
 
@@ -28,6 +28,11 @@ void fem::loadcase::LinearStaticTopo::run() {
     logging::info(true, "");
 
     auto stiffness_scalar = density.array().pow(exponent);
+
+    m_model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);
+    m_model->_data->create_data(model::ElementDataEntries::TOPO_ANGLES   , 3);
+
+    m_model->_data->get(model::ElementDataEntries::TOPO_STIFFNESS) = stiffness_scalar;
 
     // Step 1: Generate active_dof_idx_mat index matrix
     auto active_dof_idx_mat = Timer::measure(
@@ -143,7 +148,7 @@ void fem::loadcase::LinearStaticTopo::run() {
     logging::info(true, "");
     logging::info(true, "Overview");
     logging::up();
-    logging::info(true, "max nodes         : ", m_model->max_nodes);
+    logging::info(true, "max nodes         : ", m_model->_data->max_nodes);
     logging::info(true, "system total DOFs : ", active_dof_idx_mat.maxCoeff() + 1);
     logging::info(true, "lagrange DOFs     : ", n);
     logging::info(true, "total DOFs        : ", active_dof_idx_mat.maxCoeff() + 1 + n);
@@ -197,4 +202,8 @@ void fem::loadcase::LinearStaticTopo::run() {
     m_writer->write_eigen_matrix(dens_grad        , "DENS_GRAD");
     m_writer->write_eigen_matrix(volumes          , "VOLUME");
     m_writer->write_eigen_matrix(density          , "DENSITY");
+
+    m_model->_data->remove(model::ElementDataEntries::TOPO_STIFFNESS);
+    m_model->_data->remove(model::ElementDataEntries::TOPO_ANGLES);
+
 }

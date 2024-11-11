@@ -55,9 +55,9 @@ int main(int argc, char* argv[]) {
 
     // Logging input and output file information
     fem::logging::info(true, "");
-    fem::logging::info(true, "Input file: ", input_file);
+    fem::logging::info(true, "Input file : ", input_file);
     fem::logging::info(true, "Output file: ", output_file);
-    fem::logging::info(true, "CPU(s)    : ", ncpus);
+    fem::logging::info(true, "CPU(s)     : ", ncpus);
     fem::logging::info(true, "");
 
     // Store number of CPUs in config

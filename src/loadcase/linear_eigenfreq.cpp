@@ -247,7 +247,7 @@ void fem::loadcase::LinearEigenfrequency::run() {
     logging::info(true, "");
     logging::info(true, "Overview");
     logging::up();
-    logging::info(true, "max nodes         : ", m_model->max_nodes);
+    logging::info(true, "max nodes         : ", m_model->_data->max_nodes);
     logging::info(true, "system total DOFs : ", active_dof_idx_mat.maxCoeff() + 1);
     logging::info(true, "lagrange DOFs     : ", n);
     logging::info(true, "total DOFs        : ", active_dof_idx_mat.maxCoeff() + 1 + n);

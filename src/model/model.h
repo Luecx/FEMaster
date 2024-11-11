@@ -8,61 +8,42 @@
 #include "element/element.h"
 #include "element/element_structural.h"
 #include "geometry/surface/surface.h"
-#include "sets/dict.h"
-#include "sets/region.h"
-#include "sets/sets.h"
+#include "../data/dict.h"
+#include "../data/region.h"
+#include "../data/sets.h"
+
+#include "../data/elem_data_dict.h"
+#include "../data/node_data_dict.h"
+#include "./model_data.h"
 
 namespace fem {
 
 namespace model{
 
 struct Model {
-    const ID max_nodes;
-    const ID max_elements;
-    const ID max_surfaces;
-
-    // nodes and elements
-    NodeData node_coords;
-    std::vector<ElementPtr> elements{};
-    std::vector<SurfacePtr> surfaces{};
+    ModelDataPtr _data;
 
     // constraints
     std::vector<constraint::Connector>       _connectors {};
     std::vector<constraint::Coupling>        _couplings {};
     std::vector<constraint::Tie>             _ties {};
 
-    // sets to group nodes and elements and everything that has a name
-    Sets<NodeRegion>     node_sets    {SET_NODE_ALL};
-    Sets<ElementRegion>  elem_sets    {SET_ELEM_ALL};
-    Sets<SurfaceRegion>  surface_sets {SET_SURF_ALL};
-
-    // Sets<cos::CoordinateSystem> coordinate_systems;
-    Dict<cos::CoordinateSystem> coordinate_systems;
-
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
     // storage for all the sets
-    Dict<NodeData>           _load_sets   {};
-    Dict<NodeData>           _support_sets{};
-    Dict<material::Material> _materials;
+    Dict<NodeData>  _load_sets   {};
+    Dict<NodeData>  _support_sets{};
 
     // storage for other fields
     Dict<NodeData>   _fields_temperature;
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces) :
-        max_nodes   (max_nodes),
-        max_elements(max_elems),
-        max_surfaces(max_surfaces),
-        node_coords (max_nodes, 3){
+        _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces)){
 
-        // clear node coords
-        node_coords.setZero();
-
-        // resize elements to avoid later reallocation
-        elements.resize(max_elems);
-        surfaces.resize(max_surfaces);
+        // initialize the node data
+        _data->node_data.create(NodeDataEntries::POSITION, 6);
     }
 
     // adding nodes and elements
@@ -96,7 +77,7 @@ struct Model {
     void add_support    (ID id, StaticVector<6> constraint);
 
     // filling in fields
-    void set_field_temperature(const std::string& name, const ID id, Precision value);
+    void set_field_temperature(const std::string& name, ID id, Precision value);
 
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);

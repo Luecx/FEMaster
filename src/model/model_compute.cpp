@@ -9,26 +9,26 @@ namespace fem { namespace model{
 
 std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displacement){
 
-    NodeData stress{max_nodes, 6};
-    NodeData strain{max_nodes, 6};
+    NodeData stress{_data->max_nodes, 6};
+    NodeData strain{_data->max_nodes, 6};
     stress.setZero();
     strain.setZero();
-    IndexVector count{max_nodes};
+    IndexVector count{_data->max_nodes};
     count.setZero();
 
-    for(auto el: elements){
+    for(auto el: _data->elements){
         if(el == nullptr) continue;
         if(!el->is_type(StructuralType))
             continue;
         auto sel = el->as<StructuralElement>();
-        sel->compute_stress_strain_nodal(node_coords, displacement, stress, strain);
+        sel->compute_stress_strain_nodal(displacement, stress, strain);
         for(int i = 0; i < sel->n_nodes(); i++){
             ID id = sel->nodes()[i];
             count(id) ++;
         }
     }
 
-    for (int i = 0; i < max_nodes; i++) {
+    for (int i = 0; i < _data->max_nodes; i++) {
         if (count[i] != 0) {
             for (int j = 0; j < 6; j++) {
                 stress(i, j) /= count[i];
@@ -38,7 +38,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
     }
 
     // check for any nan or inf and then display the node id
-    for(int i = 0; i < max_nodes; i++){
+    for(int i = 0; i < _data->max_nodes; i++){
         for(int j = 0; j < 6; j++){
             bool inv_stress = std::isnan(stress(i, j)) || std::isinf(stress(i, j));
             bool inv_strain = std::isnan(strain(i, j)) || std::isinf(strain(i, j));
@@ -60,7 +60,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 //    NodeData nd_stress{max_nodes, 6};
 //    NodeData nd_strain{max_nodes, 6};
 //    NodeData xyz      {n_ip, 3};
-//    IndexVector n_usage{this->max_nodes};
+//    IndexVector n_usage{this->_data->max_nodes};
 //    ip_stress.setZero();
 //    ip_strain.setZero();
 //    nd_stress.setZero();
@@ -73,7 +73,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 //    n_ip = 0;
 //    for(auto el: elements){
 //        if(el == nullptr) continue;
-//        el->compute_stress_strain(node_coords, displacement, ip_stress, ip_strain, xyz, n_ip);
+//        el->compute_stress_strain(_data->get(NodeDataEntries::POSITION), displacement, ip_stress, ip_strain, xyz, n_ip);
 //        for(int i = 0; i < el->n_nodes(); i++){
 //            n_usage(el->nodes()[i]) ++;
 //        }
@@ -82,7 +82,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 //    }
 //
 //    // matrix containing for each node the elements connecting it
-//    IndexMatrix connectivity{this->max_nodes, n_usage.maxCoeff()};
+//    IndexMatrix connectivity{this->_data->max_nodes, n_usage.maxCoeff()};
 //    IndexVector elem_ip_ids {this->max_elements};
 //    connectivity.setZero();
 //    elem_ip_ids .setZero();
@@ -137,7 +137,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 //            }
 //            // do the actual computation
 //            DynamicVector r2{12};
-//            auto res = interpolator(xyz_ip.block(0,0,index, 3),  val_ip.block(0,0,index, 12), node_coords.row(n), &r2);
+//            auto res = interpolator(xyz_ip.block(0,0,index, 3),  val_ip.block(0,0,index, 12), _data->get(NodeDataEntries::POSITION).row(n), &r2);
 //
 //            std::cout << n << " " << r2.transpose() << std::endl;
 //
@@ -151,16 +151,16 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 }
 
 ElementData Model::compute_compliance(NodeData& displacement){
-    ElementData compliance{max_elements, 1};
+    ElementData compliance{_data->max_elems, 1};
     compliance.setZero();
 
-    for (size_t idx = 0; idx < elements.size(); idx++) {
-        auto el = elements[idx];
+    for (size_t idx = 0; idx < _data->elements.size(); idx++) {
+        auto el = _data->elements[idx];
         if (el == nullptr) continue;
         if(!el->is_type(StructuralType))
             continue;
         auto sel = el->as<StructuralElement>();
-        sel->compute_compliance(node_coords, displacement, compliance);
+        sel->compute_compliance(displacement, compliance);
     }
 
     return compliance;
@@ -168,14 +168,14 @@ ElementData Model::compute_compliance(NodeData& displacement){
 
 ElementData Model::compute_volumes(){
 
-    ElementData volumes{max_elements, 1};
+    ElementData volumes{_data->max_elems, 1};
     volumes.setZero();
 
-    for (size_t idx = 0; idx < elements.size(); idx++) {
-        auto el = elements[idx];
+    for (size_t idx = 0; idx < _data->elements.size(); idx++) {
+        auto el = _data->elements[idx];
         if (el == nullptr) continue;
         if (el->is_type(StructuralType)) {
-            volumes(el->elem_id) = el->as<StructuralElement>()->volume(node_coords);
+            volumes(el->elem_id) = el->as<StructuralElement>()->volume();
         }
     }
 

@@ -125,4 +125,28 @@ using ElDofs = Eigen::Matrix<bool, 1, 6>; ///< Element DOFs for a single element
 using SystemDofs = Eigen::Matrix<bool, Eigen::Dynamic, 6, Eigen::RowMajor>; ///< System DOFs for all elements/nodes
 using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6, Eigen::RowMajor>; ///< System DOF IDs for mapping local to global DOFs
 
+
+/******************************************************************************
+ * @brief related structs to models / elements / cos and everything else
+ ******************************************************************************/
+namespace model {
+  struct ModelData;
+  struct ElementInterface;
+  struct SurfaceInterface;
+  using ModelDataPtr = std::shared_ptr<ModelData>;
+  using ElementPtr = std::shared_ptr<ElementInterface>;
+  using SurfacePtr = std::shared_ptr<SurfaceInterface>;
+}
+
+namespace cos {
+  struct CoordinateSystem;
+  using CoordinateSystemPtr = std::shared_ptr<CoordinateSystem>;
+}
+
+namespace material {
+  struct Material;
+  using MaterialPtr = std::shared_ptr<Material>;
+}
+
+
 } // namespace fem

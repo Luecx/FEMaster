@@ -16,7 +16,7 @@
 #pragma once  // Ensures this file is only included once during compilation
 
 #include "../core/types.h"
-#include "../model/sets/region.h"
+#include "../data/region.h"
 
 namespace fem {
 namespace constraint {

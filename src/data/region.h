@@ -6,9 +6,10 @@
 #define FEMASTER_REGION_H
 
 #include <memory>
-#include "../../core/core.h"
+
 #include "region_type.h"
 #include "collection.h"
+#include "../core/core.h"
 
 namespace fem::model {
 
