@@ -2,49 +2,95 @@ from math import ceil
 
 from fempy.solution.tovtk import Converter
 from fempy.generate import generate_beam
+from fempy.topopt import Optimiser
 
-length = 5
-width  = 2.5
+import numpy as np
+import os
 
-beam_side = generate_beam(length, width, 0.1, 0.05)
-beam_side = beam_side.extruded(round(width / 0.05), spacing=0.05)
-beam_side = beam_side.as_second_order()
-beam_side.write_input_deck("beam2.inp")
+def run_case(id):
 
-max_node_id = len(beam_side.nodes)
+    base_file = f"/home/f_eggers/links/w/f_eggers/FEMaster/res/beam_cross_section/v2.inp"
+    inp_file  = f"./opt_{id}/model.inp"
 
-with open("beam2.inp", 'a') as f:
-    f.write("*Material, name=mat\n")
-    f.write("*Elastic, type=iso\n")
-    f.write("210000,0.3\n")
-    f.write("*Density\n")
-    f.write("7.85e-9\n")
-    f.write("\n")
-    f.write("*Solid Section, elset=EALL, material=mat\n")
-    f.write("\n")
-    f.write("*NODE, NSET=MASTER_1\n")
-    f.write(f"{max_node_id+1}, {-1}, {width / 2}, {0}\n")
-    f.write("*NODE, NSET=MASTER_2\n")
-    f.write(f"{max_node_id+2}, {length + 1}, {width / 2}, {0}\n")
-    # f.write("*Coupling, type=kinematic, master=MASTER_1, slave=LEFT\n")
-    # f.write("1,1,1,1,1,1\n")
-    # f.write("*Coupling, type=kinematic, master=MASTER_2, slave=RIGHT\n")
-    # f.write("1,1,1,1,1,1\n")
-    f.write("\n")
-    f.write("*Cload, load_collector=loads\n")
-    f.write("left, 1, 0, 0, 0, 0, 0\n")
-    f.write("\n")
-    f.write("*Support, support_collector=supp\n")
-    f.write("right, 0, 0, 0, 0, 0, 0,\n")
-    f.write("\n")
+    os.system(f"mkdir -p ./opt_{id}")
+    os.system(f"cp {base_file} {inp_file}")
 
-    f.write("*LOADCASE, TYPE= LINEAR STATIC\n")
-    f.write("*SUPPORT\n")
-    f.write("SUPP\n")
-    f.write("*LOAD\n")
-    f.write("LOADS\n")
-    f.write("*SOLVER, METHOD=DIRECT, DEVICE=CPU\n")
-    f.write("*END\n")
+
+    # append some data
+    with open(inp_file, 'a') as f:
+        loads = [0,0,0,0,0,0]
+        loads[id] = 1e6
+        f.write(f"*Cload, load_collector=loads\n")
+        f.write(f"master_b, {','.join(str(k) for k in loads)}\n")
+        f.write("\n")
+
+    optimiser = Optimiser(
+        input_deck=inp_file,
+        desi_set="EALL",
+        loadcases=[{'load_cols': ['loads'], 'supp_cols': ['supp']}],
+        output_folder=f"./opt_{id}/iter/",
+        solver_path="./bin/FEMaster",
+        method='direct',
+        device='cpu',
+        exponent=2.5,
+        min_density=0.01,
+        target_density=0.25,
+        filter_radius=3,
+        symmetry_radius=0.5,
+        move_limit=0.2)
+
+    optimiser.start(50)
+
+for i in range(6):
+    run_case(i)
+
+
+# elem_size = 0.1
+# width     = 5
+# length    = 5
+#
+# elem_length = ceil(length / elem_size)
+# elem_width  = ceil(width / elem_size)
+#
+# beam_side = generate_beam(length, width, elem_size, elem_size)
+# beam_side = beam_side.extruded(elem_width, spacing=elem_size)
+# beam_side = beam_side.as_second_order()
+# beam_side.write_input_deck("beam5.inp")
+#
+# max_node_id = len(beam_side.nodes)
+#
+# with open("beam5.inp", 'a') as f:
+#     f.write("*Material, name=mat\n")
+#     f.write("*Elastic, type=iso\n")
+#     f.write("210000,0.3\n")
+#     f.write("*Density\n")
+#     f.write("7.85e-9\n")
+#     f.write("\n")
+#     f.write("*Solid Section, elset=EALL, material=mat\n")
+#     f.write("\n")
+#     # f.write("*NODE, NSET=MASTER_1\n")
+#     # f.write(f"{max_node_id+1}, {-1}, {width / 2}, {0}\n")
+#     # f.write("*NODE, NSET=MASTER_2\n")
+#     # f.write(f"{max_node_id+2}, {length + 1}, {width / 2}, {0}\n")
+#     # f.write("*Coupling, type=kinematic, master=MASTER_1, slave=LEFT\n")
+#     # f.write("1,1,1,1,1,1\n")
+#     # f.write("*Coupling, type=kinematic, master=MASTER_2, slave=RIGHT\n")
+#     # f.write("1,1,1,1,1,1\n")
+#     f.write("\n")
+#     f.write("*Cload, load_collector=loads\n")
+#     f.write("left, 1, 0, 0, 0, 0, 0\n")
+#     f.write("\n")
+#     f.write("*Support, support_collector=supp\n")
+#     f.write("right, 0, 0, 0, 0, 0, 0,\n")
+#     f.write("\n")
+#
+#     f.write("*LOADCASE, TYPE= LINEAR STATIC\n")
+#     f.write("*SUPPORT\n")
+#     f.write("SUPP\n")
+#     f.write("*LOAD\n")
+#     f.write("LOADS\n")
+#     f.write("*SOLVER, METHOD=DIRECT, DEVICE=CPU\n")
+#     f.write("*END\n")
 
 
 # create a 2d grid first order
