@@ -1,7 +1,7 @@
 import copy
 import numpy as np
 
-from .geometry import Geometry
+from ..geometry import Geometry
 
 def generate_beam(length, height, elem_length, elem_height):
     geom = Geometry()

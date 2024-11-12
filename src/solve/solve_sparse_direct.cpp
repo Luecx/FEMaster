@@ -93,10 +93,16 @@ DynamicVector solve_direct(SolverDevice device,
         Eigen::PardisoLDLT<SparseMatrix> solver {};
 
         solver.compute(mat);
-        logging::error(solver.info() == Eigen::Success, "Decomposition failed with PardisoLDLT");
+        logging::warning(solver.info() == Eigen::Success, "Decomposition failed with PardisoLDLT");
         DynamicVector eigen_sol = solver.solve(rhs);
-        logging::error(solver.info() == Eigen::Success, "Solving failed with PardisoLDLT");
 
+        if (solver.info() != Eigen::Success) {
+            logging::warning(true, "Solving failed with PardisoLDLT");
+            Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr(mat);
+            qr.compute(mat);
+            eigen_sol = qr.solve(rhs);
+            logging::error(qr.info() == Eigen::Success, "Solving failed with SparseQR");
+        }
 #else
         // Use Eigen's SimplicialLDLT solver
         logging::info(true, "Using Eigen SimplicialLDLT solver");

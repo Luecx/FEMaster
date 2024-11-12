@@ -1,110 +1,110 @@
 import numpy as np
 
-def orthotropic_stiffness(E_x, E_y, nu_xy, G_xy):
-    """
-    Defines a 2x2x2x2 stiffness tensor for a 2D orthotropic material.
+def rotation_matrix(phi1, phi2, Phi):
+    R = np.zeros((3, 3))
+    R[0, 0] = np.cos(phi1) * np.cos(phi2) - np.cos(Phi) * np.sin(phi1) * np.sin(phi2)
+    R[0, 1] = np.cos(phi1) * np.sin(phi2) + np.cos(Phi) * np.sin(phi1) * np.cos(phi2)
+    R[0, 2] = np.sin(Phi) * np.sin(phi1)
+    R[1, 0] = -np.sin(phi1) * np.cos(phi2) - np.cos(Phi) * np.cos(phi1) * np.sin(phi2)
+    R[1, 1] = -np.sin(phi1) * np.sin(phi2) + np.cos(Phi) * np.cos(phi1) * np.cos(phi2)
+    R[1, 2] = np.sin(Phi) * np.cos(phi1)
+    R[2, 0] = np.sin(Phi) * np.sin(phi2)
+    R[2, 1] = -np.sin(Phi) * np.cos(phi2)
+    R[2, 2] = np.cos(Phi)
+    return R
 
-    Parameters:
-    - E_x: Young's modulus in x direction
-    - E_y: Young's modulus in y direction
-    - nu_xy: Poisson's ratio in the xy plane
-    - G_xy: Shear modulus in the xy plane
+def stiffness_matrix():
+    E = 230
+    nu = 0.3
 
-    Returns:
-    - C: The 2x2x2x2 stiffness tensor for orthotropic material
-    """
-    nu_yx = nu_xy * E_y / E_x
-    C = np.zeros((2, 2, 2, 2))
-    C[0, 0, 0, 0] = E_x / (1 - nu_xy * nu_yx)
-    C[1, 1, 1, 1] = E_y / (1 - nu_xy * nu_yx)
-    C[0, 0, 1, 1] = C[1, 1, 0, 0] = nu_xy * E_y / (1 - nu_xy * nu_yx)
-    C[0, 1, 0, 1] = C[1, 0, 0, 1] = C[0, 1, 1, 0] = C[1, 0, 1, 0] = G_xy
+
+
+    C = np.array([
+        [1-nu, nu, nu, 0, 0, 0],
+        [nu, 1-nu, nu, 0, 0, 0],
+        [nu, nu, 1-nu, 0, 0, 0],
+        [0, 0, 0, (1-2*nu) / 2, 0, 0],
+        [0, 0, 0, 0, (1-2*nu) / 2, 0],
+        [0, 0, 0, 0, 0, (1-2*nu) / 2]
+    ])   # Convert GPa to Pa
+    C *= E / (1 + nu) / (1 - 2 * nu)
     return C
 
-def stiffness_matrix_3x3(E_x, E_y, nu_xy, G_xy):
-    """
-    Converts the 2x2x2x2 stiffness tensor to a 3x3 stiffness matrix for 2D orthotropic materials.
+def transformation_matrix(R):
+    # Define T_sigma and T_epsilon here based on the components of R
+    T_sigma = np.zeros((6, 6))
+    T_epsilon = np.zeros((6, 6))
 
-    Parameters:
-    - E_x: Young's modulus in x direction
-    - E_y: Young's modulus in y direction
-    - nu_xy: Poisson's ratio in the xy plane
-    - G_xy: Shear modulus in the xy plane
+    # Fill in T_sigma and T_epsilon according to the formulas in the image
+    # Note: This part requires writing each component based on R
+    # Assigning values to T_sigma
+    T_sigma[0, 0] = R[0, 0] ** 2
+    T_sigma[0, 1] = R[1, 0] ** 2
+    T_sigma[0, 2] = R[2, 0] ** 2
+    T_sigma[0, 3] = R[0, 0] * R[1, 0]
+    T_sigma[0, 4] = R[1, 0] * R[2, 0]
+    T_sigma[0, 5] = R[2, 0] * R[0, 0]
 
-    Returns:
-    - C_mat: The 3x3 stiffness matrix for orthotropic material
-    """
-    nu_yx = nu_xy * E_y / E_x
+    T_sigma[1, 0] = R[0, 1] ** 2
+    T_sigma[1, 1] = R[1, 1] ** 2
+    T_sigma[1, 2] = R[2, 1] ** 2
+    T_sigma[1, 3] = R[0, 1] * R[1, 1]
+    T_sigma[1, 4] = R[1, 1] * R[2, 1]
+    T_sigma[1, 5] = R[2, 1] * R[0, 1]
 
-    # Define components in the 3x3 stiffness matrix form
-    C11 = E_x / (1 - nu_xy * nu_yx)
-    C22 = E_y / (1 - nu_xy * nu_yx)
-    C12 = nu_xy * E_y / (1 - nu_xy * nu_yx)
-    C33 = G_xy
+    T_sigma[2, 0] = R[0, 2] ** 2
+    T_sigma[2, 1] = R[1, 2] ** 2
+    T_sigma[2, 2] = R[2, 2] ** 2
+    T_sigma[2, 3] = R[0, 2] * R[1, 2]
+    T_sigma[2, 4] = R[1, 2] * R[2, 2]
+    T_sigma[2, 5] = R[2, 2] * R[0, 2]
 
-    # Construct the 3x3 matrix
-    C_mat = np.array([
-        [C11, C12, 0],
-        [C12, C22, 0],
-        [0, 0, C33]
-    ])
+    T_sigma[3, 0] = R[0, 0] * R[0, 1]
+    T_sigma[3, 1] = R[1, 0] * R[1, 1]
+    T_sigma[3, 2] = R[2, 0] * R[2, 1]
+    T_sigma[3, 3] = R[0, 0] * R[1, 1] + R[1, 0] * R[0, 1]
+    T_sigma[3, 4] = R[1, 1] * R[2, 0] + R[2, 1] * R[1, 0]
+    T_sigma[3, 5] = R[2, 0] * R[0, 1] + R[0, 0] * R[2, 1]
 
-    return C_mat
+    T_sigma[4, 0] = R[0, 1] * R[0, 2]
+    T_sigma[4, 1] = R[1, 1] * R[1, 2]
+    T_sigma[4, 2] = R[2, 1] * R[2, 2]
+    T_sigma[4, 3] = R[0, 1] * R[1, 2] + R[1, 1] * R[0, 2]
+    T_sigma[4, 4] = R[1, 2] * R[2, 1] + R[2, 2] * R[1, 1]
+    T_sigma[4, 5] = R[2, 1] * R[0, 2] + R[0, 1] * R[2, 2]
 
-def strain_vector_and_tensor(e_xx, e_yy, gamma_xy):
-    """
-    Returns the strain vector and strain tensor for given strain parameters in 2D.
+    T_sigma[5, 0] = R[0, 2] * R[0, 0]
+    T_sigma[5, 1] = R[1, 2] * R[1, 0]
+    T_sigma[5, 2] = R[2, 2] * R[2, 0]
+    T_sigma[5, 3] = R[0, 2] * R[1, 0] + R[1, 2] * R[0, 0]
+    T_sigma[5, 4] = R[1, 0] * R[2, 2] + R[2, 0] * R[1, 2]
+    T_sigma[5, 5] = R[2, 0] * R[0, 2] + R[0, 0] * R[2, 2]
 
-    Parameters:
-    - e_xx: Normal strain in the x-direction
-    - e_yy: Normal strain in the y-direction
-    - gamma_xy: Shear strain in the xy-plane
+    T_epsilon = T_sigma.copy()
 
-    Returns:
-    - strain_vector: The strain vector [e_xx, e_yy, gamma_xy]
-    - strain_tensor: The strain tensor in 2x2 matrix form
-    """
-    # Define the strain vector
-    strain_vector = np.array([e_xx, e_yy, 2 * gamma_xy])
+    T_epsilon[3:, :3] *= 2
+    T_sigma[:3, 3:] *= 2
 
-    # Define the strain tensor (note gamma_xy / 2 for the off-diagonal terms)
-    strain_tensor = np.array([
-        [e_xx, gamma_xy ],
-        [gamma_xy, e_yy]
-    ])
+    return T_sigma, T_epsilon
 
-    return strain_vector, strain_tensor
+def rotated_stiffness_matrix(C, T_sigma, T_epsilon):
+    return np.dot(np.dot(np.linalg.inv(T_sigma), C), T_epsilon)
 
-# Example usage
-E_x = 150.0   # Young's modulus in x direction (MPa)
-E_y = 120.0   # Young's modulus in y direction (MPa)
-nu_xy = 0.25  # Poisson's ratio in the xy plane
-G_xy = 50.0   # Shear modulus in xy plane (MPa)
+# Example usage:
+phi1, phi2, Phi = np.radians([30, 156, 2])  # example angles in radians
+R = rotation_matrix(phi1, phi2, Phi)
 
-# Generate stiffness tensor and matrix
-C_tensor = orthotropic_stiffness(E_x, E_y, nu_xy, G_xy)
-C_mat = stiffness_matrix_3x3(E_x, E_y, nu_xy, G_xy)
+C = stiffness_matrix()
 
-# print("2x2x2x2 stiffness tensor for orthotropic material:\n", C_tensor)
-# print("\n3x3 stiffness matrix for orthotropic material:\n", C_mat)
+print(C)
+print(R)
 
-# Define strain parameters
-e_xx = 0.01   # Strain in x direction
-e_yy = 0.005  # Strain in y direction
-gamma_xy = 0.002  # Shear strain in xy plane
+C = stiffness_matrix()
+T_sigma, T_epsilon = transformation_matrix(R)
+C_EBSP0 = rotated_stiffness_matrix(C, T_sigma, T_epsilon)
 
-# Generate strain vector and tensor
-strain_vec, strain_tensor = strain_vector_and_tensor(e_xx, e_yy, gamma_xy)
-# print("\nStrain vector:\n", strain_vec)
-# print("\nStrain tensor:\n", strain_tensor)
 
-print(C_mat)
-# print(C_tensor)
+np.set_printoptions(precision=2,  suppress=True)
 
-# stress tensor and vector
-stress_vec = np.dot(C_mat, strain_vec)
-stress_tensor = np.tensordot(C_tensor, strain_tensor, axes=([2, 3], [0, 1]))
 
-print("\nStress vector:\n", stress_vec)
-print("\nStress tensor:\n", stress_tensor)
-
+print("Rotated stiffness matrix C_EBSP0:\n", C_EBSP0)
