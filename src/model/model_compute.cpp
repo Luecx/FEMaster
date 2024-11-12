@@ -167,7 +167,6 @@ ElementData Model::compute_compliance(NodeData& displacement){
 }
 
 ElementData Model::compute_volumes(){
-
     ElementData volumes{_data->max_elems, 1};
     volumes.setZero();
 

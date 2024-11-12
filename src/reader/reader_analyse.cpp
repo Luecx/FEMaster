@@ -32,11 +32,48 @@ void Reader::analyse_nodes() {
     }
 }
 void Reader::analyse_elements() {
+    // Determine the required number of nodes for this element type
+    auto type = m_current_line.require<std::string>("TYPE");
+
     while (next_line().type() == DATA_LINE) {
-        int element_id            = std::stoi(m_current_line.values()[0]);
+        // Get the element ID from the current line
+        int element_id = std::stoi(m_current_line.values()[0]);
         m_data.highest_element_id = std::max(m_data.highest_element_id, element_id);
+
+        Index req_values;
+        if (type == "C3D4") {
+            req_values = 4;
+        } else if (type == "C3D5") {
+            req_values = 5;
+        } else if (type == "C3D6") {
+            req_values = 6;
+        } else if (type == "C3D8") {
+            req_values = 8;
+        } else if (type == "C3D10") {
+            req_values = 10;
+        } else if (type == "C3D15") {
+            req_values = 15;
+        } else if (type == "C3D20" || type == "C3D20R") {
+            req_values = 20;
+        } else {
+            logging::warning(false, "Unknown element type ", type);
+            return;
+        }
+
+        // Gather values, including across multiple lines if necessary
+        std::vector<ID> values;
+        for (Index i = 1; i < m_current_line.values().size(); i++) {
+            values.push_back(std::stoi(m_current_line.values()[i]));
+        }
+        while (values.size() < req_values) {
+            next_line();
+            for (const auto& val : m_current_line.values()) {
+                values.push_back(std::stoi(val));
+            }
+        }
     }
 }
+
 void Reader::analyse_surfaces() {
     while (next_line().type() == DATA_LINE) {
         try {
