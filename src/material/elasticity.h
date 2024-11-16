@@ -12,7 +12,7 @@ struct Elasticity {
 
     virtual ~Elasticity() = default;
 
-    template<size_t D>
+    template<Dim D>
     StaticMatrix<D == 3 ? 6:3,D == 3 ? 6:3> get() {
         if constexpr (D == 2){
             return get_2d();
@@ -60,7 +60,7 @@ struct Elasticity {
 
 
 
-    template<size_t D>
+    template<Dim D>
     StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed(StaticMatrix<D, D> R) {
         // Raise a compile-time error if D = 2, as it's not implemented
         static_assert(D == 3, "Only 3D transformation is implemented.");
@@ -72,7 +72,7 @@ struct Elasticity {
         return  T_eps.transpose() * elasticity * T_eps;
     }
 
-    template<size_t D>
+    template<Dim D>
     StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed_derivative(StaticMatrix<D, D> R, StaticMatrix<D, D> R_der) {
         // Raise a compile-time error if D = 2, as it's not implemented
         static_assert(D == 3, "Only 3D transformation is implemented.");

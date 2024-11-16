@@ -650,6 +650,8 @@ void Reader::process_loadcase_linear_static_topo() {
             process_loadcase_linear_static_topo_exponent(&lc);
         } else if (m_current_line.command() == "DENSITY") {
             process_loadcase_linear_static_topo_density(&lc);
+        } else if (m_current_line.command() == "ORIENTATION") {
+            process_loadcase_linear_static_topo_orientation(&lc);
         } else if (m_current_line.command() == "END") {
             next_line();
             break;
@@ -737,6 +739,17 @@ void Reader::process_loadcase_linear_static_topo_density(fem::loadcase::LinearSt
         auto ds         = m_current_line.get_value(1, 0.0f);
 
         lc->density(id) = ds;
+    }
+}
+void Reader::process_loadcase_linear_static_topo_orientation(fem::loadcase::LinearStaticTopo* lc) {
+    while (next_line().type() == DATA_LINE) {
+        auto id         = m_current_line.get_value(0, 0);
+        auto angle_1    = m_current_line.get_value(1, 0.0f);
+        auto angle_2    = m_current_line.get_value(2, 0.0f);
+        auto angle_3    = m_current_line.get_value(3, 0.0f);
+        lc->orientation(id, 0) = angle_1;
+        lc->orientation(id, 1) = angle_2;
+        lc->orientation(id, 2) = angle_3;
     }
 }
 void Reader::process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc) {

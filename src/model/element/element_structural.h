@@ -25,6 +25,8 @@ struct StructuralElement : public ElementInterface {
     virtual void       apply_vload(NodeData& node_loads, Vec3 load) = 0;
     virtual void       apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) = 0;
     virtual void       compute_compliance(NodeData& displacement, ElementData& result) = 0;
+    virtual void       compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) = 0;
+
 };
 
 }

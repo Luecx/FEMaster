@@ -13,8 +13,9 @@
 #include <set>
 
 fem::loadcase::LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
-    : LinearStatic(id, writer, model), density(model->_data->max_elems, 1) {
+    : LinearStatic(id, writer, model), density(model->_data->max_elems, 1), orientation(model->_data->max_elems, 3) {
     density.setOnes();
+    orientation.setZero();
 }
 
 void fem::loadcase::LinearStaticTopo::run() {
@@ -32,7 +33,18 @@ void fem::loadcase::LinearStaticTopo::run() {
     m_model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);
     m_model->_data->create_data(model::ElementDataEntries::TOPO_ANGLES   , 3);
 
+    std::cout << "density: " << density << std::endl;
+    std::cout << "exponent: " << exponent << std::endl;
+    std::cout << "stiffness_scalar: " << stiffness_scalar << std::endl;
+    std::cout << "orientation: " << orientation << std::endl;
+
     m_model->_data->get(model::ElementDataEntries::TOPO_STIFFNESS) = stiffness_scalar;
+    m_model->_data->get(model::ElementDataEntries::TOPO_ANGLES)    = orientation;
+
+    std::cout << "density: " << density << std::endl;
+    std::cout << "exponent: " << exponent << std::endl;
+    std::cout << "stiffness_scalar: " << stiffness_scalar << std::endl;
+    std::cout << "orientation: " << orientation << std::endl;
 
     // Step 1: Generate active_dof_idx_mat index matrix
     auto active_dof_idx_mat = Timer::measure(
@@ -190,6 +202,7 @@ void fem::loadcase::LinearStaticTopo::run() {
     ElementData compliance_adj = compliance_raw.array() * density.array().pow(exponent);
     ElementData dens_grad      = - exponent * compliance_raw.array() * density.array().pow(exponent - 1);
     ElementData volumes        = m_model->compute_volumes();
+    ElementData angle_grad     = m_model->compute_compliance_angle_derivative(global_disp_mat);
 
 
     // Write results to the writer
@@ -202,6 +215,8 @@ void fem::loadcase::LinearStaticTopo::run() {
     m_writer->write_eigen_matrix(dens_grad        , "DENS_GRAD");
     m_writer->write_eigen_matrix(volumes          , "VOLUME");
     m_writer->write_eigen_matrix(density          , "DENSITY");
+    m_writer->write_eigen_matrix(angle_grad       , "ORIENTATION_GRAD");
+    m_writer->write_eigen_matrix(orientation      , "ORIENTATION");
 
     m_model->_data->remove(model::ElementDataEntries::TOPO_STIFFNESS);
     m_model->_data->remove(model::ElementDataEntries::TOPO_ANGLES);

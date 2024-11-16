@@ -166,7 +166,23 @@ ElementData Model::compute_compliance(NodeData& displacement){
     return compliance;
 }
 
-ElementData Model::compute_volumes(){
+ElementData Model::compute_compliance_angle_derivative(NodeData& displacement){
+    ElementData results{_data->max_elems, 3};
+    results.setZero();
+
+    for (size_t idx = 0; idx < _data->elements.size(); idx++) {
+        auto el = _data->elements[idx];
+        if (el == nullptr) continue;
+        if(!el->is_type(StructuralType))
+            continue;
+        auto sel = el->as<StructuralElement>();
+        sel->compute_compliance_angle_derivative(displacement, results);
+    }
+
+    return results;
+}
+
+ElementData Model::compute_volumes() {
     ElementData volumes{_data->max_elems, 1};
     volumes.setZero();
 

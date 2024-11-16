@@ -71,8 +71,9 @@ class Reader {
     void process_loadcase_linear_static_solver           (fem::loadcase::LinearStatic* lc);
     void process_loadcase_linear_static_request_stiffness(fem::loadcase::LinearStatic* lc);
 
-    void process_loadcase_linear_static_topo_density (fem::loadcase::LinearStaticTopo* lc);
-    void process_loadcase_linear_static_topo_exponent(fem::loadcase::LinearStaticTopo* lc);
+    void process_loadcase_linear_static_topo_density    (fem::loadcase::LinearStaticTopo* lc);
+    void process_loadcase_linear_static_topo_orientation(fem::loadcase::LinearStaticTopo* lc);
+    void process_loadcase_linear_static_topo_exponent   (fem::loadcase::LinearStaticTopo* lc);
 
     public:
     Reader(const std::string& file_path, const std::string& output_path);

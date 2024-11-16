@@ -173,59 +173,60 @@ SolidElement<N>::compute_compliance(NodeData& displacement, ElementData& result)
 
 template<Index N>
 void SolidElement<N>::compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) {
-//    // the equation for the compliance is:
-//    // C = u^T * K * u
-//    // C = u^T * (B^T * E * B) * u
-//    // C = u^T * B^T * R^T * E * R * B * u
-//    // C = (B * u)^T * R^T * E * R * (B * u)
-//    // C = e^T * R^T * E * R * e        where e = B * u
-//
-//    // Evaluating this must be done using integration over the element since K comes from an integration
-//
-//    // compute the u-vector
-//    auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
-//    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-//
-//    // check for angles
-//    if (!this->_model_data->elem_data.has(TOPO_ANGLES)) return;
-//
-//    Vec3 angles = this->_model_data->elem_data.get(TOPO_ANGLES).row(this->elem_id);
-//    auto R = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3(0,0,0));
-//    auto dR_d1 = cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
-//    auto dR_d2 = cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));
-//    auto dR_d3 = cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2));
-//
-//    Vec3 derivative = Vec3::Zero();
-//
-//    // go through each integration point
-//    for (Index n = 0; n < this->integration_scheme().count(); n++) {
-//        Precision r = this->integration_scheme().get_point(n).r;
-//        Precision s = this->integration_scheme().get_point(n).s;
-//        Precision t = this->integration_scheme().get_point(n).t;
-//        Precision w = this->integration_scheme().get_point(n).w;
-//        Precision det;
-//
-//        // compute the B matrix
-//        StaticMatrix<n_strain, D * N> B = this->strain_displacements(this->node_coords_global(), r, s, t, det);
-//
-//        // compute the E matrix
-//        StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
-//
-//        // compute the strain vector
-//        StaticVector<n_strain> strain = B * local_displacement;
-//
-//        // compute the stress vector
-//        StaticVector<n_strain> stress = E * strain;
-//
-//        // derivative of the rotated material matrix (R^T E R) w.r.t each angle
-//        auto dCd1 = this->_material->elasticity()->get_transformed_derivative(R, dR_d1);
-//        auto dCd2 = this->_material->elasticity()->get_transformed_derivative(R, dR_d2);
-//        auto dCd3 = this->_material->elasticity()->get_transformed_derivative(R, dR_d3);
-//
-//        derivative(0) += w * strain.dot(dCd1 * strain) * det;
-//        derivative(1) += w * strain.dot(dCd2 * strain) * det;
-//        derivative(2) += w * strain.dot(dCd3 * strain) * det;
-//    }
+    // the equation for the compliance is:
+    // C = u^T * K * u
+    // C = u^T * (B^T * E * B) * u
+    // C = u^T * B^T * R^T * E * R * B * u
+    // C = (B * u)^T * R^T * E * R * (B * u)
+    // C = e^T * R^T * E * R * e        where e = B * u
+    // C = e^T (D) e
+    // where D = R^T * E * R
+    // it follows
+    // dC/dtheta = de^T/dtheta * D * e + e^T * D * de/dtheta
+
+    // Evaluating this must be done using integration over the element since K comes from an integration
+
+    // compute the u-vector
+    auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
+    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+
+    // check for angles
+    if (!this->_model_data->elem_data.has(TOPO_ANGLES)) return;
+
+    Vec3 angles = this->_model_data->elem_data.get(TOPO_ANGLES).row(this->elem_id);
+    auto R = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3(0,0,0));
+    auto dR_d1 = cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
+    auto dR_d2 = cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));
+    auto dR_d3 = cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2));
+
+    Vec3 derivative = Vec3::Zero();
+
+    // go through each integration point
+    for (Index n = 0; n < this->integration_scheme().count(); n++) {
+        Precision r = this->integration_scheme().get_point(n).r;
+        Precision s = this->integration_scheme().get_point(n).s;
+        Precision t = this->integration_scheme().get_point(n).t;
+        Precision w = this->integration_scheme().get_point(n).w;
+        Precision det;
+
+        // compute the B matrix
+        StaticMatrix<n_strain, D * N> B = this->strain_displacements(this->node_coords_global(), r, s, t, det);
+
+        // compute the strain vector
+        StaticVector<n_strain> strain = B * local_displacement;
+
+        // derivative of the rotated material matrix (R^T E R) w.r.t each angle
+        auto dCd1 = this->_material->elasticity()->get_transformed_derivative<3>(R, dR_d1);
+        auto dCd2 = this->_material->elasticity()->get_transformed_derivative<3>(R, dR_d2);
+        auto dCd3 = this->_material->elasticity()->get_transformed_derivative<3>(R, dR_d3);
+
+        derivative(0) += w * strain.dot(dCd1 * strain) * det;
+        derivative(1) += w * strain.dot(dCd2 * strain) * det;
+        derivative(2) += w * strain.dot(dCd3 * strain) * det;
+    }
+    result(elem_id, 0) = derivative(0);
+    result(elem_id, 1) = derivative(1);
+    result(elem_id, 2) = derivative(2);
 }
 
 }  // namespace fem::model
