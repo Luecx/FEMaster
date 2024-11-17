@@ -6,6 +6,7 @@ import subprocess
 import numpy as np
 
 from .filter import Filter, FilterFunction
+from .adam import Adam
 # from .viewer import Viewer
 from ..geometry import Geometry
 from ..solution import Solution
@@ -25,7 +26,8 @@ class Optimiser:
     def __init__(self, input_deck, desi_set, loadcases, output_folder,
                  solver_path=None, method='indirect', device='gpu', exponent=2.5,
                  min_density=0.01, target_density=0.2, filter_radius=None,
-                 symmetry_radius=None, move_limit=0.2, symmetries={}, custom_density_adjustment=None):
+                 symmetry_radius=None, move_limit=0.2, symmetries={}, custom_density_adjustment=None,
+                 orientation_optimization=[False, False, False]):
 
         self.input_deck = input_deck
         self.desi_set = desi_set
@@ -57,6 +59,13 @@ class Optimiser:
         # solution
         self.density = np.ones((len(self.desi_mask),))
         self.density[self.desi_mask] *= self.target_density
+
+        # orientation optimization
+        self.orientation_optimization = orientation_optimization
+        self.orientation_mask = np.full((len(self.geometry.elements), 3), False)
+        self.orientation_mask[self.desi_mask] = orientation_optimization
+        self.orientations = np.zeros_like(self.orientation_mask, dtype=np.float64)
+        self.orientations_adam = Adam(self.orientations[self.orientation_mask], learning_rate=self.move_limit)
 
         # constraints (symmetry)
         self.symmetries = symmetries
@@ -105,6 +114,7 @@ class Optimiser:
 
     def set_move_limit(self, move_limit):
         self.move_limit = move_limit
+        self.orientations_adam.learning_rate = move_limit
 
     def add_rotational_symmetry(self, axis, n_rotations, axis_loc):
         if axis in ['x', 'y', 'z']:
@@ -149,6 +159,9 @@ class Optimiser:
                 f.write("*DENSITY")
                 for v in range(len(self.density)):
                     f.write(f"\n{v}, {self.density[v]}")
+                f.write("\n*ORIENTATION")
+                for v in range(len(self.orientations)):
+                    f.write(f"\n{v}, {self.orientations[v][0]}, {self.orientations[v][1]}, {self.orientations[v][2]}")
                 f.write("\n*END\n")
 
     def _run(self, iteration):
@@ -290,8 +303,9 @@ class Optimiser:
             dens = self.density               [self.desi_mask]
 
             # sensitivities merged from all loadcases
-            comp = np.sum([data[i]['COMPLIANCE_ADJ'].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
-            sens = np.sum([data[i]['DENS_GRAD'     ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
+            comp    = np.sum([data[i]['COMPLIANCE_ADJ'  ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
+            sens    = np.sum([data[i]['DENS_GRAD'       ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
+            or_grad = np.sum([data[i]['ORIENTATION_GRAD']          [self.orientation_mask] for i in range(len(data))], axis=0)
 
             # store self.volumes
             self.volumes = vols
@@ -327,7 +341,9 @@ class Optimiser:
 
             change = np.linalg.norm(dens - new_x)
             self.density[self.desi_mask] = new_x
+            self.orientations[self.orientation_mask] = self.orientations_adam.step(-or_grad)
             self.save(os.path.join(self.output_folder, 'iterations', str(iter), 'model.dat'))
+
             # self._clean_folder(iter)
 
             print("\nResults:")

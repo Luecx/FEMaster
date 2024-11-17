@@ -33,18 +33,8 @@ void fem::loadcase::LinearStaticTopo::run() {
     m_model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);
     m_model->_data->create_data(model::ElementDataEntries::TOPO_ANGLES   , 3);
 
-    std::cout << "density: " << density << std::endl;
-    std::cout << "exponent: " << exponent << std::endl;
-    std::cout << "stiffness_scalar: " << stiffness_scalar << std::endl;
-    std::cout << "orientation: " << orientation << std::endl;
-
     m_model->_data->get(model::ElementDataEntries::TOPO_STIFFNESS) = stiffness_scalar;
     m_model->_data->get(model::ElementDataEntries::TOPO_ANGLES)    = orientation;
-
-    std::cout << "density: " << density << std::endl;
-    std::cout << "exponent: " << exponent << std::endl;
-    std::cout << "stiffness_scalar: " << stiffness_scalar << std::endl;
-    std::cout << "orientation: " << orientation << std::endl;
 
     // Step 1: Generate active_dof_idx_mat index matrix
     auto active_dof_idx_mat = Timer::measure(
