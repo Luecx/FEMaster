@@ -65,7 +65,9 @@ class Optimiser:
         self.orientation_mask = np.full((len(self.geometry.elements), 3), False)
         self.orientation_mask[self.desi_mask] = orientation_optimization
         self.orientations = np.zeros_like(self.orientation_mask, dtype=np.float64)
-        self.orientations_adam = Adam(self.orientations[self.orientation_mask], learning_rate=self.move_limit)
+        self.orientations[self.orientation_mask] = np.random.uniform(-np.pi, np.pi, self.orientations[self.orientation_mask].shape)
+        self.orientation_adam = Adam(learning_rate=self.move_limit, beta1=0.3, beta2=0.9, epsilon=1e-8, initial_values=
+            self.orientations[self.orientation_mask])
 
         # constraints (symmetry)
         self.symmetries = symmetries
@@ -306,6 +308,7 @@ class Optimiser:
             comp    = np.sum([data[i]['COMPLIANCE_ADJ'  ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
             sens    = np.sum([data[i]['DENS_GRAD'       ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
             or_grad = np.sum([data[i]['ORIENTATION_GRAD']          [self.orientation_mask] for i in range(len(data))], axis=0)
+            or_grad = -or_grad
 
             # store self.volumes
             self.volumes = vols
@@ -341,10 +344,15 @@ class Optimiser:
 
             change = np.linalg.norm(dens - new_x)
             self.density[self.desi_mask] = new_x
-            self.orientations[self.orientation_mask] = self.orientations_adam.step(-or_grad)
+
+            # orientation optimization
+            self.orientations[self.orientation_mask] = self.orientation_adam.step(or_grad)
+
             self.save(os.path.join(self.output_folder, 'iterations', str(iter), 'model.dat'))
 
             # self._clean_folder(iter)
+
+            print(self.orientations)
 
             print("\nResults:")
             print(f"    Objective       : {np.sum(comp)}")

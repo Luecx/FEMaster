@@ -21,7 +21,7 @@ optimiser = Optimiser(
     filter_radius=3,
     symmetry_radius=0.5,
     move_limit=0.2,
-    orientation_optimization=[True, True, True])
+    orientation_optimization=[False, False, True])
 
 
 optimiser.start(10)
