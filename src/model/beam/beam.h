@@ -5,12 +5,8 @@
 #ifndef BEAM_H
 #define BEAM_H
 
-
-
 class BeamElement {
 
 };
-
-
 
 #endif //BEAM_H

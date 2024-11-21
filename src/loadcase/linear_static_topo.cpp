@@ -28,6 +28,8 @@ void fem::loadcase::LinearStaticTopo::run() {
     logging::info(true, "================================================================================================");
     logging::info(true, "");
 
+    m_model->assign_sections();
+
     auto stiffness_scalar = density.array().pow(exponent);
 
     m_model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);

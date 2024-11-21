@@ -12,6 +12,17 @@ namespace fem {
 
 namespace model {
 
+void Model::assign_sections() {
+    for (Section::Ptr ptr: this->_data->sections) {
+        for (ID elem_id = 0; elem_id < this->_data->max_elems; elem_id++) {
+            if (this->_data->elements[elem_id] != nullptr) {
+                this->_data->elements[elem_id]->set_section(ptr);
+            }
+        }
+    }
+}
+
+
 SystemDofIds Model::build_unconstrained_index_matrix() {
     // first build a boolean matrix of which dofs are present in the system
     SystemDofs mask{this->_data->max_nodes, 6};

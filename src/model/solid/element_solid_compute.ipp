@@ -216,9 +216,9 @@ void SolidElement<N>::compute_compliance_angle_derivative(NodeData& displacement
         StaticVector<n_strain> strain = B * local_displacement;
 
         // derivative of the rotated material matrix (R^T E R) w.r.t each angle
-        auto dCd1 = this->_material->elasticity()->get_transformed_derivative<3>(R, dR_d1);
-        auto dCd2 = this->_material->elasticity()->get_transformed_derivative<3>(R, dR_d2);
-        auto dCd3 = this->_material->elasticity()->get_transformed_derivative<3>(R, dR_d3);
+        auto dCd1 = this->material()->elasticity()->get_transformed_derivative<3>(R, dR_d1);
+        auto dCd2 = this->material()->elasticity()->get_transformed_derivative<3>(R, dR_d2);
+        auto dCd3 = this->material()->elasticity()->get_transformed_derivative<3>(R, dR_d3);
 
         derivative(0) += w * strain.dot(dCd1 * strain) * det;
         derivative(1) += w * strain.dot(dCd2 * strain) * det;

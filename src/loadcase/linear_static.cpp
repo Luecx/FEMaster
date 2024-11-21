@@ -124,6 +124,7 @@ void fem::loadcase::LinearStatic::run() {
     logging::info(true, "LINEAR STATIC");
     logging::info(true, "================================================================================================");
     logging::info(true, "");
+    m_model->assign_sections();
 
     // Step 1: Generate active_dof_idx_mat index matrix
     auto active_dof_idx_mat = Timer::measure(

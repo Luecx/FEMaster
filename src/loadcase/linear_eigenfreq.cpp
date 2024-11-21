@@ -140,6 +140,8 @@ void fem::loadcase::LinearEigenfrequency::run() {
     logging::info(true, "================================================================================================");
     logging::info(true, "");
 
+    m_model->assign_sections();
+
     // Step 1: Generate active_dof_idx_mat index matrix
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return this->m_model->build_unconstrained_index_matrix(); },  // Fixed method name

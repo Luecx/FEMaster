@@ -15,7 +15,7 @@
 
 #include "../data/region.h"
 
-// #include "../section/section.h"
+#include "../section/section.h"
 
 namespace fem::model {
 
@@ -29,6 +29,9 @@ struct ModelData {
     // geometric entities
     std::vector<ElementPtr> elements;
     std::vector<SurfacePtr> surfaces;
+
+    // sections with their respective data
+    std::vector<Section::Ptr> sections;
 
     // data for nodes, elements. Only one allowed per field
     // other data is stored in sets
@@ -47,8 +50,6 @@ struct ModelData {
     // other things which are named
     Dict<material::Material> materials;
     Dict<cos::CoordinateSystem> coordinate_systems;
-
-    // Dict<section::Section> sections;
 
     //
     // Constructor

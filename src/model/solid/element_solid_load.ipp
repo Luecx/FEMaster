@@ -60,9 +60,9 @@ SolidElement<N>::apply_tload(NodeData& node_loads, NodeData& node_temp, Precisio
     }
 
     // error out if no _material is assigned
-    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
-    logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
-    logging::error(_material->has_thermal_expansion(), "_material has no thermal expansion assigned at element ", elem_id);
+    logging::error(material() != nullptr, "no material assigned to element ", elem_id);
+    logging::error(material()->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
+    logging::error(material()->has_thermal_expansion(), "material has no thermal expansion assigned at element ", elem_id);
 
     std::function<StaticMatrix<D*N,1>(Precision, Precision, Precision)> func =
         [this, node_coords_glob, &node_temp_glob, &ref_temp](Precision r, Precision s, Precision t) -> StaticMatrix<D*N,1> {
@@ -72,7 +72,7 @@ SolidElement<N>::apply_tload(NodeData& node_loads, NodeData& node_temp, Precisio
         Precision temp = shape_func.dot(node_temp_glob);
 
         // create strain vector
-        Precision strain_value = _material->get_thermal_expansion() * (temp - ref_temp);
+        Precision strain_value = material()->get_thermal_expansion() * (temp - ref_temp);
         Vec6 strain{strain_value, strain_value, strain_value, 0, 0, 0};
 
         // stress tensor

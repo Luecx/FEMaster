@@ -8,8 +8,7 @@
 #include "element_types.h"
 
 #include "../model_data.h"
-
-#include <array>
+#include "../../section/section.h"
 
 namespace fem {
 
@@ -23,7 +22,7 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     ElementTypeFlags _flags;
 
     public:
-    material::Material::Ptr _material = nullptr;
+    Section::Ptr _section = nullptr;
     ModelDataPtr _model_data;
 
     public:
@@ -33,8 +32,11 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     virtual ~ElementInterface() = default;
 
 
-    void set_material(material::Material::Ptr material) {
-        _material = material;
+    void set_section(Section::Ptr section) {
+        _section = section;
+    }
+    material::MaterialPtr material() {
+        return _section->material;
     }
 
     virtual ElDofs dofs()                 = 0;

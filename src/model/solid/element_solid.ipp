@@ -50,8 +50,8 @@ template<Index N>
 StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
     SolidElement<N>::material_matrix(Precision r, Precision s, Precision t) {
 
-    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
-    logging::error(_material->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
+    logging::error(material() != nullptr, "no _material assigned to element ", elem_id);
+    logging::error(material()->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
 
     Precision scaling = 1;
     if (this->_model_data->elem_data.has(TOPO_STIFFNESS)) {
@@ -65,10 +65,10 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
         Vec3                   point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
         Vec3                   point_local  = rot.to_local(point_global);
 
-        auto result = this->_material->elasticity()->template get_transformed<D>(rot.get_axes(point_local));
+        auto result = this->material()->elasticity()->template get_transformed<D>(rot.get_axes(point_local));
         return scaling * result;
     } else {
-        return scaling * this->_material->elasticity()->template get<D>();
+        return scaling * this->material()->elasticity()->template get<D>();
     }
 }
 
@@ -181,10 +181,10 @@ SolidElement<N>::stiffness(Precision* buffer) {
 template<Index N>
 MapMatrix
 SolidElement<N>::mass(Precision* buffer) {
-    logging::error(_material != nullptr, "no _material assigned to element ", elem_id);
-    logging::error(_material->has_density(), "_material has no density assigned at element ", elem_id);
+    logging::error(material() != nullptr, "no material assigned to element ", elem_id);
+    logging::error(material()->has_density(), "material has no density assigned at element ", elem_id);
 
-    Precision density = _material->get_density();
+    Precision density = material()->get_density();
 
     StaticMatrix<N, D> node_coords = this->node_coords_global();
 

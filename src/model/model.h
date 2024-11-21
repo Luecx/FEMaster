@@ -85,6 +85,8 @@ struct Model {
     // stream output to console
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
 
+    // assigns sections to each element
+    void assign_sections();
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();

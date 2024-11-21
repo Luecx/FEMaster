@@ -109,10 +109,13 @@ void Model::set_field_temperature(const std::string& name, ID id, Precision valu
 }
 
 void Model::solid_section(const std::string& set, const std::string& material) {
-    material::Material::Ptr ptr = _data->materials.get(material);
-    for (ID id : *_data->elem_sets.get(set)) {
-        _data->elements[id]->set_material(ptr);
-    }
+    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
+    logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
+
+    Section::Ptr section = std::make_shared<Section>();
+    section->material = _data->materials.get(material);
+    section->region   = _data->elem_sets.get(set);
+    this->_data->sections.push_back(section);
 }
 
 std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
