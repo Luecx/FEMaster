@@ -19,6 +19,9 @@
 #include "../cos/coordinate_system.h"  // For custom coordinate system handling
 #include "../core/types.h"             // For general types (ID, Triplet, etc.)
 #include "../core/logging.h"           // For logging warnings and errors
+
+#include "equation.h"
+
 #include <iostream>                    // For standard I/O operations (optional)
 
 namespace fem::constraint {
@@ -91,7 +94,8 @@ class Connector {
     * @param row_offset The starting row for inserting the constraint equations.
     * @return TripletList A list of triplets representing the constraint equations.
     ******************************************************************************/
-   TripletList get_equations(SystemDofIds& system_nodal_dofs, NodeData& node_coords, int row_offset);
+    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+
 };
 
 }    // namespace fem::constraint

@@ -1,4 +1,6 @@
-def extruded_geometry(self, n, spacing=1):
+def extruded_geometry(self, n, spacing=1.0):
+
+    spacing = float(spacing)
 
     # Lazy import to avoid circular dependency
     from .fem_geometry import Geometry

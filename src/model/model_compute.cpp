@@ -18,13 +18,12 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
 
     for(auto el: _data->elements){
         if(el == nullptr) continue;
-        if(!el->is_type(StructuralType))
-            continue;
-        auto sel = el->as<StructuralElement>();
-        sel->compute_stress_strain_nodal(displacement, stress, strain);
-        for(int i = 0; i < sel->n_nodes(); i++){
-            ID id = sel->nodes()[i];
-            count(id) ++;
+        if(auto sel = el->as<StructuralElement>()) {
+            sel->compute_stress_strain_nodal(displacement, stress, strain);
+            for(int i = 0; i < sel->n_nodes(); i++){
+                ID id = sel->nodes()[i];
+                count(id) ++;
+            }
         }
     }
 
@@ -157,10 +156,9 @@ ElementData Model::compute_compliance(NodeData& displacement){
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
         auto el = _data->elements[idx];
         if (el == nullptr) continue;
-        if(!el->is_type(StructuralType))
-            continue;
-        auto sel = el->as<StructuralElement>();
-        sel->compute_compliance(displacement, compliance);
+        if(auto sel = el->as<StructuralElement>())
+            sel->compute_compliance(displacement, compliance);
+
     }
 
     return compliance;
@@ -173,10 +171,8 @@ ElementData Model::compute_compliance_angle_derivative(NodeData& displacement){
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
         auto el = _data->elements[idx];
         if (el == nullptr) continue;
-        if(!el->is_type(StructuralType))
-            continue;
-        auto sel = el->as<StructuralElement>();
-        sel->compute_compliance_angle_derivative(displacement, results);
+        if (auto sel = el->as<StructuralElement>())
+            sel->compute_compliance_angle_derivative(displacement, results);
     }
 
     return results;
@@ -189,9 +185,8 @@ ElementData Model::compute_volumes() {
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
         auto el = _data->elements[idx];
         if (el == nullptr) continue;
-        if (el->is_type(StructuralType)) {
-            volumes(el->elem_id) = el->as<StructuralElement>()->volume();
-        }
+        if (auto sel = el->as<StructuralElement>())
+            volumes(el->elem_id) = sel->volume();
     }
 
     return volumes;

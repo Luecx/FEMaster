@@ -16,10 +16,11 @@
 * @date 24.10.2024
 ******************************************************************************/
 
-#pragma once  // Ensures this file is only included once during compilation
+#pragma once    // Ensures this file is only included once during compilation
 
-#include "../model/geometry/surface/surface.h"
 #include "../data/region.h"
+#include "../model/geometry/surface/surface.h"
+#include "equation.h"
 
 namespace fem {
 namespace constraint {
@@ -62,17 +63,11 @@ class Tie {
     * Optionally adjusts the slave node positions to match the master surface.
     *
     * @param system_nodal_dofs System-wide DOF IDs for all nodes.
-    * @param surface_sets Set of surface IDs for the master set.
-    * @param node_sets Set of node IDs for the slave set.
-    * @param surfaces List of surfaces to search for the closest master points.
-    * @param node_coords Coordinates of all nodes in the system.
-    * @param row_offset Row offset for inserting the equations into the global system.
+    * @param model_data Model data containing node coordinates and surface geometry.
     * @return TripletList A list of triplets representing the coupling equations.
     ******************************************************************************/
-   TripletList get_equations(SystemDofIds& system_nodal_dofs,
-                             std::vector<model::SurfacePtr>& surfaces,
-                             NodeData& node_coords,
-                             int row_offset);
+   Equations get_equations(SystemDofIds& system_nodal_dofs,
+                             model::ModelData& model_data);
 };
 
 }  // namespace constraint

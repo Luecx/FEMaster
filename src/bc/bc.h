@@ -3,7 +3,10 @@
 
 #include "../cos/coordinate_system.h"
 
-//struct BoundaryCondition {
-//    CoordinateSystemPtr _coordinate_system = nullptr;
-//};
+namespace fem {
+struct BoundaryCondition {
+    using Ptr = std::shared_ptr<BoundaryCondition>;
+};
 
+
+}

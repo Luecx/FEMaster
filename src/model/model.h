@@ -23,11 +23,6 @@ namespace model{
 struct Model {
     ModelDataPtr _data;
 
-    // constraints
-    std::vector<constraint::Connector>       _connectors {};
-    std::vector<constraint::Coupling>        _couplings {};
-    std::vector<constraint::Tie>             _ties {};
-
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
@@ -59,7 +54,7 @@ struct Model {
 
     // add _couplings for structural problems
     void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
-    void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type);
+    void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type, bool is_surface);
     void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
 
     // -------------------- STRUCTURAL --------------------

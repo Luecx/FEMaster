@@ -64,6 +64,13 @@ struct SurfaceInterface {
     virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const = 0;
     virtual ID* nodes() = 0;
     virtual void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) = 0;
+
+    ID* begin() {
+        return nodes();
+    }
+    ID* end() {
+        return nodes() + n_nodes;
+    }
 };
 
 using SurfacePtr = std::shared_ptr<SurfaceInterface>;

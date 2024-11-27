@@ -556,8 +556,11 @@ void Reader::process_connector() {
 void Reader::process_coupling() {
     // read COUPLING, MASTER=xyz, SLAVE=xyz, DOFS=xyz, TYPE=xyz
     auto master_set = m_current_line.require<std::string>("MASTER");
-    auto slave_set  = m_current_line.require<std::string>("SLAVE");
     auto type       = m_current_line.require<std::string>("TYPE");
+
+    // either SLAVE or SURFACE can be defined. slave refers to a node set and surface to a surface set
+    auto slave_set  = m_current_line.parse  <std::string>("SLAVE", "");
+    auto surface    = m_current_line.parse  <std::string>("SFSET", "");
 
     next_line();
 
@@ -569,7 +572,11 @@ void Reader::process_coupling() {
     }
 
     if (type == "KINEMATIC") {
-        m_model->add_coupling(master_set, slave_set, dof_mask, constraint::CouplingType::KINEMATIC);
+        if (surface.empty()) {
+            m_model->add_coupling(master_set, slave_set, dof_mask, constraint::CouplingType::KINEMATIC, false);
+        } else {
+            m_model->add_coupling(master_set, surface, dof_mask, constraint::CouplingType::KINEMATIC, true);
+        }
     } else {
         logging::warning(false, "Unknown coupling type: ", type);
         logging::warning(false, "    Known coupling types: KINEMATIC");

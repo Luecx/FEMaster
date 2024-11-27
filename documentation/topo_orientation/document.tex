@@ -1,0 +1,117 @@
+\documentclass[10pt,a4paper]{book}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb}  % For mathematical symbols and equations
+\usepackage{hyperref}          % For clickable links in the PDF
+\usepackage{graphicx}          % For including images
+\usepackage{listings}          % For code listings
+\usepackage{geometry}          % To adjust page margins
+\geometry{left=2.5cm, right=2.5cm, top=3cm, bottom=3cm}
+\usepackage{fancyhdr}          % For custom headers and footers
+\usepackage{caption}           % For customizing figure captions
+\usepackage{subcaption}        % For subfigures
+\usepackage{float}             % For customizing figure placement
+\usepackage{enumitem}          % For customizing lists
+\usepackage{color}             % For customizing colors
+\usepackage{tikz}              % For drawing figures
+\usepackage{pgfplots}          % For plotting graphs
+\usepackage{pgfplotstable}     % For creating tables from data
+\usepackage{booktabs}          % For creating tables
+\usepackage[ruled,vlined]{algorithm2e}
+
+\usepackage{listings}          % Package for code listings
+\usepackage{xcolor}            % Package for custom colors
+\usepackage[backend=biber,style=numeric,citestyle=numeric]{biblatex}  % Bibliography package
+
+% \addbibresource{biblio.bib}    % Link to the bibliography file
+
+% Title and author details
+\title{FEMaster User Manual}
+\author{Finn Eggers}
+\date{Version 1.0, October 2024}
+
+% Custom header and footer settings
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Multiparametric topology optimization}
+\fancyfoot[C]{\thepage}
+
+\setlength{\parindent}{0pt}
+
+\setcounter{tocdepth}{3}      % Include subsubsections in the table of contents
+\setcounter{secnumdepth}{3}   % Number subsubsections
+
+% Define a custom style for the code blocks
+\lstdefinestyle{customCode}{
+  basicstyle=\ttfamily\small,                       % Set the font and size
+  breaklines=false,                                 % Disable line breaking
+  frame=tblr,                                       % Frame on top, bottom, left, and right
+  framesep=4pt,                                     % Margin between frame and text
+  xleftmargin=20pt,                                 % Indentation on the left
+  backgroundcolor=\color{gray!10},                  % Light gray background color
+  linewidth=\linewidth,                             % Match width of the text block
+  aboveskip=12pt,                                   % Space before the code block
+  belowskip=12pt,                                   % Space after the code block
+  numberstyle=\tiny,                                % Style of the line numbers
+  numbers=none,                                     % Disable line numbers
+  framexleftmargin=10pt,                            % Margin for the box on the left
+  framexrightmargin=0pt,                            % Margin for the box on the right
+  framextopmargin=0pt,                              % Margin at the top of the frame
+  framexbottommargin=0pt,                           % Margin at the bottom of the frame
+  rulecolor=\color{gray},                           % Set the line color
+  rulesepcolor=\color{lightgray},                   % Color for the inner line
+  framerule=0.5pt,                                  % Thin frame lines
+  rulecolor=\color{gray},                           % Color for the border
+}
+
+% Define a custom command to create a border with a thicker left line
+\lstnewenvironment{codeBlock}{
+  \lstset{
+    style=customCode,
+    frame=tblr,                                     % Frame on top, bottom, left, and right
+    framerule=0.5pt,                                % Thin frame on all sides
+    rulecolor=\color{gray},                         % Set the line color
+    xleftmargin=20pt,                               % Indentation on the left
+    frame=l,                                        % Frame only on the left side
+    framerule=2pt,                                  % Thicker frame on the left
+    backgroundcolor=\color{gray!10},                % Apply light gray background
+  }
+}{}
+
+\begin{document}
+% Custom Title Page
+\begin{titlepage}
+\begin{center}
+
+    \vspace*{2cm} % Adjust vertical spacing as necessary
+
+    {\Huge \textbf{Multiparametric topology optimization}}
+    \vspace{0.3cm}
+
+    \vspace{1cm} % Space between title and image
+
+    \includegraphics[width=0.4\textwidth]{logo/logo.eps} % Logo inclusion
+
+    \vfill  % Pushes the name and date to the bottom
+
+    \textbf{Finn Eggers} \\
+    November 2024
+
+\end{center}
+\end{titlepage}
+
+\newpage
+
+% Table of Contents
+\tableofcontents
+\newpage
+
+% Include other sections
+\include{pages/bc}
+
+% Bibliography Section
+\newpage
+%\chapter*{Bibliography}
+%\addcontentsline{toc}{chapter}{Bibliography}  % Include in the table of contents
+% \printbibliography
+
+\end{document}

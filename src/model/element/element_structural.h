@@ -7,7 +7,6 @@ namespace fem::model {
 struct StructuralElement : public ElementInterface {
     StructuralElement(ID p_elem_id)
         : ElementInterface(p_elem_id) {
-        _set_type(ElementTypes::StructuralType);
     }
 
     virtual Precision  volume()                                                          = 0;

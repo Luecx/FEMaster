@@ -13,6 +13,8 @@
 
 #include "tie.h"
 
+#include "../model/model_data.h"
+
 namespace fem {
 namespace constraint {
 
@@ -47,11 +49,14 @@ Tie::Tie(const model::SurfaceRegion::Ptr masterSet,
 * @param row_offset Row offset for inserting the equations into the global system.
 * @return TripletList A list of triplets representing the coupling equations.
 ******************************************************************************/
-TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
-                              std::vector<model::SurfacePtr>& surfaces,
-                              NodeData& node_coords,
-                              int row_offset) {
-   TripletList result{};
+Equations Tie::get_equations(SystemDofIds& system_nodal_dofs,
+                              model::ModelData& model_data) {
+    auto& node_coords = model_data.get(model::NodeDataEntries::POSITION);
+    auto& surfaces    = model_data.surfaces;
+
+
+    Equations equations{};
+
 
    // Iterate through each node in the slave set
    for(ID id : *slave_set) {
@@ -61,7 +66,7 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
        node_pos(2) = node_coords(id, 2);
 
        Precision best_dist = 1e36;
-       ID best_id;
+       ID best_id = -1;
        Vec2 best_local;
 
        // Find the closest surface on the master set
@@ -116,25 +121,27 @@ TripletList Tie::get_equations(SystemDofIds& system_nodal_dofs,
        logging::error  (nodal_contributions.array().abs().maxCoeff() < 100, "Nodal contributions for slave node ", id, " exceed 100.");
 
        // Add coupling equations
-       for(ID dof_id = 0; dof_id < 6; dof_id++) {
+       for(Dim dof_id = 0; dof_id < 6; dof_id++) {
            if (dofs_mask(dof_id) == false) continue;
 
+
+           EquationEntries entries{};
            // Add the equation for the slave node
-           result.push_back(Triplet(row_offset, system_nodal_dofs(id, dof_id), 1));
+           entries.push_back(EquationEntry{id, dof_id, 1});
 
            // Couple with the master nodes
            for (ID local_id = 0; local_id < (ID)s_ptr->n_nodes; local_id++) {
                ID master_node_id = s_ptr->nodes()[local_id];
                Precision weight = nodal_contributions(local_id);
 
-               result.push_back(Triplet(row_offset, system_nodal_dofs(master_node_id, dof_id), -weight));
+               entries.push_back(EquationEntry{master_node_id, dof_id, -weight});
            }
 
-           row_offset++;
+           equations.emplace_back(entries);
        }
    }
 
-   return result;
+   return equations;
 }
 
 }  // namespace constraint

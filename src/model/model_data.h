@@ -5,15 +5,18 @@
 #ifndef MODEL_DATA_H
 #define MODEL_DATA_H
 
+#include "../constraints/connector.h"
+#include "../constraints/coupling.h"
+#include "../constraints/tie.h"
+#include "../constraints/equation.h"
+
 #include "../core/types.h"
 
+#include "../data/dict.h"
 #include "../data/elem_data_dict.h"
 #include "../data/node_data_dict.h"
-
-#include "../data/sets.h"
-#include "../data/dict.h"
-
 #include "../data/region.h"
+#include "../data/sets.h"
 
 #include "../section/section.h"
 
@@ -50,6 +53,12 @@ struct ModelData {
     // other things which are named
     Dict<material::Material> materials;
     Dict<cos::CoordinateSystem> coordinate_systems;
+
+    // constraints
+    std::vector<constraint::Connector>  connectors {};
+    std::vector<constraint::Coupling>   couplings {};
+    std::vector<constraint::Tie>        ties {};
+    std::vector<constraint::Equation>   equations {};
 
     //
     // Constructor

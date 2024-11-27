@@ -1,13 +1,10 @@
 #pragma once
 
+#include "../model_data.h"
+#include "../geometry/surface/surface.h"
 #include "../../core/core.h"
 #include "../../material/material.h"
-#include "../geometry/surface/surface.h"
 #include "../../math/quadrature.h"
-
-#include "element_types.h"
-
-#include "../model_data.h"
 #include "../../section/section.h"
 
 namespace fem {
@@ -18,8 +15,6 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     const ID elem_id = 0;
 
     protected:
-    // storing the type of this element
-    ElementTypeFlags _flags;
 
     public:
     Section::Ptr _section = nullptr;
@@ -57,21 +52,11 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
 
     // cast to a specific type
     // Templated function for casting to a specific type
+    // Templated function for casting to a specific type
     template <typename T>
-    std::shared_ptr<T> as() {
-        return std::dynamic_pointer_cast<T>(shared_from_this());
+    T* as() {
+        return dynamic_cast<T*>(this);
     }
-
-
-    void _set_type(ElementType flags) {
-        _flags |= flags;
-    }
-
-    // Function to check if the element is of a specific type
-    bool is_type(ElementType type) const {
-        return (_flags & type) != 0;
-    }
-
 };
 
 }    // namespace model

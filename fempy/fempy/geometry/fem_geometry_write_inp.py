@@ -26,11 +26,11 @@ def write_input_deck(self, filename):
         # Write node sets
         for name, ids in self.node_sets.items():
             if name != "NALL":
-                file.write(f"*NSET, NAME={name}\n")
+                file.write(f"*NSET, NSET={name}\n")
                 file.write(',\n'.join(map(str, [id for id in ids])) + '\n')
 
         # Write element sets
         for name, ids in self.elem_sets.items():
             if name != "EALL":
-                file.write(f"*ELSET, NAME={name}\n")
+                file.write(f"*ELSET, ELSET={name}\n")
                 file.write(',\n'.join(map(str, [id for id in ids])) + '\n')

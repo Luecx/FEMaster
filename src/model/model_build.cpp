@@ -42,9 +42,9 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
     }
 
     // go through all _couplings and mask the master dof
-    for (auto &c: this->_couplings) {
+    for (auto &c: this->_data->couplings) {
         ID master_id = c.master_node;
-        auto master_dofs = c.master_dofs(mask);
+        auto master_dofs = c.master_dofs(mask, *_data);
         for (ID dof = 0; dof < 6; dof++) {
             mask(master_id, dof) |= master_dofs(0, dof);
         }
@@ -78,37 +78,39 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
 }
 
 SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness) {
-    TripletList triplets;
-    int rows = -1;
-    for (auto &c: this->_couplings) {
-        auto coupling_triplets = c.get_equations(indices, _data->get(NodeDataEntries::POSITION), rows + 1);
-        for (auto &tri: coupling_triplets) {
-            triplets.push_back(tri);
-            rows = std::max(rows, tri.row());
+    constraint::Equations equations;
+
+    for (auto &c: this->_data->couplings) {
+        auto coupling_equations = c.get_equations(indices, *_data);
+        for (auto &eq: coupling_equations) {
+            equations.push_back(eq);
         }
     }
 
-    for (auto &t: this->_ties) {
-        auto tie_triplets = t.get_equations(indices, _data->surfaces, _data->get(NodeDataEntries::POSITION), rows + 1);
-        for(auto &tri: tie_triplets) {
-            triplets.push_back(tri);
-            rows = std::max(rows, tri.row());
+    for (auto &t: this->_data->ties) {
+        auto tie_equations = t.get_equations(indices, *_data);
+        for (auto &eq: tie_equations) {
+            equations.push_back(eq);
         }
     }
 
-    for (auto &t : this->_connectors) {
-        auto connector_triplets = t.get_equations(indices, _data->get(NodeDataEntries::POSITION), rows + 1);
-        for (auto &tri: connector_triplets) {
-            triplets.push_back(tri);
-            rows = std::max(rows, tri.row());
+    for (auto &t : this->_data->connectors) {
+        auto connector_equations = t.get_equations(indices, *_data);
+        for (auto &eq: connector_equations) {
+            equations.push_back(eq);
         }
     }
 
-    if (rows == 0) {
+    for (auto &eq: this->_data->equations) {
+        equations.push_back(eq);
+    }
+
+    if (equations.empty()) {
         return SparseMatrix{0, indices.maxCoeff() + 1};
     }
+    auto triplets = constraint::Equation::get_triplets(equations, indices, 0);
 
-    SparseMatrix matrix{rows + 1, indices.maxCoeff() + 1};
+    SparseMatrix matrix{(Eigen::Index) equations.size(), indices.maxCoeff() + 1};
     matrix.setFromTriplets(triplets.begin(), triplets.end());
     matrix *= characteristic_stiffness;
     return matrix;
@@ -118,8 +120,7 @@ SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision 
 
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData stiffness_scalar) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
-        if (el->is_type(StructuralType)) {
-            auto sel = el->as<StructuralElement>();
+        if (auto sel = el->as<StructuralElement>()) {
             MapMatrix stiff = sel->stiffness(storage);
             stiff *= (stiffness_scalar.rows() > 0) ? stiffness_scalar(sel->elem_id, 0) : 1.0;
             return stiff;
@@ -134,8 +135,7 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData st
 
 SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
-        if (el->is_type(StructuralType)) {
-            auto sel = el->as<StructuralElement>();
+        if (auto sel = el->as<StructuralElement>()) {
             MapMatrix element_mass = sel->mass(storage);
             return element_mass;
         } else {

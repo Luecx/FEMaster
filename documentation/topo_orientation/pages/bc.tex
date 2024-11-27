@@ -1,0 +1,261 @@
+
+\chapter{Mathematical Derivation}
+\label{chap:derivation}
+
+The stiffness matrix of an element in FEM is defined as:
+
+\begin{equation}
+\label{eq:stiffness_matrix}
+\mathbf{K}_{e,0} = \int_{\Omega} \mathbf{B}^T \mathbf{D} \mathbf{B} \, d\Omega
+\end{equation}
+
+where \(\mathbf{K}_{e,0}\) is the stiffness matrix of an element, \(\mathbf{B}\) is the strain-displacement matrix, \(\mathbf{D}\) is the constitutive matrix, and \(\Omega\) is the volume of the element.
+
+Using the principle of isoparametric elements, the integration becomes:
+
+\begin{equation}
+\label{eq:stiffness_matrix2}
+\mathbf{K}_e = \int_{\Omega'} \mathbf{B}^T \mathbf{D} \mathbf{B} \, |\text{det}(\mathbf{J})| \, d\Xi \, d\eta \, d\zeta
+\end{equation}
+
+where \(\Omega'\) is the volume of the reference element, \(\mathbf{J}\) is the Jacobian matrix, and \(\Xi\), \(\eta\), and \(\zeta\) are the natural coordinates of the reference element. For a simple 2D quadrilateral element, the domain \(\Omega'\) is commonly defined as: \(-1 \leq \Xi \leq 1\) and \(-1 \leq \eta \leq 1\).
+
+From the principle of virtual work, the external work done is defined as:
+
+\begin{equation}
+\label{eq:compliance}
+\mathbf{W} = \mathbf{F} \cdot \mathbf{u}
+\end{equation}
+
+where \(\mathbf{W}\) is the external work done, \(\mathbf{F}\) is the external force vector, and \(\mathbf{u}\) is the displacement vector.
+
+The vector \(\mathbf{F}\) can be expressed in terms of the global stiffness matrix and the displacement vector of the entire structure as:
+
+\begin{equation}
+\label{eq:force}
+\mathbf{F} = \mathbf{K} \mathbf{u}
+\end{equation}
+
+where \(\mathbf{K}\) is the global stiffness matrix of the structure.
+
+Using this, the external work done can be expressed as:
+
+\begin{align}
+\label{eq:compliance2}
+\mathbf{W} &= \mathbf{F} \cdot \mathbf{u} \\
+           &= \mathbf{u}^T \mathbf{K} \mathbf{u}
+\end{align}
+
+Since the internal work must equal the external work, the internal work, called the compliance \(\mathbf{C}\), can be expressed as:
+
+\begin{equation}
+\label{eq:compliance3}
+\mathbf{C} = \mathbf{u}^T \mathbf{K} \mathbf{u}
+\end{equation}
+
+The compliance can be expressed as a function of the stiffness matrices of each element. Based on the assembly of the global matrix \(\mathbf{K}\), the compliance can be expressed as:
+
+\begin{equation}
+\mathbf{C} = \sum_{e=1}^{n} \mathbf{u}_e^T \mathbf{K}_e \mathbf{u}_e
+\end{equation}
+
+where \(\mathbf{u}_e\) is the displacement vector of element \(e\) and \(\mathbf{K}_e\) is the stiffness matrix of element \(e\).
+This shows that \textit{the compliance, which is the strain energy of the object, is the sum of the strain energies of each element}.
+This forms the basis for the topology optimization problem.
+
+\section{Derivative with Respect to the Density}
+
+In topology optimization, compliance is often minimized subject to volume constraints. The design variables are the densities of each element. A virtual density, \(\rho\), is used to adjust the stiffness matrix of each element. Together with an exponent \(p\), the equation for the stiffness matrix of an element becomes:
+
+\begin{align}
+\label{eq:stiffness_matrix3}
+\mathbf{K}_e &= \rho^p \int_{\Omega'} \mathbf{B}^T \mathbf{D} \mathbf{B} \, |\text{det}(\mathbf{J})| \, d\Xi \, d\eta \, d\zeta \\
+             &= \rho^p \mathbf{K}_{e,0}
+\end{align}
+
+The parameter \(p\) is used to encourage the optimizer toward a binary solution and will not be further discussed in this document.
+
+Assuming that \(\mathbf{K}_{e,0}\) is constant, the derivative of the compliance with respect to the density can be expressed as:
+
+\begin{equation}
+\label{eq:compliance_derivative}
+\frac{\partial \mathbf{C}}{\partial \rho_i} = p \rho_i^{p - 1} \cdot \left( \mathbf{u}_e^T \mathbf{K}_{e,0} \mathbf{u}_e \right)
+\end{equation}
+
+which is straightforward to compute. With advancements in manufacturing, the material orientation can vary within the geometry.
+Incorporating this in the topology optimization problem requires formulating the derivative of compliance with respect to the material orientation.
+
+\section{Derivative with Respect to the Material Orientation}
+
+Deriving the compliance with respect to the material orientation requires the chain rule of differentiation.
+In this document, it is assumed that the orientation of each element can be expressed using three angles \(\alpha_{1}\), \(\alpha_{2}\), and \(\alpha_{3}\)
+that define the rotation of the material about the \(x\), \(y\), and \(z\) axes, respectively.
+
+For this, the rotation matrices \(\mathbf{R}_1\), \(\mathbf{R}_2\), and \(\mathbf{R}_3\) are defined as:
+
+\begin{align}
+\mathbf{R}_1 &= \begin{bmatrix}
+1 & 0 & 0 \\
+0 & \cos(\alpha_{1}) & -\sin(\alpha_{1}) \\
+0 & \sin(\alpha_{1}) & \cos(\alpha_{1})
+\end{bmatrix} \\
+\mathbf{R}_2 &= \begin{bmatrix}
+\cos(\alpha_{2}) & 0 & \sin(\alpha_{2}) \\
+0 & 1 & 0 \\
+-\sin(\alpha_{2}) & 0 & \cos(\alpha_{2})
+\end{bmatrix} \\
+\mathbf{R}_3 &= \begin{bmatrix}
+\cos(\alpha_{3}) & -\sin(\alpha_{3}) & 0 \\
+\sin(\alpha_{3}) & \cos(\alpha_{3}) & 0 \\
+0 & 0 & 1
+\end{bmatrix}
+\end{align}
+
+The rotation matrices around all three axes are then combined to form the rotation matrix \(\mathbf{R}\) as:
+
+\begin{equation}
+\mathbf{R} = \mathbf{R}_1 \mathbf{R}_2 \mathbf{R}_3
+\end{equation}
+
+It is noted that the order of multiplication is irrelevant, both for the derivation and the final result, yet shall be consistent throughout the document.
+Rotating the material matrix is done by transforming the strains and stresses. In Voigt notation, the strain and stress vectors are defined as:
+
+\begin{align}
+\mathbf{\varepsilon} &= \begin{bmatrix}
+\varepsilon_{xx} \\
+\varepsilon_{yy} \\
+\varepsilon_{zz} \\
+2\varepsilon_{yz} \\
+2\varepsilon_{xz} \\
+2\varepsilon_{xy}
+\end{bmatrix} \\
+\mathbf{\sigma} &= \begin{bmatrix}
+\sigma_{xx} \\
+\sigma_{yy} \\
+\sigma_{zz} \\
+\sigma_{yz} \\
+\sigma_{xz} \\
+\sigma_{xy}
+\end{bmatrix}
+\end{align}
+
+The rotation of the strain vector to the material orientation is done using the transformation matrix \(\mathbf{T}\) which
+can be expressed using the nine components of the rotation matrix \(\mathbf{R}\) as:
+
+\begin{equation}
+\mathbf{T} = \begin{bmatrix}
+R_{11}^2 & R_{21}^2 & R_{31}^2 & R_{11} R_{21} & R_{21} R_{31} & R_{31} R_{11} \\
+R_{12}^2 & R_{22}^2 & R_{32}^2 & R_{12} R_{22} & R_{22} R_{32} & R_{32} R_{12} \\
+R_{13}^2 & R_{23}^2 & R_{33}^2 & R_{13} R_{23} & R_{23} R_{33} & R_{33} R_{13} \\
+2 R_{11} R_{12} & 2 R_{21} R_{22} & 2 R_{31} R_{32} & R_{11} R_{22} + R_{12} R_{21} & R_{21} R_{32} + R_{31} R_{22} & R_{31} R_{12} + R_{32} R_{11} \\
+2 R_{12} R_{13} & 2 R_{22} R_{23} & 2 R_{32} R_{33} & R_{23} R_{12} + R_{13} R_{22} & R_{22} R_{33} + R_{32} R_{23} & R_{32} R_{13} + R_{12} R_{33} \\
+2 R_{11} R_{13} & 2 R_{21} R_{23} & 2 R_{31} R_{33} & R_{13} R_{21} + R_{11} R_{23} & R_{23} R_{31} + R_{21} R_{33} & R_{33} R_{11} + R_{31} R_{13}
+\end{bmatrix}
+\end{equation}
+
+Finally, the rotation of the material matrix is done using the transformation matrix \(\mathbf{T}\) as:
+\begin{equation}
+\mathbf{D_{\text{rot}}} = \mathbf{T}^T \mathbf{D} \mathbf{T}
+\end{equation}
+
+Putting this all together yields the stiffness matrix for an element as:
+
+\begin{equation}
+\mathbf{K}_e = \rho^p \cdot \int_{\Omega'} \mathbf{B}^T \mathbf{D_{\text{rot}}} \mathbf{B} \, |\text{det}(\mathbf{J})| \, d\Xi \, d\eta \, d\zeta
+\end{equation}
+
+Taking the deriative of the compliance with respect to the material orientation is not straight forward because of the integral.
+Since the integral will be replaced with numerical approximations, the above stiffness matrix can be reformulated as.
+Using gauss integration with \(Q\) integration points, and the assumption that both, $\mathbf{B}$ and $\mathbf{J}$ are a function of the local coordinates $\mathbf{r} = (\Xi, \eta, \zeta)$, the stiffness matrix can be expressed as:
+
+\begin{equation}
+\mathbf{K}_e = \rho^p \cdot \sum_{q=1}^Q w_q \mathbf{B(\mathbf{r}_q)}^T \mathbf{D_{\text{rot}}} \mathbf{B(\mathbf{r}_q)} \cdot \text{det}(\mathbf{J(\mathbf{r}_q)})
+\end{equation}
+
+where $w_q$ are the weights of the gauss integration and $\mathbf{r}_q$ are the local coordinates of the gauss points.
+Plugging this back into the equation for the compliance for a single element $i$ yields:
+
+\begin{align}
+C_i = \mathbf{u_i}^T \mathbf{K}_i \mathbf{u_i} = \mathbf{u_i}^T \left( \rho_i^p \sum_{q=1}^Q w_q \mathbf{B(\mathbf{r}_q)}^T \mathbf{D_{\text{rot}}} \mathbf{B(\mathbf{r}_q)} \cdot \text{det}(\mathbf{J(\mathbf{r}_q)}) \right) \mathbf{u_i} \\
+    = \mathbf{u_i}^T \left( \rho_i^p \sum_{q=1}^Q w_q \mathbf{B(\mathbf{r}_q)}^T \mathbf{T}^T \mathbf{D} \mathbf{T} \mathbf{B(\mathbf{r}_q)} \cdot \text{det}(\mathbf{J(\mathbf{r}_q)}) \right) \mathbf{u_i}\\
+    = \rho_i^p \sum_{q=1}^Q w_q \mathbf{u_i}^T \mathbf{B(\mathbf{r}_q)}^T \mathbf{T}^T \mathbf{D} \mathbf{T} \mathbf{B(\mathbf{r}_q)} \cdot \text{det}(\mathbf{J(\mathbf{r}_q)}) \mathbf{u_i}\\
+    = \rho_i^p \sum_{q=1}^Q w_q (\mathbf{B(\mathbf{r}_q)} \mathbf{u_i})^T  \mathbf{T}^T \mathbf{D} \mathbf{T} (\mathbf{B(\mathbf{r}_q)} \mathbf{u_i} ) \cdot \text{det}(\mathbf{J(\mathbf{r}_q)})\\
+    = \rho_i^p \sum_{q=1}^Q w_q \mathbf{\varepsilon(\mathbf{r}_q)}^T  \mathbf{T}^T \mathbf{D} \mathbf{T} \mathbf{\varepsilon(\mathbf{r}_q)} \cdot \text{det}(\mathbf{J(\mathbf{r}_q)})\\
+\end{align}
+
+Since only $T$ depends on the material orientation, the derivative of the compliance with respect to the material orientation can be expressed as:
+
+\begin{align}
+\frac{\partial C_i}{\partial \alpha_{1}} = \rho_i^p \sum_{q=1}^Q w_q \frac{\partial}{\partial \alpha_{1}} \left( \mathbf{\varepsilon(\mathbf{r}_q)}^T  \mathbf{T}^T \mathbf{D} \mathbf{T} \mathbf{\varepsilon(\mathbf{r}_q)} \cdot \text{det}(\mathbf{J(\mathbf{r}_q)}) \right)\\
+\end{align}
+
+The only thing left is the expression of the derivative of $T$ with respect to the material orientation.
+The matrix \( T \) derivative with respect to \( \alpha_{j} \) becomes:
+
+\begin{align}
+\frac{\partial \mathbf{T}}{\partial \alpha_{j}} =
+\begin{bmatrix}
+2 R_{11} R_{11,j} & 2 R_{21} R_{21,j} & 2 R_{31} R_{31,j} \\ R_{11} R_{21,j} + R_{11,j} R_{21} & R_{21} R_{31,j} + R_{21,j} R_{31} & R_{31} R_{11,j} + R_{31,j} R_{11} \\
+\\
+2 R_{12} R_{12,j} & 2 R_{22} R_{22,j} & 2 R_{32} R_{32,j} \\ R_{12} R_{22,j} + R_{12,j} R_{22} & R_{22} R_{32,j} + R_{22,j} R_{32} & R_{32} R_{12,j} + R_{32,j} R_{12} \\
+\\
+2 R_{13} R_{13,j} & 2 R_{23} R_{23,j} & 2 R_{33} R_{33,j} \\ R_{13} R_{23,j} + R_{13,j} R_{23} & R_{23} R_{33,j} + R_{23,j} R_{33} & R_{33} R_{13,j} + R_{33,j} R_{13} \\
+\\
+2 (R_{11} R_{12,j} + R_{11,j} R_{12}) &
+    2 (R_{21} R_{22,j} + R_{21,j} R_{22}) &
+    2 (R_{31} R_{32,j} + R_{31,j} R_{32}) \\
+    R_{11,j} R_{22} + R_{11} R_{22,j} + R_{12,j} R_{21} + R_{12} R_{21,j} &
+    R_{21,j} R_{32} + R_{21} R_{32,j} + R_{22,j} R_{31} + R_{22} R_{31,j} &
+    R_{31,j} R_{12} + R_{31} R_{12,j} + R_{32,j} R_{11} + R_{32} R_{11,j} \\
+    \\
+2 (R_{12} R_{13,j} + R_{12,j} R_{13}) &
+    2 (R_{22} R_{23,j} + R_{22,j} R_{23}) &
+    2 (R_{32} R_{33,j} + R_{32,j} R_{33}) \\
+    R_{23,j} R_{12} + R_{23} R_{12,j} + R_{13,j} R_{22} + R_{13} R_{22,j} &
+    R_{22,j} R_{33} + R_{22} R_{33,j} + R_{32,j} R_{23} + R_{32} R_{23,j} &
+    R_{32,j} R_{13} + R_{32} R_{13,j} + R_{33,j} R_{12} + R_{33} R_{12,j} \\
+    \\
+2 (R_{11} R_{13,j} + R_{11,j} R_{13}) &
+    2 (R_{23} R_{21,j} + R_{23,j} R_{21}) &
+    2 (R_{33} R_{31,j} + R_{33,j} R_{31}) \\
+    R_{13,j} R_{21} + R_{13} R_{21,j} + R_{11,j} R_{23} + R_{11} R_{23,j} &
+    R_{23,j} R_{31} + R_{23} R_{31,j} + R_{21,j} R_{33} + R_{21} R_{33,j} &
+    R_{33,j} R_{11} + R_{33} R_{11,j} + R_{31,j} R_{13} + R_{31} R_{13,j}\\
+\end{bmatrix}
+\end{align}
+
+
+The rotation matrices \( \mathbf{R}_1 \), \( \mathbf{R}_2 \), and \( \mathbf{R}_3 \), each dependent only on one respective angle \( \alpha_{j} \), now have their derivatives as follows:
+
+\begin{equation}
+\mathbf{R}_{1,j} = \frac{\partial \mathbf{R}_1}{\partial \alpha_{1}} = \begin{bmatrix}
+0 & 0 & 0 \\
+0 & -\sin(\alpha_{1}) & -\cos(\alpha_{1}) \\
+0 & \cos(\alpha_{1}) & -\sin(\alpha_{1})
+\end{bmatrix}
+\end{equation}
+
+\begin{equation}
+\mathbf{R}_{2,j} = \frac{\partial \mathbf{R}_2}{\partial \alpha_{2}} = \begin{bmatrix}
+-\sin(\alpha_{2}) & 0 & \cos(\alpha_{2}) \\
+0 & 0 & 0 \\
+-\cos(\alpha_{2}) & 0 & -\sin(\alpha_{2})
+\end{bmatrix}
+\end{equation}
+
+\begin{equation}
+\mathbf{R}_{3,j} = \frac{\partial \mathbf{R}_3}{\partial \alpha_{3}} = \begin{bmatrix}
+-\sin(\alpha_{3}) & -\cos(\alpha_{3}) & 0 \\
+\cos(\alpha_{3}) & -\sin(\alpha_{3}) & 0 \\
+0 & 0 & 0
+\end{bmatrix}
+\end{equation}
+
+Thus, the full rotation matrix \( \mathbf{R} \) with respect to each angle \( \alpha_{j} \) becomes:
+\begin{align}
+\frac{\partial \mathbf{R}}{\partial \alpha_{1}} &= \mathbf{R}_{1,j} \mathbf{R}_2 \mathbf{R}_3 \\
+\frac{\partial \mathbf{R}}{\partial \alpha_{2}} &= \mathbf{R}_1 \mathbf{R}_{2,j} \mathbf{R}_3 \\
+\frac{\partial \mathbf{R}}{\partial \alpha_{3}} &= \mathbf{R}_1 \mathbf{R}_2 \mathbf{R}_{3,j}
+\end{align}
+
+
