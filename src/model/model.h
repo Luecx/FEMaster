@@ -26,10 +26,6 @@ struct Model {
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
-    // storage for all the sets
-    Dict<NodeData>  _load_sets   {};
-    Dict<NodeData>  _support_sets{};
-
     // storage for other fields
     Dict<NodeData>   _fields_temperature;
 
@@ -68,8 +64,8 @@ struct Model {
     void add_tload      (std::string& temp_field, Precision ref_temp);
 
     // support managment
-    void add_support    (const std::string& nset, StaticVector<6> constraint);
-    void add_support    (ID id, StaticVector<6> constraint);
+    void add_support    (const std::string& nset, StaticVector<6> constraint, const std::string& orientation="");
+    void add_support    (ID id, StaticVector<6> constraint, const std::string& orientation="");
 
     // filling in fields
     void set_field_temperature(const std::string& name, ID id, Precision value);
@@ -87,11 +83,11 @@ struct Model {
     SystemDofIds  build_unconstrained_index_matrix();
 
     // building constraints and loads for every node including non existing ones
-    NodeData    build_support_matrix (std::vector<std::string> support_sets = {});
+    std::tuple<NodeData, constraint::Equations> build_support_matrix (std::vector<std::string> support_sets = {});
     NodeData    build_load_matrix    (std::vector<std::string> load_sets = {});
 
     // matrices
-    SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness=1.0);
+    SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, constraint::Equations& bc_equations, Precision characteristic_stiffness=1.0);
     SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 

@@ -123,7 +123,7 @@ class Solution:
         return sign * mises_stress
 
     @staticmethod
-    def open(filename):
+    def open(filename, loadingbar=True):
         import tqdm
 
         loadcases = {}
@@ -135,10 +135,13 @@ class Solution:
 
             lines = file.readlines()
             # init progress bar
-            pbar = tqdm.tqdm(total=len(lines), desc="Reading solution file")
+
+            if loadingbar:
+                pbar = tqdm.tqdm(total=len(lines), desc="Reading solution file")
 
             for line in lines:
-                pbar.update(1)
+                if loadingbar:
+                    pbar.update(1)
                 line = line.strip()
 
                 # Check for a loadcase marker
@@ -170,7 +173,8 @@ class Solution:
             if current_loadcase:
                 loadcases[current_loadcase] = fields
 
-        pbar.close()
+        if loadingbar:
+            pbar.close()
 
         sol = Solution()
         sol.loadcases = loadcases

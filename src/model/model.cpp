@@ -57,7 +57,7 @@ void Model::add_cload(const std::string& nset, Vec6 load){
 
 void Model::add_cload(const ID id, Vec6 load) {
     for (int i = 0; i < 6; i++) {
-        (*(_load_sets.get()))(id, i) += load(i);
+        (*(_data->load_cols.get()))(id, i) += load(i);
     }
 }
 
@@ -68,7 +68,7 @@ void Model::add_dload(const std::string& sfset, Vec3 load) {
 }
 
 void Model::add_dload(ID id, Vec3 load) {
-    _data->surfaces[id]->apply_dload(_data->get(NodeDataEntries::POSITION), (*_load_sets.get()), load);
+    _data->surfaces[id]->apply_dload(_data->get(NodeDataEntries::POSITION), (*_data->load_cols.get()), load);
 }
 
 void Model::add_vload(const std::string& elset, Vec3 load) {
@@ -80,7 +80,7 @@ void Model::add_vload(const std::string& elset, Vec3 load) {
 void Model::add_vload(const ID id, Vec3 load) {
     if (_data->elements[id] == nullptr) return;
     if (auto sel = _data->elements[id]->as<StructuralElement>())
-        sel->apply_vload((*_load_sets.get()), load);
+        sel->apply_vload((*_data->load_cols.get()), load);
 }
 
 void Model::add_tload(std::string& temp_field, Precision ref_temp) {
@@ -91,20 +91,32 @@ void Model::add_tload(std::string& temp_field, Precision ref_temp) {
     for (ElementPtr& elem : _data->elements) {
         if (elem == nullptr) continue;
         if (auto sel = elem->as<StructuralElement>())
-            sel->apply_tload((*_load_sets.get()), *temp_ptr, ref_temp);
+            sel->apply_tload((*_data->load_cols.get()), *temp_ptr, ref_temp);
     }
 }
 
-void Model::add_support(const std::string& nset, const StaticVector<6> constraint) {
-    for (ID id : *_data->node_sets.get(nset)) {
-        add_support(id, constraint);
-    }
+void Model::add_support(const std::string& nset, const StaticVector<6> constraint, const std::string& orientation) {
+    logging::error(_data->supp_cols.has_any(), "No support collectors have been defined");
+    logging::error(_data->supp_cols.get() != nullptr, "No support collectors is currently active");
+    if (!orientation.empty())
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+
+    SupportCollector::Ptr supp_col = _data->supp_cols.get();
+    supp_col->add_supp(_data->node_sets.get(nset), constraint, _data->coordinate_systems.get(orientation));
 }
 
-void Model::add_support(const ID id, const StaticVector<6> constraint) {
-    for (int i = 0; i < 6; i++) {
-        (*_support_sets.get())(id, i) = constraint(i);
-    }
+void Model::add_support(const ID id, const StaticVector<6> constraint, const std::string& orientation) {
+    logging::error(_data->supp_cols.has_any(), "No support collectors have been defined");
+    logging::error(_data->supp_cols.get() != nullptr, "No support collectors is currently active");
+    if (!orientation.empty())
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+
+    // create a new NodeRegion
+    NodeRegion::Ptr region = std::make_shared<NodeRegion>("INTERNAL");
+    region->add(id);
+
+    SupportCollector::Ptr supp_col = _data->supp_cols.get();
+    supp_col->add_supp(region, constraint, _data->coordinate_systems.get(orientation));
 }
 
 void Model::set_field_temperature(const std::string& name, ID id, Precision value) {

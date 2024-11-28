@@ -149,10 +149,12 @@ void fem::loadcase::LinearEigenfrequency::run() {
     );
 
     // Step 2: Build the global support matrix (includes all DOFs)
-    auto global_supp_mat = Timer::measure(
+    auto global_supp_mat_pair = Timer::measure(
         [&]() { return this->m_model->build_support_matrix(supps); },  // Fixed parameter name
         "building global support matrix"
     );
+    auto global_supp_mat = std::get<0>(global_supp_mat_pair);
+    auto global_supp_eqs = std::get<1>(global_supp_mat_pair);
 
     // Step 3: Build the global load matrix based on applied loads (includes all DOFs)
     auto global_load_mat = Timer::measure(
@@ -175,7 +177,7 @@ void fem::loadcase::LinearEigenfrequency::run() {
 
     // Step 5: Construct the active Lagrangian constraint matrix
     auto active_lagrange_mat = Timer::measure(
-        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, characteristic_stiffness); },
+        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, global_supp_eqs, characteristic_stiffness); },
         "constructing active Lagrangian matrix"
     );
 

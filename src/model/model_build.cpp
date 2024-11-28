@@ -55,15 +55,18 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
     return res;
 }
 
-NodeData Model::build_support_matrix(std::vector<std::string> supp_sets) {
+std::tuple<NodeData, constraint::Equations> Model::build_support_matrix(std::vector<std::string> supp_sets) {
     NodeData disp_matrix{this->_data->max_nodes, 6};
     disp_matrix.fill(std::numeric_limits<Precision>::quiet_NaN());
 
+    // todo: add support for constraints
+    constraint::Equations equations;
+
     for (auto &key: supp_sets) {
-        auto data = this->_support_sets.get(key);
-        mattools::assemble_bc(disp_matrix, *data, mattools::DuplicateHandling::SET);
+        auto supp_col = this->_data->supp_cols.get(key);
+        supp_col->apply(*_data, disp_matrix, equations);
     }
-    return disp_matrix;
+    return {disp_matrix, equations};
 }
 
 NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
@@ -71,14 +74,19 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     load_matrix.setZero();
 
     for (auto &key: load_sets) {
-        auto data = this->_load_sets.get(key);
+        auto data = this->_data->load_cols.get(key);
         mattools::assemble_bc(load_matrix, *data, mattools::DuplicateHandling::ADD);
     }
     return load_matrix;
 }
 
-SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, Precision characteristic_stiffness) {
+SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, constraint::Equations& bc_equations, Precision characteristic_stiffness) {
     constraint::Equations equations;
+
+    // add all bc equations
+    for (auto &eq: bc_equations) {
+        equations.push_back(eq);
+    }
 
     for (auto &c: this->_data->couplings) {
         auto coupling_equations = c.get_equations(indices, *_data);

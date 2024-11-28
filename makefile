@@ -26,7 +26,7 @@ double_precision ?= 1 # Enable/disable Double Precision
 # General Compiler Flags
 #===============================================================
 
-WARNFLAGS  = -Wall -Wno-uninitialized -Wpedantic -Wall -Wextra
+WARNFLAGS  = -Wall -Wno-uninitialized -Wpedantic -Wall -Wextra -Wfatal-errors
 CXXFLAGS   = -std=c++17 -O3 -I /usr/local/include $(WARNFLAGS)
 NVCCFLAGS  = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr $(WARNFLAGS)
 

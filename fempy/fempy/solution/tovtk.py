@@ -159,6 +159,7 @@ class Converter:
         start_time = time.time()
         writer = vtk.vtkUnstructuredGridWriter()
         writer.SetFileName(self.output_filename)
+        writer.SetFileTypeToBinary()  # Set the file type to binary
         writer.SetInputData(self._ugrid)
         writer.Write()
         log_timing(start_time, "writing VTK file")

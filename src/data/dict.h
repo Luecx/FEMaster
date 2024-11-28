@@ -41,6 +41,9 @@ struct Dict {
     TPtr get() { return _cur; }
 
     TPtr get(const Key &key) {
+        if (!has(key))
+            return nullptr;
+
         if constexpr (std::is_same<Key, std::string>::value) {
             return _data.at(key);
         } else {

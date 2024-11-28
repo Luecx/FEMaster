@@ -5,10 +5,13 @@
 #ifndef MODEL_DATA_H
 #define MODEL_DATA_H
 
+#include "../bc/support.h"
+#include "../bc/support_collector.h"
+
 #include "../constraints/connector.h"
 #include "../constraints/coupling.h"
-#include "../constraints/tie.h"
 #include "../constraints/equation.h"
+#include "../constraints/tie.h"
 
 #include "../core/types.h"
 
@@ -59,6 +62,10 @@ struct ModelData {
     std::vector<constraint::Coupling>   couplings {};
     std::vector<constraint::Tie>        ties {};
     std::vector<constraint::Equation>   equations {};
+
+    // mechanical loads and supports
+    Sets<SupportCollector> supp_cols{};
+    Dict<NodeData>  load_cols{};
 
     //
     // Constructor
