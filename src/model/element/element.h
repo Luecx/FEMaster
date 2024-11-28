@@ -11,7 +11,7 @@ namespace fem {
 
 namespace model {
 
-struct ElementInterface : public std::enable_shared_from_this<ElementInterface> {
+struct ElementInterface {
     const ID elem_id = 0;
 
     protected:
@@ -24,7 +24,7 @@ struct ElementInterface : public std::enable_shared_from_this<ElementInterface> 
     ElementInterface(ID p_elem_id)
         : elem_id(p_elem_id) {}
 
-    virtual ~ElementInterface() = default;
+    virtual ~ElementInterface() {};
 
 
     void set_section(Section::Ptr section) {

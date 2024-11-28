@@ -154,7 +154,7 @@ ElementData Model::compute_compliance(NodeData& displacement){
     compliance.setZero();
 
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
-        auto el = _data->elements[idx];
+        auto& el = _data->elements[idx];
         if (el == nullptr) continue;
         if(auto sel = el->as<StructuralElement>())
             sel->compute_compliance(displacement, compliance);
@@ -169,7 +169,7 @@ ElementData Model::compute_compliance_angle_derivative(NodeData& displacement){
     results.setZero();
 
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
-        auto el = _data->elements[idx];
+        auto& el = _data->elements[idx];
         if (el == nullptr) continue;
         if (auto sel = el->as<StructuralElement>())
             sel->compute_compliance_angle_derivative(displacement, results);
@@ -183,7 +183,7 @@ ElementData Model::compute_volumes() {
     volumes.setZero();
 
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
-        auto el = _data->elements[idx];
+        auto& el = _data->elements[idx];
         if (el == nullptr) continue;
         if (auto sel = el->as<StructuralElement>())
             volumes(el->elem_id) = sel->volume();

@@ -8,6 +8,7 @@ struct StructuralElement : public ElementInterface {
     StructuralElement(ID p_elem_id)
         : ElementInterface(p_elem_id) {
     }
+    ~StructuralElement() override = default;
 
     virtual Precision  volume()                                                          = 0;
     virtual MapMatrix  stiffness(Precision* buffer)                                       = 0;

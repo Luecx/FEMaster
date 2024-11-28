@@ -30,7 +30,7 @@ namespace fem {
  *          transformation of constraint values when a local coordinate system is provided.
  */
 struct Support {
-    using NodeRegionPtr = model::NodeRegion::Ptr;
+    using NodeRegionPtr    = model::NodeRegion::Ptr;
     using ElementRegionPtr = model::ElementRegion::Ptr;
     using SurfaceRegionPtr = model::SurfaceRegion::Ptr;
 

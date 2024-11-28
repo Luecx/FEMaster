@@ -36,7 +36,7 @@ void Support::apply(model::ModelData& model_data, NodeData& bc, constraint::Equa
     } else if (element_region) {
         for (ID el_id : *element_region) {
             if (!model_data.elements[el_id]) continue;
-            auto el = model_data.elements[el_id];
+            auto& el = model_data.elements[el_id];
             for(ID node_id: (*el)) {
                 apply_to_node(model_data, bc, equations, node_id);
             }
