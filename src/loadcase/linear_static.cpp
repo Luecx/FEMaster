@@ -161,23 +161,17 @@ void fem::loadcase::LinearStatic::run() {
         "constructing active Lagrangian matrix"
     );
 
-    int m   = active_stiffness_mat.rows();                   // Number of active DOFs
-    int n   = active_lagrange_mat.rows();                    // Number of Lagrangian multipliers
-    int nnz = active_stiffness_mat.nonZeros() + 2 * active_lagrange_mat.nonZeros();
+    int m   = active_stiffness_mat.rows(); // Number of active DOFs
+    int n   = active_lagrange_mat.rows();  // Number of Lagrangian multipliers
 
     // Step 6: Assemble the full system matrix (stiffness + Lagrangian)
-    auto active_lhs_mat = Timer::measure(
+    // for this, resize the active stiffness matrix to m+n, m+n to save memory
+    Timer::measure(
         [&]() {
-            SparseMatrix full_matrix(m + n, m + n);
+            active_stiffness_mat.conservativeResize(m + n, m + n);
+            // SparseMatrix full_matrix(m + n, m + n);
             TripletList full_triplets;
-            full_triplets.reserve(nnz);
-
-            // Insert stiffness matrix into full system matrix
-            for (int k = 0; k < active_stiffness_mat.outerSize(); ++k) {
-                for (SparseMatrix::InnerIterator it(active_stiffness_mat, k); it; ++it) {
-                    full_triplets.push_back(Triplet(it.row(), it.col(), it.value()));
-                }
-            }
+            full_triplets.reserve(2 * active_lagrange_mat.nonZeros());
 
             // Insert Lagrangian matrix into full system matrix
             for (int k = 0; k < active_lagrange_mat.outerSize(); ++k) {
@@ -191,8 +185,7 @@ void fem::loadcase::LinearStatic::run() {
             for (int i = 0; i < n; i++) {
                 full_triplets.push_back(Triplet(m + i, m + i, - characteristic_stiffness / 1e6));
             }
-            full_matrix.setFromTriplets(full_triplets.begin(), full_triplets.end());
-            return full_matrix;
+            active_stiffness_mat.insertFromTriplets(full_triplets.begin(), full_triplets.end());
          },
         "assembling full lhs matrix including stiffness and Lagrangian"
     );
@@ -218,7 +211,7 @@ void fem::loadcase::LinearStatic::run() {
 
     // Step 8: Compute the implicit load vector to account for constraints
     auto implicit_rhs_vec = Timer::measure(
-        [&]() { return mattools::extract_scaled_row_sum(active_lhs_mat, full_lhs_vec); },
+        [&]() { return mattools::extract_scaled_row_sum(active_stiffness_mat, full_lhs_vec); },
         "computing implicit load vector"
     );
 
@@ -227,7 +220,7 @@ void fem::loadcase::LinearStatic::run() {
 
     // Step 9: Reduce full system matrix and RHS vector to handle constrained DOFs
     auto sol_matrix = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_mat(active_lhs_mat, full_lhs_vec); },
+        [&]() { return mattools::reduce_mat_to_mat(active_stiffness_mat, full_lhs_vec); },
         "reducing stiffness matrix to solver-ready form"
     );
     auto sol_rhs = Timer::measure(
@@ -285,6 +278,7 @@ void fem::loadcase::LinearStatic::run() {
         std::ofstream file(stiffness_file);
         for (int k = 0; k < active_stiffness_mat.outerSize(); ++k) {
             for (SparseMatrix::InnerIterator it(active_stiffness_mat, k); it; ++it) {
+                if (it.row() > m || it.col() > m) continue;
                 file << it.row() << " " << it.col() << " " << it.value() << std::endl;
             }
         }

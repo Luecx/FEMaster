@@ -67,6 +67,7 @@ struct SurfaceInterface {
     virtual DynamicVector shape_function(const Vec2& local) const                                                 = 0;
     virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const                       = 0;
     virtual ID*           nodes()                                                                                 = 0;
+
     virtual void          apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load)                     = 0;
     virtual void          apply_pload(NodeData& node_coords, NodeData& node_loads, Precision load)                = 0;
 
