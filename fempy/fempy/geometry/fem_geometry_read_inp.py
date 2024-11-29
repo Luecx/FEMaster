@@ -36,6 +36,7 @@ def read_input_deck(filename):
     current_nset    = None
     current_elset   = None
     index = 0
+    keys = {}
 
     # init progress bar
     pbar = tqdm.tqdm(total=len(lines), desc="Reading input deck")
@@ -53,6 +54,7 @@ def read_input_deck(filename):
         if is_command(line):
             parts = re.split(r'[,=\s]+', line)
             key_word = parts[0].upper()
+            keys = {}
 
             # Process different commands
             if key_word == '*NODE':
@@ -66,10 +68,19 @@ def read_input_deck(filename):
 
             elif key_word == '*NSET':
                 current_nset = require(["NAME", "NSET"], parts)
+                keys['NSET'] = current_nset
+                if 'GENERATE' in parts:
+                    keys['generate'] = True
+                else:
+                    keys['generate'] = False
                 geometry.add_node_set(current_nset)
 
             elif key_word == '*ELSET':
                 current_elset = require(["NAME", "ELSET"], parts)
+                if 'GENERATE' in parts:
+                    keys['generate'] = True
+                else:
+                    keys['generate'] = False
                 geometry.add_element_set(current_elset)
 
             else:
@@ -108,13 +119,27 @@ def read_input_deck(filename):
 
             # Process NSET data
             elif key_word == '*NSET' and current_nset:
-                for nid in data:
-                    geometry.add_node_to_set(current_nset, int(nid))
+                if keys.get('generate', False):
+                    start = int(data[0])
+                    end = int(data[1])
+                    step = int(data[2]) if len(data) > 2 else 1
+                    for nid in range(start, end + 1, step):
+                        geometry.add_node_to_set(current_nset, int(nid))
+                else:
+                    for nid in data:
+                        geometry.add_node_to_set(current_nset, int(nid))
 
             # Process ELSET data
             elif key_word == '*ELSET' and current_elset:
-                for eid in data:
-                    geometry.add_element_to_set(current_elset, int(eid))
+                if keys.get('generate', False):
+                    start = int(data[0])
+                    end = int(data[1])
+                    step = int(data[2]) if len(data) > 2 else 1
+                    for eid in range(start, end + 1, step):
+                        geometry.add_element_to_set(current_elset, int(eid))
+                else:
+                    for eid in data:
+                        geometry.add_element_to_set(current_elset, int(eid))
 
             index += 1
 
