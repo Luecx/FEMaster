@@ -363,7 +363,7 @@ void Reader::process_cload() {
     // NSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
-    m_model->_data->load_cols.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->_data->max_nodes, 6);
+    m_model->_data->load_cols.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"));
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
         auto lx  = m_current_line.get_value(1, 0.0f);
@@ -387,7 +387,7 @@ void Reader::process_dload() {
     // SFSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
-    m_model->_data->load_cols.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->_data->max_nodes, 6);
+    m_model->_data->load_cols.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"));
 
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
@@ -408,7 +408,7 @@ void Reader::process_vload() {
     // NSET, lx, ly, lz
     // id, lx, ly, lz
     // ...
-    m_model->_data->load_cols.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"), m_model->_data->max_nodes, 6);
+    m_model->_data->load_cols.activate(m_current_line.require<std::string>("LOAD_COLLECTOR"));
     while (next_line().type() == DATA_LINE) {
         auto str = m_current_line.values()[0];
         auto lx  = m_current_line.get_value(1, 0.0f);
@@ -429,7 +429,7 @@ void Reader::process_tload() {
     auto temp_fi  = m_current_line.require<std::string>("TEMPERATUREFIELD");
     auto ref_temp = m_current_line.require<Precision  >("REFERENCETEMPERATURE");
 
-    m_model->_data->load_cols.activate(lod_col, m_model->_data->max_nodes, 6);
+    m_model->_data->load_cols.activate(lod_col);
     m_model->add_tload(temp_fi, ref_temp);
     next_line();
 }

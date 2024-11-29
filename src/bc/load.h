@@ -2,6 +2,7 @@
 
 #include "../core/core.h"
 #include "../data/region.h"
+#include "../data/node_data_dict.h"
 #include "bc.h"
 
 namespace fem {
@@ -52,12 +53,16 @@ struct VLoad : public Load {
     void apply(model::ModelData& model_data, NodeData& bc) override;
 };
 
-// struct TLoad : public Load {
-//     using Ptr = std::shared_ptr<TLoad>;
-//
-//     model::Region<model::NodeRegion>::Ptr region;
-//
-//     TLoad() = default;
-//     void apply(model::ModelData& model_data, NodeData& bc) override {}
-// }
+struct TLoad : public Load {
+    using Ptr = std::shared_ptr<TLoad>;
+
+    model::NodeField::Ptr temp_field;
+    Precision             ref_temp {NAN};
+
+
+    TLoad() = default;
+    void apply(model::ModelData& model_data, NodeData& bc) override;
+};
+
+
 }    // namespace fem

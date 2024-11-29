@@ -39,4 +39,11 @@ void LoadCollector::add_vload(model::ElementRegion::Ptr region, Vec3 values) {
     this->add(vload);
 }
 
+void LoadCollector::add_tload(model::NodeField::Ptr temp_field, Precision ref_temp) {
+    auto tload = std::make_shared<TLoad>();
+    tload->temp_field = temp_field;
+    tload->ref_temp = ref_temp;
+    this->add(tload);
+}
+
 } // namespace fem

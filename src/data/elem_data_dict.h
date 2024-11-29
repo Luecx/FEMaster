@@ -17,8 +17,13 @@ enum ElementDataEntries : Index {
     TOPO_ANGLES,
 };
 
+struct ElementField : NodeData {
+    using Ptr = std::shared_ptr<ElementField>;
+};
+
+
 using ElemDataDict  = DataStorage<ElementData>;
-using ElemFieldDict = Dict<Dict<ElementData>>;
+using ElemFieldDict = Dict<Dict<ElementField>, ElementDataEntries>;
 
 }
 

@@ -50,49 +50,71 @@ void Model::add_tie(const std::string& master_set, const std::string& slave_set,
 }
 
 void Model::add_cload(const std::string& nset, Vec6 load){
-    for (ID id : *_data->node_sets.get(nset)) {
-        add_cload(id, load);
-    }
+    logging::error(_data->node_sets.has(nset), "Node set ", nset, " does not exist");
+    auto region_ptr = _data->node_sets.get(nset);
+    _data->load_cols.get()->add_cload(region_ptr, load);
 }
 
 void Model::add_cload(const ID id, Vec6 load) {
-    for (int i = 0; i < 6; i++) {
-        (*(_data->load_cols.get()))(id, i) += load(i);
-    }
+    auto region_ptr = std::make_shared<NodeRegion>("INTERNAL");
+    region_ptr->add(id);
+    _data->load_cols.get()->add_cload(region_ptr, load);
 }
 
 void Model::add_dload(const std::string& sfset, Vec3 load) {
-    for (ID id : *_data->surface_sets.get(sfset)) {
-        add_dload(id, load);
-    }
+    logging::error(_data->surface_sets.has(sfset), "Surface set ", sfset, " does not exist");
+    auto region_ptr = _data->surface_sets.get(sfset);
+    _data->load_cols.get()->add_dload(region_ptr, load);
 }
 
 void Model::add_dload(ID id, Vec3 load) {
-    _data->surfaces[id]->apply_dload(_data->get(NodeDataEntries::POSITION), (*_data->load_cols.get()), load);
+    auto region_ptr = std::make_shared<SurfaceRegion>("INTERNAL");
+    region_ptr->add(id);
+    _data->load_cols.get()->add_dload(region_ptr, load);
+}
+
+void Model::add_pload(const std::string& sfset, Precision load) {
+    logging::error(_data->surface_sets.has(sfset), "Surface set ", sfset, " does not exist");
+    auto region_ptr = _data->surface_sets.get(sfset);
+    _data->load_cols.get()->add_pload(region_ptr, load);
+}
+
+void Model::add_pload(ID id, Precision load) {
+    auto region_ptr = std::make_shared<SurfaceRegion>("INTERNAL");
+    region_ptr->add(id);
+    _data->load_cols.get()->add_pload(region_ptr, load);
 }
 
 void Model::add_vload(const std::string& elset, Vec3 load) {
-    for (ID id : *_data->elem_sets.get(elset)) {
-        add_vload(id, load);
-    }
+    logging::error(_data->elem_sets.has(elset), "Element set ", elset, " does not exist");
+    auto region_ptr = _data->elem_sets.get(elset);
+    _data->load_cols.get()->add_vload(region_ptr, load);
 }
 
 void Model::add_vload(const ID id, Vec3 load) {
-    if (_data->elements[id] == nullptr) return;
-    if (auto sel = _data->elements[id]->as<StructuralElement>())
-        sel->apply_vload((*_data->load_cols.get()), load);
+    auto region_ptr = std::make_shared<ElementRegion>("INTERNAL");
+    region_ptr->add(id);
+    _data->load_cols.get()->add_vload(region_ptr, load);
 }
 
 void Model::add_tload(std::string& temp_field, Precision ref_temp) {
-    // TODO
-    logging::error(_fields_temperature.has(temp_field), "Temperature field ", temp_field, " does not exist");
-
-    auto temp_ptr = _fields_temperature.get(temp_field);
-    for (ElementPtr& elem : _data->elements) {
-        if (elem == nullptr) continue;
-        if (auto sel = elem->as<StructuralElement>())
-            sel->apply_tload((*_data->load_cols.get()), *temp_ptr, ref_temp);
+    if (!_data->node_fields.has(TEMPERATURE)) {
+        _data->node_fields.activate(TEMPERATURE);
     }
+    auto temp_fields = _data->node_fields.get(TEMPERATURE);
+
+    logging::error(temp_fields->has(temp_field), "Temperature field ", temp_field, " does not exist");
+    _data->load_cols.get()->add_tload(temp_fields->get(temp_field), ref_temp);
+
+    // // TODO
+    // logging::error(_fields_temperature.has(temp_field), "Temperature field ", temp_field, " does not exist");
+    //
+    // auto temp_ptr = _fields_temperature.get(temp_field);
+    // for (ElementPtr& elem : _data->elements) {
+    //     if (elem == nullptr) continue;
+    //     if (auto sel = elem->as<StructuralElement>())
+    //         sel->apply_tload((*_data->load_cols.get()), *temp_ptr, ref_temp);
+    // }
 }
 
 void Model::add_support(const std::string& nset, const StaticVector<6> constraint, const std::string& orientation) {
@@ -120,12 +142,18 @@ void Model::add_support(const ID id, const StaticVector<6> constraint, const std
 }
 
 void Model::set_field_temperature(const std::string& name, ID id, Precision value) {
-    if (!_fields_temperature.has(name)) {
-        _fields_temperature.activate(name, _data->max_nodes, 1);
-        _fields_temperature.get()->fill(std::numeric_limits<Precision>::quiet_NaN());
+    if (!_data->node_fields.has(TEMPERATURE)) {
+        _data->node_fields.activate(TEMPERATURE);
     }
-    _fields_temperature.activate(name, _data->max_nodes, 1);
-    _fields_temperature.get()->operator()(id) = value;
+
+    auto temp_fields = _data->node_fields.get(TEMPERATURE);
+    if (temp_fields->has(name)) {
+        temp_fields->get(name)->operator()(id) = value;
+    } else {
+        temp_fields->activate(name, _data->max_nodes, 1);
+        temp_fields->get(name)->fill(std::numeric_limits<Precision>::quiet_NaN());
+        temp_fields->get(name)->operator()(id) = value;
+    }
 }
 
 void Model::solid_section(const std::string& set, const std::string& material) {

@@ -5,22 +5,20 @@
 #ifndef MODEL_DATA_H
 #define MODEL_DATA_H
 
+#include "../bc/load.h"
+#include "../bc/load_collector.h"
 #include "../bc/support.h"
 #include "../bc/support_collector.h"
-
 #include "../constraints/connector.h"
 #include "../constraints/coupling.h"
 #include "../constraints/equation.h"
 #include "../constraints/tie.h"
-
 #include "../core/types.h"
-
 #include "../data/dict.h"
 #include "../data/elem_data_dict.h"
 #include "../data/node_data_dict.h"
 #include "../data/region.h"
 #include "../data/sets.h"
-
 #include "../section/section.h"
 
 namespace fem::model {
@@ -65,7 +63,8 @@ struct ModelData {
 
     // mechanical loads and supports
     Sets<SupportCollector> supp_cols{};
-    Dict<NodeData>  load_cols{};
+    Sets<LoadCollector>    load_cols{};
+    // Dict<NodeData>  load_cols{};
 
     //
     // Constructor

@@ -44,3 +44,11 @@ void fem::VLoad::apply(fem::model::ModelData& model_data, fem::NodeData& bc) {
         }
     }
 }
+
+void fem::TLoad::apply(fem::model::ModelData& model_data, fem::NodeData& bc) {
+    for (auto& el_ptr: model_data.elements) {
+        if (auto sel = el_ptr->as<model::StructuralElement>()) {
+            sel->apply_tload(bc, *temp_field, ref_temp);
+        }
+    }
+}

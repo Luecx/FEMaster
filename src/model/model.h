@@ -59,6 +59,8 @@ struct Model {
     void add_cload      (ID id, Vec6 load);
     void add_dload      (const std::string& sfset, Vec3 load);
     void add_dload      (ID id, Vec3 load);
+    void add_pload      (const std::string& sfset, Precision load);
+    void add_pload      (ID id, Precision load);
     void add_vload      (const std::string& elset, Vec3 load);
     void add_vload      (ID id, Vec3 load);
     void add_tload      (std::string& temp_field, Precision ref_temp);
