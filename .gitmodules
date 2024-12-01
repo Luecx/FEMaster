@@ -1,0 +1,3 @@
+[submodule "tests_decks"]
+	path = tests_decks
+	url = git@github.com:Luecx/FEMaster-TestDecks.git
