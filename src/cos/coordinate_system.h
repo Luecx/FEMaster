@@ -32,7 +32,7 @@ namespace cos {
  *          local coordinate systems. Derived classes must implement the transformation
  *          functions for converting between global and local coordinate frames.
  */
-class CoordinateSystem {
+struct CoordinateSystem {
 public:
     using Ptr = std::shared_ptr<CoordinateSystem>;
 

@@ -8,13 +8,17 @@
 namespace fem {
 
 struct Load : public BoundaryCondition {
-    using Ptr                                                      = std::shared_ptr<Load>;
+    using Ptr = std::shared_ptr<Load>;
+
+    virtual ~Load() = default;
 
     virtual void apply(model::ModelData& model_data, NodeData& bc) = 0;
 };
 
 struct CLoad : public Load {
     using Ptr = std::shared_ptr<CLoad>;
+
+    virtual ~CLoad() = default;
 
     Vec6                   values {NAN, NAN, NAN, NAN, NAN, NAN};
     model::NodeRegion::Ptr region;
@@ -30,6 +34,7 @@ struct DLoad : public Load {
     model::SurfaceRegion::Ptr region;
 
     DLoad() = default;
+    virtual ~DLoad() = default;
     void apply(model::ModelData& model_data, NodeData& bc) override;
 };
 
@@ -40,6 +45,7 @@ struct PLoad : public Load {
     model::SurfaceRegion::Ptr region;
 
     PLoad() = default;
+    virtual ~PLoad() = default;
     void apply(model::ModelData& model_data, NodeData& bc) override;
 };
 
@@ -50,6 +56,7 @@ struct VLoad : public Load {
     model::ElementRegion::Ptr region;
 
     VLoad() = default;
+    virtual ~VLoad() = default;
     void apply(model::ModelData& model_data, NodeData& bc) override;
 };
 
@@ -61,6 +68,7 @@ struct TLoad : public Load {
 
 
     TLoad() = default;
+    virtual ~TLoad() = default;
     void apply(model::ModelData& model_data, NodeData& bc) override;
 };
 

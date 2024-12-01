@@ -11,6 +11,7 @@
 
 
 void fem::CLoad::apply(fem::model::ModelData& model_data, fem::NodeData& bc) {
+    (void) model_data;
     for (auto& node_id : *region) {
         for (Dim i = 0; i < 6; i++) {
             if (!std::isnan(values[i])) {
@@ -35,7 +36,6 @@ void fem::PLoad::apply(fem::model::ModelData& model_data, fem::NodeData& bc) {
 }
 
 void fem::VLoad::apply(fem::model::ModelData& model_data, fem::NodeData& bc) {
-    auto& node_positions = model_data.get(model::POSITION);
     for(auto& el_id : *region) {
         auto& el_ptr = model_data.elements[el_id];
         auto els_ptr = el_ptr->as<model::StructuralElement>();

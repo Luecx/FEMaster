@@ -288,7 +288,7 @@ public:
      * @param displacement
      * @param result
      */
-    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result);
+    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override;
 
     //-------------------------------------------------------------------------
     // Testing Functions
