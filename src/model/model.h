@@ -32,6 +32,7 @@ struct Model {
 
         // initialize the node data
         _data->node_data.create(NodeDataEntries::POSITION, 6);
+        _data->node_data.get(POSITION).setZero();
     }
 
     // adding nodes and elements
