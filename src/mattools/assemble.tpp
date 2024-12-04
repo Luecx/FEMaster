@@ -44,9 +44,6 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
     TripletList triplets;
     SparseMatrix global_matrix(global_size, global_size);
 
-    std::cout << "ASSEMBLING" << std::endl;
-    std::cout << global_size << std::endl;
-
     // Define batch size for squashing the buffer
     constexpr size_t BATCH_SIZE = 16 * 1024 * 1024;
 
@@ -63,9 +60,6 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
 
         // Compute the local matrix for the current element
         auto local_matrix = compute_local_matrix(element, local_matrix_storage);
-
-        std::cout << "ELEMENT " << elem_idx << std::endl;
-        std::cout << local_matrix << std::endl;
 
         // Get element-specific data: number of nodes and DOFs per node
         int num_nodes = element->n_nodes();

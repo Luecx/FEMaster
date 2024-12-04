@@ -67,9 +67,6 @@ struct BeamElement : StructuralElement {
         Vec3 x = (coordinate(1) - coordinate(0)).normalized();
         Vec3 y = get_section()->n1;
         Vec3 z = x.cross(y).normalized();
-        std::cout << x << std::endl;
-        std::cout << y << std::endl;
-        std::cout << z << std::endl;
         y      = z.cross(x).normalized();
         return (Mat3() << x, y, z).finished();
     }
@@ -80,8 +77,6 @@ struct BeamElement : StructuralElement {
         StaticMatrix<N * 6, N * 6> T;
         T.setZero();
         Mat3 R = rotation_matrix();
-
-        std::cout << R << std::endl;
 
         for (Index i = 0; i < N; i++) {
             for (Dim j = 0; j < 3; j++) {

@@ -33,6 +33,7 @@ class Geometry:
         'C3D15': C3D15,
         'C3D20': C3D20,
         'C3D20R': C3D20,
+        'B33': B33,
     }
 
     def __init__(self, dimension=3):

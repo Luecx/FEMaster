@@ -55,7 +55,7 @@ void Reader::analyse_elements() {
             req_values = 15;
         } else if (type == "C3D20" || type == "C3D20R") {
             req_values = 20;
-        } else if (type == "B23") {
+        } else if (type == "B33") {
             req_values = 2;
         } else {
             logging::warning(false, "Unknown element type ", type);

@@ -352,8 +352,6 @@ class Optimiser:
 
             # self._clean_folder(iter)
 
-            print(self.orientations)
-
             print("\nResults:")
             print(f"    Objective       : {np.sum(comp)}")
             print(f"    Change          : {change}")

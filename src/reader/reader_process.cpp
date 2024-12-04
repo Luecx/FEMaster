@@ -3,7 +3,7 @@
 //
 #include "../cos/cylindrical_system.h"
 #include "../cos/rectangular_system.h"
-#include "../model/beam/b23.h"
+#include "../model/beam/b33.h"
 #include "../model/solid/c3d10.h"
 #include "../model/solid/c3d15.h"
 #include "../model/solid/c3d20.h"
@@ -174,9 +174,9 @@ void Reader::process_elements() {
                                                     values[8], values[9], values[10], values[11],
                                                     values[12], values[13], values[14], values[15],
                                                     values[16], values[17], values[18], values[19]);
-        } else if (type == "B23") {
+        } else if (type == "B33") {
             auto values = gather_values(2);
-            m_model->set_element<fem::model::B23>(id, values[0], values[1]);
+            m_model->set_element<fem::model::B33>(id, values[0], values[1]);
         }else {
             logging::warning(false, "Unknown element type ", type);
             return;
