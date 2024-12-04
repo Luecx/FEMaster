@@ -76,7 +76,13 @@ void Reader::process() {
             process_tload();
         } else if (m_current_line.command() == "LOADCASE") {
             process_loadcase();
-        } else {
+        } else if (m_current_line.command() == "EXIT") {
+            std::exit(0); next_line();
+        } else if (m_current_line.command() == "DEBUG") {
+            std::cout << *m_model << std::endl; next_line();
+        }
+
+        else {
             logging::warning(false, "Unknown command: ", m_current_line.line());
             next_line();
         }

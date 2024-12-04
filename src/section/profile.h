@@ -24,13 +24,12 @@ struct Profile : public Namable {
 
     using Ptr = std::shared_ptr<Profile>;
 
-    std::ostream& operator<<(std::ostream& os) const {
-        os << "Profile: ";
-        os << "   A  : " << A << " ";
-        os << "   I_y: " << I_y << " ";
-        os << "   I_z: " << I_z << " ";
-        os << "   J_t: " << J_t << " ";
-        return os;
+    void info() {
+        logging::info(true, "Profile: ", name);
+        logging::info(true, "   A  : ", A);
+        logging::info(true, "   I_y: ", I_y);
+        logging::info(true, "   I_z: ", I_z);
+        logging::info(true, "   J_t: ", J_t);
     }
 };
 

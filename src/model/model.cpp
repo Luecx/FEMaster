@@ -175,22 +175,44 @@ void Model::beam_section(const std::string& set, const std::string& material,  c
     sec->region   = _data->elem_sets.get(set);
     sec->profile  = _data->profiles.get(profile);
     sec->n1       = orientation;
-
+    this->_data->sections.push_back(sec);
 }
 
 
 std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
-    ostream << "\tmax nodes = " << model._data->max_nodes << '\n';
-    ostream << "\tmax elements = " << model._data->max_elems << '\n';
-    ostream << "\tmax surfaces = " << model._data->max_surfaces << "\n";
+    ostream << "max nodes = " << model._data->max_nodes << '\n';
+    ostream << "max elements = " << model._data->max_elems << '\n';
+    ostream << "max surfaces = " << model._data->max_surfaces << "\n";
 
-    // print materials
-    ostream << "\tMaterials:\n";
-    for (const auto& [name, mat] : model._data->materials._data) {
-        ostream << "\t\t" << name << ":\n";
+    logging::info(true, "Materials");
+    logging::up();
+    for (const auto& material : model._data->materials) {
+        material.second->info();
     }
+    logging::down();
+
+    logging::info(true, "Sections");
+    logging::up();
+    for (const auto& section : model._data->sections) {
+        section->info();
+    }
+    logging::down();
+
+    logging::info(true, "Profiles");
+    logging::up();
+    for(const auto &profile : model._data->profiles){
+        profile.second->info();
+    }
+    logging::down();
 
     return ostream;
+
+    // // print materials
+    // ostream << "Materials:\n";
+    // for (const auto& material : model._data->materials) {
+    //     ostream << *material.second;
+    // }
+    // return ostream;
 }
 
 } // namespace model

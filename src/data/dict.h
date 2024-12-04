@@ -90,9 +90,11 @@ struct Dict {
             _data[key] = instance;
             return instance;
         }
-
-
     }
+
+    // begin and end function
+    auto begin() { return _data.begin(); }
+    auto end() { return _data.end(); }
 };
 
 } // namespace fem::model

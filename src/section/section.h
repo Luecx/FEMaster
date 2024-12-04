@@ -24,12 +24,25 @@ struct Section {
     T* as() {
         return dynamic_cast<T*>(this);
     }
+    void info() {
+        logging::info(true, "Section: ");
+        logging::info(true, "   Material: ", (material ? material->name : "-"));
+        logging::info(true, "   Region  : ", region->name);
+    }
 };
 
 struct BeamSection : Section{
     using Ptr = std::shared_ptr<BeamSection>;
     Vec3 n1;
     Profile::Ptr profile = nullptr;
+
+    void info() {
+        logging::info(true, "BeamSection: ");
+        logging::info(true, "   Material: ", (material ? material->name : "-"));
+        logging::info(true, "   Region  : ", region->name);
+        logging::info(true, "   Profile : ", (profile ? profile->name : "-"));
+        logging::info(true, "   n1      : ", n1);
+    }
 };
 
 

@@ -63,6 +63,14 @@ struct Material : public Namable {
         return m_elastic;
     }
 
+    void info() {
+        logging::info(true, "Material: ", name);
+        logging::info(true, "   Elasticity          : ", (has_elasticity() ? "YES" : "NO"));
+        logging::info(true, "   Thermal Capacity    : ", (has_thermal_capacity() ? std::to_string(m_thermal_capacity) : "NO"));
+        logging::info(true, "   Thermal Expansion   : ", (has_thermal_expansion() ? std::to_string(m_thermal_expansion) : "NO"));
+        logging::info(true, "   Density             : ", (has_density() ? std::to_string(m_density) : "NO"));
+    }
+
 };
 
 #undef MATERIAL_SCALAR_FIELD
