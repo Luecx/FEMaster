@@ -17,9 +17,11 @@
 #pragma once
 
 #include "../core/types.h"
+#include "../data/namable.h"
+
 #include <Eigen/Dense>
-#include <string>
 #include <memory>
+#include <string>
 
 namespace fem {
 namespace cos {
@@ -32,12 +34,12 @@ namespace cos {
  *          local coordinate systems. Derived classes must implement the transformation
  *          functions for converting between global and local coordinate frames.
  */
-struct CoordinateSystem {
+struct CoordinateSystem : Namable {
 public:
     using Ptr = std::shared_ptr<CoordinateSystem>;
 
     /// Default constructor
-    CoordinateSystem() = default;
+    CoordinateSystem(const std::string& name="") : Namable(name) {};
 
     /// Virtual destructor
     virtual ~CoordinateSystem() = default;
@@ -60,21 +62,6 @@ public:
      * @brief gets the axes at a specified local point
      */
     virtual StaticMatrix<3,3> get_axes(const Vec3& local_point) const = 0;
-
-    /**
-     * @brief Get the name of the coordinate system.
-     * @return The name of the coordinate system.
-     */
-    const std::string& get_name() const { return name_; }
-
-    /**
-     * @brief Set the name of the coordinate system.
-     * @param name Name of the coordinate system.
-     */
-    void set_name(const std::string& name) { name_ = name; }
-
-protected:
-    std::string name_; ///< Name of the coordinate system.
 };
 
 

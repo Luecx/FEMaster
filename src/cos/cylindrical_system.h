@@ -31,8 +31,8 @@ public:
      * @param r_point A point defining the r-axis (radial direction).
      * @param theta_point A point in the theta-plane.
      */
-    CylindricalSystem(const Vec3& base_point, const Vec3& r_point, const Vec3& theta_point)
-        : base_point_(base_point) {
+    CylindricalSystem(const std::string& name, const Vec3& base_point, const Vec3& r_point, const Vec3& theta_point)
+        : CoordinateSystem(name), base_point_(base_point) {
         // Compute r-axis as the normalized direction from base_point to r_point
         r_axis_ = (r_point - base_point).normalized();
 

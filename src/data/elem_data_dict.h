@@ -17,7 +17,8 @@ enum ElementDataEntries : Index {
     TOPO_ANGLES,
 };
 
-struct ElementField : NodeData {
+struct ElementField : NodeData, Namable {
+    ElementField(const std::string& name) : Namable(name) {}
     using Ptr = std::shared_ptr<ElementField>;
 };
 

@@ -166,6 +166,19 @@ void Model::solid_section(const std::string& set, const std::string& material) {
     this->_data->sections.push_back(section);
 }
 
+void Model::beam_section(const std::string& set, const std::string& material,  const std::string& profile, Vec3 orientation) {
+    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
+    logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
+    logging::error(_data->profiles.has(profile), "Profile ", profile, " is not a defined profile");
+    BeamSection::Ptr sec = std::make_shared<BeamSection>();
+    sec->material = _data->materials.get(material);
+    sec->region   = _data->elem_sets.get(set);
+    sec->profile  = _data->profiles.get(profile);
+    sec->n1       = orientation;
+
+}
+
+
 std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     ostream << "\tmax nodes = " << model._data->max_nodes << '\n';
     ostream << "\tmax elements = " << model._data->max_elems << '\n';

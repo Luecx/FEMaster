@@ -26,9 +26,6 @@ struct Model {
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
-    // storage for other fields
-    Dict<NodeData>   _fields_temperature;
-
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces) :
         _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces)){
@@ -74,6 +71,7 @@ struct Model {
 
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);
+    void beam_section (const std::string& set, const std::string& material, const std::string& profile, Vec3 orientation);
 
     // stream output to console
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);

@@ -25,4 +25,6 @@ fem::StaticMatrix<6, 6> fem::material::IsotropicElasticity::get_3d() {
 
 fem::material::IsotropicElasticity::IsotropicElasticity(Precision youngs, Precision poisson)
     : youngs(youngs)
-    , poisson(poisson) {}
+    , poisson(poisson) {
+    shear = youngs / (2 * (1 + poisson));
+}

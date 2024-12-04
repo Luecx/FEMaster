@@ -76,7 +76,6 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     for (auto &key: load_sets) {
         auto data = this->_data->load_cols.get(key);
         data->apply(*_data, load_matrix);
-        // mattools::assemble_bc(load_matrix, *data, mattools::DuplicateHandling::ADD);
     }
     return load_matrix;
 }

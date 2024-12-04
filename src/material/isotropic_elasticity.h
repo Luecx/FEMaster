@@ -9,6 +9,7 @@ namespace material {
 struct IsotropicElasticity : Elasticity {
     Precision youngs;
     Precision poisson;
+    Precision shear;
 
     IsotropicElasticity(Precision youngs, Precision poisson);
 

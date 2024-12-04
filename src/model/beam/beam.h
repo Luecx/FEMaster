@@ -1,42 +1,136 @@
-////
-//// Created by f_eggers on 14.10.2024.
-////
-//
-//#ifndef BEAM_H
-//#define BEAM_H
-//
-//#include "../../core/core.h"
-//#include "../element/element_structural.h"
-//
-//#include <memory>
-//
-//namespace fem::model {
-//
-//template<Index N>
-//struct BeamElement : public StructuralElement{
-//
-//        BeamElement(ID p_elem_id)
-//                : StructuralElement(p_elem_id) {
-//        }
-//
-//        virtual Precision  volume()                                                          {};
-//        virtual MapMatrix  stiffness(Precision* buffer)                                       {};
-//        virtual MapMatrix  mass(Precision* buffer)                                           {};
-//        virtual void       compute_stress_strain_nodal(
-//                                                           NodeData& displacement,
-//                                                           NodeData& stress,
-//                                                           NodeData& strain)                                        {};
-//        virtual void       compute_stress_strain(
-//                                                 NodeData& displacement,
-//                                                 NodeData& stress,
-//                                                 NodeData& strain,
-//                                                 NodeData& xyz)                                                   {};
-//        virtual void       apply_vload(NodeData& node_loads, Vec3 load) {};
-//        virtual void       apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) {};
-//        virtual void       compute_compliance(NodeData& displacement, ElementData& result) {};
-//        virtual void       compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) {};
-//};
-//
-//}
-//
-//#endif //BEAM_H
+
+#ifndef BEAM_H
+#define BEAM_H
+
+#include "../../core/core.h"
+#include "../element/element_structural.h"
+
+#include <memory>
+
+namespace fem::model {
+
+template<Index N>
+struct BeamElement : StructuralElement {
+
+    std::array<ID, N> node_ids;
+
+                      BeamElement(ID p_elem_id, std::array<ID, N> p_node_ids)
+        : StructuralElement(p_elem_id)
+        , node_ids {p_node_ids} {}
+
+    ~BeamElement() override {};
+
+    // get sections
+    BeamSection* get_section() {
+        if (!this->_section) {
+            logging::error(false, "Section not set for element ", this->elem_id);
+        }
+        if (!this->_section->as<BeamSection>()) {
+            logging::error(false, "Section is not a beam section for element ", this->elem_id);
+        }
+        return this->_section->as<BeamSection>();
+    }
+    Profile* get_profile() {
+        return get_section()->profile.get();
+    }
+    material::IsotropicElasticity* get_elasticity() {
+        BeamSection* section = get_section();
+        if (!section->material) {
+            logging::error(false, "Material not set for element ", this->elem_id);
+        }
+        if (!section->material->has_elasticity()) {
+            logging::error(false, "Material has no elasticity assigned");
+        }
+        if (!section->material->elasticity()->as<material::IsotropicElasticity>()) {
+            logging::error(false, "Material is not isotropic for element ", this->elem_id);
+        }
+        return section->material->elasticity()->as<material::IsotropicElasticity>();
+    }
+
+    Vec3 coordinate(Index index) {
+        auto node_id = node_ids[index];
+        auto row = this->_model_data->node_data.get(POSITION).row(node_id);
+        return Vec3(row(0), row(1), row(2));
+    }
+    Precision length() {
+        Precision l = 0;
+        for (Index i = 0; i < N - 1; i++) {
+            l += (coordinate(i) - coordinate(i + 1)).norm();
+        }
+        return l;
+    }
+    Precision volume() override {
+        return get_profile()->A * length();
+    }
+
+    Mat3 rotation_matrix() {
+        Vec3 x = (coordinate(1) - coordinate(0)).normalized();
+        Vec3 y = get_section()->n1;
+        Vec3 z = x.cross(y).normalized();
+        std::cout << x << std::endl;
+        std::cout << y << std::endl;
+        std::cout << z << std::endl;
+        y      = z.cross(x).normalized();
+        return (Mat3() << x, y, z).finished();
+    }
+    virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
+    virtual StaticMatrix<N * 6, N * 6> mass_impl()      = 0;
+
+    StaticMatrix<N * 6, N * 6>         transformation() {
+        StaticMatrix<N * 6, N * 6> T;
+        T.setZero();
+        Mat3 R = rotation_matrix();
+
+        std::cout << R << std::endl;
+
+        for (Index i = 0; i < N; i++) {
+            for (Dim j = 0; j < 3; j++) {
+                for (Dim k = 0; k < 3; k++) {
+                    T(i * 6 + j, i * 6 + k)         = R(j, k);
+                    T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
+                }
+            }
+        }
+        return T;
+    }
+
+    virtual MapMatrix stiffness(Precision* buffer) {
+        MapMatrix result(buffer, N * 6, N * 6);
+        result = stiffness_impl();
+        return result;
+    };
+    virtual MapMatrix mass(Precision* buffer) {
+        MapMatrix result(buffer, N * 6, N * 6);
+        result = mass_impl();
+        return result;
+    };
+    virtual void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) {};
+    virtual void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) {};
+    virtual void apply_vload(NodeData& node_loads, Vec3 load) {};
+    virtual void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) {};
+    virtual void compute_compliance(NodeData& displacement, ElementData& result) {};
+    virtual void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) {};
+
+    ElDofs       dofs() override {
+        return ElDofs {true, true, true, true, true, true};
+    }
+    Dim dimensions() override {
+        return 3;
+    }
+    Dim n_nodes() override {
+        return N;
+    }
+    Dim n_integration_points() override {
+        return 0;
+    }
+    ID* nodes() override {
+        return node_ids.data();
+    }
+    SurfacePtr surface(ID surface_id) override {
+        return nullptr;
+    }
+};
+
+}    // namespace fem::model
+
+#endif    // BEAM_H

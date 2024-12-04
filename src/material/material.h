@@ -3,6 +3,7 @@
 #include "elasticity.h"
 #include "isotropic_elasticity.h"
 #include "orthotropic_elasticity.h"
+#include "../data/namable.h"
 
 #include <memory>
 #include <string>
@@ -28,8 +29,11 @@ namespace fem {
 namespace material {
 
 // Material struct defines the properties and methods related to a _material in the context of finite element analysis
-struct Material {
+struct Material : public Namable {
     using Ptr = std::shared_ptr<Material>;
+
+    public:
+    Material(std::string name) : Namable(name) {}
 
     private:
 

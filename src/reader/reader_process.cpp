@@ -1,6 +1,9 @@
 //
 // Created by Finn Eggers on 05.09.23.
 //
+#include "../cos/cylindrical_system.h"
+#include "../cos/rectangular_system.h"
+#include "../model/beam/b23.h"
 #include "../model/solid/c3d10.h"
 #include "../model/solid/c3d15.h"
 #include "../model/solid/c3d20.h"
@@ -9,8 +12,6 @@
 #include "../model/solid/c3d6.h"
 #include "../model/solid/c3d8.h"
 #include "reader.h"
-#include "../cos/rectangular_system.h"
-#include "../cos/cylindrical_system.h"
 
 namespace fem::reader {
 void Reader::process() {
@@ -47,8 +48,12 @@ void Reader::process() {
             process_density();
         } else if (m_current_line.command() == "THERMALEXPANSION") {
             process_thermal_expansion();
+        } else if (m_current_line.command() == "PROFILE") {
+            process_profile();
         } else if (m_current_line.command() == "SOLIDSECTION") {
             process_solid_section();
+        } else if (m_current_line.command() == "BEAMSECTION") {
+            process_beam_section();
         } else if (m_current_line.command() == "SUPPORT") {
             process_support();
         } else if (m_current_line.command() == "TEMPERATURE") {
@@ -163,7 +168,10 @@ void Reader::process_elements() {
                                                     values[8], values[9], values[10], values[11],
                                                     values[12], values[13], values[14], values[15],
                                                     values[16], values[17], values[18], values[19]);
-        } else {
+        } else if (type == "B23") {
+            auto values = gather_values(2);
+            m_model->set_element<fem::model::B23>(id, values[0], values[1]);
+        }else {
             logging::warning(false, "Unknown element type ", type);
             return;
         }
@@ -351,10 +359,34 @@ void Reader::process_thermal_expansion() {
     next_line();
 }
 
+void Reader::process_profile() {
+    auto mat = m_current_line.require<std::string>("NAME", "PROFILE");
+    next_line();
+    Precision A = m_current_line.get_value(0, 0.0f);
+    Precision Iy = m_current_line.get_value(1, 0.0f);
+    Precision Iz = m_current_line.get_value(2, 0.0f);
+    Precision Jt = m_current_line.get_value(3, 0.0f);
+    m_model->_data->profiles.activate(mat, A, Iy, Iz, Jt);
+    next_line();
+}
+
 void Reader::process_solid_section() {
     auto mat = m_current_line.require<std::string>("MAT", "MATERIAL");
     auto els = m_current_line.require<std::string>("ELSET");
     m_model->solid_section(els, mat);
+    next_line();
+}
+
+void Reader::process_beam_section() {
+    auto mat = m_current_line.require<std::string>("MAT", "MATERIAL");
+    auto els = m_current_line.require<std::string>("ELSET");
+    auto profile = m_current_line.require<std::string>("PROFILE");
+    next_line();
+    Precision n1x = m_current_line.get_value(0, 0.0f);
+    Precision n1y = m_current_line.get_value(1, 0.0f);
+    Precision n1z = m_current_line.get_value(2, 0.0f);
+    Vec3 n1 = Vec3(n1x, n1y, n1z);
+    m_model->beam_section(els, mat, profile, n1);
     next_line();
 }
 

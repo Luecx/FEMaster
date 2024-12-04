@@ -36,6 +36,7 @@ struct ModelData {
 
     // sections with their respective data
     std::vector<Section::Ptr> sections;
+    Dict<Profile> profiles;
 
     // data for nodes, elements. Only one allowed per field
     // other data is stored in sets

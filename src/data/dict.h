@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include "namable.h"
 
 namespace fem::model {
 
@@ -19,6 +20,9 @@ struct Dict {
                        std::unordered_map<Key, TPtr>,
                        std::vector<TPtr>> _data;
 
+    // if Key is string, make sure the entity is namable
+    static_assert(!std::is_same_v<Key, std::string> || std::is_base_of_v<Namable, T>,
+                      "Key must be a string if T is namable");
     TPtr _cur;
 
     bool has(const Key &key) {
@@ -76,15 +80,18 @@ struct Dict {
     TPtr create(const Key &key, Args... args) {
         static_assert(std::is_base_of<T, Derived>::value, "Derived must be derived from T");
 
-        auto instance = std::make_shared<Derived>(args...);
-
         if constexpr (std::is_same<Key, std::string>::value) {
+            auto instance = std::make_shared<Derived>(key, args...);
             _data.emplace(key, instance);
+            return instance;
         } else {
+            auto instance = std::make_shared<Derived>(args...);
             if (key >= _data.size()) _data.resize(key + 1);
             _data[key] = instance;
+            return instance;
         }
-        return instance;
+
+
     }
 };
 

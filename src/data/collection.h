@@ -14,12 +14,14 @@
 
 #pragma once
 
-#include <vector>
+#include "namable.h"
+
 #include <algorithm>
-#include <string>
-#include <utility>
 #include <memory>
+#include <string>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace fem::model {
 
@@ -34,7 +36,7 @@ namespace fem::model {
  *          through them, and managing parent-child relationships between collections.
  */
 template<typename T>
-class Collection {
+class Collection : public Namable{
 public:
     using value_type = T; ///< The type of items stored in the collection.
     using Ptr = std::shared_ptr<Collection<T>>; ///< Shared pointer to a Collection.
@@ -46,7 +48,7 @@ public:
      * @param p_sorted Whether the collection should maintain sorted order.
      */
     Collection(std::string p_name, bool p_duplicates = false, bool p_sorted = true)
-        : _name(std::move(p_name)), _sorted(false), _duplicates(false) {
+        : Namable(p_name), _sorted(false), _duplicates(false) {
         sorted(p_sorted);
         duplicates(p_duplicates);
     }
@@ -139,12 +141,6 @@ public:
     auto begin() const { return _data.cbegin(); } ///< Const iterator to the beginning of the collection.
     auto end() const { return _data.cend(); }   ///< Const iterator to the end of the collection.
 
-    // Accessors
-    /**
-     * @brief Gets the name of the collection.
-     * @return The name of the collection.
-     */
-    const std::string& name() const { return _name; }
 
     /**
      * @brief Gets all items in the collection.
@@ -170,11 +166,35 @@ public:
      */
     size_t size() const { return _data.size(); }
 
+    /**
+     *
+     */
+    T& at(size_t index) {
+        return _data[index];
+    }
+
+    T at(size_t index) const {
+        return _data[index];
+    }
+
+    T operator[](size_t index) const {
+        return _data[index];
+    }
+
+    T& operator[](size_t index) {
+        return _data[index];
+    }
+
+    T operator()(size_t index) const {
+        return _data[index];
+    }
+
+    T& operator()(size_t index) {
+        return _data[index];
+    }
 protected:
     std::vector<T> _data; ///< The vector storing the items.
     Ptr _parent = nullptr; ///< Pointer to the parent collection (if any).
-
-    const std::string _name; ///< The name of the collection.
 
     bool _sorted; ///< Whether the collection maintains sorted order.
     bool _duplicates; ///< Whether duplicates are allowed.

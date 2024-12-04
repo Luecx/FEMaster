@@ -46,7 +46,9 @@ class Reader {
     void process_density();
     void process_thermal_expansion();
 
+    void process_profile();
     void process_solid_section();
+    void process_beam_section();
     void process_cload();
     void process_dload();
     void process_vload();

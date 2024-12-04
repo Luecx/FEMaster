@@ -18,6 +18,18 @@ struct Region : public Collection<ID> {
     using Ptr = std::shared_ptr<Region<RT>>;
 
     Region(std::string name) : Collection(name, true, false) {}
+
+    // string output operator
+    std::ostream& operator<<(std::ostream& os) const {
+        os << "Region: " << this->name;
+        os << "   Type: " << RT;
+        os << "   Size: " << this->size();
+        os << "   IDs : ";
+        //for(size_t i = 0; i < std::max((size_t)4, this->size()); i++) {
+        //    os << this->at(i) << " ";
+       // }
+        return os;
+    }
 };
 
 using NodeRegion    = Region<RegionTypes::NODE>;

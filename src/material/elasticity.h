@@ -82,6 +82,11 @@ struct Elasticity {
 
         return dT_eps.transpose() * get<D>() * T_eps + T_eps.transpose() * get<D>() * dT_eps;
     }
+
+    template<typename T>
+    T* as() {
+        return dynamic_cast<T*>(this);
+    }
 };
 
 using ElasticityPtr = std::shared_ptr<Elasticity>;

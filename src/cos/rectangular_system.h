@@ -32,8 +32,8 @@ public:
      * @param y_axis Unit vector of the y-axis in the global coordinate system.
      * @param z_axis Unit vector of the z-axis in the global coordinate system.
      */
-    RectangularSystem(const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis)
-        : CoordinateSystem(), x_axis_(x_axis), y_axis_(y_axis), z_axis_(z_axis) {
+    RectangularSystem(const std::string& name, const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis)
+        : CoordinateSystem(name), x_axis_(x_axis), y_axis_(y_axis), z_axis_(z_axis) {
         orthogonalize();
         normalize();
         compute_transformations();
@@ -44,8 +44,8 @@ public:
      * @param x_axis Unit vector of the x-axis in the global coordinate system.
      * @param y_axis Unit vector of the y-axis in the global coordinate system.
      */
-    RectangularSystem(const Vec3& x_axis, const Vec3& y_axis)
-        : x_axis_(x_axis), y_axis_(y_axis), z_axis_(x_axis.cross(y_axis)) {
+    RectangularSystem(const std::string& name, const Vec3& x_axis, const Vec3& y_axis)
+        : CoordinateSystem(name), x_axis_(x_axis), y_axis_(y_axis), z_axis_(x_axis.cross(y_axis)) {
         orthogonalize();
         normalize();
         compute_transformations();
@@ -55,8 +55,8 @@ public:
      * @brief Constructor for the RectangularSystem class using one vector.
      * @param x_axis Unit vector of the x-axis in the global coordinate system.
      */
-    RectangularSystem(const Vec3& x_axis)
-        : x_axis_(x_axis), y_axis_(x_axis.cross(Vec3::UnitZ())), z_axis_(x_axis.cross(y_axis_)) {
+    RectangularSystem(const std::string& name, const Vec3& x_axis)
+        : CoordinateSystem(name), x_axis_(x_axis), y_axis_(x_axis.cross(Vec3::UnitZ())), z_axis_(x_axis.cross(y_axis_)) {
         orthogonalize();
         normalize();
         compute_transformations();
@@ -181,7 +181,7 @@ public:
         Vec3 x_axis_ = rot_mat.col(0);
         Vec3 y_axis_ = rot_mat.col(1);
         Vec3 z_axis_ = rot_mat.col(2);
-        RectangularSystem sys{x_axis_, y_axis_, z_axis_};
+        RectangularSystem sys{"",x_axis_, y_axis_, z_axis_};
         return sys;
     }
 
