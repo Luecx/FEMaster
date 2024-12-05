@@ -33,6 +33,13 @@ struct BeamElement : StructuralElement {
     Profile* get_profile() {
         return get_section()->profile.get();
     }
+    material::MaterialPtr get_material() {
+        BeamSection* section = get_section();
+        if (!section->material) {
+            logging::error(false, "Material not set for element ", this->elem_id);
+        }
+        return section->material;
+    }
     material::IsotropicElasticity* get_elasticity() {
         BeamSection* section = get_section();
         if (!section->material) {

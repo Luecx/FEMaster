@@ -16,11 +16,11 @@ struct Profile : public Namable {
 
     Precision I_y;
     Precision I_z;
-    Precision J_t;
+    Precision I_t;
 
     // constructor
-    Profile(const std::string& name, Precision A, Precision I_y, Precision I_z, Precision J_t) :
-        Namable(name), A(A), I_y(I_y), I_z(I_z), J_t(J_t) {}
+    Profile(const std::string& name, Precision A, Precision I_y, Precision I_z, Precision I_t) :
+        Namable(name), A(A), I_y(I_y), I_z(I_z), I_t(I_t) {}
 
     using Ptr = std::shared_ptr<Profile>;
 
@@ -29,7 +29,7 @@ struct Profile : public Namable {
         logging::info(true, "   A  : ", A);
         logging::info(true, "   I_y: ", I_y);
         logging::info(true, "   I_z: ", I_z);
-        logging::info(true, "   J_t: ", J_t);
+        logging::info(true, "   I_t: ", I_t);
     }
 };
 

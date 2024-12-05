@@ -172,6 +172,9 @@ void fem::loadcase::LinearEigenfrequency::run() {
         "constructing mass matrix"
     );
 
+    std::cout << DynamicMatrix(active_stiffness_mat) << std::endl;
+    std::cout << DynamicMatrix(active_mass_mat) << std::endl;
+
     // compute characteristic stiffness by taking the mean of the diagonal
     Precision characteristic_stiffness = active_stiffness_mat.diagonal().mean();
 
@@ -242,6 +245,8 @@ void fem::loadcase::LinearEigenfrequency::run() {
         [&]() { return mattools::reduce_mat_to_mat(active_mass_mat, full_lhs_vec); },
         "reducing mass matrix to solver-ready form"
     );
+
+
 
     // Compress the stiffness matrix for efficient solving
     sol_mass_mat.makeCompressed();
