@@ -26,7 +26,7 @@ class Element:
 class B33(Element):
     num_nodes = 2
     def __init__(self, element_id, node_ids):
-        super().__init__(element_id, node_ids, 'B32')
+        super().__init__(element_id, node_ids, 'B33')
 
     def to_second_order(self, new_node_ids):
         return self

@@ -117,7 +117,7 @@ class Converter:
             'C2D4': vtk.vtkQuad,
             'C2D6': vtk.vtkQuadraticTriangle,
             'C2D8': vtk.vtkQuadraticQuad,
-            "B32": vtk.vtkLine,
+            "B33": vtk.vtkLine,
         }
 
         cell_class = cell_map.get(element.elem_type)

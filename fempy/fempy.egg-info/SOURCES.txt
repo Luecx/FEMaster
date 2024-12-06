@@ -8,6 +8,7 @@ fempy.egg-info/requires.txt
 fempy.egg-info/top_level.txt
 fempy/generate/__init__.py
 fempy/generate/generate.py
+fempy/generate/generate_beam_inp.py
 fempy/generate/generate_pipe.py
 fempy/geometry/__init__.py
 fempy/geometry/fem_elements.py

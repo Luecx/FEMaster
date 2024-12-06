@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: fempy
-Version: 0.1.0
+Version: 0.2.0
 Requires-Dist: dill==0.3.8
 Requires-Dist: gmsh==4.13.1
 Requires-Dist: matplotlib==3.8.4

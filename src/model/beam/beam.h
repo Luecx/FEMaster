@@ -75,7 +75,18 @@ struct BeamElement : StructuralElement {
         Vec3 y = get_section()->n1;
         Vec3 z = x.cross(y).normalized();
         y      = z.cross(x).normalized();
-        return (Mat3() << x, y, z).finished();
+
+        Mat3 mat{};
+        mat(0, 0) = x(0);
+        mat(0, 1) = x(1);
+        mat(0, 2) = x(2);
+        mat(1, 0) = y(0);
+        mat(1, 1) = y(1);
+        mat(1, 2) = y(2);
+        mat(2, 0) = z(0);
+        mat(2, 1) = z(1);
+        mat(2, 2) = z(2);
+        return mat;
     }
     virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
     virtual StaticMatrix<N * 6, N * 6> mass_impl()      = 0;

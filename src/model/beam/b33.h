@@ -73,6 +73,7 @@ struct B33 : BeamElement<2>{
               0,  -13 * L,         0,         0,         0,-3 * L * L,         0,   -22 * L,         0,         0,          0,  4 * L * L;
 
         M *= rho * L  * A / 420;
+
         return T.transpose() * M * T;
     }
 

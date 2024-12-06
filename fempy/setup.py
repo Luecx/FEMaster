@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="fempy",  # Replace with your library's name
-    version="0.1.0",  # Version of your library
+    version="0.2.0",  # Version of your library
     packages=find_packages(),  # Automatically find all packages
     install_requires=[
         "dill==0.3.8",
@@ -19,6 +19,7 @@ setup(
     entry_points={
         "console_scripts": [
             "tovtk=fempy.solution.tovtk:main",  # Entry point for the tovtk script
+            "generatebeaminp=fempy.generate.generate_beam_inp:main",  # Entry point for the generatebeaminp script
         ],
     },
 )
