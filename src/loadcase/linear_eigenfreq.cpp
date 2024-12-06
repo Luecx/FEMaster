@@ -171,10 +171,6 @@ void fem::loadcase::LinearEigenfrequency::run() {
         [&]() { return this->m_model->build_lumped_mass_matrix(active_dof_idx_mat); },
         "constructing mass matrix"
     );
-
-    std::cout << DynamicMatrix(active_stiffness_mat) << std::endl;
-    std::cout << DynamicMatrix(active_mass_mat) << std::endl;
-
     // compute characteristic stiffness by taking the mean of the diagonal
     Precision characteristic_stiffness = active_stiffness_mat.diagonal().mean();
 
