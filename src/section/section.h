@@ -24,10 +24,15 @@ struct Section {
     T* as() {
         return dynamic_cast<T*>(this);
     }
+    virtual void info() = 0;
+};
+
+struct SolidSection : Section {
+    using Ptr = std::shared_ptr<SolidSection>;
     void info() {
-        logging::info(true, "Section: ");
+        logging::info(true, "SolidSection: ");
         logging::info(true, "   Material: ", (material ? material->name : "-"));
-        logging::info(true, "   Region  : ", region->name);
+        logging::info(true, "   Region  : ", (region ? region->name : "-"));
     }
 };
 
@@ -39,12 +44,23 @@ struct BeamSection : Section{
     void info() {
         logging::info(true, "BeamSection: ");
         logging::info(true, "   Material: ", (material ? material->name : "-"));
-        logging::info(true, "   Region  : ", region->name);
+        logging::info(true, "   Region  : ", (region ? region->name : "-"));
         logging::info(true, "   Profile : ", (profile ? profile->name : "-"));
-        logging::info(true, "   n1      : ", n1);
+        logging::info(true, "   n1      : ", n1.transpose());
     }
 };
 
+struct ShellSection : Section {
+    using Ptr = std::shared_ptr<ShellSection>;
+    Precision thickness = 1.0;
+
+    void info() {
+        logging::info(true, "ShellSection: ");
+        logging::info(true, "   Material: ", (material ? material->name : "-"));
+        logging::info(true, "   Region  : ", (region ? region->name : "-"));
+        logging::info(true, "   Thickness: ", thickness);
+    }
+};
 
 }
 

@@ -19,6 +19,17 @@ struct Region : public Collection<ID> {
 
     Region(std::string name) : Collection(name, true, false) {}
 
+    void info() {
+        logging::info(true, "Region: ", this->name);
+        logging::info(true, "   Type: ", RT);
+        logging::info(true, "   Size: ", this->size());
+        logging::info(true, "   IDs : ");
+        for(size_t i = 0; i < std::min((size_t)4, this->size()); i++) {
+            logging::info(true, "      ", this->at(i));
+        }
+
+    }
+
     // string output operator
     std::ostream& operator<<(std::ostream& os) const {
         os << "Region: " << this->name;

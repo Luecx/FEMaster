@@ -14,7 +14,8 @@ struct BeamElement : StructuralElement {
 
     std::array<ID, N> node_ids;
 
-                      BeamElement(ID p_elem_id, std::array<ID, N> p_node_ids)
+    // construction
+    BeamElement(ID p_elem_id, std::array<ID, N> p_node_ids)
         : StructuralElement(p_elem_id)
         , node_ids {p_node_ids} {}
 

@@ -160,7 +160,7 @@ void Model::solid_section(const std::string& set, const std::string& material) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
 
-    Section::Ptr section = std::make_shared<Section>();
+    Section::Ptr section = std::make_shared<SolidSection>();
     section->material = _data->materials.get(material);
     section->region   = _data->elem_sets.get(set);
     this->_data->sections.push_back(section);
@@ -202,6 +202,20 @@ std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     logging::up();
     for(const auto &profile : model._data->profiles){
         profile.second->info();
+    }
+    logging::down();
+
+    logging::info(true, "Element sets");
+    logging::up();
+    for (const auto& elem_set : model._data->elem_sets) {
+        elem_set.second->info();
+    }
+    logging::down();
+
+    logging::info(true, "Node sets");
+    logging::up();
+    for (const auto& node_set : model._data->node_sets) {
+        node_set.second->info();
     }
     logging::down();
 

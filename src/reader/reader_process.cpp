@@ -13,6 +13,9 @@
 #include "../model/solid/c3d8.h"
 #include "reader.h"
 
+namespace fem::model {
+struct MITC4;
+}
 namespace fem::reader {
 void Reader::process() {
     // read first line
@@ -177,7 +180,10 @@ void Reader::process_elements() {
         } else if (type == "B33") {
             auto values = gather_values(2);
             m_model->set_element<fem::model::B33>(id, values[0], values[1]);
-        }else {
+        } else if (type == "S4") {
+            auto values = gather_values(4);
+            m_model->set_element<fem::model::MITC4>(id, values[0], values[1], values[2], values[3]);
+        } else {
             logging::warning(false, "Unknown element type ", type);
             return;
         }
