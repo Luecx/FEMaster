@@ -4,6 +4,7 @@
 #include "../cos/cylindrical_system.h"
 #include "../cos/rectangular_system.h"
 #include "../model/beam/b33.h"
+#include "../model/pointelem/point.h"
 #include "../model/solid/c3d10.h"
 #include "../model/solid/c3d15.h"
 #include "../model/solid/c3d20.h"
@@ -54,6 +55,8 @@ void Reader::process() {
             process_solid_section();
         } else if (m_current_line.command() == "BEAMSECTION") {
             process_beam_section();
+        } else if (m_current_line.command() == "POINTMASSSECTION") {
+            process_point_mass_section();
         } else if (m_current_line.command() == "SUPPORT") {
             process_support();
         } else if (m_current_line.command() == "TEMPERATURE") {
@@ -177,6 +180,9 @@ void Reader::process_elements() {
         } else if (type == "B33") {
             auto values = gather_values(2);
             m_model->set_element<fem::model::B33>(id, values[0], values[1]);
+        }else if (type == "P") {
+            auto values = gather_values(1);
+            m_model->set_element<fem::model::Point>(id, values[0]);
         }else {
             logging::warning(false, "Unknown element type ", type);
             return;
@@ -394,6 +400,21 @@ void Reader::process_beam_section() {
     Vec3 n1 = Vec3(n1x, n1y, n1z);
     m_model->beam_section(els, mat, profile, n1);
     next_line();
+}
+
+void Reader::process_point_mass_section() {
+    auto els = m_current_line.require<std::string>("ELSET");
+    auto mass = m_current_line.parse("MASS", 0.0f);
+    next_line();
+    Vec3 inertia = Vec3::Zero();
+    if (m_current_line.type() == DATA_LINE) {
+        inertia(0) = m_current_line.get_value(0, 0.0f);
+        inertia(1) = m_current_line.get_value(1, 0.0f);
+        inertia(2) = m_current_line.get_value(2, 0.0f);
+        next_line();
+    }
+
+    m_model->point_mass_section(els, mass, inertia);
 }
 
 void Reader::process_cload() {

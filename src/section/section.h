@@ -45,6 +45,18 @@ struct BeamSection : Section{
     }
 };
 
+struct PointMassSection : Section {
+    using Ptr = std::shared_ptr<PointMassSection>;
+    Precision mass = 0;
+    Vec3 rotary_inertia = Vec3::Zero();
+    void info() {
+        logging::info(true, "PointMassSection: ");
+        logging::info(true, "   Material: ", (material ? material->name : "-"));
+        logging::info(true, "   Region  : ", region->name);
+        logging::info(true, "   Mass    : ", mass);
+        logging::info(true, "   Inertia : ", rotary_inertia);
+    }
+};
 
 }
 

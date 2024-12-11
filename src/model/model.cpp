@@ -178,6 +178,14 @@ void Model::beam_section(const std::string& set, const std::string& material,  c
     this->_data->sections.push_back(sec);
 }
 
+void Model::point_mass_section(const std::string& set, Precision mass, Vec3 rotary_inertia) {
+    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
+    PointMassSection::Ptr sec = std::make_shared<PointMassSection>();
+    sec->mass = mass;
+    sec->rotary_inertia = rotary_inertia;
+    sec->region = _data->elem_sets.get(set);
+    this->_data->sections.push_back(sec);
+}
 
 std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     ostream << "max nodes = " << model._data->max_nodes << '\n';

@@ -73,6 +73,11 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
                     for (int jdof = 0; jdof < dofs_per_node; ++jdof) {
                         int global_row = indices(element->nodes()[i], idof);
                         int global_col = indices(element->nodes()[j], jdof);
+
+                        if(global_row < 0 || global_col < 0) {
+                            continue;  // Skip DOFs that are not part of the system
+                        }
+
                         Precision value = local_matrix(i * dofs_per_node + idof, j * dofs_per_node + jdof);
 
                         // Add the computed value to the triplet list
