@@ -57,9 +57,11 @@ void Reader::analyse_elements() {
             req_values = 20;
         } else if (type == "B33") {
             req_values = 2;
+        } else if (type == "S4") {
+            req_values = 4;
         } else if (type == "P") {
             req_values = 1;
-        } else {
+        }else {
             logging::warning(false, "Unknown element type ", type);
             return;
         }

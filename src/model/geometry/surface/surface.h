@@ -124,6 +124,19 @@ struct Surface : public SurfaceInterface {
     virtual StaticMatrix<N, 1> shape_function(Precision r, Precision s) const = 0;
 
     /**
+     * @brief interpolates a matrix of shape functions at a given local coordinate (r, s).
+     **/
+    template<Index M>
+    StaticVector<M> interpolate(const StaticMatrix<N, M>& nodal_values, Precision r, Precision s) const {
+        StaticVector<M> res = StaticMatrix<M, 1>::Zero();
+        auto shape_funcs = shape_function(r, s);
+        for (Index i = 0; i < N; i++) {
+            res += (shape_funcs(i) * nodal_values.row(i)).transpose();
+        }
+        return res;
+    }
+
+    /**
      * @brief Gives a dynamic vector for outside use which is a bit slower.
      */
     DynamicVector shape_function(const Vec2& local) const override {

@@ -14,13 +14,9 @@ namespace model {
 struct ElementInterface {
     const ID elem_id = 0;
 
-    protected:
-
-    public:
     Section::Ptr _section = nullptr;
     ModelDataPtr _model_data;
 
-    public:
     ElementInterface(ID p_elem_id)
         : elem_id(p_elem_id) {}
 

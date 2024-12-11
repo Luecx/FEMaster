@@ -14,7 +14,7 @@ namespace model {
 
 void Model::assign_sections() {
     for (Section::Ptr ptr: this->_data->sections) {
-        for (ID elem_id = 0; elem_id < this->_data->max_elems; elem_id++) {
+        for (ID elem_id: *ptr->region) {
             if (this->_data->elements[elem_id] != nullptr) {
                 this->_data->elements[elem_id]->set_section(ptr);
             }

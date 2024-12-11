@@ -85,6 +85,10 @@ struct Sets {
         }
     }
 
+    // begin and end
+    auto begin() {return _data.begin();}
+    auto end() {return _data.end();}
+
 private:
     // create a new collection with additional values passed
     template <typename... Args>

@@ -43,7 +43,9 @@ struct B33 : BeamElement<2>{
             0,         0,-6 * d * L,        0, 2 * d * M,         0,        0,         0, 6 * d * L,        0, 4 * d * M,         0,
             0, 6 * c * L,         0,        0,         0, 2 * c * M,        0,-6 * c * L,         0,        0,         0, 4 * c *M;
 
+
         return T.transpose() * K * T;
+
     }
 
     StaticMatrix<12,12> mass_impl() override {
