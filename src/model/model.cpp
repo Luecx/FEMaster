@@ -178,11 +178,13 @@ void Model::beam_section(const std::string& set, const std::string& material,  c
     this->_data->sections.push_back(sec);
 }
 
-void Model::point_mass_section(const std::string& set, Precision mass, Vec3 rotary_inertia) {
+void Model::point_mass_section(const std::string& set, Precision mass, Vec3 rotary_inertia, Vec3 spring, Vec3 rotary_spring) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     PointMassSection::Ptr sec = std::make_shared<PointMassSection>();
     sec->mass = mass;
     sec->rotary_inertia = rotary_inertia;
+    sec->spring_constants = spring;
+    sec->rotary_spring_constants = rotary_spring;
     sec->region = _data->elem_sets.get(set);
     this->_data->sections.push_back(sec);
 }

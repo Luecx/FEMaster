@@ -38,7 +38,18 @@ struct Point : fem::model::StructuralElement {
         return 0;
     };
     MapMatrix  stiffness(Precision* buffer) override {
-        return MapMatrix(buffer, 6, 6).setZero();
+        MapMatrix(buffer, 6, 6).setZero();
+        logging::error(_section != nullptr, "Section not assigned to element ", elem_id);
+        logging::error(_section->as<PointMassSection>(), "Section is not a PointMassSection");
+        PointMassSection* section = _section->as<PointMassSection>();
+        MapMatrix res = MapMatrix(buffer, 6, 6).setZero();
+        res(0, 0) = section->spring_constants(0);
+        res(1, 1) = section->spring_constants(1);
+        res(2, 2) = section->spring_constants(2);
+        res(3, 3) = section->rotary_spring_constants(0);
+        res(4, 4) = section->rotary_spring_constants(1);
+        res(5, 5) = section->rotary_spring_constants(2);
+        return res;
     };
     MapMatrix  mass(Precision* buffer) override {
         logging::error(_section != nullptr, "Section not assigned to element ", elem_id);

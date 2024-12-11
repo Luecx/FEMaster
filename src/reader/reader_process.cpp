@@ -181,7 +181,7 @@ void Reader::process_elements() {
         } else if (type == "B33") {
             auto values = gather_values(2);
             m_model->set_element<fem::model::B33>(id, values[0], values[1]);
-        }  if (type == "P") {
+        } else if (type == "P") {
             auto values = gather_values(1);
             m_model->set_element<fem::model::Point>(id, values[0]);
         } else if (type == "S4") {
@@ -408,9 +408,17 @@ void Reader::process_beam_section() {
 
 void Reader::process_point_mass_section() {
     auto els = m_current_line.require<std::string>("ELSET");
-    auto mass = m_current_line.parse("MASS", 0.0f);
     next_line();
+    Precision mass = 0;
     Vec3 inertia = Vec3::Zero();
+    Vec3 spring  = Vec3::Zero();
+    Vec3 rotary_spring = Vec3::Zero();
+
+    if (m_current_line.type() == DATA_LINE) {
+        mass = m_current_line.get_value(0, 0.0f);
+        next_line();
+    }
+
     if (m_current_line.type() == DATA_LINE) {
         inertia(0) = m_current_line.get_value(0, 0.0f);
         inertia(1) = m_current_line.get_value(1, 0.0f);
@@ -418,7 +426,21 @@ void Reader::process_point_mass_section() {
         next_line();
     }
 
-    m_model->point_mass_section(els, mass, inertia);
+    if (m_current_line.type() == DATA_LINE) {
+        spring(0) = m_current_line.get_value(0, 0.0f);
+        spring(1) = m_current_line.get_value(1, 0.0f);
+        spring(2) = m_current_line.get_value(2, 0.0f);
+        next_line();
+    }
+
+    if (m_current_line.type() == DATA_LINE) {
+        rotary_spring(0) = m_current_line.get_value(0, 0.0f);
+        rotary_spring(1) = m_current_line.get_value(1, 0.0f);
+        rotary_spring(2) = m_current_line.get_value(2, 0.0f);
+        next_line();
+    }
+
+    m_model->point_mass_section(els, mass, inertia, spring, rotary_spring);
 }
 
 void Reader::process_cload() {

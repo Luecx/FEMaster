@@ -122,7 +122,8 @@ class Converter:
 
         cell_class = cell_map.get(element.elem_type)
         if cell_class is None:
-            raise ValueError(f'[ERROR] Unknown cell type: {element.elem_type}')
+            print (f'[WARNING] Unknown cell type: {element.elem_type}')
+            return None, None
         cell = cell_class()
         for j, node_id in enumerate(element.node_ids):
             cell.GetPointIds().SetId(j, node_id)

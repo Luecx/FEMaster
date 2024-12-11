@@ -34,6 +34,7 @@ class Geometry:
         'C3D20': C3D20,
         'C3D20R': C3D20,
         'B33': B33,
+        'P': Point,
     }
 
     def __init__(self, dimension=3):

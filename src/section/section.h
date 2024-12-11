@@ -46,7 +46,7 @@ struct BeamSection : Section{
         logging::info(true, "   Material: ", (material ? material->name : "-"));
         logging::info(true, "   Region  : ", region->name);
         logging::info(true, "   Profile : ", (profile ? profile->name : "-"));
-        logging::info(true, "   n1      : ", n1);
+        logging::info(true, "   n1      : ", n1.transpose());
     }
 };
 
@@ -66,12 +66,16 @@ struct PointMassSection : Section {
     using Ptr = std::shared_ptr<PointMassSection>;
     Precision mass = 0;
     Vec3 rotary_inertia = Vec3::Zero();
+    Vec3 spring_constants = Vec3::Zero();
+    Vec3 rotary_spring_constants  = Vec3::Zero();
     void info() {
         logging::info(true, "PointMassSection: ");
-        logging::info(true, "   Material: ", (material ? material->name : "-"));
-        logging::info(true, "   Region  : ", region->name);
-        logging::info(true, "   Mass    : ", mass);
-        logging::info(true, "   Inertia : ", rotary_inertia);
+        logging::info(true, "   Material : ", (material ? material->name : "-"));
+        logging::info(true, "   Region   : ", region->name);
+        logging::info(true, "   Mass     : ", mass);
+        logging::info(true, "   Inertia  : ", rotary_inertia.transpose());
+        logging::info(true, "   Springs  : ", spring_constants.transpose());
+        logging::info(true, "   Rotations: ", rotary_spring_constants.transpose());
     }
 };
 
