@@ -1,85 +1,65 @@
-//
-// Created by f_eggers on 21.11.2024.
-//
+/******************************************************************************
+* @file section.h
+* @brief Base class definition for different FEM section types.
+*
+* This file contains the abstract base class Section and its derived classes,
+* including SolidSection, BeamSection, ShellSection, and PointMassSection.
+* Each derived class represents a specific type of section with associated
+* properties and behavior.
+*
+* @see section.cpp
+* @see solid_section.h
+* @see beam_section.h
+* @see shell_section.h
+* @see point_mass_section.h
+*
+* @author Finn Eggers
+* @date 21.11.2024
+******************************************************************************/
 
-#ifndef SECTION_H
-#define SECTION_H
+#pragma once
 
 #include "../material/material.h"
 #include "../data/region.h"
-
-#include "profile.h"
+#include <memory>
+#include <string>
+#include "../core/logging.h" // For logging utilities
 
 namespace fem {
 
+/******************************************************************************
+* @class Section
+* @brief Abstract base class for FEM sections.
+*
+* The Section class provides a common interface and base implementation
+* for different section types in the FEM solver. Each derived class
+* specializes the section properties and behavior.
+******************************************************************************/
 struct Section {
-    using Ptr = std::shared_ptr<Section>;
+   using Ptr = std::shared_ptr<Section>;
 
-    virtual ~Section() = default; // Make Section polymorphic
+   virtual ~Section() = default; ///< Default virtual destructor for polymorphism.
 
-    material::Material::Ptr material = nullptr;
-    model::ElementRegion::Ptr region = nullptr;
+   material::Material::Ptr material = nullptr; ///< Material associated with the section.
+   model::ElementRegion::Ptr region = nullptr; ///< Element region associated with the section.
 
-    template<typename T>
-    T* as() {
-        return dynamic_cast<T*>(this);
-    }
-    virtual void info() = 0;
+   /******************************************************************************
+    * @brief Dynamic cast helper method.
+    *
+    * Casts this Section to a derived type.
+    *
+    * @tparam T Derived type to cast to.
+    * @return T* Pointer to the derived type or nullptr if the cast fails.
+    ******************************************************************************/
+   template<typename T>
+   T* as() {
+       return dynamic_cast<T*>(this);
+   }
+
+   /******************************************************************************
+    * @brief Outputs information about the section.
+    ******************************************************************************/
+   virtual void info() = 0;
 };
 
-struct SolidSection : Section {
-    using Ptr = std::shared_ptr<SolidSection>;
-    void info() {
-        logging::info(true, "Section: ");
-        logging::info(true, "   Material: ", (material ? material->name : "-"));
-        logging::info(true, "   Region  : ", region->name);
-    }
-};
-
-struct BeamSection : Section{
-    using Ptr = std::shared_ptr<BeamSection>;
-    Vec3 n1;
-    Profile::Ptr profile = nullptr;
-
-    void info() {
-        logging::info(true, "BeamSection: ");
-        logging::info(true, "   Material: ", (material ? material->name : "-"));
-        logging::info(true, "   Region  : ", region->name);
-        logging::info(true, "   Profile : ", (profile ? profile->name : "-"));
-        logging::info(true, "   n1      : ", n1.transpose());
-    }
-};
-
-struct ShellSection : Section {
-    using Ptr = std::shared_ptr<ShellSection>;
-    Precision thickness = 1.0;
-
-    void info() {
-        logging::info(true, "ShellSection: ");
-        logging::info(true, "   Material: ", (material ? material->name : "-"));
-        logging::info(true, "   Region  : ", (region ? region->name : "-"));
-        logging::info(true, "   Thickness: ", thickness);
-    }
-};
-
-struct PointMassSection : Section {
-    using Ptr = std::shared_ptr<PointMassSection>;
-    Precision mass = 0;
-    Vec3 rotary_inertia = Vec3::Zero();
-    Vec3 spring_constants = Vec3::Zero();
-    Vec3 rotary_spring_constants  = Vec3::Zero();
-    void info() {
-        logging::info(true, "PointMassSection: ");
-        logging::info(true, "   Material : ", (material ? material->name : "-"));
-        logging::info(true, "   Region   : ", region->name);
-        logging::info(true, "   Mass     : ", mass);
-        logging::info(true, "   Inertia  : ", rotary_inertia.transpose());
-        logging::info(true, "   Springs  : ", spring_constants.transpose());
-        logging::info(true, "   Rotations: ", rotary_spring_constants.transpose());
-    }
-};
-
-}
-
-
-#endif //SECTION_H
+} // namespace fem
