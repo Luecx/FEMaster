@@ -1,66 +1,101 @@
 /******************************************************************************
-* @file section.h
-* @brief Base class definition for different FEM section types.
+* @file connector.h
+* @brief Defines the Connector class for applying constraints between nodes using a connector element.
 *
-* This file contains the abstract base class Section and its derived classes,
-* including SolidSection, BeamSection, ShellSection, and PointMassSection.
-* Each derived class represents a specific type of section with associated
-* properties and behavior.
+* The Connector class links two nodes and constrains specific degrees of freedom (DOFs) using a
+* custom coordinate system. The constrained DOFs are defined by the connector type, which can
+* represent various physical connections such as beams or hinges.
 *
-* @see section.cpp
-* @see solid_section.h
-* @see beam_section.h
-* @see shell_section.h
-* @see point_mass_section.h
+* @details This class supports _connectors that constrain translations and/or rotations in specific
+* directions based on the connector type, which is defined using a bitmask.
 *
-*
+* @see connector.cpp
 * @author Finn Eggers
-* @date 21.11.2024
+* @date 08.10.2024
 ******************************************************************************/
 
-#pragma once
+#pragma once  // Ensures this file is only included once during compilation
 
-#include "../material/material.h"
-#include "../data/region.h"
-#include <memory>
-#include <string>
-#include "../core/logging.h" // For logging utilities
+#include "../cos/coordinate_system.h"  // For custom coordinate system handling
+#include "../core/types.h"             // For general types (ID, Triplet, etc.)
+#include "../core/logging.h"           // For logging warnings and errors
 
-namespace fem {
+#include "equation.h"
+
+#include <iostream>                    // For standard I/O operations (optional)
+
+namespace fem::constraint {
 
 /******************************************************************************
-* @class Section
-* @brief Abstract base class for FEM sections.
+* @enum ConnectorType
+* @brief Enum for defining different types of _connectors using bitwise integer representations.
 *
-* The Section class provides a common interface and base implementation
-* for different section types in the FEM solver. Each derived class
-* specializes the section properties and behavior.
+* Each connector type is represented using a bitmask, where each bit represents a degree of freedom (DOF):
+* - Bit 0: Translation-X
+* - Bit 1: Translation-Y
+* - Bit 2: Translation-Z
+* - Bit 3: Rotation-X
+* - Bit 4: Rotation-Y
+* - Bit 5: Rotation-Z
 ******************************************************************************/
-struct Section {
-   using Ptr = std::shared_ptr<Section>;
-
-   virtual ~Section() = default; ///< Default virtual destructor for polymorphism.
-
-   material::Material::Ptr material = nullptr; ///< Material associated with the section.
-   model::ElementRegion::Ptr region = nullptr; ///< Element region associated with the section.
-
-   /******************************************************************************
-    * @brief Dynamic cast helper method.
-    *
-    * Casts this Section to a derived type.
-    *
-    * @tparam T Derived type to cast to.
-    * @return T* Pointer to the derived type or nullptr if the cast fails.
-    ******************************************************************************/
-   template<typename T>
-   T* as() {
-       return dynamic_cast<T*>(this);
-   }
-
-   /******************************************************************************
-    * @brief Outputs information about the section.
-    ******************************************************************************/
-   virtual void info() = 0;
+enum ConnectorType : int {
+   None        = 0b000000,    ///< No DOFs are constrained.
+   Beam        = 0b111111,    ///< All 6 DOFs are constrained.
+   Hinge       = 0b111011,    ///< All DOFs except rotation around X (bit 3 is 0).
+   Cylindrical = 0b011011,    ///< Translation and rotation around X are allowed.
+   Translator  = 0b011111,    ///< Only translation in the X direction is allowed.
 };
 
-} // namespace fem
+/******************************************************************************
+* @class Connector
+* @brief Class for representing a connector element that links two nodes.
+*
+* The Connector class constrains specific degrees of freedom (DOFs) between two nodes
+* using a custom coordinate system. The DOFs to be constrained are defined by the
+* connector type, which determines the physical connection behavior (e.g., beam or hinge).
+******************************************************************************/
+class Connector {
+   fem::cos::CoordinateSystem::Ptr coordinate_system_;    ///< Pointer to the custom coordinate system for transforming DOFs.
+   ConnectorType                   connector_type_;       ///< Type of the connector (e.g., Beam, Hinge).
+   Dofs                            constrained_dofs_;     ///< Vector indicating which DOFs are constrained (6 DOFs).
+   ID                              node_1_id_;            ///< ID of the first node.
+   ID                              node_2_id_;            ///< ID of the second node.
+
+   public:
+   /******************************************************************************
+    * @brief Constructor for the Connector class.
+    *
+    * Initializes a Connector object that links two nodes and constrains the specified
+    * degrees of freedom (DOFs) based on the connector type. The coordinate system
+    * is used to transform the local DOF directions to the global system.
+    *
+    * @param node_1_id ID of the first node.
+    * @param node_2_id ID of the second node.
+    * @param coordinate_system Pointer to the custom coordinate system for the connector.
+    * @param connector_type The type of the connector, which defines the constrained DOFs.
+    ******************************************************************************/
+   Connector(ID node_1_id,
+             ID node_2_id,
+             fem::cos::CoordinateSystem::Ptr coordinate_system,
+             ConnectorType connector_type);
+
+   virtual ~Connector() = default;    ///< Default destructor for the Connector class.
+
+   /******************************************************************************
+    * @brief Generates the constraint equations for the connector element.
+    *
+    * This method generates the constraint equations between the two nodes based
+    * on the specified constrained degrees of freedom (DOFs) and their global
+    * system DOF indices. The equations are transformed using the custom coordinate
+    * system for accurate coupling in the global system.
+    *
+    * @param system_nodal_dofs The global system DOF IDs for each node.
+    * @param node_coords The coordinates of all nodes (unused in this implementation).
+    * @param row_offset The starting row for inserting the constraint equations.
+    * @return TripletList A list of triplets representing the constraint equations.
+    ******************************************************************************/
+    Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+
+};
+
+}    // namespace fem::constraint

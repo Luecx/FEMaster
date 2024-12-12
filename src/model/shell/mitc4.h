@@ -66,19 +66,19 @@ struct MITC4 : ShellElement<4> {
 
     Mat3 covariant(const Vec3& pos) {
         // derivative of X w.r.t r
-        // auto node_coords_glob = this->node_coords_global();
-        // auto dX0drs = geometry.jacobian(node_coords_glob, pos(0), pos(1));
-        // auto N      = geometry.shape_function(pos(0), pos(1));
-        // auto dNdrs  = geometry.shape_derivative(pos(0), pos(1));
-        // auto hv     = thickness_times_directions();
-        //
-        // auto dNdr   = dNdrs.col(0);
-        // auto dNds   = dNdrs.col(1);
-        //
-        // auto dNdrhv = dNdr.asDiagonal() * hv;
-        // auto dNdshv = dNds.asDiagonal() * hv;
-        //
-        // std::cout << dX0drs << std::endl;
+        auto node_coords_glob = this->node_coords_global();
+        auto dX0drs = geometry.jacobian(node_coords_glob, pos(0), pos(1));
+         auto N      = geometry.shape_function(pos(0), pos(1));
+         auto dNdrs  = geometry.shape_derivative(pos(0), pos(1));
+         auto hv     = thickness_times_directions();
+
+        auto dNdr   = dNdrs.col(0);
+        auto dNds   = dNdrs.col(1);
+
+        auto dNdrhv = dNdr.asDiagonal() * hv;
+        auto dNdshv = dNds.asDiagonal() * hv;
+
+        std::cout << dX0drs << std::endl;
 
         // Vec3 dX0dr = dX0drs.col(0) + pos(2) / 2 *  dNdrhv;
         // Vec3 dX0ds = dX0drs.col(1) + pos(2) / 2 *  dNdshv;
@@ -101,8 +101,8 @@ struct MITC4 : ShellElement<4> {
     MapMatrix  stiffness(Precision* buffer) override {
         auto covariant = this->covariant(Vec3{0,0,0});
         std::cout << covariant << std::endl;
-        return MapMatrix(buffer, 4, 4);
         exit(0);
+        return MapMatrix(buffer, 4, 4);
     }
     MapMatrix  mass(Precision* buffer) override {
         return MapMatrix(buffer, 4, 4);
