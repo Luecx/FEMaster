@@ -49,7 +49,9 @@ class Reader {
     void process_profile();
     void process_solid_section();
     void process_beam_section();
+    void process_shell_section();
     void process_point_mass_section();
+
     void process_cload();
     void process_dload();
     void process_vload();

@@ -7,6 +7,7 @@
 
 #include "../../core/core.h"
 #include "../element/element_structural.h"
+#include "../../section/section_shell.h"
 
 #include <memory>
 

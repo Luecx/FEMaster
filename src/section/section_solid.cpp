@@ -1,4 +1,4 @@
-#include "section_solid.h.h"
+#include "section_solid.h"
 
 namespace fem {
 

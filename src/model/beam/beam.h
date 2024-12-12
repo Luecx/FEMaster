@@ -4,6 +4,7 @@
 
 #include "../../core/core.h"
 #include "../element/element_structural.h"
+#include "../../section/section_beam.h"
 
 #include <memory>
 

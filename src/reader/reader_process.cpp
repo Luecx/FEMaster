@@ -5,6 +5,7 @@
 #include "../cos/rectangular_system.h"
 #include "../model/beam/b33.h"
 #include "../model/pointelem/point.h"
+#include "../model/shell/s4.h"
 #include "../model/solid/c3d10.h"
 #include "../model/solid/c3d15.h"
 #include "../model/solid/c3d20.h"
@@ -12,7 +13,6 @@
 #include "../model/solid/c3d4.h"
 #include "../model/solid/c3d6.h"
 #include "../model/solid/c3d8.h"
-#include "../model/shell/mitc4.h"
 #include "reader.h"
 
 namespace fem::reader {
@@ -56,6 +56,8 @@ void Reader::process() {
             process_solid_section();
         } else if (m_current_line.command() == "BEAMSECTION") {
             process_beam_section();
+        } else if (m_current_line.command() == "SHELLSECTION") {
+            process_shell_section();
         } else if (m_current_line.command() == "POINTMASSSECTION") {
             process_point_mass_section();
         } else if (m_current_line.command() == "SUPPORT") {
@@ -403,6 +405,14 @@ void Reader::process_beam_section() {
     Precision n1z = m_current_line.get_value(2, 0.0f);
     Vec3 n1 = Vec3(n1x, n1y, n1z);
     m_model->beam_section(els, mat, profile, n1);
+    next_line();
+}
+
+void Reader::process_shell_section() {
+    auto mat = m_current_line.require<std::string>("MAT", "MATERIAL");
+    auto els = m_current_line.require<std::string>("ELSET");
+    auto thi = m_current_line.parse("THICKNESS", 1.0);
+    m_model->shell_section(els, mat, thi);
     next_line();
 }
 

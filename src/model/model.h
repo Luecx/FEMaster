@@ -74,6 +74,7 @@ struct Model {
     void solid_section(const std::string& set, const std::string& material);
     void beam_section (const std::string& set, const std::string& material, const std::string& profile, Vec3 orientation);
     void point_mass_section(const std::string& set, Precision mass, Vec3 rotary_inertia, Vec3 spring_constants, Vec3 rotary_spring_constants);
+    void shell_section(const std::string& set, const std::string& material, Precision thickness);
 
     // stream output to console
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
