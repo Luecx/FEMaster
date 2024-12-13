@@ -10,6 +10,11 @@ struct Elasticity {
     virtual StaticMatrix<3, 3> get_2d() = 0;
     virtual StaticMatrix<6, 6> get_3d() = 0;
 
+    // matrices for shell elements
+    virtual StaticMatrix<2, 2> get_shear(Precision t) = 0;
+    virtual StaticMatrix<3, 3> get_bend(Precision t) = 0;
+    virtual StaticMatrix<3, 3> get_memb() {return get_2d();}
+
     virtual ~Elasticity() = default;
 
     template<Dim D>

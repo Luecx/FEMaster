@@ -31,6 +31,17 @@ fem::StaticMatrix<6, 6> fem::material::OrthotropicElasticity::get_3d() {
 
     return S.inverse();
 }
+
+fem::StaticMatrix<2, 2> fem::material::OrthotropicElasticity::get_shear(Precision t) {
+    throw std::runtime_error("Not implemented");
+    return StaticMatrix<2, 2>();
+}
+
+fem::StaticMatrix<3, 3> fem::material::OrthotropicElasticity::get_bend(Precision t) {
+    throw std::runtime_error("Not implemented");
+    return StaticMatrix<3, 3>();
+}
+
 fem::material::OrthotropicElasticity::OrthotropicElasticity(Precision ex,
                                                             Precision ey,
                                                             Precision ez,

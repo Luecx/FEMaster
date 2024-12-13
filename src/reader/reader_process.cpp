@@ -188,7 +188,7 @@ void Reader::process_elements() {
             m_model->set_element<fem::model::Point>(id, values[0]);
         } else if (type == "S4") {
             auto values = gather_values(4);
-            m_model->set_element<fem::model::MITC4>(id, values[0], values[1], values[2], values[3]);
+            m_model->set_element<fem::model::S4>(id, values[0], values[1], values[2], values[3]);
         } else {
             logging::warning(false, "Unknown element type ", type);
             return;

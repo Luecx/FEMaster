@@ -2,234 +2,295 @@
 // Created by f_eggers on 11.12.2024.
 //
 
-#ifndef MITC4_H
-#define MITC4_H
+#ifndef S4_H
+#define S4_H
 
 #include "shell.h"
 #include "../geometry/surface/surface4.h"
 
+// this file is partially based on the implementation of
+// https://github.com/JWock82/Pynite/blob/main/Archived/S4.py
+//
+
 namespace fem::model {
 
-struct MITC4 : ShellElement<4> {
+struct S4 : ShellElement<4> {
 
     Surface4 geometry;
     quadrature::Quadrature integration_scheme_;
 
-    MITC4(ID p_elem_id, const std::array<ID, 4>& p_node_ids)
+    S4(ID p_elem_id, const std::array<ID, 4>& p_node_ids)
         : ShellElement<4>(p_elem_id, p_node_ids),
             geometry(p_node_ids),
             integration_scheme_(quadrature::DOMAIN_ISO_QUAD, quadrature::ORDER_CUBIC) {
     }
-    ~MITC4() override = default;
+    ~S4() override = default;
 
-    Vec4 thicknesses() {
-        // TODO
-        return {
-            this->get_section()->thickness,
-            this->get_section()->thickness,
-            this->get_section()->thickness,
-            this->get_section()->thickness};
-    }
-    Vec3 normal(Precision r, Precision s) {
-        auto node_coords_glob = this->_model_data->get(POSITION);
-        return geometry.normal(node_coords_glob, Vec2{r,s});
-    }
-    StaticMatrix<4, 3> shell_directions() {
-        // TODO
-        auto               node_coords_local = geometry.node_coords_local();
 
-        Vec3               n1                = normal(node_coords_local(0, 0), node_coords_local(0, 1));
-        Vec3               n2                = normal(node_coords_local(1, 0), node_coords_local(1, 1));
-        Vec3               n3                = normal(node_coords_local(2, 0), node_coords_local(2, 1));
-        Vec3               n4                = normal(node_coords_local(3, 0), node_coords_local(3, 1));
+    // when assuming a planar element, the normal is constant
+    // we can also project the shell and use a local x,y system
+    // this must not be confused with the local r,s system which is used for integration
+    Mat3 get_xyz_axes() {
+        StaticMatrix<4, 3> node_coords = this->node_coords_global();
+        StaticMatrix<4, 2> xy_coords;
 
-        StaticMatrix<4, 3> res;
-        res.row(0) = n1.transpose();
-        res.row(1) = n2.transpose();
-        res.row(2) = n3.transpose();
-        res.row(3) = n4.transpose();
+        Vec3 n1 = node_coords.row(0);
+        Vec3 n2 = node_coords.row(1);
+        Vec3 n3 = node_coords.row(2);
+        Vec3 n4 = node_coords.row(3);
+
+        Vec3 n12 = n2 - n1;
+        Vec3 n13 = n3 - n1;
+
+        Vec3 x_axis = n12 / n12.norm();
+        Vec3 z_axis = n12.cross(n13) / (n12.cross(n13)).norm();
+        Vec3 y_axis = z_axis.cross(x_axis);
+
+        // for each node calculate the local x,y coordinates by projecting onto the axes
+        StaticMatrix<3, 3> res;
+        res.row(0) = x_axis.transpose();
+        res.row(1) = y_axis.transpose();
+        res.row(2) = z_axis.transpose();
         return res;
     }
-    StaticMatrix<4,3> thickness_times_directions() {
-        auto shell_dir = shell_directions();
-        Vec4 thickness = thicknesses();
-        StaticMatrix<4,3> res;
-        for(int i = 0; i < 4; i++) {
-            res.row(i) = thickness(i) * shell_dir.row(i);
+
+    StaticMatrix<24,24> transformation() {
+        // Assumption is that the element is planar
+        // deviations of that will produce inaccurate results
+        // finding the transformation matrix is straight forward
+        // the x-axis will be aligned with the direction from node 1 to node 2
+        // the z-axis will be perpendicular to the plane of the element
+        // the y-axis will be the cross product of the other two
+        auto axes = get_xyz_axes();
+        StaticMatrix<24,24> res = StaticMatrix<24,24>::Zero();
+        for (int i = 0; i < 8; ++i) { // Loop over the 8 nodes
+            res.block<3, 3>(3 * i, 3 * i) = axes;
         }
         return res;
     }
+
+    // when assuming a planar element, the normal is constant
+    // we can also project the shell and use a local x,y system
+    // this must not be confused with the local r,s system which is used for integration
+    Mat42 get_xy_coords() {
+        StaticMatrix<4, 3> node_coords = this->node_coords_global();
+        StaticMatrix<4, 2> xy_coords;
+
+        Vec3 n1 = node_coords.row(0);
+        Vec3 n2 = node_coords.row(1);
+        Vec3 n3 = node_coords.row(2);
+        Vec3 n4 = node_coords.row(3);
+
+        Vec3 n12 = n2 - n1;
+        Vec3 n13 = n3 - n1;
+        Vec3 n14 = n4 - n1;
+
+        Vec3 x_axis = n12 / n12.norm();
+        Vec3 z_axis = n12.cross(n13) / (n12.cross(n13)).norm();
+        Vec3 y_axis = z_axis.cross(x_axis);
+
+        // for each node calculate the local x,y coordinates by projecting onto the axes
+        xy_coords(0, 0) = 0;
+        xy_coords(0, 1) = 0;
+
+        xy_coords(1, 0) = n12.dot(x_axis);
+        xy_coords(1, 1) = n12.dot(y_axis);
+
+        xy_coords(2, 0) = n13.dot(x_axis);
+        xy_coords(2, 1) = n13.dot(y_axis);
+
+        xy_coords(3, 0) = n14.dot(x_axis);
+        xy_coords(3, 1) = n14.dot(y_axis);
+        return xy_coords;
+    }
+
+    // when assuming a planar element, the normal is constant
+    // one can simply retrieve it from the local xyz axes
+    Vec3 get_normal() {
+        return get_xyz_axes().row(2).transpose();
+    }
+
+    Vec4 shape_function(Precision r, Precision s) {
+        return geometry.shape_function(r, s);
+    }
+
+    Mat42 shape_derivative(Precision r, Precision s) {
+        return geometry.shape_derivative(r, s);
+    }
+
+    // function which relates derivatives in the local r,s to the local x,y system
+    // the entries will contain the mapping
+    // [dx/dr, dy/dr]
+    // [dx/ds, dy/ds]
+    // x = N1*x1 + N2*x2 + N3*x3 + N4*x4
+    // y = N1*y1 + N2*y2 + N3*y3 + N4*y4
+    // hence the derivatives are
+    // dx/dr = dN1/dr*x1 + dN2/dr*x2 + dN3/dr*x3 + dN4/dr*x4
+    Mat2 jacobian() {
+        // computing the jacobian is done by computing the derivatives of the shape functions
+        // with the local x,y system
+        Mat42 xy_coords = get_xy_coords();
+        Mat42 shape_derivatives = shape_derivative(0, 0);
+
+        Mat2 jacobian;
+        jacobian(0, 0) = shape_derivatives.col(0).dot(xy_coords.col(0));
+        jacobian(0, 1) = shape_derivatives.col(0).dot(xy_coords.col(1));
+        jacobian(1, 0) = shape_derivatives.col(1).dot(xy_coords.col(0));
+        jacobian(1, 1) = shape_derivatives.col(1).dot(xy_coords.col(1));
+        return jacobian;
+    }
+
+    StaticMatrix<3, 12> strain_disp_bending(Precision r, Precision s) {
+        auto shape_der = shape_derivative(r, s);
+        auto jacobian = this->jacobian();
+
+        Mat2 inv = jacobian.inverse();
+
+        auto dH = (inv * shape_der.transpose());
+
+
+        StaticMatrix<3, 12> res{};
+        // dofs are displacement in z, rotation around x, rotation around y
+        // its only a function of the rotational dofs (second derivative of displacement)
+        res <<
+            0,    0,     -dH(0, 0), 0,    0,     -dH(0, 1), 0,    0,     -dH(0, 2), 0,    0,     -dH(0, 3),
+            0, dH(1, 0),     0,     0, dH(1, 1),     0,     0, dH(1, 2),     0,     0, dH(1, 3),     0    ,
+            0, dH(0, 0), -dH(1, 0), 0, dH(0, 1), -dH(1, 1), 0, dH(0, 2), -dH(1, 2), 0, dH(0, 3), -dH(1, 3);
+        return res;
+    }
+
+    StaticMatrix<2, 12> strain_disp_shear(Precision r, Precision s) {
+        auto shape_der = shape_derivative(r, s);
+        auto jacobian = this->jacobian();
+        auto H = shape_function(r, s);
+        auto dH = (jacobian.inverse() * shape_der.transpose());
+
+        StaticMatrix<2, 12> res{};
+        // dofs are displacement in z, rotation around x, rotation around y
+        // its only a function of the rotational dofs (second derivative of displacement)
+        res <<
+            dH(0,0),  0, H(0), dH(0,1),  0, H(1), dH(0,2),  0, H(2), dH(0,3),  0, H(3),
+            dH(1,0),-H(0),  0, dH(1,1),-H(1),  0, dH(1,2),-H(2),  0, dH(1,3),-H(3), 0;
+        return res;
+    }
+
+    StaticMatrix<3, 8> strain_disp_membrane(Precision r, Precision s) {
+        auto shape_der = shape_derivative(r, s);
+        auto jacobian = this->jacobian();
+
+        auto dH = (jacobian.inverse() * shape_der.transpose());
+        StaticMatrix<3, 8> res{};
+        res << dH(0,0), 0      , dH(0,1), 0      , dH(0,2), 0      , dH(0,3), 0      ,
+                   0  , dH(1,0), 0      , dH(1,1), 0      , dH(1,2), 0      , dH(1,3),
+               dH(1,0), dH(0,0), dH(1,1), dH(0,1), dH(1,2), dH(0,2), dH(1,3), dH(0,3);
+        return res;
+    }
+
+    StaticMatrix<24, 24> stiffness_bending() {
+        auto mat_bend  = get_elasticity()->get_bend(this->get_section()->thickness);
+        auto mat_shear = get_elasticity()->get_shear(this->get_section()->thickness);
+
+        std::function<StaticMatrix<12, 12>(Precision, Precision, Precision)> func_bend =
+            [this, mat_bend](Precision r, Precision s, Precision t) -> StaticMatrix<12, 12> {
+                Precision det;
+
+                auto jac = this->jacobian();
+                auto jac_det = jac.determinant();
+                auto B = this->strain_disp_bending(r, s);
+                auto E = mat_bend;
+                return B.transpose() * (E * B) * jac_det;
+        };
+
+        std::function<StaticMatrix<12, 12>(Precision, Precision, Precision)> func_shear =
+            [this, mat_shear](Precision r, Precision s, Precision t) -> StaticMatrix<12, 12> {
+                Precision det;
+                auto jac = this->jacobian();
+                auto jac_det = jac.determinant();
+                auto B = this->strain_disp_shear(r, s);
+                auto E = mat_shear;
+                return B.transpose() * (E * B) * jac_det;
+        };
+
+
+        StaticMatrix<12, 12> stiff_bend = this->integration_scheme().integrate(func_bend);
+        StaticMatrix<12, 12> stiff_shear = this->integration_scheme().integrate(func_shear);
+        StaticMatrix<12, 12> stiff_local = stiff_bend + stiff_shear;
+
+        std::cout << stiff_local << std::endl;
+
+        Precision            k_drill     = std::min({stiff_local(1, 1),
+                                                     stiff_local(2, 2),
+                                                     stiff_local(4, 4),
+                                                     stiff_local(5, 5),
+                                                     stiff_local(7, 7),
+                                                     stiff_local(8, 8),
+                                                     stiff_local(10, 10),
+                                                     stiff_local(11, 11)}) / 1000;
+        StaticMatrix<24, 24> res;
+        res.setZero();
+
+        int index_map[] {
+            2,  // z
+            3,  // rx
+            4,  // ry
+            8,  // z
+            9,  // rx
+            10, // ry
+            14, // z
+            15, // rx
+            16, // ry
+            20, // z
+            21, // rx
+            22  // ry
+        };
+
+        for(Index i = 0; i < 12; i++) {
+            for(Index j = 0; j < 12; j++) {
+                res(index_map[i], index_map[i]) = stiff_local(i, j);
+            }
+        }
+        res(5,5) = k_drill;
+        res(11,11) = k_drill;
+        res(17,17) = k_drill;
+        res(23,23) = k_drill;
+
+        return res;
+    }
+
+    StaticMatrix<24, 24> stiffness_membrane() {
+        auto mat_membrane = get_elasticity()->get_memb();
+        std::function<StaticMatrix<8, 8>(Precision, Precision, Precision)> func_membrane =
+            [this, &mat_membrane](Precision r, Precision s, Precision t) -> StaticMatrix<8, 8> {
+                Precision det;
+                auto jac = this->jacobian();
+                auto jac_det = jac.determinant();
+                auto B = this->strain_disp_membrane(r, s);
+                auto E = mat_membrane;
+                return B.transpose() * (E * B) * jac_det;
+        };
+
+        int index_map[] {
+            0, 1,
+            6, 7,
+            12, 13,
+            18, 19
+        };
+        StaticMatrix<8, 8> stiff_membrane = this->integration_scheme().integrate(func_membrane);
+        std::cout << stiff_membrane << std::endl;
+
+        StaticMatrix<24, 24> res;
+        res.setZero();
+        for(Index i = 0; i < 8; i++) {
+            for(Index j = 0; j < 8; j++) {
+                res(index_map[i], index_map[i]) = stiff_membrane(i, j);
+            }
+        }
+        return res;
+    }
+
 
     const quadrature::Quadrature& integration_scheme() const override {
         return integration_scheme_;
-    }
-
-    Mat3 covariant(const Vec3& pos) {
-        // derivative of X w.r.t r
-        auto node_coords_glob = this->node_coords_global();
-        auto dX0drs           = geometry.jacobian(node_coords_glob, pos(0), pos(1));
-        auto N                = geometry.shape_function(pos(0), pos(1));
-        auto dNdrs            = geometry.shape_derivative(pos(0), pos(1));
-
-        // thickness x normal at each corner (4 x 3)
-        auto hv_corner = thickness_times_directions();
-
-        auto dNdr      = dNdrs.col(0);
-        auto dNds      = dNdrs.col(1);
-
-        // derivative of (hv(r,s) w.r.t r and s
-        auto dNdrhv = hv_corner.transpose() * dNdr;
-        auto dNdshv = hv_corner.transpose() * dNds;
-
-        Vec3 dXdr = dX0drs.col(0) + pos(2) / 2 * dNdrhv;
-        Vec3 dXds = dX0drs.col(1) + pos(2) / 2 * dNdshv;
-        Vec3 dXdt = 0.5 * hv_corner.transpose() * N;
-
-        Mat3 res;
-        res << dXdr, dXds, dXdt;
-        return res;
-    }
-    Mat3 contravariant(const Mat3& covariant) {
-        Vec3 gr = covariant.col(0);
-        Vec3 gs = covariant.col(1);
-        Vec3 gt = covariant.col(2);
-
-        Precision grgsgt = gr.dot(gs.cross(gt));
-
-        Vec3 contra_gr = gs.cross(gt) / grgsgt;
-        Vec3 contra_gs = gt.cross(gr) / grgsgt;
-        Vec3 contra_gt = gr.cross(gs) / grgsgt;
-
-        Mat3 res;
-        res << contra_gr, contra_gs, contra_gt;
-        return res;
-    }
-    Mat3 localbasis(const Mat3& covariant) {
-        Vec3 gr = covariant.col(0);
-        Vec3 gs = covariant.col(1);
-        Vec3 gt = covariant.col(2);
-
-        Vec3 e3 = gt / gt.norm();
-        Vec3 e1 = gs.cross(e3) / gs.cross(e3).norm();
-        Vec3 e2 = e3.cross(e1);
-    }
-
-    StaticMatrix<6, 6 * 4> strain_displacement(const Vec3& pos) {
-        Precision r = pos(0);
-        Precision s = pos(1);
-        Precision t = pos(2);
-
-        StaticMatrix<6, 6 * 4> res{};
-
-        // derivatives of shape functions w.r.t r and s
-        auto dN = geometry.shape_derivative(r, s);
-        auto dNr = dN.col(0);
-        auto dNs = dN.col(1);
-
-        auto covariant = this->covariant(pos);
-        auto gr = covariant.col(0);
-        auto gs = covariant.col(1);
-        auto gt = covariant.col(2);
-
-        auto hv_mat = this->thickness_times_directions();
-
-        for(ID local_id = 0; local_id < 4; local_id++) {
-
-            Index dof_1 = 6 * local_id;
-            Index dof_2 = 6 * local_id + 1;
-            Index dof_3 = 6 * local_id + 2;
-            Index dof_4 = 6 * local_id + 3;
-            Index dof_5 = 6 * local_id + 4;
-            Index dof_6 = 6 * local_id + 5;
-
-            // extract variables for this dof
-            Vec3 hv = hv_mat.col(local_id);
-
-            auto dNi_dr = dNr(local_id);
-            auto dNi_ds = dNs(local_id);
-
-            int x = 0;
-            int y = 1;
-            int z = 2;
-
-            // strain e11
-            // u_1x  gx*Derivative(N1(r, s), r)
-            // u_1y  gy*Derivative(N1(r, s), r)
-            // u_1z  gz*Derivative(N1(r, s), r)
-            // theta_1x -gy*h_1*t*v_1z*Derivative(N1(r, s), r)/2 + gz*h_1*t*v_1y*Derivative(N1(r, s), r)/2
-            // theta_1y  gx*h_1*t*v_1z*Derivative(N1(r, s), r)/2 - gz*h_1*t*v_1x*Derivative(N1(r, s), r)/2
-            // theta_1z -gx*h_1*t*v_1y*Derivative(N1(r, s), r)/2 + gy*h_1*t*v_1x*Derivative(N1(r, s), r)/2
-            res(0, dof_1) = gr(x) * dNi_dr;
-            res(0, dof_2) = gr(y) * dNi_dr;
-            res(0, dof_3) = gr(z) * dNi_dr;
-
-            res(0, dof_4) = (gr(z) * hv(y) - gr(y) * hv(z)) * t * dNi_dr / 2;
-            res(0, dof_5) = (gr(x) * hv(z) - gr(z) * hv(x)) * t * dNi_dr / 2;
-            res(0, dof_6) = (gr(y) * hv(x) - gr(x) * hv(y)) * t * dNi_dr / 2;
-
-            // strain e22
-            // u_1x gx*Derivative(N1(r, s), s)
-            // u_1y gy*Derivative(N1(r, s), s)
-            // u_1z gz*Derivative(N1(r, s), s)
-            // theta_1x -gy*h_1*t*v_1z*Derivative(N1(r, s), s)/2 + gz*h_1*t*v_1y*Derivative(N1(r, s), s)/2
-            // theta_1y  gx*h_1*t*v_1z*Derivative(N1(r, s), s)/2 - gz*h_1*t*v_1x*Derivative(N1(r, s), s)/2
-            // theta_1z -gx*h_1*t*v_1y*Derivative(N1(r, s), s)/2 + gy*h_1*t*v_1x*Derivative(N1(r, s), s)/2
-            res(1, dof_1) = gs(x) * dNi_ds;
-            res(1, dof_2) = gs(y) * dNi_ds;
-            res(1, dof_3) = gs(z) * dNi_ds;
-            res(1, dof_4) = (gs(z) * hv(y) - gs(y) * hv(z)) * t * dNi_ds / 2;
-            res(1, dof_5) = (gs(x) * hv(z) - gs(z) * hv(x)) * t * dNi_ds / 2;
-            res(1, dof_6) = (gs(y) * hv(x) - gs(x) * hv(y)) * t * dNi_ds / 2;
-
-            // strain e33 = 0
-            res(2, dof_1) = 0;
-            res(2, dof_2) = 0;
-            res(2, dof_3) = 0;
-            res(2, dof_4) = 0;
-            res(2, dof_5) = 0;
-            res(2, dof_6) = 0;
-
-            // strain e23
-            // u_1x gtx*Derivative(N1(r, s), s)
-            // u_1y gty*Derivative(N1(r, s), s)
-            // u_1z gtz*Derivative(N1(r, s), s)
-            // theta_1x -gsy*h_1*v_1z*N1(r, s)/2 + gsz*h_1*v_1y*N1(r, s)/2 - gty*h_1*t*v_1z*Derivative(N1(r, s), s)/2 + gtz*h_1*t*v_1y*Derivative(N1(r, s), s)/2
-            // theta_1y gsx*h_1*v_1z*N1(r, s)/2 - gsz*h_1*v_1x*N1(r, s)/2 + gtx*h_1*t*v_1z*Derivative(N1(r, s), s)/2 - gtz*h_1*t*v_1x*Derivative(N1(r, s), s)/2
-            // theta_1z -gsx*h_1*v_1y*N1(r, s)/2 + gsy*h_1*v_1x*N1(r, s)/2 - gtx*h_1*t*v_1y*Derivative(N1(r, s), s)/2 + gty*h_1*t*v_1x*Derivative(N1(r, s), s)/2
-            res(3, dof_1) = gt(x) * dNi_ds;
-            res(3, dof_2) = gt(y) * dNi_ds;
-            res(3, dof_3) = gt(z) * dNi_ds;
-            res(3, dof_4) = (gs(z) * hv(y) - gs(y) * hv(z)) * dNi_ds / 2;
-            res(3, dof_5) = (gs(x) * hv(z) - gs(z) * hv(x)) * dNi_ds / 2;
-            res(3, dof_6) = (gs(y) * hv(x) - gs(x) * hv(y)) * dNi_ds / 2;
-
-            //---- e13 ----
-            // u_1x gtx*Derivative(N1(r, s), r)
-            // u_1y gty*Derivative(N1(r, s), r)
-            // u_1z gtz*Derivative(N1(r, s), r)
-            // theta_1x -gry*h_1*v_1z*N1(r, s)/2 + grz*h_1*v_1y*N1(r, s)/2 - gty*h_1*t*v_1z*Derivative(N1(r, s), r)/2 + gtz*h_1*t*v_1y*Derivative(N1(r, s), r)/2
-            // theta_1y grx*h_1*v_1z*N1(r, s)/2 - grz*h_1*v_1x*N1(r, s)/2 + gtx*h_1*t*v_1z*Derivative(N1(r, s), r)/2 - gtz*h_1*t*v_1x*Derivative(N1(r, s), r)/2
-            // theta_1z -grx*h_1*v_1y*N1(r, s)/2 + gry*h_1*v_1x*N1(r, s)/2 - gtx*h_1*t*v_1y*Derivative(N1(r, s), r)/2 + gty*h_1*t*v_1x*Derivative(N1(r, s), r)/2
-            res(4, dof_1) = gt(x) * dNi_dr;
-            res(4, dof_2) = gt(y) * dNi_dr;
-            res(4, dof_3) = gt(z) * dNi_dr;
-            res(4, dof_4) = (gr(z) * hv(y) - gr(y) * hv(z)) * dNi_dr / 2;
-            res(4, dof_5) = (gr(x) * hv(z) - gr(z) * hv(x)) * dNi_dr / 2;
-            res(4, dof_6) = (gr(y) * hv(x) - gr(x) * hv(y)) * dNi_dr / 2;
-
-            // u_1x grx*Derivative(N1(r, s), s) + gsx*Derivative(N1(r, s), r)
-            // u_1y gry*Derivative(N1(r, s), s) + gsy*Derivative(N1(r, s), r)
-            // u_1z grz*Derivative(N1(r, s), s) + gsz*Derivative(N1(r, s), r)
-            // theta_1x -gry*h_1*t*v_1z*Derivative(N1(r, s), s)/2 + grz*h_1*t*v_1y*Derivative(N1(r, s), s)/2 - gsy*h_1*t*v_1z*Derivative(N1(r, s), r)/2 + gsz*h_1*t*v_1y*Derivative(N1(r, s), r)/2
-            // theta_1y grx*h_1*t*v_1z*Derivative(N1(r, s), s)/2 - grz*h_1*t*v_1x*Derivative(N1(r, s), s)/2 + gsx*h_1*t*v_1z*Derivative(N1(r, s), r)/2 - gsz*h_1*t*v_1x*Derivative(N1(r, s), r)/2
-            // theta_1z -grx*h_1*t*v_1y*Derivative(N1(r, s), s)/2 + gry*h_1*t*v_1x*Derivative(N1(r, s), s)/2 - gsx*h_1*t*v_1y*Derivative(N1(r, s), r)/2 + gsy*h_1*t*v_1x*Derivative(N1(r, s), r)/2
-            res(5, dof_1) = gr(x) * dNi_ds + gs(x) * dNi_dr;
-            res(5, dof_2) = gr(y) * dNi_ds + gs(y) * dNi_dr;
-            res(5, dof_3) = gr(z) * dNi_ds + gs(z) * dNi_dr;
-            res(5, dof_4) = (gr(z) * hv(y) - gr(y) * hv(z)) * dNi_ds / 2 + (gs(z) * hv(y) - gs(y) * hv(z)) * dNi_dr / 2;
-            res(5, dof_5) = (gr(x) * hv(z) - gr(z) * hv(x)) * dNi_ds / 2 + (gs(x) * hv(z) - gs(z) * hv(x)) * dNi_dr / 2;
-            res(5, dof_6) = (gr(y) * hv(x) - gr(x) * hv(y)) * dNi_ds / 2 + (gs(y) * hv(x) - gs(x) * hv(y)) * dNi_dr / 2;
-        }
     }
 
 
@@ -241,14 +302,32 @@ struct MITC4 : ShellElement<4> {
         return 0;
     }
     MapMatrix  stiffness(Precision* buffer) override {
-        auto covariant = this->covariant(Vec3{0,0,0});
-        std::cout << covariant << std::endl;
-        exit(0);
-        return MapMatrix(buffer, 4, 4);
+        MapMatrix mapped{buffer, 24, 24};
+        auto trans = transformation();
+
+        std::cout << trans << std::endl;
+        try {
+            std::cout << stiffness_bending() << std::endl;
+        } catch (std::exception& e) {
+            std::cout << e.what() << std::endl;
+        }
+        try {
+            std::cout << stiffness_membrane() << std::endl;
+        } catch (std::exception& e) {
+            std::cout << e.what() << std::endl;
+        }
+
+        auto stiff = stiffness_bending() + stiffness_membrane();
+        mapped = trans.transpose() * stiff * trans;
+        return mapped;
     }
     MapMatrix  mass(Precision* buffer) override {
         return MapMatrix(buffer, 4, 4);
     }
+
+
+
+
 };
 
 }
@@ -257,4 +336,4 @@ struct MITC4 : ShellElement<4> {
 
 
 
-#endif //MITC4_H
+#endif //S4_H

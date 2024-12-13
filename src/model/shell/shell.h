@@ -29,7 +29,7 @@ struct ShellElement : StructuralElement {
         return this->_section->as<ShellSection>();
     }
     material::MaterialPtr get_material() {
-        BeamSection* section = get_section();
+        ShellSection* section = get_section();
         if (!section->material) {
             logging::error(false, "Material not set for element ", this->elem_id);
         }
@@ -53,11 +53,6 @@ struct ShellElement : StructuralElement {
     virtual MapMatrix  mass(Precision* buffer) override = 0;
 
     virtual const fem::quadrature::Quadrature& integration_scheme() const = 0;
-
-    virtual Mat3 covariant(const Vec3& pos);
-    virtual Mat3 contravariant(const Vec3& pos);
-
-
 
     //
     StaticMatrix<N, 3> node_coords_global() {
@@ -89,12 +84,34 @@ struct ShellElement : StructuralElement {
     }
 
     // not implemented
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {};
-    void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override{};
-    void apply_vload(NodeData& node_loads, Vec3 load) override{};
-    void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override{};
-    void compute_compliance(NodeData& displacement, ElementData& result) override{};
-    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override{};
+    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+        (void) displacement;
+        (void) stress;
+        (void) strain;
+    };
+    void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override {
+        (void) displacement;
+        (void) stress;
+        (void) strain;
+        (void) xyz;
+    };
+    void apply_vload(NodeData& node_loads, Vec3 load) override {
+        (void) node_loads;
+        (void) load;
+    };
+    void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {
+        (void) node_loads;
+        (void) node_temp;
+        (void) ref_temp;
+    };
+    void compute_compliance(NodeData& displacement, ElementData& result) override {
+        (void) displacement;
+        (void) result;
+    };
+    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override {
+        (void) displacement;
+        (void) result;
+    };
 };
 }
 

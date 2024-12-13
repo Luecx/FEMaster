@@ -91,9 +91,17 @@ using Vec3 = StaticVector<3>; ///< 3D vector
 using Vec4 = StaticVector<4>; ///< 4D vector
 using Vec6 = StaticVector<6>; ///< 6D vector
 
+using Mat2 = StaticMatrix<2, 2>; ///< 2x2 matrix
 using Mat3 = StaticMatrix<3, 3>; ///< 3x3 matrix
 using Mat6 = StaticMatrix<6, 6>; ///< 6x6 matrix
 using Mat4 = StaticMatrix<4, 4>; ///< 4x4 matrix
+
+using Mat42 = StaticMatrix<4, 2>; ///< 4x2 matrix
+using Mat24 = StaticMatrix<2, 4>; ///< 2x4 matrix
+using Mat32 = StaticMatrix<3, 2>; ///< 3x2 matrix
+using Mat23 = StaticMatrix<2, 3>; ///< 2x3 matrix
+using Mat43 = StaticMatrix<4, 3>; ///< 4x3 matrix
+using Mat34 = StaticMatrix<3, 4>; ///< 3x4 matrix
 
 /******************************************************************************
 * @brief Index and Boolean matrix types for FEM system DOFs and IDs.
