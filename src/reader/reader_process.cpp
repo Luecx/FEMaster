@@ -186,9 +186,19 @@ void Reader::process_elements() {
         } else if (type == "P") {
             auto values = gather_values(1);
             m_model->set_element<fem::model::Point>(id, values[0]);
+        } else if (type == "S3") {
+            auto values = gather_values(3);
+            m_model->set_element<fem::model::S3>(id, values[0], values[1], values[2]);
         } else if (type == "S4") {
             auto values = gather_values(4);
             m_model->set_element<fem::model::S4>(id, values[0], values[1], values[2], values[3]);
+        } else if (type == "S6") {
+            auto values = gather_values(6);
+            m_model->set_element<fem::model::S6>(id, values[0], values[1], values[2], values[3], values[4], values[5]);
+        } else if (type == "S8") {
+            auto values = gather_values(8);
+            m_model->set_element<fem::model::S8>(id, values[0], values[1], values[2], values[3],
+                                                     values[4], values[5], values[6], values[7]);
         } else {
             logging::warning(false, "Unknown element type ", type);
             return;

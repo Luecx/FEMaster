@@ -7,6 +7,9 @@
 
 #include "shell.h"
 #include "../geometry/surface/surface4.h"
+#include "../geometry/surface/surface8.h"
+#include "../geometry/surface/surface3.h"
+#include "../geometry/surface/surface6.h"
 
 // this file is partially based on the implementation of
 // https://github.com/JWock82/Pynite/blob/main/Archived/S4.py
@@ -14,30 +17,26 @@
 
 namespace fem::model {
 
-struct S4 : ShellElement<4> {
-
-    Surface4 geometry;
+template<Index N, typename SFType, quadrature::Domain INT_D, quadrature::Order INT_O>
+struct DefaultShellElement : public ShellElement<N> {
+    SFType geometry;
     quadrature::Quadrature integration_scheme_;
 
-    S4(ID p_elem_id, const std::array<ID, 4>& p_node_ids)
-        : ShellElement<4>(p_elem_id, p_node_ids),
-            geometry(p_node_ids),
-            integration_scheme_(quadrature::DOMAIN_ISO_QUAD, quadrature::ORDER_CUBIC) {
-    }
-    ~S4() override = default;
-
+    DefaultShellElement(ID p_elem_id, std::array<ID, N> p_node)
+        : ShellElement<N>(p_elem_id, p_node)
+        , geometry(p_node)
+        , integration_scheme_(INT_D, INT_O) {}
+    ~DefaultShellElement() override = default;
 
     // when assuming a planar element, the normal is constant
     // we can also project the shell and use a local x,y system
     // this must not be confused with the local r,s system which is used for integration
     Mat3 get_xyz_axes() {
-        StaticMatrix<4, 3> node_coords = this->node_coords_global();
-        StaticMatrix<4, 2> xy_coords;
+        StaticMatrix<N, 3> node_coords = this->node_coords_global();
 
         Vec3 n1 = node_coords.row(0);
         Vec3 n2 = node_coords.row(1);
         Vec3 n3 = node_coords.row(2);
-        Vec3 n4 = node_coords.row(3);
 
         Vec3 n12 = n2 - n1;
         Vec3 n13 = n3 - n1;
@@ -54,53 +53,38 @@ struct S4 : ShellElement<4> {
         return res;
     }
 
-    StaticMatrix<24,24> transformation() {
-        // Assumption is that the element is planar
-        // deviations of that will produce inaccurate results
-        // finding the transformation matrix is straight forward
-        // the x-axis will be aligned with the direction from node 1 to node 2
-        // the z-axis will be perpendicular to the plane of the element
-        // the y-axis will be the cross product of the other two
+    // Assumption is that the element is planar
+    // deviations of that will produce inaccurate results
+    // finding the transformation matrix is straight forward
+    // the x-axis will be aligned with the direction from node 1 to node 2
+    // the z-axis will be perpendicular to the plane of the element
+    // the y-axis will be the cross product of the other two
+    StaticMatrix<N*6,N*6> transformation() {
         auto axes = get_xyz_axes();
-        StaticMatrix<24,24> res = StaticMatrix<24,24>::Zero();
-        for (int i = 0; i < 8; ++i) { // Loop over the 8 nodes
-            res.block<3, 3>(3 * i, 3 * i) = axes;
+        StaticMatrix<N*6,N*6> res = StaticMatrix<N*6,N*6>::Zero();
+        for (int i = 0; i < 2*N; ++i) { // Loop over the 8 nodes
+            res.template block<3, 3>(3 * i, 3 * i) = axes;
         }
         return res;
     }
 
-    // when assuming a planar element, the normal is constant
-    // we can also project the shell and use a local x,y system
-    // this must not be confused with the local r,s system which is used for integration
-    Mat42 get_xy_coords() {
-        StaticMatrix<4, 3> node_coords = this->node_coords_global();
-        StaticMatrix<4, 2> xy_coords;
 
-        Vec3 n1 = node_coords.row(0);
-        Vec3 n2 = node_coords.row(1);
-        Vec3 n3 = node_coords.row(2);
-        Vec3 n4 = node_coords.row(3);
+    StaticMatrix<N, 2> get_xy_coords() {
+        StaticMatrix<N, 3> node_coords = this->node_coords_global();
 
-        Vec3 n12 = n2 - n1;
-        Vec3 n13 = n3 - n1;
-        Vec3 n14 = n4 - n1;
-
-        Vec3 x_axis = n12 / n12.norm();
-        Vec3 z_axis = n12.cross(n13) / (n12.cross(n13)).norm();
-        Vec3 y_axis = z_axis.cross(x_axis);
+        Mat3 axes = get_xyz_axes();
+        Vec3 x_axis = axes.row(0).transpose();
+        Vec3 y_axis = axes.row(1).transpose();
 
         // for each node calculate the local x,y coordinates by projecting onto the axes
-        xy_coords(0, 0) = 0;
-        xy_coords(0, 1) = 0;
-
-        xy_coords(1, 0) = n12.dot(x_axis);
-        xy_coords(1, 1) = n12.dot(y_axis);
-
-        xy_coords(2, 0) = n13.dot(x_axis);
-        xy_coords(2, 1) = n13.dot(y_axis);
-
-        xy_coords(3, 0) = n14.dot(x_axis);
-        xy_coords(3, 1) = n14.dot(y_axis);
+        StaticMatrix<N, 2> xy_coords;
+        for (Index i = 0; i < N; i++) {
+            Vec3 ni = node_coords.row(i);
+            Vec3 n0 = node_coords.row(0);
+            Vec3 n = ni - n0;
+            xy_coords(i, 0) = n.dot(x_axis);
+            xy_coords(i, 1) = n.dot(y_axis);
+        }
         return xy_coords;
     }
 
@@ -110,11 +94,11 @@ struct S4 : ShellElement<4> {
         return get_xyz_axes().row(2).transpose();
     }
 
-    Vec4 shape_function(Precision r, Precision s) {
+    auto shape_function(Precision r, Precision s) {
         return geometry.shape_function(r, s);
     }
 
-    Mat42 shape_derivative(Precision r, Precision s) {
+    auto shape_derivative(Precision r, Precision s) {
         return geometry.shape_derivative(r, s);
     }
 
@@ -129,8 +113,8 @@ struct S4 : ShellElement<4> {
     Mat2 jacobian() {
         // computing the jacobian is done by computing the derivatives of the shape functions
         // with the local x,y system
-        Mat42 xy_coords = get_xy_coords();
-        Mat42 shape_derivatives = shape_derivative(0, 0);
+        auto xy_coords = get_xy_coords();
+        auto shape_derivatives = shape_derivative(0, 0);
 
         Mat2 jacobian;
         jacobian(0, 0) = shape_derivatives.col(0).dot(xy_coords.col(0));
@@ -140,7 +124,8 @@ struct S4 : ShellElement<4> {
         return jacobian;
     }
 
-    StaticMatrix<3, 12> strain_disp_bending(Precision r, Precision s) {
+
+    StaticMatrix<3, N*3> strain_disp_bending(Precision r, Precision s) {
         auto shape_der = shape_derivative(r, s);
         auto jacobian = this->jacobian();
 
@@ -149,49 +134,86 @@ struct S4 : ShellElement<4> {
         auto dH = (inv * shape_der.transpose());
 
 
-        StaticMatrix<3, 12> res{};
+        StaticMatrix<3, N*3> res{};
+
         // dofs are displacement in z, rotation around x, rotation around y
         // its only a function of the rotational dofs (second derivative of displacement)
-        res <<
-            0,    0,     -dH(0, 0), 0,    0,     -dH(0, 1), 0,    0,     -dH(0, 2), 0,    0,     -dH(0, 3),
-            0, dH(1, 0),     0,     0, dH(1, 1),     0,     0, dH(1, 2),     0,     0, dH(1, 3),     0    ,
-            0, dH(0, 0), -dH(1, 0), 0, dH(0, 1), -dH(1, 1), 0, dH(0, 2), -dH(1, 2), 0, dH(0, 3), -dH(1, 3);
+        for(int i = 0; i < N; i++) {
+            res(0, 3*i  ) = 0;
+            res(0, 3*i+1) = 0;
+            res(0, 3*i+2) = -dH(0, i);
+
+            res(1, 3*i  ) = 0;
+            res(1, 3*i+1) = dH(1, i);
+            res(1, 3*i+2) = 0;
+
+            res(2, 3*i  ) = 0;
+            res(2, 3*i+1) = dH(0, i);
+            res(2, 3*i+2) = -dH(1, i);
+        }
+        // res <<
+        //     0,    0,     -dH(0, 0), 0,    0,     -dH(0, 1), 0,    0,     -dH(0, 2), 0,    0,     -dH(0, 3),
+        //     0, dH(1, 0),     0,     0, dH(1, 1),     0,     0, dH(1, 2),     0,     0, dH(1, 3),     0    ,
+        //     0, dH(0, 0), -dH(1, 0), 0, dH(0, 1), -dH(1, 1), 0, dH(0, 2), -dH(1, 2), 0, dH(0, 3), -dH(1, 3);
         return res;
     }
 
-    StaticMatrix<2, 12> strain_disp_shear(Precision r, Precision s) {
+    StaticMatrix<2, 3 * N> strain_disp_shear(Precision r, Precision s) {
         auto shape_der = shape_derivative(r, s);
         auto jacobian = this->jacobian();
         auto H = shape_function(r, s);
         auto dH = (jacobian.inverse() * shape_der.transpose());
 
-        StaticMatrix<2, 12> res{};
-        // dofs are displacement in z, rotation around x, rotation around y
-        // its only a function of the rotational dofs (second derivative of displacement)
-        res <<
-            dH(0,0),  0, H(0), dH(0,1),  0, H(1), dH(0,2),  0, H(2), dH(0,3),  0, H(3),
-            dH(1,0),-H(0),  0, dH(1,1),-H(1),  0, dH(1,2),-H(2),  0, dH(1,3),-H(3), 0;
+        // StaticMatrix<2, 12> res{};
+        // // dofs are displacement in z, rotation around x, rotation around y
+        // // its only a function of the rotational dofs (second derivative of displacement)
+        // res <<
+        //     dH(0,0),  0, H(0), dH(0,1),  0, H(1), dH(0,2),  0, H(2), dH(0,3),  0, H(3),
+        //     dH(1,0),-H(0),  0, dH(1,1),-H(1),  0, dH(1,2),-H(2),  0, dH(1,3),-H(3), 0;
+        // return res;
+        StaticMatrix<2, 3 * N> res{};
+        for(int i = 0; i < N; i++) {
+            res(0, 3*i  ) = dH(0, i);
+            res(0, 3*i+1) = 0;
+            res(0, 3*i+2) = H(i);
+
+            res(1, 3*i  ) = dH(1, i);
+            res(1, 3*i+1) = -H(i);
+            res(1, 3*i+2) = 0;
+        }
         return res;
     }
 
-    StaticMatrix<3, 8> strain_disp_membrane(Precision r, Precision s) {
+    StaticMatrix<3, 2 * N> strain_disp_membrane(Precision r, Precision s) {
         auto shape_der = shape_derivative(r, s);
         auto jacobian = this->jacobian();
 
         auto dH = (jacobian.inverse() * shape_der.transpose());
-        StaticMatrix<3, 8> res{};
-        res << dH(0,0), 0      , dH(0,1), 0      , dH(0,2), 0      , dH(0,3), 0      ,
-                   0  , dH(1,0), 0      , dH(1,1), 0      , dH(1,2), 0      , dH(1,3),
-               dH(1,0), dH(0,0), dH(1,1), dH(0,1), dH(1,2), dH(0,2), dH(1,3), dH(0,3);
+        // StaticMatrix<3, 8> res{};
+        // res << dH(0,0), 0      , dH(0,1), 0      , dH(0,2), 0      , dH(0,3), 0      ,
+        //            0  , dH(1,0), 0      , dH(1,1), 0      , dH(1,2), 0      , dH(1,3),
+        //        dH(1,0), dH(0,0), dH(1,1), dH(0,1), dH(1,2), dH(0,2), dH(1,3), dH(0,3);
+        StaticMatrix<3, 2 * N> res{};
+        for(int i = 0; i < N; i++) {
+            res(0, 2*i  ) = dH(0, i);
+            res(0, 2*i+1) = 0;
+
+            res(1, 2*i  ) = 0;
+            res(1, 2*i+1) = dH(1, i);
+
+            res(2, 2*i  ) = dH(1, i);
+            res(2, 2*i+1) = dH(0, i);
+        }
         return res;
     }
 
-    StaticMatrix<24, 24> stiffness_bending() {
-        auto mat_bend  = get_elasticity()->get_bend(this->get_section()->thickness);
-        auto mat_shear = get_elasticity()->get_shear(this->get_section()->thickness);
+    StaticMatrix<6 * N, 6 * N> stiffness_bending() {
 
-        std::function<StaticMatrix<12, 12>(Precision, Precision, Precision)> func_bend =
-            [this, mat_bend](Precision r, Precision s, Precision t) -> StaticMatrix<12, 12> {
+        auto mat_bend  = this->get_elasticity()->get_bend(this->get_section()->thickness);
+        auto mat_shear = this->get_elasticity()->get_shear(this->get_section()->thickness);
+
+        std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_bend =
+            [this, mat_bend](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
                 Precision det;
 
                 auto jac = this->jacobian();
@@ -201,8 +223,8 @@ struct S4 : ShellElement<4> {
                 return B.transpose() * (E * B) * jac_det;
         };
 
-        std::function<StaticMatrix<12, 12>(Precision, Precision, Precision)> func_shear =
-            [this, mat_shear](Precision r, Precision s, Precision t) -> StaticMatrix<12, 12> {
+        std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
+            [this, mat_shear](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
                 Precision det;
                 auto jac = this->jacobian();
                 auto jac_det = jac.determinant();
@@ -212,82 +234,81 @@ struct S4 : ShellElement<4> {
         };
 
 
-        StaticMatrix<12, 12> stiff_bend = this->integration_scheme().integrate(func_bend);
-        StaticMatrix<12, 12> stiff_shear = this->integration_scheme().integrate(func_shear);
-        StaticMatrix<12, 12> stiff_local = stiff_bend + stiff_shear;
+        StaticMatrix<3 * N, 3 * N> stiff_bend  = this->integration_scheme().integrate(func_bend);
+        StaticMatrix<3 * N, 3 * N> stiff_shear = this->integration_scheme().integrate(func_shear);
+        StaticMatrix<3 * N, 3 * N> stiff_local = stiff_bend + stiff_shear;
 
-        std::cout << stiff_local << std::endl;
+        Precision k_drill = 1e32;
+        for(int i = 0; i < N; i++) {
+            k_drill = std::min(k_drill, stiff_local(3*i+1, 3*i+1));
+            k_drill = std::min(k_drill, stiff_local(3*i+2, 3*i+2));
+        }
+        k_drill /= 1000;
 
-        Precision            k_drill     = std::min({stiff_local(1, 1),
-                                                     stiff_local(2, 2),
-                                                     stiff_local(4, 4),
-                                                     stiff_local(5, 5),
-                                                     stiff_local(7, 7),
-                                                     stiff_local(8, 8),
-                                                     stiff_local(10, 10),
-                                                     stiff_local(11, 11)}) / 1000;
-        StaticMatrix<24, 24> res;
+        StaticMatrix<6*N, 6*N> res;
         res.setZero();
 
-        int index_map[] {
-            2,  // z
-            3,  // rx
-            4,  // ry
-            8,  // z
-            9,  // rx
-            10, // ry
-            14, // z
-            15, // rx
-            16, // ry
-            20, // z
-            21, // rx
-            22  // ry
+        int dof_map[] {
+            2, // z
+            3, // rx
+            4, // ry
         };
 
-        for(Index i = 0; i < 12; i++) {
-            for(Index j = 0; j < 12; j++) {
-                res(index_map[i], index_map[i]) = stiff_local(i, j);
+        for(Index i = 0; i < 3*N; i++) {
+            for(Index j = 0; j < 3*N; j++) {
+                auto i_local_id = i / 3;
+                auto j_local_id = j / 3;
+                auto i_dof     = i % 3;
+                auto j_dof     = j % 3;
+
+                auto i_glob_index = i_local_id * 6 + dof_map[i_dof];
+                auto j_glob_index = j_local_id * 6 + dof_map[j_dof];
+
+                res(i_glob_index, j_glob_index) = stiff_local(i, j);
             }
         }
-        res(5,5) = k_drill;
-        res(11,11) = k_drill;
-        res(17,17) = k_drill;
-        res(23,23) = k_drill;
+
+        for(int i = 0; i < N; i++) {
+            res(6*i+5, 6*i+5) = k_drill;
+        }
 
         return res;
     }
 
-    StaticMatrix<24, 24> stiffness_membrane() {
-        auto mat_membrane = get_elasticity()->get_memb();
-        std::function<StaticMatrix<8, 8>(Precision, Precision, Precision)> func_membrane =
-            [this, &mat_membrane](Precision r, Precision s, Precision t) -> StaticMatrix<8, 8> {
+    StaticMatrix<6*N, 6*N> stiffness_membrane() {
+        auto mat_membrane = this->get_elasticity()->get_memb();
+        std::function<StaticMatrix<2*N, 2*N>(Precision, Precision, Precision)> func_membrane =
+            [this, &mat_membrane](Precision r, Precision s, Precision t) -> StaticMatrix<2*N, 2*N> {
                 Precision det;
                 auto jac = this->jacobian();
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_membrane(r, s);
                 auto E = mat_membrane;
-                return B.transpose() * (E * B) * jac_det;
+                return B.transpose() * (E * B) * jac_det * this->get_section()->thickness;
         };
 
-        int index_map[] {
-            0, 1,
-            6, 7,
-            12, 13,
-            18, 19
-        };
-        StaticMatrix<8, 8> stiff_membrane = this->integration_scheme().integrate(func_membrane);
-        std::cout << stiff_membrane << std::endl;
-
-        StaticMatrix<24, 24> res;
+        StaticMatrix<2*N, 2*N> stiff_membrane = this->integration_scheme().integrate(func_membrane);
+        StaticMatrix<6*N, 6*N> res;
         res.setZero();
-        for(Index i = 0; i < 8; i++) {
-            for(Index j = 0; j < 8; j++) {
-                res(index_map[i], index_map[i]) = stiff_membrane(i, j);
+
+        int dof_map [] {
+            0, 1
+        };
+        for(Index i = 0; i < 2*N; i++) {
+            for(Index j = 0; j < 2*N; j++) {
+                auto i_local_id = i / 2;
+                auto j_local_id = j / 2;
+                auto i_dof     = i % 2;
+                auto j_dof     = j % 2;
+
+                auto i_glob_index = i_local_id * 6 + dof_map[i_dof];
+                auto j_glob_index = j_local_id * 6 + dof_map[j_dof];
+
+                res(i_glob_index, j_glob_index) = stiff_membrane(i, j);
             }
         }
         return res;
     }
-
 
     const quadrature::Quadrature& integration_scheme() const override {
         return integration_scheme_;
@@ -302,21 +323,8 @@ struct S4 : ShellElement<4> {
         return 0;
     }
     MapMatrix  stiffness(Precision* buffer) override {
-        MapMatrix mapped{buffer, 24, 24};
+        MapMatrix mapped{buffer, 6*N, 6*N};
         auto trans = transformation();
-
-        std::cout << trans << std::endl;
-        try {
-            std::cout << stiffness_bending() << std::endl;
-        } catch (std::exception& e) {
-            std::cout << e.what() << std::endl;
-        }
-        try {
-            std::cout << stiffness_membrane() << std::endl;
-        } catch (std::exception& e) {
-            std::cout << e.what() << std::endl;
-        }
-
         auto stiff = stiffness_bending() + stiffness_membrane();
         mapped = trans.transpose() * stiff * trans;
         return mapped;
@@ -326,9 +334,26 @@ struct S4 : ShellElement<4> {
     }
 
 
-
-
 };
+
+
+struct S4 : DefaultShellElement<4, Surface4, quadrature::Domain::DOMAIN_ISO_QUAD, quadrature::Order::ORDER_CUBIC> {
+    S4(ID p_elem_id, std::array<ID, 4> p_node)
+        : DefaultShellElement(p_elem_id, p_node) {}
+};
+struct S8 : DefaultShellElement<8, Surface8, quadrature::Domain::DOMAIN_ISO_QUAD, quadrature::Order::ORDER_QUINTIC> {
+    S8(ID p_elem_id, std::array<ID, 8> p_node)
+        : DefaultShellElement(p_elem_id, p_node) {}
+};
+struct S3 : DefaultShellElement<3, Surface3, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_QUINTIC> {
+    S3(ID p_elem_id, std::array<ID, 3> p_node)
+        : DefaultShellElement(p_elem_id, p_node) {}
+};
+struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_QUINTIC> {
+    S6(ID p_elem_id, std::array<ID, 6> p_node)
+        : DefaultShellElement(p_elem_id, p_node) {}
+};
+
 
 }
 
