@@ -12,7 +12,7 @@
 #include "../geometry/surface/surface6.h"
 
 // this file is partially based on the implementation of
-// https://github.com/JWock82/Pynite/blob/main/Archived/S4.py
+// https://github.com/JWock82/Pynite/blob/main/Archived/MITC4.py
 //
 
 namespace fem::model {
@@ -104,34 +104,35 @@ struct DefaultShellElement : public ShellElement<N> {
 
     // function which relates derivatives in the local r,s to the local x,y system
     // the entries will contain the mapping
-    // [dx/dr, dy/dr]
-    // [dx/ds, dy/ds]
+    // [dx/dr, dx/ds]
+    // [dy/dr, dy/ds]
     // x = N1*x1 + N2*x2 + N3*x3 + N4*x4
     // y = N1*y1 + N2*y2 + N3*y3 + N4*y4
     // hence the derivatives are
     // dx/dr = dN1/dr*x1 + dN2/dr*x2 + dN3/dr*x3 + dN4/dr*x4
-    Mat2 jacobian() {
+    Mat2 jacobian(Precision r, Precision s) {
         // computing the jacobian is done by computing the derivatives of the shape functions
         // with the local x,y system
         auto xy_coords = get_xy_coords();
-        auto shape_derivatives = shape_derivative(0, 0);
+        auto shape_derivatives = shape_derivative(r, s);
 
         Mat2 jacobian;
-        jacobian(0, 0) = shape_derivatives.col(0).dot(xy_coords.col(0));
-        jacobian(0, 1) = shape_derivatives.col(0).dot(xy_coords.col(1));
-        jacobian(1, 0) = shape_derivatives.col(1).dot(xy_coords.col(0));
-        jacobian(1, 1) = shape_derivatives.col(1).dot(xy_coords.col(1));
+        jacobian(0, 0) = shape_derivatives.col(0).dot(xy_coords.col(0)); // dx/dr
+        jacobian(1, 0) = shape_derivatives.col(0).dot(xy_coords.col(1)); // dy/dr
+
+        jacobian(0, 1) = shape_derivatives.col(1).dot(xy_coords.col(0)); // dx/ds
+        jacobian(1, 1) = shape_derivatives.col(1).dot(xy_coords.col(1)); // dy/ds
         return jacobian;
     }
 
 
     StaticMatrix<3, N*3> strain_disp_bending(Precision r, Precision s) {
         auto shape_der = shape_derivative(r, s);
-        auto jacobian = this->jacobian();
+        auto jacobian = this->jacobian(r, s);
 
         Mat2 inv = jacobian.inverse();
 
-        auto dH = (inv * shape_der.transpose());
+        auto dH = (shape_der * inv).transpose();
 
 
         StaticMatrix<3, N*3> res{};
@@ -160,9 +161,10 @@ struct DefaultShellElement : public ShellElement<N> {
 
     StaticMatrix<2, 3 * N> strain_disp_shear(Precision r, Precision s) {
         auto shape_der = shape_derivative(r, s);
-        auto jacobian = this->jacobian();
+        auto jacobian = this->jacobian(r,s);
         auto H = shape_function(r, s);
-        auto dH = (jacobian.inverse() * shape_der.transpose());
+        auto dH = (shape_der * jacobian.inverse()).transpose();
+
 
         // StaticMatrix<2, 12> res{};
         // // dofs are displacement in z, rotation around x, rotation around y
@@ -186,9 +188,9 @@ struct DefaultShellElement : public ShellElement<N> {
 
     StaticMatrix<3, 2 * N> strain_disp_membrane(Precision r, Precision s) {
         auto shape_der = shape_derivative(r, s);
-        auto jacobian = this->jacobian();
+        auto jacobian = this->jacobian(r,s);
 
-        auto dH = (jacobian.inverse() * shape_der.transpose());
+        auto dH = (shape_der * jacobian.inverse()).transpose();
         // StaticMatrix<3, 8> res{};
         // res << dH(0,0), 0      , dH(0,1), 0      , dH(0,2), 0      , dH(0,3), 0      ,
         //            0  , dH(1,0), 0      , dH(1,1), 0      , dH(1,2), 0      , dH(1,3),
@@ -216,7 +218,7 @@ struct DefaultShellElement : public ShellElement<N> {
             [this, mat_bend](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
                 Precision det;
 
-                auto jac = this->jacobian();
+                auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_bending(r, s);
                 auto E = mat_bend;
@@ -226,7 +228,7 @@ struct DefaultShellElement : public ShellElement<N> {
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
             [this, mat_shear](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
                 Precision det;
-                auto jac = this->jacobian();
+                auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_shear(r, s);
                 auto E = mat_shear;
@@ -280,7 +282,7 @@ struct DefaultShellElement : public ShellElement<N> {
         std::function<StaticMatrix<2*N, 2*N>(Precision, Precision, Precision)> func_membrane =
             [this, &mat_membrane](Precision r, Precision s, Precision t) -> StaticMatrix<2*N, 2*N> {
                 Precision det;
-                auto jac = this->jacobian();
+                auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_membrane(r, s);
                 auto E = mat_membrane;
@@ -345,11 +347,11 @@ struct S8 : DefaultShellElement<8, Surface8, quadrature::Domain::DOMAIN_ISO_QUAD
     S8(ID p_elem_id, std::array<ID, 8> p_node)
         : DefaultShellElement(p_elem_id, p_node) {}
 };
-struct S3 : DefaultShellElement<3, Surface3, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_QUINTIC> {
+struct S3 : DefaultShellElement<3, Surface3, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_CUBIC> {
     S3(ID p_elem_id, std::array<ID, 3> p_node)
         : DefaultShellElement(p_elem_id, p_node) {}
 };
-struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_QUINTIC> {
+struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_CUBIC> {
     S6(ID p_elem_id, std::array<ID, 6> p_node)
         : DefaultShellElement(p_elem_id, p_node) {}
 };
