@@ -34,6 +34,10 @@ class Geometry:
         'C3D20': C3D20,
         'C3D20R': C3D20,
         'B33': B33,
+        'S4': S4,
+        'S8': S8,
+        'S3': S3,
+        'S6': S6,
         'P': Point,
     }
 

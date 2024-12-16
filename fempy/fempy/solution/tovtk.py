@@ -117,6 +117,10 @@ class Converter:
             'C2D4': vtk.vtkQuad,
             'C2D6': vtk.vtkQuadraticTriangle,
             'C2D8': vtk.vtkQuadraticQuad,
+            'S4': vtk.vtkQuad,
+            'S8': vtk.vtkQuadraticQuad,
+            'S3': vtk.vtkTriangle,
+            'S6': vtk.vtkQuadraticTriangle,
             "B33": vtk.vtkLine,
         }
 
