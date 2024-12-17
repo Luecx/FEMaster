@@ -221,6 +221,7 @@ struct DefaultShellElement : public ShellElement<N> {
                 auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_bending(r, s);
+                std::cout << B << std::endl;
                 auto E = mat_bend;
                 return B.transpose() * (E * B) * jac_det;
         };
@@ -231,6 +232,7 @@ struct DefaultShellElement : public ShellElement<N> {
                 auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_shear(r, s);
+                std::cout << B << std::endl;
                 auto E = mat_shear;
                 return B.transpose() * (E * B) * jac_det;
         };
@@ -286,10 +288,12 @@ struct DefaultShellElement : public ShellElement<N> {
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_membrane(r, s);
                 auto E = mat_membrane;
-                return B.transpose() * (E * B) * jac_det * this->get_section()->thickness;
+                return B.transpose() * (E * B) * jac_det;
         };
 
         StaticMatrix<2*N, 2*N> stiff_membrane = this->integration_scheme().integrate(func_membrane);
+        stiff_membrane *= this->get_section()->thickness;
+
         StaticMatrix<6*N, 6*N> res;
         res.setZero();
 
@@ -329,6 +333,7 @@ struct DefaultShellElement : public ShellElement<N> {
         auto trans = transformation();
         auto stiff = stiffness_bending() + stiffness_membrane();
         mapped = trans.transpose() * stiff * trans;
+        std::cout << mapped << std::endl;
         return mapped;
     }
     MapMatrix  mass(Precision* buffer) override {
