@@ -30,7 +30,10 @@ fem::StaticMatrix<2, 2>             fem::material::IsotropicElasticity::get_shea
 }
 fem::StaticMatrix<3, 3>             fem::material::IsotropicElasticity::get_bend(Precision t) {
     Precision scalar = youngs * t*t*t / 12 / (1 - poisson * poisson);
-    return StaticMatrix<3, 3>({{0, poisson, 0}, {poisson, 0, 0}, {0, 0, (1 - poisson) / 2}}) * scalar;
+    return StaticMatrix<3, 3>({
+        {1, poisson, 0},
+        {poisson, 1, 0},
+        {0, 0, (1 - poisson) / 2}}) * scalar;
 }
 
 fem::material::IsotropicElasticity::IsotropicElasticity(Precision youngs, Precision poisson)

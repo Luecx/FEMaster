@@ -39,10 +39,13 @@ class Model():
     materials = {}
 
     def __init__(self):
-        self.nodes[1] = Node(0, 0, 0)
-        self.nodes[2] = Node(1, 0, 0)
-        self.nodes[3] = Node(1, 1, 0)
-        self.nodes[4] = Node(0, 1, 0)
+
+        a = 2
+
+        self.nodes[1] = Node(0.6, 0.1, 0)
+        self.nodes[2] = Node(2, -0.1, 0)
+        self.nodes[3] = Node(2.3, 2, 0)
+        self.nodes[4] = Node(-0.5, 2, 0)
 
         self.materials['Steel'] = Material(1, 0)
 
@@ -101,6 +104,7 @@ class MITC4():
         X2, Y2, Z2 = self.n_node.X, self.n_node.Y, self.n_node.Z
         X3, Y3, Z3 = self.i_node.X, self.i_node.Y, self.i_node.Z
         X4, Y4, Z4 = self.j_node.X, self.j_node.Y, self.j_node.Z
+
 
         # Following Reference 1, Figure 5.26, node 3 will be used as the
         # origin of the plate's local (x, y) coordinate system. Find the
@@ -198,7 +202,6 @@ class MITC4():
         B_gamma = array([[dH[0, 0],   0,   H[0], dH[0, 1],   0,   H[1], dH[0, 2],   0,   H[2], dH[0, 3],   0,   H[3]],
                          [dH[1, 0], -H[0],  0,   dH[1, 1], -H[1],  0,   dH[1, 2], -H[2],  0,   dH[1, 3], -H[3],  0  ]])
 
-        print(B_gamma)
 
         return B_gamma
 
@@ -358,7 +361,7 @@ class MITC4():
 
         # Create the stiffness matrix with bending stiffness terms
         # See Reference 1, Equation 5.94
-        k = (matmul(B1.T, matmul(Cb, B1))*J1 +
+        k_b = (matmul(B1.T, matmul(Cb, B1))*J1 +
              matmul(B2.T, matmul(Cb, B2))*J2 +
              matmul(B3.T, matmul(Cb, B3))*J3 +
              matmul(B4.T, matmul(Cb, B4))*J4)
@@ -376,11 +379,13 @@ class MITC4():
         # B3 = self.B_gamma(-gp, -gp)
         # B4 = self.B_gamma(gp, -gp)
 
-        # Add shear stiffness terms to the stiffness matrix
-        k += (matmul(B1.T, matmul(Cs, B1))*J1 +
+        # # Add shear stiffness terms to the stiffness matrix
+        k_s= (matmul(B1.T, matmul(Cs, B1))*J1 +
               matmul(B2.T, matmul(Cs, B2))*J2 +
               matmul(B3.T, matmul(Cs, B3))*J3 +
               matmul(B4.T, matmul(Cs, B4))*J4)
+
+        k = k_b + k_s
 
         # Following Bathe's recommendation for the drilling degree of freedom
         # from Example 4.19 in "Finite Element Procedures, 2nd Ed.", calculate
@@ -441,6 +446,14 @@ class MITC4():
         k_exp[23, 23] = k_rz
 
         return k_exp
+
+    def area(self):
+        gp = 1/3**0.5
+        J1 = det(self.J(gp, gp))
+        J2 = det(self.J(-gp, gp))
+        J3 = det(self.J(-gp, -gp))
+        J4 = det(self.J(gp, -gp))
+        return J1 + J2 + J3 + J4
 
     #%%
     def k_m(self):
@@ -505,12 +518,34 @@ class MITC4():
         '''
         Returns the quad element's local stiffness matrix.
         '''
-
-        # Recalculate the local coordinate system
         self._local_coords()
 
-        # Sum the bending and membrane stiffness matrices
-        return add(self.k_b(), self.k_m())
+        #node_positions = [
+        #  np.array([0.0, 0.0,0.0]),
+        #  np.array([1.5297058540778354, 0.0,0.0]),
+        #  np.array([0.5491251783869153, 1.8434916702989301,0.0]),
+        #  np.array([-0.6667948594698258, 0.7844645405527361,0.0]),
+        #
+        # print(self.x1, self.y1)
+        # print(self.x2, self.y2)
+        # print(self.x3, self.y3)
+        # print(self.x4, self.y4)
+        #
+        # self.x1 = 0.0
+        # self.y1 = 0.0
+        # self.x2 = 1.5297058540778354
+        # self.y2 = 0.0
+        # self.x3 = 0.5491251783869153
+        # self.y3 = 1.8434916702989301
+        # self.x4 = -0.6667948594698258
+        # self.y4 = 0.7844645405527361
+
+        return self.k_b() + self.k_m()
+
+        # # Recalculate the local coordinate system
+        #
+        # # Sum the bending and membrane stiffness matrices
+        # return add(self.k_b(), self.k_m())
 
     def T(self):
         '''
@@ -588,8 +623,19 @@ class MITC4():
         # Calculate and return the stiffness matrix in global coordinates
         return matmul(matmul(inv(T), self.k()), T)
 
+
+
 model = Model()
-plate = MITC4('Plate 1', model.nodes[1], model.nodes[2], model.nodes[3], model.nodes[4], 0.1, 'Steel', model)
+model.nodes[1] = Node(0.1,-0.5, 0.0 )
+model.nodes[2] = Node(1.5, 0.3, 0.0 )
+model.nodes[3] = Node(1.0, 1.2, 0.0 )
+model.nodes[4] = Node(-0.5, 1.5, 0.0)
+plate = MITC4('Plate 1', m_node=model.nodes[1],
+                         n_node=model.nodes[2],
+                         i_node=model.nodes[3],
+                         j_node=model.nodes[4], t=3, material_name='Steel', model=model)
+plate._local_coords()
 import numpy as np
-np.set_printoptions(precision=3,  linewidth=2000)
+
+np.set_printoptions(precision=2,  linewidth=2000, suppress=True)
 print(plate.K())

@@ -131,9 +131,7 @@ struct DefaultShellElement : public ShellElement<N> {
         auto jacobian = this->jacobian(r, s);
 
         Mat2 inv = jacobian.inverse();
-
         auto dH = (shape_der * inv).transpose();
-
 
         StaticMatrix<3, N*3> res{};
 
@@ -164,7 +162,6 @@ struct DefaultShellElement : public ShellElement<N> {
         auto jacobian = this->jacobian(r,s);
         auto H = shape_function(r, s);
         auto dH = (shape_der * jacobian.inverse()).transpose();
-
 
         // StaticMatrix<2, 12> res{};
         // // dofs are displacement in z, rotation around x, rotation around y
@@ -216,23 +213,18 @@ struct DefaultShellElement : public ShellElement<N> {
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_bend =
             [this, mat_bend](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
-                Precision det;
-
                 auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_bending(r, s);
-                std::cout << B << std::endl;
                 auto E = mat_bend;
                 return B.transpose() * (E * B) * jac_det;
         };
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
             [this, mat_shear](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
-                Precision det;
                 auto jac = this->jacobian(r,s);
                 auto jac_det = jac.determinant();
                 auto B = this->strain_disp_shear(r, s);
-                std::cout << B << std::endl;
                 auto E = mat_shear;
                 return B.transpose() * (E * B) * jac_det;
         };
@@ -333,14 +325,11 @@ struct DefaultShellElement : public ShellElement<N> {
         auto trans = transformation();
         auto stiff = stiffness_bending() + stiffness_membrane();
         mapped = trans.transpose() * stiff * trans;
-        std::cout << mapped << std::endl;
         return mapped;
     }
     MapMatrix  mass(Precision* buffer) override {
         return MapMatrix(buffer, 4, 4);
     }
-
-
 };
 
 
