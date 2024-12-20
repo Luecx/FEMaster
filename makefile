@@ -12,6 +12,7 @@ PROJECT_NAME = "FEMaster"
 NVCC = nvcc
 CXX  = g++
 
+
 #===============================================================
 # Default Feature Flags
 #===============================================================
@@ -26,7 +27,7 @@ double_precision ?= 1 # Enable/disable Double Precision
 # General Compiler Flags
 #===============================================================
 
-WARNFLAGS  = -Wall -Wno-uninitialized -Wpedantic -Wall -Wextra -Wfatal-errors
+WARNFLAGS  =
 CXXFLAGS   = -std=c++17 -O3 -I /usr/local/include $(WARNFLAGS)
 NVCCFLAGS  = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr $(WARNFLAGS)
 
@@ -222,22 +223,39 @@ $(EXE_TST): $(TST_OBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) $^ $(TEST_LIBS) -o $@
 
-# Object generation rules
+# Object generation rules with timing
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@
+	@START=$$(date +%s.%N); \
+	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@; \
+	END=$$(date +%s.%N); \
+	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
+	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
 
 $(CPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $(FEATURE_FLAGS) -x cu -c $< -o $@
+	@START=$$(date +%s.%N); \
+	$(NVCC) $(NVCCFLAGS) $(FEATURE_FLAGS) -x cu -c $< -o $@; \
+	END=$$(date +%s.%N); \
+	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
+	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
 
 $(CU_OBJDIR)/%.o: $(SRCDIR)/%.cu
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(FEATURE_FLAGS) -c $< -o $@
+	@START=$$(date +%s.%N); \
+	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(FEATURE_FLAGS) -c $< -o $@; \
+	END=$$(date +%s.%N); \
+	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
+	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
 
 $(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@
+	@START=$$(date +%s.%N); \
+	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@; \
+	END=$$(date +%s.%N); \
+	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
+	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
+
 
 # Include the generated dependency files
 -include $(GPP_OBJS:.o=.d)
