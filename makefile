@@ -226,35 +226,35 @@ $(EXE_TST): $(TST_OBJS)
 # Object generation rules with timing
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
-	@START=$$(date +%s.%N); \
+	@START=$$(date +%s%N); \
 	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@; \
-	END=$$(date +%s.%N); \
-	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
-	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
+	END=$$(date +%s%N); \
+	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
+	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
 
 $(CPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
-	@START=$$(date +%s.%N); \
+	@START=$$(date +%s%N); \
 	$(NVCC) $(NVCCFLAGS) $(FEATURE_FLAGS) -x cu -c $< -o $@; \
-	END=$$(date +%s.%N); \
-	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
-	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
+	END=$$(date +%s%N); \
+	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
+	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
 
 $(CU_OBJDIR)/%.o: $(SRCDIR)/%.cu
 	@mkdir -p $(@D)
-	@START=$$(date +%s.%N); \
+	@START=$$(date +%s%N); \
 	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(FEATURE_FLAGS) -c $< -o $@; \
-	END=$$(date +%s.%N); \
-	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
-	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
+	END=$$(date +%s%N); \
+	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
+	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
 
 $(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
 	@mkdir -p $(@D)
-	@START=$$(date +%s.%N); \
+	@START=$$(date +%s%N); \
 	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@; \
-	END=$$(date +%s.%N); \
-	DURATION=$$(echo "scale=1; $$END - $$START" | bc); \
-	printf "%-50s : %6.1f seconds\n" "Compiling $<" $$DURATION
+	END=$$(date +%s%N); \
+	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
+	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
 
 
 # Include the generated dependency files
