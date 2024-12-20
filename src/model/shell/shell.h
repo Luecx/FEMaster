@@ -23,10 +23,10 @@ struct ShellElement : StructuralElement {
         if (!this->_section) {
             logging::error(false, "Section not set for element ", this->elem_id);
         }
-        if (!this->_section->as<ShellSection>()) {
+        if (!this->_section->template as<ShellSection>()) {
             logging::error(false, "Section is not a beam section for element ", this->elem_id);
         }
-        return this->_section->as<ShellSection>();
+        return this->_section->template as<ShellSection>();
     }
     material::MaterialPtr get_material() {
         ShellSection* section = get_section();
@@ -66,7 +66,7 @@ struct ShellElement : StructuralElement {
         return res;
     }
 
-    Dim        n_integration_points() {
+    Dim        n_integration_points() override {
         return integration_scheme().count();
     }
 
