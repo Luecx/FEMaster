@@ -6,6 +6,9 @@
 #include "interpolate.h"
 #include <iostream>
 
+#include <Eigen/QR>
+#include <Eigen/Eigen>
+
 namespace fem {
 namespace math {
 namespace interpolate {
@@ -208,8 +211,8 @@ DynamicMatrix
     }
     DynamicMatrix results(1, values.cols());
 
-    auto ATA = lhs.transpose() * lhs;
-    auto determinant = ATA.determinant();
+    DynamicMatrix ATA = lhs.transpose() * lhs;
+    Precision determinant = ATA.determinant();
 
     if (determinant < 1e-10 || determinant > 1e20) {
         // If the determinant is too small, we cannot solve the system.
@@ -220,8 +223,8 @@ DynamicMatrix
         return interpolate<get_next_lower<F>()>(xyz, values, center, r2_values);
     }
 
-    auto ATB = lhs.transpose() * values;
-    auto coe = ATA.fullPivHouseholderQr().solve(ATB);
+    DynamicMatrix ATB = lhs.transpose() * values;
+    DynamicVector coe = ATA.fullPivHouseholderQr().solve(ATB);
 
     for (int i = 0; i < values.cols(); i++) {
         results(0, i) = evaluate<F>(coe.col(i), adjusted_center);

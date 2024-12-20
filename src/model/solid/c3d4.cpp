@@ -3,6 +3,7 @@
 //
 
 #include "c3d4.h"
+#include "../geometry/surface/surface3.h"
 
 namespace fem {
 namespace model {
@@ -114,12 +115,27 @@ StaticMatrix<4, 3> C3D4::node_coords_local() {
     res.setZero();
 
     // Define local coordinates for each node
-    res(0, 0) = 1;  // Node 1: (1, 0, 0)
-    res(1, 1) = 1;  // Node 2: (0, 1, 0)
-    res(2, 2) = 0;  // Node 3: (0, 0, 0)
-    res(3, 2) = 1;  // Node 4: (0, 0, 1)
+    res(0, 0) = 1;    // Node 1: (1, 0, 0)
+    res(1, 1) = 1;    // Node 2: (0, 1, 0)
+    res(2, 2) = 0;    // Node 3: (0, 0, 0)
+    res(3, 2) = 1;    // Node 4: (0, 0, 1)
 
     return res;
+}
+
+const quadrature::Quadrature& C3D4::integration_scheme() {
+    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_LINEAR};
+    return quad;
+}
+
+SurfacePtr C3D4::surface(ID surface_id) {
+    switch (surface_id) {
+        case 1: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[0], node_ids[1], node_ids[2]});
+        case 2: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[0], node_ids[3], node_ids[1]});
+        case 3: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[1], node_ids[3], node_ids[2]});
+        case 4: return std::make_shared<Surface3>(std::array<ID, 3> {node_ids[2], node_ids[3], node_ids[0]});
+        default: return nullptr;    // Invalid surface ID
+    }
 }
 
 }  // namespace model

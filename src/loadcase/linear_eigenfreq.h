@@ -20,7 +20,6 @@
 
 #include "loadcase.h"
 #include "../solve/solver.h"
-#include "../math/interpolate.h"
 
 namespace fem {
 namespace loadcase {

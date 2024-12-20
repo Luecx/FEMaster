@@ -2,12 +2,9 @@
 
 #include "../cuda/cuda_csr.h"
 #include "../cuda/cuda_array.h"
-#include "../cuda/cuda_vec.h"
 #include "../core/core.h"
 #include "device.h"
-#include "method.h"
 
-#include <string>
 #include <utility>  // For std::pair
 
 namespace fem::solver {

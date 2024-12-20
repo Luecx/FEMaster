@@ -16,6 +16,8 @@
 
 #include "assemble_bc.h"
 
+#include "../core/logging.h"
+
 namespace fem { namespace mattools {
 
 void assemble_bc(NodeData& target_bc, const NodeData& source_bc, DuplicateHandling handling) {

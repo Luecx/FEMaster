@@ -1,12 +1,24 @@
 // Created by Finn on 19.10.2024
 
 #include "c3d13.h"
+#include "../geometry/surface/surface4.h"
+#include "../geometry/surface/surface3.h"
 
 namespace fem {
 namespace model {
 
 C3D13::C3D13(ID p_elem_id, const std::array<ID, 13>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
+
+const quadrature::Quadrature& C3D13::integration_scheme() {
+    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_PYRAMID, quadrature::ORDER_QUARTIC};
+    return quad;
+}
+SurfacePtr C3D13::surface(ID surface_id) {
+    // TODO: implement this
+    (void) surface_id;
+    return nullptr;
+}
 
 StaticMatrix<13, 1> C3D13::shape_function(Precision r, Precision s, Precision t) {
     StaticMatrix<13, 1> res {};

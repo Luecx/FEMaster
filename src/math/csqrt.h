@@ -5,7 +5,6 @@
 #ifndef FEMASTER_CSQRT_H
 #define FEMASTER_CSQRT_H
 
-#include "../core/core.h"
 #include "../core/types.h"
 #include <limits>
 

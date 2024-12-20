@@ -2,12 +2,11 @@
 
 #include "../cuda/cuda_csr.h"
 #include "../cuda/cuda_array.h"
-#include "../cuda/cuda_vec.h"
-#include "../core/core.h"
 #include "device.h"  // Import SolverDevice
 #include "method.h"  // Import SolverMethod
+#include "../core/types.h"
+#include "../core/config.h"
 
-#include <string>
 
 namespace fem::solver {
 

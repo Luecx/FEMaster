@@ -18,11 +18,8 @@
 
 #include "../cos/coordinate_system.h"  // For custom coordinate system handling
 #include "../core/types.h"             // For general types (ID, Triplet, etc.)
-#include "../core/logging.h"           // For logging warnings and errors
 
 #include "equation.h"
-
-#include <iostream>                    // For standard I/O operations (optional)
 
 namespace fem::constraint {
 

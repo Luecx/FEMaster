@@ -1,7 +1,5 @@
 #pragma once
 
-#include <algorithm>
-#include <cctype>
 #include <ostream>
 #include <regex>
 #include <sstream>

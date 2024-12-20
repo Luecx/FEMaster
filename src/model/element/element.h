@@ -2,9 +2,6 @@
 
 #include "../model_data.h"
 #include "../geometry/surface/surface.h"
-#include "../../core/core.h"
-#include "../../material/material.h"
-#include "../../math/quadrature.h"
 #include "../../section/section.h"
 
 namespace fem {

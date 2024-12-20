@@ -15,6 +15,9 @@
  * @date Created on 28.08.2024
  ******************************************************************************/
 
+#include "../model/element/element.h"
+#include "../core/logging.h"
+
 namespace fem { namespace mattools {
 
 /**

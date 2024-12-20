@@ -17,7 +17,7 @@
 
 #include "../core/types.h"
 #include <Eigen/Sparse>
-#include <Eigen/Dense>
+
 
 namespace fem { namespace mattools {
 

@@ -1,6 +1,12 @@
 
 #include "solver.h"
 
+#include "../core/logging.h"
+#include "../core/timer.h"
+
+#include <Eigen/SparseCholesky>
+#include <Eigen/SparseQR>
+
 #ifdef USE_MKL
 #include <mkl.h>
 #endif
@@ -10,9 +16,9 @@ namespace fem::solver{
 DynamicVector solve_direct(SolverDevice device,
                           SparseMatrix& mat,
                           DynamicVector& rhs){
-    runtime_assert(mat.rows() == mat.cols(), "matrix must be square");
-    runtime_assert(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
-    runtime_assert(rhs.cols() == 1, "can only solve one equation at a time");
+    logging::error(mat.rows() == mat.cols(), "matrix must be square");
+    logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
+    logging::error(rhs.cols() == 1, "can only solve one equation at a time");
 
     const auto N   = mat.cols();
     const auto nnz = mat.nonZeros();

@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include <sstream>
-#include <type_traits>
 #include <iomanip>
 
 namespace fem::logging{

@@ -24,7 +24,7 @@
 #endif
 
 #include <Eigen/Core>
-#include <Eigen/Eigen>
+#include <Eigen/SparseCore>
 #include <memory>  // For std::shared_ptr
 
 #ifdef USE_MKL

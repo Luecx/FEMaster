@@ -1,10 +1,6 @@
 #pragma once
 
 #include "element_solid.h"
-#include "../geometry/surface/surface8.h"
-#include "../geometry/surface/surface6.h"
-#include "../geometry/surface/surface4.h"
-#include "../geometry/surface/surface3.h"
 
 namespace fem { namespace model {
 
@@ -18,23 +14,9 @@ struct C3D8 : public SolidElement<8>{
 
     StaticMatrix<8, 3> node_coords_local() override;
 
-    SurfacePtr surface(ID surface_id) override {
-        switch (surface_id) {
-            case 1: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 0], node_ids[ 1], node_ids[ 2], node_ids[ 3]});
-            case 2: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 4], node_ids[ 5], node_ids[ 6], node_ids[ 7]});
-            case 3: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 0], node_ids[ 1], node_ids[ 5], node_ids[ 4]});
-            case 4: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 1], node_ids[ 2], node_ids[ 6], node_ids[ 5]});
-            case 5: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 2], node_ids[ 3], node_ids[ 7], node_ids[ 6]});
-            case 6: return std::make_shared<Surface4>(std::array<ID, 4>{node_ids[ 3], node_ids[ 0], node_ids[ 4], node_ids[ 7]});
-            default: return nullptr;  // Invalid surface ID
-        }
-    }
+    SurfacePtr                    surface(ID surface_id) override;
 
-    const quadrature::Quadrature& integration_scheme() override {
-        const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUADRATIC};
-        return quad;
-    }
-
+    const quadrature::Quadrature& integration_scheme() override;
 };
 
 } }

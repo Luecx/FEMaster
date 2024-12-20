@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "element_solid.h"
+#include "../../cos/rectangular_system.h"
 
 namespace fem::model {
 

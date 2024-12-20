@@ -1,4 +1,5 @@
 #include "orthotropic_elasticity.h"
+#include <Eigen/Eigen>
 
 
 fem::StaticMatrix<3, 3> fem::material::OrthotropicElasticity::get_2d() {

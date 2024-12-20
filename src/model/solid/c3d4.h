@@ -14,10 +14,7 @@
 #pragma once
 
 #include "element_solid.h"
-#include "../geometry/surface/surface8.h"
-#include "../geometry/surface/surface6.h"
-#include "../geometry/surface/surface4.h"
-#include "../geometry/surface/surface3.h"
+
 
 namespace fem { namespace model {
 
@@ -90,20 +87,9 @@ struct C3D4 : public SolidElement<4> {
      * @return const quadrature::Quadrature& The quadrature rule to be used
      * for integration over the element's domain.
      */
-    const quadrature::Quadrature& integration_scheme() override {
-        const static quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TET, quadrature::ORDER_LINEAR};
-        return quad;
-    }
+    const quadrature::Quadrature& integration_scheme() override;
 
-    SurfacePtr surface(ID surface_id) override {
-        switch (surface_id) {
-            case 1: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 0], node_ids[ 1], node_ids[ 2]});
-            case 2: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 0], node_ids[ 3], node_ids[ 1]});
-            case 3: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 1], node_ids[ 3], node_ids[ 2]});
-            case 4: return std::make_shared<Surface3>(std::array<ID, 3>{node_ids[ 2], node_ids[ 3], node_ids[ 0]});
-            default: return nullptr;  // Invalid surface ID
-        }
-    }
+    SurfacePtr                    surface(ID surface_id) override;
 };
 
 } } // namespace fem::model

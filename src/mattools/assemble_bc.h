@@ -19,10 +19,6 @@
 #pragma once
 
 #include "../core/types.h"
-#include "../core/logging.h"
-#include <Eigen/Dense>
-#include <stdexcept>  // for std::runtime_error
-#include <cmath>      // for std::isnan
 
 namespace fem { namespace mattools {
 

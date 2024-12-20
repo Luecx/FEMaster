@@ -2,9 +2,6 @@
 
 #include "../core/types.h"
 
-#include <functional>
-#include <ostream>
-
 namespace fem {
 namespace math {
 namespace interpolate {

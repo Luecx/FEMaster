@@ -1,7 +1,10 @@
 
 #include "solver.h"
 
-#include <iomanip>
+#include "../core/logging.h"
+#include "../core/timer.h"
+
+#include <Eigen/IterativeLinearSolvers>
 
 namespace fem::solver{
 
@@ -51,9 +54,11 @@ void solve_iter_gpu_precon(cuda::CudaCSR &mat) {
 DynamicVector solve_iter(SolverDevice device,
                          SparseMatrix& mat,
                          DynamicVector& rhs){
-    runtime_assert(mat.cols() == mat.rows(), "matrix must be square");
-    runtime_assert(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
-    runtime_assert(rhs.cols() == 1, "can only solve one equation at a time");
+
+    logging::error(mat.cols() == mat.rows(), "matrix must be square");
+    logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
+    logging::error(rhs.cols() == 1, "can only solve one equation at a time");
+
 
     const auto N   = mat.cols();
     const auto nnz = mat.nonZeros();

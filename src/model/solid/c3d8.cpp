@@ -3,6 +3,8 @@
 //
 
 #include "c3d8.h"
+#include "../geometry/surface/surface4.h"
+#include "../geometry/surface/surface3.h"
 
 namespace fem {
 namespace model {
@@ -74,6 +76,27 @@ StaticMatrix<8, 3> C3D8::node_coords_local() {
         res(n, 2)    = t1;
     }
     return res;
+}
+SurfacePtr C3D8::surface(ID surface_id) {
+    switch (surface_id) {
+        case 1:
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[1], node_ids[2], node_ids[3]});
+        case 2:
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[4], node_ids[5], node_ids[6], node_ids[7]});
+        case 3:
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[1], node_ids[5], node_ids[4]});
+        case 4:
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[1], node_ids[2], node_ids[6], node_ids[5]});
+        case 5:
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[2], node_ids[3], node_ids[7], node_ids[6]});
+        case 6:
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[3], node_ids[0], node_ids[4], node_ids[7]});
+        default: return nullptr;    // Invalid surface ID
+    }
+}
+const quadrature::Quadrature& C3D8::integration_scheme() {
+    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUADRATIC};
+    return quad;
 }
 
 }    // namespace model

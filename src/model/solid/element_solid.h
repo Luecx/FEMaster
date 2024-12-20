@@ -4,7 +4,6 @@
 #include "../element/element_structural.h"
 #include "../../math/interpolate.h"
 #include "../geometry/surface/surface.h"
-#include "../../cos/rectangular_system.h"
 
 namespace fem::model {
 

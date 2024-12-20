@@ -11,8 +11,6 @@
 
 #pragma once
 
-#include "element_solid.h"
-
 namespace fem::model {
 
 template<Index N>

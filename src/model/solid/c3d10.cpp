@@ -3,6 +3,7 @@
 //
 
 #include "c3d10.h"
+#include "../geometry/surface/surface6.h"
 
 namespace fem {
 namespace model {
@@ -108,20 +109,65 @@ StaticMatrix<10, 3> C3D10::node_coords_local() {
     res.setZero();
 
     // Vertex nodes
-    res(0, 0) = 0;   res(0, 1) = 0;   res(0, 2) = 0;
-    res(1, 0) = 1;   res(1, 1) = 0;   res(1, 2) = 0;
-    res(2, 0) = 0;   res(2, 1) = 1;   res(2, 2) = 0;
-    res(3, 0) = 0;   res(3, 1) = 0;   res(3, 2) = 1;
+    res(0, 0) = 0;
+    res(0, 1) = 0;
+    res(0, 2) = 0;
+    res(1, 0) = 1;
+    res(1, 1) = 0;
+    res(1, 2) = 0;
+    res(2, 0) = 0;
+    res(2, 1) = 1;
+    res(2, 2) = 0;
+    res(3, 0) = 0;
+    res(3, 1) = 0;
+    res(3, 2) = 1;
 
     // Mid-edge nodes
-    res(4, 0) = 0.5; res(4, 1) = 0.0; res(4, 2) = 0;
-    res(5, 0) = 0.5; res(5, 1) = 0.5; res(5, 2) = 0.0;
-    res(6, 0) = 0.0; res(6, 1) = 0.5; res(6, 2) = 0.0;
-    res(7, 0) = 0.0; res(7, 1) = 0.0; res(7, 2) = 0.5;
-    res(8, 0) = 0.5; res(8, 1) = 0.0; res(8, 2) = 0.5;
-    res(9, 0) = 0.0; res(9, 1) = 0.5; res(9, 2) = 0.5;
+    res(4, 0) = 0.5;
+    res(4, 1) = 0.0;
+    res(4, 2) = 0;
+    res(5, 0) = 0.5;
+    res(5, 1) = 0.5;
+    res(5, 2) = 0.0;
+    res(6, 0) = 0.0;
+    res(6, 1) = 0.5;
+    res(6, 2) = 0.0;
+    res(7, 0) = 0.0;
+    res(7, 1) = 0.0;
+    res(7, 2) = 0.5;
+    res(8, 0) = 0.5;
+    res(8, 1) = 0.0;
+    res(8, 2) = 0.5;
+    res(9, 0) = 0.0;
+    res(9, 1) = 0.5;
+    res(9, 2) = 0.5;
 
     return res;
+}
+SurfacePtr C3D10::surface(ID surface_id) {
+    switch (surface_id) {
+        case 1:
+            return std::make_shared<Surface6>(
+                std::array<ID, 6> {node_ids[0], node_ids[1], node_ids[2], node_ids[4], node_ids[5], node_ids[6]});
+        case 2:
+            return std::make_shared<Surface6>(
+                std::array<ID, 6> {node_ids[0], node_ids[3], node_ids[1], node_ids[7], node_ids[8], node_ids[4]});
+        case 3:
+            return std::make_shared<Surface6>(
+                std::array<ID, 6> {node_ids[1], node_ids[3], node_ids[2], node_ids[8], node_ids[9], node_ids[5]});
+        case 4:
+            return std::make_shared<Surface6>(
+                std::array<ID, 6> {node_ids[2], node_ids[3], node_ids[0], node_ids[9], node_ids[7], node_ids[6]});
+        default: return nullptr;    // Invalid surface ID
+    }
+}
+const quadrature::Quadrature& C3D10::integration_scheme() {
+    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUADRATIC};
+    return quad;
+}
+const quadrature::Quadrature& C3D10::integration_scheme_mass() {
+    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUARTIC};
+    return quad;
 }
 
 }    // namespace model

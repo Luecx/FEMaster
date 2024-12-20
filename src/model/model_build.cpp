@@ -8,6 +8,8 @@
 #include "../mattools/assemble_bc.h"
 #include "../mattools/lump_matrix.h"
 
+#include "element/element_structural.h"
+
 namespace fem {
 
 namespace model {

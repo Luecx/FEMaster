@@ -22,8 +22,6 @@
 #include "../material/material.h"
 #include "../data/region.h"
 #include <memory>
-#include <string>
-#include "../core/logging.h" // For logging utilities
 
 namespace fem {
 

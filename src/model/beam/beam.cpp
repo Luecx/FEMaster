@@ -4,7 +4,6 @@
 
 #include "beam.h"
 
-#include "../model_data.h"
 
 namespace fem::model {
 

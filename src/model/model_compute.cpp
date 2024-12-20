@@ -5,6 +5,8 @@
 #include "../core/config.h"
 #include "../math/interpolate.h"
 
+#include "element/element_structural.h"
+
 namespace fem { namespace model{
 
 std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displacement){

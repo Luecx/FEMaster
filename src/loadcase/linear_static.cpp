@@ -18,7 +18,6 @@
 
 #include "linear_static.h"
 
-#include "../mattools/assemble.tpp"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
