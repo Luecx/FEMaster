@@ -5,7 +5,7 @@
 #ifndef EQUATION_H
 #define EQUATION_H
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 
 namespace fem::constraint {
 

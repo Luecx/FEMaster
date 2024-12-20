@@ -17,7 +17,7 @@
 #pragma once  // Ensures this file is only included once during compilation
 
 #include "../cos/coordinate_system.h"  // For custom coordinate system handling
-#include "../core/types.h"             // For general types (ID, Triplet, etc.)
+#include "../core/types_eig.h"             // For general types (ID, Triplet, etc.)
 
 #include "equation.h"
 

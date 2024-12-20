@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 #include <cmath>

@@ -22,6 +22,14 @@ struct DefaultShellElement : public ShellElement<N> {
     SFType geometry;
     quadrature::Quadrature integration_scheme_;
 
+    using Axes            = Mat3;
+    using NodeCoords      = StaticMatrix<N, 3>;
+    using LocalCoords     = StaticMatrix<N, 2>;
+    using Jacobian        = StaticMatrix<2, 2>;
+    using ShapeDerivative = StaticMatrix<N, 2>;
+    using ShapeFunction   = StaticVector<N>;
+
+
     DefaultShellElement(ID p_elem_id, std::array<ID, N> p_node)
         : ShellElement<N>(p_elem_id, p_node)
         , geometry(p_node)
@@ -31,8 +39,8 @@ struct DefaultShellElement : public ShellElement<N> {
     // when assuming a planar element, the normal is constant
     // we can also project the shell and use a local x,y system
     // this must not be confused with the local r,s system which is used for integration
-    Mat3 get_xyz_axes() {
-        StaticMatrix<N, 3> node_coords = this->node_coords_global();
+    Axes get_xyz_axes() {
+        NodeCoords node_coords = this->node_coords_global();
 
         Vec3 n1 = node_coords.row(0);
         Vec3 n2 = node_coords.row(1);
@@ -59,8 +67,7 @@ struct DefaultShellElement : public ShellElement<N> {
     // the x-axis will be aligned with the direction from node 1 to node 2
     // the z-axis will be perpendicular to the plane of the element
     // the y-axis will be the cross product of the other two
-    StaticMatrix<N*6,N*6> transformation() {
-        auto axes = get_xyz_axes();
+    StaticMatrix<N*6,N*6> transformation(Mat3 &axes) {
         StaticMatrix<N*6,N*6> res = StaticMatrix<N*6,N*6>::Zero();
         for (int i = 0; i < 2*N; ++i) { // Loop over the 8 nodes
             res.template block<3, 3>(3 * i, 3 * i) = axes;
@@ -69,10 +76,9 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
 
-    StaticMatrix<N, 2> get_xy_coords() {
-        StaticMatrix<N, 3> node_coords = this->node_coords_global();
+    LocalCoords get_xy_coords(Mat3& axes) {
+        NodeCoords node_coords = this->node_coords_global();
 
-        Mat3 axes = get_xyz_axes();
         Vec3 x_axis = axes.row(0).transpose();
         Vec3 y_axis = axes.row(1).transpose();
 
@@ -88,17 +94,11 @@ struct DefaultShellElement : public ShellElement<N> {
         return xy_coords;
     }
 
-    // when assuming a planar element, the normal is constant
-    // one can simply retrieve it from the local xyz axes
-    Vec3 get_normal() {
-        return get_xyz_axes().row(2).transpose();
-    }
-
-    auto shape_function(Precision r, Precision s) {
+    ShapeFunction shape_function(Precision r, Precision s) {
         return geometry.shape_function(r, s);
     }
 
-    auto shape_derivative(Precision r, Precision s) {
+    ShapeDerivative shape_derivative(Precision r, Precision s) {
         return geometry.shape_derivative(r, s);
     }
 
@@ -110,13 +110,10 @@ struct DefaultShellElement : public ShellElement<N> {
     // y = N1*y1 + N2*y2 + N3*y3 + N4*y4
     // hence the derivatives are
     // dx/dr = dN1/dr*x1 + dN2/dr*x2 + dN3/dr*x3 + dN4/dr*x4
-    Mat2 jacobian(Precision r, Precision s) {
+    Jacobian jacobian(StaticMatrix<N, 2> &shape_derivatives, StaticMatrix<N, 2> &xy_coords) {
         // computing the jacobian is done by computing the derivatives of the shape functions
         // with the local x,y system
-        auto xy_coords = get_xy_coords();
-        auto shape_derivatives = shape_derivative(r, s);
-
-        Mat2 jacobian;
+        Jacobian jacobian;
         jacobian(0, 0) = shape_derivatives.col(0).dot(xy_coords.col(0)); // dx/dr
         jacobian(1, 0) = shape_derivatives.col(0).dot(xy_coords.col(1)); // dy/dr
 
@@ -126,10 +123,7 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
 
-    StaticMatrix<3, N*3> strain_disp_bending(Precision r, Precision s) {
-        auto shape_der = shape_derivative(r, s);
-        auto jacobian = this->jacobian(r, s);
-
+    StaticMatrix<3, N*3> strain_disp_bending(ShapeDerivative& shape_der, Jacobian& jacobian) {
         Mat2 inv = jacobian.inverse();
         auto dH = (shape_der * inv).transpose();
 
@@ -157,10 +151,8 @@ struct DefaultShellElement : public ShellElement<N> {
         return res;
     }
 
-    StaticMatrix<2, 3 * N> strain_disp_shear(Precision r, Precision s) {
-        auto shape_der = shape_derivative(r, s);
-        auto jacobian = this->jacobian(r,s);
-        auto H = shape_function(r, s);
+    StaticMatrix<2, 3 * N> strain_disp_shear(ShapeFunction& shape_func, ShapeDerivative& shape_der, Jacobian& jacobian) {
+        auto H = shape_func;
         auto dH = (shape_der * jacobian.inverse()).transpose();
 
         // StaticMatrix<2, 12> res{};
@@ -183,10 +175,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return res;
     }
 
-    StaticMatrix<3, 2 * N> strain_disp_membrane(Precision r, Precision s) {
-        auto shape_der = shape_derivative(r, s);
-        auto jacobian = this->jacobian(r,s);
-
+    StaticMatrix<3, 2 * N> strain_disp_membrane(ShapeDerivative& shape_der, Jacobian& jacobian) {
         auto dH = (shape_der * jacobian.inverse()).transpose();
         // StaticMatrix<3, 8> res{};
         // res << dH(0,0), 0      , dH(0,1), 0      , dH(0,2), 0      , dH(0,3), 0      ,
@@ -206,25 +195,28 @@ struct DefaultShellElement : public ShellElement<N> {
         return res;
     }
 
-    StaticMatrix<6 * N, 6 * N> stiffness_bending() {
+    StaticMatrix<6 * N, 6 * N> stiffness_bending(LocalCoords& xy_coords) {
 
         auto mat_bend  = this->get_elasticity()->get_bend(this->get_section()->thickness);
         auto mat_shear = this->get_elasticity()->get_shear(this->get_section()->thickness);
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_bend =
-            [this, mat_bend](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
-                auto jac = this->jacobian(r,s);
-                auto jac_det = jac.determinant();
-                auto B = this->strain_disp_bending(r, s);
+            [this, &mat_bend, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
+                ShapeDerivative shape_der = this->shape_derivative(r, s);
+                Jacobian jac = this->jacobian(shape_der, xy_coords);
+                Precision jac_det = jac.determinant();
+                auto B = this->strain_disp_bending(shape_der, jac);
                 auto E = mat_bend;
                 return B.transpose() * (E * B) * jac_det;
         };
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
-            [this, mat_shear](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
-                auto jac = this->jacobian(r,s);
-                auto jac_det = jac.determinant();
-                auto B = this->strain_disp_shear(r, s);
+            [this, &mat_shear, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
+                ShapeFunction shape_func = this->shape_function(r, s);
+                ShapeDerivative shape_der = this->shape_derivative(r, s);
+                Jacobian jac = this->jacobian(shape_der, xy_coords);
+                Precision jac_det = jac.determinant();
+                auto B = this->strain_disp_shear(shape_func, shape_der, jac);
                 auto E = mat_shear;
                 return B.transpose() * (E * B) * jac_det;
         };
@@ -271,14 +263,14 @@ struct DefaultShellElement : public ShellElement<N> {
         return res;
     }
 
-    StaticMatrix<6*N, 6*N> stiffness_membrane() {
+    StaticMatrix<6*N, 6*N> stiffness_membrane(LocalCoords& xy_coords) {
         auto mat_membrane = this->get_elasticity()->get_memb();
         std::function<StaticMatrix<2*N, 2*N>(Precision, Precision, Precision)> func_membrane =
-            [this, &mat_membrane](Precision r, Precision s, Precision t) -> StaticMatrix<2*N, 2*N> {
-                Precision det;
-                auto jac = this->jacobian(r,s);
-                auto jac_det = jac.determinant();
-                auto B = this->strain_disp_membrane(r, s);
+            [this, &mat_membrane, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<2*N, 2*N> {
+                ShapeDerivative shape_der = this->shape_derivative(r, s);
+                Jacobian jac = this->jacobian(shape_der, xy_coords);
+                Precision jac_det = jac.determinant();
+                auto B = this->strain_disp_membrane(shape_der, jac);
                 auto E = mat_membrane;
                 return B.transpose() * (E * B) * jac_det;
         };
@@ -321,9 +313,14 @@ struct DefaultShellElement : public ShellElement<N> {
         return 0;
     }
     MapMatrix  stiffness(Precision* buffer) override {
+
+        // compute axes and local coordinates
+        auto axes = get_xyz_axes();
+        auto xy_coords = get_xy_coords(axes);
+
         MapMatrix mapped{buffer, 6*N, 6*N};
-        auto trans = transformation();
-        auto stiff = stiffness_bending() + stiffness_membrane();
+        auto trans = transformation(axes);;
+        auto stiff = stiffness_bending(xy_coords) + stiffness_membrane(xy_coords);
         mapped = trans.transpose() * stiff * trans;
         return mapped;
     }

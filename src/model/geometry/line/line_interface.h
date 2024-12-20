@@ -27,7 +27,7 @@
 #include <functional>
 
 #include "../../../math/quadrature.h"
-#include "../../../core/types.h"
+#include "../../../core/types_eig.h"
 
 namespace fem::model {
 

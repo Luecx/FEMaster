@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "../data/namable.h"
 
 #include <Eigen/Dense>

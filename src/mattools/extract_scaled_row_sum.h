@@ -21,7 +21,7 @@
 
 #pragma once
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "../core/logging.h"
 #include <Eigen/Sparse>
 #include <Eigen/Dense>

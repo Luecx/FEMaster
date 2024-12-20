@@ -13,7 +13,7 @@
 #include "../constraints/coupling.h"
 #include "../constraints/equation.h"
 #include "../constraints/tie.h"
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "../data/dict.h"
 #include "../data/elem_data_dict.h"
 #include "../data/node_data_dict.h"

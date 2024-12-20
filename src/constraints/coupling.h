@@ -15,7 +15,7 @@
 
 #pragma once    // Ensures this file is only included once during compilation
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "../data/region.h"
 #include "equation.h"
 

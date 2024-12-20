@@ -5,7 +5,7 @@
 #include "../cos/rectangular_system.h"
 #include "../model/beam/b33.h"
 #include "../model/pointelem/point.h"
-#include "../model/shell/s4.h"
+#include "../model/shell/shell_simple.h"
 #include "../model/solid/c3d10.h"
 #include "../model/solid/c3d15.h"
 #include "../model/solid/c3d20.h"

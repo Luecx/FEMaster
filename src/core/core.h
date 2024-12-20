@@ -2,7 +2,7 @@
 
 #include "assert.h"
 #include "logging.h"
-#include "types.h"
+#include "types_eig.h"
 #include "timer.h"
 #include "config.h"
 

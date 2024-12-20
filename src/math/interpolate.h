@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 
 namespace fem {
 namespace math {

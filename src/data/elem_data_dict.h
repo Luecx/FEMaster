@@ -9,7 +9,7 @@
 #include "data_storage.h"
 #include "dict.h"
 
-#include "../core/core.h"
+#include "../core/types_eig.h"
 
 namespace fem::model {
 enum ElementDataEntries : Index {

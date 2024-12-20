@@ -5,7 +5,7 @@
 #ifndef NODE_DATA_DICT_H
 #define NODE_DATA_DICT_H
 
-#include "../core/core.h"
+#include "../core/types_eig.h"
 #include "data_storage.h"
 #include "dict.h"
 #include "namable.h"

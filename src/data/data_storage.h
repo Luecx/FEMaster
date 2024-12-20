@@ -5,7 +5,9 @@
 #ifndef DATA_STORAGE_H
 #define DATA_STORAGE_H
 
-#include "../core/core.h"
+#include <memory>
+#include <vector>
+#include "../core/types_num.h"
 
 namespace fem::model {
 

@@ -6,7 +6,6 @@
 #define NAMABLE_H
 
 #include <string>
-#include "../core/core.h"
 
 struct Namable {
     const std::string name;

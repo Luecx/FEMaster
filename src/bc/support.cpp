@@ -13,6 +13,7 @@
 #include "support.h"
 #include "../model/model_data.h"
 #include "../model/element/element.h"
+#include "../data/node_data_dict.h"
 
 namespace fem {
 

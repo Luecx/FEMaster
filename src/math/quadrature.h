@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "csqrt.h"
 #include <functional>
 #include <ostream>

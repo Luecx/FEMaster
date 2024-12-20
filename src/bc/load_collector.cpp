@@ -1,4 +1,5 @@
 #include "load_collector.h"
+#include "../data/node_data_dict.h"
 
 namespace fem {
 

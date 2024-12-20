@@ -19,7 +19,7 @@
 #pragma once  // Ensures this file is only included once during compilation
 
 #include "logging.h"  // For logging timing information
-#include "types.h"    // For Time typedef
+#include "types_eig.h"    // For Time typedef
 
 #include <chrono>     // For high-resolution timing
 

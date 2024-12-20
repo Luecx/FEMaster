@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../core/core.h"
 #include "../data/region.h"
-#include "../data/node_data_dict.h"
 #include "bc.h"
+#include "../data/node_data_dict.h"
+
 
 namespace fem {
 

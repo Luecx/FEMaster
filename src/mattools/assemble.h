@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include <Eigen/Sparse>
 #include <vector>
 #include <memory>  // for std::shared_ptr

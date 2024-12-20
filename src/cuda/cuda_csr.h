@@ -2,7 +2,7 @@
 
 #ifdef SUPPORT_GPU
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "cuda_array.h"
 
 #include <memory>

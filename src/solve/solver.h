@@ -4,7 +4,7 @@
 #include "../cuda/cuda_array.h"
 #include "device.h"  // Import SolverDevice
 #include "method.h"  // Import SolverMethod
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "../core/config.h"
 
 

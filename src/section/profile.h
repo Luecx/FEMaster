@@ -5,7 +5,7 @@
 #ifndef PROFILE_H
 #define PROFILE_H
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include "../data/namable.h"
 
 namespace fem {

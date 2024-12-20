@@ -5,7 +5,7 @@
 #ifndef FEMASTER_CSQRT_H
 #define FEMASTER_CSQRT_H
 
-#include "../core/types.h"
+#include "../core/types_eig.h"
 #include <limits>
 
 namespace fem :: math {
