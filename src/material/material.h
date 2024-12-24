@@ -1,79 +1,99 @@
-#pragma once
+/******************************************************************************
+* @file material.h
+* @brief Defines the Material class for managing material properties in FEM analysis.
+*
+* The Material class provides a mechanism to define and access material properties
+* such as elasticity, density, thermal capacity, and thermal expansion. The class
+* also supports setting and querying these properties dynamically.
+*
+* @details The class leverages polymorphism for elasticity definitions and provides
+* utility methods for logging material information.
+*
+* @see material.cpp
+* @author Finn Eggers
+* @date 20.12.2024
+******************************************************************************/
 
+#pragma once  // Ensures this file is only included once during compilation
+
+#include "../data/namable.h"
 #include "elasticity.h"
 #include "isotropic_elasticity.h"
 #include "orthotropic_elasticity.h"
-#include "../data/namable.h"
-
 #include <memory>
 #include <string>
 
-#define MATERIAL_SCALAR_FIELD(name) \
-    private:                                \
-    Precision m_##name = -1;      \
-    public:                                \
-    bool has_##name () const {           \
-        return m_##name != -1;    \
-    }                               \
-                                        \
-    void set_##name (Precision value ) {   \
-        m_##name = value; \
-    }                               \
-                                    \
-    Precision get_##name () const {           \
-        return m_##name ;                               \
-    }                                   \
-\
+namespace fem::material {
 
-namespace fem {
-namespace material {
-
-// Material struct defines the properties and methods related to a _material in the context of finite element analysis
+/******************************************************************************
+* @class Material
+* @brief Class for defining material properties and their elasticity in FEM.
+*
+* The Material class is used to define material properties such as elasticity,
+* density, thermal capacity, and thermal expansion. It also supports polymorphic
+* definitions of elasticity via a shared pointer.
+******************************************************************************/
 struct Material : public Namable {
-    using Ptr = std::shared_ptr<Material>;
+    using Ptr = std::shared_ptr<Material>; ///< Shared pointer alias for Material.
 
-    public:
-    Material(std::string name) : Namable(name) {}
+public:
+    /******************************************************************************
+    * @brief Constructor for the Material class.
+    *
+    * Initializes a Material object with the given name.
+    * @param name Name of the material.
+    ******************************************************************************/
+    explicit Material(std::string name);
 
-    private:
+private:
+    ElasticityPtr m_elastic = nullptr; ///< Pointer to an object defining material elasticity.
 
-    // Pointer to an object of type Elasticity, used to store the elasticity properties of the _material
-    ElasticityPtr m_elastic = nullptr;
+#define MATERIAL_SCALAR_FIELD(name)                                          \
+private:                                                                     \
+    Precision m_##name = -1;                                                 \
+public:                                                                      \
+    /** @brief Checks if the field has been set. */                          \
+    bool has_##name() const { return m_##name != -1; }                       \
+    /** @brief Sets the value of the field. */                               \
+    void set_##name(Precision value) { m_##name = value; }                   \
+    /** @brief Retrieves the value of the field. */                          \
+    Precision get_##name() const { return m_##name; }
 
-    MATERIAL_SCALAR_FIELD(thermal_capacity)
-    MATERIAL_SCALAR_FIELD(thermal_expansion)
-    MATERIAL_SCALAR_FIELD(density)
-
-    public:
-
-    // set_elasticity is a templated function that takes any type T (that should inherit from Elasticity)
-    // and any number of arguments to construct an object of type T, then sets the ElasticityPtr to this object
-    template<typename T, typename... Args>
-    void set_elasticity(Args&&... args) {
-        this->m_elastic = ElasticityPtr {new T(args...)};
-    }
-
-    // Function to check if the elasticity has been set
-    bool has_elasticity() const {
-        return this->m_elastic != nullptr;
-    }
-
-    // Function to get the elasticity of the _material
-    ElasticityPtr elasticity() const {
-        return m_elastic;
-    }
-
-    void info() {
-        logging::info(true, "Material: ", name);
-        logging::info(true, "   Elasticity          : ", (has_elasticity() ? "YES" : "NO"));
-        logging::info(true, "   Thermal Capacity    : ", (has_thermal_capacity() ? std::to_string(m_thermal_capacity) : "NO"));
-        logging::info(true, "   Thermal Expansion   : ", (has_thermal_expansion() ? std::to_string(m_thermal_expansion) : "NO"));
-        logging::info(true, "   Density             : ", (has_density() ? std::to_string(m_density) : "NO"));
-    }
-
-};
-
+    MATERIAL_SCALAR_FIELD(thermal_capacity) ///< Field for thermal capacity.
+    MATERIAL_SCALAR_FIELD(thermal_expansion) ///< Field for thermal expansion.
+    MATERIAL_SCALAR_FIELD(density) ///< Field for density.
 #undef MATERIAL_SCALAR_FIELD
 
-}    // namespace _material
-}    // namespace fem
+public:
+    /******************************************************************************
+    * @brief Sets the elasticity model for the material.
+    *
+    * This templated function constructs an elasticity model of type T with the
+    * provided arguments and assigns it to the material.
+    * @tparam T Elasticity type (must inherit from Elasticity).
+    * @param args Arguments for constructing the elasticity model.
+    ******************************************************************************/
+    template<typename T, typename... Args>
+    void set_elasticity(Args&&... args) {
+        m_elastic = ElasticityPtr(new T(std::forward<Args>(args)...));
+    }
+
+    /******************************************************************************
+    * @brief Checks if an elasticity model is defined for the material.
+    * @return True if elasticity is defined, false otherwise.
+    ******************************************************************************/
+    bool has_elasticity() const;
+
+    /******************************************************************************
+    * @brief Retrieves the elasticity model of the material.
+    * @return Pointer to the elasticity model.
+    ******************************************************************************/
+    ElasticityPtr elasticity() const;
+
+    /******************************************************************************
+    * @brief Logs information about the material properties.
+    ******************************************************************************/
+    void info() const;
+};
+
+} // namespace fem::material

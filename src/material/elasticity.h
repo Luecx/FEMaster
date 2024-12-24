@@ -1,99 +1,123 @@
-#pragma once
+/******************************************************************************
+* @file elasticity.h
+* @brief Defines the Elasticity base class for material elasticity properties.
+*
+* The Elasticity class is an abstract base class providing the interface for
+* calculating stiffness matrices for materials under different conditions
+* (e.g., 2D, 3D, shear, and bending). It includes transformation utilities
+* for rotating stiffness matrices in 3D.
+*
+* @see elasticity.cpp
+* @note This class uses template methods for dimension-specific operations.
+* @author Finn Eggers
+* @date 20.12.2024
+******************************************************************************/
 
-#include "../core/core.h"
-#include <memory>
+#pragma once  // Ensures this file is included only once during compilation
 
-namespace fem {
-namespace material {
+#include "../core/core.h"        // Core FEM types
+#include <memory>               // For std::shared_ptr
+
+namespace fem::material {
+
+/******************************************************************************
+* @class Elasticity
+* @brief Abstract base class for material elasticity properties.
+*
+* Provides an interface for calculating material stiffness matrices in 2D, 3D,
+* shear, and bending contexts. Includes utilities for transforming elasticity
+* matrices in 3D using rotation matrices.
+******************************************************************************/
 struct Elasticity {
-    public:
-    virtual StaticMatrix<3, 3> get_2d() = 0;
-    virtual StaticMatrix<6, 6> get_3d() = 0;
-
-    // matrices for shell elements
-    virtual StaticMatrix<2, 2> get_shear(Precision t) = 0;
-    virtual StaticMatrix<3, 3> get_bend(Precision t) = 0;
-    virtual StaticMatrix<3, 3> get_memb() {return get_2d();}
-
+public:
     virtual ~Elasticity() = default;
 
-    template<Dim D>
-    StaticMatrix<D == 3 ? 6:3,D == 3 ? 6:3> get() {
-        if constexpr (D == 2){
-            return get_2d();
-        }
-        if constexpr (D == 3){
-            return get_3d();
-        }
-        throw std::out_of_range("indexing _material elasticity outside of valid dimensions which is 2 or 3");
-    }
+    /******************************************************************************
+    * @brief Computes the 2D stiffness matrix.
+    * @return A 3x3 static matrix representing the 2D stiffness.
+    ******************************************************************************/
+    virtual StaticMatrix<3, 3> get_2d() = 0;
 
-    StaticMatrix<6,6> transformation(StaticMatrix<3,3> R) {
-        Precision R11 = R(0, 0), R12 = R(0, 1), R13 = R(0, 2);
-        Precision R21 = R(1, 0), R22 = R(1, 1), R23 = R(1, 2);
-        Precision R31 = R(2, 0), R32 = R(2, 1), R33 = R(2, 2);
+    /******************************************************************************
+    * @brief Computes the 3D stiffness matrix.
+    * @return A 6x6 static matrix representing the 3D stiffness.
+    ******************************************************************************/
+    virtual StaticMatrix<6, 6> get_3d() = 0;
 
-        StaticMatrix<6, 6> T_eps;
-        T_eps << R11*R11, R21*R21, R31*R31, R11*R21, R21*R31, R31*R11,
-                 R12*R12, R22*R22, R32*R32, R12*R22, R22*R32, R32*R12,
-                 R13*R13, R23*R23, R33*R33, R13*R23, R23*R33, R33*R13,
-                 2*R11*R12, 2*R21*R22, 2*R31*R32, R11*R22 + R12*R21, R21*R32 + R31*R22, R31*R12 + R32*R11,
-                 2*R12*R13, 2*R22*R23, 2*R33*R32, R23*R12 + R13*R22, R22*R33 + R32*R23, R32*R13 + R12*R33,
-                 2*R11*R13, 2*R23*R21, 2*R33*R31, R13*R21 + R11*R23, R23*R31 + R21*R33, R33*R11 + R31*R13;
-        return T_eps;
-    }
+    /******************************************************************************
+    * @brief Computes the shear stiffness matrix for shell elements.
+    * @param t Thickness of the shell element.
+    * @return A 2x2 static matrix representing shear stiffness.
+    ******************************************************************************/
+    virtual StaticMatrix<2, 2> get_shear(Precision t) = 0;
 
-    StaticMatrix<6,6> transformation_der(StaticMatrix<3,3> R, StaticMatrix<3,3> dR) {
-        Precision R11 = R(0, 0), R12 = R(0, 1), R13 = R(0, 2);
-        Precision R21 = R(1, 0), R22 = R(1, 1), R23 = R(1, 2);
-        Precision R31 = R(2, 0), R32 = R(2, 1), R33 = R(2, 2);
+    /******************************************************************************
+    * @brief Computes the bending stiffness matrix for shell elements.
+    * @param t Thickness of the shell element.
+    * @return A 3x3 static matrix representing bending stiffness.
+    ******************************************************************************/
+    virtual StaticMatrix<3, 3> get_bend(Precision t) = 0;
 
-        Precision dR11 = dR(0, 0), dR12 = dR(0, 1), dR13 = dR(0, 2);
-        Precision dR21 = dR(1, 0), dR22 = dR(1, 1), dR23 = dR(1, 2);
-        Precision dR31 = dR(2, 0), dR32 = dR(2, 1), dR33 = dR(2, 2);
+    /******************************************************************************
+    * @brief Computes the membrane stiffness matrix for shell elements.
+    * Defaults to the 2D stiffness matrix.
+    * @return A 3x3 static matrix representing membrane stiffness.
+    ******************************************************************************/
+    virtual StaticMatrix<3, 3> get_memb() { return get_2d(); }
 
-        StaticMatrix<6, 6> dT_eps;
-        dT_eps << 2 * R11 * dR11, 2 * R21 * dR21, 2 * R31 * dR31, R11 * dR21 + dR11 * R21, R21 * dR31 + dR21 * R31, R31 * dR11 + dR31 * R11,
-                  2 * R12 * dR12, 2 * R22 * dR22, 2 * R32 * dR32, R12 * dR22 + dR12 * R22, R22 * dR32 + dR22 * R32, R32 * dR12 + dR32 * R12,
-                  2 * R13 * dR13, 2 * R23 * dR23, 2 * R33 * dR33, R13 * dR23 + dR13 * R23, R23 * dR33 + dR23 * R33, R33 * dR13 + dR33 * R13,
-                  2 * (R11 * dR12 + dR11 * R12), 2 * (R21 * dR22 + dR21 * R22), 2 * (R31 * dR32 + dR31 * R32), dR11 * R22 + R11 * dR22 + dR12 * R21 + R12 * dR21, dR21 * R32 + R21 * dR32 + dR22 * R31 + R22 * dR31, dR31 * R12 + R31 * dR12 + dR32 * R11 + R32 * dR11,
-                  2 * (R12 * dR13 + dR12 * R13), 2 * (R22 * dR23 + dR22 * R23), 2 * (R32 * dR33 + dR32 * R33), dR23 * R12 + R23 * dR12 + dR13 * R22 + R13 * dR22, dR22 * R33 + R22 * dR33 + dR32 * R23 + R32 * dR23, dR32 * R13 + R32 * dR13 + dR33 * R12 + R33 * dR12,
-                  2 * (R11 * dR13 + dR11 * R13), 2 * (R23 * dR21 + dR23 * R21), 2 * (R33 * dR31 + dR33 * R31), dR13 * R21 + R13 * dR21 + dR11 * R23 + R11 * dR23, dR23 * R31 + R23 * dR31 + dR21 * R33 + R21 * dR33, dR33 * R11 + R33 * dR11 + dR31 * R13 + R31 * dR13;
+    /******************************************************************************
+    * @brief Retrieves the stiffness matrix for a given dimension.
+    * @tparam D The spatial dimension (2 or 3).
+    * @return The stiffness matrix for the given dimension.
+    ******************************************************************************/
+    template <Dim D>
+    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get();
 
-        return dT_eps;
-    }
+    /******************************************************************************
+    * @brief Transforms the stiffness matrix using a rotation matrix in 3D.
+    * @param R The 3x3 rotation matrix.
+    * @return The transformed 6x6 stiffness matrix.
+    ******************************************************************************/
+    StaticMatrix<6, 6> transformation(StaticMatrix<3, 3> R);
 
+    /******************************************************************************
+    * @brief Computes the derivative of the transformation matrix with respect to rotation.
+    * @param R The 3x3 rotation matrix.
+    * @param dR The derivative of the 3x3 rotation matrix.
+    * @return The derivative of the 6x6 transformation matrix.
+    ******************************************************************************/
+    StaticMatrix<6, 6> transformation_der(StaticMatrix<3, 3> R, StaticMatrix<3, 3> dR);
 
+    /******************************************************************************
+    * @brief Computes the transformed stiffness matrix for a given rotation in 3D.
+    * @tparam D The spatial dimension (must be 3).
+    * @param R The rotation matrix.
+    * @return The transformed stiffness matrix.
+    ******************************************************************************/
+    template <Dim D>
+    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed(StaticMatrix<D, D> R);
 
-    template<Dim D>
-    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed(StaticMatrix<D, D> R) {
-        // Raise a compile-time error if D = 2, as it's not implemented
-        static_assert(D == 3, "Only 3D transformation is implemented.");
+    /******************************************************************************
+    * @brief Computes the derivative of the transformed stiffness matrix.
+    * @tparam D The spatial dimension (must be 3).
+    * @param R The rotation matrix.
+    * @param R_der The derivative of the rotation matrix.
+    * @return The derivative of the transformed stiffness matrix.
+    ******************************************************************************/
+    template <Dim D>
+    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed_derivative(StaticMatrix<D, D> R, StaticMatrix<D, D> R_der);
 
-        // Get elasticity matrix or tensor for dimension D (assume get<D>() returns it)
-        auto elasticity = get<D>();
-        StaticMatrix<6, 6> T_eps = transformation(R);
-        // Perform the final transformation by multiplying with elasticity matrix
-        return  T_eps.transpose() * elasticity * T_eps;
-    }
-
-    template<Dim D>
-    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed_derivative(StaticMatrix<D, D> R, StaticMatrix<D, D> R_der) {
-        // Raise a compile-time error if D = 2, as it's not implemented
-        static_assert(D == 3, "Only 3D transformation is implemented.");
-
-        StaticMatrix<6,6> T_eps = transformation(R);
-        StaticMatrix<6,6> dT_eps = transformation_der(R, R_der);
-
-        return dT_eps.transpose() * get<D>() * T_eps + T_eps.transpose() * get<D>() * dT_eps;
-    }
-
-    template<typename T>
+    /******************************************************************************
+    * @brief Dynamically casts this instance to a specific type.
+    * @tparam T The target type.
+    * @return A pointer to the instance cast to the target type.
+    ******************************************************************************/
+    template <typename T>
     T* as() {
         return dynamic_cast<T*>(this);
     }
 };
 
 using ElasticityPtr = std::shared_ptr<Elasticity>;
-}    // namespace _material
-}    // namespace fem
+
+}    // namespace fem::material

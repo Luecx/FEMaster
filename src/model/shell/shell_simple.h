@@ -18,7 +18,7 @@
 namespace fem::model {
 
 template<Index N, typename SFType, quadrature::Domain INT_D, quadrature::Order INT_O>
-struct DefaultShellElement : public ShellElement<N> {
+struct DefaultShellElement : ShellElement<N> {
     SFType geometry;
     quadrature::Quadrature integration_scheme_;
 
