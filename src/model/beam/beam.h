@@ -27,10 +27,10 @@ struct BeamElement : StructuralElement {
         if (!this->_section) {
             logging::error(false, "Section not set for element ", this->elem_id);
         }
-        if (!this->_section->as<BeamSection>()) {
+        if (!this->_section->template as<BeamSection>()) {
             logging::error(false, "Section is not a beam section for element ", this->elem_id);
         }
-        return this->_section->as<BeamSection>();
+        return this->_section->template as<BeamSection>();
     }
     Profile* get_profile() {
         return get_section()->profile.get();
@@ -50,10 +50,10 @@ struct BeamElement : StructuralElement {
         if (!section->material->has_elasticity()) {
             logging::error(false, "Material has no elasticity assigned");
         }
-        if (!section->material->elasticity()->as<material::IsotropicElasticity>()) {
+        if (!section->material->elasticity()->template as<material::IsotropicElasticity>()) {
             logging::error(false, "Material is not isotropic for element ", this->elem_id);
         }
-        return section->material->elasticity()->as<material::IsotropicElasticity>();
+        return section->material->elasticity()->template as<material::IsotropicElasticity>();
     }
 
     Vec3 coordinate(Index index) {
@@ -109,22 +109,22 @@ struct BeamElement : StructuralElement {
         return T;
     }
 
-    virtual MapMatrix stiffness(Precision* buffer) {
+    virtual MapMatrix stiffness(Precision* buffer) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = stiffness_impl();
         return result;
     };
-    virtual MapMatrix mass(Precision* buffer) {
+    virtual MapMatrix mass(Precision* buffer) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = mass_impl();
         return result;
     };
-    virtual void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) {};
-    virtual void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) {};
-    virtual void apply_vload(NodeData& node_loads, Vec3 load) {};
-    virtual void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) {};
-    virtual void compute_compliance(NodeData& displacement, ElementData& result) {};
-    virtual void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) {};
+    virtual void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {};
+    virtual void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override {};
+    virtual void apply_vload(NodeData& node_loads, Vec3 load) override {};
+    virtual void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {};
+    virtual void compute_compliance(NodeData& displacement, ElementData& result) override {};
+    virtual void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override {};
 
     ElDofs       dofs() override {
         return ElDofs {true, true, true, true, true, true};
