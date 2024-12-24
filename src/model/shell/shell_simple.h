@@ -18,7 +18,7 @@
 namespace fem::model {
 
 template<Index N, typename SFType, quadrature::Domain INT_D, quadrature::Order INT_O>
-struct DefaultShellElement : ShellElement<N> {
+struct DefaultShellElement : public ShellElement<N> {
     SFType geometry;
     quadrature::Quadrature integration_scheme_;
 
@@ -313,20 +313,117 @@ struct DefaultShellElement : ShellElement<N> {
         return 0;
     }
     MapMatrix  stiffness(Precision* buffer) override {
-
         // compute axes and local coordinates
         auto axes = get_xyz_axes();
         auto xy_coords = get_xy_coords(axes);
 
         MapMatrix mapped{buffer, 6*N, 6*N};
         auto trans = transformation(axes);;
-        auto stiff = stiffness_bending(xy_coords) + stiffness_membrane(xy_coords);
+        auto stiff = stiffness_bending(xy_coords)
+                   + stiffness_membrane(xy_coords);
         mapped = trans.transpose() * stiff * trans;
         return mapped;
     }
     MapMatrix  mass(Precision* buffer) override {
         return MapMatrix(buffer, 4, 4);
     }
+
+    Vec6 stress(Precision r, Precision s, Precision t, NodeData& displacement) {
+        (void) r;
+        (void) s;
+        (void) t;
+        (void) displacement;
+
+        Vec6 res;
+        res = Vec6::Zero();
+
+        // get the displacement vectors
+        StaticVector<2*N> disp_membrane;
+        StaticVector<3*N> disp_bending;
+        StaticVector<3*N> disp_shear;
+
+        // get the axes for transformation from global to local
+        Mat3 axes = get_xyz_axes();
+
+        for (int i = 0; i < N; i++) {
+            ID node_id = this->nodes()[i];
+
+            Vec6 displacement_glob = Vec6{displacement.row(node_id)};
+            Vec3 disp_xyz = displacement_glob.head(3);
+            Vec3 disp_rot = displacement_glob.tail(3);
+
+            disp_xyz = axes.transpose() * disp_xyz;
+            disp_rot = axes.transpose() * disp_rot;
+
+            disp_membrane(2*i  ) = disp_xyz(0);
+            disp_membrane(2*i+1) = disp_xyz(1);
+
+            disp_bending(3*i)   = disp_xyz(2);
+            disp_bending(3*i+1) = disp_rot(0);
+            disp_bending(3*i+2) = disp_rot(1);
+
+            disp_shear(3*i)   = disp_xyz(2);
+            disp_shear(3*i+1) = disp_rot(0);
+            disp_shear(3*i+2) = disp_rot(1);
+        }
+
+        Mat3 mat_membrane = this->get_elasticity()->get_memb();
+        Mat3 mat_bend     = this->get_elasticity()->get_bend (this->get_section()->thickness);
+        Mat2 mat_shear    = this->get_elasticity()->get_shear(this->get_section()->thickness);
+
+        // membrane stress
+        LocalCoords xy_coords     = get_xy_coords(axes);
+        ShapeFunction  shape_func = this->shape_function(r, s);
+        ShapeDerivative shape_der = this->shape_derivative(r, s);
+        Jacobian jac              = this->jacobian(shape_der, xy_coords);
+
+        // strain displacement matrices
+        auto B_membrane = this->strain_disp_membrane(shape_der, jac);
+        auto B_bending  = this->strain_disp_bending(shape_der, jac);
+        auto B_shear    = this->strain_disp_shear(shape_func, shape_der, jac);
+
+        // membrane stress, s_x, s_y, s_xy
+        Vec3 stress_membrane = mat_membrane * B_membrane * disp_membrane;
+        res(0) += stress_membrane(0);
+        res(1) += stress_membrane(1);
+        res(5) += stress_membrane(2);
+
+        // bending stress,
+        // mat bend is scaled by h^3 / 12, we need to get rid of that scaling
+        mat_bend *= 12 / std::pow(this->get_section()->thickness, 3);
+        Vec3 stress_bending = t * mat_bend * B_bending * disp_bending;
+        res(0) += stress_bending(0);
+        res(1) += stress_bending(1);
+        res(5) += stress_bending(2);
+
+        // shear stress
+        Vec2 stress_shear = mat_shear * B_shear * disp_shear;
+        res(3) += stress_shear(0);
+        res(4) += stress_shear(1);
+
+        return res;
+
+    }
+
+    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+        (void) displacement;
+        (void) stress;
+        (void) strain;
+
+        // local coordinates stored in the surface class
+        StaticMatrix<N, 2> coords = this->geometry.node_coords_local();
+        for(int i = 0; i < N; i++) {
+            ID node_id = this->nodes()[i];
+
+            Vec6 stress_top = this->stress(coords(i, 0), coords(i, 1), 0, displacement);
+            Vec6 stress_bot = this->stress(coords(i, 0), coords(i, 1), 1, displacement);
+
+            // choose the one with the larger norm
+            Vec6 stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;
+
+            stress.row(node_id) = stress_nodal;
+        }
+    };
 };
 
 
