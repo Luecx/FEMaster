@@ -397,6 +397,7 @@ struct DefaultShellElement : public ShellElement<N> {
         res(5) += stress_bending(2);
 
         // shear stress
+        mat_shear /= this->get_section()->thickness;
         Vec2 stress_shear = mat_shear * B_shear * disp_shear;
         res(3) += stress_shear(0);
         res(4) += stress_shear(1);
