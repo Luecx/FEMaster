@@ -402,6 +402,9 @@ struct DefaultShellElement : public ShellElement<N> {
         res(3) += stress_shear(0);
         res(4) += stress_shear(1);
 
+        logging::warning(false, "this code produces incorrect results.");
+        logging::warning(false, "the stresses for the shell elements, especially S8 must be revised.");
+
         return res;
 
     }
