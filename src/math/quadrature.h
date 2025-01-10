@@ -1,13 +1,15 @@
 #pragma once
 
+#include "../core/assert.h"
 #include "../core/types_eig.h"
 #include "csqrt.h"
+
 #include <functional>
-#include <ostream>
-#include <map>
-#include <vector>
-#include <tuple>
 #include <iostream>
+#include <map>
+#include <ostream>
+#include <tuple>
+#include <vector>
 
 namespace fem {
 
@@ -131,6 +133,11 @@ struct Quadrature {
 
         }
         return res;
+    }
+
+    template<int M, int N>
+    StaticVector<N> extrapolate(StaticMatrix<M, N> const& values) const {
+        runtime_assert(M == count(), "Number of values must match number of quadrature points");
     }
 
     Point get_point(ID n) const;

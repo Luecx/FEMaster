@@ -13,6 +13,10 @@
 #include "../model/solid/c3d4.h"
 #include "../model/solid/c3d6.h"
 #include "../model/solid/c3d8.h"
+#include "../model/shell/s3.h"
+#include "../model/shell/s4.h"
+#include "../model/shell/s6.h"
+#include "../model/shell/s8.h"
 #include "reader.h"
 
 namespace fem::reader {

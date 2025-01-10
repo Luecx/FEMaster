@@ -2,14 +2,10 @@
 // Created by f_eggers on 11.12.2024.
 //
 
-#ifndef S4_H
-#define S4_H
+#ifndef SHELL_SIMPLE_H
+#define SHELL_SIMPLE_H
 
 #include "shell.h"
-#include "../geometry/surface/surface4.h"
-#include "../geometry/surface/surface8.h"
-#include "../geometry/surface/surface3.h"
-#include "../geometry/surface/surface6.h"
 
 // this file is partially based on the implementation of
 // https://github.com/JWock82/Pynite/blob/main/Archived/MITC4.py
@@ -52,6 +48,24 @@ struct DefaultShellElement : public ShellElement<N> {
         Vec3 x_axis = n12 / n12.norm();
         Vec3 z_axis = n12.cross(n13) / (n12.cross(n13)).norm();
         Vec3 y_axis = z_axis.cross(x_axis);
+
+        // in the scenario where the normal (z-axis) is basically a unit vector, we adjust the x-axis and y-axis so they align
+        // with the global axes
+        if (std::abs(z_axis(0)) > 0.9999) {
+            x_axis = Vec3{0, 1, 0};
+            y_axis = Vec3{0, 0, 1};
+            z_axis = Vec3{1, 0, 0};
+        }
+        if (std::abs(z_axis(1)) > 0.9999) {
+            x_axis = Vec3{0, 0, 1};
+            y_axis = Vec3{1, 0, 0};
+            z_axis = Vec3{0, 1, 0};
+        }
+        if (std::abs(z_axis(2)) > 0.9999) {
+            x_axis = Vec3{1, 0, 0};
+            y_axis = Vec3{0, 1, 0};
+            z_axis = Vec3{0, 0, 1};
+        }
 
         // for each node calculate the local x,y coordinates by projecting onto the axes
         StaticMatrix<3, 3> res;
@@ -328,7 +342,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return MapMatrix(buffer, 4, 4);
     }
 
-    Vec6 stress(Precision r, Precision s, Precision t, NodeData& displacement) {
+    virtual Vec6 stress(Precision r, Precision s, Precision t, NodeData& displacement) {
         (void) r;
         (void) s;
         (void) t;
@@ -416,34 +430,22 @@ struct DefaultShellElement : public ShellElement<N> {
         for(int i = 0; i < N; i++) {
             ID node_id = this->nodes()[i];
 
-            Vec6 stress_top = this->stress(coords(i, 0), coords(i, 1), 0, displacement);
-            Vec6 stress_bot = this->stress(coords(i, 0), coords(i, 1), 1, displacement);
+            Vec6 stress_bot = this->stress(coords(i, 0), coords(i, 1), 0, displacement);
+            Vec6 stress_top = this->stress(coords(i, 0), coords(i, 1), 1, displacement);
 
-            // choose the one with the larger norm
+            // // choose the one with the larger norm
             Vec6 stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;
 
-            stress.row(node_id) = stress_nodal;
+            stress.row(node_id) += stress_nodal;
         }
     };
 };
 
 
-struct S4 : DefaultShellElement<4, Surface4, quadrature::Domain::DOMAIN_ISO_QUAD, quadrature::Order::ORDER_CUBIC> {
-    S4(ID p_elem_id, std::array<ID, 4> p_node)
-        : DefaultShellElement(p_elem_id, p_node) {}
-};
-struct S8 : DefaultShellElement<8, Surface8, quadrature::Domain::DOMAIN_ISO_QUAD, quadrature::Order::ORDER_QUINTIC> {
-    S8(ID p_elem_id, std::array<ID, 8> p_node)
-        : DefaultShellElement(p_elem_id, p_node) {}
-};
-struct S3 : DefaultShellElement<3, Surface3, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_CUBIC> {
-    S3(ID p_elem_id, std::array<ID, 3> p_node)
-        : DefaultShellElement(p_elem_id, p_node) {}
-};
-struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI, quadrature::Order::ORDER_CUBIC> {
-    S6(ID p_elem_id, std::array<ID, 6> p_node)
-        : DefaultShellElement(p_elem_id, p_node) {}
-};
+
+
+
+
 
 
 }
@@ -452,4 +454,4 @@ struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI,
 
 
 
-#endif //S4_H
+#endif //SHELL_SIMPLE_H

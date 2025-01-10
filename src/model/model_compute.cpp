@@ -1,11 +1,11 @@
 //
 // Created by Finn Eggers on 04.09.23.
 //
-#include "model.h"
 #include "../core/config.h"
 #include "../math/interpolate.h"
-
 #include "element/element_structural.h"
+#include "model.h"
+#include "shell/s8.h"
 
 namespace fem { namespace model{
 
@@ -21,6 +21,7 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
     for(auto el: _data->elements){
         if(el == nullptr) continue;
         if(auto sel = el->as<StructuralElement>()) {
+
             sel->compute_stress_strain_nodal(displacement, stress, strain);
             for(int i = 0; i < sel->n_nodes(); i++){
                 ID id = sel->nodes()[i];
