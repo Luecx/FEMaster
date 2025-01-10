@@ -403,9 +403,11 @@ struct DefaultShellElement : public ShellElement<N> {
         res(5) += stress_membrane(2);
 
         // bending stress,
-        // mat bend is scaled by h^3 / 12, we need to get rid of that scaling
-        mat_bend *= 12 / std::pow(this->get_section()->thickness, 3);
-        Vec3 stress_bending = t * mat_bend * B_bending * disp_bending;
+        // mat bend is scaled by h^3 / 12, we need to get rid of that 
+        Precision h = this->get_section()->thickness;
+        mat_bend *= 12 / std::pow(h, 3);
+        Precision t_pos = t * h / 2;
+        Vec3 stress_bending = t_pos * mat_bend * B_bending * disp_bending;
         res(0) += stress_bending(0);
         res(1) += stress_bending(1);
         res(5) += stress_bending(2);
@@ -415,6 +417,9 @@ struct DefaultShellElement : public ShellElement<N> {
         Vec2 stress_shear = mat_shear * B_shear * disp_shear;
         res(3) += stress_shear(0);
         res(4) += stress_shear(1);
+
+        logging::warning(false, "this code produces incorrect results.");
+        logging::warning(false, "the stresses for the shell elements, especially S8 must be revised.");
 
         return res;
 
