@@ -320,7 +320,19 @@ struct DefaultShellElement : public ShellElement<N> {
 
 
     SurfacePtr surface(ID surface_id) override {
-        (void) surface_id;
+        std::array<ID, N> _nodes;
+
+        constexpr int corner_nodes = N <= 4 ? N : N / 2;
+        for (int i = 0; i < corner_nodes; i++) {
+            if (surface_id == i) {
+                _nodes[i] = this->nodes()[i];
+                _nodes[i+corner_nodes] = this->nodes()[i];
+            } else {
+                _nodes[i] = this->nodes()[(N - i) % N];
+                _nodes[i+corner_nodes] = this->nodes()[(N - i - 1) % N + corner_nodes];
+            }
+        }
+
         return nullptr;
     }
     Precision  volume() override {
