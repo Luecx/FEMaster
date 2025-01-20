@@ -5,7 +5,6 @@
 #ifndef MODEL_DATA_H
 #define MODEL_DATA_H
 
-#include "../bc/load.h"
 #include "../bc/load_collector.h"
 #include "../bc/support.h"
 #include "../bc/support_collector.h"
@@ -21,10 +20,7 @@
 #include "../data/sets.h"
 #include "../section/profile.h"
 #include "../section/section.h"
-#include "../section/section_shell.h"
-#include "../section/section_solid.h"
-#include "../section/section_beam.h"
-#include "../section/section_point_mass.h"
+#include "../bc/load.h"
 
 namespace fem::model {
 

@@ -4,7 +4,9 @@
 
 #ifndef POINT_H
 #define POINT_H
+
 #include "../element/element_structural.h"
+#include "../../core/types_cls.h"
 
 namespace fem::model {
 
@@ -37,33 +39,10 @@ struct Point : fem::model::StructuralElement {
     Precision  volume() override {
         return 0;
     };
-    MapMatrix  stiffness(Precision* buffer) override {
-        MapMatrix(buffer, 6, 6).setZero();
-        logging::error(_section != nullptr, "Section not assigned to element ", elem_id);
-        logging::error(_section->as<PointMassSection>(), "Section is not a PointMassSection");
-        PointMassSection* section = _section->as<PointMassSection>();
-        MapMatrix res = MapMatrix(buffer, 6, 6).setZero();
-        res(0, 0) = section->spring_constants(0);
-        res(1, 1) = section->spring_constants(1);
-        res(2, 2) = section->spring_constants(2);
-        res(3, 3) = section->rotary_spring_constants(0);
-        res(4, 4) = section->rotary_spring_constants(1);
-        res(5, 5) = section->rotary_spring_constants(2);
-        return res;
-    };
-    MapMatrix  mass(Precision* buffer) override {
-        logging::error(_section != nullptr, "Section not assigned to element ", elem_id);
-        logging::error(_section->as<PointMassSection>(), "Section is not a PointMassSection");
-        PointMassSection* section = _section->as<PointMassSection>();
-        MapMatrix res = MapMatrix(buffer, 6, 6).setZero();
-        res(0, 0) = section->mass;
-        res(1, 1) = section->mass;
-        res(2, 2) = section->mass;
-        res(3, 3) = section->rotary_inertia(0);
-        res(4, 4) = section->rotary_inertia(1);
-        res(5, 5) = section->rotary_inertia(2);
-        return res;
-    };
+    MapMatrix stiffness(Precision* buffer) override;
+    ;
+    MapMatrix mass(Precision* buffer) override;
+    ;
     void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
         (void) displacement;
         (void) stress;

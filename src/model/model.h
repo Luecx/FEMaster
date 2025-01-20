@@ -4,15 +4,11 @@
 #include "../constraints/coupling.h"
 #include "../cos/coordinate_system.h"
 #include "geometry/surface/surface.h"
-#include "element/element.h"
-#include "../section/section.h"
-#include "../section/section_beam.h"
-#include "../section/section_point_mass.h"
-#include "../section/section_shell.h"
-#include "../section/section_solid.h"
-#include "../section/profile.h"
 #include "../data/node_data_dict.h"
 #include "./model_data.h"
+#include "../core/types_cls.h"
+#include "element/element.h"
+#include "element/element_structural.h"
 
 namespace fem {
 

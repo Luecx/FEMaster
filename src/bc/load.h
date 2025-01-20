@@ -3,7 +3,7 @@
 #include "../data/region.h"
 #include "bc.h"
 #include "../data/node_data_dict.h"
-
+#include "../core/types_cls.h"
 
 namespace fem {
 

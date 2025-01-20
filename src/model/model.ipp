@@ -1,4 +1,5 @@
-#include "model.h"
+#include "element/element.h"
+#include "element/element_structural.h"
 
 inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     logging::error(id < _data->max_nodes, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");

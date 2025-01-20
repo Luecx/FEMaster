@@ -1,5 +1,13 @@
 #include "model.h"
 
+#include "../section/section.h"
+#include "../section/section_beam.h"
+#include "../section/section_solid.h"
+#include "../section/section_shell.h"
+#include "../section/section_point_mass.h"
+
+#include "../bc/load_collector.h"
+#include "../bc/support_collector.h"
 
 namespace fem {
 namespace model {

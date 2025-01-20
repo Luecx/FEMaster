@@ -2,6 +2,7 @@
 // Created by Luecx on 06.09.2023.
 //
 #include "reader.h"
+#include "../model/model.h"
 
 namespace fem::reader{
 

@@ -4,10 +4,14 @@
 
 #include "line.h"
 #include "file.h"
-#include "../model/model.h"
-#include "../loadcase/linear_static.h"
-#include "../loadcase/linear_static_topo.h"
-#include "../loadcase/linear_eigenfreq.h"
+
+#include "../core/types_cls.h"
+#include "writer.h"
+
+// #include "../model/model.h"
+// #include "../loadcase/linear_static.h"
+// #include "../loadcase/linear_static_topo.h"
+// #include "../loadcase/linear_eigenfreq.h"
 
 namespace fem::reader {
 
@@ -26,7 +30,7 @@ class Reader {
     Line        m_current_line;
     ProblemData m_data;
 
-    std::shared_ptr<fem::model::Model> m_model;
+    fem::model::ModelPtr m_model;
 
     Line& next_line();
 

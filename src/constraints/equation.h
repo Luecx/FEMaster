@@ -6,6 +6,7 @@
 #define EQUATION_H
 
 #include "../core/types_eig.h"
+#include "../core/types_cls.h"
 
 namespace fem::constraint {
 
