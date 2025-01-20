@@ -3,6 +3,7 @@
 #include "../../core/types_cls.h"
 #include "../../section/section.h"
 #include "../model_data.h"
+#include "../geometry/surface/surface.h"
 
 namespace fem {
 

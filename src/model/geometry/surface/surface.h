@@ -77,9 +77,8 @@ struct SurfaceInterface {
     ID* end() {
         return nodes() + n_nodes;
     }
+    using Ptr = std::shared_ptr<SurfaceInterface>;
 };
-
-using SurfacePtr = std::shared_ptr<SurfaceInterface>;
 
 /******************************************************************************
  * @class Surface

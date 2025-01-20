@@ -45,6 +45,7 @@ void Reader::process_surfaces() {
 
                 m_model->set_surface(id, elem_id, surf_side);
             } else {
+
                 // First value is element set name
                 set_name = first_value;
                 if (m_current_line.values()[1][0] == 'S') {

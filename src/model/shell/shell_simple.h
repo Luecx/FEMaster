@@ -6,6 +6,11 @@
 #define SHELL_SIMPLE_H
 
 #include "shell.h"
+#include "../geometry/surface/surface.h"
+#include "../geometry/surface/surface4.h"
+#include "../geometry/surface/surface6.h"
+#include "../geometry/surface/surface3.h"
+#include "../geometry/surface/surface8.h"
 
 // this file is partially based on the implementation of
 // https://github.com/JWock82/Pynite/blob/main/Archived/MITC4.py
@@ -319,21 +324,37 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     SurfacePtr surface(ID surface_id) override {
-        std::array<ID, N> _nodes;
-
-        constexpr int corner_nodes = N <= 4 ? N : N / 2;
-        for (int i = 0; i < corner_nodes; i++) {
-            if (surface_id == i) {
-                _nodes[i] = this->nodes()[i];
-                _nodes[i+corner_nodes] = this->nodes()[i];
-            } else {
-                _nodes[i] = this->nodes()[(N - i) % N];
-                _nodes[i+corner_nodes] = this->nodes()[(N - i - 1) % N + corner_nodes];
-            }
+        // TODO split into derived classes
+        if constexpr (N == 3) {
+            return std::make_shared<Surface3>(
+                surface_id == 1
+                    ? std::array<ID, 3>{this->nodes()[0], this->nodes()[1], this->nodes()[2]}
+                    : std::array<ID, 3>{this->nodes()[0], this->nodes()[2], this->nodes()[1]});
+        } else if constexpr (N == 4) {
+            return std::make_shared<Surface4>(
+                surface_id == 1
+                    ? std::array<ID, 4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
+                    : std::array<ID, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
+        } else if constexpr (N == 6) {
+            return std::make_shared<Surface6>(
+                surface_id == 1
+                    ? std::array<ID, 6>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
+                                        this->nodes()[4], this->nodes()[5]}
+                    : std::array<ID, 6>{this->nodes()[0], this->nodes()[2], this->nodes()[1], this->nodes()[5],
+                                        this->nodes()[4], this->nodes()[3]});
+        } else if constexpr (N == 8) {
+            return std::make_shared<Surface8>(
+                surface_id == 1
+                    ? std::array<ID, 8>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
+                                        this->nodes()[4], this->nodes()[5], this->nodes()[6], this->nodes()[7]}
+                    : std::array<ID, 8>{this->nodes()[0], this->nodes()[3], this->nodes()[2], this->nodes()[1],
+                                        this->nodes()[7], this->nodes()[6], this->nodes()[5], this->nodes()[4]});
+        } else {
+            static_assert(N == 3 || N == 4 || N == 6 || N == 8, "Unsupported number of nodes for surface construction");
         }
-
-        return nullptr;
     }
+
+
     Precision  volume() override {
         return 0;
     }
@@ -428,9 +449,6 @@ struct DefaultShellElement : public ShellElement<N> {
         Vec2 stress_shear = mat_shear * B_shear * disp_shear;
         res(3) += stress_shear(0);
         res(4) += stress_shear(1);
-
-        logging::warning(false, "this code produces incorrect results.");
-        logging::warning(false, "the stresses for the shell elements, especially S8 must be revised.");
 
         return res;
 

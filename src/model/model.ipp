@@ -1,5 +1,6 @@
 #include "element/element.h"
 #include "element/element_structural.h"
+#include "geometry/surface/surface.h"
 
 inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     logging::error(id < _data->max_nodes, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
@@ -47,7 +48,6 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
         _data->surfaces.reserve(id + 128);
         _data->surfaces.resize(id + 1);
     }
-
     logging::error(_data->surfaces[id] == nullptr, "surface with id=", id, " has already been defined");
 
     _data->surfaces[id] = surfptr;
