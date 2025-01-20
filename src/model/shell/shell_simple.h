@@ -318,7 +318,6 @@ struct DefaultShellElement : public ShellElement<N> {
         return integration_scheme_;
     }
 
-
     SurfacePtr surface(ID surface_id) override {
         std::array<ID, N> _nodes;
 
