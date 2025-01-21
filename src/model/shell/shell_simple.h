@@ -323,40 +323,8 @@ struct DefaultShellElement : public ShellElement<N> {
         return integration_scheme_;
     }
 
-    SurfacePtr surface(ID surface_id) override {
-        // TODO split into derived classes
-        if constexpr (N == 3) {
-            return std::make_shared<Surface3>(
-                surface_id == 1
-                    ? std::array<ID, 3>{this->nodes()[0], this->nodes()[1], this->nodes()[2]}
-                    : std::array<ID, 3>{this->nodes()[0], this->nodes()[2], this->nodes()[1]});
-        } else if constexpr (N == 4) {
-            return std::make_shared<Surface4>(
-                surface_id == 1
-                    ? std::array<ID, 4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
-                    : std::array<ID, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
-        } else if constexpr (N == 6) {
-            return std::make_shared<Surface6>(
-                surface_id == 1
-                    ? std::array<ID, 6>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
-                                        this->nodes()[4], this->nodes()[5]}
-                    : std::array<ID, 6>{this->nodes()[0], this->nodes()[2], this->nodes()[1], this->nodes()[5],
-                                        this->nodes()[4], this->nodes()[3]});
-        } else if constexpr (N == 8) {
-            return std::make_shared<Surface8>(
-                surface_id == 1
-                    ? std::array<ID, 8>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
-                                        this->nodes()[4], this->nodes()[5], this->nodes()[6], this->nodes()[7]}
-                    : std::array<ID, 8>{this->nodes()[0], this->nodes()[3], this->nodes()[2], this->nodes()[1],
-                                        this->nodes()[7], this->nodes()[6], this->nodes()[5], this->nodes()[4]});
-        } else {
-            static_assert(N == 3 || N == 4 || N == 6 || N == 8, "Unsupported number of nodes for surface construction");
-        }
-    }
-
-
     Precision  volume() override {
-        return 0;
+        return area() * this->get_section()->thickness;
     }
     MapMatrix  stiffness(Precision* buffer) override {
         // compute axes and local coordinates
