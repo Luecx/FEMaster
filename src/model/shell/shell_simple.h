@@ -170,7 +170,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return res;
     }
 
-    StaticMatrix<2, 3 * N> strain_disp_shear(ShapeFunction& shape_func, ShapeDerivative& shape_der, Jacobian& jacobian) {
+    virtual StaticMatrix<2, 3 * N> strain_disp_shear(ShapeFunction& shape_func, ShapeDerivative& shape_der, Jacobian& jacobian) {
         auto H = shape_func;
         auto dH = (shape_der * jacobian.inverse()).transpose();
 
@@ -324,7 +324,7 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     Precision  volume() override {
-        return area() * this->get_section()->thickness;
+        return 0;
     }
     MapMatrix  stiffness(Precision* buffer) override {
         // compute axes and local coordinates

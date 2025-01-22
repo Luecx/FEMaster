@@ -25,7 +25,7 @@ struct Model {
         _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces)){
 
         // initialize the node data
-        _data->node_data.create(NodeDataEntries::POSITION, 6);
+        _data->node_data.create(POSITION, 6);
         _data->node_data.get(POSITION).setZero();
     }
 

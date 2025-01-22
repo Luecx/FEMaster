@@ -17,10 +17,13 @@ struct S4 : DefaultShellElement<4, Surface4, quadrature::Domain::DOMAIN_ISO_QUAD
     virtual std::shared_ptr<SurfaceInterface> surface(int surface_id) {
         return std::make_shared<Surface4>(
             surface_id == 1
-                ? std::array<ID, 4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
-                : std::array<ID, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
+                ? std::array<ID, 4> {this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
+                : std::array<ID, 4> {this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
     }
 
+    StaticMatrix<2, 3 * 4> strain_disp_shear(ShapeFunction& shape_func, ShapeDerivative& shape_der, Jacobian& jacobian) override {
+        return DefaultShellElement::strain_disp_shear(shape_func, shape_der, jacobian);
+    }
 };
 
 
