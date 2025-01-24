@@ -13,6 +13,8 @@ Sections in FEMaster are used to define the material properties, geometry, and o
 
 Each section type has a unique set of parameters that can be specified in the input file. The following sections describe the syntax and parameters for each type.
 
+% some spacing, not a new page
+
 \section{Solid Section \texttt{(*SOLID SECTION)}}
 Solid sections define the material properties for solid elements. These are primarily used for 3D solid elements like C3D4, C3D8, and C3D20.
 
@@ -52,13 +54,13 @@ Shell sections define the material properties and thickness for shell elements. 
 \subsection{Syntax}
 \begin{codeBlock}
 *SHELL SECTION, ELSET=, MAT=
-
+<thickness>
 \end{codeBlock}
 
 \begin{itemize}
 \item \textbf{ELSET}: The name of the element set to which the shell section is applied. This is a required parameter.
 \item \textbf{MAT} or \textbf{MATERIAL}: The name of the material to be used for the elements in the set. This is a required parameter.
-\item \textbf{Thickness}: The thickness of the shell elements. This is a required parameter.
+\item \textbf{thickness}: The thickness of the shell elements. This is a required parameter.
 \end{itemize}
 
 \section{Beam Section \texttt{(*BEAM SECTION)}}
@@ -83,7 +85,7 @@ Profiles define the geometric properties of beam cross-sections. They must be sp
 \subsubsection{Syntax}
 \begin{codeBlock}
 *PROFILE, NAME=
-, <moment_of_inertia_y>, <moment_of_inertia_z>, <torsional_constant>
+<area>, <second_moment_of_area_y>, <second_moment_of_area_z>, <torsional_constant>
 \end{codeBlock}
 
 \begin{itemize}

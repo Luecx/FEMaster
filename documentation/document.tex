@@ -17,6 +17,8 @@
 \usepackage{pgfplotstable}     % For creating tables from data
 \usepackage{booktabs}          % For creating tables
 \usepackage[ruled,vlined]{algorithm2e}
+\usepackage{titlesec}          % For customizing section titles
+
 
 \usepackage{listings}          % Package for code listings
 \usepackage{xcolor}            % Package for custom colors
@@ -37,6 +39,9 @@
 \fancyfoot[C]{\thepage}
 
 \setlength{\parindent}{0pt}
+\titlespacing*{\section}{0pt}{5\baselineskip}{1\baselineskip}
+\titlespacing*{\subsection}{0pt}{3\baselineskip}{1\baselineskip}
+
 
 \setcounter{tocdepth}{3}      % Include subsubsections in the table of contents
 \setcounter{secnumdepth}{3}   % Number subsubsections
@@ -121,8 +126,8 @@
 
 % Bibliography Section
 \newpage
-%\chapter*{Bibliography}
-%\addcontentsline{toc}{chapter}{Bibliography}  % Include in the table of contents
-% \printbibliography
+\chapter*{Bibliography}
+\addcontentsline{toc}{chapter}{Bibliography}  % Include in the table of contents
+\printbibliography
 
 \end{document}

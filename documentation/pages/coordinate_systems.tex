@@ -1,106 +1,226 @@
+
 \chapter{Coordinate Systems}
 \label{chap:coordinate_systems}
+
 
 Coordinate systems are fundamental in finite element analysis for defining how elements and nodes are oriented in space,
 as well as for applying loads, boundary conditions, and constraints relative to specific directions.
 In \texttt{FEMaster}, coordinate systems provide the local frames of reference for defining connector elements but will eventually define custom forces/loads.
 This chapter covers the current implementation of coordinate systems and how they can be defined using various input configurations.
 
+
 \section{Rectangular Coordinate Systems (\texttt{*COORDINATE SYSTEM, TYPE=RECTANGULAR})}
+
 
 Rectangular coordinate systems are defined by specifying the orientation of their axes in the global coordinate space.
 This type of system is useful for defining orthogonal local axes and simplifying transformations between different reference frames. In the current implementation, rectangular coordinate systems can be defined using one, two, or three vectors. Depending on the number of vectors provided, the system will determine the remaining axes automatically to form a complete orthonormal basis.
 
+
 \subsection{Definitions}
+
 
 The rectangular coordinate system can be defined using the following options for specifying its orientation:
 
+
 \begin{itemize}
-    \item \textbf{Single Vector Definition}: Defines only the x-axis. The y-axis and z-axis will be chosen to form a right-handed coordinate system, but their orientation is arbitrary.
-    \item \textbf{Two Vector Definition}: Defines both the x-axis and the y-axis. The z-axis will be chosen as the cross product of the x and y vectors to form a right-handed system.
-    \item \textbf{Three Vector Definition}: Defines the x-axis, y-axis, and z-axis explicitly. All three vectors should be mutually orthogonal to form a proper coordinate system.
+\item \textbf{Single Vector Definition}: Defines only the x-axis. The y-axis and z-axis will be chosen to form a right-handed coordinate system, but their orientation is arbitrary.
+\item \textbf{Two Vector Definition}: Defines both the x-axis and the y-axis. The z-axis will be chosen as the cross product of the x and y vectors to form a right-handed system.
+\item \textbf{Three Vector Definition}: Defines the x-axis, y-axis, and z-axis explicitly. All three vectors should be mutually orthogonal to form a proper coordinate system.
 \end{itemize}
+
 
 \subsection{Syntax}
 
+
 To define a rectangular coordinate system in the input file, use the following syntax:
+
 
 \begin{codeBlock}
 *COORDINATE SYSTEM, TYPE=RECTANGULAR, NAME=SYSTEM_NAME
 x1, y1, z1
 \end{codeBlock}
 
+
 \begin{codeBlock}
 *COORDINATE SYSTEM, TYPE=RECTANGULAR, NAME=SYSTEM_NAME
 x1, y1, z1, x2, y2, z2
 \end{codeBlock}
+
 
 \begin{codeBlock}
 *COORDINATE SYSTEM, TYPE=RECTANGULAR, NAME=SYSTEM_NAME
 x1, y1, z1, x2, y2, z2, x3, y3, z3
 \end{codeBlock}
 
+
 The \texttt{TYPE} parameter must be set to \texttt{RECTANGULAR}, and \texttt{NAME} should specify a unique identifier for the coordinate system. The subsequent lines define the vectors:
 
+
 \begin{itemize}
-    \item For a \textbf{single vector definition}, specify the components of the x-axis: \texttt{x1, y1, z1}.
-    \item For a \textbf{two vector definition}, specify both the x-axis and the y-axis: \texttt{x1, y1, z1, x2, y2, z2}.
-    \item For a \textbf{three vector definition}, specify the x-axis, y-axis, and z-axis: \texttt{x1, y1, z1, x2, y2, z2, x3, y3, z3}.
+\item For a \textbf{single vector definition}, specify the components of the x-axis: \texttt{x1, y1, z1}.
+\item For a \textbf{two vector definition}, specify both the x-axis and the y-axis: \texttt{x1, y1, z1, x2, y2, z2}.
+\item For a \textbf{three vector definition}, specify the x-axis, y-axis, and z-axis: \texttt{x1, y1, z1, x2, y2, z2, x3, y3, z3}.
 \end{itemize}
+
 
 \subsection{Example}
 
+
 Consider a rectangular coordinate system named \texttt{CSYS1} defined using a single vector for the x-axis:
+
 
 \begin{codeBlock}
 *COORDINATE SYSTEM, TYPE=RECTANGULAR, NAME=CSYS1
 1.0, 0.0, 0.0
 \end{codeBlock}
 
+
 This definition sets the x-axis to point along the global x-direction. The y-axis and z-axis will be chosen automatically to form a right-handed coordinate system.
 
+
 For a definition using two vectors, where the x-axis is aligned along the global x-direction, and the y-axis is aligned along the global y-direction:
+
 
 \begin{codeBlock}
 *COORDINATE SYSTEM, TYPE=RECTANGULAR, NAME=CSYS2
 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
 \end{codeBlock}
 
+
 This setup fully determines the orientation, and the z-axis will be set to the cross product of the x and y vectors.
 
+
 If all three axes are provided:
+
 
 \begin{codeBlock}
 *COORDINATE SYSTEM, TYPE=RECTANGULAR, NAME=CSYS3
 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0
 \end{codeBlock}
 
+
 The system is defined explicitly as a standard Cartesian coordinate system, where x, y, and z are aligned with the global axes.
+
 
 \subsection{Behavior and Usage}
 
+
 The coordinate system is used in defining:
 
+
 \begin{itemize}
-    \item \textbf{Connector Elements}: The local orientation of the element can be specified using a rectangular coordinate system.
-    \item \textbf{Constraints}: Coordinate systems are often required for defining rotational constraints, such as kinematic couplings or tie constraints, when nodes or surfaces are oriented in non-standard directions.
-    \item \textbf{Boundary Conditions and Loads}: Specifying local directions for applying forces or displacements.
+\item \textbf{Connector Elements}: The local orientation of the element can be specified using a rectangular coordinate system.
+\item \textbf{Constraints}: Coordinate systems are often required for defining rotational constraints, such as kinematic couplings or tie constraints, when nodes or surfaces are oriented in non-standard directions.
+\item \textbf{Boundary Conditions and Loads}: Specifying local directions for applying forces or displacements.
 \end{itemize}
+
 
 The rectangular coordinate system provides a straightforward means of defining orientations without complex transformations or additional parameters.
 
-\section{Planned Extensions}
 
-Currently, only rectangular coordinate systems are supported, but the implementation will be expanded to include:
+\section{Cylindrical Coordinate Systems (\texttt{*COORDINATE SYSTEM, TYPE=CYLINDRICAL})}
+
+
+Cylindrical coordinate systems are defined by specifying three points: the base point (origin), a point on the radial axis (r-axis), and a point in the theta-plane. These systems are useful for problems involving rotational symmetry or loads and constraints that vary in a radial or angular direction.
+
+
+\subsection{Definitions}
+
+
+The cylindrical coordinate system requires the following points to define its orientation:
+
 
 \begin{itemize}
-    \item \textbf{Cylindrical Coordinate Systems}: Defined using a radial distance, angle, and height.
-    \item \textbf{Spherical Coordinate Systems}: Defined using a radius, polar angle, and azimuthal angle.
-    \item \textbf{Coordinate Systems Defined by Angles}: Instead of using vectors, these systems will be defined by specifying rotation angles around principal axes. This will simplify certain definitions where rotational alignment is the primary focus.
+\item \textbf{Base Point}: A vector specifying the origin of the cylindrical system.
+\item \textbf{Radial Point}: A vector specifying a point on the radial axis (r-axis).
+\item \textbf{Theta Point}: A vector specifying a point in the theta-plane.
 \end{itemize}
+
+
+From these points, the following unit vectors are computed:
+
+
+\begin{itemize}
+\item \textbf{Radial Axis (r-axis)}: The normalized vector from the base point to the radial point.
+\item \textbf{Theta Axis ($\theta$-axis)}: A unit vector orthogonalized against the r-axis in the theta-plane.
+\item \textbf{Z-Axis}: The cross product of the r-axis and $\theta$-axis to ensure orthogonality.
+\end{itemize}
+
+
+\subsection{Syntax}
+
+
+To define a cylindrical coordinate system in the input file, use the following syntax:
+
+
+\begin{codeBlock}
+*COORDINATE SYSTEM, TYPE=CYLINDRICAL, NAME=SYSNAME
+x1, y1, z1, x2, y2, z2, x3, y3, z3
+\end{codeBlock}
+
+
+The \texttt{TYPE} parameter must be set to \texttt{CYLINDRICAL}, and \texttt{NAME} should specify a unique identifier for the coordinate system. The subsequent line defines the points:
+
+
+\begin{itemize}
+\item \textbf{Base Point}: \texttt{x1, y1, z1}
+\item \textbf{Radial Point}: \texttt{x2, y2, z2}
+\item \textbf{Theta Point}: \texttt{x3, y3, z3}
+\end{itemize}
+
+
+\subsection{Example}
+
+
+Consider a cylindrical coordinate system named \texttt{CSYS4} defined as follows:
+
+
+\begin{codeBlock}
+*COORDINATE SYSTEM, TYPE=CYLINDRICAL, NAME=CSYS4
+0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
+\end{codeBlock}
+
+
+This defines a system with:
+
+
+\begin{itemize}
+\item Base point at \texttt{(0.0, 0.0, 0.0)}.
+\item Radial point along the global x-direction \texttt{(1.0, 0.0, 0.0)}.
+\item Theta point along the global y-direction \texttt{(0.0, 1.0, 0.0)}.
+\end{itemize}
+
+
+\subsection{Behavior and Usage}
+
+
+Cylindrical coordinate systems are used for defining:
+
+
+\begin{itemize}
+\item \textbf{Rotational Symmetry}: Problems where loads, constraints, or geometry vary radially or angularly.
+\item \textbf{Radial and Angular Loads}: Application of forces or displacements in cylindrical directions.
+\item \textbf{Local Orientations}: Elements requiring cylindrical orientation for analysis.
+\end{itemize}
+
+
+\section{Planned Extensions}
+
+
+Currently, rectangular and cylindrical coordinate systems are supported, but the implementation will be expanded to include:
+
+
+\begin{itemize}
+\item \textbf{Spherical Coordinate Systems}: Defined using a radius, polar angle, and azimuthal angle.
+\item \textbf{Coordinate Systems Defined by Angles}: Instead of using vectors, these systems will be defined by specifying rotation angles around principal axes. This will simplify certain definitions where rotational alignment is the primary focus.
+\end{itemize}
+
 
 \section{Conclusion}
 
-Coordinate systems provide a powerful tool for aligning and controlling element orientations, boundary conditions, and constraints within \texttt{FEMaster}. The current support for rectangular systems, with flexible definitions using one, two, or three vectors, allows for detailed control of local frames. Future enhancements will broaden this capability, making the solver more versatile for complex simulations.
 
-For now, understanding the rectangular system syntax and its use cases will help set up consistent simulations. As more types are added, this chapter will be updated to reflect the expanded functionality.
+Coordinate systems provide a powerful tool for aligning and controlling element orientations, boundary conditions, and constraints within \texttt{FEMaster}. The current support for rectangular and cylindrical systems, with flexible definitions, allows for detailed control of local frames. Future enhancements will broaden this capability, making the solver more versatile for complex simulations.
+
+
+For now, understanding the rectangular and cylindrical system syntax and their use cases will help set up consistent simulations. As more types are added, this chapter will be updated to reflect the expanded functionality.
+
