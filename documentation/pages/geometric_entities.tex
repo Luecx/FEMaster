@@ -72,6 +72,12 @@ FEMaster currently supports the following 3D element types:
     \item \textbf{C3D15}: 15-node quadratic triangular prism (wedge) element.
     \item \textbf{C3D20}: 20-node quadratic hexahedral (brick) element.
     \item \textbf{C3D20R}: 20-node reduced integration hexahedral element.
+    \item \textbf{S3}: 3-node triangular shell element.
+    \item \textbf{S4}: 4-node quadrilateral shell element.
+    \item \textbf{S6}: 6-node triangular shell element (second-order).
+    \item \textbf{S8}: 8-node quadrilateral shell element (second-order).
+    \item \textbf{B33}: 2-node beam element in 3D with third order interpolation for accurate bending without shear.
+    \item \textbf{P}: 1-node point element for springs and masses.
 \end{itemize}
 
 \subsection{Syntax}
@@ -631,4 +637,3 @@ $\text{min\_distance\_squared} \gets \infty$ \;
 }
 \Return{$\text{best\_coords}$} \;
 \end{algorithm}
-

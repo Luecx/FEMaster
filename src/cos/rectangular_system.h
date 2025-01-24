@@ -18,8 +18,8 @@ namespace cos {
  ******************************************************************************/
 class RectangularSystem : public CoordinateSystem {
 private:
-    StaticMatrix<3, 3> local_to_global_; ///< Transformation matrix from local to global coordinates.
-    StaticMatrix<3, 3> global_to_local_; ///< Transformation matrix from global to local coordinates.
+    Basis local_to_global_; ///< Transformation matrix from local to global coordinates.
+    Basis global_to_local_; ///< Transformation matrix from global to local coordinates.
 
     Vec3 x_axis_; ///< Unit vector of the x-axis in the global coordinate system.
     Vec3 y_axis_; ///< Unit vector of the y-axis in the global coordinate system.
@@ -113,53 +113,53 @@ public:
         return local_to_global_ * local_point;
     }
 
-    StaticMatrix<3,3> get_axes(const Vec3& local_point) const override {
+    Basis get_axes(const Vec3& local_point) const override {
         (void) local_point;
         return local_to_global_;
     }
 
-    static StaticMatrix<3, 3> rotation_x(Precision angle) {
-        StaticMatrix<3, 3> rot;
+    static Basis rotation_x(Precision angle) {
+        Basis rot;
         rot << 1, 0, 0,
                0, std::cos(angle), -std::sin(angle),
                0, std::sin(angle), std::cos(angle);
         return rot;
     }
 
-    static StaticMatrix<3, 3> rotation_y(Precision angle) {
-        StaticMatrix<3, 3> rot;
+    static Basis rotation_y(Precision angle) {
+        Basis rot;
         rot << std::cos(angle), 0, std::sin(angle),
                0, 1, 0,
                -std::sin(angle), 0, std::cos(angle);
         return rot;
     }
 
-    static StaticMatrix<3, 3> rotation_z(Precision angle) {
-        StaticMatrix<3, 3> rot;
+    static Basis rotation_z(Precision angle) {
+        Basis rot;
         rot << std::cos(angle), -std::sin(angle), 0,
                std::sin(angle), std::cos(angle), 0,
                0, 0, 1;
         return rot;
     }
 
-    static StaticMatrix<3, 3> rotation_x_derivative(Precision angle) {
-        StaticMatrix<3, 3> rot;
+    static Basis rotation_x_derivative(Precision angle) {
+        Basis rot;
         rot << 0, 0, 0,
                0, -std::sin(angle), -std::cos(angle),
                0,  std::cos(angle), -std::sin(angle);
         return rot;
     }
 
-    static StaticMatrix<3, 3> rotation_y_derivative(Precision angle) {
-        StaticMatrix<3, 3> rot;
+    static Basis rotation_y_derivative(Precision angle) {
+        Basis rot;
         rot << -std::sin(angle), 0, std::cos(angle),
                0, 0, 0,
                -std::cos(angle), 0, -std::sin(angle);
         return rot;
     }
 
-    static StaticMatrix<3, 3> rotation_z_derivative(Precision angle) {
-        StaticMatrix<3, 3> rot;
+    static Basis rotation_z_derivative(Precision angle) {
+        Basis rot;
         rot << -std::sin(angle), -std::cos(angle), 0,
                std::cos(angle), -std::sin(angle), 0,
                0, 0, 0;
@@ -172,11 +172,11 @@ public:
     static RectangularSystem euler(Precision rot_x, Precision rot_y, Precision rot_z) {
         using std::cos;
         using std::sin;
-        StaticMatrix<3, 3> rot_x_mat = rotation_x(rot_x);
-        StaticMatrix<3, 3> rot_y_mat = rotation_y(rot_y);
-        StaticMatrix<3, 3> rot_z_mat = rotation_z(rot_z);
+        Basis rot_x_mat = rotation_x(rot_x);
+        Basis rot_y_mat = rotation_y(rot_y);
+        Basis rot_z_mat = rotation_z(rot_z);
 
-        StaticMatrix<3, 3> rot_mat = rot_x_mat * rot_y_mat * rot_z_mat;
+        Basis rot_mat = rot_x_mat * rot_y_mat * rot_z_mat;
 
         Vec3 x_axis_ = rot_mat.col(0);
         Vec3 y_axis_ = rot_mat.col(1);
@@ -185,15 +185,15 @@ public:
         return sys;
     }
 
-    static StaticMatrix<3,3> derivative_rot_x(Precision rot_x, Precision rot_y, Precision rot_z) {
+    static Basis derivative_rot_x(Precision rot_x, Precision rot_y, Precision rot_z) {
         return rotation_x_derivative(rot_x) * rotation_y(rot_y) * rotation_z(rot_z);
     }
 
-    static StaticMatrix<3,3> derivative_rot_y(Precision rot_x, Precision rot_y, Precision rot_z) {
+    static Basis derivative_rot_y(Precision rot_x, Precision rot_y, Precision rot_z) {
         return rotation_x(rot_x) * rotation_y_derivative(rot_y) * rotation_z(rot_z);
     }
 
-    static StaticMatrix<3,3> derivative_rot_z(Precision rot_x, Precision rot_y, Precision rot_z) {
+    static Basis derivative_rot_z(Precision rot_x, Precision rot_y, Precision rot_z) {
         return rotation_x(rot_x) * rotation_y(rot_y) * rotation_z_derivative(rot_z);
     }
 };

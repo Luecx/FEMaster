@@ -26,6 +26,9 @@
 namespace fem {
 namespace cos {
 
+
+using Basis = Mat3;
+
 /**
  * @class CoordinateSystem
  * @brief Base class for representing local coordinate systems in FEM _connectors.
@@ -61,7 +64,7 @@ public:
     /**
      * @brief gets the axes at a specified local point
      */
-    virtual StaticMatrix<3,3> get_axes(const Vec3& local_point) const = 0;
+    virtual Basis get_axes(const Vec3& local_point) const = 0;
 };
 
 

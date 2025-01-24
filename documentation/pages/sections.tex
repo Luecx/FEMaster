@@ -1,0 +1,98 @@
+
+\chapter{Sections}
+\label{chap:sections}
+
+Sections in FEMaster are used to define the material properties, geometry, and other characteristics of specific regions of a model. Sections are applied to element sets (ELSETs) to ensure that all elements within the set inherit the defined properties. The following section types are supported:
+
+\begin{itemize}
+\item \textbf{Solid Section (*SOLID SECTION)}
+\item \textbf{Point Mass Section (*POINT MASS SECTION)}
+\item \textbf{Shell Section (*SHELL SECTION)}
+\item \textbf{Beam Section (*BEAM SECTION)}
+\end{itemize}
+
+Each section type has a unique set of parameters that can be specified in the input file. The following sections describe the syntax and parameters for each type.
+
+\section{Solid Section \texttt{(*SOLID SECTION)}}
+Solid sections define the material properties for solid elements. These are primarily used for 3D solid elements like C3D4, C3D8, and C3D20.
+
+\subsection{Syntax}
+\begin{codeBlock}
+*SOLID SECTION, ELSET=, MAT=
+\end{codeBlock}
+
+\begin{itemize}
+\item \textbf{ELSET}: The name of the element set to which the solid section is applied. This is a required parameter.
+\item \textbf{MAT} or \textbf{MATERIAL}: The name of the material to be used for the elements in the set. This is a required parameter.
+\end{itemize}
+
+\section{Point Mass Section \texttt{(*POINT MASS SECTION)}}
+Point mass sections define mass and inertia properties for point elements. These sections are used to model concentrated masses or inertia effects.
+
+\subsection{Syntax}
+\begin{codeBlock}
+*POINT MASS SECTION, ELSET=
+<mass>
+<inertia_x>, <inertia_y>, <inertia_z>
+<spring_x>, <spring_y>, <spring_z>
+<rotary_spring_x>, <rotary_spring_y>, <rotary_spring_z>
+\end{codeBlock}
+
+\begin{itemize}
+\item \textbf{ELSET}: The name of the element set to which the point mass section is applied. This is a required parameter.
+\item \textbf{Mass (optional)}: The concentrated mass. Defaults to 0.0 if not provided.
+\item \textbf{Inertia (optional)}: The rotational inertia components in the x, y, and z directions. Defaults to .
+\item \textbf{Spring (optional)}: Translational spring stiffness in the x, y, and z directions. Defaults to .
+\item \textbf{Rotary Spring (optional)}: Rotational spring stiffness in the x, y, and z directions. Defaults to .
+\end{itemize}
+
+\section{Shell Section \texttt{(*SHELL SECTION)}}
+Shell sections define the material properties and thickness for shell elements. These sections are used for elements like S4 and S8.
+
+\subsection{Syntax}
+\begin{codeBlock}
+*SHELL SECTION, ELSET=, MAT=
+
+\end{codeBlock}
+
+\begin{itemize}
+\item \textbf{ELSET}: The name of the element set to which the shell section is applied. This is a required parameter.
+\item \textbf{MAT} or \textbf{MATERIAL}: The name of the material to be used for the elements in the set. This is a required parameter.
+\item \textbf{Thickness}: The thickness of the shell elements. This is a required parameter.
+\end{itemize}
+
+\section{Beam Section \texttt{(*BEAM SECTION)}}
+Beam sections define the material properties and cross-sectional profile for beam elements. These sections are used for elements like B33.
+
+\subsection{Syntax}
+\begin{codeBlock}
+*BEAM SECTION, ELSET=, MAT=, PROFILE=
+<orientation_x>, <orientation_y>, <orientation_z>
+\end{codeBlock}
+
+\begin{itemize}
+\item \textbf{ELSET}: The name of the element set to which the beam section is applied. This is a required parameter.
+\item \textbf{MAT} or \textbf{MATERIAL}: The name of the material to be used for the elements in the set. This is a required parameter.
+\item \textbf{PROFILE}: The name of the cross-sectional profile. This is a required parameter and must correspond to a profile defined using the \texttt{*PROFILE} command.
+\item \textbf{Orientation (optional)}: A vector  defining the beam orientation.
+\end{itemize}
+
+\subsection{Defining Profiles}
+Profiles define the geometric properties of beam cross-sections. They must be specified using the \texttt{*PROFILE} command.
+
+\subsubsection{Syntax}
+\begin{codeBlock}
+*PROFILE, NAME=
+, <moment_of_inertia_y>, <moment_of_inertia_z>, <torsional_constant>
+\end{codeBlock}
+
+\begin{itemize}
+\item \textbf{NAME} or \textbf{PROFILE}: The name of the profile. This is a required parameter.
+\item \textbf{Area}: The cross-sectional area. Defaults to 0.0 if not provided.
+\item \textbf{Moment of Inertia (Iy, Iz)}: The moments of inertia about the y and z axes. Defaults to 0.0 if not provided.
+\item \textbf{Torsional Constant (Jt)}: The torsional constant. Defaults to 0.0 if not provided.
+\end{itemize}
+
+
+
+

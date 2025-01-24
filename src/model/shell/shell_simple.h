@@ -5,12 +5,13 @@
 #ifndef SHELL_SIMPLE_H
 #define SHELL_SIMPLE_H
 
-#include "shell.h"
+#include "../../material/stress.h"
 #include "../geometry/surface/surface.h"
+#include "../geometry/surface/surface3.h"
 #include "../geometry/surface/surface4.h"
 #include "../geometry/surface/surface6.h"
-#include "../geometry/surface/surface3.h"
 #include "../geometry/surface/surface8.h"
+#include "shell.h"
 
 // this file is partially based on the implementation of
 // https://github.com/JWock82/Pynite/blob/main/Archived/MITC4.py
@@ -342,7 +343,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return MapMatrix(buffer, 4, 4);
     }
 
-    virtual Vec6 stress(Precision r, Precision s, Precision t, NodeData& displacement) {
+    virtual Stress stress(Precision r, Precision s, Precision t, NodeData& displacement) {
         (void) r;
         (void) s;
         (void) t;
@@ -418,7 +419,7 @@ struct DefaultShellElement : public ShellElement<N> {
         res(3) += stress_shear(0);
         res(4) += stress_shear(1);
 
-        return res;
+        return Stress{res};
 
     }
 
@@ -432,11 +433,15 @@ struct DefaultShellElement : public ShellElement<N> {
         for(int i = 0; i < N; i++) {
             ID node_id = this->nodes()[i];
 
-            Vec6 stress_bot = this->stress(coords(i, 0), coords(i, 1), 0, displacement);
-            Vec6 stress_top = this->stress(coords(i, 0), coords(i, 1), 1, displacement);
+            Stress stress_bot = this->stress(coords(i, 0), coords(i, 1), 0, displacement);
+            Stress stress_top = this->stress(coords(i, 0), coords(i, 1), 1, displacement);
 
-            // // choose the one with the larger norm
-            Vec6 stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;
+            // choose the one with the larger norm
+            Stress stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;
+
+            // transform to global coordinates
+            Mat3 axes = get_xyz_axes();
+            stress_nodal = stress_nodal.transform(axes);
 
             stress.row(node_id) += stress_nodal;
         }
