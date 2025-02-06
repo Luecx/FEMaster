@@ -6,3 +6,4 @@ from .segment_curved import CurvedSegment
 from .segment_straight import StraightSegment
 from .segment_group import SegmentGroup
 from .segment_filet import Filet
+from .segment_bspline import BSplineSegment

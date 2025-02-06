@@ -40,6 +40,8 @@ struct Stress : Vec6 {
 };
 
 
+using Stresses = std::vector<Stress>;
+
 }
 
 #endif //STRESS_H

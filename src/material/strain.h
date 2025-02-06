@@ -39,6 +39,9 @@ struct Strain : Vec6 {
 
 };
 
+
+using Strains = std::vector<Strain>;
+
 }
 
 #endif //STRAIN_H

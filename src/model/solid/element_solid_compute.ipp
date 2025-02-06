@@ -15,6 +15,52 @@
 
 namespace fem::model {
 
+
+template<Index N>
+Strains SolidElement<N>::strain(NodeData& displacement, std::vector<Vec3>& rst) {
+    auto global_node_coords = this->node_coords_global();
+    auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
+    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+
+    for(Vec3 pos: rst) {
+        Precision r = pos(0);
+        Precision s = pos(1);
+        Precision t = pos(2);
+        Precision det;
+        StaticMatrix<N, D> shape_der_global = this->shape_derivative_global(r, s, t);
+        StaticMatrix<n_strain, D * N> B = this->strain_displacement(shape_der_global);
+        StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
+
+        if (det > 0) {
+            auto strains = B * local_displacement;
+            Strains strain;
+            for (int j = 0; j < n_strain; j++) {
+                strain.push_back(strains(j));
+            }
+        } else {
+
+        }
+
+        auto strains  = B * local_displacement;
+
+        for (int j = 0; j < n_strain; j++) {
+            strain.push_back(strains(j));
+        }
+    }
+}
+
+template<Index N>
+Stresses SolidElement<N>::stress(NodeData& displacement, std::vector<Vec3>& rst) {
+    auto strains = strain(displacement, rst);
+    Stresses stress;
+    for(int i = 0; i < rst.size(); i++) {
+        StaticMatrix<n_strain, n_strain> E = material_matrix(rst[i](0), rst[i](1), rst[i](2));
+        stress.push_back(E * strains[i]);
+    }
+    return stress;
+}
+
+
 //-----------------------------------------------------------------------------
 // compute_stress_strain_nodal
 //-----------------------------------------------------------------------------

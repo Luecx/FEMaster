@@ -55,24 +55,6 @@ struct DefaultShellElement : public ShellElement<N> {
         Vec3 z_axis = n12.cross(n13) / (n12.cross(n13)).norm();
         Vec3 y_axis = z_axis.cross(x_axis);
 
-        // in the scenario where the normal (z-axis) is basically a unit vector, we adjust the x-axis and y-axis so they align
-        // with the global axes
-        if (std::abs(z_axis(0)) > 0.9999) {
-            x_axis = Vec3{0, 1, 0};
-            y_axis = Vec3{0, 0, 1};
-            z_axis = Vec3{1, 0, 0};
-        }
-        if (std::abs(z_axis(1)) > 0.9999) {
-            x_axis = Vec3{0, 0, 1};
-            y_axis = Vec3{1, 0, 0};
-            z_axis = Vec3{0, 1, 0};
-        }
-        if (std::abs(z_axis(2)) > 0.9999) {
-            x_axis = Vec3{1, 0, 0};
-            y_axis = Vec3{0, 1, 0};
-            z_axis = Vec3{0, 0, 1};
-        }
-
         // for each node calculate the local x,y coordinates by projecting onto the axes
         StaticMatrix<3, 3> res;
         res.row(0) = x_axis.transpose();
@@ -343,11 +325,9 @@ struct DefaultShellElement : public ShellElement<N> {
         return MapMatrix(buffer, 4, 4);
     }
 
-    virtual Stress stress(Precision r, Precision s, Precision t, NodeData& displacement) {
-        (void) r;
-        (void) s;
-        (void) t;
-        (void) displacement;
+    virtual Stress stress(NodeData& displacement, Vec3& xyz) {
+        Precision r = xyz(0);
+        Precision s = xyz(1);
 
         Vec6 res;
         res = Vec6::Zero();

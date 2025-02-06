@@ -127,10 +127,6 @@ struct Surface : public SurfaceInterface {
      **/
     template<Index M>
     StaticVector<M> interpolate(const StaticMatrix<N, M>& nodal_values, Precision r, Precision s) const {
-        std::cout << "interpolating" << std::endl;
-        std::cout << shape_function(r, s).transpose() << std::endl;
-        std::cout << nodal_values << std::endl;
-
         StaticVector<M> res = (shape_function(r,s).transpose() * nodal_values).transpose();
     }
 

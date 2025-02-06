@@ -48,6 +48,14 @@ class Geometry:
         self.node_sets = {"NALL": []}
         self.elem_sets = {"EALL": []}
 
+        self.materials = {}
+        self.sections  = []
+
+        self.loads     = {} # set, (x,y,z,rx,ry,rz)
+        self.supps     = {} # set, (x,y,z,rx,ry,rz)
+
+        self.steps     = [] # name -> loads, supps
+
     def add_node(self, node_id=-1, x=0, y=0, z=0):
         # Resize nodes list if necessary
         if node_id == -1:
@@ -90,6 +98,24 @@ class Geometry:
     def add_element_to_set(self, name, element_id):
         self.add_element_set(name)
         self.elem_sets[name].append(element_id)
+
+    def add_material(self, name, young, poisson, density):
+        self.materials[name] = {'young': young, 'poisson': poisson, 'density': density}
+
+    def add_section_solid(self, material, elset):
+        self.sections.append({'type': 'SOLID', 'material': material, 'elset': elset})
+
+    def add_section_shell(self, material, elset, thickness):
+        self.sections.append({'type': 'SHELL', 'material': material, 'elset': elset, 'thickness': thickness})
+
+    def add_load(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None):
+        self.loads[name] = {'set':set, 'data': (fx, fy, fz, mx, my, mz)}
+
+    def add_supp(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None):
+        self.supps[name] = {'set':set, 'data': (fx, fy, fz, mx, my, mz)}
+
+    def add_step(self, name="Step-1", loads=[], supps=[]):
+        self.steps.append({'name': name, 'loads': loads, 'supports': supps})
 
     def determine_element_order(self):
         for element in self.elements:

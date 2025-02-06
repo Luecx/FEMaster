@@ -101,6 +101,11 @@ using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>; ///< 
 using NodeData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>; ///< Node-related data matrix
 using ElementData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>; ///< Element-related data matrix
 
+template<size_t B>
+using NodeDataM = Eigen::Matrix<Precision, Eigen::Dynamic, B, Eigen::RowMajor>; ///< Node-related data matrix with fixed columns
+template<size_t B>
+using ElementDataM = Eigen::Matrix<Precision, Eigen::Dynamic, B, Eigen::RowMajor>; ///< Element-related data matrix with fixed columns
+
 /******************************************************************************
 * @brief DOF-related matrix definitions for FEM systems.
 *

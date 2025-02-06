@@ -92,7 +92,7 @@ class S3(Element):
         n4 = new_node_ids[(n1, n2)]
         n5 = new_node_ids[(n2, n3)]
         n6 = new_node_ids[(n3, n1)]
-        return C2D6(self.element_id, [n1, n2, n3, n4, n5, n6])
+        return S6(self.element_id, [n1, n2, n3, n4, n5, n6])
 
     def connectivity(self):
         return [(self.node_ids[0], self.node_ids[1]),

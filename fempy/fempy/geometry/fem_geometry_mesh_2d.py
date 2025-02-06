@@ -31,6 +31,7 @@ def mesh_interior(segment_groups, second_order=False, mesh_type=0, tolerance=1e-
     # Initialize Gmsh
     gmsh.initialize()
     gmsh.model.add("SegmentGroupMesh")
+    gmsh.option.setNumber("General.Terminal", 0)  # Suppress terminal output
 
     # Store the curve loops and surfaces
     curve_loops = []
@@ -134,13 +135,13 @@ def mesh_interior(segment_groups, second_order=False, mesh_type=0, tolerance=1e-
 
             # Identify element type based on the number of nodes and create geometry
             if len(node_tags) == 3:
-                element_type = 'C2D3'  # 3-node triangle
+                element_type = 'S3'  # 3-node triangle
             elif len(node_tags) == 4:
-                element_type = 'C2D4'  # 4-node quadrilateral
+                element_type = 'S4'  # 4-node quadrilateral
             elif len(node_tags) == 6:
-                element_type = 'C2D6'  # 6-node second-order triangle
+                element_type = 'S6'  # 6-node second-order triangle
             elif len(node_tags) == 9:
-                element_type = 'C2D8'  # Always convert 9-node to 8-node quadrilateral
+                element_type = 'S8'  # Always convert 9-node to 8-node quadrilateral
                 node_indices = node_indices[:8]
             else:
                 raise ValueError(f"Unsupported element type with {len(node_tags)} nodes.")

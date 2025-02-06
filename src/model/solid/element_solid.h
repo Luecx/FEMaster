@@ -262,6 +262,15 @@ public:
     void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override;
 
     /**
+     * Computes the stress at a given point in the element.
+     * @param displacement
+     * @param xyz
+     * @return
+     */
+    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override;
+    Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override;
+
+    /**
      * @brief Computes the stress and strain at integration points of the element.
      *
      * @param node_coords The global nodal coordinates for the element.
