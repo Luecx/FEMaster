@@ -22,42 +22,12 @@ Strains SolidElement<N>::strain(NodeData& displacement, std::vector<Vec3>& rst) 
     auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
-    for(Vec3 pos: rst) {
-        Precision r = pos(0);
-        Precision s = pos(1);
-        Precision t = pos(2);
-        Precision det;
-        StaticMatrix<N, D> shape_der_global = this->shape_derivative_global(r, s, t);
-        StaticMatrix<n_strain, D * N> B = this->strain_displacement(shape_der_global);
-        StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
-
-        if (det > 0) {
-            auto strains = B * local_displacement;
-            Strains strain;
-            for (int j = 0; j < n_strain; j++) {
-                strain.push_back(strains(j));
-            }
-        } else {
-
-        }
-
-        auto strains  = B * local_displacement;
-
-        for (int j = 0; j < n_strain; j++) {
-            strain.push_back(strains(j));
-        }
-    }
+    return {};
 }
 
 template<Index N>
 Stresses SolidElement<N>::stress(NodeData& displacement, std::vector<Vec3>& rst) {
-    auto strains = strain(displacement, rst);
-    Stresses stress;
-    for(int i = 0; i < rst.size(); i++) {
-        StaticMatrix<n_strain, n_strain> E = material_matrix(rst[i](0), rst[i](1), rst[i](2));
-        stress.push_back(E * strains[i]);
-    }
-    return stress;
+    return {};
 }
 
 
@@ -123,20 +93,21 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
             ip_strain.setZero();
 
             compute_stress_strain(displacement, ip_stress, ip_strain, ip_xyz);
+
             auto res1 =
                 fem::math::interpolate::interpolate(ip_xyz,
                                                     ip_stress,
                                                     global_node_coords.row(n),
                                                     nullptr,
                                                     0.7,
-                                                    fem::math::interpolate::InterpolationFunction::QUADRATIC);
+                                                    fem::math::interpolate::InterpolationFunction::CONSTANT);
             auto res2 =
                 fem::math::interpolate::interpolate(ip_xyz,
                                                     ip_strain,
                                                     global_node_coords.row(n),
                                                     nullptr,
                                                     0.7,
-                                                    fem::math::interpolate::InterpolationFunction::QUADRATIC);
+                                                    fem::math::interpolate::InterpolationFunction::CONSTANT);
 
             for (int j = 0; j < n_strain; j++) {
 

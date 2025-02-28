@@ -156,7 +156,7 @@ DynamicVector compute_r2(const DynamicMatrix& predicted_values, const NodeData& 
 template<InterpolationFunction F>
 DynamicMatrix
     interpolate(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values) {
-    
+
     NodeData adjusted_xyz = xyz;
     // Subtract center from each row of xyz
     for (int i = 0; i < xyz.rows(); ++i) {
@@ -224,7 +224,11 @@ DynamicMatrix
     }
 
     DynamicMatrix ATB = lhs.transpose() * values;
-    DynamicVector coe = ATA.fullPivHouseholderQr().solve(ATB);
+
+    DynamicMatrix coe {ATA.rows(), ATB.cols()};
+    for (int i = 0; i < values.cols(); i++) {
+        coe.col(i) = ATA.fullPivHouseholderQr().solve(ATB.col(i));
+    }
 
     for (int i = 0; i < values.cols(); i++) {
         results(0, i) = evaluate<F>(coe.col(i), adjusted_center);

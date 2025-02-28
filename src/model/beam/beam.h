@@ -144,6 +144,12 @@ struct BeamElement : StructuralElement {
     SurfacePtr surface(ID surface_id) override {
         return nullptr;
     }
+    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+        return {};
+    };
+    Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+        return {};
+    };
 };
 
 }    // namespace fem::model

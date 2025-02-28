@@ -25,6 +25,9 @@ struct ElementInterface {
         _section = section;
     }
     material::MaterialPtr material() {
+        logging::error(_section != nullptr, "no section assigned to element ", elem_id);
+        logging::error(_section->material != nullptr, "no _material assigned to element ", elem_id);
+
         return _section->material;
     }
 

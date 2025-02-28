@@ -112,6 +112,12 @@ struct ShellElement : StructuralElement {
         (void) displacement;
         (void) result;
     };
+    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+        return {};
+    };
+    Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+        return {};
+    };
 };
 }
 

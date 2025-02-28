@@ -328,6 +328,7 @@ struct DefaultShellElement : public ShellElement<N> {
     virtual Stress stress(NodeData& displacement, Vec3& xyz) {
         Precision r = xyz(0);
         Precision s = xyz(1);
+        Precision t = xyz(2);
 
         Vec6 res;
         res = Vec6::Zero();
@@ -413,8 +414,10 @@ struct DefaultShellElement : public ShellElement<N> {
         for(int i = 0; i < N; i++) {
             ID node_id = this->nodes()[i];
 
-            Stress stress_bot = this->stress(coords(i, 0), coords(i, 1), 0, displacement);
-            Stress stress_top = this->stress(coords(i, 0), coords(i, 1), 1, displacement);
+            Vec3 top = {coords(i, 0), coords(i, 1), 1};
+            Vec3 bot = {coords(i, 0), coords(i, 1), 0};
+            Stress stress_bot = this->stress(displacement, top);
+            Stress stress_top = this->stress(displacement, bot);
 
             // choose the one with the larger norm
             Stress stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;

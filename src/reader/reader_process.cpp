@@ -66,6 +66,8 @@ void Reader::process() {
             process_cload();
         } else if (m_current_line.command() == "DLOAD") {
             process_dload();
+        } else if (m_current_line.command() == "PLOAD") {
+            process_pload();
         } else if (m_current_line.command() == "VLOAD") {
             process_vload();
         } else if (m_current_line.command() == "TLOAD") {

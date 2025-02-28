@@ -10,6 +10,9 @@
 #include <random>
 #include <filesystem>
 
+
+#include "math/interpolate.h"
+
 int main(int argc, char* argv[]) {
     // Set up argparse
     argparse::ArgumentParser program("FEM Solver");
