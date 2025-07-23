@@ -50,6 +50,7 @@ class Geometry:
 
         self.materials = {}
         self.sections  = []
+        self.profiles  = []
 
         self.loads     = {} # set, (x,y,z,rx,ry,rz)
         self.supps     = {} # set, (x,y,z,rx,ry,rz)
@@ -102,11 +103,52 @@ class Geometry:
     def add_material(self, name, young, poisson, density):
         self.materials[name] = {'young': young, 'poisson': poisson, 'density': density}
 
+    def add_profile(self, name, area, Iy, Iz, It):
+        self.profiles.append({
+            'name': name,
+            'area': area,
+            'Iy': Iy,
+            'Iz': Iz,
+            'It': It,
+        })
+
     def add_section_solid(self, material, elset):
         self.sections.append({'type': 'SOLID', 'material': material, 'elset': elset})
 
     def add_section_shell(self, material, elset, thickness):
         self.sections.append({'type': 'SHELL', 'material': material, 'elset': elset, 'thickness': thickness})
+
+    def add_section_beam(self, elset, material, profile, orientation=(0, 1, 0)):
+        if not isinstance(orientation, (list, tuple)) or len(orientation) != 3:
+            raise ValueError("Orientation must be a list or tuple of 3 floats")
+        self.sections.append({
+            'type': 'BEAM',
+            'elset': elset,
+            'material': material,
+            'profile': profile,
+            'orientation': tuple(orientation)
+        })
+
+    def add_section_pointmass(self, elset, mass=None, inertia=None, spring=None, rotary_spring=None):
+        def validate_vector(v, name):
+            if v is not None:
+                if not isinstance(v, (list, tuple)) or len(v) != 3:
+                    raise ValueError(f"{name} must be a list of 3 values or None.")
+                return list(v)
+            return None
+
+        inertia = validate_vector(inertia, "inertia")
+        spring = validate_vector(spring, "spring")
+        rotary_spring = validate_vector(rotary_spring, "rotary_spring")
+
+        self.sections.append({
+            'type': 'POINTMASS',
+            'elset': elset,
+            'mass': mass,
+            'inertia': inertia,
+            'spring': spring,
+            'rotary_spring': rotary_spring
+        })
 
     def add_load(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None):
         self.loads[name] = {'set':set, 'data': (fx, fy, fz, mx, my, mz)}
@@ -114,13 +156,30 @@ class Geometry:
     def add_supp(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None):
         self.supps[name] = {'set':set, 'data': (fx, fy, fz, mx, my, mz)}
 
-    def add_step(self, name="Step-1", loads=[], supps=[]):
-        self.steps.append({'name': name, 'loads': loads, 'supports': supps})
+    def add_step(self, type, name="Step-1", **kwargs):
+        step = {'name': name, 'type': type.upper()}
+
+        if step['type'] == "LINEAR STATIC":
+            required_keys = ['loads', 'supps']
+        elif step['type'] == "EIGENFREQ":
+            required_keys = ['supps', 'numeigenvalues']
+        else:
+            raise ValueError(f"Unsupported step type: {type}")
+
+        for key in required_keys:
+            if key not in kwargs:
+                raise ValueError(f"{key} must be provided for step type '{type}'")
+
+        step.update(kwargs)
+        self.steps.append(step)
+
 
     def determine_element_order(self):
         for element in self.elements:
             if element is not None:
                 if element.elem_type in ['C2D3', 'C2D4', 'C3D4', 'C3D6', 'C3D8']:
+                    return 1
+                if element.elem_type in ['S3', 'S4', 'S6', 'S8']:
                     return 1
                 elif element.elem_type in ['C2D6', 'C2D8', 'C3D10', 'C3D15', 'C3D20']:
                     return 2
@@ -260,10 +319,6 @@ class Geometry:
         #
         #     if node[axis_idx] - location != 0:
         #         geometry.add_node(node_id, *node)
-
-
-
-
 
     def plot_2d(self):
         if self.dimension != 2:

@@ -122,6 +122,38 @@ class Solution:
         sign = np.sign(np.sum(principal_stresses_val * (np.abs(principal_stresses_val) == max_absolute_principal_stress[:, None]), axis=1))
         return sign * mises_stress
 
+    def add_field(self, loadcase, field_name, data):
+        """
+        Adds or overrides a field in the specified loadcase.
+
+        Parameters:
+        -----------
+        loadcase : str or int
+            Loadcase name or number.
+        field_name : str
+            Name of the field (e.g. 'SUPPORT').
+        data : np.ndarray
+            Array with shape (n_elements,) or (n_elements, d).
+        """
+        loadcase = str(loadcase)
+        if loadcase not in self.loadcases:
+            self.loadcases[loadcase] = {}
+        self.loadcases[loadcase][field_name] = np.atleast_2d(data).T if data.ndim == 1 else data
+
+
+    def write(self, filepath):
+        """
+        Writes the current Solution to a result file in FEMaster format.
+        """
+        with open(filepath, 'w') as f:
+            for lc, fields in self.loadcases.items():
+                f.write(f"LC {lc}\n")
+                for name, data in fields.items():
+                    f.write(f"FIELD, NAME={name}\n")
+                    for row in data:
+                        f.write(" ".join(f"{v:.6e}" for v in row) + "\n")
+                    f.write("END FIELD\n")
+
     @staticmethod
     def open(filename, loadingbar=True):
         import tqdm

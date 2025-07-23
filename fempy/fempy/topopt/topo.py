@@ -7,6 +7,8 @@ import numpy as np
 
 from .filter import Filter, FilterFunction
 from .adam import Adam
+from .overhang import Overhang
+from .plane import Plane
 # from .viewer import Viewer
 from ..geometry import Geometry
 from ..solution import Solution
@@ -90,6 +92,14 @@ class Optimiser:
            custom_density_adjustment = lambda x: x
         self.custom_density_adjustment = custom_density_adjustment
 
+        # overhang constraint
+        self.overhang_plane     = False
+        self.overhang_dx        = False
+        self.overhang_F         = False
+        self.overhang_alpha     = False
+        self.overhang_nodes     = False
+        self.overhang_penalty   = False
+
     def check_fields(self):
         attrs = vars(self)
         none_fields = [attr for attr, value in attrs.items() if value is None]
@@ -172,11 +182,12 @@ class Optimiser:
         log_path = os.path.join(output_path, 'solver.log')
         model_path = os.path.join(output_path, 'model.inp')
 
-        # Run the solver and redirect both stdout and stderr to the log file
+        # Run the solver
         with open(log_path, 'w') as log_file:
-            result = subprocess.run([self.solver, model_path, "--ncpus", str(self.ncpus)], stdout=log_file, stderr=log_file)
+            result = subprocess.run([self.solver, model_path, "--ncpus", str(self.ncpus)],
+                                    stdout=log_file, stderr=log_file)
 
-        # if the residual is too large, exit
+        # Check residual
         with open(log_path, 'r') as log_file:
             for line in log_file:
                 if "residual" in line.lower():
@@ -184,11 +195,17 @@ class Optimiser:
                     if residual > 1e-2:
                         raise Exception("Residual too large:", residual)
 
-        # Check for errors in execution
+        # Check exit code
         if result.returncode != 0:
             with open(log_path, 'r') as log_file:
                 raise Exception("Error in executing the solver:", log_file.read())
-        return self._read_output(iteration)
+
+        # Open .res once and return both raw and parsed results
+        res_path = os.path.join(output_path, 'model.res')
+        sol = Solution.open(res_path, loadingbar=False)
+        results = [sol.loadcases[lc] for lc in sol.loadcases]
+        return sol, results
+
 
     def _read_output(self, iteration):
         # create output path
@@ -267,98 +284,167 @@ class Optimiser:
         v.set_element_mask(self.density > threshold)
         v.write_to_stl(file)
 
+    def set_overhang_constraint(self, plane, dx, F, alpha, maxnodes, penalty):
+        self.overhang_plane = plane
+        self.overhang_dx = dx
+        self.overhang_F = F
+        self.overhang_alpha = alpha
+        self.overhang_nodes = maxnodes
+        self.overhang_penalty = penalty
+
     def start(self, iterations):
+        import time
+        import os
 
-        print("Starting optimisation")
-        print("   elements in design set: ", np.sum(self.desi_mask))
-        print("   target density        : ", self.target_density)
-        print("   filter radius         : ", self.filter_radius)
-        print("   symmetry radius       : ", self.symmetry_radius)
-        print("   closest distance      : ", self.closest_distance)
-        print("   move limit            : ", self.move_limit)
-        print("   symmetry              : ", self.symmetries)
+        def _print_settings():
+            print("Starting optimisation")
+            print(f"   elements in design set: {np.sum(self.desi_mask)}")
+            print(f"   target density        : {self.target_density}")
+            print(f"   filter radius         : {self.filter_radius}")
+            print(f"   symmetry radius       : {self.symmetry_radius}")
+            print(f"   closest distance      : {self.closest_distance}")
+            print(f"   move limit            : {self.move_limit}")
+            print(f"   symmetry              : {self.symmetries}")
 
-        # create density
-        self.density = np.ones((len(self.desi_mask),))
-        self.density[self.desi_mask] *= self.target_density
+        def _initialize_density():
+            self.density = np.ones(len(self.desi_mask))
+            self.density[self.desi_mask] *= self.target_density
+            self.check_fields()
 
-        # make sure all fields are initialised
-        self.check_fields()
+        def _initialize_filters():
+            grads_filter = Filter(self.mid_points, self.filter_radius, self.symmetries, FilterFunction.CONSTANT)
+            value_filter = Filter(self.mid_points, self.symmetry_radius, self.symmetries, FilterFunction.CONSTANT)
+            return grads_filter, value_filter
 
-        # normal and symmetry filters
-        grads_filter = Filter(sigma=self.filter_radius  , coords=self.mid_points,
-                                     symmetries=self.symmetries, filter_func=FilterFunction.CONSTANT)
-        value_filter = Filter(sigma=self.symmetry_radius, coords=self.mid_points,
-                                     symmetries=self.symmetries, filter_func=FilterFunction.CONSTANT)
+        def _initialize_overhang():
+            if self.overhang_plane:
+                return Overhang(
+                    self.geometry, plane=self.overhang_plane,
+                    F=self.overhang_F, alpha=self.overhang_alpha,
+                    max_nodes=100000, element_set=self.desi_set
+                )
+            return None
 
-        # go through the iteration
-        for iter in range(1, iterations+1):
-            print("\n" + "-"*40)
-            print("Iteration ", iter)
-            print("-"*40)
+        def _run_solver(iter):
+            print("\n" + "-" * 40)
+            print(f"Iteration {iter}")
+            print("-" * 40)
             start_time = time.time()
+            sol, data = self._run(iter)
+            solver_end_time = time.time()
+            return sol, data, start_time, solver_end_time
 
-            data = self._run(iter)
-            # data = self._read_output(iter)
-            run_time = time.time()
-            vols = data[0]['VOLUME'].flatten()[self.desi_mask]
-            dens = self.density               [self.desi_mask]
-
-            # sensitivities merged from all loadcases
-            comp    = np.sum([data[i]['COMPLIANCE_ADJ'  ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
-            sens    = np.sum([data[i]['DENS_GRAD'       ].flatten()[self.desi_mask] for i in range(len(data))], axis=0)
-            or_grad = np.sum([data[i]['ORIENTATION_GRAD']          [self.orientation_mask] for i in range(len(data))], axis=0)
-            or_grad = -or_grad
-
-            # store self.volumes
+        def _compute_objectives(data):
+            vols = data[0]["VOLUME"].flatten()[self.desi_mask]
+            dens = self.density[self.desi_mask]
+            comp = np.sum([d["COMPLIANCE_ADJ"].flatten()[self.desi_mask] for d in data], axis=0)
+            sens = np.sum([d["DENS_GRAD"].flatten()[self.desi_mask] for d in data], axis=0)
+            or_grad = -np.sum([d["ORIENTATION_GRAD"][self.orientation_mask] for d in data], axis=0)
             self.volumes = vols
+            return comp, sens, or_grad, vols, dens
+
+        def _apply_overhang_if_enabled(sens, comp_grad, overhang):
+            if overhang:
+                overhang_grad = overhang.loss_derivative(self.density, 1, self.overhang_penalty)[self.desi_mask]
+                print(f"    Overhang gradient  : mean = {np.mean(overhang_grad):.6e}, var = {np.var(overhang_grad):.6e}")
+                sens += overhang_grad
+            else:
+                overhang_grad = np.zeros_like(comp_grad)
+            total_grad = sens.copy()
+            return sens, overhang_grad, total_grad
+
+        def _apply_sensitivities(sens, grads_filter):
+            print(f"    Combined gradient  : mean = {np.mean(sens):.6e}, var = {np.var(sens):.6e}")
             sens = grads_filter.apply(sens)
             sens = np.minimum(0, sens)
-            sens = sens / np.max(np.abs(sens))
+            sens /= np.max(np.abs(sens))
+            return sens
 
-            l1 = 1e-20
-            l2 = 1e20
-
-            while (l2-l1) / l1 > 1e-6:
-                lm = (l2 + l1) / 2
-
-                new_x = np.multiply(dens, np.sqrt(-sens/(lm)))
-                new_x = np.minimum(dens + self.move_limit, new_x)
-                new_x = np.minimum(1, new_x)
-                new_x = np.maximum(dens - self.move_limit, new_x)
-                new_x = np.maximum(self.min_density, new_x)
+        def _update_densities(sens, dens, vols, value_filter):
+            l1, l2 = 1e-20, 1e20
+            while (l2 - l1) / l1 > 1e-6:
+                lm = (l1 + l2) / 2
+                new_x = np.multiply(dens, np.sqrt(-sens / lm))
+                new_x = np.clip(new_x, dens - self.move_limit, dens + self.move_limit)
+                new_x = np.clip(new_x, self.min_density, 1.0)
                 new_x = self.custom_density_adjustment(new_x)
-
-                if len(self.symmetries) > 0:
-                    new_x = value_filter.apply(values=new_x)
-                new_mass = np.multiply(new_x, self.volumes)
-                mass_ratio = np.sum(new_mass) / np.sum(self.volumes)
-
-                if np.abs(mass_ratio-self.target_density) < 1e-8:
+                if self.symmetries:
+                    new_x = value_filter.apply(new_x)
+                current_density = np.sum(new_x * vols) / np.sum(vols)
+                if np.abs(current_density - self.target_density) < 1e-8:
                     break
-
-                if mass_ratio - self.target_density > 0:
+                if current_density > self.target_density:
                     l1 = lm
                 else:
                     l2 = lm
+            return new_x
 
+        def _finalize_density_update(new_x, dens):
             change = np.linalg.norm(dens - new_x)
             self.density[self.desi_mask] = new_x
+            return change
 
-            # orientation optimization
+        def _update_orientations(or_grad):
             self.orientations[self.orientation_mask] = self.orientation_adam.step(or_grad)
 
-            self.save(os.path.join(self.output_folder, 'iterations', str(iter), 'model.dat'))
+        def _write_results(sol, iter, comp_grad, overhang_grad, total_grad):
+            field_len = len(self.desi_mask)
+            comp_full = np.zeros(field_len)
+            overhang_full = np.zeros(field_len)
+            total_full = np.zeros(field_len)
 
-            # self._clean_folder(iter)
+            comp_full[self.desi_mask] = comp_grad
+            overhang_full[self.desi_mask] = overhang_grad
+            total_full[self.desi_mask] = total_grad
 
-            print("\nResults:")
-            print(f"    Objective       : {np.sum(comp)}")
+            sol.add_field("1", "COMP_GRAD", comp_full)
+            sol.add_field("1", "CONSTRAINT_GRAD", overhang_full)
+            sol.add_field("1", "TOTAL_GRAD", total_full)
+
+            res_path = os.path.join(self.output_folder, 'iterations', str(iter), 'model.res')
+            dat_path = os.path.join(self.output_folder, 'iterations', str(iter), 'model.dat')
+            sol.write(res_path)
+            self.save(dat_path)
+
+        def _print_iteration_summary(comp, overhang, new_x, vols, change, start, solver_end):
+            compliance_obj = np.sum(comp)
+            if overhang:
+                overhang_obj = overhang.loss(self.density, 1, self.overhang_penalty)
+                total_obj = compliance_obj + overhang_obj
+                print(f"\nResults:")
+                print(f"    Objective       : {total_obj}")
+                print(f"      Compliance    : {compliance_obj}")
+                print(f"      Overhang      : {overhang_obj}")
+            else:
+                print(f"\nResults:")
+                print(f"    Objective       : {compliance_obj}")
             print(f"    Change          : {change}")
-            print(f"    Mass Constraint : {np.sum(np.multiply(new_x, vols)) / np.sum(vols)}")
+            print(f"    Mass Constraint : {np.sum(new_x * vols) / np.sum(vols)}")
             print(f"    Threshold       : {self.threshold()}")
-            print(f"    Self time       : {time.time() - run_time}")
-            print(f"    Solver time     : {run_time - start_time}")
-            print(f"    Total time      : {time.time() - start_time}")
-            print("Iteration ", iter, " completed.")
+            print(f"    Self time       : {time.time() - solver_end:.2f}")
+            print(f"    Solver time     : {solver_end - start:.2f}")
+            print(f"    Total time      : {time.time() - start:.2f}")
+            print(f"Iteration completed.\n")
 
+        # ==== MAIN EXECUTION FLOW ====
+        _print_settings()
+        _initialize_density()
+        grads_filter, value_filter = _initialize_filters()
+        overhang = _initialize_overhang()
+
+        for iter in range(1, iterations + 1):
+            sol, data, start, solver_end = _run_solver(iter)
+            comp, sens, or_grad, vols, dens = _compute_objectives(data)
+
+            # Store raw compliance gradient before adding overhang
+            comp_grad = sens.copy()
+            sens, overhang_grad, total_grad = _apply_overhang_if_enabled(sens, comp_grad, overhang)
+
+            # Filtering and clipping
+            sens = _apply_sensitivities(sens, grads_filter)
+            new_x = _update_densities(sens, dens, vols, value_filter)
+            change = _finalize_density_update(new_x, dens)
+            _update_orientations(or_grad)
+
+            _write_results(sol, iter, comp_grad, overhang_grad, total_grad)
+            _print_iteration_summary(comp, overhang, new_x, vols, change, start, solver_end)

@@ -166,7 +166,7 @@ class B33(Element):
 class Point(Element):
     num_nodes = 1
     def __init__(self, element_id, node_ids):
-        super().__init__(element_id, node_ids, 'Point')
+        super().__init__(element_id, node_ids, 'P')
 
     def to_second_order(self, new_node_ids):
         return self

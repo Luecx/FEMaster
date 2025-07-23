@@ -99,13 +99,29 @@ class Filet(Segment):
 
 
     def _arc_point(self, center, p1, p2, t):
-        # Calculate angles for p1 and p2 relative to the center
+        # Calculate angles
         angle_start = np.arctan2(p1[1] - center[1], p1[0] - center[0])
         angle_end   = np.arctan2(p2[1] - center[1], p2[0] - center[0])
 
-        if angle_end < angle_start:
-            angle_end += 2 * np.pi  # Ensure counterclockwise sweep
+        # Compute tangents at endpoints
+        tangent1 = self.segment1.tangent(self.t1)
+        tangent2 = self.segment2.tangent(self.t2)
 
-        # Interpolate angle for point along the arc
+        # Compute vector from center to each point
+        v1 = p1 - center
+        v2 = p2 - center
+
+        # Determine direction of arc using cross product
+        cross = v1[0]*v2[1] - v1[1]*v2[0]  # scalar cross product in 2D
+
+        # Decide direction: counterclockwise if cross > 0
+        if cross > 0:
+            if angle_end < angle_start:
+                angle_end += 2 * np.pi
+        else:
+            if angle_end > angle_start:
+                angle_end -= 2 * np.pi
+
+        # Interpolate angle
         angle = angle_start + t * (angle_end - angle_start)
         return np.array([center[0] + self.radius * np.cos(angle), center[1] + self.radius * np.sin(angle)])
