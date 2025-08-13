@@ -260,25 +260,30 @@ void fem::loadcase::LinearStatic::run() {
 
     auto global_force_mat = Timer::measure(
         [&]() {
-            // active part of solution (size m)
-            DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);
+            // Sizes: m = active DOFs, n = Lagrange multipliers
+            // 1) split solution into active u and lambda
+            const int n_total = sol_lhs.rows();
+            DynamicVector active_disp_u = sol_lhs.segment(0, n_total - n); // size <= m after reduction
+            DynamicVector lambda_vec    = sol_lhs.tail(n);                 // size n
 
-            // expand to full active DOF vector (still size m; fills constrained entries via active_lhs_vec)
+            // 2) expand u back to full active DOF vector (size m), honoring prescribed entries
             DynamicVector full_u = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);
 
-            // extend with n zeros for Lagrange DOFs to match (m+n) x (m+n) matrix
-            DynamicVector extended_u(m + n);
-            extended_u.head(m) = full_u;
-            extended_u.tail(n).setZero();
+            // 3) build the full unknown vector [u; lambda] (size m+n)
+            DynamicVector extended_solution(m + n);
+            extended_solution.head(m) = full_u;
+            extended_solution.tail(n) = lambda_vec;
 
-            // multiply and discard Lagrange reaction rows
-            DynamicVector active_force = (active_stiffness_mat * extended_u).head(m);
+            // 4) multiply with the assembled (m+n)x(m+n) system matrix and keep only physical force rows
+            DynamicVector full_force = active_stiffness_mat * extended_solution; // [K u + C^T λ ; C u - ε λ]
+            DynamicVector active_force = full_force.head(m);                     // take only the DOF part
 
-            // expand to full DOF-sized matrix (including constrained DOFs)
+            // 5) expand back to full DOF layout (including constrained DOFs)
             return mattools::expand_vec_to_mat(active_dof_idx_mat, active_force);
         },
         "expanding force vector to matrix form"
     );
+
 
     // Step 12: Compute stresses and strains at the nodes
     NodeData stress;
