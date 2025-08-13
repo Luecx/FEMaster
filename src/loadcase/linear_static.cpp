@@ -249,18 +249,23 @@ void fem::loadcase::LinearStatic::run() {
     );
 
     // Step 11: Expand the reduced displacement vector to full size
-    auto active_disp_vec = Timer::measure(
+    auto global_disp_mat = Timer::measure(
         [&]() {
             DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);  // Extract active DOF displacements
-            return mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);     // Expand back to full displacement
+            DynamicVector full_u        = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);     // Expand back to full displacement
+            return mattools::expand_vec_to_mat(active_dof_idx_mat, full_u);
         },
-        "expanding displacement vector"
+        "expanding displacement vector to matrix form"
     );
 
-    // Expand the displacement vector to global matrix form
-    auto global_disp_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, active_disp_vec); },
-        "expanding displacement vector to matrix form"
+    auto global_force_mat = Timer::measure(
+        [&]() {
+            DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);
+            DynamicVector active_force  = active_stiffness_mat * active_disp_u;  // Compute forces at active DOFs
+            // Expand the active force vector to the full size, including constrained DOFs
+            return mattools::expand_vec_to_mat(active_dof_idx_mat, active_force);
+        },
+        "expanding force vector to matrix form"
     );
 
     // Step 12: Compute stresses and strains at the nodes
@@ -292,4 +297,5 @@ void fem::loadcase::LinearStatic::run() {
     m_writer->write_eigen_matrix(stress, "STRESS");
     m_writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
     m_writer->write_eigen_matrix(global_supp_mat, "DOF_SUPPORTS");
+    m_writer->write_eigen_matrix(global_force_mat, "NODAL_FORCES");
 }
