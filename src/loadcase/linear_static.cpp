@@ -261,7 +261,8 @@ void fem::loadcase::LinearStatic::run() {
     auto global_force_mat = Timer::measure(
         [&]() {
             DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);
-            DynamicVector active_force  = active_stiffness_mat * active_disp_u;  // Compute forces at active DOFs
+            DynamicVector full_u        = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);
+            DynamicVector active_force  = active_stiffness_mat * full_u;
             // Expand the active force vector to the full size, including constrained DOFs
             return mattools::expand_vec_to_mat(active_dof_idx_mat, active_force);
         },
