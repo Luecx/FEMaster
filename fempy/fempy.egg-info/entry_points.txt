@@ -1,0 +1,3 @@
+[console_scripts]
+generatebeaminp = fempy.generate.generate_beam_inp:main
+tovtk = fempy.solution.tovtk:main

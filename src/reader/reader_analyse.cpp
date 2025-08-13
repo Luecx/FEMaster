@@ -57,6 +57,8 @@ void Reader::analyse_elements() {
             req_values = 20;
         } else if (type == "B33") {
             req_values = 2;
+        } else if (type == "T3") {
+            req_values = 2;
         } else if (type == "S3") {
             req_values = 3;
         } else if (type == "S4") {

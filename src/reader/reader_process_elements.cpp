@@ -1,5 +1,11 @@
-#include "reader.h"
-
+#include "../model/beam/b33.h"
+#include "../model/truss/truss.h"
+#include "../model/model.h"
+#include "../model/pointelem/point.h"
+#include "../model/shell/s3.h"
+#include "../model/shell/s4.h"
+#include "../model/shell/s6.h"
+#include "../model/shell/s8.h"
 #include "../model/solid/c3d10.h"
 #include "../model/solid/c3d15.h"
 #include "../model/solid/c3d20.h"
@@ -7,14 +13,7 @@
 #include "../model/solid/c3d4.h"
 #include "../model/solid/c3d6.h"
 #include "../model/solid/c3d8.h"
-#include "../model/shell/s3.h"
-#include "../model/shell/s4.h"
-#include "../model/shell/s6.h"
-#include "../model/shell/s8.h"
-#include "../model/beam/b33.h"
-#include "../model/pointelem/point.h"
-#include "../model/model.h"
-
+#include "reader.h"
 
 namespace fem::reader {
 void Reader::process_elements() {
@@ -91,6 +90,9 @@ void Reader::process_elements() {
         } else if (type == "B33") {
             auto values = gather_values(2);
             m_model->set_element<fem::model::B33>(id, values[0], values[1]);
+        } else if (type == "T3") {
+            auto values = gather_values(2);
+            m_model->set_element<fem::model::T3>(id, values[0], values[1]);
         } else if (type == "P") {
             auto values = gather_values(1);
             m_model->set_element<fem::model::Point>(id, values[0]);

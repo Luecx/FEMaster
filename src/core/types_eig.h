@@ -98,13 +98,16 @@ using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>; ///< 
 * NodeData and ElementData are row-major matrices used to store data related to
 * nodes and elements in the FEM system.
 ******************************************************************************/
-using NodeData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>; ///< Node-related data matrix
+using NodeData    = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>; ///< Node-related data matrix
 using ElementData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>; ///< Element-related data matrix
+using IPData      = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>; ///< Integration point data matrix
 
 template<size_t B>
 using NodeDataM = Eigen::Matrix<Precision, Eigen::Dynamic, B, Eigen::RowMajor>; ///< Node-related data matrix with fixed columns
 template<size_t B>
 using ElementDataM = Eigen::Matrix<Precision, Eigen::Dynamic, B, Eigen::RowMajor>; ///< Element-related data matrix with fixed columns
+template<size_t B>
+using IPDataM = Eigen::Matrix<Precision, Eigen::Dynamic, B, Eigen::RowMajor>; ///< Integration point data matrix with fixed columns
 
 /******************************************************************************
 * @brief DOF-related matrix definitions for FEM systems.
