@@ -260,15 +260,21 @@ void fem::loadcase::LinearStatic::run() {
 
     auto global_force_mat = Timer::measure(
         [&]() {
+            // active part of solution (size m)
             DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);
-            DynamicVector full_u        = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);
 
-            std::cout << "active disp u size: " << active_disp_u.size() << std::endl;
-            std::cout << "full u size: " << full_u.size() << std::endl;
-            std::cout << "active stiffness size (m x n): " << active_stiffness_mat.rows() << " x " << active_stiffness_mat.cols() << std::endl;
+            // expand to full active DOF vector (still size m; fills constrained entries via active_lhs_vec)
+            DynamicVector full_u = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);
 
-            DynamicVector active_force  = active_stiffness_mat * full_u;
-            // Expand the active force vector to the full size, including constrained DOFs
+            // extend with n zeros for Lagrange DOFs to match (m+n) x (m+n) matrix
+            DynamicVector extended_u(m + n);
+            extended_u.head(m) = full_u;
+            extended_u.tail(n).setZero();
+
+            // multiply and discard Lagrange reaction rows
+            DynamicVector active_force = (active_stiffness_mat * extended_u).head(m);
+
+            // expand to full DOF-sized matrix (including constrained DOFs)
             return mattools::expand_vec_to_mat(active_dof_idx_mat, active_force);
         },
         "expanding force vector to matrix form"
