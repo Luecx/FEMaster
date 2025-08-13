@@ -262,6 +262,11 @@ void fem::loadcase::LinearStatic::run() {
         [&]() {
             DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);
             DynamicVector full_u        = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);
+
+            std::cout << "active disp u size: " << active_disp_u.size() << std::endl;
+            std::cout << "full u size: " << full_u.size() << std::endl;
+            std::cout << "active stiffness size (m x n): " << active_stiffness_mat.rows() << " x " << active_stiffness_mat.cols() << std::endl;
+
             DynamicVector active_force  = active_stiffness_mat * full_u;
             // Expand the active force vector to the full size, including constrained DOFs
             return mattools::expand_vec_to_mat(active_dof_idx_mat, active_force);
