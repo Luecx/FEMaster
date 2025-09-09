@@ -48,6 +48,11 @@ struct B33 : BeamElement<2>{
 
     }
 
+    StaticMatrix<12,12> stiffness_geom_impl(IPData& ip_stress, int offset) {
+        throw std::runtime_error("Not yet implemented");
+    }
+
+
     StaticMatrix<12,12> mass_impl() override {
         StaticMatrix<12,12> T = transformation();
         StaticMatrix<12,12> M = StaticMatrix<12,12>::Zero();

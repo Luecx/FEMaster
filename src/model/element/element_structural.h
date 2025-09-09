@@ -13,20 +13,22 @@ struct StructuralElement : public ElementInterface {
     }
     ~StructuralElement() override = default;
 
-    virtual Precision  volume()                                                          = 0;
-    virtual MapMatrix  stiffness(Precision* buffer)                                       = 0;
-    virtual MapMatrix  mass(Precision* buffer)                                            = 0;
+    virtual Precision volume()                                                               = 0;
+    virtual MapMatrix stiffness(Precision* buffer)                                           = 0;
+    virtual MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) = 0;
+    virtual MapMatrix mass(Precision* buffer)                                                = 0;
 
     // compute stress and strain at any local coordinates
     // its more efficient to compute the stress and strain at multiple times at once
     virtual Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) = 0;
     virtual Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) = 0;
 
-    virtual void       compute_stress_strain(
-                                             NodeData& displacement,
-                                             NodeData& stress,
-                                             NodeData& strain,
-                                             NodeData& xyz)                                                   = 0;
+    virtual void       compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) = 0;
+    // virtual void       compute_stress_strain(
+    //                                          NodeData& displacement,
+    //                                          NodeData& stress,
+    //                                          NodeData& strain,
+    //                                          NodeData& xyz)                                                   = 0;
     virtual void       compute_stress_strain_nodal(
                                                    NodeData& displacement,
                                                    NodeData& stress,

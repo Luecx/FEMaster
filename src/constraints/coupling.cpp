@@ -54,9 +54,14 @@ Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dof
  * @return TripletList A list of triplets representing the coupling equations.
  ******************************************************************************/
 Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
-    Equations   equations {};
+    Equations equations {};
 
-    auto&       node_coords = model_data.get(model::NodeDataEntries::POSITION);
+    // dont create equations if not kinematic coupling
+    if (type != CouplingType::KINEMATIC) {
+        return equations;
+    }
+
+    auto& node_coords = model_data.get(model::NodeDataEntries::POSITION);
 
     std::vector<ID> ids{};
     if (slave_nodes != nullptr) {
@@ -126,6 +131,112 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
     return equations;
 }
 
+
+void Coupling::apply_loads(model::ModelData& model_data, NodeData& load_matrix) {
+    // Only act for distributing/structural coupling
+    if (type != CouplingType::STRUCTURAL) {
+        return;
+    }
+
+    // Gather slave node IDs (deduplicated)
+    std::vector<ID> ids;
+    ids.reserve(64);
+    if (slave_nodes != nullptr) {
+        for (ID node_id : *slave_nodes) ids.push_back(node_id);
+    } else if (slave_surfaces != nullptr) {
+        for (ID surface_id : *slave_surfaces) {
+            for (ID node_id : *model_data.surfaces[surface_id]) {
+                ids.push_back(node_id);
+            }
+        }
+    }
+    // Deduplicate to avoid over-weighting shared nodes
+    {
+        std::sort(ids.begin(), ids.end());
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    }
+
+    const std::size_t n = ids.size();
+    if (n == 0) return;
+
+    // Read master generalized load: [Fx, Fy, Fz, Mx, My, Mz]
+    Eigen::Matrix<Precision, 6, 1> b;
+    b << load_matrix(master_node, 0), load_matrix(master_node, 1), load_matrix(master_node, 2),
+         load_matrix(master_node, 3), load_matrix(master_node, 4), load_matrix(master_node, 5);
+
+    // Nothing to distribute?
+    if (b.cwiseAbs().maxCoeff() == Precision(0)) return;
+
+    // Coordinates
+    auto& X = model_data.get(model::NodeDataEntries::POSITION);
+    const Precision x0 = X(master_node, 0);
+    const Precision y0 = X(master_node, 1);
+    const Precision z0 = X(master_node, 2);
+
+    // Build A (6 x 3n): [ I I ... ; [r1]x [r2]x ... ], and (optional) weights
+    Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic> A(6, 3 * (Eigen::Index)n);
+    A.setZero();
+
+    // (Uniform) weights: w_i = 1  -> W^{-1} = I   (easy to extend later)
+    // If you add weights, prefer scaling A's 3-column blocks by 1/sqrt(w_i) and
+    // then build G = As * As^T for improved conditioning.
+
+    auto skew = [](Precision rx, Precision ry, Precision rz) {
+        Eigen::Matrix<Precision, 3, 3> S;
+        S <<  0,   -rz,  ry,
+              rz,   0,  -rx,
+             -ry,  rx,   0;
+        return S;
+    };
+
+    for (std::size_t k = 0; k < n; ++k) {
+        const ID i = ids[k];
+        const Precision rx = X(i, 0) - x0;
+        const Precision ry = X(i, 1) - y0;
+        const Precision rz = X(i, 2) - z0;
+
+        // Top block: ... I3 ...
+        A.block<3,3>(0, 3 * (Eigen::Index)k).setIdentity();
+        // Bottom block: ... [r_i]_x ...
+        A.block<3,3>(3, 3 * (Eigen::Index)k) = skew(rx, ry, rz);
+    }
+
+    // Build Gram matrix G = A * W^{-1} * A^T; here W^{-1}=I -> G = A*A^T (6x6)
+    Eigen::Matrix<Precision, 6, 6> G = (A * A.transpose()).template selfadjointView<Eigen::Lower>();
+    // Small Tikhonov in case geometry is rank-deficient
+    const Precision eps = std::max(Precision(1e-12), Precision(1e-12) * (G.trace() + Precision(1)));
+    G.diagonal().array() += eps;
+
+    // Solve G * lambda = b
+    Eigen::LDLT<Eigen::Matrix<Precision, 6, 6>> ldlt(G);
+    if (ldlt.info() != Eigen::Success) {
+        // As a fallback, increase damping a bit and retry once
+        Eigen::Matrix<Precision, 6, 6> Gd = G;
+        Gd.diagonal().array() += Precision(1e-9);
+        ldlt.compute(Gd);
+    }
+    Eigen::Matrix<Precision, 6, 1> lambda = ldlt.solve(b);
+
+    // f = W^{-1} * A^T * lambda; with W^{-1}=I -> f = A^T * lambda  (size 3n)
+    Eigen::Matrix<Precision, Eigen::Dynamic, 1> f = A.transpose() * lambda;
+
+    // Scatter to slave nodes: add only translational components (Fx,Fy,Fz)
+    for (std::size_t k = 0; k < n; ++k) {
+        const ID i = ids[k];
+        const Eigen::Index j = 3 * (Eigen::Index)k;
+        load_matrix(i, 0) += f(j + 0);
+        load_matrix(i, 1) += f(j + 1);
+        load_matrix(i, 2) += f(j + 2);
+        // No nodal moments added here: moment resultant is produced via r x f
+    }
+
+    // Consume the master load (it is now represented on slaves)
+    for (int c = 0; c < 6; ++c) {
+        load_matrix(master_node, c) = Precision(0);
+    }
+}
+
+
 /******************************************************************************
  * @brief Computes the necessary DOFs for the master node based on the coupling.
  *
@@ -137,6 +248,11 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
  ******************************************************************************/
 Dofs Coupling::master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data) {
     Dofs slave_dofs = {false, false, false, false, false, false};
+
+    // no dofs except for kinematic
+    if (type != CouplingType::KINEMATIC) {
+        return slave_dofs;
+    }
 
     std::vector<ID> ids{};
     if (slave_nodes != nullptr) {

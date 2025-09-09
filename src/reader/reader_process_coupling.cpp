@@ -28,6 +28,12 @@ void Reader::process_coupling() {
         } else {
             m_model->add_coupling(master_set, surface, dof_mask, constraint::CouplingType::KINEMATIC, true);
         }
+    } else if (type == "STRUCTURAL") {
+        if (surface.empty()) {
+            m_model->add_coupling(master_set, slave_set, dof_mask, constraint::CouplingType::STRUCTURAL, false);
+        } else {
+            m_model->add_coupling(master_set, surface, dof_mask, constraint::CouplingType::STRUCTURAL, true);
+        }
     } else {
         logging::warning(false, "Unknown coupling type: ", type);
         logging::warning(false, "    Known coupling types: KINEMATIC");

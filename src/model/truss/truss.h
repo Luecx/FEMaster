@@ -103,6 +103,11 @@ struct TrussElement : StructuralElement {
         return result;
     }
 
+    // --- Interface overrides ---
+    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+        throw std::runtime_error("Not implemented yet");
+    }
+
     MapMatrix mass(Precision* buffer) override {
         MapMatrix result(buffer, N * 3, N * 3);
         result = mass_impl();
@@ -167,16 +172,17 @@ struct TrussElement : StructuralElement {
         // return result;
     }
 
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
-        // auto s = stress(displacement, {});
-        // auto e = strain(displacement, {});
-        // for (Index i = 0; i < N; ++i) {
-        //     stress(node_ids[i], 0) += s(0, 0);
-        //     strain(node_ids[i], 0) += e(0, 0);
-        // }
+    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+        (void) ip_stress;
+        (void) ip_strain;
+        (void) displacement;
+        (void) ip_offset;
     }
-
-    void compute_stress_strain(NodeData&, NodeData&, NodeData&, NodeData&) override {}
+    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+        (void) displacement;
+        (void) stress;
+        (void) strain;
+    }
     void apply_vload(NodeData&, Vec3) override {}
     void apply_tload(NodeData&, NodeData&, Precision) override {}
     void compute_compliance(NodeData&, ElementData&) override {}

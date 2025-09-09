@@ -85,14 +85,37 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
                 stress(node_id, j) += stresses(j);
             }
         } else {
-            NodeData ip_xyz{this->n_integration_points(), 3};
-            NodeData ip_stress{this->n_integration_points(), 6};
-            NodeData ip_strain{this->n_integration_points(), 6};
+            IPData ip_xyz   {this->n_integration_points(), 3};
+            IPData ip_stress{this->n_integration_points(), 6};
+            IPData ip_strain{this->n_integration_points(), 6};
             ip_xyz.setZero();
             ip_stress.setZero();
             ip_strain.setZero();
 
-            compute_stress_strain(displacement, ip_stress, ip_strain, ip_xyz);
+            // fill ip_xyz
+            auto scheme = this->integration_scheme();
+            for (int i = 0; i < scheme.count(); i++) {
+                Precision r_ip = scheme.get_point(i).r;
+                Precision s_ip = scheme.get_point(i).s;
+                Precision t_ip = scheme.get_point(i).t;
+                Precision w_ip = scheme.get_point(i).w;
+
+                Precision x = 0;
+                Precision y = 0;
+                Precision z = 0;
+
+                auto shape_func = this->shape_function(r_ip, s_ip, t_ip);
+                for (Index j = 0; j < N; j++) {
+                    x += shape_func(j) * global_node_coords(j, 0);
+                    y += shape_func(j) * global_node_coords(j, 1);
+                    z += shape_func(j) * global_node_coords(j, 2);
+                }
+                ip_xyz(i, 0) = x;
+                ip_xyz(i, 1) = y;
+                ip_xyz(i, 2) = z;
+            }
+
+            compute_stress_strain(displacement, ip_stress, ip_strain, 0);
 
             auto res1 =
                 fem::math::interpolate::interpolate(ip_xyz,
@@ -125,52 +148,76 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
     }
 }
 
-//-----------------------------------------------------------------------------
-// compute_stress_strain
-//-----------------------------------------------------------------------------
 template<Index N>
-void
-SolidElement<N>::compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) {
+void SolidElement<N>::compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) {
     auto global_node_coords = this->node_coords_global();
-
     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-
     auto scheme = this->integration_scheme();
-
     for (Index n = 0; n < scheme.count(); n++) {
         Precision r = scheme.get_point(n).r;
         Precision s = scheme.get_point(n).s;
         Precision t = scheme.get_point(n).t;
         Precision det;
-
-        StaticMatrix<N, 1> shape_func = this->shape_function(r, s, t);
-        StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det);
-        StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
-
-        auto strains = B * local_displacement;
+        StaticMatrix<N, 1> shape_func       = this->shape_function(r, s, t);
+        StaticMatrix<n_strain, D * N> B     = this->strain_displacements(global_node_coords, r, s, t, det);
+        StaticMatrix<n_strain, n_strain> E  = material_matrix(r, s, t);
+        auto strains  = B * local_displacement;
         auto stresses = E * strains;
-
-        Precision x = 0;
-        Precision y = 0;
-        Precision z = 0;
-
         for (Dim j = 0; j < n_strain; j++) {
-            strain(n, j) = strains(j);
-            stress(n, j) = stresses(j);
+            ip_stress(ip_offset + n, j) = stresses(j);
+            ip_strain(ip_offset + n, j) = strains(j);
         }
-
-        for (Index j = 0; j < N; j++) {
-            x += shape_func(j) * global_node_coords(j, 0);
-            y += shape_func(j) * global_node_coords(j, 1);
-            z += shape_func(j) * global_node_coords(j, 2);
-        }
-
-        xyz(n, 0) = x;
-        xyz(n, 1) = y;
-        xyz(n, 2) = z;
     }
 }
+
+
+// //-----------------------------------------------------------------------------
+// // compute_stress_strain
+// //-----------------------------------------------------------------------------
+// template<Index N>
+// void
+// SolidElement<N>::compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) {
+//     auto global_node_coords = this->node_coords_global();
+//
+//     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
+//     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+//
+//     auto scheme = this->integration_scheme();
+//
+//     for (Index n = 0; n < scheme.count(); n++) {
+//         Precision r = scheme.get_point(n).r;
+//         Precision s = scheme.get_point(n).s;
+//         Precision t = scheme.get_point(n).t;
+//         Precision det;
+//
+//         StaticMatrix<N, 1> shape_func = this->shape_function(r, s, t);
+//         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det);
+//         StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
+//
+//         auto strains = B * local_displacement;
+//         auto stresses = E * strains;
+//
+//         Precision x = 0;
+//         Precision y = 0;
+//         Precision z = 0;
+//
+//         for (Dim j = 0; j < n_strain; j++) {
+//             strain(n, j) = strains(j);
+//             stress(n, j) = stresses(j);
+//         }
+//
+//         for (Index j = 0; j < N; j++) {
+//             x += shape_func(j) * global_node_coords(j, 0);
+//             y += shape_func(j) * global_node_coords(j, 1);
+//             z += shape_func(j) * global_node_coords(j, 2);
+//         }
+//
+//         xyz(n, 0) = x;
+//         xyz(n, 1) = y;
+//         xyz(n, 2) = z;
+//     }
+// }
 
 //-----------------------------------------------------------------------------
 // compute_compliance

@@ -41,9 +41,9 @@ fem::loadcase::LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::
  *
  * This method performs the following steps:
  * 1. **Generate the active DOF index matrix (`active_dof_idx_mat`)**:
- *    The degrees of freedom (DOFs) that are not constrained by boundary conditions
+ *    The degrees of freedom (DOFs) that are used by elements
  *    are indexed, forming the `active_dof_idx_mat`. This matrix maps the active DOFs
- *    in the system, excluding those with prescribed displacements.
+ *    in the system.
  *
  * 2. **Build the global support matrix for constraints (`global_supp_mat`)**:
  *    A matrix is built that represents the support conditions (boundary constraints)
@@ -120,7 +120,7 @@ void fem::loadcase::LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
     logging::info(true, "================================================================================================");
-    logging::info(true, "LINEAR STATIC");
+    logging::info(true, "LINEAR STATIC ANALYSIS");
     logging::info(true, "================================================================================================");
     logging::info(true, "");
     m_model->assign_sections();

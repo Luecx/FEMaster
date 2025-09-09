@@ -2,13 +2,13 @@
 // Created by Finn Eggers on 03.09.23.
 //
 
-#include "model.h"
-#include "../mattools/numerate_dofs.h"
 #include "../mattools/assemble.h"
 #include "../mattools/assemble_bc.h"
 #include "../mattools/lump_matrix.h"
-
+#include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
+#include "model.h"
+#include "solid/element_solid.h"
 
 namespace fem {
 
@@ -57,6 +57,27 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
     return res;
 }
 
+ElementData Model::build_integration_point_numeration() {
+    // +1 row to store the total number of integration points
+    ElementData ip_numeration{this->_data->max_elems + 1, 1};
+
+    ID next_id = 0;
+    for (auto &e : _data->elements) {
+        if (e != nullptr) {
+            if (auto el = e->as<StructuralElement>()) {
+                ip_numeration(e->elem_id, 0) = next_id;
+                next_id += el->n_integration_points();
+            }
+        }
+    }
+
+    // last entry = total number of IPs
+    ip_numeration(this->_data->max_elems, 0) = next_id;
+
+    return ip_numeration;
+}
+
+
 std::tuple<NodeData, constraint::Equations> Model::build_support_matrix(std::vector<std::string> supp_sets) {
     NodeData disp_matrix{this->_data->max_nodes, 6};
     disp_matrix.fill(std::numeric_limits<Precision>::quiet_NaN());
@@ -79,6 +100,12 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
         auto data = this->_data->load_cols.get(key);
         data->apply(*_data, load_matrix);
     }
+
+    // apply constrained loads
+    for (auto &c: this->_data->couplings) {
+        c.apply_loads(*_data, load_matrix);
+    }
+
     return load_matrix;
 }
 
@@ -142,6 +169,31 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData st
     auto res = mattools::assemble_matrix(_data->elements, indices, lambda);
     return res;
 }
+
+SparseMatrix Model::build_geom_stiffness_matrix(SystemDofIds &indices,
+                                                const IPData& ip_stress,
+                                                ElementData stiffness_scalar)
+{
+    ElementData ip_enum = build_integration_point_numeration();
+
+    auto lambda = [&](const ElementPtr &e, Precision* storage) -> MapMatrix {
+        if (auto sel = e->as<StructuralElement>()) {
+            const ID eid = sel->elem_id;
+            // start index of this element’s IPs
+            const ID ip_start = ip_enum(eid, 0);
+
+            MapMatrix Kg = sel->stiffness_geom(storage, const_cast<IPData&>(ip_stress), ip_start);
+            Kg *= (stiffness_scalar.rows() > 0) ? stiffness_scalar(eid, 0) : 1.0;
+            return Kg;
+        } else {
+            MapMatrix mat{storage, 0, 0};
+            return mat;
+        }
+    };
+
+    return mattools::assemble_matrix(_data->elements, indices, lambda);
+}
+
 
 SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {

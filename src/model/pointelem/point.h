@@ -40,6 +40,10 @@ struct Point : fem::model::StructuralElement {
         return 0;
     };
     MapMatrix stiffness(Precision* buffer) override;
+    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+        throw std::runtime_error("Not implemented");
+    }
+
     ;
     MapMatrix mass(Precision* buffer) override;
     ;
@@ -48,11 +52,11 @@ struct Point : fem::model::StructuralElement {
         (void) stress;
         (void) strain;
     };
-    void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override {
+    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+        (void) ip_stress;
+        (void) ip_strain;
         (void) displacement;
-        (void) stress;
-        (void) strain;
-        (void) xyz;
+        (void) ip_offset;
     };
     void apply_vload(NodeData& node_loads, Vec3 load) override {
         (void) node_loads;

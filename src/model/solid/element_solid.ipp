@@ -33,7 +33,7 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
         B(1, r2) = shape_der_global(j, 1);    // dy/ds
         B(2, r3) = shape_der_global(j, 2);    // dz/dt
 
-        B(3, r2) = shape_der_global(j, 2);    // dy/dr
+        B(3, r2) = shape_der_global(j, 2);    // dy/dt
         B(3, r3) = shape_der_global(j, 1);    // dz/ds
 
         B(4, r1) = shape_der_global(j, 2);    // dz/dr
@@ -174,6 +174,72 @@ SolidElement<N>::stiffness(Precision* buffer) {
     mapped = stiffness;
     return mapped;
 }
+template<Index N>
+MapMatrix
+SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) {
+    StaticMatrix<N, D> node_coords = this->node_coords_global();
+
+    Index ip_counter = 0;
+
+    // Funktor OHNE w-Parameter; integrate() übernimmt die Gewichte.
+    std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
+        [this, &node_coords, &ip_stress, ip_start_idx, &ip_counter]
+        (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
+    {
+        // Lokale Ableitungen & Jakobimatrix
+        StaticMatrix<N, D> local_shape_der = this->shape_derivative(r, s, t);
+        StaticMatrix<D, D> J = this->jacobian(node_coords, r, s, t);
+        Precision det = J.determinant();
+
+        // global_shape_der = local_shape_der * J^{-T}  (ohne explizite Inverse)
+        StaticMatrix<N, D> global_shape_der =
+            (J.transpose().partialPivLu().solve(local_shape_der.transpose())).transpose();
+
+        // ---- G-Matrix (9×3N) ----
+        StaticMatrix<9, D * N> G = StaticMatrix<9, D * N>::Zero();
+        for (Index a = 0; a < N; ++a) {
+            Index col = 3 * a;
+            // ux-Gradient
+            G(0, col + 0) = global_shape_der(a, 0);
+            G(1, col + 0) = global_shape_der(a, 1);
+            G(2, col + 0) = global_shape_der(a, 2);
+            // uy-Gradient
+            G(3, col + 1) = global_shape_der(a, 0);
+            G(4, col + 1) = global_shape_der(a, 1);
+            G(5, col + 1) = global_shape_der(a, 2);
+            // uz-Gradient
+            G(6, col + 2) = global_shape_der(a, 0);
+            G(7, col + 2) = global_shape_der(a, 1);
+            G(8, col + 2) = global_shape_der(a, 2);
+        }
+
+        // ---- Spannung am IP (achte auf Voigt-Reihenfolge!) ----
+        auto stress_voigt = ip_stress.row(ip_start_idx + ip_counter++);
+        Eigen::Matrix<Precision, 3, 3> sigma;
+        // Hier: Voigt = [xx, yy, zz, yz, zx, xy]
+        sigma << stress_voigt(0), stress_voigt(5), stress_voigt(4),
+                 stress_voigt(5), stress_voigt(1), stress_voigt(3),
+                 stress_voigt(4), stress_voigt(3), stress_voigt(2);
+
+        // ---- Kronprodukt I⊗σ (Blockdiag mit 3x sigma) ----
+        Eigen::Matrix<Precision, 9, 9> kron = Eigen::Matrix<Precision, 9, 9>::Zero();
+        for (int i = 0; i < 3; ++i)
+            kron.block<3, 3>(3 * i, 3 * i) = sigma;
+
+        // Rückgabe = Integrand (OHNE w). det gehört natürlich rein.
+        StaticMatrix<D * N, D * N> Kg = G.transpose() * kron * G * det;
+        return Kg;
+    };
+
+    StaticMatrix<D * N, D * N> Kg = integration_scheme().integrate(func);
+    Kg = 0.5 * (Kg + Kg.transpose()); // Numerisch symmetrisieren
+
+    MapMatrix mapped{buffer, D * N, D * N};
+    mapped = Kg;
+    return mapped;
+}
+
+
 
 //-----------------------------------------------------------------------------
 // mass

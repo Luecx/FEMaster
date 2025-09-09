@@ -185,6 +185,15 @@ public:
     MapMatrix stiffness(Precision* buffer) override;
 
     /**
+     * @brief computes the geometric stiffness matrix for the element.
+     * @param buffer
+     * @param ip_stress
+     * @param ip_start_idx
+     * @return
+     */
+    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override;
+
+    /**
      * @brief Computes the mass matrix for the element.
      *
      * @param position The nodal positions for the element.
@@ -271,15 +280,13 @@ public:
     Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override;
 
     /**
-     * @brief Computes the stress and strain at integration points of the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param displacement The nodal displacement data.
-     * @param stress The computed stress at integration points.
-     * @param strain The computed strain at integration points.
-     * @param xyz The computed global coordinates of the integration points.
+     * Computes the stress and strain at the integration points of the elements
+     * @param ip_stress
+     * @param ip_strain
+     * @param displacement
+     * @param ip_offset
      */
-    void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override;
+    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override;
 
     /**
      * @brief Computes the compliance (strain energy) for the element.

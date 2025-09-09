@@ -321,6 +321,12 @@ struct DefaultShellElement : public ShellElement<N> {
         mapped = trans.transpose() * stiff * trans;
         return mapped;
     }
+
+    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+        throw new std::runtime_error("Geometric stiffness not implemented for shell elements yet");
+    }
+
+
     MapMatrix  mass(Precision* buffer) override {
         return MapMatrix(buffer, 4, 4);
     }

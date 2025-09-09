@@ -29,6 +29,7 @@ namespace fem::loadcase {
     struct LinearStatic;
     struct LinearStaticTopo;
     struct LinearEigenfrequency;
+    struct LinearBuckling;
 }
 
 namespace fem {

@@ -1,5 +1,3 @@
-
-
 from .fem_elements import *
 
 from .fem_geometry_mesh_2d import mesh_interior
@@ -16,6 +14,8 @@ import numpy as np
 import copy
 import scipy.sparse
 import matplotlib.pyplot as plt
+
+from collections import Counter
 
 
 class Geometry:
@@ -48,22 +48,45 @@ class Geometry:
         self.node_sets = {"NALL": []}
         self.elem_sets = {"EALL": []}
 
+        # Materialien / Sektionen / Profile
         self.materials = {}
         self.sections  = []
         self.profiles  = []
 
-        self.loads     = {} # set, (x,y,z,rx,ry,rz)
-        self.supps     = {} # set, (x,y,z,rx,ry,rz)
+        # Collector (Name -> {set, data, coord_sys})
+        # data = (fx, fy, fz, mx, my, mz)
+        self.loads     = {}
+        self.supps     = {}
 
-        self.steps     = [] # name -> loads, supps
+        # Steps (Liste): z.B. {'name':..., 'type':'LINEAR STATIC', 'loads':[...], 'supps':[...]}
+        self.steps     = []
 
+        # Koordinatensysteme (nur Rohdaten speichern, wie im Input angegeben)
+        # name -> {'type': 'RECTANGULAR'|'CYLINDRICAL',
+        #          'values': tuple[float, ...]}  # 3/6/9 bei RECT, 9 bei CYL
+        # Optional kann zusätzlich 'definition' für Schreibzwecke stehen (z.B. 'VECTOR' oder 'POINTS').
+        self.coordinate_systems = {}
+
+        # Couplings (Liste reiner Daten fürs Input-Deck)
+        # {'type': 'KINEMATIC', 'master': 'M_*', 'slave': 'C_*',
+        #  'cx':int, 'cy':int, 'cz':int, 'crx':int, 'cry':int, 'crz':int}
+        self.couplings = []
+
+        # Connector-Elements (Liste reiner Daten fürs Input-Deck)
+        # {'type':'HINGE'|'BEAM'|'CYLINDRICAL'|'TRANSLATOR',
+        #  'coord_sys':'CSY', 'nset1':'M1', 'nset2':'M2'}
+        self.connectors = []
+
+    # -------------------------
+    # Nodes / Elements / Sets
+    # -------------------------
     def add_node(self, node_id=-1, x=0, y=0, z=0):
         # Resize nodes list if necessary
         if node_id == -1:
             node_id = len(self.nodes)
         if node_id >= len(self.nodes):
             self.nodes.extend([None] * (node_id - len(self.nodes) + 1))
-        self.nodes[node_id] = (x, y, z)
+        self.nodes[node_id] = [x, y, z]
         self.node_sets["NALL"].append(node_id)
         return node_id
 
@@ -100,6 +123,9 @@ class Geometry:
         self.add_element_set(name)
         self.elem_sets[name].append(element_id)
 
+    # -------------------------
+    # Materials / Sections / Profiles
+    # -------------------------
     def add_material(self, name, young, poisson, density):
         self.materials[name] = {'young': young, 'poisson': poisson, 'density': density}
 
@@ -150,13 +176,64 @@ class Geometry:
             'rotary_spring': rotary_spring
         })
 
-    def add_load(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None):
-        self.loads[name] = {'set':set, 'data': (fx, fy, fz, mx, my, mz)}
+    # -------------------------
+    # Coordinate Systems (nur Rohdaten speichern)
+    # -------------------------
+    def add_coordinate_system_rectangular(self, name, *values, definition="VECTOR"):
+        """
+        Speichert ein RECTANGULAR-System, genau wie im Input angegeben.
+        Erlaubt 3, 6 oder 9 Werte (x, y [, z]).
+        values: (x1,y1,z1[, x2,y2,z2[, x3,y3,z3]])
+        """
+        if name in self.coordinate_systems:
+            raise ValueError(f"Coordinate system '{name}' already exists.")
+        if len(values) not in (3, 6, 9):
+            raise ValueError("RECTANGULAR coordinate system requires 3, 6, or 9 values.")
+        self.coordinate_systems[name] = {
+            'type': 'RECTANGULAR',
+            'definition': definition,
+            'values': tuple(float(v) for v in values)
+        }
+        return name
 
-    def add_supp(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None):
-        self.supps[name] = {'set':set, 'data': (fx, fy, fz, mx, my, mz)}
+    def add_coordinate_system_cylindrical(self, name, *values, definition="POINTS"):
+        """
+        Speichert ein CYLINDRICAL-System, genau wie im Input angegeben.
+        Erlaubt 9 Werte (Base, Radial, Theta-Punkt): (x1,y1,z1, x2,y2,z2, x3,y3,z3)
+        """
+        if name in self.coordinate_systems:
+            raise ValueError(f"Coordinate system '{name}' already exists.")
+        if len(values) != 9:
+            raise ValueError("CYLINDRICAL coordinate system requires 9 values (base, radial, theta points).")
+        self.coordinate_systems[name] = {
+            'type': 'CYLINDRICAL',
+            'definition': definition,
+            'values': tuple(float(v) for v in values)
+        }
+        return name
 
+    # -------------------------
+    # Loads / Supports (Collectors) – optionales CSYS
+    # -------------------------
+    def add_load(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None, coord_sys=None):
+        if coord_sys is not None and coord_sys not in self.coordinate_systems:
+            raise KeyError(f"Unknown coordinate system '{coord_sys}' for load '{name}'.")
+        self.loads[name] = {'set': set, 'data': (fx, fy, fz, mx, my, mz), 'coord_sys': coord_sys}
+
+    def add_supp(self, name, set, fx=None, fy=None, fz=None, mx=None, my=None, mz=None, coord_sys=None):
+        if coord_sys is not None and coord_sys not in self.coordinate_systems:
+            raise KeyError(f"Unknown coordinate system '{coord_sys}' for support '{name}'.")
+        self.supps[name] = {'set': set, 'data': (fx, fy, fz, mx, my, mz), 'coord_sys': coord_sys}
+
+    # -------------------------
+    # Steps
+    # -------------------------
     def add_step(self, type, name="Step-1", **kwargs):
+        """
+        Aktuelle Step-Typen:
+          - "LINEAR STATIC": required keys = ['loads', 'supps']
+          - "EIGENFREQ"    : required keys = ['supps', 'numeigenvalues']
+        """
         step = {'name': name, 'type': type.upper()}
 
         if step['type'] == "LINEAR STATIC":
@@ -173,7 +250,74 @@ class Geometry:
         step.update(kwargs)
         self.steps.append(step)
 
+    # -------------------------
+    # Couplings (explizite DOFs)
+    # -------------------------
+    def add_coupling(self, master_set, slave_set, type="KINEMATIC",
+                     cx=1, cy=1, cz=1, crx=1, cry=1, crz=1):
+        """
+        Speichert einen Coupling-Eintrag für das Input-Deck.
+        master_set: Name eines Node-Sets mit GENAU 1 Knoten (Referenz).
+        slave_set : Name eines Node-Sets (typisch mehrere Knoten).
+        type      : aktuell 'KINEMATIC' (weitere können später ergänzt werden).
+        DOFs      : cx, cy, cz, crx, cry, crz (0/1).
+        """
+        t = str(type).upper()
+        if t != "KINEMATIC":
+            raise ValueError(f"Unsupported coupling type '{type}'. Only KINEMATIC is implemented currently.")
 
+        if master_set not in self.node_sets:
+            raise KeyError(f"Unknown node set '{master_set}' (master).")
+        if slave_set not in self.node_sets:
+            raise KeyError(f"Unknown node set '{slave_set}' (slave).")
+
+        m_nodes = self.node_sets[master_set]
+        if len(m_nodes) != 1:
+            raise ValueError(f"Master node set '{master_set}' must contain exactly one node (got {len(m_nodes)}).")
+
+        self.couplings.append({
+            'type': t,
+            'master': master_set,
+            'slave': slave_set,
+            'cx': int(bool(cx)),
+            'cy': int(bool(cy)),
+            'cz': int(bool(cz)),
+            'crx': int(bool(crx)),
+            'cry': int(bool(cry)),
+            'crz': int(bool(crz)),
+        })
+
+    # -------------------------
+    # Connector Elements (nur Rohdaten)
+    # -------------------------
+    def add_connector(self, type, coord_sys, nset1, nset2):
+        """
+        type     : 'BEAM'|'HINGE'|'CYLINDRICAL'|'TRANSLATOR' (aktuell bekannte)
+        coord_sys: Name eines existierenden Koordinatensystems (wird nur referenziert)
+        nset1/2  : Node-Set-Namen, JEWEILS mit GENAU 1 Knoten.
+        """
+        t = str(type).upper()
+        if coord_sys not in self.coordinate_systems:
+            raise KeyError(f"Unknown coordinate system '{coord_sys}' for connector.")
+        if nset1 not in self.node_sets:
+            raise KeyError(f"Unknown node set '{nset1}' for connector.")
+        if nset2 not in self.node_sets:
+            raise KeyError(f"Unknown node set '{nset2}' for connector.")
+        if len(self.node_sets[nset1]) != 1:
+            raise ValueError(f"Connector nset1 '{nset1}' must contain exactly one node.")
+        if len(self.node_sets[nset2]) != 1:
+            raise ValueError(f"Connector nset2 '{nset2}' must contain exactly one node.")
+
+        self.connectors.append({
+            'type': t,
+            'coord_sys': coord_sys,
+            'nset1': nset1,
+            'nset2': nset2
+        })
+
+    # -------------------------
+    # Ableitungen / Utilities
+    # -------------------------
     def determine_element_order(self):
         for element in self.elements:
             if element is not None:
@@ -235,10 +379,21 @@ class Geometry:
         geometry = Geometry(self.dimension)
 
         # Copy nodes and node sets
-        geometry.nodes = self.nodes.copy()
+        geometry.nodes = copy.deepcopy(self.nodes)
         geometry.node_sets = {name: ids.copy() for name, ids in self.node_sets.items()}
         geometry.elem_sets = {name: ids.copy() for name, ids in self.elem_sets.items()}
         geometry.elements = copy.deepcopy(self.elements)
+
+        # Kopiere sonstige Strukturen 1:1 (ohne Änderungen)
+        geometry.materials = copy.deepcopy(self.materials)
+        geometry.sections = copy.deepcopy(self.sections)
+        geometry.profiles = copy.deepcopy(self.profiles)
+        geometry.loads = copy.deepcopy(self.loads)
+        geometry.supps = copy.deepcopy(self.supps)
+        geometry.steps = copy.deepcopy(self.steps)
+        geometry.coordinate_systems = copy.deepcopy(self.coordinate_systems)  # NICHT spiegeln/ändern
+        geometry.couplings = copy.deepcopy(self.couplings)
+        geometry.connectors = copy.deepcopy(self.connectors)
 
         edge_midpoints = geometry.compute_edge_midpoints()
 
@@ -249,16 +404,27 @@ class Geometry:
                 geometry.elements[i] = element.to_second_order(edge_midpoints)
         return geometry
 
-    def mirrored(self, plane, location, copy=True):
+    def mirrored(self, plane, location, copy_nodes=True):
         geometry = Geometry(self.dimension)
-        geometry.nodes = self.nodes.copy()
+        geometry.nodes = copy.deepcopy(self.nodes)
         geometry.node_sets = {name: ids.copy() for name, ids in self.node_sets.items()}
         geometry.elem_sets = {name: ids.copy() for name, ids in self.elem_sets.items()}
         geometry.elements = copy.deepcopy(self.elements)
 
+        # Alles andere nur kopieren, nicht transformieren
+        geometry.materials = copy.deepcopy(self.materials)
+        geometry.sections = copy.deepcopy(self.sections)
+        geometry.profiles = copy.deepcopy(self.profiles)
+        geometry.loads = copy.deepcopy(self.loads)
+        geometry.supps = copy.deepcopy(self.supps)
+        geometry.steps = copy.deepcopy(self.steps)
+        geometry.coordinate_systems = copy.deepcopy(self.coordinate_systems)  # unverändert lassen
+        geometry.couplings = copy.deepcopy(self.couplings)
+        geometry.connectors = copy.deepcopy(self.connectors)
+
         axis_idx = ['yz', 'xz', 'xy'].index(plane)
 
-        if not copy:
+        if not copy_nodes:
             # mirror all nodes and elements inplace
             for node in geometry.nodes:
                 if node is not None:
@@ -266,20 +432,17 @@ class Geometry:
             for element in geometry.elements:
                 if element is not None:
                     element.mirror_ids()
-
-
         else:
             node_map = {}
-            for idx,node in enumerate(geometry.nodes):
+            for idx, node in enumerate(geometry.nodes):
                 if node is not None:
-
                     # check if its close, if so, map to itself
                     if np.abs(node[axis_idx] - location) < 1e-6:
                         node_map[idx] = idx
                     else:
                         new_coords = node.copy()
                         new_coords[axis_idx] = 2 * location - new_coords[axis_idx]
-                        nid = geometry.add_node(x = new_coords[0], y = new_coords[1], z = new_coords[2])
+                        nid = geometry.add_node(x=new_coords[0], y=new_coords[1], z=new_coords[2])
                         node_map[idx] = nid
 
             for elem_id, element in enumerate(geometry.elements):
@@ -289,36 +452,21 @@ class Geometry:
                     geometry.elements[elem_id].mirror_ids()
 
             # copy sets
-            for setname in geometry.node_sets:
+            for setname in list(geometry.node_sets.keys()):
                 # create copied set
                 new_set_name = setname + "_mirrored"
                 geometry.add_node_set(new_set_name)
-                for idx, nid in enumerate(geometry.node_sets[setname]):
+                for nid in geometry.node_sets[setname]:
                     geometry.add_node_to_set(new_set_name, node_map[nid])
 
-            for setname in geometry.elem_sets:
+            for setname in list(geometry.elem_sets.keys()):
                 # create copied set
                 new_set_name = setname + "_mirrored"
                 geometry.add_element_set(new_set_name)
-                for idx, eid in enumerate(geometry.elem_sets[setname]):
+                for eid in geometry.elem_sets[setname]:
                     geometry.add_element_to_set(new_set_name, eid)
 
-
         return geometry
-
-
-        # # check if axis is correct
-        # if plane not in ['yz', 'xz', 'xy']:
-        #     raise ValueError(f"Unsupported plane: {plane}, use 'yz', 'xz' or 'xy'")
-        #
-        # # copy all nodes that are outside of the plane
-        # for node_id in range(len(self.nodes)):
-        #     node = self.nodes[node_id]
-        #     if node is None:
-        #         continue
-        #
-        #     if node[axis_idx] - location != 0:
-        #         geometry.add_node(node_id, *node)
 
     def plot_2d(self):
         if self.dimension != 2:
@@ -336,6 +484,78 @@ class Geometry:
 
         plt.show()
 
+    def get_surface_nodes(self) -> list[int]:
+        """
+        Liefert IDs aller Knoten auf der Außenfläche, ermittelt rein über
+        'lonely faces' (Faces, die nur in genau einem 3D-Solid vorkommen).
+        Keine Filterung, kein candidate_set, keine Fallbacks.
+        Shell-Elemente tragen ihre Knoten direkt zur Oberfläche bei.
+        """
+        surf_nodes = set()
+
+        # Hilfsfunktionen nur für die 3D-Solids
+        def _corner_nodes(elem):
+            ids = elem.node_ids
+            t = elem.elem_type
+            if t in ("C3D8", "C3D20"):  # Hexaeder
+                return ids[:8]
+            if t in ("C3D4", "C3D10"):  # Tetraeder
+                return ids[:4]
+            if t in ("C3D6", "C3D15"):  # Wedge/Prisma
+                return ids[:6]
+            return ids
+
+        def _faces_of(elem):
+            t  = elem.elem_type
+            cn = _corner_nodes(elem)
+            if t in ("C3D8", "C3D20"):
+                return [
+                    (cn[0], cn[1], cn[2], cn[3]),
+                    (cn[4], cn[5], cn[6], cn[7]),
+                    (cn[0], cn[1], cn[5], cn[4]),
+                    (cn[1], cn[2], cn[6], cn[5]),
+                    (cn[2], cn[3], cn[7], cn[6]),
+                    (cn[3], cn[0], cn[4], cn[7]),
+                ]
+            if t in ("C3D4", "C3D10"):
+                return [
+                    (cn[0], cn[1], cn[2]),
+                    (cn[0], cn[1], cn[3]),
+                    (cn[1], cn[2], cn[3]),
+                    (cn[0], cn[2], cn[3]),
+                ]
+            if t in ("C3D6", "C3D15"):
+                return [
+                    (cn[0], cn[1], cn[2]),            # tri
+                    (cn[3], cn[4], cn[5]),            # tri
+                    (cn[0], cn[1], cn[4], cn[3]),     # quad
+                    (cn[1], cn[2], cn[5], cn[4]),     # quad
+                    (cn[2], cn[0], cn[3], cn[5]),     # quad
+                ]
+            return []
+
+        # 1) Lonely-Face-Logik für 3D-Solids
+        face_counter = Counter()
+        for e in self.elements:
+            if e is None:
+                continue
+            if e.elem_type.startswith("C3D"):
+                for f in _faces_of(e):
+                    face_counter[tuple(sorted(f))] += 1
+
+        for key, cnt in face_counter.items():
+            if cnt == 1:
+                surf_nodes.update(key)
+
+        # 2) Shells als Oberfläche (direkt alle Knoten)
+        for e in self.elements:
+            if e is None:
+                continue
+            if e.elem_type in ("S3", "S4", "S6", "S8"):
+                surf_nodes.update(e.node_ids)
+
+        return sorted(surf_nodes)
+
     def __str__(self):
         ret_str = ""
         ret_str += f"Dimension: {'2D' if self.dimension == 2 else '3D'}\n"
@@ -347,16 +567,25 @@ class Geometry:
         ret_str += "Element Sets:\n"
         for name, ids in self.elem_sets.items():
             ret_str += "  {}: {} elements\n".format(name, len(ids))
+        ret_str += "Coordinate Systems:\n"
+        for name, cs in self.coordinate_systems.items():
+            ret_str += f"  {name}: {cs['type']} ({len(cs['values'])} values)\n"
+        ret_str += "Couplings:\n"
+        for c in self.couplings:
+            ret_str += ("  {type}: master={master} slave={slave} "
+                        "dofs=({cx},{cy},{cz},{crx},{cry},{crz})\n").format(**c)
+        ret_str += "Connectors:\n"
+        for c in self.connectors:
+            ret_str += f"  {c['type']}: {c['nset1']} <-> {c['nset2']} (csys={c['coord_sys']})\n"
         return ret_str
 
+    # Re-exports / Bindings
     connectivity_node_to_element = connectivity_node_to_element
     connectivity_element_to_element = connectivity_element_to_element
     element_element_distance_matrix = element_element_distance_matrix
 
-
-    subdivided          = subdivided_geometry
-    extruded            = extruded_geometry
-    write_input_deck    = write_input_deck
-    read_input_deck     = staticmethod(read_input_deck)
-    mesh_interior       = staticmethod(mesh_interior)
-
+    subdivided       = subdivided_geometry
+    extruded         = extruded_geometry
+    write_input_deck = write_input_deck
+    read_input_deck  = staticmethod(read_input_deck)
+    mesh_interior    = staticmethod(mesh_interior)

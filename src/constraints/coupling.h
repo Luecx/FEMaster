@@ -32,7 +32,7 @@ namespace constraint {
  ******************************************************************************/
 enum class CouplingType {
     KINEMATIC,    ///< Kinematic coupling between master and slave nodes
-                  // TODO: Add more coupling types
+    STRUCTURAL,   ///< Structural distribution coupling
 };
 
 /******************************************************************************
@@ -81,6 +81,45 @@ class Coupling {
      * @return TripletList A list of triplets representing the coupling equations.
      ******************************************************************************/
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+
+    /**
+     * @brief Distribute loads from the master to slaves with static equivalence.
+     *
+     * Reads the generalized load stored at @p load_matrix for @p master_node
+     * (translations → forces, rotations → moments), removes it (so it is not
+     * applied at the master), and scatters **equivalent nodal forces** to the
+     * slave nodes so that:
+     * \f[
+     *   \sum_i f_i = F,\qquad \sum_i (x_i - x_0) \times f_i = M,
+     * \f]
+     * where \f$x_0\f$ is the master position and \f$x_i\f$ are slave node
+     * positions obtained from @p model_data.
+     *
+     * Typical implementation uses a weighted minimum-norm map
+     * \f$ f = W^{-1} A^\top (A W^{-1} A^\top)^{-1} [F;M] \f$ with
+     * \f$A=[I\ I\ \dots;\ [r_1]_\times\ [r_2]_\times\ \dots]\f$ and
+     * \f$r_i=x_i-x_0\f$, where \f$W\f$ encodes tributary areas/lengths.
+     * For surface slaves, a consistent element-wise load integration is a good
+     * alternative (constant + linear traction field reproduction).
+     *
+     * @param model_data  Provides master/slave coordinates and mesh topology.
+     * @param load_matrix In/out per-node load storage (RHS): the master’s load
+     *                    is consumed and equivalent slave nodal loads are added.
+     *
+     * @pre @p load_matrix contains the master’s intended load (Fx,Fy,Fz,Mx,My,Mz).
+     * @pre Slave node set derivable from @c slave_nodes or @c slave_surfaces.
+     * @post @p load_matrix[master_node] is cleared (or reduced by what was
+     *       redistributed); slave nodes receive the distributed forces.
+     *
+     * @warning If slave geometry is rank-deficient (e.g., all slaves on the
+     *          master point), some moments cannot be reproduced; implementation
+     *          should detect this and either damp/invert in the attainable
+     *          subspace or issue a warning.
+     * @note This method **does not** add constraints; it only assembles the RHS.
+     * @note Use this also when you conceptually “apply a load to a reference
+     *       point” but want the structure to carry it through a patch of nodes.
+     */
+    void apply_loads(model::ModelData& model_data, NodeData& load_matrix);
 
     /******************************************************************************
      * @brief Computes the necessary DOFs for the master node based on the coupling.

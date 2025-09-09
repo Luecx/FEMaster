@@ -90,8 +90,9 @@ struct BeamElement : StructuralElement {
         mat(2, 2) = z(2);
         return mat;
     }
-    virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
-    virtual StaticMatrix<N * 6, N * 6> mass_impl()      = 0;
+    virtual StaticMatrix<N * 6, N * 6> stiffness_impl     ()                              = 0;
+    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(IPData& ip_stress, int offset) = 0;
+    virtual StaticMatrix<N * 6, N * 6> mass_impl()                                        = 0;
 
     StaticMatrix<N * 6, N * 6>         transformation() {
         StaticMatrix<N * 6, N * 6> T;
@@ -114,13 +115,24 @@ struct BeamElement : StructuralElement {
         result = stiffness_impl();
         return result;
     };
+    virtual MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+        MapMatrix result(buffer, N * 6, N * 6);
+        result = stiffness_impl();
+        return result;
+    };
+
     virtual MapMatrix mass(Precision* buffer) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = mass_impl();
         return result;
     };
     virtual void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {};
-    virtual void compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) override {};
+    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+        (void) ip_stress;
+        (void) ip_strain;
+        (void) displacement;
+        (void) ip_offset;
+    };
     virtual void apply_vload(NodeData& node_loads, Vec3 load) override {};
     virtual void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {};
     virtual void compute_compliance(NodeData& displacement, ElementData& result) override {};

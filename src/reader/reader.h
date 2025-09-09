@@ -8,10 +8,6 @@
 #include "../core/types_cls.h"
 #include "writer.h"
 
-// #include "../model/model.h"
-// #include "../loadcase/linear_static.h"
-// #include "../loadcase/linear_static_topo.h"
-// #include "../loadcase/linear_eigenfreq.h"
 
 namespace fem::reader {
 
@@ -86,6 +82,11 @@ class Reader {
     void process_loadcase_linear_static_topo_density    (fem::loadcase::LinearStaticTopo* lc);
     void process_loadcase_linear_static_topo_orientation(fem::loadcase::LinearStaticTopo* lc);
     void process_loadcase_linear_static_topo_exponent   (fem::loadcase::LinearStaticTopo* lc);
+
+    void process_loadcase_linear_buckling();
+    void process_loadcase_linear_buckling_support(fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_load   (fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_solver (fem::loadcase::LinearBuckling* lc);
 
     public:
     Reader(const std::string& file_path, const std::string& output_path);

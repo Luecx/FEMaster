@@ -5,6 +5,7 @@
 #ifndef MODEL_DATA_H
 #define MODEL_DATA_H
 
+#include "../bc/load.h"
 #include "../bc/load_collector.h"
 #include "../bc/support.h"
 #include "../bc/support_collector.h"
@@ -15,12 +16,12 @@
 #include "../core/types_eig.h"
 #include "../data/dict.h"
 #include "../data/elem_data_dict.h"
+#include "../data/ip_data_dict.h"
 #include "../data/node_data_dict.h"
 #include "../data/region.h"
 #include "../data/sets.h"
 #include "../section/profile.h"
 #include "../section/section.h"
-#include "../bc/load.h"
 
 namespace fem::model {
 
@@ -76,7 +77,7 @@ struct ModelData {
           max_elems(max_elems),
           max_surfaces(max_surfaces),
             node_data(max_nodes),
-            elem_data(max_elems) {
+            elem_data(max_elems){
         elements.resize(max_elems);
         surfaces.resize(max_surfaces);
     }

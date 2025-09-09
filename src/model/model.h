@@ -41,9 +41,9 @@ struct Model {
     inline void add_coordinate_system(const std::string& name, Args&&... args);
 
     // add _couplings for structural problems
-    void add_connector(const std::string& set1, const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
-    void add_coupling(const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type, bool is_surface);
-    void add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
+    void add_connector(const std::string& set1      , const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
+    void add_coupling (const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type, bool is_surface);
+    void add_tie      (const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
 
     // -------------------- STRUCTURAL --------------------
     // load management
@@ -78,6 +78,8 @@ struct Model {
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();
+    // integration point numeration. every element gets a start and an end id in this
+    ElementData build_integration_point_numeration();
 
     // building constraints and loads for every node including non existing ones
     std::tuple<NodeData, constraint::Equations> build_support_matrix (std::vector<std::string> support_sets = {});
@@ -86,12 +88,19 @@ struct Model {
     // matrices
     SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, constraint::Equations& bc_equations, Precision characteristic_stiffness=1.0);
     SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
+    SparseMatrix  build_geom_stiffness_matrix(SystemDofIds& indices,
+                                              const IPData& ip_stress,
+                                              ElementData stiffness_scalar = ElementData(0,0));
+
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 
+
+    std::tuple<IPData, IPData>     compute_ip_stress_strain(NodeData& displacement);
     std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);
     ElementData                    compute_compliance   (NodeData& displacement);
     ElementData                    compute_compliance_angle_derivative(NodeData& displacement);
     ElementData                    compute_volumes      ();
+
 };
 
 #include "model.ipp"

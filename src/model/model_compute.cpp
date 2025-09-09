@@ -9,6 +9,52 @@
 
 namespace fem { namespace model{
 
+
+std::tuple<IPData, IPData>
+Model::compute_ip_stress_strain(NodeData& displacement) {
+    // 1) Build IP enumeration with sentinel total in the last row
+    const auto ip_enum = this->build_integration_point_numeration();
+    logging::error(ip_enum.rows() == _data->max_elems + 1,
+                   "ip_numeration must have max_elems+1 rows (with total at the end).");
+
+    const ID total_ips = static_cast<ID>(ip_enum(_data->max_elems, 0));
+    logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
+
+    // 2) Allocate IP-level containers (Voigt: 6 components)
+    IPData ip_stress(total_ips, 6);
+    IPData ip_strain(total_ips, 6);
+    ip_stress.setZero();
+    ip_strain.setZero();
+
+    // 3) Dispatch to each structural element
+    for (auto el : _data->elements) {
+        if (!el) continue;
+        if (auto sel = el->as<StructuralElement>()) {
+            const ID eid = sel->elem_id;
+            logging::error(eid >= 0 && eid < _data->max_elems,
+                           "Element id out of range in compute_ip_stress_strain: ", eid);
+
+            const ID ip_offset = static_cast<ID>(ip_enum(eid, 0));
+            logging::error(ip_offset >= 0 && ip_offset <= total_ips,
+                           "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
+
+            sel->compute_stress_strain(ip_stress, ip_strain, displacement, ip_offset);
+        }
+    }
+
+    // 4) Basic sanity checks (optional but helpful)
+    for (Index i = 0; i < ip_stress.rows(); ++i) {
+        for (Index j = 0; j < ip_stress.cols(); ++j) {
+            const bool badS = std::isnan(ip_stress(i, j)) || std::isinf(ip_stress(i, j));
+            const bool badE = std::isnan(ip_strain(i, j)) || std::isinf(ip_strain(i, j));
+            logging::error(!badS, "IP ", i, " has invalid stress at col ", j);
+            logging::error(!badE, "IP ", i, " has invalid strain at col ", j);
+        }
+    }
+
+    return {ip_stress, ip_strain};
+}
+
 std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displacement){
 
     NodeData stress{_data->max_nodes, 6};
