@@ -17,12 +17,15 @@ CXX  = g++
 # Default Feature Flags
 #===============================================================
 
-openmp           ?= 1   # Enable/disable OpenMP
-mkl              ?= 0   # Enable/disable MKL (Math Kernel Library)
-mkl_sequential   ?= 0   # Enable/disable Sequential MKL
-cuda_dp          ?= 1   # Enable/disable CUDA Double Precision
-debug            ?= 0   # Enable/disable Debug mode
-double_precision ?= 1 # Enable/disable Double Precision
+openmp             ?= 1   # Enable/disable OpenMP
+mkl                ?= 0   # Enable/disable MKL (Math Kernel Library)
+mkl_sequential     ?= 0   # Enable/disable Sequential MKL
+cuda_dp            ?= 1   # Enable/disable CUDA Double Precision
+debug              ?= 0   # Enable/disable Debug mode
+double_precision   ?= 1   # Enable/disable Double Precision
+eigen_fast_compile ?= 1   # Enable/disable Eigen fast compile mode
+time_report        ?= 0   # Enable/disable time report for compilation
+
 #===============================================================
 # General Compiler Flags
 #===============================================================
@@ -30,6 +33,11 @@ double_precision ?= 1 # Enable/disable Double Precision
 WARNFLAGS  =
 CXXFLAGS   = -std=c++17 -O3 -I /usr/local/include $(WARNFLAGS)
 NVCCFLAGS  = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr $(WARNFLAGS)
+
+ifneq (,$(shell which ccache 2>/dev/null))
+  CXX  := ccache $(CXX)
+  NVCC := ccache $(NVCC)
+endif
 
 #===============================================================
 # Custom Feature Flags (Conditional Flags)
@@ -51,9 +59,14 @@ FEATURE_FLAGS += $(if $(filter 1,$(mkl_sequential)),-DUSE_MKL_SEQUENTIAL)
 LIBS          += $(if $(filter 1,$(mkl_sequential)),$(MKL_LIBS),$(if $(filter 1,$(mkl)),$(MKL_LIBS)))
 
 # Debug mode
-FEATURE_FLAGS += $(if $(filter 1,$(debug)),-DNDEBUG)
-CXXFLAGS      += $(if $(filter 1,$(debug)),-g)
+FEATURE_FLAGS += $(if $(filter 0,$(debug)),-DNDEBUG -DEIGEN_NO_DEBUG)
+CXXFLAGS      += $(if $(filter 1,$(debug)),-g3,-g0)
 NVCCFLAGS     += $(if $(filter 1,$(debug)),-G -g)
+
+CXXFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(CXXFLAGS))
+CXXFLAGS += $(if $(filter 1,$(debug)),-O2,-O3)
+NVCCFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(NVCCFLAGS))
+NVCCFLAGS += $(if $(filter 1,$(debug)),-O2,-O3)
 
 # cuda double precision
 FEATURE_FLAGS += $(if $(filter 1,$(cuda_dp)),-DCUDA_DOUBLE_PRECISION)
@@ -61,6 +74,13 @@ FEATURE_FLAGS += $(if $(filter 1,$(cuda_dp)),-DCUDA_DOUBLE_PRECISION)
 # double precision
 FEATURE_FLAGS += $(if $(filter 1,$(double_precision)),-DDOUBLE_PRECISION)
 
+ifeq ($(eigen_fast_compile),1)
+  FEATURE_FLAGS += -DEIGEN_DONT_PARALLELIZE    # Threading via OpenMP/MKL statt Eigen
+  FEATURE_FLAGS += -DEIGEN_UNROLLING_LIMIT=50  # weniger Aggro-Unrolling
+  FEATURE_FLAGS += -DEIGEN_DONT_INLINE         # weniger Inlining -> schnelleres Kompilieren
+endif
+
+CXXFLAGS += $(if $(filter 1,$(time_report)),-ftime-report)
 
 #===============================================================
 # System Information (Optional Flags Based on System)
