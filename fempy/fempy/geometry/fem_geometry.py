@@ -234,12 +234,17 @@ class Geometry:
           - "LINEAR STATIC": required keys = ['loads', 'supps']
           - "EIGENFREQ"    : required keys = ['supps', 'numeigenvalues']
         """
-        step = {'name': name, 'type': type.upper()}
+        # remove spaces from type
+        type = type.replace(" ", "").upper()
 
-        if step['type'] == "LINEAR STATIC":
+        step = {'name': name, 'type': type}
+
+        if step['type'] == "LINEARSTATIC":
             required_keys = ['loads', 'supps']
         elif step['type'] == "EIGENFREQ":
             required_keys = ['supps', 'numeigenvalues']
+        elif step['type'] == "LINEARBUCKLING":
+            required_keys = ['loads', 'supps', 'numeigenvalues']
         else:
             raise ValueError(f"Unsupported step type: {type}")
 

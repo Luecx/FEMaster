@@ -5,44 +5,48 @@
 #include "../core/core.h"
 #include "device.h"
 
-#include <utility>  // For std::pair
+#include <utility>
+#include <vector>
+#include <optional>
 
 namespace fem::solver {
 
-/******************************************************************************
- * @brief Extracts eigenvalues (and optionally eigenvectors) from a matrix using a method on the specified device.
- *
- * @param device The computational device to use (CPU or GPU).
- * @param mat The sparse matrix for which eigenvalues are to be computed.
- * @param num_eigenvalues The number of eigenvalues (and eigenvectors) to compute.
- * @param return_vectors If true, the function returns both eigenvalues and eigenvectors.
- *                       If false, only the eigenvalues are returned.
- * @return std::pair<DynamicVector, DynamicMatrix> A pair containing the eigenvalues and (optionally) eigenvectors.
- *         If `return_vectors` is false, the second element of the pair will be an empty matrix.
- ******************************************************************************/
-std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
-                                                            SparseMatrix& mat,
-                                                            int num_eigenvalues,
-                                                            bool return_vectors = false);
+// ---------- Return type ----------
+struct EigenValueVectorPair {
+    Precision     value;   // λ
+    DynamicVector vector;  // x  (size = n)
+};
 
-/******************************************************************************
- * @brief Extracts eigenvalues (and optionally eigenvectors) from a matrix using a method on the specified device.
- *        This variant takes a second diagonal sparse matrix and divides each row of the main matrix by the diagonal
- *        values before computing the eigenvalues.
- *
- * @param device The computational device to use (CPU or GPU).
- * @param mat The sparse matrix for which eigenvalues are to be computed.
- * @param diag_mat The diagonal sparse matrix whose diagonal values are used to divide the rows of `mat`.
- * @param num_eigenvalues The number of eigenvalues (and eigenvectors) to compute.
- * @param return_vectors If true, the function returns both eigenvalues and eigenvectors.
- *                       If false, only the eigenvalues are returned.
- * @return std::pair<DynamicVector, DynamicMatrix> A pair containing the eigenvalues and (optionally) eigenvectors.
- *         If `return_vectors` is false, the second element of the pair will be an empty matrix.
- ******************************************************************************/
-std::pair<DynamicVector, DynamicMatrix> compute_eigenvalues(SolverDevice device,
-                                                                  SparseMatrix& mat,
-                                                            const SparseMatrix& diag_mat,
-                                                            int num_eigenvalues,
-                                                            bool return_vectors = false);
+// ---------- Controls ----------
+enum class EigenMode {
+    Regular,      // no shift: standard solver
+    ShiftInvert,  // (A - σB)^(-1)B (or (A-σI)^(-1) for simple)
+    Buckling,     // (A - σB)^(-1)A   (requires A ≻ 0)
+    Cayley        // optional specialized transform
+};
 
-}  // namespace fem::solver
+struct EigenOpts {
+    EigenMode mode = EigenMode::Regular;
+    double    sigma = 0.0;         // used for ShiftInvert/Buckling/Cayley
+    int       ncv = -1;            // Krylov subspace size; -1 => auto
+    int       maxit = 3000;
+    double    tol = 1e-8;
+    enum class Sort { LargestAlge, LargestMagn, SmallestAlge, SmallestMagn } sort = Sort::SmallestAlge;
+};
+
+// ---------- Simple problem:  A x = λ x ----------
+std::vector<EigenValueVectorPair>
+    eigs(SolverDevice device,
+         const SparseMatrix& A,
+         int k,
+         const EigenOpts& opts = {});
+
+// ---------- Generalized problem:  A x = λ B x ----------
+std::vector<EigenValueVectorPair>
+    eigs(SolverDevice device,
+         const SparseMatrix& A,
+         const SparseMatrix& B,
+         int k,
+         const EigenOpts& opts);
+
+} // namespace fem::solver

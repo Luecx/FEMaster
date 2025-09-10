@@ -147,7 +147,7 @@ def write_input_deck(self, filename, format='femaster'):
                 step_type = step.get('type', 'LINEAR STATIC').upper()
                 file.write(f"*LOADCASE, TYPE={step_type}\n")
 
-                if step_type == "LINEAR STATIC":
+                if step_type == "LINEARSTATIC":
                     file.write(f"*SUPPORT\n")
                     for support_name in step['supps']:
                         file.write(f"{support_name}\n")
@@ -161,6 +161,17 @@ def write_input_deck(self, filename, format='femaster'):
                         file.write(f"{support_name}\n")
                     file.write(f"*NUMEIGENVALUES\n{step['numeigenvalues']}\n")
 
+                elif step_type == "LINEARBUCKLING":
+                    file.write(f"*SUPPORT\n")
+                    for support_name in step['supps']:
+                        file.write(f"{support_name}\n")
+                    file.write(f"*LOAD\n")
+                    for load_name in step['loads']:
+                        file.write(f"{load_name}\n")
+                    file.write(f"*NUMEIGENVALUES\n{step['numeigenvalues']}\n")
+
+                else:
+                    raise ValueError(f"Unsupported step type for FEMaster export: {step_type}")
                 file.write("*END\n**\n**\n")
 
         elif format == 'abaqus':

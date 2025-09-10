@@ -72,6 +72,8 @@ class Solution:
                     fields_dict[f"{prefix}displacement_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
                 if "MODE_SHAPE" in field:
                     fields_dict[f"{prefix}{field.lower()}_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
+                if "BUCKLING_MODE" in field:
+                    fields_dict[f"{prefix}{field.lower()}_xyz"] = lambda f=field, lc=lc: self.get(lc, f)[:, :3]
                 # Store the raw data for other fields
                 fields_dict[f"{prefix}{field.lower()}"] = lambda f=field, lc=lc: self.get(lc, f)
 

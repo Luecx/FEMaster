@@ -228,6 +228,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_sta
 
         // Rückgabe = Integrand (OHNE w). det gehört natürlich rein.
         StaticMatrix<D * N, D * N> Kg = G.transpose() * kron * G * det;
+
         return Kg;
     };
 

@@ -77,32 +77,77 @@ def write_input_deck(self, filename, format='femaster'):
                 orientation = section.get('orientation', (0, 1, 0))
                 file.write(f"{orientation[0]}, {orientation[1]}, {orientation[2]}\n")
 
+        # ============================
+        # FEMaster-only additions
+        # ============================
         spacing()
         if format == 'femaster':
-            # Write boundary conditions and loads before steps
+
+            # --- Coordinate Systems (raw) ---
+            # Wir benutzen *ORIENTATION wie in deinem Beispiel:
+            # *ORIENTATION, TYPE=RECTANGULAR, DEFINITION=VECTOR, NAME=CSY
+            # 1, 0, 0, 0, 1, 0
+            if hasattr(self, "coordinate_systems"):
+                for name, cs in self.coordinate_systems.items():
+                    ctype = cs.get('type', 'RECTANGULAR')
+                    definition = cs.get('definition', 'VECTOR' if ctype == 'RECTANGULAR' else 'POINTS')
+                    values = cs.get('values', ())
+                    spacing(1)
+                    file.write(f"*ORIENTATION, TYPE={ctype}, DEFINITION={definition}, NAME={name}\n")
+                    file.write(", ".join(str(v) for v in values) + "\n")
+
+            # --- Couplings ---
+            # *COUPLING, MASTER=..., SLAVE=..., TYPE=KINEMATIC
+            # cx, cy, cz, crx, cry, crz
+            if hasattr(self, "couplings"):
+                for c in self.couplings:
+                    spacing(1)
+                    file.write(f"*COUPLING, MASTER={c['master']}, SLAVE={c['slave']}, TYPE={c['type']}\n")
+                    file.write(f"{c['cx']}, {c['cy']}, {c['cz']}, {c['crx']}, {c['cry']}, {c['crz']}\n")
+
+            # --- Connectors ---
+            # *CONNECTOR, TYPE=..., COORDINATE SYSTEM=..., NSET1=..., NSET2=...
+            if hasattr(self, "connectors"):
+                for con in self.connectors:
+                    spacing(1)
+                    file.write(
+                        f"*CONNECTOR, TYPE={con['type']}, COORDINATE SYSTEM={con['coord_sys']}, "
+                        f"NSET1={con['nset1']}, NSET2={con['nset2']}\n"
+                    )
+
+            # --- Boundary conditions (supports) collectors ---
             spacing()
             for name in self.supps:
                 bc = self.supps[name]
                 set_name = bc['set']
                 bc_data = bc['data']
-                file.write(f"*SUPPORT, SUPPORT_COLLECTOR={name}\n")
+                coord_sys = bc.get('coord_sys')
+                if coord_sys:
+                    file.write(f"*SUPPORT, SUPPORT_COLLECTOR={name}, COORDINATE SYSTEM={coord_sys}\n")
+                else:
+                    file.write(f"*SUPPORT, SUPPORT_COLLECTOR={name}\n")
                 file.write(f"{set_name}, {', '.join([str(k) if k is not None else ' ' for k in bc_data])}\n")
 
+            # --- Loads collectors ---
             spacing()
             for name in self.loads:
                 load = self.loads[name]
                 set_name = load['set']
                 load_data = load['data']
-                file.write(f"*CLOAD, LOAD_COLLECTOR={name}\n")
+                coord_sys = load.get('coord_sys')
+                if coord_sys:
+                    file.write(f"*CLOAD, LOAD_COLLECTOR={name}, COORDINATE SYSTEM={coord_sys}\n")
+                else:
+                    file.write(f"*CLOAD, LOAD_COLLECTOR={name}\n")
                 file.write(f"{set_name}, {', '.join([str(k) if k is not None else '0.0' for k in load_data])}\n")
 
-            # Write steps
+            # --- Steps ---
             for step in self.steps:
                 spacing()
                 step_type = step.get('type', 'LINEAR STATIC').upper()
                 file.write(f"*LOADCASE, TYPE={step_type}\n")
 
-                if step_type == "LINEAR STATIC":
+                if step_type == "LINEARSTATIC":
                     file.write(f"*SUPPORT\n")
                     for support_name in step['supps']:
                         file.write(f"{support_name}\n")
@@ -116,7 +161,18 @@ def write_input_deck(self, filename, format='femaster'):
                         file.write(f"{support_name}\n")
                     file.write(f"*NUMEIGENVALUES\n{step['numeigenvalues']}\n")
 
-                file.write("*END")
+                elif step_type == "LINEARBUCKLING":
+                    file.write(f"*SUPPORT\n")
+                    for support_name in step['supps']:
+                        file.write(f"{support_name}\n")
+                    file.write(f"*LOAD\n")
+                    for load_name in step['loads']:
+                        file.write(f"{load_name}\n")
+                    file.write(f"*NUMEIGENVALUES\n{step['numeigenvalues']}\n")
+
+                else:
+                    raise ValueError(f"Unsupported step type for FEMaster export: {step_type}")
+                file.write("*END\n**\n**\n")
 
         elif format == 'abaqus':
             # Write steps with boundary conditions and loads

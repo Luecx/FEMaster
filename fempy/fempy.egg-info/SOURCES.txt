@@ -37,6 +37,14 @@ fempy/legacy/stiffness_mitc4.py
 fempy/legacy/stiffness_s4.py
 fempy/legacy/stiffness_shell.py
 fempy/legacy/viewer.py
+fempy/sensopt/__init__.py
+fempy/sensopt/console.py
+fempy/sensopt/fim_selector.py
+fempy/sensopt/gauges.py
+fempy/sensopt/hbuilder.py
+fempy/sensopt/prep.py
+fempy/sensopt/runner.py
+fempy/sensopt/select.py
 fempy/solution/__init__.py
 fempy/solution/solution.py
 fempy/solution/tovtk.py

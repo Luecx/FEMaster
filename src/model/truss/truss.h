@@ -140,6 +140,7 @@ struct TrussElement : StructuralElement {
 
     // --- Stress/Strain ---
     Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+        throw std::runtime_error("Not implemented yet");
         // Vec3 u0 = displacement.row(node_ids[0]);
         // Vec3 u1 = displacement.row(node_ids[1]);
         //
@@ -157,6 +158,8 @@ struct TrussElement : StructuralElement {
     }
 
     Strains strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+        throw std::runtime_error("Not implemented yet");
+
         // Vec3 u0 = displacement.row(node_ids[0]);
         // Vec3 u1 = displacement.row(node_ids[1]);
         //

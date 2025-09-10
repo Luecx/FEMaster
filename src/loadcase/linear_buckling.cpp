@@ -2,11 +2,15 @@
 #include "linear_buckling.h"
 
 #include <algorithm>  // std::sort
+#include <iomanip>
+#include <limits>
+
 #include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/extract_scaled_row_sum.h"
-#include "../solve/eigen.h"
+#include "../solve/eigen.h"  // new API: eigs(...) -> std::vector<EigenValueVectorPair>
+#include "../reader/write_mtx.h"
 
 namespace fem { namespace loadcase {
 
@@ -30,15 +34,69 @@ struct BucklingMode {
     bool operator<(const BucklingMode& o) const { return lambda < o.lambda; }
 };
 
+// Convert solver eigenpairs to sorted buckling modes
 static std::vector<BucklingMode>
-pair_and_sort(const DynamicVector& lambdas, const DynamicMatrix& vecs)
+    make_and_sort_modes(const std::vector<solver::EigenValueVectorPair>& pairs)
 {
     std::vector<BucklingMode> out;
-    out.reserve(lambdas.size());
-    for (int i = 0; i < lambdas.size(); ++i)
-        out.emplace_back(lambdas[i], vecs.col(i));
+    out.reserve(pairs.size());
+    for (const auto& p : pairs)
+        out.emplace_back(p.value, p.vector);
     std::sort(out.begin(), out.end());
     return out;
+}
+
+/// Check symmetry and compute eigenvalues of a (small/medium) sparse matrix.
+/// Only use this as a debug check (will dense-convert internally).
+static void check_matrix_spectrum(const Eigen::SparseMatrix<double>& A, int num_lowest = 10)
+{
+    Eigen::MatrixXd Ad = Eigen::MatrixXd(A);
+
+    // Symmetry check
+    Eigen::MatrixXd diff = Ad - Ad.transpose();
+    double sym_norm = diff.norm();
+    double a_norm   = Ad.norm();
+    double rel_sym  = (a_norm > 0) ? sym_norm / a_norm : sym_norm;
+
+    std::cout << "\n[DEBUG] Matrix spectrum check\n";
+    std::cout << "  Size           : " << Ad.rows() << " x " << Ad.cols() << "\n";
+    std::cout << "  Symmetry error : " << sym_norm
+              << " (relative " << rel_sym << ")\n";
+
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Ad);
+    if (es.info() != Eigen::Success) {
+        std::cout << "  [ERROR] Eigen decomposition failed.\n";
+        return;
+    }
+
+    Eigen::VectorXd eigs = es.eigenvalues();
+    std::cout << "  Lowest " << num_lowest << " eigenvalues:\n";
+    int n = std::min<int>(num_lowest, eigs.size());
+    for (int i = 0; i < n; ++i)
+        std::cout << "    λ[" << i << "] = " << eigs[i] << "\n";
+    std::cout.flush();
+}
+
+// --- Simple, compact on-screen summary like eigenfrequency (Idx, λ only) ---
+static void display_buckling_results(const std::vector<BucklingMode>& modes,
+                                     double sigma_used,
+                                     int    ncv_used,
+                                     int    k_requested)
+{
+    logging::info(true, "");
+    logging::info(true, "Buckling summary");
+    logging::up();
+    logging::info(true, "requested modes k : ", k_requested);
+    logging::info(true, "ncv               : ", ncv_used);
+    logging::info(true, "shift σ           : ", std::scientific, std::setprecision(3), sigma_used);
+    logging::down();
+
+    logging::info(true, std::setw(6), "Idx", std::setw(24), "Buckling factor λ");
+    for (size_t i = 0; i < modes.size(); ++i) {
+        logging::info(true,
+                      std::setw(6), i + 1,
+                      std::setw(24), std::fixed, std::setprecision(9), Precision(modes[i].lambda));
+    }
 }
 
 LinearBuckling::LinearBuckling(ID id, reader::Writer* writer, model::Model* model, int numEigenvalues)
@@ -147,7 +205,7 @@ void LinearBuckling::run() {
     DynamicVector u_full   = mattools::expand_vec_to_vec(u_active, active_lhs_vec);
     DynamicMatrix U_mat    = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
 
-    // 6) Compute IP stresses for geometric stiffness (no need to pass an enumeration)
+    // 6) Compute IP stresses for geometric stiffness
     IPData ip_stress;
     {
         NodeData U_row = U_mat;
@@ -166,13 +224,10 @@ void LinearBuckling::run() {
         [&]() {
             SparseMatrix G(m + n, m + n);
             TripletList T; T.reserve(Kg_act.nonZeros());
-
-            // put Kg in top-left
+            // put Kg in top-left (Λ blocks remain zero)
             for (int k = 0; k < Kg_act.outerSize(); ++k)
                 for (SparseMatrix::InnerIterator it(Kg_act, k); it; ++it)
                     T.emplace_back(it.row(), it.col(), it.value());
-
-            // Lagrange blocks remain zero
             G.setFromTriplets(T.begin(), T.end());
             return G;
         },
@@ -187,33 +242,52 @@ void LinearBuckling::run() {
     Kg_hat_red.makeCompressed();
 
     // Overview
-    logging::info(true, "\nOverview");
+    logging::info(true, "");
+    logging::info(true, "Overview");
     logging::up();
     logging::info(true, "system total DOFs : ", active_dof_idx_mat.maxCoeff() + 1);
     logging::info(true, "lagrange DOFs     : ", n);
     logging::info(true, "final DOFs        : ", rhs_red.rows());
+    logging::info(true, "active system DOFs: ", rhs_red.rows() - n);
     logging::down();
 
-    // 8) Buckling EVP:  K_hat * φ = λ * (-Kg_hat) * φ  => use B = (-Kg_hat)
+    // 8) Buckling EVP
+    // Classical formulation: K φ + λ Kg φ = 0  ⇔  K φ = (-λ) Kg φ.
+    // If Kg is assembled in the classical sign convention, use B = -Kg_hat to obtain positive buckling factors.
+    SparseMatrix B = -Kg_hat_red;
+
     const Index active_system_dofs = rhs_red.rows() - n;
     const Index neigs = std::min<Index>(num_eigenvalues, std::max<Index>(1, active_system_dofs));
 
-    auto sym = [](SparseMatrix& A){
-        A.makeCompressed();
-    };
-    sym(K_hat_red);
-    sym(Kg_hat_red);
+    // --- Solver options (choose σ as you like; 1e-9 recommended by you) ---
+    solver::EigenOpts opts;
+    opts.mode = solver::EigenMode::Buckling;
+    opts.sigma = 1e-3; // <<< your tiny shift; change here if desired
+    opts.sort = solver::EigenOpts::Sort::SmallestAlge; // smallest λ first
+    const int ncv = std::min<int>(static_cast<int>(K_hat_red.rows()),
+                                  std::max<int>(static_cast<int>(3 * neigs + 20), static_cast<int>(neigs + 2)));
+    opts.ncv = ncv;
 
-    SparseMatrix B = Kg_hat_red;
+    // Optional: debug spectra of K and B
+    // check_matrix_spectrum(K_hat_red);
+    // check_matrix_spectrum(B);
 
-    auto eig = Timer::measure(
-        [&]{ return solver::compute_eigenvalues(solver::CPU, K_hat_red, B, neigs, true); },
-        "solving generalized EVP for buckling" );
+    // Solve with Spectra Buckling mode via new API (back-transforms to original λ)
+    auto eig_pairs = Timer::measure(
+        [&]{
+            return solver::eigs(solver::CPU, K_hat_red, B,
+                                static_cast<int>(neigs), opts);
+        },
+        "solving generalized EVP for buckling"
+    );
 
     // 9) Pair/sort and expand
-    auto modes = pair_and_sort(eig.first, eig.second);
+    auto modes = make_and_sort_modes(eig_pairs);
     for (auto& m : modes)
         m.expand_mode_shape(n, active_lhs_vec, active_dof_idx_mat);
+
+    // --- NEW: compact on-screen summary ---
+    display_buckling_results(modes, opts.sigma, ncv, static_cast<int>(neigs));
 
     // 10) Write results: buckling factors + mode shapes
     m_writer->add_loadcase(m_id);
