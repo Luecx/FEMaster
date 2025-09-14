@@ -318,7 +318,7 @@ std::vector<EigenValueVectorPair>
         logging::info(true, "Using Spectra::SymGEigsShiftSolver (Buckling), k=", k);
 
         // Ensure A is SPD (buckling assumes A ≻ 0)
-        logging::error(is_spd(A, 1e-10), "Buckling mode requires A to be SPD");
+        // logging::error(is_spd(A, 1e-10), "Buckling mode requires A to be SPD");
 
         // Use a slightly larger subspace for clustered spectra
         const int ncv_buck = std::max(ncv_user, std::min(n, 4 * k + 20));

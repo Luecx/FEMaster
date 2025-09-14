@@ -37,6 +37,16 @@ fempy/legacy/stiffness_mitc4.py
 fempy/legacy/stiffness_s4.py
 fempy/legacy/stiffness_shell.py
 fempy/legacy/viewer.py
+fempy/mtxviewer/__init__.py
+fempy/mtxviewer/app.py
+fempy/mtxviewer/main.py
+fempy/mtxviewer/matrix_view.py
+fempy/mtxviewer/style.py
+fempy/mtxviewer/tabs_decomp.py
+fempy/mtxviewer/tabs_formats.py
+fempy/mtxviewer/tabs_io.py
+fempy/mtxviewer/tabs_overview.py
+fempy/mtxviewer/tabs_spectral.py
 fempy/sensopt/__init__.py
 fempy/sensopt/console.py
 fempy/sensopt/fim_selector.py

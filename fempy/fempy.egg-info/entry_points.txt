@@ -1,3 +1,4 @@
 [console_scripts]
 generatebeaminp = fempy.generate.generate_beam_inp:main
+mtxviewer = fempy.mtxviewer.app:main
 tovtk = fempy.solution.tovtk:main

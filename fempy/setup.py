@@ -19,6 +19,7 @@ setup(
     entry_points={
         "console_scripts": [
             "tovtk=fempy.solution.tovtk:main",  # Entry point for the tovtk script
+            "mtxviewer=fempy.mtxviewer.app:main",  # Entry point for the mtxviewer script
             "generatebeaminp=fempy.generate.generate_beam_inp:main",  # Entry point for the generatebeaminp script
         ],
     },

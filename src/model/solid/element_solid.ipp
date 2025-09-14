@@ -174,6 +174,7 @@ SolidElement<N>::stiffness(Precision* buffer) {
     mapped = stiffness;
     return mapped;
 }
+
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) {
@@ -186,50 +187,44 @@ SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_sta
         [this, &node_coords, &ip_stress, ip_start_idx, &ip_counter]
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
-        // Lokale Ableitungen & Jakobimatrix
-        StaticMatrix<N, D> local_shape_der = this->shape_derivative(r, s, t);
-        StaticMatrix<D, D> J = this->jacobian(node_coords, r, s, t);
-        Precision det = J.determinant();
 
-        // global_shape_der = local_shape_der * J^{-T}  (ohne explizite Inverse)
-        StaticMatrix<N, D> global_shape_der =
-            (J.transpose().partialPivLu().solve(local_shape_der.transpose())).transpose();
+        // ---- Stress at IP (Voigt = [xx, yy, zz, yz, zx, xy]) ----
+        auto v = ip_stress.row(ip_start_idx + ip_counter++);
+        Eigen::Matrix<Precision,3,3> sigma;
+        sigma << v(0), v(5), v(4),
+            v(5), v(1), v(3),
+            v(4), v(3), v(2);
 
-        // ---- G-Matrix (9×3N) ----
-        StaticMatrix<9, D * N> G = StaticMatrix<9, D * N>::Zero();
-        for (Index a = 0; a < N; ++a) {
-            Index col = 3 * a;
-            // ux-Gradient
-            G(0, col + 0) = global_shape_der(a, 0);
-            G(1, col + 0) = global_shape_der(a, 1);
-            G(2, col + 0) = global_shape_der(a, 2);
-            // uy-Gradient
-            G(3, col + 1) = global_shape_der(a, 0);
-            G(4, col + 1) = global_shape_der(a, 1);
-            G(5, col + 1) = global_shape_der(a, 2);
-            // uz-Gradient
-            G(6, col + 2) = global_shape_der(a, 0);
-            G(7, col + 2) = global_shape_der(a, 1);
-            G(8, col + 2) = global_shape_der(a, 2);
+        // ---- Local -> global shape derivatives, Jacobian, det ----
+        StaticMatrix<N, D> dN_local = this->shape_derivative(r, s, t);
+        StaticMatrix<D, D> J        = this->jacobian(node_coords, r, s, t);
+        StaticMatrix<D, D> Jinv     = J.inverse();
+        Precision det               = J.determinant();
+        StaticMatrix<N, D> dN       = (Jinv * dN_local.transpose()).transpose(); // global grads per node
+
+        // ---- Geometric stiffness integrand (scalar s_ab * I3) ----
+        StaticMatrix<D * N, D * N> Kg = StaticMatrix<D * N, D * N>::Zero();
+
+        for (Index a = 0; a < N; ++a)
+        {
+            Eigen::Matrix<Precision,3,1> gNa;
+            gNa << dN(a,0), dN(a,1), dN(a,2);
+
+            for (Index b = 0; b < N; ++b)
+            {
+                Eigen::Matrix<Precision,3,1> gNb;
+                gNb << dN(b,0), dN(b,1), dN(b,2);
+
+                Precision s_ab = (gNa.transpose() * sigma * gNb)(0,0); // scalar
+
+                // add s_ab * I3 to block (a,b)
+                for (int d = 0; d < 3; ++d)
+                    Kg(3*a + d, 3*b + d) += s_ab * det;
+            }
         }
 
-        // ---- Spannung am IP (achte auf Voigt-Reihenfolge!) ----
-        auto stress_voigt = ip_stress.row(ip_start_idx + ip_counter++);
-        Eigen::Matrix<Precision, 3, 3> sigma;
-        // Hier: Voigt = [xx, yy, zz, yz, zx, xy]
-        sigma << stress_voigt(0), stress_voigt(5), stress_voigt(4),
-                 stress_voigt(5), stress_voigt(1), stress_voigt(3),
-                 stress_voigt(4), stress_voigt(3), stress_voigt(2);
-
-        // ---- Kronprodukt I⊗σ (Blockdiag mit 3x sigma) ----
-        Eigen::Matrix<Precision, 9, 9> kron = Eigen::Matrix<Precision, 9, 9>::Zero();
-        for (int i = 0; i < 3; ++i)
-            kron.block<3, 3>(3 * i, 3 * i) = sigma;
-
-        // Rückgabe = Integrand (OHNE w). det gehört natürlich rein.
-        StaticMatrix<D * N, D * N> Kg = G.transpose() * kron * G * det;
-
         return Kg;
+
     };
 
     StaticMatrix<D * N, D * N> Kg = integration_scheme().integrate(func);
@@ -239,8 +234,6 @@ SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_sta
     mapped = Kg;
     return mapped;
 }
-
-
 
 //-----------------------------------------------------------------------------
 // mass
