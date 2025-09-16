@@ -45,7 +45,7 @@ struct SupportCollector : model::Collection<Support> {
      * @param bc The boundary condition data structure.
      * @param equations The constraint equations structure.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, constraint::Equations& equations);
+    constraint::Equations get_equations(model::ModelData& model_data);
 
     /**
      * @brief Adds a Support for a node region.

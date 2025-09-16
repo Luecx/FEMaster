@@ -1,377 +1,279 @@
 /******************************************************************************
-* @file linear_buckling.cpp
-* @brief Implementation of the LinearBuckling load case for performing linear
-* buckling analysis.
-*
-* @details
-* This file implements the linear buckling analysis based on the finite element
-* method. The procedure involves:
-* 1. Building the stiffness matrix with constraints.
-* 2. Solving a static preload step to obtain stresses.
-* 3. Assembling the geometric stiffness matrix from stresses.
-* 4. Solving the generalized eigenvalue problem:
-*
-*      K φ = λ (−Kg) φ
-*
-*    where K is the structural stiffness matrix and Kg is the geometric stiffness
-*    matrix. The resulting eigenvalues λ are the buckling factors, and the eigenvectors
-*    φ are the corresponding buckling mode shapes.
-*
-* A coarse eigenvalue estimate is computed cheaply (via a Rayleigh quotient using
-* the prebuckling displacement) to set the shift σ for the eigenvalue solver.
-*
-* @date Created on 12.09.2025
-******************************************************************************/
+ * @file linear_buckling.cpp
+ * @brief Linear buckling analysis using affine null-space constraints (u = u_p + T q).
+ *
+ * Pipeline (null-space path, no Lagrange blocks):
+ *   0) Assign sections/materials.
+ *   1) Build unconstrained DOF indexing (node×6 → active dof id or -1).
+ *   2) Build constraint equations (supports/ties/couplings → C u = d).
+ *   3) Assemble global load matrix (node×6) and active stiffness K (n×n).
+ *   4) Reduce loads to active RHS f (n×1).
+ *   5) Build ConstraintTransformer → get T, u_p (affine map).
+ *   6) Pre-buckling static solve in reduced space:
+ *        A = Tᵀ K T, b = Tᵀ (f − K u_p), solve A q = b, u = u_p + T q.
+ *   7) From u, compute integration-point stresses; assemble geometric K_g (n×n).
+ *   8) Reduce K and K_g: A = Tᵀ K T, B = Tᵀ K_g T.
+ *   9) Solve generalized EVP: A φ = λ (−B) φ for k modes (shifted if desired).
+ *  10) Expand each reduced φ (q-space) → full u-mode → node×6 matrix for output.
+ *
+ * Remarks
+ * -------
+ * - The EVP is homogeneous; any inhomogeneous constraints were already accounted
+ *   for in the preload via u_p (static step).
+ * - We estimate a shift σ from the preload displacement using a Rayleigh quotient
+ *   in reduced space to guide the eigensolver (optional but helpful).
+ *
+ * @date    15.09.2025
+ * @author  Finn
+ ******************************************************************************/
 
 #include "linear_buckling.h"
 
-#include <algorithm>  // std::sort
+#include <algorithm>
 #include <iomanip>
 #include <limits>
 
+#include "../solve/eigen.h"                 // solve(...), eigs(...)
+#include "../core/logging.h"
+
+#include "../constraints/constraint_transformer.h"
+#include "../constraints/equation.h"
+
+#include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
-#include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/extract_scaled_row_sum.h"
-#include "../solve/eigen.h"   // eigs(...) -> std::vector<EigenValueVectorPair>
-#include "../reader/write_mtx.h"
 
 namespace fem { namespace loadcase {
 
-//==============================================================================
-// BucklingMode: holds a single eigenpair (buckling factor + mode shape)
-//==============================================================================
+using fem::constraint::ConstraintTransformer;
+
+//------------------------------------------------------------------------------
+// Small helpers (local to this TU)
+//------------------------------------------------------------------------------
 struct BucklingMode {
-   Precision     lambda;            ///< Buckling factor
-   DynamicVector mode_shape;        ///< Reduced mode shape (includes Lagrange DOFs at tail)
-   DynamicMatrix mode_shape_mat;    ///< Expanded to node × DOF layout
+    Precision     lambda;       ///< Buckling factor (eigenvalue)
+    DynamicVector q_mode;       ///< Reduced coordinates (in q-space)
+    DynamicMatrix mode_mat;     ///< Expanded (node × DOF) layout for writing
 
-   explicit BucklingMode(Precision lam, DynamicVector v)
-       : lambda(lam), mode_shape(std::move(v)) {}
-
-   /// Expand reduced mode shape to full node × DOF layout
-   void expand_mode_shape(int lagrange_dofs,
-                          const DynamicVector& active_lhs_vec,
-                          const IndexMatrix&   active_dof_idx_mat)
-   {
-       DynamicVector mode_shape_active = mode_shape.head(mode_shape.size() - lagrange_dofs);
-       auto expanded_mode_shape        = mattools::expand_vec_to_vec(mode_shape_active, active_lhs_vec);
-       mode_shape_mat                  = mattools::expand_vec_to_mat(active_dof_idx_mat, expanded_mode_shape);
-   }
-
-   bool operator<(const BucklingMode& o) const { return lambda < o.lambda; }
+    BucklingMode(Precision lam, DynamicVector q) : lambda(lam), q_mode(std::move(q)) {}
 };
 
-//==============================================================================
-// Helper: convert raw solver eigenpairs into sorted BucklingModes
-//==============================================================================
-static std::vector<BucklingMode>
-   make_and_sort_modes(const std::vector<solver::EigenValueVectorPair>& pairs)
-{
-   std::vector<BucklingMode> out;
-   out.reserve(pairs.size());
-   for (const auto& p : pairs)
-       out.emplace_back(p.value, p.vector);
-   std::sort(out.begin(), out.end());
-   return out;
+/** @brief Cheap Rayleigh quotient estimate λ ≈ (qᵀ A q) / (qᵀ (−B) q). */
+static inline double estimate_lambda_rayleigh(const SparseMatrix& A,
+                                              const SparseMatrix& B,
+                                              const DynamicVector& q) {
+    if (q.size() == 0) return 0.0;
+    DynamicVector Aq = A * q;
+    DynamicVector Bq = B * q;          // we use −B later
+    const double num = q.dot(Aq);
+    const double den = q.dot(-Bq);
+    if (std::abs(den) < 1e-20) return 0.0;
+    return num / den;
 }
 
-//==============================================================================
-// Helper: print compact buckling summary
-//==============================================================================
-static void display_buckling_results(const std::vector<BucklingMode>& modes,
-                                    double sigma_used,
-                                    int    ncv_used,
-                                    int    k_requested)
-{
-   logging::info(true, "");
-   logging::info(true, "Buckling summary");
-   logging::up();
-   logging::info(true, "requested modes k : ", k_requested);
-   logging::info(true, "ncv               : ", ncv_used);
-   logging::info(true, "shift σ           : ", std::scientific, std::setprecision(3), sigma_used);
-   logging::down();
+/** @brief Pretty print a short table of buckling factors. */
+static void print_buckling_summary(const std::vector<BucklingMode>& modes,
+                                   double sigma_used,
+                                   int k_requested) {
+    logging::info(true, "");
+    logging::info(true, "Buckling summary");
+    logging::up();
+    logging::info(true, "requested modes k : ", k_requested);
+    logging::info(true, "shift σ           : ", std::scientific, std::setprecision(3), sigma_used);
+    logging::down();
 
-   logging::info(true, std::setw(6), "Idx", std::setw(24), "Buckling factor λ");
-   for (size_t i = 0; i < modes.size(); ++i) {
-       logging::info(true,
-                     std::setw(6), i + 1,
-                     std::setw(24), std::fixed, std::setprecision(9),
-                     Precision(modes[i].lambda));
-   }
+    logging::info(true, std::setw(6), "Idx", std::setw(24), "Buckling factor λ");
+    for (size_t i = 0; i < modes.size(); ++i) {
+        logging::info(true,
+                      std::setw(6), i + 1,
+                      std::setw(24), std::fixed, std::setprecision(9),
+                      Precision(modes[i].lambda));
+    }
 }
 
-//==============================================================================
-// Helper: estimate the first eigenvalue with a cheap Rayleigh quotient
-//==============================================================================
-static double estimate_first_eigenvalue(const SparseMatrix& K,
-                                       const SparseMatrix& Kg,
-                                       const DynamicVector& trial_u)
-{
-   double lambda_est = 0.0;
-
-   DynamicVector Ku = K * trial_u;
-   DynamicVector Bu = (-Kg) * trial_u;   // use −Kg to ensure positive denominator
-
-   double num = trial_u.dot(Ku);
-   double den = trial_u.dot(Bu);
-
-   if (den > 1e-14) {
-       lambda_est = num / den;
-   } else {
-       // fallback: diagonal ratio
-       double min_ratio = std::numeric_limits<double>::infinity();
-       for (int k = 0; k < K.rows(); ++k) {
-           double bii = -Kg.coeff(k, k);
-           if (bii > 1e-14)
-               min_ratio = std::min(min_ratio, K.coeff(k, k) / bii);
-       }
-       lambda_est = (min_ratio < std::numeric_limits<double>::infinity())
-                        ? min_ratio : 100.0; // fallback constant
-   }
-   return lambda_est;
-}
-
-//==============================================================================
-// LinearBuckling class
-//==============================================================================
-
-LinearBuckling::LinearBuckling(ID id, reader::Writer* writer, model::Model* model, int numEigenvalues)
-   : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
+//------------------------------------------------------------------------------
+// LinearBuckling
+//------------------------------------------------------------------------------
+LinearBuckling::LinearBuckling(ID id,
+                               reader::Writer* writer,
+                               model::Model* model,
+                               int numEigenvalues)
+    : LoadCase(id, writer, model)
+    , num_eigenvalues(numEigenvalues) {}
 
 /**
-* @brief Executes the linear buckling analysis.
-*
-* Steps:
-* 1. Assign sections and materials.
-* 2. Build DOF indexing, supports, and loads.
-* 3. Assemble the structural stiffness matrix and constraint matrix.
-* 4. Assemble augmented system with Lagrange multipliers.
-* 5. Solve static preload (linear system) to obtain displacements.
-* 6. Compute stresses at integration points.
-* 7. Assemble geometric stiffness matrix.
-* 8. Estimate smallest eigenvalue to choose shift σ.
-* 9. Solve the generalized eigenvalue problem for buckling.
-* 10. Expand mode shapes and write results.
-*/
+ * @brief Execute the linear buckling analysis.
+ *
+ * See file header for the full step list. This version enforces constraints
+ * via the null-space transformer, avoiding a saddle-point system.
+ */
 void LinearBuckling::run() {
-   // =========================================================================
-   // Begin logging
-   // =========================================================================
-   logging::info(true, "");
-   logging::info(true, "================================================================================");
-   logging::info(true, "LINEAR BUCKLING ANALYSIS");
-   logging::info(true, "================================================================================");
-   logging::info(true, "");
+    // Banner
+    logging::info(true, "");
+    logging::info(true, "================================================================================");
+    logging::info(true, "LINEAR BUCKLING ANALYSIS");
+    logging::info(true, "================================================================================");
+    logging::info(true, "");
 
-   // -------------------------------------------------------------------------
-   // 0) Sections and materials
-   // -------------------------------------------------------------------------
-   m_model->assign_sections();
+    // (0) Sections/materials
+    m_model->assign_sections();
 
-   // -------------------------------------------------------------------------
-   // 1) DOF indexing + supports + loads
-   // -------------------------------------------------------------------------
-   auto active_dof_idx_mat = Timer::measure(
-       [&]{ return m_model->build_unconstrained_index_matrix(); },
-       "generating active_dof_idx_mat index matrix" );
+    // (1) Unconstrained DOF index (node×6 → active dof id or -1)
+    auto active_dof_idx_mat = Timer::measure(
+        [&]() { return m_model->build_unconstrained_index_matrix(); },
+        "generating active_dof_idx_mat index matrix"
+    );
 
-   auto [global_supp_mat, global_supp_eqs] = Timer::measure(
-       [&]{ return m_model->build_support_matrix(supps); },
-       "building global support matrix" );
+    // (2) Build constraint equations from supports/ties/couplings
+    auto equations = Timer::measure(
+        [&]() { return m_model->build_constraints(active_dof_idx_mat, supps); },
+        "building constraints"
+    );
 
-   auto global_load_mat = Timer::measure(
-       [&]{ return m_model->build_load_matrix(loads); },
-       "building global load matrix" );
+    // (3) Global load matrix (node×6) → keep for reporting if you like
+    auto global_load_mat = Timer::measure(
+        [&]() { return m_model->build_load_matrix(loads); },
+        "building global load matrix"
+    );
 
-   // -------------------------------------------------------------------------
-   // 2) Assemble stiffness and constraints
-   // -------------------------------------------------------------------------
-   auto K_act = Timer::measure(
-       [&]{ return m_model->build_stiffness_matrix(active_dof_idx_mat); },
-       "constructing active stiffness matrix" );
+    // (4) Active stiffness K (n×n)
+    auto K = Timer::measure(
+        [&]() { return m_model->build_stiffness_matrix(active_dof_idx_mat); },
+        "constructing stiffness matrix K"
+    );
 
-   Precision kchar = K_act.diagonal().mean();
+    // (5) Reduce global loads → active RHS f (n×1)
+    auto f = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        "reducing load matrix → active RHS vector f"
+    );
 
-   auto C_act = Timer::measure(
-       [&]{ return m_model->build_constraint_matrix(active_dof_idx_mat, global_supp_eqs, kchar); },
-       "constructing active Lagrangian matrix" );
+    // (6) Constraint transformer (Set → Builder → Map)
+    ConstraintTransformer::BuildOptions copt;
+    copt.set.scale_columns = true; // robust QR
+    ConstraintTransformer CT(
+        equations,
+        active_dof_idx_mat,   // system DOF map
+        K.rows(),             // n (active DOFs)
+        copt
+    );
 
-   const int m = K_act.rows();     // active DOFs
-   const int n = C_act.rows();     // Lagrange rows
+    // (7) Pre-buckling static solve in reduced space
+    auto A = Timer::measure(
+        [&]() { return CT.assemble_A(K); },
+        "assembling A = T^T K T (preload)"
+    );
+    auto b = Timer::measure(
+        [&]() { return CT.assemble_b(K, f); },
+        "assembling b = T^T (f - K u_p) (preload)"
+    );
 
-   // -------------------------------------------------------------------------
-   // 3) Assemble augmented K̂ = [K  Cᵀ; C  0]
-   // -------------------------------------------------------------------------
-   auto K_hat = Timer::measure(
-       [&]() {
-           SparseMatrix A(m + n, m + n);
-           TripletList T; T.reserve(K_act.nonZeros() + 2*C_act.nonZeros() + n);
+    auto q_pre = Timer::measure(
+        [&]() { return solve(device, method, A, b); },
+        "solving reduced preload A q = b"
+    );
+    auto u_pre = Timer::measure(
+        [&]() { return CT.recover_u(q_pre); },
+        "recovering full preload displacement u"
+    );
 
-           // K block
-           for (int k = 0; k < K_act.outerSize(); ++k)
-               for (SparseMatrix::InnerIterator it(K_act, k); it; ++it)
-                   T.emplace_back(it.row(), it.col(), it.value());
+    // (8) Integration-point stresses from preload → K_g assembly
+    IPData ip_stress, ip_strain_unused;
+    {
+        // Many model APIs expect node-wise displacements (node×6) for IP recovery.
+        auto U_mat = Timer::measure(
+            [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_pre); },
+            "expanding u to node×DOF for IP stress"
+        );
+        std::tie(ip_stress, ip_strain_unused) = Timer::measure(
+            [&]() { return m_model->compute_ip_stress_strain(U_mat); },
+            "computing IP stress/strain for Kg"
+        );
+    }
 
-           // C blocks
-           for (int k = 0; k < C_act.outerSize(); ++k)
-               for (SparseMatrix::InnerIterator it(C_act, k); it; ++it) {
-                   T.emplace_back(m + it.row(), it.col(), it.value());
-                   T.emplace_back(it.col(), m + it.row(), it.value());
-               }
+    auto Kg = Timer::measure(
+        [&]() { return m_model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
+        "assembling geometric stiffness K_g"
+    );
 
-           // small regularization in bottom-right (Lagrange block)
-           for (int i = 0; i < n; ++i)
-               T.emplace_back(m + i, m + i, -kchar / 1e6);
+    // (9) Reduced buckling operators
+    auto B = Timer::measure(
+        [&]() { return CT.assemble_B(Kg); },
+        "assembling B = T^T K_g T"
+    );
 
-           A.setFromTriplets(T.begin(), T.end());
-           return A;
-       },
-       "assembling full lhs matrix K_hat" );
+    // Optional: estimate a shift σ from preload (Rayleigh in reduced space)
+    double sigma = Timer::measure(
+        [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e6; },
+        "estimating initial shift σ (Rayleigh)"
+    );
+    if (sigma <= 0) sigma = - sigma;
+    if (!std::isfinite(sigma)) sigma = 1e-6;
 
-   // -------------------------------------------------------------------------
-   // 4) RHS/LHS vectors for static solve
-   // -------------------------------------------------------------------------
-   auto active_rhs_vec = Timer::measure(
-       [&]{ return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-       "reducing load vector (RHS)" );
+    // (10) Solve generalized EVP in reduced space: A φ = λ (−B) φ
+    SparseMatrix Bneg = (-1.0) * B;
 
-   auto active_lhs_vec = Timer::measure(
-       [&]{ return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_supp_mat); },
-       "reducing support vector (LHS)" );
+    const int k_req = std::max(1, std::min<int>(num_eigenvalues, std::max<int>(1, int(A.rows()))));
+    solver::EigenOpts eigopt;
+    eigopt.mode  = solver::EigenMode::Buckling;
+    eigopt.sigma = sigma;
+    eigopt.ncv   = std::min<int>(int(A.rows()), std::max<int>(3*k_req + 20, k_req + 2));
+    eigopt.sort  = solver::EigenOpts::Sort::LargestMagn;
 
-   DynamicVector full_rhs_vec(m + n);
-   DynamicVector full_lhs_vec(m + n);
-   full_rhs_vec << active_rhs_vec, DynamicVector::Zero(n);
-   full_lhs_vec << active_lhs_vec, DynamicVector::Constant(n, std::numeric_limits<Precision>::quiet_NaN());
+    auto eig_pairs = Timer::measure(
+        [&]() { return solver::eigs(device, A, Bneg, k_req, eigopt); },
+        "solving reduced generalized EVP for buckling"
+    );
 
-   // Implicit RHS (constraint enforcement)
-   auto implicit_rhs = Timer::measure(
-       [&]{ return mattools::extract_scaled_row_sum(K_hat, full_lhs_vec); },
-       "computing implicit load vector" );
-   full_rhs_vec += implicit_rhs;
+    // Package modes and expand to node×DOF for writing
+    std::vector<BucklingMode> modes;
+    modes.reserve(eig_pairs.size());
+    for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
 
-   // Reduce system
-   auto K_hat_red = Timer::measure(
-       [&]{ return mattools::reduce_mat_to_mat(K_hat, full_lhs_vec); },
-       "reducing K_hat to solver-ready form" );
+    // Sort ascending by buckling factor (smallest first)
+    std::sort(modes.begin(), modes.end(),
+      [](const BucklingMode& a, const BucklingMode& b) {
+          return a.lambda < b.lambda;
+      });
 
-   auto rhs_red = Timer::measure(
-       [&]{ return mattools::reduce_vec_to_vec(full_rhs_vec, full_lhs_vec); },
-       "reducing load vector to solver-ready form" );
 
-   K_hat_red.makeCompressed();
+    for (auto& m : modes) {
+        // Reduced → full vector with constraints
+        DynamicVector u_mode = CT.recover_u(m.q_mode);
+        // Full → node×DOF
+        m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+    }
 
-   // -------------------------------------------------------------------------
-   // 5) Solve static preload displacements
-   // -------------------------------------------------------------------------
-   auto sol = Timer::measure(
-       [&]{ return solve(device, method, K_hat_red, rhs_red); },
-       "solving linear system for pre-stress" );
+    // Summary
+    print_buckling_summary(modes, eigopt.sigma, k_req);
 
-   DynamicVector u_active = sol.head(sol.rows() - n);
-   DynamicVector u_full   = mattools::expand_vec_to_vec(u_active, active_lhs_vec);
-   DynamicMatrix U_mat    = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
+    // (11) Write results
+    m_writer->add_loadcase(m_id);
+    {
+        DynamicVector lambdas(modes.size());
+        for (size_t i = 0; i < modes.size(); ++i) {
+            lambdas(i) = modes[i].lambda;
+            m_writer->write_eigen_matrix(modes[i].mode_mat,
+                                         "BUCKLING_MODE_" + std::to_string(i + 1));
+        }
+        m_writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
+    }
 
-   // -------------------------------------------------------------------------
-   // 6) Compute integration point stresses
-   // -------------------------------------------------------------------------
-   IPData ip_stress;
-   {
-       NodeData U_row = U_mat;
-       IPData ip_strain_unused;
-       std::tie(ip_stress, ip_strain_unused) =
-           Timer::measure([&]{ return m_model->compute_ip_stress_strain(U_row); },
-                          "computing IP stress/strain for Kg");
-   }
+    // (12) Small post-checks (optional): projected residual of preload
+    {
+        DynamicVector r_pre  = K * u_pre - f;           // full active residual (reactions + orthogonal)
+        DynamicVector red    = CT.map().apply_Tt(r_pre);
+        logging::info(true, "");
+        logging::info(true, "Preload post-checks");
+        logging::up();
+        logging::info(true, "||u_pre||2             : ", u_pre.norm());
+        logging::info(true, "||C u_pre - d||2       : ", (CT.set().C * u_pre - CT.set().d).norm());
+        logging::info(true, "||K u_pre - f||2       : ", r_pre.norm());
+        logging::info(true, "||T^T (K u_pre - f)||2 : ", red.norm());
+        logging::down();
+    }
 
-   // -------------------------------------------------------------------------
-   // 7) Assemble geometric stiffness Kg
-   // -------------------------------------------------------------------------
-   auto Kg_act = Timer::measure(
-       [&]{ return m_model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
-       "assembling active geometric stiffness matrix" );
-
-   auto Kg_hat = Timer::measure(
-       [&]() {
-           SparseMatrix G(m + n, m + n);
-           TripletList T; T.reserve(Kg_act.nonZeros());
-           for (int k = 0; k < Kg_act.outerSize(); ++k)
-               for (SparseMatrix::InnerIterator it(Kg_act, k); it; ++it)
-                   T.emplace_back(it.row(), it.col(), it.value());
-           G.setFromTriplets(T.begin(), T.end());
-           return G;
-       },
-       "assembling Kghat" );
-
-   write_mtx<Precision>("K_norm.mtx", K_hat , 0.0001);
-   write_mtx<Precision>("K_geom.mtx", Kg_hat, 0.0001);
-
-   auto Kg_hat_red = Timer::measure(
-       [&]{ return mattools::reduce_mat_to_mat(Kg_hat, full_lhs_vec); },
-       "reducing Kghat to solver-ready form" );
-
-   K_hat_red.makeCompressed();
-   Kg_hat_red.makeCompressed();
-
-   // -------------------------------------------------------------------------
-   // 8) Estimate first eigenvalue and choose shift σ
-   // -------------------------------------------------------------------------
-   double lambda_est = Timer::measure(
-       [&]{ return estimate_first_eigenvalue(K_hat_red, Kg_hat_red, u_active); },
-       "estimating first eigenvalue (Rayleigh quotient)" );
-
-   double sigma_val = lambda_est / 1e6;   // scale down strongly
-    // if (sigma_val <= 0.0) sigma_val *= -1;
-   if (!std::isfinite(sigma_val))
-       sigma_val = 1e-9; // fallback safe value
-
-   // -------------------------------------------------------------------------
-   // 9) Solve buckling eigenvalue problem
-   // -------------------------------------------------------------------------
-   SparseMatrix B = -Kg_hat_red; // ensure positive buckling factors
-
-   const Index active_system_dofs = rhs_red.rows() - n;
-   const Index neigs = std::min<Index>(num_eigenvalues,
-                                       std::max<Index>(1, active_system_dofs));
-
-   solver::EigenOpts opts;
-   opts.mode  = solver::EigenMode::Buckling;
-   opts.sigma = sigma_val;
-   opts.sort  = solver::EigenOpts::Sort::LargestMagn;
-
-   const int ncv = std::min<int>(static_cast<int>(K_hat_red.rows()),
-                                 std::max<int>(3 * static_cast<int>(neigs) + 20,
-                                               static_cast<int>(neigs) + 2));
-   opts.ncv = ncv;
-
-   auto eig_pairs = Timer::measure(
-       [&]{ return solver::eigs(solver::CPU, K_hat_red, B,
-                                 static_cast<int>(neigs), opts); },
-       "solving generalized EVP for buckling"
-   );
-
-   auto modes = make_and_sort_modes(eig_pairs);
-   for (auto& m : modes)
-       m.expand_mode_shape(n, active_lhs_vec, active_dof_idx_mat);
-
-   display_buckling_results(modes, opts.sigma, ncv, static_cast<int>(neigs));
-
-   // -------------------------------------------------------------------------
-   // 10) Write results
-   // -------------------------------------------------------------------------
-   m_writer->add_loadcase(m_id);
-   {
-       DynamicVector lambdas(modes.size());
-       for (size_t i = 0; i < modes.size(); ++i) {
-           lambdas(i) = modes[i].lambda;
-           m_writer->write_eigen_matrix(modes[i].mode_shape_mat,
-                                        "BUCKLING_MODE_" + std::to_string(i+1));
-       }
-       m_writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
-   }
-
-   logging::info(true, "Buckling analysis completed.");
+    logging::info(true, "Buckling analysis completed.");
 }
 
 }} // namespace fem::loadcase

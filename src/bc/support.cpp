@@ -29,17 +29,17 @@ Support::Support(ElementRegionPtr element_region, const Vec6& values, cos::Coord
 Support::Support(SurfaceRegionPtr surface_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
     : surface_region(std::move(surface_region)), values(values), coordinate_system(std::move(coordinate_system)) {}
 
-void Support::apply(model::ModelData& model_data, NodeData& bc, constraint::Equations& equations) {
+void Support::apply(model::ModelData& model_data, constraint::Equations& equations) {
     if (node_region) {
         for (ID node_id : *node_region) {
-            apply_to_node(model_data, bc, equations, node_id);
+            apply_to_node(model_data, equations, node_id);
         }
     } else if (element_region) {
         for (ID el_id : *element_region) {
             if (!model_data.elements[el_id]) continue;
             auto& el = model_data.elements[el_id];
             for(ID node_id: (*el)) {
-                apply_to_node(model_data, bc, equations, node_id);
+                apply_to_node(model_data, equations, node_id);
             }
         }
     } else if (surface_region) {
@@ -47,13 +47,13 @@ void Support::apply(model::ModelData& model_data, NodeData& bc, constraint::Equa
             if (!model_data.surfaces[el_id]) continue;
             auto el = model_data.surfaces[el_id];
             for(ID node_id: *el) {
-                apply_to_node(model_data, bc, equations, node_id);
+                apply_to_node(model_data, equations, node_id);
             }
         }
     }
 }
 
-void Support::apply_to_node(model::ModelData& model_data, NodeData& bc, constraint::Equations& equations, ID node_id) {
+void Support::apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id) {
     Vec6 position_vec = model_data.get(model::POSITION).row(node_id);
     Vec3 position = position_vec.head(3);
 
@@ -69,13 +69,8 @@ void Support::apply_to_node(model::ModelData& model_data, NodeData& bc, constrai
                 constraint::EquationEntry en3 = {node_id, (Dim)((i / 3) * 3 + 2), vals[2]};
                 equations.push_back(constraint::Equation({en1, en2, en3}));
             } else {
-                if (!std::isnan(bc(node_id, i))) {
-                    logging::warning(false, "Support already defined for node ", node_id, " DOF ", i);
-                }
-                if (!std::isnan(bc(node_id, i))) {
-                    logging::error(bc(node_id, i) == values[i], "Support already defined for node ", node_id, " DOF ", i);
-                }
-                bc(node_id, i) = values[i];
+                constraint::EquationEntry en = {node_id, (Dim)i, 1.0};
+                equations.push_back(constraint::Equation({en}, values[i]));
             }
         }
     }

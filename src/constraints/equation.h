@@ -1,64 +1,33 @@
+#pragma once
 //
-// Created by f_eggers on 25.11.2024.
+// Created by f_eggers on 25.11.2024 (revised: Constraint Equations with RHS)
 //
 
-#ifndef EQUATION_H
-#define EQUATION_H
-
+#include <vector>
 #include "../core/types_eig.h"
 #include "../core/types_cls.h"
 
 namespace fem::constraint {
 
-struct EquationEntry {
-    ID node_id;
-    Dim dof;
-    Precision value;
-};
+    /// One term c * u(node_id, dof)
+    struct EquationEntry {
+        ID        node_id;   ///< global node id
+        Dim       dof;       ///< component index (0..ndim-1)
+        Precision coeff;     ///< coefficient c for this dof
+    };
 
-struct Equation {
-    std::vector<EquationEntry> entries;
+    /// Linear equation: sum_i coeff_i * u(node_i,dof_i) = rhs
+    struct Equation {
+        std::vector<EquationEntry> entries;
+        Precision rhs = Precision(0);
 
-    Equation(std::vector<EquationEntry> entries) : entries(std::move(entries)) {};
-    Equation(std::initializer_list<EquationEntry> entries) : entries(entries) {};
+        Equation() = default;
+        Equation(std::vector<EquationEntry> e, Precision r = 0)
+            : entries(std::move(e)), rhs(r) {}
+        Equation(std::initializer_list<EquationEntry> e, Precision r = 0)
+            : entries(e), rhs(r) {}
+    };
 
     using Equations = std::vector<Equation>;
 
-    static TripletList get_triplets(Equations& equations, SystemDofIds& dofs, Index start_row) {
-        TripletList triplets;
-        Index row = start_row;
-        for (auto& eq : equations) {
-
-            // ignore empty equations
-            if (eq.entries.empty()) {
-                continue;
-            }
-
-            // check if any entry is found, if not, no need to increment the row
-            bool has_entry = false;
-            for (auto& entry : eq.entries) {
-                int dof_id = dofs(entry.node_id, entry.dof);
-                // check if the DOF is active
-                if (dof_id < 0)
-                    continue;
-
-                has_entry = true;
-                triplets.emplace_back(row, dof_id, entry.value);
-            }
-            if (has_entry)
-                row++;
-        }
-        return triplets;
-    }
-};
-
-using Equations = std::vector<Equation>;
-using EquationEntries = std::vector<EquationEntry>;
-
-}
-
-
-
-
-
-#endif //EQUATION_H
+} // namespace fem::constraint

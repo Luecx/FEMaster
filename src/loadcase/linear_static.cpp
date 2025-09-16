@@ -1,17 +1,19 @@
 /******************************************************************************
  * @file LinearStatic.cpp
- * @brief Implementation of the LinearStatic load case for performing linear
- * static analysis.
+ * @brief Linear static analysis using affine null-space constraints (u = u_p + T q).
  *
- * @details This file implements the methods for performing linear static
- * analysis using the finite element method. The analysis computes displacements,
- * stresses, and reactions for a structure under static loading conditions. The
- * analysis assumes linear elasticity. The solver handles the formulation of
- * stiffness matrices, reduction of the system to account for boundary conditions,
- * and solution of the linear system of equations.
+ * This implementation:
+ *  - Builds the unconstrained system DOF indexing (active_dof_idx_mat).
+ *  - Assembles global equations (constraints), global loads, and the active stiffness.
+ *  - Builds the constraint transformer (C u = d  →  u = u_p + T q).
+ *  - Reduces K and f: A = Tᵀ K T, b = Tᵀ (f - K u_p).
+ *  - Solves A q = b, recovers u, computes reactions r = K u - f.
+ *  - Expands u and r back to (nodes × 6) matrices for writing.
  *
- * The run method is responsible for assembling the system matrices and solving
- * for the displacements and other quantities of interest.
+ * Notes:
+ *  - Loads are first reduced to the active DOFs via reduce_mat_to_vec(...) before use.
+ *  - This path preserves SPD on A (for SPD K and feasible constraints).
+ *  - The same transformer is re-usable across static/modal/buckling setups.
  *
  * @date Created on 04.09.2023
  ******************************************************************************/
@@ -21,298 +23,170 @@
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
-#include "../mattools/extract_scaled_row_sum.h"
 
 #include "../solve/eigen.h"
+#include "../core/logging.h"
 
-/**
- * @brief Constructs a LinearStatic load case with a given ID, writer, and model.
- *
- * @param id The unique ID of the load case.
- * @param writer Pointer to a Writer object for output handling.
- * @param model Pointer to the finite element model.
- */
+// New constraint stack
+#include "../constraints/constraint_transformer.h"
+#include "../constraints/equation.h"
+#include "../constraints/constraint_set.h"
+#include "../constraints/constraint_builder.h"
+#include "../constraints/constraint_map.h"
+
+using fem::constraint::ConstraintTransformer;
+
 fem::loadcase::LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
-/**
- * @brief Executes the linear static analysis, solving for displacements, stresses,
- * and reaction forces in the model using the finite element method (FEM).
- *
- * This method performs the following steps:
- * 1. **Generate the active DOF index matrix (`active_dof_idx_mat`)**:
- *    The degrees of freedom (DOFs) that are used by elements
- *    are indexed, forming the `active_dof_idx_mat`. This matrix maps the active DOFs
- *    in the system.
- *
- * 2. **Build the global support matrix for constraints (`global_supp_mat`)**:
- *    A matrix is built that represents the support conditions (boundary constraints)
- *    of the model. This matrix includes all DOFs (both active and constrained). The
- *    support matrix is used to ensure that the boundary conditions are applied correctly.
- *
- * 3. **Formulate the global load vector (`global_load_mat`)**:
- *    The load vector for the entire system is constructed based on the applied external
- *    forces. The load vector represents the forces acting on each degree of freedom
- *    (including both active and constrained DOFs).
- *
- * 4. **Construct the global stiffness matrix (`active_stiffness_mat`) and the Lagrangian constraint matrix (`active_lagrange_mat`)**:
- *    - The **stiffness matrix** represents the stiffness of the structure. It relates
- *      the displacements of the active DOFs to the forces acting on the structure.
- *      This matrix is generated for the active DOFs.
- *    - The **Lagrangian constraint matrix** (`C`), is formulated to enforce constraints
- *      using Lagrange multipliers. It contains the Lagrange multiplier equations that
- *      ensure the boundary conditions are satisfied.
- *
- * 5. **Assemble the full system matrix (`K C^T / C 0`)**:
- *    The global stiffness matrix and Lagrangian constraint matrix are combined into a
- *    larger system matrix. This matrix has the following block structure:
- *    \[
- *    \begin{bmatrix}
- *    K & C^T \\
- *    C & 0
- *    \end{bmatrix}
- *    \]
- *    Where:
- *    - `K` is the stiffness matrix for the active DOFs (size `m x m`, where `m` is the number of active DOFs).
- *    - `C^T` is the transpose of the Lagrangian constraint matrix (size `n x m`, where `n` is the number of Lagrangian multipliers).
- *    - `C` is the Lagrangian constraint matrix (size `n x m`).
- *    - The bottom-right block is a zero matrix of size `n x n` that corresponds to the Lagrangian multipliers.
- *
- * 6. **Reduce the load vector and support vector (`active_rhs_vec`, `active_lhs_vec`)**:
- *    The global load and support vectors are reduced to handle only the active DOFs.
- *    The active load vector (`active_rhs_vec`) contains the external forces acting
- *    on the active DOFs. Similarly, the active support vector (`active_lhs_vec`) contains
- *    the prescribed displacements for constrained DOFs (if any).
- *
- *    Additionally, the load vector is extended with Lagrangian multipliers to match
- *    the dimensions of the final system matrix.
- *
- * 7. **Solve the system of equations**:
- *    The final system of equations, represented by the full matrix
- *    \[
- *    \begin{bmatrix}
- *    K & C^T \\
- *    C & 0
- *    \end{bmatrix}
- *    \]
- *    is solved using the selected solver method (e.g., direct solver, iterative solver).
- *    The solution vector contains both the displacements of the active DOFs and the
- *    values of the Lagrangian multipliers that enforce the boundary conditions.
- *
- * 8. **Expand the displacement vector to its full size**:
- *    The reduced displacement vector (which includes only the active DOFs) is expanded
- *    back to the full size, including the constrained DOFs. This results in a displacement
- *    vector that corresponds to all the DOFs in the model.
- *
- * 9. **Compute stresses and strains**:
- *    Using the full displacement vector, stresses and strains are computed at the nodes
- *    of the model. These are derived from the displacement field using _material properties
- *    and the finite element method (FEM).
- *
- * 10. **Write the results**:
- *    The computed displacements, stresses, and strains are written to the output writer,
- *    which stores the results for further processing or visualization. The output may
- *    include node-wise displacements, element-wise stresses and strains, and other relevant
- *    quantities.
- */
 void fem::loadcase::LinearStatic::run() {
-    // Begin logging
+    // Banner
     logging::info(true, "");
     logging::info(true, "");
     logging::info(true, "================================================================================================");
     logging::info(true, "LINEAR STATIC ANALYSIS");
     logging::info(true, "================================================================================================");
     logging::info(true, "");
+
+    // (0) Section assignment (as before)
     m_model->assign_sections();
 
-    // Step 1: Generate active_dof_idx_mat index matrix
+    // (1) Unconstrained system DOF index matrix (node×6 → active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return this->m_model->build_unconstrained_index_matrix(); },  // Fixed method name
+        [&]() { return this->m_model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 
-    // Step 2: Build the global support matrix (includes all DOFs)
-    auto global_supp_mat_pair = Timer::measure(
-        [&]() { return this->m_model->build_support_matrix(supps); },  // Fixed parameter name
-        "building global support matrix"
+    // (2) Build constraint equations (supports, ties, couplings, …)
+    auto equations = Timer::measure(
+        [&]() { return this->m_model->build_constraints(active_dof_idx_mat, supps); },
+        "building constraints"
     );
-    auto global_supp_mat = std::get<0>(global_supp_mat_pair);
-    auto global_supp_eqs = std::get<1>(global_supp_mat_pair);
 
-    // Step 3: Build the global load matrix based on applied loads (includes all DOFs)
+    // (3) Global load matrix (node×6 layout); keep for output
     auto global_load_mat = Timer::measure(
         [&]() { return this->m_model->build_load_matrix(loads); },
-        "building global load matrix"
+        "constructing load matrix (node×6)"
     );
 
-    // Step 4: Construct the active stiffness matrix for active DOFs
-    auto active_stiffness_mat = Timer::measure(
+    // (4) Active global stiffness K (n×n), assembled using active_dof_idx_mat
+    auto K = Timer::measure(
         [&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat); },
-        "constructing active stiffness matrix"
+        "constructing stiffness matrix K"
     );
 
-    // compute characteristic stiffness by taking the mean of the diagonal
-    Precision characteristic_stiffness = active_stiffness_mat.diagonal().mean();
-
-    // Step 5: Construct the active Lagrangian constraint matrix
-    auto active_lagrange_mat = Timer::measure(
-        [&]() { return m_model->build_constraint_matrix(active_dof_idx_mat, global_supp_eqs, characteristic_stiffness); },
-        "constructing active Lagrangian matrix"
-    );
-
-    int m   = active_stiffness_mat.rows(); // Number of active DOFs
-    int n   = active_lagrange_mat.rows();  // Number of Lagrangian multipliers
-
-    // Step 6: Assemble the full system matrix (stiffness + Lagrangian)
-    // for this, resize the active stiffness matrix to m+n, m+n to save memory
-    Timer::measure(
-        [&]() {
-            active_stiffness_mat.conservativeResize(m + n, m + n);
-            // SparseMatrix full_matrix(m + n, m + n);
-            TripletList full_triplets;
-            full_triplets.reserve(2 * active_lagrange_mat.nonZeros());
-
-            // Insert Lagrangian matrix into full system matrix
-            for (int k = 0; k < active_lagrange_mat.outerSize(); ++k) {
-                for (SparseMatrix::InnerIterator it(active_lagrange_mat, k); it; ++it) {
-                    full_triplets.push_back(Triplet(it.row() + m, it.col(), it.value()));
-                    full_triplets.push_back(Triplet(it.col(), it.row() + m, it.value()));
-                }
-            }
-
-            // insert regularization term at the bottom right
-            for (int i = 0; i < n; i++) {
-                full_triplets.push_back(Triplet(m + i, m + i, - characteristic_stiffness / 1e6));
-            }
-            active_stiffness_mat.insertFromTriplets(full_triplets.begin(), full_triplets.end());
-         },
-        "assembling full lhs matrix including stiffness and Lagrangian"
-    );
-
-    auto active_lagrange_rhs = DynamicVector::Zero(n);  // Lagrangian RHS initialized to zero
-    auto active_lagrange_lhs = DynamicVector::Constant(n, std::numeric_limits<Precision>::quiet_NaN());  // LHS for Lagrangian
-
-    // Step 7: Reduce global load and support matrices to active DOFs
-    auto active_rhs_vec = Timer::measure(
+    // (5) Reduce global loads to active RHS vector f (n×1)
+    auto f = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load vector (RHS)"
-    );
-    auto active_lhs_vec = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_supp_mat); },
-        "reducing support vector (LHS)"
+        "reducing load matrix → active RHS vector f"
     );
 
-    // Extend RHS and LHS vectors for Lagrangian DOFs
-    DynamicVector full_rhs_vec(m + n);
-    DynamicVector full_lhs_vec(m + n);
-    full_rhs_vec << active_rhs_vec, active_lagrange_rhs;  // Combine active RHS with Lagrangian RHS
-    full_lhs_vec << active_lhs_vec, active_lagrange_lhs;  // Combine active LHS with Lagrangian LHS
+    // (6) Build constraint transformer (Set → Builder → Map)
+    //     Uses the system DOF ids from the model and the active dimension n = K.rows().
+    ConstraintTransformer::BuildOptions copt;
+    // Recommended: scale columns of C for robust QR:
+    copt.set.scale_columns = true;
+    // Optional tolerances:
+    // copt.builder.rank_tol_rel = 1e-12;
+    // copt.builder.feas_tol_rel = 1e-10;
 
-    // Step 8: Compute the implicit load vector to account for constraints
-    auto implicit_rhs_vec = Timer::measure(
-        [&]() { return mattools::extract_scaled_row_sum(active_stiffness_mat, full_lhs_vec); },
-        "computing implicit load vector"
+    ConstraintTransformer CT(
+        equations,
+        active_dof_idx_mat,     // maps (node, dof) to global index
+        K.rows(),                // total active DOFs n
+        copt
     );
 
-    // Add implicit load vector to the RHS
-    full_rhs_vec += implicit_rhs_vec;
-
-    // Step 9: Reduce full system matrix and RHS vector to handle constrained DOFs
-    auto sol_matrix = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_mat(active_stiffness_mat, full_lhs_vec); },
-        "reducing stiffness matrix to solver-ready form"
-    );
-    auto sol_rhs = Timer::measure(
-        [&]() { return mattools::reduce_vec_to_vec(full_rhs_vec, full_lhs_vec); },
-        "reducing load vector (RHS) to solver-ready form"
-    );
-
-    // Compress the stiffness matrix for efficient solving
-    sol_matrix.makeCompressed();
-
-    // Log system overview
+    // Diagnostics
     logging::info(true, "");
-    logging::info(true, "Overview");
+    logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "max nodes         : ", m_model->_data->max_nodes);
-    logging::info(true, "system total DOFs : ", active_dof_idx_mat.maxCoeff() + 1);
-    logging::info(true, "lagrange DOFs     : ", n);
-    logging::info(true, "total DOFs        : ", active_dof_idx_mat.maxCoeff() + 1 + n);
-    logging::info(true, "constrained DOFs  : ", active_dof_idx_mat.maxCoeff() + 1 + n - sol_rhs.rows());
-    logging::info(true, "final DOFs        : ", sol_rhs.rows());
+    logging::info(true, "m (rows of C)     : ", CT.report().m);
+    logging::info(true, "n (cols of C)     : ", CT.report().n);
+    logging::info(true, "rank(C)           : ", CT.rank());
+    logging::info(true, "masters (n-r)     : ", CT.n_master());
+    logging::info(true, "homogeneous       : ", CT.homogeneous() ? "true" : "false");
+    logging::info(true, "feasible          : ", CT.feasible() ? "true" : "false");
+    if (!CT.feasible()) {
+        logging::info(true, "residual ||C u - d|| : ", CT.report().residual_norm);
+    }
     logging::down();
 
-    // Step 10: Solve the system of equations to get displacements
-    auto sol_lhs = Timer::measure(
-        [&]() { return solve(device, method, sol_matrix, sol_rhs); },
-        "solving system of equations"
+    // (7) Assemble reduced system A q = b with A = Tᵀ K T, b = Tᵀ (f - K u_p)
+    auto A = Timer::measure(
+        [&]() { return CT.assemble_A(K); },
+        "assembling reduced stiffness A = T^T K T"
+    );
+    auto b = Timer::measure(
+        [&]() { return CT.assemble_b(K, f); },
+        "assembling reduced RHS b = T^T (f - K u_p)"
     );
 
-    // Step 11: Expand the reduced displacement vector to full size
+    // (8) Solve reduced system
+    auto q = Timer::measure(
+        [&]() { return solve(device, method, A, b); },
+        "solving reduced system A q = b"
+    );
+
+    // (9) Recover full displacement vector u (n×1)
+    auto u = Timer::measure(
+        [&]() { return CT.recover_u(q); },
+        "recovering full displacement vector u"
+    );
+
+    // (10) Full reactions r = K u - f (n×1)
+    auto r = Timer::measure(
+        [&]() { return CT.reactions(K, f, q); },
+        "computing reactions r = K u - f"
+    );
+
+    // (11) Expand u and r back to (node×6) for writer output
     auto global_disp_mat = Timer::measure(
-        [&]() {
-            DynamicVector active_disp_u = sol_lhs.segment(0, sol_lhs.rows() - n);  // Extract active DOF displacements
-            DynamicVector full_u        = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);     // Expand back to full displacement
-            return mattools::expand_vec_to_mat(active_dof_idx_mat, full_u);
-        },
+        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
         "expanding displacement vector to matrix form"
     );
-
     auto global_force_mat = Timer::measure(
-        [&]() {
-            // Sizes: m = active DOFs, n = Lagrange multipliers
-            // 1) split solution into active u and lambda
-            const int n_total = sol_lhs.rows();
-            DynamicVector active_disp_u = sol_lhs.segment(0, n_total - n); // size <= m after reduction
-            DynamicVector lambda_vec    = sol_lhs.tail(n);                 // size n
-
-            // 2) expand u back to full active DOF vector (size m), honoring prescribed entries
-            DynamicVector full_u = mattools::expand_vec_to_vec(active_disp_u, active_lhs_vec);
-
-            // 3) build the full unknown vector [u; lambda] (size m+n)
-            DynamicVector extended_solution(m + n);
-            extended_solution.head(m) = full_u;
-            extended_solution.tail(n) = lambda_vec;
-
-            // 4) multiply with the assembled (m+n)x(m+n) system matrix and keep only physical force rows
-            DynamicVector full_force = active_stiffness_mat * extended_solution; // [K u + C^T λ ; C u - ε λ]
-            DynamicVector active_force = full_force.head(m);                     // take only the DOF part
-
-            // 5) expand back to full DOF layout (including constrained DOFs)
-            return mattools::expand_vec_to_mat(active_dof_idx_mat, active_force);
-        },
-        "expanding force vector to matrix form"
+        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r); },
+        "expanding reactions to matrix form"
     );
 
-
-    // Step 12: Compute stresses and strains at the nodes
-    NodeData stress;
-    NodeData strain;
-
+    // (12) Compute stresses and strains at the nodes (unchanged)
+    NodeData stress, strain;
     std::tie(stress, strain) = Timer::measure(
         [&]() { return m_model->compute_stress_strain(global_disp_mat); },
         "Interpolating stress and strain at nodes"
     );
 
-    // output stiffness if file isnt empty. report row, col, value
+    // Optional: export K sub-block (active) if a path is configured
     if (!stiffness_file.empty()) {
         std::ofstream file(stiffness_file);
-        for (int k = 0; k < active_stiffness_mat.outerSize(); ++k) {
-            for (SparseMatrix::InnerIterator it(active_stiffness_mat, k); it; ++it) {
-                if (it.row() > m || it.col() > m) continue;
-                file << it.row() << " " << it.col() << " " << it.value() << std::endl;
+        for (int k = 0; k < K.outerSize(); ++k) {
+            for (SparseMatrix::InnerIterator it(K, k); it; ++it) {
+                file << it.row() << " " << it.col() << " " << it.value() << '\n';
             }
         }
         file.close();
     }
 
-
-    // Write results to the writer
+    // (13) Write results
     m_writer->add_loadcase(m_id);
     m_writer->write_eigen_matrix(global_disp_mat, "DISPLACEMENT");
-    m_writer->write_eigen_matrix(strain, "STRAIN");
-    m_writer->write_eigen_matrix(stress, "STRESS");
+    m_writer->write_eigen_matrix(strain,          "STRAIN");
+    m_writer->write_eigen_matrix(stress,          "STRESS");
     m_writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
-    m_writer->write_eigen_matrix(global_supp_mat, "DOF_SUPPORTS");
-    m_writer->write_eigen_matrix(global_force_mat, "NODAL_FORCES");
+    m_writer->write_eigen_matrix(global_force_mat,"NODAL_FORCES");
+
+    // (14) Small consistency diagnostics (optional): projected residual
+    {
+        DynamicVector resid = K * u - f;
+        DynamicVector red   = CT.map().apply_Tt(resid);
+        logging::info(true, "");
+        logging::info(true, "Post-checks");
+        logging::up();
+        logging::info(true, "||u||2                : ", u.norm());
+        logging::info(true, "||C u - d||2          : ", (CT.set().C * u - CT.set().d).norm());
+        logging::info(true, "||K u - f||2          : ", resid.norm());
+        logging::info(true, "||T^T (K u - f)||2    : ", red.norm());
+        logging::down();
+    }
 }

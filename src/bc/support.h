@@ -67,7 +67,7 @@ struct Support {
      * @param bc The boundary condition data structure.
      * @param equations The constraint equations structure.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, constraint::Equations& equations);
+    void apply(model::ModelData& model_data, constraint::Equations& equations);
 
 private:
     NodeRegionPtr node_region = nullptr;       ///< Pointer to the node region, if applicable.
@@ -76,7 +76,7 @@ private:
     Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN}; ///< Constraint values for the degrees of freedom.
     cos::CoordinateSystem::Ptr coordinate_system = nullptr; ///< Local coordinate system, if applicable.
 
-    void apply_to_node(model::ModelData& model_data, NodeData& bc, constraint::Equations& equations, ID node_id);
+    void apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id);
 };
 
 } // namespace fem

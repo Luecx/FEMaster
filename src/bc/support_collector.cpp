@@ -19,10 +19,12 @@ SupportCollector::SupportCollector(const std::string& p_name)
     : model::Collection<Support>(p_name, true, false) {}
 
 // Applies all supports in the collector to the FEM model
-void SupportCollector::apply(model::ModelData& model_data, NodeData& bc, constraint::Equations& equations) {
+constraint::Equations SupportCollector::get_equations(model::ModelData& model_data) {
+    constraint::Equations equations{};
     for (Support& sup : _data) {
-        sup.apply(model_data, bc, equations);
+        sup.apply(model_data, equations);
     }
+    return equations;
 }
 
 // Adds a Support for a node region

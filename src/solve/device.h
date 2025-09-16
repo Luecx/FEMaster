@@ -1,5 +1,5 @@
 /******************************************************************************
-* @file device.h
+ * @file device.h
  * @brief Defines the SolverDevice enum used to specify the computational
  *        device (CPU or GPU) for solving linear systems and eigenvalue problems.
  *

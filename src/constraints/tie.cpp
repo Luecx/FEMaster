@@ -117,27 +117,27 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs,
        auto nodal_contributions = s_ptr->shape_function(best_local);
 
        // throw warning if any absolute contribution is > 10
-       logging::warning(nodal_contributions.array().abs().maxCoeff() < 10 , "Nodal contributions for slave node ", id, " exceed 10.");
-       logging::error  (nodal_contributions.array().abs().maxCoeff() < 100, "Nodal contributions for slave node ", id, " exceed 100.");
+       logging::warning(false, nodal_contributions.array().abs().maxCoeff() < 10 , "Nodal contributions for slave node ", id, " exceed 10.");
+       logging::error  (false, nodal_contributions.array().abs().maxCoeff() < 100, "Nodal contributions for slave node ", id, " exceed 100.");
 
        // Add coupling equations
        for(Dim dof_id = 0; dof_id < 6; dof_id++) {
            if (dofs_mask(dof_id) == false) continue;
 
 
-           EquationEntries entries{};
-           // Add the equation for the slave node
-           entries.push_back(EquationEntry{id, dof_id, 1});
-
-           // Couple with the master nodes
-           for (ID local_id = 0; local_id < (ID)s_ptr->n_nodes; local_id++) {
-               ID master_node_id = s_ptr->nodes()[local_id];
-               Precision weight = nodal_contributions(local_id);
-
-               entries.push_back(EquationEntry{master_node_id, dof_id, -weight});
-           }
-
-           equations.emplace_back(entries);
+//           EquationEntries entries{};
+//           // Add the equation for the slave node
+//           entries.push_back(EquationEntry{id, dof_id, 1});
+//
+//           // Couple with the master nodes
+//           for (ID local_id = 0; local_id < (ID)s_ptr->n_nodes; local_id++) {
+//               ID master_node_id = s_ptr->nodes()[local_id];
+//               Precision weight = nodal_contributions(local_id);
+//
+//               entries.push_back(EquationEntry{master_node_id, dof_id, -weight});
+//           }
+//
+//           equations.emplace_back(entries);
        }
    }
 

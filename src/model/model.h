@@ -78,20 +78,17 @@ struct Model {
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();
-    // integration point numeration. every element gets a start and an end id in this
-    ElementData build_integration_point_numeration();
+    ElementData   build_integration_point_numeration();
 
-    // building constraints and loads for every node including non existing ones
-    std::tuple<NodeData, constraint::Equations> build_support_matrix (std::vector<std::string> support_sets = {});
-    NodeData    build_load_matrix    (std::vector<std::string> load_sets = {});
+    // building loads for every node including non existing ones
+    NodeData              build_load_matrix(std::vector<std::string> load_sets = {});
+    constraint::Equations build_constraints(SystemDofIds& system_dof_ids, std::vector<std::string> supp_sets = {});
 
     // matrices
-    SparseMatrix  build_constraint_matrix   (SystemDofIds& indices, constraint::Equations& bc_equations, Precision characteristic_stiffness=1.0);
-    SparseMatrix  build_stiffness_matrix    (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
+    SparseMatrix  build_stiffness_matrix     (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
     SparseMatrix  build_geom_stiffness_matrix(SystemDofIds& indices,
                                               const IPData& ip_stress,
                                               ElementData stiffness_scalar = ElementData(0,0));
-
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 
 

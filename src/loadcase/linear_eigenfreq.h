@@ -1,19 +1,18 @@
 /******************************************************************************
- * @file LinearEigenfrequency.h
- * @brief LinearEigenfrequency.h defines a load case for performing linear
- * eigenfrequency analysis. The class computes the natural frequencies and mode
- * shapes of a structure based on the finite element model under specified
- * boundary conditions.
+* @file LinearEigenfrequency.h
+ * @brief Linear eigenfrequency analysis using affine null-space constraints.
  *
- * @details The analysis assumes linear elasticity and free vibration conditions.
- * It uses the finite element method to solve the eigenvalue problem resulting
- * from the mass and stiffness matrices of the model. The number of eigenvalues
- * (natural frequencies) to compute can be customized.
+ * Solves the generalized EVP
+ *     K u = λ M u
+ * with constraints enforced via the null-space map u = u_p + T q,
+ * yielding the reduced EVP
+ *     (Tᵀ K T) φ = λ (Tᵀ M T) φ .
  *
- * @author Created by <Your Name>
- * all rights reserved
- * @date Created on <Creation Date>
+ * Outputs eigenvalues λ, natural frequencies f = √λ / (2π), mode shapes,
+ * and simple modal participation factors in the 6 global DOF directions.
  *
+ * @date    15.09.2025
+ * @author  Finn
  ******************************************************************************/
 
 #pragma once
@@ -52,6 +51,9 @@ struct LinearEigenfrequency : public LoadCase {
     std::vector<std::string> supps;  /**< List of support conditions applied to the model. */
     int num_eigenvalues; /**< Number of eigenvalues to compute in the analysis. */
 
+    // Solver selection
+    solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
+    solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT - always DIRECT.
 public:
 
     //-------------------------------------------------------------------------

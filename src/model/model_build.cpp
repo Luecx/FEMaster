@@ -78,20 +78,6 @@ ElementData Model::build_integration_point_numeration() {
 }
 
 
-std::tuple<NodeData, constraint::Equations> Model::build_support_matrix(std::vector<std::string> supp_sets) {
-    NodeData disp_matrix{this->_data->max_nodes, 6};
-    disp_matrix.fill(std::numeric_limits<Precision>::quiet_NaN());
-
-    // todo: add support for constraints
-    constraint::Equations equations;
-
-    for (auto &key: supp_sets) {
-        auto supp_col = this->_data->supp_cols.get(key);
-        supp_col->apply(*_data, disp_matrix, equations);
-    }
-    return {disp_matrix, equations};
-}
-
 NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     NodeData load_matrix{this->_data->max_nodes, 6};
     load_matrix.setZero();
@@ -109,51 +95,28 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
     return load_matrix;
 }
 
-SparseMatrix Model::build_constraint_matrix   (SystemDofIds& indices, constraint::Equations& bc_equations, Precision characteristic_stiffness) {
-    constraint::Equations equations;
 
-    // add all bc equations
-    for (auto &eq: bc_equations) {
-        equations.push_back(eq);
+constraint::Equations Model::build_constraints (SystemDofIds& system_dof_ids, std::vector<std::string> supp_sets) {
+    constraint::Equations equations{};
+    for (auto &key: supp_sets) {
+        auto data = this->_data->supp_cols.get(key);
+        auto eqs = data->get_equations(*_data);
+        equations.insert(equations.end(), eqs.begin(), eqs.end());
     }
-
+    for (auto &c: this->_data->connectors) {
+        auto eqs = c.get_equations(system_dof_ids, *_data);
+        equations.insert(equations.end(), eqs.begin(), eqs.end());
+    }
     for (auto &c: this->_data->couplings) {
-        auto coupling_equations = c.get_equations(indices, *_data);
-        for (auto &eq: coupling_equations) {
-            equations.push_back(eq);
-        }
+        auto eqs = c.get_equations(system_dof_ids, *_data);
+        equations.insert(equations.end(), eqs.begin(), eqs.end());
     }
-
     for (auto &t: this->_data->ties) {
-        auto tie_equations = t.get_equations(indices, *_data);
-        for (auto &eq: tie_equations) {
-            equations.push_back(eq);
-        }
+        auto eqs = t.get_equations(system_dof_ids, *_data);
+        equations.insert(equations.end(), eqs.begin(), eqs.end());
     }
-
-    for (auto &t : this->_data->connectors) {
-        auto connector_equations = t.get_equations(indices, *_data);
-        for (auto &eq: connector_equations) {
-            equations.push_back(eq);
-        }
-    }
-
-    for (auto &eq: this->_data->equations) {
-        equations.push_back(eq);
-    }
-
-    if (equations.empty()) {
-        return SparseMatrix{0, indices.maxCoeff() + 1};
-    }
-    auto triplets = constraint::Equation::get_triplets(equations, indices, 0);
-
-    SparseMatrix matrix{(Eigen::Index) equations.size(), indices.maxCoeff() + 1};
-    matrix.setFromTriplets(triplets.begin(), triplets.end());
-    matrix *= characteristic_stiffness;
-    return matrix;
+    return equations;
 }
-
-
 
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData stiffness_scalar) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
