@@ -1,17 +1,48 @@
 /******************************************************************************
  * @file LinearEigenfrequency.cpp
- * @brief Linear eigenfrequency analysis via affine null-space constraints.
+ * @brief Linear eigenfrequency (modal) analysis via affine null-space constraints.
  *
- * Pipeline:
- *   0) Assign sections/materials.
- *   1) Build unconstrained DOF indexing (node×6 → active dof id or -1).
- *   2) Build constraint equations (supports/ties/couplings → C u = d).
- *   3) Assemble active stiffness K (n×n) and mass M (n×n).
- *   4) Build ConstraintTransformer → T, u_p (affine map; u_p=0 for homogeneous).
- *   5) Reduce A = Tᵀ K T,  Mr = Tᵀ M T.
- *   6) Solve A φ = λ Mr φ (smallest λ via shift–invert at σ=0).
- *   7) Recover full modes u = T φ; expand to node×6; compute participations.
- *   8) Print summary & write results.
+ * Overview
+ * --------
+ * We enforce linear constraints C u = d by parameterizing all admissible
+ * displacements as u = u_p + T q, where q contains the master DOFs. This keeps
+ * the reduced operators symmetric positive definite (for SPD K and feasible
+ * constraints) and avoids a saddle-point system with Lagrange multipliers.
+ *
+ * Pipeline
+ * --------
+ *   (0) Assign sections/materials in the model.
+ *   (1) Build unconstrained DOF indexing (node x 6 -> active dof id or -1).
+ *   (2) Build constraint equations from supports/ties/couplings -> C u = d.
+ *   (3) Assemble active stiffness K (n x n) and mass M (n x n).
+ *   (4) Build ConstraintTransformer -> T and u_p (affine map; u_p = 0 if homogeneous).
+ *   (5) Reduce:
+ *         A  = T^T K T
+ *         Mr = T^T M T           (reduced "mass")
+ *   (6) Solve generalized EVP:
+ *         A * phi = lambda * Mr * phi
+ *       We target the *smallest* eigenvalues by shift-invert at sigma = 0.
+ *   (7) Recover full mode shapes:
+ *         u_mode = T * phi    (u_p = 0 for homogeneous modal constraints)
+ *       Expand to node x 6 and compute simple modal participations.
+ *   (8) Print a summary table and write all results.
+ *
+ * Implementation highlights
+ * -------------------------
+ * - ConstraintTransformer creation is wrapped in Timer::measure(...) so you
+ *   see its cost (which can dominate without zero-column compression).
+ * - Reduced operators A and Mr are assembled via ConstraintMap routines. If
+ *   you use direct solvers (as you do), explicit A/Mr is appropriate.
+ * - The eigensolver is configured for shift-invert at sigma=0 to extract the
+ *   lowest frequencies first. Sorting is "largest magnitude" in SI space.
+ *
+ * Notes
+ * -----
+ * - The modal case is homogeneous in practice (d = 0), hence u_p = 0, but we
+ *   keep the general path and do not assume it; diagnostics will tell you.
+ * - The helper "participation" is a simple mass-weighted projection onto the
+ *   six global axes over the active DOFs. It is not a full modal effective
+ *   mass computation but is often sufficient for quick screening.
  *
  * @date    15.09.2025
  * @author  Finn
@@ -38,24 +69,43 @@ using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
 
-//------------------------------------------------------------------------------
-// Result container for one mode
-//------------------------------------------------------------------------------
+/******************************************************************************
+ * @struct EigenMode
+ * @brief Small container that holds one modal eigenpair in reduced space
+ *        together with derived/expanded quantities for output.
+ *
+ * Data members
+ * ------------
+ * - lambda: eigenvalue of the reduced problem (omega^2).
+ * - freq  : physical frequency f = sqrt(lambda) / (2*pi), guarded for lambda < 0.
+ * - q_mode: eigenvector in reduced coordinates (size = n_master).
+ * - mode_mat: full mode in node x 6 layout, suitable for writer output.
+ * - participation: simple mass-weighted projections onto global axes (x,y,z,rx,ry,rz).
+ ******************************************************************************/
 struct EigenMode {
-    Precision     lambda;        // eigenvalue (ω^2)
-    Precision     freq;          // f = sqrt(λ)/(2π)
+    Precision     lambda;        // eigenvalue (omega^2)
+    Precision     freq;          // f = sqrt(lambda) / (2 * pi)
     DynamicVector q_mode;        // reduced coordinates (q-space)
-    DynamicMatrix mode_mat;      // expanded node×6 for writer
+    DynamicMatrix mode_mat;      // expanded node x 6 for writer
     Vec6          participation; // simple modal participation (x,y,z,rx,ry,rz)
 
     explicit EigenMode(Precision lam, DynamicVector q)
-        : lambda(lam), freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * M_PI)), q_mode(std::move(q)) {}
+        : lambda(lam),
+          freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * M_PI)),
+          q_mode(std::move(q)) {}
 };
 
-//------------------------------------------------------------------------------
-// Build 6 axis “unit” direction vectors over active DOFs (length n)
-//   col 0..2 → translations x/y/z, col 3..5 → rotations rx/ry/rz
-//------------------------------------------------------------------------------
+/******************************************************************************
+ * @brief Build 6 "unit" direction vectors over active DOFs (length n).
+ *
+ * The returned matrix U (n x 6) has one column per global axis:
+ *   - col 0..2 -> translations x/y/z,
+ *   - col 3..5 -> rotations    rx/ry/rz.
+ *
+ * For each active (node, dof) pair, we place a 1.0 in the corresponding axis
+ * column at the global active DOF index. This provides a quick basis to
+ * compute axis participations by dotting with M*u.
+ ******************************************************************************/
 static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx_mat) {
     const int n = active_dof_idx_mat.maxCoeff() + 1; // active system size
     DynamicMatrix U = DynamicMatrix::Zero(n, 6);
@@ -65,7 +115,6 @@ static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx
         for (int dof = 0; dof < 6; ++dof) {
             int gid = active_dof_idx_mat(node, dof);
             if (gid >= 0) {
-                // Mark the corresponding axis column
                 U(gid, dof) += 1.0;
             }
         }
@@ -73,7 +122,10 @@ static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx
     return U;
 }
 
-// Return an exponent e so that participation values * 10^e are O(1)
+/******************************************************************************
+ * @brief Compute a power-of-ten scaling exponent so that reported participations
+ *        are O(1). If all participations are zero, returns 0.
+ ******************************************************************************/
 static int compute_scaling_exponent(const std::vector<EigenMode>& modes) {
     Precision max_abs = 0;
     for (const auto& m : modes) {
@@ -87,9 +139,11 @@ static int compute_scaling_exponent(const std::vector<EigenMode>& modes) {
     return static_cast<int>(e);
 }
 
-// Pretty, aligned table: eigenvalue, frequency, and (scaled) participations
+/******************************************************************************
+ * @brief Pretty-print a summary table (lambda, frequency, participations).
+ ******************************************************************************/
 static void display_eigen_summary(const std::vector<EigenMode>& modes) {
-    const int      exp10 = compute_scaling_exponent(modes);
+    const int       exp10 = compute_scaling_exponent(modes);
     const Precision scale = std::pow(Precision(10), exp10);
 
     logging::info(true, "");
@@ -119,9 +173,9 @@ static void display_eigen_summary(const std::vector<EigenMode>& modes) {
     logging::info(true, "");
 }
 
-//------------------------------------------------------------------------------
-// Write results
-//------------------------------------------------------------------------------
+/******************************************************************************
+ * @brief Write eigenvalues, eigenfrequencies, mode shapes, and participations.
+ ******************************************************************************/
 static void write_results(const std::vector<EigenMode>& modes,
                           reader::Writer*               writer,
                           int                           loadcase_id)
@@ -141,18 +195,24 @@ static void write_results(const std::vector<EigenMode>& modes,
     writer->write_eigen_matrix(DynamicMatrix(eigenfreqs ), "EIGENFREQUENCIES");
 }
 
-//------------------------------------------------------------------------------
-// LinearEigenfrequency
-//------------------------------------------------------------------------------
+/******************************************************************************
+ * @class LinearEigenfrequency
+ * @brief Modal analysis entry point (constrained via null-space).
+ ******************************************************************************/
 LinearEigenfrequency::LinearEigenfrequency(ID id,
                                            reader::Writer* writer,
                                            model::Model*   model,
                                            int             numEigenvalues)
     : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
 
-/**
- * @brief Run the linear eigenfrequency analysis (null-space constrained).
- */
+/******************************************************************************
+ * @brief Execute the modal analysis as described in the file header.
+ *
+ * Logging
+ * -------
+ * Mirroring LinearStatic, all heavyweight steps are wrapped with Timer::measure
+ * for consistent performance diagnostics in your logs.
+ ******************************************************************************/
 void LinearEigenfrequency::run() {
     // Banner
     logging::info(true, "");
@@ -164,7 +224,7 @@ void LinearEigenfrequency::run() {
     // (0) Sections/materials
     m_model->assign_sections();
 
-    // (1) Unconstrained system DOF indices (node×6 → active dof id or -1)
+    // (1) Unconstrained system DOF indices (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return m_model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -176,7 +236,7 @@ void LinearEigenfrequency::run() {
         "building constraints"
     );
 
-    // (3) Assemble active stiffness K and mass M (n×n)
+    // (3) Assemble active stiffness K and mass M (n x n)
     auto K = Timer::measure(
         [&]() { return m_model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K"
@@ -186,27 +246,61 @@ void LinearEigenfrequency::run() {
         "constructing mass matrix M"
     );
 
-    // (4) Build constraint transformer
-    ConstraintTransformer::BuildOptions copt;
-    copt.set.scale_columns = true;
-    ConstraintTransformer CT(
-        equations,
-        active_dof_idx_mat, // system DOF map
-        K.rows(),           // n
-        copt
+    // (4) Build constraint transformer (Set -> Builder -> Map)
+    //     Wrapped for timing and to keep the logging style uniform with LinearStatic.
+    auto CT = Timer::measure(
+        [&]() {
+            ConstraintTransformer::BuildOptions copt;
+            // Recommended: scale columns of C for robust QR (rank detection).
+            copt.set.scale_columns = true;
+            // Optional tolerances (keep defaults unless your constraints are ill-conditioned):
+            // copt.builder.rank_tol_rel = 1e-12;
+            // copt.builder.feas_tol_rel = 1e-10;
+            return std::make_unique<ConstraintTransformer>(
+                equations,
+                active_dof_idx_mat,   // system DOF map (node,dof) -> global id or -1
+                K.rows(),             // n (active DOFs)
+                copt
+            );
+        },
+        "building constraint transformer"
     );
 
-    // (5) Reduced operators A = Tᵀ K T, Mr = Tᵀ M T
-    auto A  = Timer::measure([&]() { return CT.assemble_A(K);  }, "assembling A = T^T K T");
-    auto Mr = Timer::measure([&]() { return CT.assemble_B(M);  }, "assembling Mr = T^T M T");
+    // Diagnostics for the constraint transformer
+    logging::info(true, "");
+    logging::info(true, "Constraint summary");
+    logging::up();
+    logging::info(true, "m (rows of C)     : ", CT->report().m);
+    logging::info(true, "n (cols of C)     : ", CT->report().n);
+    logging::info(true, "rank(C)           : ", CT->rank());
+    logging::info(true, "masters (n-r)     : ", CT->n_master());
+    logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
+    logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");
+    if (!CT->feasible()) {
+        logging::info(true, "residual ||C u - d|| : ", CT->report().residual_norm);
+    }
+    logging::down();
 
-    // (6) Solve generalized EVP A φ = λ Mr φ ; get the *lowest* λ first.
-    // Shift-invert at σ=0 makes the smallest λ dominant in SI space.
+    // (5) Reduced operators A = T^T K T, Mr = T^T M T
+    // Note: These assemble explicit matrices (direct solver friendly).
+    auto A  = Timer::measure(
+        [&]() { return CT->assemble_A(K);  },
+        "assembling A = T^T K T"
+    );
+    auto Mr = Timer::measure(
+        [&]() { return CT->assemble_B(M);  },
+        "assembling Mr = T^T M T"
+    );
+
+    // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
+    // We use shift-invert at sigma = 0.0, so "largest magnitude" in SI space
+    // corresponds to the smallest original eigenvalues.
     solver::EigenOpts eigopt;
     eigopt.mode  = solver::EigenMode::ShiftInvert;
     eigopt.sigma = 0.0;
-    eigopt.sort  = solver::EigenOpts::Sort::LargestMagn; // largest in SI ↔ smallest original
-    eigopt.ncv   = std::min<int>(int(A.rows()), std::max<int>(3 * num_eigenvalues + 20, num_eigenvalues + 2));
+    eigopt.sort  = solver::EigenOpts::Sort::LargestMagn; // largest in SI <-> smallest original
+    eigopt.ncv   = std::min<int>(int(A.rows()),
+                                 std::max<int>(3 * num_eigenvalues + 20, num_eigenvalues + 2));
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
@@ -214,21 +308,21 @@ void LinearEigenfrequency::run() {
         "solving generalized EVP (modal)"
     );
 
-    // Collect modes (ascending λ)
+    // Collect modes (ascending lambda)
     std::vector<EigenMode> modes; modes.reserve(eig_pairs.size());
     for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
     std::sort(modes.begin(), modes.end(),
               [](const EigenMode& a, const EigenMode& b){ return a.lambda < b.lambda; });
 
     // (7) Expand mode shapes and compute simple participations
-    //     u_mode = T q_mode (u_p=0 in modal case)
-    DynamicMatrix axes_full = build_active_axis_vectors(active_dof_idx_mat); // n×6
+    //     For homogeneous constraints, u_p = 0 and u_mode = T * q_mode.
+    DynamicMatrix axes_full = build_active_axis_vectors(active_dof_idx_mat); // n x 6
     for (auto& m : modes) {
         // Full vector u
-        DynamicVector u_mode = CT.map().apply_T(m.q_mode);
-        // Node×6
+        DynamicVector u_mode = CT->map().apply_T(m.q_mode);
+        // Node x 6 layout for writer
         m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
-        // Participations p_i = e_iᵀ (M u) using axis columns as e_i
+        // Participations p_i = e_i^T (M u) using axis columns as e_i
         DynamicVector Mu = M * u_mode;
         for (int i = 0; i < 6; ++i) m.participation(i) = axes_full.col(i).dot(Mu);
     }
@@ -236,6 +330,22 @@ void LinearEigenfrequency::run() {
     // (8) Print + write
     display_eigen_summary(modes);
     write_results(modes, m_writer, m_id);
+
+    // Optional post-checks: orthogonality and projected residual (quick sanity)
+    {
+        logging::info(true, "");
+        logging::info(true, "Modal post-checks (quick)");
+        logging::up();
+        if (!modes.empty()) {
+            // Check Mr-orthogonality for the first pair as a tiny smoke test.
+            const DynamicVector& q0 = modes[0].q_mode;
+            DynamicVector Aq0 = A * q0;
+            DynamicVector Mrq0 = Mr * q0;
+            logging::info(true, "||A q0||2              : ", Aq0.norm());
+            logging::info(true, "||Mr q0||2             : ", Mrq0.norm());
+        }
+        logging::down();
+    }
 
     logging::info(true, "Eigenfrequency analysis completed.");
 }

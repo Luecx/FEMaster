@@ -66,7 +66,7 @@ void fem::loadcase::LinearStatic::run() {
     // (3) Global load matrix (node×6 layout); keep for output
     auto global_load_mat = Timer::measure(
         [&]() { return this->m_model->build_load_matrix(loads); },
-        "constructing load matrix (node×6)"
+        "constructing load matrix (node x 6)"
     );
 
     // (4) Active global stiffness K (n×n), assembled using active_dof_idx_mat
@@ -78,47 +78,52 @@ void fem::loadcase::LinearStatic::run() {
     // (5) Reduce global loads to active RHS vector f (n×1)
     auto f = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix → active RHS vector f"
+        "reducing load matrix -> active RHS vector f"
     );
 
-    // (6) Build constraint transformer (Set → Builder → Map)
+    // (6) Build constraint transformer (Set -> Builder -> Map)
     //     Uses the system DOF ids from the model and the active dimension n = K.rows().
-    ConstraintTransformer::BuildOptions copt;
-    // Recommended: scale columns of C for robust QR:
-    copt.set.scale_columns = true;
-    // Optional tolerances:
-    // copt.builder.rank_tol_rel = 1e-12;
-    // copt.builder.feas_tol_rel = 1e-10;
-
-    ConstraintTransformer CT(
-        equations,
-        active_dof_idx_mat,     // maps (node, dof) to global index
-        K.rows(),                // total active DOFs n
-        copt
+    // Wrap creation of the transformer
+    auto CT = Timer::measure(
+        [&]() {
+            ConstraintTransformer::BuildOptions copt;
+            // Recommended: scale columns of C for robust QR:
+            copt.set.scale_columns = true;
+            // Optional tolerances:
+            // copt.builder.rank_tol_rel = 1e-12;
+            // copt.builder.feas_tol_rel = 1e-10;
+            return std::make_unique<ConstraintTransformer>(
+                equations,
+                active_dof_idx_mat,   // maps (node, dof) to global index
+                K.rows(),             // total active DOFs n
+                copt
+            );
+        },
+        "building constraint transformer"
     );
 
     // Diagnostics
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", CT.report().m);
-    logging::info(true, "n (cols of C)     : ", CT.report().n);
-    logging::info(true, "rank(C)           : ", CT.rank());
-    logging::info(true, "masters (n-r)     : ", CT.n_master());
-    logging::info(true, "homogeneous       : ", CT.homogeneous() ? "true" : "false");
-    logging::info(true, "feasible          : ", CT.feasible() ? "true" : "false");
-    if (!CT.feasible()) {
-        logging::info(true, "residual ||C u - d|| : ", CT.report().residual_norm);
+    logging::info(true, "m (rows of C)     : ", CT->report().m);
+    logging::info(true, "n (cols of C)     : ", CT->report().n);
+    logging::info(true, "rank(C)           : ", CT->rank());
+    logging::info(true, "masters (n-r)     : ", CT->n_master());
+    logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
+    logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");
+    if (!CT->feasible()) {
+        logging::info(true, "residual ||C u - d|| : ", CT->report().residual_norm);
     }
     logging::down();
 
     // (7) Assemble reduced system A q = b with A = Tᵀ K T, b = Tᵀ (f - K u_p)
     auto A = Timer::measure(
-        [&]() { return CT.assemble_A(K); },
+        [&]() { return CT->assemble_A(K); },
         "assembling reduced stiffness A = T^T K T"
     );
     auto b = Timer::measure(
-        [&]() { return CT.assemble_b(K, f); },
+        [&]() { return CT->assemble_b(K, f); },
         "assembling reduced RHS b = T^T (f - K u_p)"
     );
 
@@ -130,13 +135,13 @@ void fem::loadcase::LinearStatic::run() {
 
     // (9) Recover full displacement vector u (n×1)
     auto u = Timer::measure(
-        [&]() { return CT.recover_u(q); },
+        [&]() { return CT->recover_u(q); },
         "recovering full displacement vector u"
     );
 
     // (10) Full reactions r = K u - f (n×1)
     auto r = Timer::measure(
-        [&]() { return CT.reactions(K, f, q); },
+        [&]() { return CT->reactions(K, f, q); },
         "computing reactions r = K u - f"
     );
 
@@ -179,14 +184,17 @@ void fem::loadcase::LinearStatic::run() {
     // (14) Small consistency diagnostics (optional): projected residual
     {
         DynamicVector resid = K * u - f;
-        DynamicVector red   = CT.map().apply_Tt(resid);
+        DynamicVector red   = CT->map().apply_Tt(resid);
         logging::info(true, "");
         logging::info(true, "Post-checks");
         logging::up();
         logging::info(true, "||u||2                : ", u.norm());
-        logging::info(true, "||C u - d||2          : ", (CT.set().C * u - CT.set().d).norm());
+        logging::info(true, "||C u - d||2          : ", (CT->set().C * u - CT->set().d).norm());
         logging::info(true, "||K u - f||2          : ", resid.norm());
         logging::info(true, "||T^T (K u - f)||2    : ", red.norm());
         logging::down();
     }
+    logging::info(true, "");
+    logging::info(true, "LINEAR STATIC ANALYSIS FINISHED");
+    logging::info(true, "");
 }

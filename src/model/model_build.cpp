@@ -3,7 +3,6 @@
 //
 
 #include "../mattools/assemble.h"
-#include "../mattools/assemble_bc.h"
 #include "../mattools/lump_matrix.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
