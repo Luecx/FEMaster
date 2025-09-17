@@ -121,6 +121,10 @@ ConstraintBuilder::build(const ConstraintSet& set, const Options& opt)
     // ---- SparseQR (COLAMD) -------------------------------------------------
     Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> sqr;
     sqr.setPivotThreshold(0.0);
+    logging::info(true,
+    "SparseQR input: rows=", C_use.rows(),
+    " cols=", C_use.cols(),
+    " nnz=",  C_use.nonZeros());
     sqr.compute(C_use);
     logging::error(sqr.info() == Eigen::Success, "[ConstraintBuilder] SparseQR failed.");
     lap("SparseQR.compute", t_start);
