@@ -111,9 +111,9 @@ ConstraintBuilder::build(const ConstraintSet& set, const Options& opt)
     }
 
     // ---- Sparse, rank-revealing QR:  C_use * P = Q * R ---------------------
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> sqr;
+    Eigen::SparseQR<SparseMatrix, Eigen::AMDOrdering<int>> sqr;
     // Pivot threshold: keep API; SparseQR interprets it relatively (0..1)
-    sqr.setPivotThreshold(0);
+    sqr.setPivotThreshold(opt.rank_tol_rel <= 0 ? 0 : std::min<Precision>(0.1, opt.rank_tol_rel));
     sqr.compute(C_use);
 
     logging::error(sqr.info() == Eigen::Success, "[ConstraintBuilder] SparseQR failed.");
