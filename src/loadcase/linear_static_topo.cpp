@@ -188,6 +188,22 @@ void LinearStaticTopo::run() {
         "assembling b = T^T (f - K u_p)"
     );
 
+    // (6a) Sanity check for NaN/Inf in A and b
+    {
+        bool badA = false;
+        for (int k = 0; k < A.outerSize(); ++k) {
+            for (Eigen::SparseMatrix<Precision>::InnerIterator it(A, k); it; ++it) {
+                if (!std::isfinite(it.value())) {
+                    badA = true;
+                    break;
+                }
+            }
+            if (badA) break;
+        }
+        logging::error(!badA, "Matrix A contains NaN/Inf entries");
+        logging::error(b.allFinite(), "b contains NaN/Inf entries");
+    }
+
     auto q = Timer::measure(
         [&]() { return solve(device, method, A, b); },
         "solving reduced system A q = b"

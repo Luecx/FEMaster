@@ -1,35 +1,35 @@
 /******************************************************************************
  * @file constraint_builder.cpp
- * @brief Implementation: build a reduced null-space map u = u_p + T q from C u = d.
+ * @brief Build a reduced null-space map u = u_p + T q from C u = d.
+ *
+ * Sparse pipeline (no dense QR, no dense intermediates):
+ *   - Compress zero columns of C → C_use (m x n_use)
+ *   - SparseQR (COLAMD): C_use * P = Q * R
+ *   - Rank r from diag(R) via relative threshold
+ *   - Solve X = -R11^{-1} R12    (X held as thin dense r×(n_use−r))
+ *   - Build T and X directly from (used, P, X) as sparse triplets
+ *   - Inhomogeneous u_p via SparseQR::solve (min-norm), then slave offsets
+ *
+ * All application/assembly paths remain sparse-only (see ConstraintMap).
+ *
+ * @date    14.09.2025  (SparseQR-only fast path)
+ * @author  Finn
  ******************************************************************************/
 
 #include "constraint_builder.h"
 #include "constraint_map.h"
 #include "../core/logging.h"
 
-#include <Eigen/SparseQR>
-#include <Eigen/OrderingMethods>
-#include <Eigen/QR>   // ColPivHouseholderQR
+#include <Eigen/SparseQR>                        // SparseQR
+#include <Eigen/OrderingMethods>                 // COLAMDOrdering
 #include <algorithm>
-#include <sstream>
 #include <unordered_map>
+#include <cmath>
 
 namespace fem::constraint {
 
-using QR = Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>>;
+/*** Helpers ******************************************************************/
 
-/*** Utilities ***************************************************************/
-
-// Read |R(k,k)| from sparse upper-triangular column k
-static Precision read_diag_abs(const SparseMatrix& R, int k) {
-    for (SparseMatrix::InnerIterator it(R, k); it; ++it) {
-        if (it.row() == k) return std::abs(it.value());
-        if (it.row() >  k) break;
-    }
-    return Precision(0);
-}
-
-// Build list of used (nonzero) columns and a compressed C_use = C(:, used)
 static void compress_zero_columns(const SparseMatrix& C,
                                   std::vector<int>&   used_cols,
                                   Eigen::VectorXi&    old2new,
@@ -39,23 +39,20 @@ static void compress_zero_columns(const SparseMatrix& C,
     used_cols.clear();
     used_cols.reserve(n);
 
-    // Identify columns with at least one nonzero
     for (int j = 0; j < C.outerSize(); ++j) {
         bool nonzero = false;
         for (SparseMatrix::InnerIterator it(C, j); it; ++it) { nonzero = true; break; }
         if (nonzero) used_cols.push_back(j);
     }
 
-    // Map: old col -> new col (or -1 if unused)
     old2new = Eigen::VectorXi::Constant(n, -1);
     for (int k = 0; k < (int)used_cols.size(); ++k) old2new[used_cols[k]] = k;
 
-    // Build C_use by copying only used columns
     C_use.resize(C.rows(), (int)used_cols.size());
     std::vector<Eigen::Triplet<Precision>> trips;
     trips.reserve(C.nonZeros());
     for (int jnew = 0; jnew < (int)used_cols.size(); ++jnew) {
-        int j = used_cols[jnew];
+        const int j = used_cols[jnew];
         for (SparseMatrix::InnerIterator it(C, j); it; ++it) {
             trips.emplace_back(it.row(), jnew, it.value());
         }
@@ -64,308 +61,7 @@ static void compress_zero_columns(const SparseMatrix& C,
     C_use.makeCompressed();
 }
 
-// Build X (r x nm_use) and local partitions from R and permutation (local n_use)
-static void build_X_and_partition_from_R(
-    int n_use, int r, const Eigen::VectorXi& permCols, const SparseMatrix& Rtop,
-    std::vector<int>& slaves_loc, std::vector<int>& masters_loc, SparseMatrix& X_use)
-{
-    const int nm_use = n_use - r;
-
-    // Partition columns in local (compressed) index space
-    slaves_loc.resize(r);
-    masters_loc.resize(nm_use);
-    for (int k = 0; k < r; ++k) slaves_loc[k] = permCols[k];
-    for (int k = r; k < n_use; ++k) masters_loc[k - r] = permCols[k];
-
-    // Extract R11 (r x r) and R12 (r x nm_use)
-    SparseMatrix R11 = Rtop.leftCols(r);
-    SparseMatrix R12 = Rtop.rightCols(nm_use);
-
-    // Solve X_use = - R11^{-1} R12 (upper-triangular)
-    X_use.resize(r, nm_use);
-    std::vector<Eigen::Triplet<Precision>> xTrips;
-    xTrips.reserve(std::max<int>(1, R12.nonZeros()));
-
-    for (int j = 0; j < R12.outerSize(); ++j) {
-        DynamicVector b = DynamicVector::Zero(r);
-        for (SparseMatrix::InnerIterator it(R12, j); it; ++it) b[it.row()] = -it.value();
-
-        DynamicVector x = (r > 0)
-            ? R11.template triangularView<Eigen::Upper>().solve(b)
-            : DynamicVector();
-
-        for (int i = 0; i < x.size(); ++i) {
-            if (x[i] != Precision(0)) xTrips.emplace_back(i, j, x[i]);
-        }
-    }
-    X_use.setFromTriplets(xTrips.begin(), xTrips.end());
-    X_use.makeCompressed();
-}
-
-// Build full-size T (n x nm_total) and global master/slave lists.
-// masters_loc/slaves_loc are in compressed space; 'used' lifts to global DOFs.
-static void assemble_global_T_from_local(
-    int n_full,
-    const std::vector<int>& used,
-    const std::vector<int>& slaves_loc,
-    const std::vector<int>& masters_loc,
-    const SparseMatrix&     X_use,
-    std::vector<Index>&     slaves_glob,
-    std::vector<Index>&     masters_glob,
-    SparseMatrix&           T_full)
-{
-    const int r = (int)slaves_loc.size();
-    const int nm_use = (int)masters_loc.size();
-
-    // Map local -> global DOFs
-    slaves_glob.resize(r);
-    for (int i = 0; i < r; ++i) slaves_glob[i] = used[slaves_loc[i]];
-
-    // Start with masters that were in 'used'
-    masters_glob.resize(0);
-    masters_glob.reserve(n_full - r);
-    for (int j = 0; j < nm_use; ++j) masters_glob.push_back(used[masters_loc[j]]);
-
-    // Append all never-used columns as additional masters
-    // Build a marker for used cols
-    std::vector<char> is_used(n_full, 0);
-    for (int c : used) is_used[c] = 1;
-
-    // Also mark the already-added masters (from used) to avoid duplicates (not strictly needed)
-    std::vector<char> is_master(n_full, 0);
-    for (Index g : masters_glob) is_master[(int)g] = 1;
-
-    for (int g = 0; g < n_full; ++g) {
-        if (!is_used[g]) {
-            masters_glob.push_back(g);
-        }
-    }
-
-    const int nm_total = (int)masters_glob.size();
-
-    // Map: global master DOF -> column index in T_full
-    std::unordered_map<int,int> master_col_of_dof;
-    master_col_of_dof.reserve(nm_total * 2);
-    for (int j = 0; j < nm_total; ++j) master_col_of_dof[(int)masters_glob[j]] = j;
-
-    // Assemble T_full: identity on masters; scatter X_use into slave rows
-    T_full.resize(n_full, nm_total);
-    std::vector<Eigen::Triplet<Precision>> tTrips;
-    tTrips.reserve(nm_total + X_use.nonZeros());
-
-    // Identity on masters
-    for (int j = 0; j < nm_total; ++j) {
-        tTrips.emplace_back((int)masters_glob[j], j, Precision(1));
-    }
-
-    // Scatter X_use (which only references masters from 'used')
-    for (int jloc = 0; jloc < X_use.outerSize(); ++jloc) {
-        // Global master dof corresponding to this local master column
-        int g_master = used[masters_loc[jloc]];
-        int jglob = master_col_of_dof[g_master];
-
-        for (SparseMatrix::InnerIterator it(X_use, jloc); it; ++it) {
-            int i = it.row();               // slave index in local list
-            int g_slave = (int)slaves_glob[i];
-            tTrips.emplace_back(g_slave, jglob, it.value());
-        }
-    }
-
-    T_full.setFromTriplets(tTrips.begin(), tTrips.end());
-    T_full.makeCompressed();
-}
-
-// Expand a reduced solution u_use (size n_use) to full size n_full using 'used'
-static DynamicVector expand_solution_to_full(const DynamicVector& u_use,
-                                             const std::vector<int>& used,
-                                             int n_full)
-{
-    DynamicVector u_full = DynamicVector::Zero(n_full);
-    for (int k = 0; k < (int)used.size(); ++k) {
-        u_full[used[k]] = u_use[k];
-    }
-    return u_full;
-}
-
-/*** Dense path ***************************************************************/
-
-static std::pair<ConstraintMap, ConstraintBuilder::Report>
-build_dense_qr(const ConstraintSet& set, const ConstraintBuilder::Options& opt)
-{
-    ConstraintMap M;
-    ConstraintBuilder::Report rep;
-
-    rep.m = set.m;
-    rep.n = set.n;
-    rep.homogeneous = (set.d.size() == 0) || (set.d.lpNorm<Eigen::Infinity>() == Precision(0));
-
-    // Compress zero columns
-    std::vector<int> used;
-    Eigen::VectorXi old2new; // not used on dense path, but kept for symmetry
-    SparseMatrix C_use;
-    compress_zero_columns(set.C, used, old2new, C_use);
-
-    const int n_use = (int)used.size();
-
-    // If nothing is used, everything is a master; trivial map.
-    if (n_use == 0) {
-        M.n_  = set.n;
-        M.r_  = 0;
-        M.nm_ = set.n;
-        M.masters_.resize(set.n);
-        M.slaves_.clear();
-        for (int j = 0; j < set.n; ++j) M.masters_[j] = j;
-
-        // Build T = identity
-        M.T_ = SparseMatrix(set.n, set.n);
-        M.T_.setIdentity();
-        M.u_p_ = DynamicVector::Zero(set.n);
-
-        rep.rank = 0;
-        rep.n_redundant_rows = rep.m; // all rows redundant if any
-        rep.feasible = true;
-        rep.d_norm = (set.d.size() == 0) ? 0 : set.d.norm();
-        return {M, rep};
-    }
-
-    // Dense QR on C_use
-    Eigen::MatrixXd Cd = Eigen::MatrixXd(C_use);
-    Eigen::ColPivHouseholderQR<Eigen::MatrixXd> dqr(Cd);
-
-    Eigen::MatrixXd R = dqr.matrixR()
-                            .topLeftCorner(set.m, n_use)
-                            .template triangularView<Eigen::Upper>();
-
-    // Rank decision
-    Precision max_abs_diag = 0;
-    const int rmax = std::min<int>(set.m, n_use);
-    for (int k = 0; k < rmax; ++k) max_abs_diag = std::max<Precision>(max_abs_diag, std::abs(R(k,k)));
-    rep.R11_max_diag = max_abs_diag;
-    const Precision tol = std::max(Precision(1e-300), max_abs_diag * opt.rank_tol_rel);
-
-    int r = 0;
-    for (int k = 0; k < rmax; ++k) if (std::abs(R(k,k)) > tol) ++r;
-    rep.rank = r;
-
-    // Convert top r rows of R to sparse Rs (r x n_use)
-    SparseMatrix Rs(r, n_use);
-    std::vector<Eigen::Triplet<Precision>> trips;
-    trips.reserve(C_use.nonZeros());
-    for (int i = 0; i < r; ++i) {
-        for (int j = i; j < n_use; ++j) {
-            double v = R(i, j);
-            if (v != 0.0) trips.emplace_back(i, j, v);
-        }
-    }
-    Rs.setFromTriplets(trips.begin(), trips.end());
-    Rs.makeCompressed();
-
-    // Build X (local) and partitions (local)
-    std::vector<int> slaves_loc, masters_loc;
-    SparseMatrix X_use;
-    build_X_and_partition_from_R(n_use, r, dqr.colsPermutation().indices(), Rs,
-                                 slaves_loc, masters_loc, X_use);
-
-    // Lift to global, assemble full T
-    assemble_global_T_from_local(set.n, used, slaves_loc, masters_loc,
-                                 X_use, M.slaves_, M.masters_, M.T_);
-
-    // Populate sizes and defaults
-    M.n_   = set.n;
-    M.r_   = r;
-    M.nm_  = (Index)M.masters_.size();
-    M.u_p_ = DynamicVector::Zero(set.n);
-
-    rep.feasible = true;
-    rep.d_norm   = (set.d.size() == 0) ? 0 : set.d.norm();
-    rep.n_redundant_rows = (rep.m >= rep.rank) ? (rep.m - rep.rank) : 0;
-
-    if (!rep.homogeneous) {
-        // Least-squares solution on C_use, then expand
-        Eigen::VectorXd u_use = dqr.solve(set.d);
-        DynamicVector u_any = expand_solution_to_full(u_use, used, set.n);
-
-        DynamicVector resid = set.C * u_any - set.d;
-        rep.residual_norm   = resid.norm();
-        const Precision feas_tol = opt.feas_tol_rel * (rep.d_norm > 0 ? rep.d_norm : Precision(1));
-        rep.feasible = (rep.residual_norm <= feas_tol);
-
-        if (rep.feasible) {
-            // Build u_p as in the original code
-            DynamicVector q_any(M.nm_);
-            for (int j = 0; j < M.nm_; ++j) q_any[j] = u_any[M.masters_[j]];
-            DynamicVector Xq = M.X_ * q_any; // M.X_ not yet set — set it now from X_use
-
-            // We need M.X_ to match slave rows and full master columns order.
-            // Build M.X_ as r x nm_total by scattering X_use into the correct master columns.
-            {
-                M.X_.resize((int)M.slaves_.size(), (int)M.masters_.size());
-                std::vector<Eigen::Triplet<Precision>> xTrips2;
-                xTrips2.reserve(X_use.nonZeros());
-                // Map global master dof -> column index
-                std::unordered_map<int,int> master_col_of_dof;
-                for (int j = 0; j < (int)M.masters_.size(); ++j)
-                    master_col_of_dof[(int)M.masters_[j]] = j;
-
-                for (int jloc = 0; jloc < X_use.outerSize(); ++jloc) {
-                    int g_master = used[masters_loc[jloc]];
-                    int jglob = master_col_of_dof[g_master];
-                    for (SparseMatrix::InnerIterator it(X_use, jloc); it; ++it) {
-                        int i = it.row();
-                        xTrips2.emplace_back(i, jglob, it.value());
-                    }
-                }
-                M.X_.setFromTriplets(xTrips2.begin(), xTrips2.end());
-                M.X_.makeCompressed();
-            }
-
-            DynamicVector Xq2 = M.X_ * q_any;
-            DynamicVector s  = DynamicVector::Zero(M.r_);
-            for (int i = 0; i < M.r_; ++i) s[i] = u_any[M.slaves_[i]] - Xq2[i];
-            for (int i = 0; i < M.r_; ++i) M.u_p_[M.slaves_[i]] = s[i];
-        } else {
-            struct Pair { Precision val; Index row; };
-            std::vector<Pair> rows; rows.reserve(set.m);
-            for (Index i = 0; i < set.m; ++i) rows.push_back({ std::abs(resid[i]), i });
-            const int K = std::min<int>(opt.suspect_rows_k, rows.size());
-            std::partial_sort(rows.begin(), rows.begin() + K, rows.end(),
-                              [](const Pair& a, const Pair& b){ return a.val > b.val; });
-
-            rep.suspect_row_ids.clear();
-            rep.suspect_row_ids.reserve(K);
-            for (int k = 0; k < K; ++k) {
-                const Index orig = set.kept_row_ids.empty() ? rows[k].row
-                                                            : set.kept_row_ids[rows[k].row];
-                rep.suspect_row_ids.push_back(orig);
-            }
-            logging::warning(false, "[ConstraintBuilder] Infeasible constraints (dense QR): ||C u - d|| = ",
-                             rep.residual_norm, " (tol ", feas_tol, "). Top ", K, " suspect rows reported.");
-        }
-    } else {
-        // Build M.X_ consistent with M.T_ (X only on masters from 'used'; zeros elsewhere)
-        M.X_.resize((int)M.slaves_.size(), (int)M.masters_.size());
-        std::vector<Eigen::Triplet<Precision>> xTrips2;
-        // Map global master dof -> column index
-        std::unordered_map<int,int> master_col_of_dof;
-        for (int j = 0; j < (int)M.masters_.size(); ++j)
-            master_col_of_dof[(int)M.masters_[j]] = j;
-
-        for (int jloc = 0; jloc < X_use.outerSize(); ++jloc) {
-            int g_master = used[masters_loc[jloc]];
-            int jglob = master_col_of_dof[g_master];
-            for (SparseMatrix::InnerIterator it(X_use, jloc); it; ++it) {
-                int i = it.row();
-                xTrips2.emplace_back(i, jglob, it.value());
-            }
-        }
-        M.X_.setFromTriplets(xTrips2.begin(), xTrips2.end());
-        M.X_.makeCompressed();
-    }
-
-    return {M, rep};
-}
-
-/*** Sparse path **************************************************************/
+/*** Builder ******************************************************************/
 
 std::pair<ConstraintMap, ConstraintBuilder::Report>
 ConstraintBuilder::build(const ConstraintSet& set) {
@@ -376,12 +72,11 @@ ConstraintBuilder::build(const ConstraintSet& set) {
 std::pair<ConstraintMap, ConstraintBuilder::Report>
 ConstraintBuilder::build(const ConstraintSet& set, const Options& opt)
 {
-    // Dense fallback for small m
-    if (set.m <= 256) {
-        return build_dense_qr(set, opt);
-    }
+    using Mat  = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
+    using Vec  = Eigen::Matrix<Precision, Eigen::Dynamic, 1>;
+    using Perm = Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic, int>;
 
-    // Compress zero columns
+    // ---- Compress to constrained DOFs only ---------------------------------
     std::vector<int> used;
     Eigen::VectorXi old2new;
     SparseMatrix C_use;
@@ -395,7 +90,7 @@ ConstraintBuilder::build(const ConstraintSet& set, const Options& opt)
 
     const int n_use = (int)used.size();
 
-    // If nothing is used, everything is a master; trivial map.
+    // Trivial (no constrained columns): identity map
     if (n_use == 0) {
         M.n_  = set.n;
         M.r_  = 0;
@@ -404,8 +99,7 @@ ConstraintBuilder::build(const ConstraintSet& set, const Options& opt)
         M.slaves_.clear();
         for (int j = 0; j < set.n; ++j) M.masters_[j] = j;
 
-        M.T_ = SparseMatrix(set.n, set.n);
-        M.T_.setIdentity();
+        M.T_ = SparseMatrix(set.n, set.n); M.T_.setIdentity();
         M.X_.resize(0, set.n);
         M.u_p_ = DynamicVector::Zero(set.n);
 
@@ -416,108 +110,197 @@ ConstraintBuilder::build(const ConstraintSet& set, const Options& opt)
         return {M, rep};
     }
 
-    // Sparse QR on C_use
-    QR qr;
-    qr.setPivotThreshold(0.0);
-    qr.compute(C_use);
-    logging::error(qr.info() == Eigen::Success,
-                   "[ConstraintBuilder] SparseQR failed to factorize C_use (",
-                   set.m, "x", n_use, ").");
+    // ---- Sparse, rank-revealing QR:  C_use * P = Q * R ---------------------
+    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> sqr;
+    // Pivot threshold: keep API; SparseQR interprets it relatively (0..1)
+    sqr.setPivotThreshold(opt.rank_tol_rel <= 0 ? 0 : std::min<Precision>(0.1, opt.rank_tol_rel));
+    sqr.compute(C_use);
 
-    // Retrieve R and analyze diag
-    SparseMatrix R = qr.matrixR();
-    R.makeCompressed();
+    logging::error(sqr.info() == Eigen::Success, "[ConstraintBuilder] SparseQR failed.");
 
-    const int rmax = std::min<int>(set.m, n_use);
+    // Extract permutation and R
+    Perm P = sqr.colsPermutation();
+    SparseMatrix Rsp = sqr.matrixR();   // sparse upper-triangular (m x n_use)
+
+    // Rank detection via |diag(R)| relative to max |diag|
+    const int rmax = std::min<int>(Rsp.rows(), Rsp.cols());
     Precision max_abs_diag = 0;
-    std::vector<Precision> diag_abs(rmax, 0);
     for (int k = 0; k < rmax; ++k) {
-        diag_abs[k] = read_diag_abs(R, k);
-        if (diag_abs[k] > max_abs_diag) max_abs_diag = diag_abs[k];
+        const Precision ad = std::abs(Rsp.coeff(k, k)); // diagonal exists for QR
+        if (ad > max_abs_diag) max_abs_diag = ad;
     }
     rep.R11_max_diag = max_abs_diag;
+
     const Precision tol = std::max(Precision(1e-300), max_abs_diag * opt.rank_tol_rel);
-
     int r = 0;
-    for (int k = 0; k < rmax; ++k) if (diag_abs[k] > tol) ++r;
+    for (; r < rmax; ++r) {
+        if (std::abs(Rsp.coeff(r, r)) <= tol) break;
+    }
     rep.rank = r;
+    const int nm_use = n_use - r;
 
-    // Build X in local space
-    Eigen::VectorXi p = qr.colsPermutation().indices();
-    SparseMatrix Rtop = R.topRows(r);
-    std::vector<int> slaves_loc, masters_loc;
-    SparseMatrix X_use;
-    build_X_and_partition_from_R(n_use, r, p, Rtop, slaves_loc, masters_loc, X_use);
+    // ---- Build Xd = -R11^{-1} R12  (thin dense, r x nm_use) -----------------
+    Mat Xd = Mat::Zero(r, nm_use);
+    if (r > 0 && nm_use > 0) {
+        // Extract R11 and R12 as small dense from sparse R
+        Mat R11 = Mat::Zero(r, r);
+        Mat R12 = Mat::Zero(r, nm_use);
 
-    // Lift to global, assemble full T
-    assemble_global_T_from_local(set.n, used, slaves_loc, masters_loc,
-                                 X_use, M.slaves_, M.masters_, M.T_);
-
-    // Populate sizes
-    M.n_   = set.n;
-    M.r_   = r;
-    M.nm_  = (Index)M.masters_.size();
-    M.u_p_ = DynamicVector::Zero(set.n);
-
-    rep.feasible = true;
-    rep.d_norm   = (set.d.size() == 0) ? 0 : set.d.norm();
-    rep.n_redundant_rows = (rep.m >= rep.rank) ? (rep.m - rep.rank) : 0;
-
-    // Build M.X_ aligned to global master ordering (scatter X_use columns)
-    {
-        M.X_.resize((int)M.slaves_.size(), (int)M.masters_.size());
-        std::vector<Eigen::Triplet<Precision>> xTrips2;
-        xTrips2.reserve(X_use.nonZeros());
-        std::unordered_map<int,int> master_col_of_dof;
-        for (int j = 0; j < (int)M.masters_.size(); ++j)
-            master_col_of_dof[(int)M.masters_[j]] = j;
-
-        for (int jloc = 0; jloc < X_use.outerSize(); ++jloc) {
-            int g_master = used[masters_loc[jloc]];
-            int jglob = master_col_of_dof[g_master];
-            for (SparseMatrix::InnerIterator it(X_use, jloc); it; ++it) {
-                int i = it.row();
-                xTrips2.emplace_back(i, jglob, it.value());
+        // Iterate by column j of Rsp (upper-triangular)
+        const int Rcols = Rsp.cols();
+        for (int j = 0; j < Rcols; ++j) {
+            for (SparseMatrix::InnerIterator it(Rsp, j); it; ++it) {
+                const int i = it.row();           // row index
+                if (i >= r) continue;             // only rows [0..r-1] matter
+                const Precision v = it.value();
+                if (j < r) {
+                    R11(i, j) = v;
+                } else if (j < r + nm_use) {
+                    R12(i, j - r) = v;
+                } // else: beyond the leading [r | nm_use] block; ignore
             }
         }
-        M.X_.setFromTriplets(xTrips2.begin(), xTrips2.end());
-        M.X_.makeCompressed();
+
+        // Solve X = -R11^{-1} R12 (upper-triangular solve; no manual regularization)
+        Xd = (-R11.template triangularView<Eigen::Upper>().solve(R12)).eval();
     }
 
-    if (!rep.homogeneous) {
-        // Solve least-squares on compressed system, expand, and compute u_p
-        DynamicVector u_use = qr.solve(set.d);
-        DynamicVector u_any = expand_solution_to_full(u_use, used, set.n);
+    // ---- Partition columns by permutation P --------------------------------
+    const auto& p = P.indices(); // P*e_i = e_{p(i)}
 
+    std::vector<int> slaves_loc;  slaves_loc.reserve(r);
+    std::vector<int> masters_loc; masters_loc.reserve(nm_use);
+    for (int i = 0; i < r;      ++i) slaves_loc.push_back(  p(i)     );
+    for (int j = 0; j < nm_use; ++j) masters_loc.push_back( p(r + j) );
+
+    // ---- Build T and X directly (no dense Zp/Tuse) --------------------------
+    std::vector<char> is_used(set.n, 0);
+    for (int c : used) is_used[c] = 1;
+    int n_never = 0; for (int g = 0; g < set.n; ++g) if (!is_used[g]) ++n_never;
+    const int nm_total = nm_use + n_never;
+
+    // global index lists
+    std::vector<Index> masters_glob; masters_glob.reserve(nm_total);
+    std::vector<Index> slaves_glob;  slaves_glob.reserve(r);
+    for (int j = 0; j < nm_use; ++j) masters_glob.push_back( used[ masters_loc[j] ] );
+    for (int g = 0; g < set.n; ++g) if (!is_used[g]) masters_glob.push_back(g);
+    for (int i = 0; i < r;      ++i) slaves_glob.push_back( used[ slaves_loc[i] ] );
+
+    // T_full (n x nm_total)
+    SparseMatrix T_full(set.n, nm_total);
+    {
+        std::vector<Eigen::Triplet<Precision>> tTrips;
+        // Rough pre-reserve: one 1 per constrained master + average sparsity for X + identities for never-used
+        tTrips.reserve( (size_t)nm_use * (size_t)(1 + std::max(1, r/16)) + (size_t)n_never );
+
+        // constrained master columns
+        for (int j = 0; j < nm_use; ++j) {
+            const int row_master_loc = masters_loc[j];
+            tTrips.emplace_back( used[row_master_loc], j, Precision(1) );
+            for (int i = 0; i < r; ++i) {
+                Precision v = Xd(i, j);
+                if (v != Precision(0)) tTrips.emplace_back( used[ slaves_loc[i] ], j, v );
+            }
+        }
+        // append identity for never-used masters
+        int col_off = nm_use;
+        for (int g = 0; g < set.n; ++g)
+            if (!is_used[g]) tTrips.emplace_back(g, col_off++, Precision(1));
+
+        T_full.setFromTriplets(tTrips.begin(), tTrips.end());
+        T_full.makeCompressed();
+    }
+
+    // X_ (r x nm_total)
+    SparseMatrix X(r, nm_total);
+    if (r > 0 && nm_use > 0) {
+        std::vector<Eigen::Triplet<Precision>> xTrips;
+        xTrips.reserve( (size_t)r * (size_t)nm_use / 4 + 1 ); // heuristic
+        for (int j = 0; j < nm_use; ++j)
+            for (int i = 0; i < r; ++i) {
+                Precision v = Xd(i, j);
+                if (v != Precision(0)) xTrips.emplace_back(i, j, v);
+            }
+        X.setFromTriplets(xTrips.begin(), xTrips.end());
+        X.makeCompressed();
+    } else {
+        X.resize(r, nm_total); // empty
+    }
+
+    // ---- Populate map -------------------------------------------------------
+    M.n_       = set.n;
+    M.r_       = r;
+    M.nm_      = (Index)masters_glob.size();
+    M.masters_ = std::move(masters_glob);
+    M.slaves_  = std::move(slaves_glob);
+    M.T_       = std::move(T_full);
+    M.X_       = std::move(X);
+    M.u_p_     = DynamicVector::Zero(set.n);
+
+    rep.feasible          = true;
+    rep.d_norm            = (set.d.size() == 0) ? 0 : set.d.norm();
+    rep.n_redundant_rows  = (rep.m >= rep.rank) ? (rep.m - rep.rank) : 0;
+
+#ifndef NDEBUG
+    // ---- Invariants (debug only) --------------------------------------------
+    // 1) C*T ≈ 0
+    {
+        const int nm = (int)M.nm_;
+        DynamicVector e = DynamicVector::Zero(nm);
+        double max_norm = 0.0;
+        for (int k = 0; k < nm; ++k) {
+            e.setZero(); e[k] = 1;
+            DynamicVector cu = set.C * (M.T_ * e);
+            max_norm = std::max(max_norm, (double)cu.norm());
+        }
+        logging::error(max_norm <= 1e-12, "[ConstraintBuilder] invariant failed: max_k ||C*T*e_k|| = ", max_norm);
+    }
+    // 2) apply_T vs explicit T_
+    {
+        DynamicVector q = DynamicVector::Random(M.nm_);
+        DynamicVector u_explicit = M.T_ * q + M.u_p_;
+        DynamicVector u_fast     = DynamicVector::Zero(M.n_);
+        M.apply_T(q, u_fast);
+        logging::error( (u_explicit - u_fast).norm() <= 1e-12,
+                        "[ConstraintBuilder] apply_T mismatch explicit T.");
+    }
+    // 3) apply_Tt vs explicit T_^T
+    {
+        DynamicVector y = DynamicVector::Random(M.n_);
+        DynamicVector z_explicit = M.T_.transpose() * y;
+        DynamicVector z_fast     = DynamicVector::Zero(M.nm_);
+        M.apply_Tt(y, z_fast);
+        logging::error( (z_explicit - z_fast).norm() <= 1e-12,
+                        "[ConstraintBuilder] apply_Tt mismatch explicit T^T.");
+    }
+#endif
+
+    // ---- Inhomogeneous: particular solution u_p (min-norm) ------------------
+    if (!rep.homogeneous) {
+        Vec d_dense(set.m); for (int i = 0; i < set.m; ++i) d_dense[i] = set.d[i];
+
+        // Solve min-norm u_use for C_use * u_use ≈ d
+        Vec u_use = sqr.solve(d_dense);
+
+        // Lift to full vector (zeros elsewhere)
+        DynamicVector u_any = DynamicVector::Zero(set.n);
+        for (int k = 0; k < n_use; ++k) u_any[used[k]] = u_use[k];
+
+        // Residual in original scaling
         DynamicVector resid = set.C * u_any - set.d;
         rep.residual_norm   = resid.norm();
         const Precision feas_tol = opt.feas_tol_rel * (rep.d_norm > 0 ? rep.d_norm : Precision(1));
         rep.feasible = (rep.residual_norm <= feas_tol);
 
         if (rep.feasible) {
+            // Project u_any onto affine map to get u_p (store only slave offsets)
             DynamicVector q_any(M.nm_);
             for (int j = 0; j < M.nm_; ++j) q_any[j] = u_any[M.masters_[j]];
             DynamicVector Xq = M.X_ * q_any;
-            DynamicVector s  = DynamicVector::Zero(M.r_);
-            for (int i = 0; i < M.r_; ++i) s[i] = u_any[M.slaves_[i]] - Xq[i];
-            for (int i = 0; i < M.r_; ++i) M.u_p_[M.slaves_[i]] = s[i];
-        } else {
-            struct Pair { Precision val; Index row; };
-            std::vector<Pair> rows; rows.reserve(set.m);
-            for (Index i = 0; i < set.m; ++i) rows.push_back({ std::abs(resid[i]), i });
-            const int K = std::min<int>(opt.suspect_rows_k, rows.size());
-            std::partial_sort(rows.begin(), rows.begin() + K, rows.end(),
-                              [](const Pair& a, const Pair& b){ return a.val > b.val; });
-
-            rep.suspect_row_ids.clear();
-            rep.suspect_row_ids.reserve(K);
-            for (int k = 0; k < K; ++k) {
-                const Index orig = set.kept_row_ids.empty() ? rows[k].row
-                                                            : set.kept_row_ids[rows[k].row];
-                rep.suspect_row_ids.push_back(orig);
+            for (int i = 0; i < M.r_; ++i) {
+                const Index gi = M.slaves_[i];
+                M.u_p_[gi] = u_any[gi] - Xq[i];
             }
-            logging::warning(false, "[ConstraintBuilder] Infeasible constraints (sparse QR): ||C u - d|| = ",
-                             rep.residual_norm, " (tol ", feas_tol, "). Top ", K, " suspect rows reported.");
         }
     }
 

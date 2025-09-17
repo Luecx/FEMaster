@@ -115,7 +115,7 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
                 ip_xyz(i, 2) = z;
             }
 
-            compute_stress_strain(displacement, ip_stress, ip_strain, 0);
+            compute_stress_strain(ip_stress, ip_strain, displacement, 0);
 
             auto res1 =
                 fem::math::interpolate::interpolate(ip_xyz,
