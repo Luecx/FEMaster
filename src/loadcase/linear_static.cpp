@@ -170,7 +170,6 @@ void fem::loadcase::LinearStatic::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r); },
         "expanding reactions to matrix form"
     );
-    std::cout << "global disp mat size: " << global_disp_mat.rows() << " x " << global_disp_mat.cols() << std::endl;
 
     // (12) Compute stresses and strains at the nodes (unchanged)
     NodeData stress, strain;
