@@ -59,6 +59,7 @@ struct LinearBuckling : public LoadCase {
     std::vector<std::string> supps;           ///< Support/coupling identifiers → constraints.
     std::vector<std::string> loads;           ///< Load identifiers → preload (for K_g).
     int num_eigenvalues;                      ///< Number of buckling modes requested.
+    Precision sigma = 0;                      ///< Target shift for eigenvalue search (0 = smallest).
 
     // Solver selection
     solver::SolverDevice device = solver::CPU;    ///< CPU / GPU (as supported in your stack).

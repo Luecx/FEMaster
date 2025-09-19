@@ -9,10 +9,11 @@
 
 #pragma once
 
-#include "../constraint_set.h"
 #include "../../core/types_eig.h"
-#include <utility>
+#include "../constraint_set.h"
+
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fem::constraint {
@@ -36,9 +37,9 @@ struct ConstraintBuilder {
         bool  homogeneous = true;
         bool  feasible    = true;
 
-        Precision R11_max_diag = 0;
-        Precision residual_norm = 0;
-        Precision d_norm        = 0;
+        Precision R11_max_diag     = 0;
+        Precision residual_norm    = 0;
+        Precision d_norm           = 0;
         Index     n_redundant_rows = 0;
 
         std::vector<Index> slave_idx;    ///< size = rank

@@ -261,14 +261,20 @@ void LinearBuckling::run() {
         "assembling B = T^T K_g T"
     );
 
-    // Optional: estimate an initial shift sigma from the preload (Rayleigh in reduced space).
-    // We scale down by 1e6 to avoid aggressive shifts on very stiff systems; clamp to a small positive value.
-    double sigma = Timer::measure(
-        [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e6; },
-        "estimating initial shift sigma (Rayleigh)"
-    );
-    if (sigma <= 0) sigma = -sigma;           // ensure positive
-    if (!std::isfinite(sigma)) sigma = 1e-6;  // fallback
+    if (this->sigma != 0) {
+        logging::info(true, "");
+        logging::info(true, "User-provided shift sigma = ", std::scientific, std::setprecision(3), this->sigma);
+    } else {
+        // Optional: estimate an initial shift sigma from the preload (Rayleigh in reduced space).
+        // We scale down by 1e6 to avoid aggressive shifts on very stiff systems; clamp to a small positive value.
+        this->sigma = Timer::measure(
+            [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e4; },
+            "estimating initial shift sigma (Rayleigh)"
+        );
+        if (this->sigma <= 0) this->sigma = -this->sigma;     // ensure positive
+        if (!std::isfinite(this->sigma)) this->sigma = 1e-6;  // fallback
+    }
+
 
     // (10) Solve generalized EVP in reduced space: A * phi = lambda * (-B) * phi
     // Many libraries expect the "K x = lambda M x" form; we pass (-B) as the "mass" side.
@@ -278,7 +284,6 @@ void LinearBuckling::run() {
     solver::EigenOpts eigopt;
     eigopt.mode  = solver::EigenMode::Buckling;     // your solver's mode for buckling EVP
     eigopt.sigma = sigma;                           // shift to guide convergence
-    eigopt.ncv   = std::min<int>(int(A.rows()), std::max<int>(3 * k_req + 20, k_req + 2));
     eigopt.sort  = solver::EigenOpts::Sort::LargestMagn; // consistent with your eigs(...) contract
 
     auto eig_pairs = Timer::measure(

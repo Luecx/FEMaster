@@ -8,9 +8,10 @@
 
 #pragma once
 
-#include "equation.h"
-#include "../core/types_eig.h"
 #include "../core/types_cls.h"
+#include "../core/types_eig.h"
+#include "equation.h"
+
 #include <vector>
 
 namespace fem::constraint {

@@ -1,44 +1,47 @@
-// src/solve/eigen.cpp
+/******************************************************************************
+ * @file eigen.cpp
+ * @brief Sparse symmetric partial eigenvalue solvers (CPU, optional MKL).
+ *
+ * - Symmetric-only code paths (no unsymmetric LU flows in user code).
+ * - If -DUSE_MKL is defined, shift–invert operators use MKL PARDISO (LDLT).
+ * - Otherwise, shift–invert uses Spectra’s Eigen-based operators.
+ * - ncv (subspace size) is auto-chosen; there is no user override.
+ ******************************************************************************/
+
 #include "eigen.h"
-#include "device.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
 
 #include <algorithm>
-#include <random>
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 #include <Eigen/SparseCore>
-#include <Eigen/SparseCholesky>   // Cholesky backends
+#include <Eigen/SparseCholesky>   // SimplicialLLT (for SPD checks)
 
-// --- Spectra (partial, sparse eigenvalues) ---
 #include <Spectra/SymEigsSolver.h>          // simple, regular
 #include <Spectra/SymEigsShiftSolver.h>     // simple, shift-invert
 
-#include <Spectra/SymGEigsSolver.h>         // generalized, regular (Cholesky/RegularInverse)
+#include <Spectra/SymGEigsSolver.h>         // generalized, regular (Cholesky mode)
 #include <Spectra/SymGEigsShiftSolver.h>    // generalized, shift-invert/buckling/cayley
 
 #include <Spectra/MatOp/SparseSymMatProd.h>     // (A v)
-#include <Spectra/MatOp/SparseSymShiftSolve.h>  // (A - σ I)^{-1} v  (simple)
-#include <Spectra/MatOp/SymShiftInvert.h>       // (A - σ B)^{-1} * {B|A}  (generalized)
-
-#include <Spectra/MatOp/SparseCholesky.h>       // B-Cholesky (GEigsMode::Cholesky)
-// #include <Spectra/MatOp/SparseRegularInverse.h>
+#include <Spectra/MatOp/SparseSymShiftSolve.h>  // (A - σ I)^{-1} v (simple, Eigen backend)
+#include <Spectra/MatOp/SparseCholesky.h>       // B-Cholesky for GEigsMode::Cholesky
+#include <Spectra/MatOp/SymShiftInvert.h>       // (A - σ B)^{-1}{B|A} (Eigen backend)
 
 #ifdef USE_MKL
-#include <Eigen/PardisoSupport>
-#include <mkl.h>
+  #include <Eigen/PardisoSupport>  // PardisoLDLT
+  #include <mkl.h>
 #endif
 
+// ============================================================================
+// Internal utilities (unnamed namespace)
+// ============================================================================
 namespace {
 
-// -----------------------------------------------------------------------------
-// Utilities (private to this translation unit)
-// -----------------------------------------------------------------------------
-
-/******************************************************************************
- * @brief Map our Sort enum to Spectra::SortRule.
- ******************************************************************************/
+/** Map high-level sorting rule to Spectra’s SortRule. */
 inline Spectra::SortRule to_rule(fem::solver::EigenOpts::Sort s) {
     using SR   = Spectra::SortRule;
     using Sort = fem::solver::EigenOpts::Sort;
@@ -46,21 +49,12 @@ inline Spectra::SortRule to_rule(fem::solver::EigenOpts::Sort s) {
         case Sort::LargestAlge:  return SR::LargestAlge;
         case Sort::LargestMagn:  return SR::LargestMagn;
         case Sort::SmallestAlge: return SR::SmallestAlge;
-        default:                 return SR::SmallestMagn;
+        case Sort::SmallestMagn: default: return SR::SmallestMagn;
     }
 }
 
-/******************************************************************************
- * @brief Choose a Spectra subspace size (ncv) satisfying k < ncv <= n.
- *
- * Heuristic: ncv = min(n, max(k+2, 2k+20)).
- ******************************************************************************/
-inline int choose_ncv(int n, int k, int user) {
-    if (user > 0) {
-        int ncv = std::min(n, user);
-        if (ncv <= k) ncv = std::min(n, std::max(k + 2, k + 1));
-        return ncv;
-    }
+/** Choose subspace size ncv automatically: k < ncv ≤ n. Heuristic: ncv = min(n, max(k+2, 2k+20)). */
+inline int choose_ncv(int n, int k) {
     const int lo  = k + 2;
     const int hi  = 2 * k + 20;
     int ncv       = std::min(n, std::max(lo, hi));
@@ -68,122 +62,179 @@ inline int choose_ncv(int n, int k, int user) {
     return ncv;
 }
 
-/******************************************************************************
- * @brief Ensure an Eigen sparse matrix is compressed (CSR-like) for Spectra.
- ******************************************************************************/
+/** Ensure an Eigen sparse matrix is in compressed storage (CSC). */
 inline void ensure_compressed(const fem::SparseMatrix& M_const) {
     auto& M = const_cast<fem::SparseMatrix&>(M_const);
     if (!M.isCompressed()) M.makeCompressed();
 }
 
-/******************************************************************************
- * @brief Relative symmetry error ||A - Aᵀ||_F / ||A||_F without densification.
- ******************************************************************************/
-inline double symmetry_error_rel(const fem::SparseMatrix& A)
-{
-    using Sparse = fem::SparseMatrix;
-    double num = 0.0, den = 0.0;
+} // unnamed namespace
 
-    // ||A - Aᵀ||_F
-    {
-        Sparse AT = A.transpose();
-        Sparse D  = A - AT;
-        for (int k = 0; k < D.outerSize(); ++k)
-            for (Sparse::InnerIterator it(D, k); it; ++it)
-                num += it.value() * it.value();
-    }
-    // ||A||_F
-    for (int k = 0; k < A.outerSize(); ++k)
-        for (Sparse::InnerIterator it(A, k); it; ++it)
-            den += it.value() * it.value();
-
-    if (den == 0.0) den = 1.0;
-    return std::sqrt(num / den);
-}
-
-/******************************************************************************
- * @brief Backend-aware SPD test: symmetry + Cholesky acceptance.
- *
- * Uses PardisoLDLT (if USE_MKL) or SimplicialLLT otherwise.
- * No logging; pure predicate.
- *
- * @param A            Square sparse matrix to test.
- * @param rel_sym_tol  Relative symmetry tolerance (default 1e-10).
- * @return true if A is (numerically) symmetric and accepted as SPD.
- ******************************************************************************/
-inline bool is_spd(const fem::SparseMatrix& A, double rel_sym_tol = 1e-10)
-{
-    if (A.rows() != A.cols()) return false;
-    const double rel = symmetry_error_rel(A);
-    if (!(rel <= rel_sym_tol)) return false;
-
+// ============================================================================
+// MKL-backed shift–solve operators (symmetric-only, LDLT)
+// ============================================================================
 #ifdef USE_MKL
+namespace mkl_ops {
+
+using fem::Precision;
+using fem::SparseMatrix;
+
+/**
+ * @brief (A - σ I)^{-1} * x using MKL PARDISO (LDLT). Symmetric-only.
+ *
+ * Spectra expects:
+ *   - using Scalar = ...
+ *   - rows(), cols()
+ *   - perform_op(const Scalar* x, Scalar* y)
+ *   - set_shift(const Scalar& sigma)
+ */
+struct MKLShiftSolveSimple {
+    using Scalar = Precision;  // required by Spectra
+
+    const SparseMatrix& A;
+    Precision sigma{0};
+    int n{0};
+    Eigen::PardisoLDLT<SparseMatrix> ldl;
+
+    MKLShiftSolveSimple(const SparseMatrix& Ain, Precision s)
+        : A(Ain), sigma(s), n(static_cast<int>(Ain.rows()))
     {
-        Eigen::PardisoLDLT<fem::SparseMatrix> solver;
-        solver.compute(A);
-        if (solver.info() == Eigen::Success) return true;
-        // fall back
+        refactor_();
     }
-#endif
+
+    void set_shift(const Precision& s) {
+        if (s == sigma) return;
+        sigma = s;
+        refactor_();
+    }
+
+    int rows() const { return n; }
+    int cols() const { return n; }
+
+    void perform_op(const Precision* x_in, Precision* y_out) const {
+        Eigen::Map<const Eigen::Matrix<Precision, Eigen::Dynamic, 1>> x(x_in, n);
+        Eigen::Matrix<Precision, Eigen::Dynamic, 1> y = ldl.solve(x);
+        std::memcpy(y_out, y.data(), sizeof(Precision) * static_cast<size_t>(n));
+    }
+
+private:
+    void refactor_() {
+        SparseMatrix M = A;                 // M ← A - σ I
+        if (!M.isCompressed()) M.makeCompressed();
+        std::vector<Eigen::Triplet<Precision>> diag;
+        diag.reserve(n);
+        for (int i = 0; i < n; ++i) diag.emplace_back(i, i, -sigma);
+        SparseMatrix D(n, n);
+        D.setFromTriplets(diag.begin(), diag.end());
+        M += D;
+        M.makeCompressed();
+
+        ldl.compute(M);
+        if (ldl.info() != Eigen::Success) {
+            throw std::runtime_error("MKLShiftSolveSimple: PARDISO LDLT factorization failed");
+        }
+    }
+};
+
+enum class Right { B, A };
+
+/**
+ * @brief (A - σ B)^{-1} * (RightMat * x), with RightMat ∈ {B, A}. Symmetric-only.
+ *
+ * Also provides set_shift() so Spectra can (re)apply the same/updated σ.
+ */
+template <Right Rm>
+struct MKLShiftSolveGeneral {
+    using Scalar = Precision;  // required by Spectra
+
+    const SparseMatrix& A;
+    const SparseMatrix& B;
+    Precision sigma{0};
+    int n{0};
+    Eigen::PardisoLDLT<SparseMatrix> ldl;
+
+    MKLShiftSolveGeneral(const SparseMatrix& Ain, const SparseMatrix& Bin, Precision s)
+        : A(Ain), B(Bin), sigma(s), n(static_cast<int>(Ain.rows()))
     {
-        Eigen::SimplicialLLT<fem::SparseMatrix> llt;
-        llt.compute(A);
-        if (llt.info() == Eigen::Success) return true;
+        refactor_();
     }
-    return false;
-}
 
+    void set_shift(const Precision& s) {
+        if (s == sigma) return;
+        sigma = s;
+        refactor_();
+    }
 
-} // anonymous
+    int rows() const { return n; }
+    int cols() const { return n; }
 
+    void perform_op(const Precision* x_in, Precision* y_out) const {
+        Eigen::Map<const Eigen::Matrix<Precision, Eigen::Dynamic, 1>> x(x_in, n);
+        Eigen::Matrix<Precision, Eigen::Dynamic, 1> rhs =
+            (Rm == Right::B) ? (B * x) : (A * x);
+        Eigen::Matrix<Precision, Eigen::Dynamic, 1> y = ldl.solve(rhs);
+        std::memcpy(y_out, y.data(), sizeof(Precision) * static_cast<size_t>(n));
+    }
+
+private:
+    void refactor_() {
+        SparseMatrix M = A - sigma * B;   // symmetric by assumption
+        if (!M.isCompressed()) M.makeCompressed();
+
+        ldl.compute(M);
+        if (ldl.info() != Eigen::Success) {
+            throw std::runtime_error("MKLShiftSolveGeneral: PARDISO LDLT factorization failed");
+        }
+    }
+};
+
+} // namespace mkl_ops
+#endif // USE_MKL
+
+// ============================================================================
+// Public API
+// ============================================================================
 namespace fem::solver {
 
-// -----------------------------
-// Simple: A x = λ x
-// -----------------------------
+// --------------------------------------------------------------------------
+// Simple: A x = λ x (A symmetric)
+// --------------------------------------------------------------------------
 std::vector<EigenValueVectorPair>
-    eigs(SolverDevice device,
-         const SparseMatrix& A,
-         int k,
-         const EigenOpts& opts)
+eigs(SolverDevice device,
+     const SparseMatrix& A,
+     int k,
+     const EigenOpts& opts)
 {
-    logging::error(A.rows() == A.cols(), "Matrix must be square for simple eigenproblem");
-
-#ifndef SUPPORT_GPU
-    logging::info(device != CPU, "This build does not support GPU-accelerated eigen, falling back to CPU");
-    device = CPU;
-#endif
-
-    const int n = static_cast<int>(A.rows());
+    logging::error(A.rows() == A.cols(), "Matrix must be square");
     logging::error(k > 0, "Requested k must be > 0");
-    logging::error(k < n, "Requesting k >= N is not supported in sparse partial mode");
+    logging::error(k < A.rows(), "Requesting k >= N is not supported in sparse partial mode");
 
-#ifdef SUPPORT_GPU
-    if (device == GPU) {
-        logging::info(true, "GPU path not implemented for eigen; falling back to CPU");
-        device = CPU;
+    // GPU not implemented here — fall back to CPU.
+    if (device != CPU) {
+        logging::info(true, "Eigen: GPU path not implemented; falling back to CPU");
     }
-#endif
 
     ensure_compressed(A);
+
+    const int n   = static_cast<int>(A.rows());
+    const int ncv = choose_ncv(n, k);
 
     std::vector<EigenValueVectorPair> out;
     out.reserve(static_cast<size_t>(k));
 
-    Timer t{};
-    t.start();
+    Timer t{}; t.start();
 
     using OpA = Spectra::SparseSymMatProd<Precision>;
-    const int ncv = choose_ncv(n, k, opts.ncv);
 
     if (opts.mode == EigenMode::Regular) {
-        logging::info(true, "Using Spectra::SymEigsSolver (Regular), ncv=", ncv);
+        logging::info(true, "Eigen (simple): Regular, ncv=", ncv);
+
         OpA opA(A);
         Spectra::SymEigsSolver<OpA> eig(opA, k, ncv);
         eig.init();
         eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
         logging::error(eig.info() == Spectra::CompInfo::Successful,
-                       "Spectra partial eigen (Regular) failed");
+                       "Spectra simple (Regular) failed");
 
         DynamicVector evals = eig.eigenvalues();
         DynamicMatrix evecs = eig.eigenvectors();
@@ -191,84 +242,81 @@ std::vector<EigenValueVectorPair>
             out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
     }
     else if (opts.mode == EigenMode::ShiftInvert) {
-        logging::info(true, "Using Spectra::SymEigsShiftSolver (ShiftInvert, σ=", opts.sigma, "), ncv=", ncv);
+        logging::info(true, "Eigen (simple): ShiftInvert, sigma=", opts.sigma, ", ncv=", ncv);
+
+#ifdef USE_MKL
+        mkl_ops::MKLShiftSolveSimple op(A, static_cast<Precision>(opts.sigma));
+        Spectra::SymEigsShiftSolver<mkl_ops::MKLShiftSolveSimple>
+            eig(op, k, ncv, static_cast<Precision>(opts.sigma));
+#else
+        // Eigen backend (Simplicial LLT/LDLT underneath). Requires A - σI to factor.
         Spectra::SparseSymShiftSolve<Precision> op(A);
         Spectra::SymEigsShiftSolver<Spectra::SparseSymShiftSolve<Precision>>
             eig(op, k, ncv, static_cast<Precision>(opts.sigma));
-
+#endif
         eig.init();
         eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
         logging::error(eig.info() == Spectra::CompInfo::Successful,
-                       "Spectra partial eigen (ShiftInvert) failed");
+                       "Spectra simple (ShiftInvert) failed");
 
-        DynamicVector evals = eig.eigenvalues();   // already back-transformed
+        DynamicVector evals = eig.eigenvalues();   // back-transformed to original λ
         DynamicMatrix evecs = eig.eigenvectors();
         for (int i = 0; i < evals.size(); ++i)
             out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
     }
     else {
-        logging::error(false, "Simple eigenproblem supports only Regular or ShiftInvert modes");
+        logging::error(false, "Simple eigenproblem supports only Regular or ShiftInvert");
     }
 
     t.stop();
-    logging::info(true, "Eigen computation (simple) finished on CPU; elapsed: ", t.elapsed(), " ms");
+    logging::info(true, "Eigen (simple) finished; elapsed: ", t.elapsed(), " ms");
     return out;
 }
 
-// -------------------------------------------
-// Generalized: A x = λ B x
-// -------------------------------------------
+// --------------------------------------------------------------------------
+// Generalized: A x = λ B x (A,B symmetric; B typically SPD)
+// --------------------------------------------------------------------------
 std::vector<EigenValueVectorPair>
-    eigs(SolverDevice device,
-         const SparseMatrix& A,
-         const SparseMatrix& B,
-         int k,
-         const EigenOpts& opts)
+eigs(SolverDevice device,
+     const SparseMatrix& A,
+     const SparseMatrix& B,
+     int k,
+     const EigenOpts& opts)
 {
     logging::error(A.rows() == A.cols(), "A must be square");
-    logging::error(B.rows() == B.rows(), "B must be square");
-    logging::error(A.rows() == B.rows(), "A and B must have same size");
-
-#ifndef SUPPORT_GPU
-    logging::info(device != CPU, "This build does not support GPU-accelerated eigen, falling back to CPU");
-    device = CPU;
-#endif
-
-    const int n = static_cast<int>(A.rows());
+    logging::error(B.rows() == B.cols(), "B must be square");
+    logging::error(A.rows() == B.rows(), "A and B must have the same size");
     logging::error(k > 0, "Requested k must be > 0");
-    logging::error(k < n, "Requesting k >= N is not supported in sparse partial mode");
+    logging::error(k < A.rows(), "Requesting k >= N is not supported in sparse partial mode");
 
-#ifdef SUPPORT_GPU
-    if (device == GPU) {
-        logging::info(true, "GPU path not implemented for generalized eigen; falling back to CPU");
-        device = CPU;
+    if (device != CPU) {
+        logging::info(true, "Eigen (generalized): GPU path not implemented; falling back to CPU");
     }
-#endif
 
     ensure_compressed(A);
     ensure_compressed(B);
 
+    const int n        = static_cast<int>(A.rows());
+    const int ncv_user = choose_ncv(n, k);
+
     std::vector<EigenValueVectorPair> out;
     out.reserve(static_cast<size_t>(k));
 
-    Timer t{};
-    t.start();
+    Timer t{}; t.start();
 
     using OpA = Spectra::SparseSymMatProd<Precision>;
     OpA opA(A);
 
-    const int ncv_user = choose_ncv(n, k, opts.ncv);
-
     if (opts.mode == EigenMode::Regular) {
-        // GEigsMode::Cholesky (requires B ≻ 0)
-        logging::info(true, "Using Spectra::SymGEigsSolver (Regular/Cholesky), ncv=", ncv_user, " [B must be SPD]");
+        // GEigsMode::Cholesky expects B ≻ 0.
+        logging::info(true, "Eigen (gen): Regular/Cholesky, ncv=", ncv_user, " [B must be SPD]");
 
-        // Explicit SPD check for B
+        // Clear error if B is not SPD.
         {
             Eigen::SimplicialLLT<SparseMatrix> llt;
             llt.compute(B);
             logging::error(llt.info() == Eigen::Success,
-                           "Cholesky factorization of B failed (B must be SPD)");
+                           "Cholesky of B failed (B must be SPD) for Regular generalized mode");
         }
 
         Spectra::SparseCholesky<Precision> opB(B);
@@ -276,7 +324,7 @@ std::vector<EigenValueVectorPair>
             OpA,
             Spectra::SparseCholesky<Precision>,
             Spectra::GEigsMode::Cholesky
-            > eig(opA, opB, k, ncv_user);
+        > eig(opA, opB, k, ncv_user);
 
         eig.init();
         eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
@@ -289,73 +337,89 @@ std::vector<EigenValueVectorPair>
             out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
     }
     else if (opts.mode == EigenMode::ShiftInvert) {
-        // (A - σB)^{-1} B x = ν x, ν = 1/(λ - σ) [B should be SPD for stability]
-        logging::info(true, "Using Spectra::SymGEigsShiftSolver (ShiftInvert, σ=", opts.sigma, "), ncv=", ncv_user,
-                      " [B should be SPD]");
+        // (A - σB)^{-1} B x = ν x, ν = 1/(λ - σ) → Spectra returns λ.
+        logging::info(true, "Eigen (gen): ShiftInvert, sigma=", opts.sigma, ", ncv=", ncv_user);
 
-        Spectra::SymShiftInvert<Precision>   op(A, B);
+#ifdef USE_MKL
+        mkl_ops::MKLShiftSolveGeneral<mkl_ops::Right::B> op(A, B, static_cast<Precision>(opts.sigma));
         Spectra::SparseSymMatProd<Precision> opB(B);
-
+        Spectra::SymGEigsShiftSolver<
+            mkl_ops::MKLShiftSolveGeneral<mkl_ops::Right::B>,
+            Spectra::SparseSymMatProd<Precision>,
+            Spectra::GEigsMode::ShiftInvert
+        > eig(op, opB, k, ncv_user, static_cast<Precision>(opts.sigma));
+#else
+        Spectra::SymShiftInvert<Precision>   op(A, B);
+        Spectra::SparseSymMatProd<Precision> opB2(B);
         Spectra::SymGEigsShiftSolver<
             Spectra::SymShiftInvert<Precision>,
             Spectra::SparseSymMatProd<Precision>,
             Spectra::GEigsMode::ShiftInvert
-            > eig(op, opB, k, ncv_user, static_cast<Precision>(opts.sigma));
-
+        > eig(op, opB2, k, ncv_user, static_cast<Precision>(opts.sigma));
+#endif
         eig.init();
         eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
         logging::error(eig.info() == Spectra::CompInfo::Successful,
                        "Spectra generalized (ShiftInvert) failed");
 
-        DynamicVector evals = eig.eigenvalues();   // original λ
+        DynamicVector evals = eig.eigenvalues();
         DynamicMatrix evecs = eig.eigenvectors();
         for (int i = 0; i < evals.size(); ++i)
             out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
     }
     else if (opts.mode == EigenMode::Buckling) {
-        // (A - σB)^{-1} A x = ν x, ν = λ/(λ - σ); Spectra returns physical λ
-        // Requirements: A should be SPD; B only symmetric (may be indefinite)
-        logging::info(true, "Using Spectra::SymGEigsShiftSolver (Buckling), k=", k);
-
-        // Ensure A is SPD (buckling assumes A ≻ 0)
-        // logging::error(is_spd(A, 1e-10), "Buckling mode requires A to be SPD");
-
-        // Use a slightly larger subspace for clustered spectra
+        // (A - σB)^{-1} A x = ν x, ν = λ/(λ - σ); Spectra returns physical λ.
         const int ncv_buck = std::max(ncv_user, std::min(n, 4 * k + 20));
-        logging::info(true, "Buckling: using σ=", opts.sigma, ", ncv=", ncv_buck);
+        logging::info(true, "Eigen (gen): Buckling, sigma=", opts.sigma, ", ncv=", ncv_buck);
 
-        Spectra::SymShiftInvert<Precision>   op(A, B);   // (A - σB)^{-1} * {...}
-        Spectra::SparseSymMatProd<Precision> opA(A);     // IMPORTANT: A-op(K) in buckling
-
+#ifdef USE_MKL
+        mkl_ops::MKLShiftSolveGeneral<mkl_ops::Right::A> op(A, B, static_cast<Precision>(opts.sigma));
+        Spectra::SparseSymMatProd<Precision> opA2(A);
+        Spectra::SymGEigsShiftSolver<
+            mkl_ops::MKLShiftSolveGeneral<mkl_ops::Right::A>,
+            Spectra::SparseSymMatProd<Precision>,
+            Spectra::GEigsMode::Buckling
+        > eig(op, opA2, k, ncv_buck, static_cast<Precision>(opts.sigma));
+#else
+        Spectra::SymShiftInvert<Precision>   op(A, B);
+        Spectra::SparseSymMatProd<Precision> opA2(A);
         Spectra::SymGEigsShiftSolver<
             Spectra::SymShiftInvert<Precision>,
             Spectra::SparseSymMatProd<Precision>,
             Spectra::GEigsMode::Buckling
-            > eig(op, opA, k, ncv_buck, static_cast<Precision>(opts.sigma));
-
+        > eig(op, opA2, k, ncv_buck, static_cast<Precision>(opts.sigma));
+#endif
         eig.init();
         eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
         logging::error(eig.info() == Spectra::CompInfo::Successful,
                        "Spectra generalized (Buckling) failed");
 
-        DynamicVector evals = eig.eigenvalues();   // physical λ (buckling factors)
+        DynamicVector evals = eig.eigenvalues();   // physical λ
         DynamicMatrix evecs = eig.eigenvectors();
         for (int i = 0; i < evals.size(); ++i)
             out.push_back({ static_cast<Precision>(evals[i]), evecs.col(i) });
     }
     else if (opts.mode == EigenMode::Cayley) {
-        // Cayley transform via (A - σB)^{-1}{…}
-        logging::info(true, "Using Spectra::SymGEigsShiftSolver (Cayley, σ=", opts.sigma, "), ncv=", ncv_user);
+        // Cayley: Spectra uses same Op as ShiftInvert with Right=B.
+        logging::info(true, "Eigen (gen): Cayley, sigma=", opts.sigma, ", ncv=", ncv_user);
 
-        Spectra::SymShiftInvert<Precision>   op(A, B);
+#ifdef USE_MKL
+        mkl_ops::MKLShiftSolveGeneral<mkl_ops::Right::B> op(A, B, static_cast<Precision>(opts.sigma));
         Spectra::SparseSymMatProd<Precision> opB(B);
-
+        Spectra::SymGEigsShiftSolver<
+            mkl_ops::MKLShiftSolveGeneral<mkl_ops::Right::B>,
+            Spectra::SparseSymMatProd<Precision>,
+            Spectra::GEigsMode::Cayley
+        > eig(op, opB, k, ncv_user, static_cast<Precision>(opts.sigma));
+#else
+        Spectra::SymShiftInvert<Precision>   op(A, B);
+        Spectra::SparseSymMatProd<Precision> opB2(B);
         Spectra::SymGEigsShiftSolver<
             Spectra::SymShiftInvert<Precision>,
             Spectra::SparseSymMatProd<Precision>,
             Spectra::GEigsMode::Cayley
-            > eig(op, opB, k, ncv_user, static_cast<Precision>(opts.sigma));
-
+        > eig(op, opB2, k, ncv_user, static_cast<Precision>(opts.sigma));
+#endif
         eig.init();
         eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
         logging::error(eig.info() == Spectra::CompInfo::Successful,
@@ -371,7 +435,7 @@ std::vector<EigenValueVectorPair>
     }
 
     t.stop();
-    logging::info(true, "Eigen computation (generalized) finished on CPU; elapsed: ", t.elapsed(), " ms");
+    logging::info(true, "Eigen (generalized) finished; elapsed: ", t.elapsed(), " ms");
     return out;
 }
 

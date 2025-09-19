@@ -47,19 +47,16 @@
 
 #include "linear_static_topo.h"
 
-#include "../core/logging.h"
-#include "../solve/eigen.h"
-
+#include "../constraints/constraint_map.h"
+#include "../constraints/constraint_set.h"
 #include "../constraints/constraint_transformer.h"
 #include "../constraints/equation.h"
-#include "../constraints/constraint_set.h"
-#include "../constraints/builder/constraint_builder.h"
-#include "../constraints/constraint_map.h"
-
+#include "../core/logging.h"
 #include "../mattools/assemble.tpp"
-#include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_mat_to_mat.h"
+#include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_vec_to_vec.h"
+#include "../solve/eigen.h"
 
 #include <limits>
 

@@ -3,7 +3,8 @@
  * @brief Assemble the sparse constraint system `C u = d` from high-level equations.
  ******************************************************************************/
 
-#include "constraint_set.h"
+#include "./constraint_set.h"
+
 #include "../core/logging.h"
 
 namespace fem::constraint {

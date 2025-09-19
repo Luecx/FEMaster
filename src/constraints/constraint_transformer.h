@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include "constraint_set.h"
-#include "builder/constraint_builder.h"
+#include "builder/builder.h"
 #include "constraint_map.h"
+#include "constraint_set.h"
 
 namespace fem::constraint {
 

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "../core/types_eig.h"
+
 #include <vector>
 
 namespace fem::constraint {

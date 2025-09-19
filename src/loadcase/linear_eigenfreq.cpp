@@ -299,8 +299,6 @@ void LinearEigenfrequency::run() {
     eigopt.mode  = solver::EigenMode::ShiftInvert;
     eigopt.sigma = 0.0;
     eigopt.sort  = solver::EigenOpts::Sort::LargestMagn; // largest in SI <-> smallest original
-    eigopt.ncv   = std::min<int>(int(A.rows()),
-                                 std::max<int>(3 * num_eigenvalues + 20, num_eigenvalues + 2));
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(

@@ -21,6 +21,9 @@ void Reader::process_loadcase_linear_buckling() {
         if (m_current_line.command() == "NUMEIGENVALUES") {
             next_line();
             lc.num_eigenvalues = m_current_line.get_value(0, 10);
+        } else if (m_current_line.command() == "SIGMA") {
+            next_line();
+            lc.sigma = m_current_line.get_value(0, 1e-3);
         } else if (m_current_line.command() == "SUPPORT") {
             process_loadcase_linear_buckling_support(&lc);
         } else if (m_current_line.command() == "LOAD") {

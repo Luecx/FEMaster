@@ -4,7 +4,9 @@
  ******************************************************************************/
 
 #include "constraint_map.h"
+
 #include "../core/logging.h"
+
 #include <cmath>
 
 namespace fem::constraint {
