@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include "constraint_set.h"
-#include "../core/types_eig.h"
+#include "../constraint_set.h"
+#include "../../core/types_eig.h"
 #include <utility>
 #include <string>
 #include <vector>

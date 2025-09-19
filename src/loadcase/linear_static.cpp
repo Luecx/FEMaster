@@ -31,7 +31,7 @@
 #include "../constraints/constraint_transformer.h"
 #include "../constraints/equation.h"
 #include "../constraints/constraint_set.h"
-#include "../constraints/constraint_builder.h"
+#include "../constraints/builder/constraint_builder.h"
 #include "../constraints/constraint_map.h"
 
 using fem::constraint::ConstraintTransformer;
