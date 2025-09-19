@@ -1,22 +1,16 @@
 /******************************************************************************
  * @file eigen_shift_invert_op_gen.cpp
- * @brief Implementation of y = (A - σ B)^{-1} x for the generalized problem.
+ * @brief Implementation of y = (A - σ B)^{-1} x with cached factorization.
  *
- * @details Builds and factorizes the shifted matrix (A - σB) per call and then
- *          solves the linear system. MKL thread count is set from the global
- *          configuration when built with USE_MKL. A and B are required to be
- *          symmetric and of identical shape.
- *
- * @author
- *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
- *   All rights reserved.
- * @date   Created on 19.09.2025
+ * @details
+ * Builds and caches the LDLT factorization of (A - σ B). If σ changes via
+ * set_shift(), the next call to perform_op() will re-factorize.
  ******************************************************************************/
 
 #include "eigen_shift_invert_op_gen.h"
 #include "../core/logging.h"
 
-#include <cstring>   // std::memcpy
+#include <cstring>    // std::memcpy
 #include <stdexcept>
 
 namespace {
@@ -47,37 +41,56 @@ int ShiftInvertOpGeneral::cols() const { return static_cast<int>(_A_ref.cols());
 
 void ShiftInvertOpGeneral::set_shift(const Scalar& s) {
     _sigma = s;
+    // Defer re-factorization until next apply.
 }
 
-void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const {
-#ifdef USE_MKL
-    // Configure MKL threads from global config.
-    mkl_set_num_threads(global_config.max_threads);
-#endif
-
-    const int nA = static_cast<int>(_A_ref.rows());
-    const int nB = static_cast<int>(_B_ref.rows());
-    if (nA != nB || _A_ref.cols() != _B_ref.cols()) {
-        throw std::invalid_argument("ShiftInvertOpGeneral: A and B must have the same shape");
+void ShiftInvertOpGeneral::_factorize_if_needed() const
+{
+    if (std::isfinite(_sigma_fact) && _sigma_fact == _sigma) {
+        return; // cached factorization is current
     }
-    const int n = nA;
 
-    // Build M = A - σ B.
+    // Build M = A - σ B (symmetric by assumption).
     SparseMatrix M = _A_ref;
     ensure_compressed(M);
+
     SparseMatrix SB = _B_ref;
     ensure_compressed(SB);
-    M -= (_sigma * SB);
+
+    if (_sigma != Scalar(0)) {
+        M -= (_sigma * SB);
+    }
     M.makeCompressed();
 
-    // Factorize and solve.
+    // Factorize.
     _ldl.compute(M);
     if (_ldl.info() != Eigen::Success) {
         throw std::runtime_error("ShiftInvertOpGeneral: LDLT factorization failed");
     }
 
+    _sigma_fact = _sigma;
+}
+
+void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const
+{
+#ifdef USE_MKL
+    // Configure MKL threads from global config each apply (cheap).
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+
+    // Basic dimension check to be defensive.
+    if (_A_ref.rows() != _B_ref.rows() || _A_ref.cols() != _B_ref.cols()) {
+        throw std::invalid_argument("ShiftInvertOpGeneral: A and B must have the same shape");
+    }
+
+    _factorize_if_needed();
+
+    const int n = static_cast<int>(_A_ref.rows());
     Eigen::Map<const Eigen::Matrix<Scalar, Eigen::Dynamic, 1>> x(x_in, n);
     Eigen::Matrix<Scalar, Eigen::Dynamic, 1> y = _ldl.solve(x);
+    if (_ldl.info() != Eigen::Success) {
+        throw std::runtime_error("ShiftInvertOpGeneral: solve() failed");
+    }
 
     std::memcpy(y_out, y.data(), sizeof(Scalar) * static_cast<size_t>(n));
 }
