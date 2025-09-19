@@ -268,7 +268,7 @@ void LinearBuckling::run() {
         // Optional: estimate an initial shift sigma from the preload (Rayleigh in reduced space).
         // We scale down by 1e6 to avoid aggressive shifts on very stiff systems; clamp to a small positive value.
         this->sigma = Timer::measure(
-            [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e4; },
+            [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e6; },
             "estimating initial shift sigma (Rayleigh)"
         );
         if (this->sigma <= 0) this->sigma = -this->sigma;     // ensure positive

@@ -10,7 +10,7 @@
 
 namespace fem { namespace constraint {
 
-void factorize_sparse_qr(const SparseMatrix& C_use, RResult& out)
+void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& s, QRResult& out)
 {
     out.qr.setPivotThreshold(s.pivot_rel <= 0 ? 0 : std::min<Precision>(0.1, s.pivot_rel));
     out.qr.compute(C_use);
