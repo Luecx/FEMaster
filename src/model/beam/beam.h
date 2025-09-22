@@ -148,7 +148,7 @@ struct BeamElement : StructuralElement {
         return N;
     }
     Dim n_integration_points() override {
-        return 0;
+        return 1;
     }
     ID* nodes() override {
         return node_ids.data();
