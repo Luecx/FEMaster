@@ -4,6 +4,7 @@
 #include "../model/pointelem/point.h"
 #include "../model/shell/s3.h"
 #include "../model/shell/s4.h"
+#include "../model/shell/s4_mitc.h"
 #include "../model/shell/s6.h"
 #include "../model/shell/s8.h"
 #include "../model/solid/c3d10.h"
@@ -102,6 +103,10 @@ void Reader::process_elements() {
         } else if (type == "S4") {
             auto values = gather_values(4);
             m_model->set_element<fem::model::S4>(id, values[0], values[1], values[2], values[3]);
+        } else if (type == "MITC4") {
+            logging::error(false, "Element type MITC4 is supported but shall not be used yet");
+            auto values = gather_values(4);
+            m_model->set_element<fem::model::MITC4>(id, values[0], values[1], values[2], values[3]);
         } else if (type == "S6") {
             auto values = gather_values(6);
             m_model->set_element<fem::model::S6>(id, values[0], values[1], values[2], values[3], values[4], values[5]);

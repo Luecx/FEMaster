@@ -63,6 +63,8 @@ void Reader::analyse_elements() {
             req_values = 3;
         } else if (type == "S4") {
             req_values = 4;
+        } else if (type == "MITC4") {
+            req_values = 4;
         } else if (type == "S6") {
             req_values = 6;
         } else if (type == "S8") {
