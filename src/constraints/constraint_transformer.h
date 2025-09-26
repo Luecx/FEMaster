@@ -11,6 +11,8 @@
 #include "constraint_map.h"
 #include "constraint_set.h"
 
+#include <iostream>
+
 namespace fem::constraint {
 
 class ConstraintTransformer {
@@ -27,7 +29,9 @@ public:
     {
         set_.equations = eqs;
         set_.opt = opt.set;
+        std::cout << "assembling set..." << std::endl;
         set_.assemble(dofs, n_dofs);
+        std::cout << "building map..." << std::endl;
         std::tie(map_, report_) = ConstraintBuilder::build(set_, opt.builder);
     }
 

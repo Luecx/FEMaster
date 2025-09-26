@@ -16,7 +16,7 @@ struct QRSettings {
 
 struct QRResult {
     // Keep the handle so callers can call qr.solve later.
-    Eigen::SparseQR<SparseMatrix, Eigen::AMDOrdering<int>> qr; ///< handle
+    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr; ///< handle
     SparseMatrix R;    ///< matrixR() copy (upper-triangular)
     Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic, int> P; ///< cols permutation
 };

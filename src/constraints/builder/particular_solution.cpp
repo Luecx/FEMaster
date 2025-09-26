@@ -13,7 +13,7 @@
 namespace fem { namespace constraint {
 
 ParticularOutput compute_particular_and_project(const ParticularInput& in,
-                                                const Eigen::SparseQR<SparseMatrix, Eigen::AMDOrdering<int>>& qr,
+                                                const Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>>& qr,
                                                 const ConstraintMap& M,
                                                 Precision feas_tol_rel,
                                                 Precision d_norm)
