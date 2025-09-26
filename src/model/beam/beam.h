@@ -117,7 +117,7 @@ struct BeamElement : StructuralElement {
     };
     virtual MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
         MapMatrix result(buffer, N * 6, N * 6);
-        result = stiffness_impl();
+        result = stiffness_geom_impl(ip_stress, ip_start_idx);
         return result;
     };
 

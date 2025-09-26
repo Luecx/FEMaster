@@ -61,9 +61,18 @@ struct LinearBuckling : public LoadCase {
     int num_eigenvalues;                      ///< Number of buckling modes requested.
     Precision sigma = 0;                      ///< Target shift for eigenvalue search (0 = smallest).
 
+    // === Debug / diagnostics ===
+    /// If non-empty, write elastic stiffness (K, A) here.
+    /// Will be suffixed "_K.mtx", "_A.mtx".
+    std::string stiffness_file;
+
+    /// If non-empty, write geometric stiffness (Kg, B) here.
+    /// Will be suffixed "_Kg.mtx", "_B.mtx".
+    std::string geom_file;
+
     // Solver selection
-    solver::SolverDevice device = solver::CPU;    ///< CPU / GPU (as supported in your stack).
-    solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT for linear solves (preload).
+    solver::SolverDevice device = solver::CPU;
+    solver::SolverMethod method = solver::DIRECT;
 
     /// Execute the analysis.
     virtual void run() override;

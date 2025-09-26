@@ -22,17 +22,15 @@
 
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_mat_to_mat.h"
-#include "../mattools/reduce_vec_to_vec.h"
 
 #include "../solve/eigen.h"
 #include "../core/logging.h"
+#include "../reader/write_mtx.h"
 
-// New constraint stack
 #include "../constraints/builder/builder.h"
 #include "../constraints/constraint_map.h"
 #include "../constraints/constraint_set.h"
 #include "../constraints/constraint_transformer.h"
-#include "../constraints/equation.h"
 
 using fem::constraint::ConstraintTransformer;
 
@@ -179,15 +177,16 @@ void fem::loadcase::LinearStatic::run() {
     );
 
     // Optional: export K sub-block (active) if a path is configured
+    // === DEBUG OUTPUTS ===
     if (!stiffness_file.empty()) {
-        std::ofstream file(stiffness_file);
-        for (int k = 0; k < K.outerSize(); ++k) {
-            for (SparseMatrix::InnerIterator it(K, k); it; ++it) {
-                file << it.row() << " " << it.col() << " " << it.value() << '\n';
-            }
-        }
-        file.close();
+        // Active stiffness K (unconstrained, reduced)
+        write_mtx(stiffness_file + "_K.mtx", K);
+        // Reduced A = Tᵀ K T
+        write_mtx(stiffness_file + "_A.mtx", A);
+        // Optional: RHS vector b as dense
+        write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
+    // ======================
 
     // (13) Write results
     m_writer->add_loadcase(m_id);

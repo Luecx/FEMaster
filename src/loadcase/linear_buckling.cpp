@@ -47,6 +47,7 @@
 
 #include "../solve/eigen.h"                 // solve(...), eigs(...)
 #include "../core/logging.h"
+#include "../reader/write_mtx.h"
 
 #include "../constraints/constraint_transformer.h"
 #include "../constraints/equation.h"
@@ -261,9 +262,9 @@ void LinearBuckling::run() {
         "assembling B = T^T K_g T"
     );
 
-    if (this->sigma != 0) {
+    if (std::abs(this->sigma) > 1e-24) {
         logging::info(true, "");
-        logging::info(true, "User-provided shift sigma = ", std::scientific, std::setprecision(3), this->sigma);
+        logging::info(true, "User-provided shift sigma = ", std::scientific, std::setprecision(4), this->sigma);
     } else {
         // Optional: estimate an initial shift sigma from the preload (Rayleigh in reduced space).
         // We scale down by 1e6 to avoid aggressive shifts on very stiff systems; clamp to a small positive value.
@@ -271,8 +272,10 @@ void LinearBuckling::run() {
             [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e6; },
             "estimating initial shift sigma (Rayleigh)"
         );
-        if (this->sigma <= 0) this->sigma = -this->sigma;     // ensure positive
-        if (!std::isfinite(this->sigma)) this->sigma = 1e-6;  // fallback
+        if (std::abs(this->sigma) < 1e-12) this->sigma = 1e-12; // avoid zero
+        if (this->sigma <= 0) this->sigma = -this->sigma;       // ensure positive
+        if (!std::isfinite(this->sigma)) this->sigma = 1e-6;    // fallback
+        logging::info(true, "Using generated sigma = ", std::scientific, std::setprecision(4), this->sigma);
     }
 
 
@@ -320,6 +323,18 @@ void LinearBuckling::run() {
                                          "BUCKLING_MODE_" + std::to_string(i + 1));
         }
         m_writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
+    }
+
+    // After (4) K assembled
+    if (!stiffness_file.empty()) {
+        write_mtx(stiffness_file + "_K.mtx", K, 0, 17);
+        write_mtx(stiffness_file + "_A.mtx", A, 0, 17);
+    }
+
+    // After (9) B assembled
+    if (!geom_file.empty()) {
+        write_mtx(geom_file + "_Kg.mtx", Kg, 0, 17);
+        write_mtx(geom_file + "_B.mtx", B  , 0, 17);
     }
 
     // (12) Small post-checks (optional): projected residual of preload

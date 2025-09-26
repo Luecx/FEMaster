@@ -30,6 +30,10 @@ void Reader::process_loadcase_linear_buckling() {
             process_loadcase_linear_buckling_load(&lc);
         } else if (m_current_line.command() == "SOLVER") {
             process_loadcase_linear_buckling_solver(&lc);
+        } else if (m_current_line.command() == "REQUESTSTIFFNESS") {
+            process_loadcase_linear_buckling_request_stiffness(&lc);
+        } else if (m_current_line.command() == "REQUESTSTGEOM") {
+            process_loadcase_linear_buckling_request_geom(&lc);
         } else if (m_current_line.command() == "END") {
             next_line();
             break;
@@ -37,6 +41,7 @@ void Reader::process_loadcase_linear_buckling() {
             logging::warning(false, "   Unknown command for buckling loadcase: ", m_current_line.line());
             next_line();
         }
+
     }
 
     lc.run();

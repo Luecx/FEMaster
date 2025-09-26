@@ -137,7 +137,10 @@ template<Dim K>
 StaticMatrix<N, K>
 SolidElement<N>::nodal_data(const NodeData& full_data, Index offset, Index stride) {
     StaticMatrix<N, K> res {};
-    runtime_assert(full_data.cols() >= offset + stride * D, "cannot extract this many elements from the data");
+    runtime_assert(
+        full_data.cols() >= offset + stride * (K - 1) + 1,
+        "cannot extract this many elements from the data"
+    );
 
     for (Dim m = 0; m < N; m++) {
         for (Dim j = 0; j < K; j++) {

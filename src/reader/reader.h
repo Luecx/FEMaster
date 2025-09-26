@@ -84,9 +84,12 @@ class Reader {
     void process_loadcase_linear_static_topo_exponent   (fem::loadcase::LinearStaticTopo* lc);
 
     void process_loadcase_linear_buckling();
-    void process_loadcase_linear_buckling_support(fem::loadcase::LinearBuckling* lc);
-    void process_loadcase_linear_buckling_load   (fem::loadcase::LinearBuckling* lc);
-    void process_loadcase_linear_buckling_solver (fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_support          (fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_load             (fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_solver           (fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_request_stiffness(fem::loadcase::LinearBuckling* lc);
+    void process_loadcase_linear_buckling_request_geom     (fem::loadcase::LinearBuckling* lc);
+
 
     public:
     Reader(const std::string& file_path, const std::string& output_path);
