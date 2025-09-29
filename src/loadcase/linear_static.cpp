@@ -176,17 +176,12 @@ void fem::loadcase::LinearStatic::run() {
         "Interpolating stress and strain at nodes"
     );
 
-    // Optional: export K sub-block (active) if a path is configured
-    // === DEBUG OUTPUTS ===
+    // Optional: export K/A/b if a path is configured
     if (!stiffness_file.empty()) {
-        // Active stiffness K (unconstrained, reduced)
         write_mtx(stiffness_file + "_K.mtx", K);
-        // Reduced A = Tᵀ K T
         write_mtx(stiffness_file + "_A.mtx", A);
-        // Optional: RHS vector b as dense
         write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
-    // ======================
 
     // (13) Write results
     m_writer->add_loadcase(m_id);
@@ -196,19 +191,13 @@ void fem::loadcase::LinearStatic::run() {
     m_writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
     m_writer->write_eigen_matrix(global_force_mat,"NODAL_FORCES");
 
-    // (14) Small consistency diagnostics (optional): projected residual
+    // (14) Post-checks (relative, checklist via ConstraintTransformer)
     {
-        DynamicVector resid = K * u - f;
-        DynamicVector red   = CT->map().apply_Tt(resid);
-        logging::info(true, "");
-        logging::info(true, "Post-checks");
-        logging::up();
-        logging::info(true, "||u||2                : ", u.norm());
-        logging::info(true, "||C u - d||2          : ", (CT->set().C * u - CT->set().d).norm());
-        logging::info(true, "||K u - f||2          : ", resid.norm());
-        logging::info(true, "||T^T (K u - f)||2    : ", red.norm());
-        logging::down();
+        // Defaults: tol_constraint_rel=1e-10, tol_reduced_rel=1e-8, full-residual informational
+        auto chk = CT->check_static(K, f, u);
+        CT->print_checklist(chk);
     }
+
     logging::info(true, "");
     logging::info(true, "LINEAR STATIC ANALYSIS FINISHED");
     logging::info(true, "");

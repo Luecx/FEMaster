@@ -10,16 +10,53 @@
 #include "builder/builder.h"
 #include "constraint_map.h"
 #include "constraint_set.h"
-
+#include <limits>
 #include <iostream>
 
 namespace fem::constraint {
+
+
 
 class ConstraintTransformer {
 public:
     struct BuildOptions {
         ConstraintSet::Options     set;
         ConstraintBuilder::Options builder;
+    };
+
+
+    struct StaticCheckOptions {
+        // Relative tolerances
+        Precision tol_constraint_rel = 1e-10; // ||C u - d|| / max(1, ||d||)
+        Precision tol_reduced_rel    = 1e-8;  // ||T^T (K u - f)|| / denom_red
+        // Optional: full residual tolerance (set inf to ignore)
+        Precision tol_full_rel       = std::numeric_limits<Precision>::infinity();
+
+        // Denominator for reduced relative residual:
+        // denom_red = max(1, ||T^T f||, ||T^T K u||) for robustness
+    };
+
+    struct StaticCheckResult {
+        // Raw norms
+        Precision norm_u        = 0;
+        Precision norm_Cu_d     = 0;
+        Precision norm_resid    = 0; // ||K u - f||
+        Precision norm_reduced  = 0; // ||T^T (K u - f)||
+
+        // Relatives
+        Precision rel_Cu_d      = 0;
+        Precision rel_resid     = 0; // full-space rel residual
+        Precision rel_reduced   = 0; // reduced-space rel residual
+
+        // Denominators used (handy for logs)
+        Precision denom_Cu_d    = 1;
+        Precision denom_full    = 1;
+        Precision denom_reduced = 1;
+
+        // Pass flags
+        bool pass_constraints   = false;
+        bool pass_reduced_eq    = false;
+        bool pass_full_resid    = true; // ignored if tol_full_rel is inf
     };
 
     ConstraintTransformer(const Equations& eqs,
@@ -29,9 +66,7 @@ public:
     {
         set_.equations = eqs;
         set_.opt = opt.set;
-        std::cout << "assembling set..." << std::endl;
         set_.assemble(dofs, n_dofs);
-        std::cout << "building map..." << std::endl;
         std::tie(map_, report_) = ConstraintBuilder::build(set_, opt.builder);
     }
 
@@ -64,6 +99,23 @@ public:
     DynamicVector reactions(const SparseMatrix& K, const DynamicVector& f, const DynamicVector& q) const {
         return map_.reactions(K, f, q);
     }
+
+
+    // Main implementations (no defaults)
+    StaticCheckResult check_static(const SparseMatrix& K,
+                                   const DynamicVector& f,
+                                   const DynamicVector& u,
+                                   StaticCheckOptions opt) const;
+
+    void print_checklist(const StaticCheckResult& r,
+                         StaticCheckOptions opt) const;
+
+    // Convenience overloads (use default options)
+    StaticCheckResult check_static(const SparseMatrix& K,
+                                   const DynamicVector& f,
+                                   const DynamicVector& u) const;
+
+    void print_checklist(const StaticCheckResult& r) const;
 
 private:
     ConstraintSet             set_;
