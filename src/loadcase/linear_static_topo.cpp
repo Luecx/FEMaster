@@ -265,18 +265,7 @@ void LinearStaticTopo::run() {
     m_model->_data->remove(model::ElementDataEntries::TOPO_ANGLES);
 
     // (13) Diagnostics (optional): projected residual checks
-    {
-        DynamicVector resid = K * u - f;
-        DynamicVector red   = CT->map().apply_Tt(resid);
-        logging::info(true, "");
-        logging::info(true, "Post-checks");
-        logging::up();
-        logging::info(true, "||u||2                : ", u.norm());
-        logging::info(true, "||C u - d||2          : ", (CT->set().C * u - CT->set().d).norm());
-        logging::info(true, "||K u - f||2          : ", resid.norm());
-        logging::info(true, "||T^T (K u - f)||2    : ", red.norm());
-        logging::down();
-    }
+    CT->post_check_static(K, f, u);
 }
 
 }} // namespace fem::loadcase

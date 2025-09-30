@@ -318,6 +318,10 @@ void LinearEigenfrequency::run() {
     for (auto& m : modes) {
         // Full vector u
         DynamicVector u_mode = CT->map().apply_T(m.q_mode);
+        CT->post_check_static(K, DynamicVector::Zero(K.rows()), u_mode,
+                      /*tol_constraint_rel*/1e-10,
+                      /*tol_reduced_rel   */std::numeric_limits<Precision>::infinity(),
+                      /*tol_full_rel      */std::numeric_limits<Precision>::infinity());
         // Node x 6 layout for writer
         m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
         // Participations p_i = e_i^T (M u) using axis columns as e_i
@@ -328,22 +332,6 @@ void LinearEigenfrequency::run() {
     // (8) Print + write
     display_eigen_summary(modes);
     write_results(modes, m_writer, m_id);
-
-    // Optional post-checks: orthogonality and projected residual (quick sanity)
-    {
-        logging::info(true, "");
-        logging::info(true, "Modal post-checks (quick)");
-        logging::up();
-        if (!modes.empty()) {
-            // Check Mr-orthogonality for the first pair as a tiny smoke test.
-            const DynamicVector& q0 = modes[0].q_mode;
-            DynamicVector Aq0 = A * q0;
-            DynamicVector Mrq0 = Mr * q0;
-            logging::info(true, "||A q0||2              : ", Aq0.norm());
-            logging::info(true, "||Mr q0||2             : ", Mrq0.norm());
-        }
-        logging::down();
-    }
 
     logging::info(true, "Eigenfrequency analysis completed.");
 }

@@ -237,6 +237,8 @@ void LinearBuckling::run() {
         "recovering full preload displacement u"
     );
 
+    CT->post_check_static(K, f, u_pre);
+
     // (8) Integration-point stresses from preload -> K_g assembly
     //     Most model APIs expect node-wise displacements (node x 6) for IP recovery.
     IPData ip_stress, ip_strain_unused;
@@ -336,22 +338,6 @@ void LinearBuckling::run() {
         write_mtx(geom_file + "_Kg.mtx", Kg, 0, 17);
         write_mtx(geom_file + "_B.mtx", B  , 0, 17);
     }
-
-    // (12) Small post-checks (optional): projected residual of preload
-    //      Sanity: residual should mostly live in range(C^T) and T^T r should be small.
-    {
-        DynamicVector r_pre  = K * u_pre - f;  // full active residual (reactions + orthogonal)
-        DynamicVector red    = CT->map().apply_Tt(r_pre);
-        logging::info(true, "");
-        logging::info(true, "Preload post-checks");
-        logging::up();
-        logging::info(true, "||u_pre||2             : ", u_pre.norm());
-        logging::info(true, "||C u_pre - d||2       : ", (CT->set().C * u_pre - CT->set().d).norm());
-        logging::info(true, "||K u_pre - f||2       : ", r_pre.norm());
-        logging::info(true, "||T^T (K u_pre - f)||2 : ", red.norm());
-        logging::down();
-    }
-
     logging::info(true, "Buckling analysis completed.");
 }
 

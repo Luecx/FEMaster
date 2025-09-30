@@ -191,12 +191,8 @@ void fem::loadcase::LinearStatic::run() {
     m_writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
     m_writer->write_eigen_matrix(global_force_mat,"NODAL_FORCES");
 
-    // (14) Post-checks (relative, checklist via ConstraintTransformer)
-    {
-        // Defaults: tol_constraint_rel=1e-10, tol_reduced_rel=1e-8, full-residual informational
-        auto chk = CT->check_static(K, f, u);
-        CT->print_checklist(chk);
-    }
+    // (14) Post-checks
+    CT->post_check_static(K, f, u);
 
     logging::info(true, "");
     logging::info(true, "LINEAR STATIC ANALYSIS FINISHED");

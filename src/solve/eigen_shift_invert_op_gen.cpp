@@ -67,6 +67,7 @@ void ShiftInvertOpGeneral::_factorize_if_needed() const
     if (_ldl.info() != Eigen::Success) {
         throw std::runtime_error("ShiftInvertOpGeneral: LDLT factorization failed");
     }
+    logging::info(true, "Factorized (A - σ B) for σ = ", _sigma);
 
     _sigma_fact = _sigma;
 }
@@ -82,6 +83,7 @@ void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const
     if (_A_ref.rows() != _B_ref.rows() || _A_ref.cols() != _B_ref.cols()) {
         throw std::invalid_argument("ShiftInvertOpGeneral: A and B must have the same shape");
     }
+
 
     _factorize_if_needed();
 
