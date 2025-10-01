@@ -111,4 +111,13 @@ Equations Connector::get_equations(SystemDofIds& system_nodal_dofs, model::Model
     return equations;
 }
 
+/******************************************************************************
+ * @brief Returns the coupled DOFs for the two nodes based on the connector.
+ *
+ * @return DOFs that are constrained by the connector.
+ ******************************************************************************/
+Dofs Connector::dofs() {
+    return this->constrained_dofs_;
+}
+
 }    // namespace fem::constraint

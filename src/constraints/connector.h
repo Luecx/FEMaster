@@ -42,6 +42,7 @@ enum ConnectorType : int {
    Hinge       = 0b111011,    ///< All DOFs except rotation around X (bit 3 is 0).
    Cylindrical = 0b011011,    ///< Translation and rotation around X are allowed.
    Translator  = 0b011111,    ///< Only translation in the X direction is allowed.
+   Join        = 0b111000,    ///< Only translations are constrained; rotations are free.
 };
 
 /******************************************************************************
@@ -93,6 +94,24 @@ class Connector {
     * @return TripletList A list of triplets representing the constraint equations.
     ******************************************************************************/
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
+
+    /******************************************************************************
+     * @brief Returns the coupled DOFs for the two nodes based on the connector.
+     *
+     * @return DOFs that are constrained by the connector.
+     ******************************************************************************/
+    Dofs dofs();
+
+    /******************************************************************************
+    * @brief Returns the ID of the first node.
+     ******************************************************************************/
+    ID node_1() {return node_1_id_;}
+
+    /******************************************************************************
+    * @brief Returns the ID of the second node.
+     ******************************************************************************/
+    ID node_2() {return node_2_id_;}
+
 
 };
 

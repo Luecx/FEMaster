@@ -50,6 +50,17 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
             mask(master_id, dof) |= master_dofs(0, dof);
         }
     }
+    // go through all connectors and mask the dofs of both nodes
+        for (auto &c: this->_data->connectors) {
+            ID node1_id = c.node_1();
+            ID node2_id = c.node_2();
+            auto dofs   = c.dofs();
+
+            for (ID dof = 0; dof < 6; dof++) {
+                mask(node1_id, dof) |= dofs(0, dof);
+                mask(node2_id, dof) |= dofs(0, dof);
+            }
+        }
 
     auto res = mattools::numerate_dofs(mask);
 

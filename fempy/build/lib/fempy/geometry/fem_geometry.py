@@ -73,7 +73,7 @@ class Geometry:
         self.couplings = []
 
         # Connector-Elements (Liste reiner Daten fürs Input-Deck)
-        # {'type':'HINGE'|'BEAM'|'CYLINDRICAL'|'TRANSLATOR',
+        # {'type':'HINGE'|'BEAM'|'CYLINDRICAL'|'TRANSLATOR'|'JOIN',
         #  'coord_sys':'CSY', 'nset1':'M1', 'nset2':'M2'}
         self.connectors = []
 
@@ -106,6 +106,152 @@ class Geometry:
         self.elements[element_id] = element
         self.elem_sets["EALL"].append(element_id)
         return element_id
+
+    def add_element_beams(self,
+                          node1: int,
+                          node2: int,
+                          element_id: int | None = None,
+                          orientation: tuple[float, float, float] | list[float] | None = None,
+                          *,
+                          material: str | None = None,
+                          profile: str | None = None,
+                          n_elements: int = 1,
+                          joint_A: bool = False,
+                          joint_B: bool = False):
+        """
+        Create one or several B33 beam elements between node1 (A) and node2 (B).
+        Returns int if n_elements == 1 else list[int].
+        Uses NumPy for all vector math.
+        """
+        # --- basic check
+        if node1 >= len(self.nodes) or self.nodes[node1] is None:
+            raise ValueError(f"node1 id {node1} does not exist")
+        if node2 >= len(self.nodes) or self.nodes[node2] is None:
+            raise ValueError(f"node2 id {node2} does not exist")
+        if n_elements < 1:
+            raise ValueError("n_elements must be >= 1")
+
+        # --- ensure a rectangular CSYS for connectors
+        def _ensure_default_rect_csys() -> str:
+            for name, cs in self.coordinate_systems.items():
+                if cs.get('type') == 'RECTANGULAR':
+                    return name
+            name = "CSYS_GLOBAL"
+            self.add_coordinate_system_rectangular(name, 1.0, 0.0, 0.0, definition="VECTOR")
+            return name
+
+        csys_name = _ensure_default_rect_csys()
+
+        # --- joints (only on requested sides)
+        A_id = node1
+        B_id = node2
+
+        def _make_joint(side_label: str, old_id: int) -> int:
+            xyz    = self.nodes[old_id]
+            new_id = self.add_node(x=xyz[0], y=xyz[1], z=xyz[2])
+            set_new = f"JOINT_{side_label}_NEW_{new_id}"
+            set_old = f"JOINT_{side_label}_OLD_{new_id}"
+            self.add_node_set(set_new)
+            self.add_node_to_set(set_new, new_id)
+            self.add_node_set(set_old)
+            self.add_node_to_set(set_old, old_id)
+            self.add_connector(type="JOIN", coord_sys=csys_name, nset1=set_new, nset2=set_old)
+            return new_id
+
+        if joint_A:
+            A_id = _make_joint("A", A_id)
+        if joint_B:
+            B_id = _make_joint("B", B_id)
+
+        # --- NumPy helpers
+        def _np_norm(v: np.ndarray) -> float:
+            return float(np.linalg.norm(v))
+
+        def _normalize(v: np.ndarray) -> np.ndarray:
+            n = _np_norm(v)
+            return v / n if n > 1e-14 else np.zeros(3)
+
+        def _auto_orientation(a_xyz: np.ndarray, b_xyz: np.ndarray) -> np.ndarray:
+            d = _normalize(b_xyz - a_xyz)                       # beam axis
+            ez = np.array([0.0, 0.0, 1.0])
+            ex = np.array([1.0, 0.0, 0.0])
+            helper = ez if abs(float(np.dot(d, ez))) < 0.9 else ex
+            # Gram-Schmidt: helper ⟂ d
+            v = helper - np.dot(helper, d) * d
+            v = _normalize(v)
+            if _np_norm(v) <= 1e-14:
+                # fallback: any perpendicular via cross
+                v = _normalize(np.cross(d, ex))
+            return v
+
+        A_xyz = np.asarray(self.nodes[A_id], dtype=float)
+        B_xyz = np.asarray(self.nodes[B_id], dtype=float)
+
+        # --- orientation: param or auto
+        if orientation is not None:
+            orientation = _normalize(np.asarray(orientation, dtype=float))
+            if _np_norm(orientation) <= 1e-14:
+                orientation = _auto_orientation(A_xyz, B_xyz)
+        else:
+            orientation = _auto_orientation(A_xyz, B_xyz)
+
+        # --- choose material/profile (auto if missing)
+        if material is None:
+            if not self.materials:
+                raise ValueError("No materials defined; please add a material or pass 'material'.")
+            material = next(iter(self.materials.keys()))
+        if profile is None:
+            if not self.profiles:
+                raise ValueError("No profiles defined; please add a profile or pass 'profile'.")
+            first_prof = self.profiles[0]
+            profile = first_prof['name'] if isinstance(first_prof, dict) and 'name' in first_prof else first_prof
+
+        # --- subdivision nodes with NumPy (linspace)
+        path_nodes = [A_id]
+        if n_elements > 1:
+            # internal points at k/n_elements, k = 1..n_elements-1
+            ts = np.linspace(0.0, 1.0, n_elements + 1)[1:-1]
+            seg = (B_xyz - A_xyz)
+            for t in ts:
+                p = A_xyz + t * seg
+                nid = self.add_node(x=float(p[0]), y=float(p[1]), z=float(p[2]))
+                path_nodes.append(nid)
+        path_nodes.append(B_id)
+
+        # --- element id policy
+        fixed_ids = None
+        if element_id is not None:
+            fixed_ids = [element_id + i for i in range(n_elements)]
+            for eid in fixed_ids:
+                if eid < len(self.elements) and self.elements[eid] is not None:
+                    raise ValueError(f"Requested element_id {eid} is already occupied.")
+
+        # --- create elements
+        created = []
+        for i in range(n_elements):
+            nA = path_nodes[i]
+            nB = path_nodes[i + 1]
+            if fixed_ids is not None:
+                eid = self.add_element(element_id=fixed_ids[i], element_type='B33', node_ids=[nA, nB])
+            else:
+                eid = self.add_element(element_id=-1, element_type='B33', node_ids=[nA, nB])
+            created.append(eid)
+
+        # --- attach a BEAM section for these elements (new ELSET)
+        elset_name = f"EL_BEAM_{created[0]}_{created[-1]}"
+        self.add_element_set(elset_name)
+        for eid in created:
+            self.add_element_to_set(elset_name, eid)
+
+        self.add_section_beam(elset=elset_name,
+                              material=material,
+                              profile=profile,
+                              orientation=(float(orientation[0]),
+                                           float(orientation[1]),
+                                           float(orientation[2])))
+
+        return created[0] if n_elements == 1 else created
+
 
     def add_node_set(self, name):
         if name not in self.node_sets:
@@ -140,9 +286,11 @@ class Geometry:
 
     def add_section_solid(self, material, elset):
         self.sections.append({'type': 'SOLID', 'material': material, 'elset': elset})
+        return self.sections[-1]
 
     def add_section_shell(self, material, elset, thickness):
         self.sections.append({'type': 'SHELL', 'material': material, 'elset': elset, 'thickness': thickness})
+        return self.sections[-1]
 
     def add_section_beam(self, elset, material, profile, orientation=(0, 1, 0)):
         if not isinstance(orientation, (list, tuple)) or len(orientation) != 3:
@@ -154,6 +302,7 @@ class Geometry:
             'profile': profile,
             'orientation': tuple(orientation)
         })
+        return self.sections[-1]
 
     def add_section_pointmass(self, elset, mass=None, inertia=None, spring=None, rotary_spring=None):
         def validate_vector(v, name):
@@ -297,11 +446,13 @@ class Geometry:
     # -------------------------
     def add_connector(self, type, coord_sys, nset1, nset2):
         """
-        type     : 'BEAM'|'HINGE'|'CYLINDRICAL'|'TRANSLATOR' (aktuell bekannte)
+        type     : 'BEAM'|'HINGE'|'CYLINDRICAL'|'TRANSLATOR'|'JOIN' (aktuell bekannte)
         coord_sys: Name eines existierenden Koordinatensystems (wird nur referenziert)
         nset1/2  : Node-Set-Namen, JEWEILS mit GENAU 1 Knoten.
         """
         t = str(type).upper()
+        if t not in ['BEAM', 'HINGE', 'CYLINDRICAL', 'TRANSLATOR', 'JOIN']:
+            raise ValueError(f"Unsupported connector type '{type}'.")
         if coord_sys not in self.coordinate_systems:
             raise KeyError(f"Unknown coordinate system '{coord_sys}' for connector.")
         if nset1 not in self.node_sets:
@@ -585,7 +736,7 @@ class Geometry:
         return ret_str
 
     # Re-exports / Bindings
-    connectivity_node_to_element = connectivity_node_to_element
+    connectivity_node_to_element    = connectivity_node_to_element
     connectivity_element_to_element = connectivity_element_to_element
     element_element_distance_matrix = element_element_distance_matrix
 
