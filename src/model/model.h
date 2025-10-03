@@ -82,6 +82,28 @@ struct Model {
 
     // building loads for every node including non existing ones
     NodeData              build_load_matrix(std::vector<std::string> load_sets = {});
+    struct ConstraintGroups {
+        constraint::Equations supports;
+        constraint::Equations connectors;
+        constraint::Equations couplings;
+        constraint::Equations ties;
+        constraint::Equations others;
+
+        constraint::Equations flatten() const {
+            constraint::Equations all;
+            auto append = [&all](const constraint::Equations& input) {
+                all.insert(all.end(), input.begin(), input.end());
+            };
+            append(supports);
+            append(connectors);
+            append(couplings);
+            append(ties);
+            append(others);
+            return all;
+        }
+    };
+
+    ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids, const std::vector<std::string>& supp_sets = {});
     constraint::Equations build_constraints(SystemDofIds& system_dof_ids, std::vector<std::string> supp_sets = {});
 
     // matrices

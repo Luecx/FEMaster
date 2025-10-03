@@ -17,6 +17,9 @@ void Reader::process_loadcase_eigenfreq() {
             lc.num_eigenvalues = m_current_line.get_value(0, 10);
         } else if (m_current_line.command() == "SUPPORT") {
             process_loadcase_eigenfreq_support(&lc);
+        } else if (m_current_line.command() == "CONSTRAINTSUMMARY") {
+            lc.report_constraints = true;
+            next_line();
         } else if (m_current_line.command() == "END") {
             next_line();
             break;

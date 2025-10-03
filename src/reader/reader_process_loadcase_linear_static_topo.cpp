@@ -24,6 +24,9 @@ void Reader::process_loadcase_linear_static_topo() {
             process_loadcase_linear_static_topo_density(&lc);
         } else if (m_current_line.command() == "ORIENTATION") {
             process_loadcase_linear_static_topo_orientation(&lc);
+        } else if (m_current_line.command() == "CONSTRAINTSUMMARY") {
+            lc.report_constraints = true;
+            next_line();
         } else if (m_current_line.command() == "END") {
             next_line();
             break;

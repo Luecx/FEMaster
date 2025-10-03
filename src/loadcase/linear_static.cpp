@@ -57,7 +57,11 @@ void fem::loadcase::LinearStatic::run() {
 
     // (2) Build constraint equations (supports, ties, couplings, …)
     auto equations = Timer::measure(
-        [&]() { return this->m_model->build_constraints(active_dof_idx_mat, supps); },
+        [&]() {
+            auto groups = this->m_model->collect_constraints(active_dof_idx_mat, supps);
+            report_constraint_groups(groups);
+            return groups.flatten();
+        },
         "building constraints"
     );
 

@@ -22,7 +22,10 @@
 
 #include "equation.h"
 
+
+
 namespace fem::constraint {
+
 
 /******************************************************************************
 * @enum ConnectorType
@@ -43,6 +46,7 @@ enum ConnectorType : int {
    Cylindrical = 0b011011,    ///< Translation and rotation around X are allowed.
    Translator  = 0b011111,    ///< Only translation in the X direction is allowed.
    Join        = 0b111000,    ///< Only translations are constrained; rotations are free.
+   JoinRx      = 0b111100,    ///< Only translations are constrained; rotations are free.
 };
 
 /******************************************************************************
@@ -95,21 +99,24 @@ class Connector {
     ******************************************************************************/
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
 
-    /******************************************************************************
-     * @brief Returns the coupled DOFs for the two nodes based on the connector.
-     *
-     * @return DOFs that are constrained by the connector.
-     ******************************************************************************/
-    Dofs dofs();
+   /******************************************************************************
+    * @brief Returns which GLOBAL DOFs (Tx, Ty, Tz, Rx, Ry, Rz) are impacted by this connector,
+    *        taking the connector's coordinate system into account.
+    *
+    * This projects constrained local directions into the global system and marks a global DOF
+    * as impacted if the corresponding component has |value| > epsilon.
+    ******************************************************************************/
+    Dofs dofs() const;
 
-    /******************************************************************************
+
+   /******************************************************************************
     * @brief Returns the ID of the first node.
-     ******************************************************************************/
+    ******************************************************************************/
     ID node_1() {return node_1_id_;}
 
-    /******************************************************************************
+   /******************************************************************************
     * @brief Returns the ID of the second node.
-     ******************************************************************************/
+    ******************************************************************************/
     ID node_2() {return node_2_id_;}
 
 

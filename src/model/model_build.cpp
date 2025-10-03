@@ -9,6 +9,10 @@
 #include "model.h"
 #include "solid/element_solid.h"
 
+#include <iterator>
+#include <utility>
+#include <string>
+
 namespace fem {
 
 namespace model {
@@ -51,16 +55,16 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
         }
     }
     // go through all connectors and mask the dofs of both nodes
-        for (auto &c: this->_data->connectors) {
-            ID node1_id = c.node_1();
-            ID node2_id = c.node_2();
-            auto dofs   = c.dofs();
+    for (auto &c: this->_data->connectors) {
+        ID node1_id = c.node_1();
+        ID node2_id = c.node_2();
+        auto dofs   = c.dofs();
 
-            for (ID dof = 0; dof < 6; dof++) {
-                mask(node1_id, dof) |= dofs(0, dof);
-                mask(node2_id, dof) |= dofs(0, dof);
-            }
+        for (ID dof = 0; dof < 6; dof++) {
+            mask(node1_id, dof) |= dofs(0, dof);
+            mask(node2_id, dof) |= dofs(0, dof);
         }
+    }
 
     auto res = mattools::numerate_dofs(mask);
 
@@ -106,26 +110,85 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
 }
 
 
-constraint::Equations Model::build_constraints (SystemDofIds& system_dof_ids, std::vector<std::string> supp_sets) {
-    constraint::Equations equations{};
-    for (auto &key: supp_sets) {
-        auto data = this->_data->supp_cols.get(key);
-        auto eqs = data->get_equations(*_data);
-        equations.insert(equations.end(), eqs.begin(), eqs.end());
+Model::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
+                                                   const std::vector<std::string>& supp_sets) {
+    ConstraintGroups groups{};
+
+    Index support_idx = 0;
+    if (supp_sets.empty() && this->_data->supp_cols.has_all()) {
+        if (auto all = this->_data->supp_cols.all()) {
+            auto eqs = all->get_equations(*_data);
+            for (auto& eq : eqs) {
+                eq.source = constraint::EquationSourceKind::Support;
+                eq.source_index = support_idx;
+                groups.supports.push_back(std::move(eq));
+            }
+            ++support_idx;
+        }
     }
-    for (auto &c: this->_data->connectors) {
+
+    for (const auto& key : supp_sets) {
+        if (auto data = this->_data->supp_cols.get(key)) {
+            auto eqs = data->get_equations(*_data);
+            for (auto& eq : eqs) {
+                eq.source = constraint::EquationSourceKind::Support;
+                eq.source_index = support_idx;
+                groups.supports.push_back(std::move(eq));
+            }
+            ++support_idx;
+        }
+    }
+
+    Index connector_idx = 0;
+    for (auto& c : this->_data->connectors) {
         auto eqs = c.get_equations(system_dof_ids, *_data);
-        equations.insert(equations.end(), eqs.begin(), eqs.end());
+        for (auto& eq : eqs) {
+            eq.source = constraint::EquationSourceKind::Connector;
+            eq.source_index = connector_idx;
+            groups.connectors.push_back(std::move(eq));
+        }
+        ++connector_idx;
     }
-    for (auto &c: this->_data->couplings) {
+
+    Index coupling_idx = 0;
+    for (auto& c : this->_data->couplings) {
         auto eqs = c.get_equations(system_dof_ids, *_data);
-        equations.insert(equations.end(), eqs.begin(), eqs.end());
+        for (auto& eq : eqs) {
+            eq.source = constraint::EquationSourceKind::Coupling;
+            eq.source_index = coupling_idx;
+            groups.couplings.push_back(std::move(eq));
+        }
+        ++coupling_idx;
     }
-    for (auto &t: this->_data->ties) {
+
+    Index tie_idx = 0;
+    for (auto& t : this->_data->ties) {
         auto eqs = t.get_equations(system_dof_ids, *_data);
-        equations.insert(equations.end(), eqs.begin(), eqs.end());
+        for (auto& eq : eqs) {
+            eq.source = constraint::EquationSourceKind::Tie;
+            eq.source_index = tie_idx;
+            groups.ties.push_back(std::move(eq));
+        }
+        ++tie_idx;
     }
-    return equations;
+
+    if (!this->_data->equations.empty()) {
+        Index manual_idx = 0;
+        for (auto eq : this->_data->equations) {
+            if (eq.source == constraint::EquationSourceKind::Unknown) {
+                eq.source = constraint::EquationSourceKind::Manual;
+            }
+            eq.source_index = manual_idx++;
+            groups.others.push_back(std::move(eq));
+        }
+    }
+
+    return groups;
+}
+
+constraint::Equations Model::build_constraints(SystemDofIds& system_dof_ids,
+                                               std::vector<std::string> supp_sets) {
+    return collect_constraints(system_dof_ids, supp_sets).flatten();
 }
 
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData stiffness_scalar) {

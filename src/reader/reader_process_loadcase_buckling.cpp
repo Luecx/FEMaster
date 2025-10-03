@@ -34,6 +34,9 @@ void Reader::process_loadcase_linear_buckling() {
             process_loadcase_linear_buckling_request_stiffness(&lc);
         } else if (m_current_line.command() == "REQUESTSTGEOM") {
             process_loadcase_linear_buckling_request_geom(&lc);
+        } else if (m_current_line.command() == "CONSTRAINTSUMMARY") {
+            lc.report_constraints = true;
+            next_line();
         } else if (m_current_line.command() == "END") {
             next_line();
             break;

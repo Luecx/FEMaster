@@ -56,11 +56,20 @@ public:
      * @param x_axis Unit vector of the x-axis in the global coordinate system.
      */
     RectangularSystem(const std::string& name, const Vec3& x_axis)
-        : CoordinateSystem(name), x_axis_(x_axis), y_axis_(x_axis.cross(Vec3::UnitZ())), z_axis_(x_axis.cross(y_axis_)) {
+    : CoordinateSystem(name), x_axis_(x_axis) {
+        // Pick auxiliary axis: UnitZ unless x is nearly parallel to it
+        Vec3 aux = (std::abs(x_axis_.normalized().dot(Vec3::UnitZ())) > 0.9)
+                   ? Vec3::UnitY()
+                   : Vec3::UnitZ();
+
+        y_axis_ = x_axis_.cross(aux);
+        z_axis_ = x_axis_.cross(y_axis_);
+
         orthogonalize();
         normalize();
         compute_transformations();
     }
+
 
     /**
      * @brief Normalize the axes to unit vectors.

@@ -90,7 +90,7 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
 
                     EquationEntry en1 = EquationEntry {slave_node , i, 1.0};
                     EquationEntry en2 = EquationEntry {master_node, i, -1.0};
-                    equations.push_back(Equation {en1, en2});
+                    equations.emplace_back(Equation {en1, en2});
                 } else {
                     // Translational DOFs: couple with master translations and rotations
                     auto dof_slave = system_nodal_dofs(slave_node, i);
@@ -122,7 +122,7 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
                     EquationEntry entry_r2    = EquationEntry {master_node, r2_dof, dr2};
                     EquationEntry entry_slave = EquationEntry {slave_node , u_dof, -1.0};
 
-                    equations.push_back(Equation {entry_r1, entry_r2, entry_slave, entry_u});
+                    equations.emplace_back(Equation {entry_r1, entry_r2, entry_slave, entry_u});
                 }
             }
         }

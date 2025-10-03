@@ -73,7 +73,7 @@ class Geometry:
         self.couplings = []
 
         # Connector-Elements (Liste reiner Daten fürs Input-Deck)
-        # {'type':'HINGE'|'BEAM'|'CYLINDRICAL'|'TRANSLATOR'|'JOIN',
+        # {'type':'HINGE'|'BEAM'|'CYLINDRICAL'|'TRANSLATOR'|'JOIN'|'JOINRX',
         #  'coord_sys':'CSY', 'nset1':'M1', 'nset2':'M2'}
         self.connectors = []
 
@@ -107,21 +107,23 @@ class Geometry:
         self.elem_sets["EALL"].append(element_id)
         return element_id
 
-    def add_element_beams(self,
-                          node1: int,
-                          node2: int,
-                          element_id: int | None = None,
-                          orientation: tuple[float, float, float] | list[float] | None = None,
-                          *,
-                          material: str | None = None,
-                          profile: str | None = None,
-                          n_elements: int = 1,
-                          joint_A: bool = False,
-                          joint_B: bool = False):
+    def add_element_beams(
+            self,
+            node1: int,
+            node2: int,
+            element_id: int | None = None,
+            orientation: tuple[float, float, float] | list[float] | None = None,
+            *,
+            material: str | None = None,
+            profile: str | None = None,
+            n_elements: int = 1,
+            joint_A: bool = False,
+            joint_B: bool = False):
         """
         Create one or several B33 beam elements between node1 (A) and node2 (B).
         Returns int if n_elements == 1 else list[int].
-        Uses NumPy for all vector math.
+        A fresh RECTANGULAR coordinate system is created, aligned with A->B (VECTOR, 3 components),
+        and used for any connectors (joints) created here.
         """
         # --- basic check
         if node1 >= len(self.nodes) or self.nodes[node1] is None:
@@ -130,38 +132,6 @@ class Geometry:
             raise ValueError(f"node2 id {node2} does not exist")
         if n_elements < 1:
             raise ValueError("n_elements must be >= 1")
-
-        # --- ensure a rectangular CSYS for connectors
-        def _ensure_default_rect_csys() -> str:
-            for name, cs in self.coordinate_systems.items():
-                if cs.get('type') == 'RECTANGULAR':
-                    return name
-            name = "CSYS_GLOBAL"
-            self.add_coordinate_system_rectangular(name, 1.0, 0.0, 0.0, definition="VECTOR")
-            return name
-
-        csys_name = _ensure_default_rect_csys()
-
-        # --- joints (only on requested sides)
-        A_id = node1
-        B_id = node2
-
-        def _make_joint(side_label: str, old_id: int) -> int:
-            xyz    = self.nodes[old_id]
-            new_id = self.add_node(x=xyz[0], y=xyz[1], z=xyz[2])
-            set_new = f"JOINT_{side_label}_NEW_{new_id}"
-            set_old = f"JOINT_{side_label}_OLD_{new_id}"
-            self.add_node_set(set_new)
-            self.add_node_to_set(set_new, new_id)
-            self.add_node_set(set_old)
-            self.add_node_to_set(set_old, old_id)
-            self.add_connector(type="JOIN", coord_sys=csys_name, nset1=set_new, nset2=set_old)
-            return new_id
-
-        if joint_A:
-            A_id = _make_joint("A", A_id)
-        if joint_B:
-            B_id = _make_joint("B", B_id)
 
         # --- NumPy helpers
         def _np_norm(v: np.ndarray) -> float:
@@ -172,7 +142,7 @@ class Geometry:
             return v / n if n > 1e-14 else np.zeros(3)
 
         def _auto_orientation(a_xyz: np.ndarray, b_xyz: np.ndarray) -> np.ndarray:
-            d = _normalize(b_xyz - a_xyz)                       # beam axis
+            d = _normalize(b_xyz - a_xyz)  # beam axis
             ez = np.array([0.0, 0.0, 1.0])
             ex = np.array([1.0, 0.0, 0.0])
             helper = ez if abs(float(np.dot(d, ez))) < 0.9 else ex
@@ -184,10 +154,52 @@ class Geometry:
                 v = _normalize(np.cross(d, ex))
             return v
 
+        # --- base nodes and vectors
+        A_id_base = node1
+        B_id_base = node2
+        A_xyz_base = np.asarray(self.nodes[A_id_base], dtype=float)
+        B_xyz_base = np.asarray(self.nodes[B_id_base], dtype=float)
+        axis_raw = B_xyz_base - A_xyz_base
+        axis_len = _np_norm(axis_raw)
+        if axis_len <= 1e-14:
+            raise ValueError("add_element_beams: Node A and B are coincident; cannot define beam axis.")
+
+        axis_dir = axis_raw / axis_len  # normalized
+
+        # --- create a fresh RECTANGULAR CSYS aligned with A->B (VECTOR; 3 components)
+        csys_name = f"CSYS_AB_{A_id_base}_{B_id_base}_{len(self.coordinate_systems)}"
+        self.add_coordinate_system_rectangular(
+            csys_name,
+            float(axis_dir[0]), float(axis_dir[1]), float(axis_dir[2]),
+            definition="VECTOR"
+        )
+
+        # --- possibly create joints (on top of base A/B)
+        A_id = A_id_base
+        B_id = B_id_base
+
+        def _make_joint(side_label: str, old_id: int) -> int:
+            xyz    = self.nodes[old_id]
+            new_id = self.add_node(x=xyz[0], y=xyz[1], z=xyz[2])
+            set_new = f"JOINT_{side_label}_NEW_{new_id}"
+            set_old = f"JOINT_{side_label}_OLD_{new_id}"
+            self.add_node_set(set_new)
+            self.add_node_to_set(set_new, new_id)
+            self.add_node_set(set_old)
+            self.add_node_to_set(set_old, old_id)
+            self.add_connector(type="JOINRX", coord_sys=csys_name, nset1=set_new, nset2=set_old)
+            return new_id
+
+        if joint_A:
+            A_id = _make_joint("A", A_id)
+        if joint_B:
+            B_id = _make_joint("B", B_id)
+
+        # --- recompute A/B xyz for the *active* end nodes used by the elements
         A_xyz = np.asarray(self.nodes[A_id], dtype=float)
         B_xyz = np.asarray(self.nodes[B_id], dtype=float)
 
-        # --- orientation: param or auto
+        # --- orientation: param or auto (a vector ⟂ beam axis)
         if orientation is not None:
             orientation = _normalize(np.asarray(orientation, dtype=float))
             if _np_norm(orientation) <= 1e-14:
@@ -209,7 +221,6 @@ class Geometry:
         # --- subdivision nodes with NumPy (linspace)
         path_nodes = [A_id]
         if n_elements > 1:
-            # internal points at k/n_elements, k = 1..n_elements-1
             ts = np.linspace(0.0, 1.0, n_elements + 1)[1:-1]
             seg = (B_xyz - A_xyz)
             for t in ts:
@@ -243,14 +254,15 @@ class Geometry:
         for eid in created:
             self.add_element_to_set(elset_name, eid)
 
-        self.add_section_beam(elset=elset_name,
-                              material=material,
-                              profile=profile,
-                              orientation=(float(orientation[0]),
-                                           float(orientation[1]),
-                                           float(orientation[2])))
+        self.add_section_beam(
+            elset=elset_name,
+            material=material,
+            profile=profile,
+            orientation=(float(orientation[0]), float(orientation[1]), float(orientation[2]))
+        )
 
         return created[0] if n_elements == 1 else created
+
 
 
     def add_node_set(self, name):
@@ -446,12 +458,12 @@ class Geometry:
     # -------------------------
     def add_connector(self, type, coord_sys, nset1, nset2):
         """
-        type     : 'BEAM'|'HINGE'|'CYLINDRICAL'|'TRANSLATOR'|'JOIN' (aktuell bekannte)
+        type     : 'BEAM'|'HINGE'|'CYLINDRICAL'|'TRANSLATOR'|'JOIN'|'JOINRX' (aktuell bekannte)
         coord_sys: Name eines existierenden Koordinatensystems (wird nur referenziert)
         nset1/2  : Node-Set-Namen, JEWEILS mit GENAU 1 Knoten.
         """
         t = str(type).upper()
-        if t not in ['BEAM', 'HINGE', 'CYLINDRICAL', 'TRANSLATOR', 'JOIN']:
+        if t not in ['BEAM', 'HINGE', 'CYLINDRICAL', 'TRANSLATOR', 'JOIN', 'JOINRX']:
             raise ValueError(f"Unsupported connector type '{type}'.")
         if coord_sys not in self.coordinate_systems:
             raise KeyError(f"Unknown coordinate system '{coord_sys}' for connector.")

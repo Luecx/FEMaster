@@ -20,6 +20,9 @@ void Reader::process_loadcase_linear_static() {
             process_loadcase_linear_static_solver(&lc);
         } else if (m_current_line.command() == "REQUESTSTIFFNESS") {
             process_loadcase_linear_static_request_stiffness(&lc);
+        } else if (m_current_line.command() == "CONSTRAINTSUMMARY") {
+            lc.report_constraints = true;
+            next_line();
         }else if (m_current_line.command() == "END") {
             next_line();
             break;

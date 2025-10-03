@@ -12,8 +12,16 @@
 #include "connector.h"
 
 #include "../model/model_data.h"
+#include "../core/logging.h"
+
+#include <iomanip>
+#include <sstream>
 
 namespace fem::constraint {
+
+namespace {
+constexpr double kEps = 1e-8; // hardcoded epsilon as requested
+}
 
 /******************************************************************************
  * @brief Constructor for the Connector class.
@@ -50,74 +58,94 @@ Connector::Connector(ID                              node_1_id,
  * @return TripletList A list of triplets representing the constraint equations.
  ******************************************************************************/
 Equations Connector::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
-    (void) model_data;    // Unused parameter
-    Equations equations {};
+    (void) model_data;
+    Equations equations{};
 
-    // Loop through each degree of freedom (DOF)
-    for (int i = 0; i < 6; i++) {
-        if (!constrained_dofs_(i))
-            continue;    // Skip unconstrained DOFs.
+    constexpr double kEps = 1e-8; // hardcoded epsilon threshold
 
-        // Get the global system DOF indices for the two nodes
-        auto dof_1 = system_nodal_dofs(node_1_id_, i);
-        auto dof_2 = system_nodal_dofs(node_2_id_, i);
+    const char axis_names[3] = {'X', 'Y', 'Z'};
 
-        // Skip if any of the DOFs are invalid (-1 means unconstrained in the system)
-        if (dof_1 < 0 || dof_2 < 0)
-            continue;
+    for (int i = 0; i < 6; ++i) {
+        if (!constrained_dofs_(i)) continue;
 
-        // Determine the local axis based on whether it's a translational or rotational DOF
-        Vec3 local_dof_direction;
-        if (i < 3) {
-            // Translational DOFs (0: X, 1: Y, 2: Z)
-            local_dof_direction = Vec3::Unit(i);
-        } else {
-            // Rotational DOFs (3: RX, 4: RY, 5: RZ)
-            local_dof_direction = Vec3::Unit(i - 3);    // Adjust to correct local rotational axis
-        }
+        // local basis for this DOF (Tx,Ty,Tz,Rx,Ry,Rz)
+        const Vec3 local_dof_direction = (i < 3) ? Vec3::Unit(i) : Vec3::Unit(i - 3);
 
-        // Transform the local DOF direction to the global coordinate system
-        Vec3                       global_dof_direction = coordinate_system_->to_global(local_dof_direction);
+        // project to global
+        const Vec3 g = coordinate_system_->to_global(local_dof_direction);
 
         std::vector<EquationEntry> entries;
+        const int block = (i < 3) ? 0 : 1; // 0: translations, 1: rotations
 
-        // Add the constraint equation to the triplet list
-        for (int j = 0; j < 3; j++) {
+        for (int j = 0; j < 3; ++j) {
+            const double c = g(j);
+            if (std::abs(c) <= kEps) continue; // drop tiny components
 
-            Dim  dof       = 3 * (i / 3) + j;
+            const Dim dof = 3 * block + j;
 
-            auto dof_id_n1 = system_nodal_dofs(node_1_id_, dof);
-            auto dof_id_n2 = system_nodal_dofs(node_2_id_, dof);
-
+            const auto dof_id_n1 = system_nodal_dofs(node_1_id_, dof);
+            const auto dof_id_n2 = system_nodal_dofs(node_2_id_, dof);
             if (dof_id_n1 < 0 || dof_id_n2 < 0) {
-                logging::warning(false,
-                                 "Invalid DOF indices for node ",
-                                 node_1_id_,
-                                 " and ",
-                                 node_2_id_,
-                                 ". Constraint may not work as intended.");
+                // silently skip this component; it's not active in the system
                 continue;
             }
 
-            EquationEntry en1 = EquationEntry {node_1_id_, dof, global_dof_direction(j)};
-            EquationEntry en2 = EquationEntry {node_2_id_, dof, -global_dof_direction(j)};
-
-            entries.push_back(en1);
-            entries.push_back(en2);
+            entries.emplace_back(EquationEntry{node_1_id_, dof, (Precision) c});
+            entries.emplace_back(EquationEntry{node_2_id_, dof, (Precision)-c});
         }
-        equations.push_back(Equation {entries});
+
+        // Only push if something meaningful remains
+        if (!entries.empty()) {
+            equations.emplace_back(Equation{std::move(entries)});
+        }
+
+        logging::warning(entries.empty(),
+                         "Connector (", node_1_id_, " <-> ", node_2_id_,
+                         ") generated no equation for local ",
+                         (i < 3 ? "T" : "R"), axis_names[(i < 3) ? i : i - 3],
+                         " (", g(0), ", ", g(1), ", ", g(2), "). ",
+                         "in coordinate system '", coordinate_system_->name, "'.");
     }
 
     return equations;
 }
+
 
 /******************************************************************************
  * @brief Returns the coupled DOFs for the two nodes based on the connector.
  *
  * @return DOFs that are constrained by the connector.
  ******************************************************************************/
-Dofs Connector::dofs() {
-    return this->constrained_dofs_;
+Dofs Connector::dofs() const {
+    // Output: which GLOBAL DOFs (Tx,Ty,Tz,Rx,Ry,Rz) the connector actually impacts
+    Dofs impacted;
+    impacted.setZero();
+
+    // For each local DOF we intend to constrain, transform its local basis direction to global.
+    for (int i = 0; i < 6; ++i) {
+        if (!constrained_dofs_(i)) continue; // skip unconstrained local directions
+
+        // Build local unit direction for this DOF (Tx,Ty,Tz,Rx,Ry,Rz)
+        // For rotations we use the same axis unit vectors; the coordinate system should map them.
+        Vec3 local_dir = (i < 3) ? Vec3::Unit(i) : Vec3::Unit(i - 3);
+
+        // Map local axis to global
+        Vec3 g = coordinate_system_->to_global(local_dir);
+
+        // Decide which GLOBAL components are significantly present
+        const int block = (i < 3) ? 0 : 1; // 0 = translations, 1 = rotations
+        for (int j = 0; j < 3; ++j)
+        {
+            if (std::abs(g(j)) > kEps)
+            {
+                const int global_dof = 3 * block + j; // (Tx,Ty,Tz,Rx,Ry,Rz)
+                impacted(global_dof) = true;
+            }
+        }
+    }
+
+    return impacted;
 }
+
 
 }    // namespace fem::constraint

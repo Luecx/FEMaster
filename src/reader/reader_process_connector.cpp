@@ -21,6 +21,8 @@ void Reader::process_connector() {
         ctype = constraint::ConnectorType::Translator;
     } else if (type == "JOIN") {
         ctype = constraint::ConnectorType::Join;
+    } else if (type == "JOINRX") {
+        ctype = constraint::ConnectorType::JoinRx;
     } else {
         logging::error(false, "Unknown connector type: ", type);
     }
