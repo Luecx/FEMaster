@@ -1,6 +1,14 @@
 /******************************************************************************
  * @file particular_solution.cpp
- * @brief Compute min-norm particular solution and project onto affine map.
+ * @brief Computes and projects particular solutions for constraint systems.
+ *
+ * The solver obtains a minimum-norm solution for inhomogeneous constraints and
+ * projects it into the affine map `u = u_p + T q`.
+ *
+ * @see src/constraints/builder/particular_solution.h
+ * @see src/constraints/constraint_map.h
+ * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #include "particular_solution.h"
@@ -8,70 +16,77 @@
 #include "../../core/logging.h"
 #include "../../core/timer.h"
 
-#include <Eigen/SparseQR>
+namespace fem {
+namespace constraint {
 
-namespace fem { namespace constraint {
-
-ParticularOutput compute_particular_and_project(const ParticularInput& in,
+/******************************************************************************
+ * @copydoc compute_particular_and_project
+ ******************************************************************************/
+ParticularOutput compute_particular_and_project(const ParticularInput& input,
                                                 const Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>>& qr,
-                                                const ConstraintMap& M,
+                                                const ConstraintMap& map,
                                                 Precision feas_tol_rel,
-                                                Precision d_norm)
-{
-    ParticularOutput out{};
-    const int n     = (int)M.n_;
-    const int n_use = (int)in.used.size();
+                                                Precision d_norm) {
+    ParticularOutput output;
+    const int n = static_cast<int>(map.n_);
+    const int n_use = static_cast<int>(input.used.size());
 
-    out.u_p = DynamicVector::Zero(n);
+    output.u_p = DynamicVector::Zero(n);
 
-    if (in.homogeneous) {
-        // Only fixed DOFs contribute
-        for (int j = 0; j < n; ++j)
-            if (in.is_fixed_col[j]) out.u_p[j] = in.fixed_val[j];
-        out.residual_norm = Precision(0);
-        out.feasible      = true;
-        return out;
+    if (input.homogeneous) {
+        for (int j = 0; j < n; ++j) {
+            if (input.is_fixed_col[j]) {
+                output.u_p[j] = input.fixed_val[j];
+            }
+        }
+        output.residual_norm = Precision(0);
+        output.feasible = true;
+        return output;
     }
 
-    // Build RHS for QR system: rows of C_use align with original row indexing
-    Eigen::Matrix<Precision, Eigen::Dynamic, 1> d_dense(in.C_use.rows());
-    for (int i = 0; i < in.C_use.rows(); ++i) d_dense[i] = in.d_mod[i];
+    Eigen::VectorXd d_dense(input.C_use.rows());
+    for (int i = 0; i < input.C_use.rows(); ++i) {
+        d_dense[i] = input.d_mod[i];
+    }
 
-    // Min-norm solution in reduced space
-    Eigen::Matrix<Precision, Eigen::Dynamic, 1> u_use = qr.solve(d_dense);
+    Eigen::VectorXd u_use = qr.solve(d_dense);
 
-    // Lift to full u_any (putting values only on 'used' columns)
     DynamicVector u_any = DynamicVector::Zero(n);
-    for (int k = 0; k < n_use; ++k) u_any[in.used[k]] = u_use[k];
+    for (int k = 0; k < n_use; ++k) {
+        u_any[input.used[k]] = u_use[k];
+    }
 
-    // fixed DOFs override
-    for (int j = 0; j < n; ++j) if (in.is_fixed_col[j]) u_any[j] = in.fixed_val[j];
+    for (int j = 0; j < n; ++j) {
+        if (input.is_fixed_col[j]) {
+            u_any[j] = input.fixed_val[j];
+        }
+    }
 
-    // Residual wrt *reduced* system (no access to full C here)
-    // r = C_use * u_use - d_mod
-    Eigen::Matrix<Precision, Eigen::Dynamic, 1> r = in.C_use * u_use - d_dense;
-    out.residual_norm = r.norm();
+    Eigen::VectorXd residual = input.C_use * u_use - d_dense;
+    output.residual_norm = residual.norm();
 
     const Precision feas_tol = feas_tol_rel * (d_norm > 0 ? d_norm : Precision(1));
-    out.feasible = (out.residual_norm <= feas_tol);
+    output.feasible = (output.residual_norm <= feas_tol);
 
-    // Project onto affine map u = u_p + T q and store only slave offsets in u_p
-    // (masters are represented by q; fixed already placed into u_p)
-    // q_any = u_any[masters]
-    DynamicVector q_any(M.nm_);
-    for (int j = 0; j < M.nm_; ++j) q_any[j] = u_any[M.masters_[j]];
-
-    // Xq = X * q_any  (size r), then for each slave i: u_p[slave_i] = u_any[slave_i] - Xq[i]
-    DynamicVector Xq = M.X_ * q_any;
-    for (int i = 0; i < M.r_; ++i) {
-        const Index gi = M.slaves_[i];
-        out.u_p[gi] = u_any[gi] - Xq[i];
+    DynamicVector q_any(map.nm_);
+    for (int j = 0; j < map.nm_; ++j) {
+        q_any[j] = u_any[map.masters_[j]];
     }
 
-    // Ensure fixed values are kept
-    for (int j = 0; j < n; ++j) if (in.is_fixed_col[j]) out.u_p[j] = in.fixed_val[j];
+    DynamicVector Xq = map.X_ * q_any;
+    for (int i = 0; i < map.r_; ++i) {
+        const Index gi = map.slaves_[i];
+        output.u_p[gi] = u_any[gi] - Xq[i];
+    }
 
-    return out;
+    for (int j = 0; j < n; ++j) {
+        if (input.is_fixed_col[j]) {
+            output.u_p[j] = input.fixed_val[j];
+        }
+    }
+
+    return output;
 }
 
-}} // namespace fem::constraint
+} // namespace constraint
+} // namespace fem

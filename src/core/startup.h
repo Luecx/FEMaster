@@ -1,21 +1,30 @@
-//
-// Created by Luecx on 06.09.2023.
-//
+/******************************************************************************
+ * @file startup.h
+ * @brief Declares the startup helper that prints build information at launch.
+ *
+ * Instantiating the `Startup` struct emits version and capability data to the
+ * log output.
+ *
+ * @see src/core/startup.cpp
+ * @see src/core/version.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
 
-#ifndef FEMASTER_STARTUP_H
-#define FEMASTER_STARTUP_H
+#pragma once
 
-namespace fem{
+namespace fem {
+namespace startup {
 
-namespace{
-
-struct Startup{
+/******************************************************************************
+ * @struct Startup
+ * @brief Emits build information during static initialisation.
+ ******************************************************************************/
+struct Startup {
     Startup();
 };
 
-extern Startup startup;
+extern Startup instance; ///< Global startup object that triggers automatic reporting.
 
-}
-}
-
-#endif    // FEMASTER_STARTUP_H
+} // namespace startup
+} // namespace fem

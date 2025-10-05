@@ -1,13 +1,14 @@
 /******************************************************************************
  * @file support_collector.h
- * @brief Defines the SupportCollector class for managing collections of supports in an FEM model.
+ * @brief Declares the collector that manages support boundary conditions.
  *
- * @details The SupportCollector class extends the Collection class and provides an interface
- *          to manage and apply multiple Support instances to a FEM model. Supports can be
- *          added for node, element, or surface regions with optional local coordinate systems.
+ * The `SupportCollector` aggregates support definitions over multiple regions
+ * and converts them into constraint equations on demand.
  *
- * @date Created on 27.11.2024
+ * @see src/bc/support_collector.cpp
+ * @see src/bc/support.h
  * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #pragma once
@@ -17,60 +18,71 @@
 #include "support.h"
 
 namespace fem {
+namespace model {
+class ModelData;
+}
+}
 
-/**
+namespace fem {
+namespace bc {
+
+/******************************************************************************
  * @struct SupportCollector
- * @brief Manages a collection of Support objects for applying boundary conditions in an FEM model.
+ * @brief Stores supports and assembles their constraint equations.
  *
- * @details The SupportCollector allows managing multiple supports for various regions (nodes,
- *          elements, and surfaces) and provides functionality to apply all collected supports
- *          to the FEM model. Supports can be added with specific values and optional local
- *          coordinate systems.
- */
+ * Supports are stored by value for cache locality. When queried the collector
+ * iterates every entry and generates the corresponding constraint equations.
+ ******************************************************************************/
 struct SupportCollector : model::Collection<Support> {
-    using Ptr = std::shared_ptr<SupportCollector>;
+    using Ptr = std::shared_ptr<SupportCollector>; ///< Shared pointer alias for collectors.
 
-    /**
-     * @brief Constructor for the SupportCollector.
-     * @param p_name Name of the support collector.
-     */
-    explicit SupportCollector(const std::string& p_name);
+    /******************************************************************************
+     * @brief Constructs a collector with the specified name.
+     *
+     * @param name Identifier for the collector within the model context.
+     ******************************************************************************/
+    explicit SupportCollector(const std::string& name);
 
-    /// Destructor
-    ~SupportCollector() = default;
+    /******************************************************************************
+     * @brief Defaulted virtual destructor for polymorphic cleanup.
+     ******************************************************************************/
+    ~SupportCollector() override = default;
 
-    /**
-     * @brief Applies all supports in the collector to the FEM model.
-     * @param model_data The FEM model data.
-     * @param bc The boundary condition data structure.
-     * @param equations The constraint equations structure.
-     */
+    /******************************************************************************
+     * @brief Assembles constraint equations for all stored supports.
+     *
+     * @param model_data FEM model data used to resolve regions and coordinates.
+     * @return constraint::Equations Collection of constraint equations.
+     ******************************************************************************/
     constraint::Equations get_equations(model::ModelData& model_data);
 
-    /**
-     * @brief Adds a Support for a node region.
-     * @param region Pointer to the node region.
-     * @param values Constraint values for the degrees of freedom.
-     * @param coordinate_system Optional local coordinate system for transformations.
-     */
+    /******************************************************************************
+     * @brief Adds a node-region support to the collector.
+     *
+     * @param region Node region receiving the support.
+     * @param values Constraint specification per generalized DOF.
+     * @param coordinate_system Optional local coordinate frame.
+     ******************************************************************************/
     void add_supp(model::NodeRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Adds a Support for an element region.
-     * @param region Pointer to the element region.
-     * @param values Constraint values for the degrees of freedom.
-     * @param coordinate_system Optional local coordinate system for transformations.
-     */
+    /******************************************************************************
+     * @brief Adds an element-region support to the collector.
+     *
+     * @param region Element region receiving the support.
+     * @param values Constraint specification per generalized DOF.
+     * @param coordinate_system Optional local coordinate frame.
+     ******************************************************************************/
     void add_supp(model::ElementRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Adds a Support for a surface region.
-     * @param region Pointer to the surface region.
-     * @param values Constraint values for the degrees of freedom.
-     * @param coordinate_system Optional local coordinate system for transformations.
-     */
+    /******************************************************************************
+     * @brief Adds a surface-region support to the collector.
+     *
+     * @param region Surface region receiving the support.
+     * @param values Constraint specification per generalized DOF.
+     * @param coordinate_system Optional local coordinate frame.
+     ******************************************************************************/
     void add_supp(model::SurfaceRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 };
 
+} // namespace bc
 } // namespace fem
-

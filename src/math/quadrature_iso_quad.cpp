@@ -1,49 +1,45 @@
-#ifndef QUADRATURE_ISO_QUAD_H
-#define QUADRATURE_ISO_QUAD_H
+/******************************************************************************
+ * @file quadrature_iso_quad.cpp
+ * @brief Registers quadrature schemes for the isoparametric quadrilateral.
+ *
+ * @see src/math/quadrature.h
+ ******************************************************************************/
 
 #include "quadrature.h"
 
 namespace fem {
 namespace quadrature {
 
-using namespace fem::math;
+namespace {
+constexpr std::array<Point, 1> quad_linear{{Point(0.0, 0.0, 0.0, 4.0)}};
 
-// ORDER_CONSTANT and ORDER_LINEAR
-constexpr Point domain_iso_quad_points_1[] = {
-    Point(0.0, 0.0, 0.0, 4.0)
-};
-
-// ORDER_QUADRATIC and ORDER_CUBIC
-constexpr Point domain_iso_quad_points_4[] = {
+constexpr std::array<Point, 4> quad_quadratic{{
     Point(csqrt(3.0) / 3.0, csqrt(3.0) / 3.0, 1.0),
     Point(-csqrt(3.0) / 3.0, csqrt(3.0) / 3.0, 1.0),
     Point(-csqrt(3.0) / 3.0, -csqrt(3.0) / 3.0, 1.0),
-    Point(csqrt(3.0) / 3.0, -csqrt(3.0) / 3.0, 1.0)
-};
+    Point(csqrt(3.0) / 3.0, -csqrt(3.0) / 3.0, 1.0),
+}};
 
-// ORDER_QUARTIC and ORDER_QUINTIC
-constexpr Point domain_iso_quad_points_9[] = {
+constexpr std::array<Point, 9> quad_quartic{{
     Point(-csqrt(0.6), -csqrt(0.6), 25.0 / 81.0),
-    Point(csqrt(0.0), -csqrt(0.6), 40.0 / 81.0),
+    Point(0.0, -csqrt(0.6), 40.0 / 81.0),
     Point(csqrt(0.6), -csqrt(0.6), 25.0 / 81.0),
-    Point(-csqrt(0.6), csqrt(0.0), 40.0 / 81.0),
-    Point(csqrt(0.0), csqrt(0.0), 64.0 / 81.0),
-    Point(csqrt(0.6), csqrt(0.0), 40.0 / 81.0),
+    Point(-csqrt(0.6), 0.0, 40.0 / 81.0),
+    Point(0.0, 0.0, 64.0 / 81.0),
+    Point(csqrt(0.6), 0.0, 40.0 / 81.0),
     Point(-csqrt(0.6), csqrt(0.6), 25.0 / 81.0),
-    Point(csqrt(0.0), csqrt(0.6), 40.0 / 81.0),
-    Point(csqrt(0.6), csqrt(0.6), 25.0 / 81.0)
-};
+    Point(0.0, csqrt(0.6), 40.0 / 81.0),
+    Point(csqrt(0.6), csqrt(0.6), 25.0 / 81.0),
+}};
+} // namespace
 
-REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_CONSTANT, domain_iso_quad_points_1);
-REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_LINEAR  , domain_iso_quad_points_1);
-
-REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_QUADRATIC, domain_iso_quad_points_4);
-REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_CUBIC    , domain_iso_quad_points_4);
-
-REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_QUARTIC  , domain_iso_quad_points_9);
-REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_QUINTIC  , domain_iso_quad_points_9);
+REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_CONSTANT, quad_linear);
+REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_LINEAR, quad_linear);
+REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_QUADRATIC, quad_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_CUBIC, quad_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_QUARTIC, quad_quartic);
+REGISTER_SCHEME(DOMAIN_ISO_QUAD, ORDER_QUINTIC, quad_quartic);
 
 } // namespace quadrature
 } // namespace fem
 
-#endif // QUADRATURE_ISO_QUAD_H

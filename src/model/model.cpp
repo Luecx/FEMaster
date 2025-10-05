@@ -132,7 +132,7 @@ void Model::add_support(const std::string& nset, const StaticVector<6> constrain
     if (!orientation.empty())
         logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
 
-    SupportCollector::Ptr supp_col = _data->supp_cols.get();
+    bc::SupportCollector::Ptr supp_col = _data->supp_cols.get();
     supp_col->add_supp(_data->node_sets.get(nset), constraint, _data->coordinate_systems.get(orientation));
 }
 
@@ -146,7 +146,7 @@ void Model::add_support(const ID id, const StaticVector<6> constraint, const std
     NodeRegion::Ptr region = std::make_shared<NodeRegion>("INTERNAL");
     region->add(id);
 
-    SupportCollector::Ptr supp_col = _data->supp_cols.get();
+    bc::SupportCollector::Ptr supp_col = _data->supp_cols.get();
     supp_col->add_supp(region, constraint, _data->coordinate_systems.get(orientation));
 }
 

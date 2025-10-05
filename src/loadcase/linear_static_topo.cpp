@@ -102,26 +102,26 @@ void LinearStaticTopo::run() {
     logging::info(true, "");
 
     // (0) Sections/materials
-    m_model->assign_sections();
+    model->assign_sections();
 
     // Inject topology parameters into the model's element data store so the
     // stiffness builder can read them during assembly.
     const ElementData stiffness_scalar = density.array().pow(exponent);
-    m_model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);
-    m_model->_data->create_data(model::ElementDataEntries::TOPO_ANGLES   , 3);
-    m_model->_data->get(model::ElementDataEntries::TOPO_STIFFNESS) = stiffness_scalar;
-    m_model->_data->get(model::ElementDataEntries::TOPO_ANGLES)    = orientation;
+    model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);
+    model->_data->create_data(model::ElementDataEntries::TOPO_ANGLES   , 3);
+    model->_data->get(model::ElementDataEntries::TOPO_STIFFNESS) = stiffness_scalar;
+    model->_data->get(model::ElementDataEntries::TOPO_ANGLES)    = orientation;
 
     // (1) Unconstrained DOF indexing (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return this->m_model->build_unconstrained_index_matrix(); },
+        [&]() { return this->model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 
     // (2) Constraint equations from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->m_model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
             report_constraint_groups(groups);
             return groups.flatten(); },
         "building constraints"
@@ -129,7 +129,7 @@ void LinearStaticTopo::run() {
 
     // (3) Global loads (node x 6) and reduction to active RHS vector f
     auto global_load_mat = Timer::measure(
-        [&]() { return this->m_model->build_load_matrix(loads); },
+        [&]() { return this->model->build_load_matrix(loads); },
         "constructing load matrix (node x 6)"
     );
     auto f = Timer::measure(
@@ -139,7 +139,7 @@ void LinearStaticTopo::run() {
 
     // (4) Active stiffness K with topology scaling/orientation
     auto K = Timer::measure(
-        [&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat, stiffness_scalar); },
+        [&]() { return this->model->build_stiffness_matrix(active_dof_idx_mat, stiffness_scalar); },
         "constructing stiffness matrix K(rho^p, theta)"
     );
 
@@ -232,7 +232,7 @@ void LinearStaticTopo::run() {
     // (9) Post-processing: nodal stress/strain from displacements
     NodeData stress, strain;
     std::tie(stress, strain) = Timer::measure(
-        [&]() { return m_model->compute_stress_strain(global_disp_mat); },
+        [&]() { return model->compute_stress_strain(global_disp_mat); },
         "Interpolating stress and strain at nodes"
     );
 
@@ -242,30 +242,30 @@ void LinearStaticTopo::run() {
     //  - dens_grad     : derivative of compliance w.r.t. density (basic SIMP)
     //  - volumes       : element volumes
     //  - angle_grad    : derivative of compliance w.r.t. orientation angles
-    ElementData compliance_raw = m_model->compute_compliance(global_disp_mat);
+    ElementData compliance_raw = model->compute_compliance(global_disp_mat);
     ElementData compliance_adj = compliance_raw.array() * density.array().pow(exponent);
     ElementData dens_grad      = - exponent * compliance_raw.array() * density.array().pow(exponent - 1);
-    ElementData volumes        = m_model->compute_volumes();
-    ElementData angle_grad     = m_model->compute_compliance_angle_derivative(global_disp_mat);
+    ElementData volumes        = model->compute_volumes();
+    ElementData angle_grad     = model->compute_compliance_angle_derivative(global_disp_mat);
 
     // (11) Write results
-    m_writer->add_loadcase(m_id);
-    m_writer->write_eigen_matrix(global_disp_mat , "DISPLACEMENT");
-    m_writer->write_eigen_matrix(strain          , "STRAIN");
-    m_writer->write_eigen_matrix(stress          , "STRESS");
-    m_writer->write_eigen_matrix(global_load_mat , "DOF_LOADS");
-    m_writer->write_eigen_matrix(global_force_mat, "NODAL_FORCES");
-    m_writer->write_eigen_matrix(compliance_raw  , "COMPLIANCE_RAW");
-    m_writer->write_eigen_matrix(compliance_adj  , "COMPLIANCE_ADJ");
-    m_writer->write_eigen_matrix(dens_grad       , "DENS_GRAD");
-    m_writer->write_eigen_matrix(volumes         , "VOLUME");
-    m_writer->write_eigen_matrix(density         , "DENSITY");
-    m_writer->write_eigen_matrix(angle_grad      , "ORIENTATION_GRAD");
-    m_writer->write_eigen_matrix(orientation     , "ORIENTATION");
+    writer->add_loadcase(id);
+    writer->write_eigen_matrix(global_disp_mat , "DISPLACEMENT");
+    writer->write_eigen_matrix(strain          , "STRAIN");
+    writer->write_eigen_matrix(stress          , "STRESS");
+    writer->write_eigen_matrix(global_load_mat , "DOF_LOADS");
+    writer->write_eigen_matrix(global_force_mat, "NODAL_FORCES");
+    writer->write_eigen_matrix(compliance_raw  , "COMPLIANCE_RAW");
+    writer->write_eigen_matrix(compliance_adj  , "COMPLIANCE_ADJ");
+    writer->write_eigen_matrix(dens_grad       , "DENS_GRAD");
+    writer->write_eigen_matrix(volumes         , "VOLUME");
+    writer->write_eigen_matrix(density         , "DENSITY");
+    writer->write_eigen_matrix(angle_grad      , "ORIENTATION_GRAD");
+    writer->write_eigen_matrix(orientation     , "ORIENTATION");
 
     // (12) Cleanup element scratch data from the model store
-    m_model->_data->remove(model::ElementDataEntries::TOPO_STIFFNESS);
-    m_model->_data->remove(model::ElementDataEntries::TOPO_ANGLES);
+    model->_data->remove(model::ElementDataEntries::TOPO_STIFFNESS);
+    model->_data->remove(model::ElementDataEntries::TOPO_ANGLES);
 
     // (13) Diagnostics (optional): projected residual checks
     CT->post_check_static(K, f, u);

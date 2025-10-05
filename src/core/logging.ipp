@@ -1,69 +1,104 @@
-#include <iostream>
-#include <string>
-#include <sstream>
+/******************************************************************************
+ * @file logging.ipp
+ * @brief Implements templated logging helpers.
+ *
+ * @see src/core/logging.h
+ ******************************************************************************/
+
 #include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <string>
 
-namespace fem::logging{
+namespace fem {
+namespace logging {
 
+int indentation_level = 0;
+
+inline void up() {
+    ++indentation_level;
+}
+
+inline void down() {
+    if (indentation_level > 0) {
+        --indentation_level;
+    }
+}
+
+inline std::string get_indentation() {
+    std::string result;
+    for (int i = 0; i < indentation_level; ++i) {
+        result += "  ";
+    }
+    return result;
+}
+
+namespace detail {
 
 template<typename T>
-std::string inline process(T t, std::ostringstream& oss) {
-    oss << t;
-    return oss.str();
+std::string process(T value, std::ostringstream& stream) {
+    stream << value;
+    return stream.str();
 }
 
-template<> inline std::string process<int>(int i, std::ostringstream& oss) {
-    oss << std::to_string(i);
-    return oss.str();
+template<>
+inline std::string process<int>(int value, std::ostringstream& stream) {
+    stream << value;
+    return stream.str();
 }
 
-template<> inline std::string process<float>(float f, std::ostringstream& oss) {
-    oss << f;
-    return oss.str();
+template<>
+inline std::string process<float>(float value, std::ostringstream& stream) {
+    stream << value;
+    return stream.str();
 }
 
-template<> inline std::string process<double>(double d, std::ostringstream& oss) {
-    oss << d;
-    return oss.str();
+template<>
+inline std::string process<double>(double value, std::ostringstream& stream) {
+    stream << value;
+    return stream.str();
 }
 
-template<> inline std::string process<std::ios_base& (*)(std::ios_base&)>(std::ios_base& (*f)(std::ios_base&), std::ostringstream& oss) {
-    oss << f;
-    return "";
+template<>
+inline std::string process<std::ios_base& (*)(std::ios_base&)>(std::ios_base& (*manip)(std::ios_base&), std::ostringstream& stream) {
+    stream << manip;
+    return stream.str();
 }
 
 template<typename T, typename... Args>
-void inline log_impl(const std::string& log_type, T t, Args... args) {
-    std::ostringstream oss;
-    oss << log_type << logging::get_indentation() << " ";
-    process(t, oss);
-    ((process(args, oss)), ...);
-    std::cout << oss.str() << std::endl;
+void log_impl(const std::string& prefix, T value, Args... args) {
+    std::ostringstream stream;
+    stream << prefix << logging::get_indentation() << " ";
+    process(value, stream);
+    ((process(args, stream)), ...);
+    std::cout << stream.str() << std::endl;
 }
 
+} // namespace detail
+
 template<typename... Args>
-void inline warning(bool condition, Args... args) {
+void warning(bool condition, Args... args) {
     if (!condition) {
-        log_impl("[WARNING]", args...);
+        detail::log_impl("[WARNING]", args...);
     }
 }
 
 template<typename... Args>
-void inline info(bool condition, Args... args) {
+void info(bool condition, Args... args) {
     if (condition) {
-        log_impl("[INFO]", args...);
+        detail::log_impl("[INFO]", args...);
     }
 }
 
 template<typename... Args>
-void inline error(bool condition, Args... args) {
+void error(bool condition, Args... args) {
     if (!condition) {
-        std::ostringstream oss;
-        ((process(args, oss)), ...);
-        std::string message = oss.str();
-        std::cout << "[ERROR] " << message << std::endl;
+        std::ostringstream stream;
+        ((detail::process(args, stream)), ...);
+        std::cout << "[ERROR] " << stream.str() << std::endl;
         std::exit(-1);
     }
 }
 
-}
+} // namespace logging
+} // namespace fem

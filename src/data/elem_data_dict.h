@@ -1,33 +1,50 @@
-//
-// Created by f_eggers on 08.11.2024.
-//
+/******************************************************************************
+ * @file elem_data_dict.h
+ * @brief Declares containers that manage element-level data fields.
+ *
+ * Provides the `ElementField` helper and storage aliases that mirror the nodal
+ * data containers for element-specific matrices such as stiffness updates or
+ * orientation angles.
+ *
+ * @see src/data/elem_data_dict.cpp
+ * @see src/data/data_storage.h
+ * @see src/data/dict.h
+ ******************************************************************************/
 
-#ifndef ELEM_DATA_DICT_H
-#define ELEM_DATA_DICT_H
-
-
-#include "data_storage.h"
-#include "dict.h"
+#pragma once
 
 #include "../core/types_eig.h"
+#include "data_storage.h"
+#include "dict.h"
+#include "namable.h"
 
-namespace fem::model {
+#include <memory>
+#include <string>
+
+namespace fem {
+namespace model {
+
+/// Enumerates default element data entries consumed by solvers and readers.
 enum ElementDataEntries : Index {
-    TOPO_STIFFNESS,
-    TOPO_ANGLES,
+    TOPO_STIFFNESS, ///< Scalar density or stiffness scaling factors.
+    TOPO_ANGLES     ///< Orientation angles for topology optimisation workflows.
 };
 
+/******************************************************************************
+ * @struct ElementField
+ * @brief Extends `NodeData` with a stable name for element-level datasets.
+ ******************************************************************************/
 struct ElementField : NodeData, Namable {
-    ElementField(const std::string& name) : Namable(name) {}
-    using Ptr = std::shared_ptr<ElementField>;
+    using Ptr = std::shared_ptr<ElementField>; ///< Shared pointer alias for element fields.
+
+    /// Constructs the field with the provided name.
+    explicit ElementField(const std::string& name)
+        : Namable(name) {}
 };
 
+using ElemDataDict = DataStorage<ElementData>;                         ///< Storage for element matrices.
+using ElemFieldDict = Dict<Dict<ElementField>, ElementDataEntries>;    ///< Nested dictionary for named element fields.
 
-using ElemDataDict  = DataStorage<ElementData>;
-using ElemFieldDict = Dict<Dict<ElementField>, ElementDataEntries>;
+} // namespace model
+} // namespace fem
 
-}
-
-
-
-#endif //ELEM_DATA_DICT_H

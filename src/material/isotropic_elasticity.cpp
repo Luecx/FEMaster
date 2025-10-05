@@ -1,63 +1,76 @@
 /******************************************************************************
-* @file isotropic_elasticity.cpp
-* @brief Implements the IsotropicElasticity class for isotropic material behavior.
-*
-* This file contains the implementation of methods for calculating stiffness
-* matrices for isotropic materials in 2D, 3D, shear, and bending conditions.
-*
-* @see isotropic_elasticity.h
-******************************************************************************/
+ * @file isotropic_elasticity.cpp
+ * @brief Implements the isotropic elasticity model.
+ *
+ * Provides stiffness matrices for isotropic materials across various shell and
+ * solid formulations.
+ *
+ * @see src/material/isotropic_elasticity.h
+ * @see src/material/elasticity.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
 
 #include "isotropic_elasticity.h"
 
-namespace fem::material {
+namespace fem {
+namespace material {
 
-IsotropicElasticity::IsotropicElasticity(Precision youngs, Precision poisson)
-    : youngs(youngs), poisson(poisson) {
-    shear = youngs / (2 * (1 + poisson));    // Compute shear modulus (G)
-}
+/******************************************************************************
+ * @copydoc IsotropicElasticity::IsotropicElasticity
+ ******************************************************************************/
+IsotropicElasticity::IsotropicElasticity(Precision youngs_in, Precision poisson_in)
+    : youngs(youngs_in)
+    , poisson(poisson_in)
+    , shear(youngs_in / (2 * (1 + poisson_in))) {}
 
-fem::StaticMatrix<3, 3> IsotropicElasticity::get_2d() {
+/******************************************************************************
+ * @copydoc IsotropicElasticity::get_2d
+ ******************************************************************************/
+StaticMatrix<3, 3> IsotropicElasticity::get_2d() {
     Precision scalar = youngs / (1 - poisson * poisson);
-
     return StaticMatrix<3, 3>({
         {scalar, scalar * poisson, 0},
         {scalar * poisson, scalar, 0},
         {0, 0, (1 - poisson) / 2 * scalar}});
 }
 
-fem::StaticMatrix<6, 6> IsotropicElasticity::get_3d() {
+/******************************************************************************
+ * @copydoc IsotropicElasticity::get_3d
+ ******************************************************************************/
+StaticMatrix<6, 6> IsotropicElasticity::get_3d() {
     Precision scalar = youngs / ((1 + poisson) * (1 - 2 * poisson));
     Precision mu = (1 - 2 * poisson);
-
     return StaticMatrix<6, 6>({
                {1 - poisson, poisson, poisson, 0, 0, 0},
                {poisson, 1 - poisson, poisson, 0, 0, 0},
                {poisson, poisson, 1 - poisson, 0, 0, 0},
                {0, 0, 0, mu / 2, 0, 0},
                {0, 0, 0, 0, mu / 2, 0},
-               {0, 0, 0, 0, 0, mu / 2}})
-           * scalar;
+               {0, 0, 0, 0, 0, mu / 2}}) * scalar;
 }
 
-StaticMatrix<2, 2> IsotropicElasticity::get_shear(Precision t) {
-    Precision k = 5 / 6.0;    // Shear correction factor
-    Precision scalar = youngs * t * k / (2 * (1 + poisson));
-
+/******************************************************************************
+ * @copydoc IsotropicElasticity::get_shear
+ ******************************************************************************/
+StaticMatrix<2, 2> IsotropicElasticity::get_shear(Precision thickness) {
+    Precision k = Precision(5) / Precision(6);
+    Precision scalar = youngs * thickness * k / (2 * (1 + poisson));
     return StaticMatrix<2, 2>({
         {1, 0},
-        {0, 1}}) *
-           scalar;
+        {0, 1}}) * scalar;
 }
 
-StaticMatrix<3, 3> IsotropicElasticity::get_bend(Precision t) {
-    Precision scalar = youngs * t * t * t / (12 * (1 - poisson * poisson));
-
+/******************************************************************************
+ * @copydoc IsotropicElasticity::get_bend
+ ******************************************************************************/
+StaticMatrix<3, 3> IsotropicElasticity::get_bend(Precision thickness) {
+    Precision scalar = youngs * thickness * thickness * thickness / (12 * (1 - poisson * poisson));
     return StaticMatrix<3, 3>({
         {1, poisson, 0},
         {poisson, 1, 0},
-        {0, 0, (1 - poisson) / 2}}) *
-           scalar;
+        {0, 0, (1 - poisson) / 2}}) * scalar;
 }
 
-}    // namespace fem::material
+} // namespace material
+} // namespace fem

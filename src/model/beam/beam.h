@@ -1,28 +1,38 @@
+/******************************************************************************
+ * @file beam.h
+ * @brief Declares the templated base class for structural beam elements.
+ *
+ * `BeamElement<N>` factors out common geometry and section/material handling for
+ * concrete beam implementations while deriving from `StructuralElement`.
+ *
+ * @see src/model/beam/b33.h
+ ******************************************************************************/
 
-#ifndef BEAM_H
-#define BEAM_H
+#pragma once
 
 #include "../../core/core.h"
-#include "../element/element_structural.h"
 #include "../../section/section_beam.h"
+#include "../element/element_structural.h"
 
-#include <memory>
+#include <array>
 
-namespace fem::model {
+namespace fem {
+namespace model {
 
+/******************************************************************************
+ * @struct BeamElement
+ * @brief Provides shared functionality for beam formulations with `N` nodes.
+ ******************************************************************************/
 template<Index N>
 struct BeamElement : StructuralElement {
+    std::array<ID, N> node_ids{}; ///< Connectivity of the beam element.
 
-    std::array<ID, N> node_ids;
+    BeamElement(ID elem_id, std::array<ID, N> node_ids_in)
+        : StructuralElement(elem_id)
+        , node_ids(node_ids_in) {}
 
-    // construction
-    BeamElement(ID p_elem_id, std::array<ID, N> p_node_ids)
-        : StructuralElement(p_elem_id)
-        , node_ids {p_node_ids} {}
+    ~BeamElement() override = default;
 
-    ~BeamElement() override {};
-
-    // get sections
     BeamSection* get_section() {
         if (!this->_section) {
             logging::error(false, "Section not set for element ", this->elem_id);
@@ -32,9 +42,9 @@ struct BeamElement : StructuralElement {
         }
         return this->_section->template as<BeamSection>();
     }
-    Profile* get_profile() {
-        return get_section()->profile.get();
-    }
+
+    Profile* get_profile() { return get_section()->profile.get(); }
+
     material::MaterialPtr get_material() {
         BeamSection* section = get_section();
         if (!section->material) {
@@ -42,6 +52,7 @@ struct BeamElement : StructuralElement {
         }
         return section->material;
     }
+
     material::IsotropicElasticity* get_elasticity() {
         BeamSection* section = get_section();
         if (!section->material) {
@@ -61,6 +72,7 @@ struct BeamElement : StructuralElement {
         auto row = this->_model_data->node_data.get(POSITION).row(node_id);
         return Vec3(row(0), row(1), row(2));
     }
+
     Precision length() {
         Precision l = 0;
         for (Index i = 0; i < N - 1; i++) {
@@ -68,15 +80,14 @@ struct BeamElement : StructuralElement {
         }
         return l;
     }
-    Precision volume() override {
-        return get_profile()->A * length();
-    }
+
+    Precision volume() override { return get_profile()->A * length(); }
 
     Mat3 rotation_matrix() {
         Vec3 x = (coordinate(1) - coordinate(0)).normalized();
         Vec3 y = get_section()->n1;
         Vec3 z = x.cross(y).normalized();
-        y      = z.cross(x).normalized();
+        y = z.cross(x).normalized();
 
         Mat3 mat{};
         mat(0, 0) = x(0);
@@ -90,11 +101,12 @@ struct BeamElement : StructuralElement {
         mat(2, 2) = z(2);
         return mat;
     }
-    virtual StaticMatrix<N * 6, N * 6> stiffness_impl     ()                              = 0;
-    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(IPData& ip_stress, int offset) = 0;
-    virtual StaticMatrix<N * 6, N * 6> mass_impl()                                        = 0;
 
-    StaticMatrix<N * 6, N * 6>         transformation() {
+    virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
+    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(IPData& ip_stress, int offset) = 0;
+    virtual StaticMatrix<N * 6, N * 6> mass_impl() = 0;
+
+    StaticMatrix<N * 6, N * 6> transformation() {
         StaticMatrix<N * 6, N * 6> T;
         T.setZero();
         Mat3 R = rotation_matrix();
@@ -102,7 +114,7 @@ struct BeamElement : StructuralElement {
         for (Index i = 0; i < N; i++) {
             for (Dim j = 0; j < 3; j++) {
                 for (Dim k = 0; k < 3; k++) {
-                    T(i * 6 + j, i * 6 + k)         = R(j, k);
+                    T(i * 6 + j, i * 6 + k) = R(j, k);
                     T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
                 }
             }
@@ -110,60 +122,79 @@ struct BeamElement : StructuralElement {
         return T;
     }
 
-    virtual MapMatrix stiffness(Precision* buffer) override {
+    MapMatrix stiffness(Precision* buffer) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = stiffness_impl();
         return result;
-    };
-    virtual MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+    }
+
+    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = stiffness_geom_impl(ip_stress, ip_start_idx);
         return result;
-    };
+    }
 
-    virtual MapMatrix mass(Precision* buffer) override {
+    MapMatrix mass(Precision* buffer) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = mass_impl();
         return result;
-    };
-    virtual void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {};
-    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
-        (void) ip_stress;
-        (void) ip_strain;
-        (void) displacement;
-        (void) ip_offset;
-    };
-    virtual void apply_vload(NodeData& node_loads, Vec3 load) override {};
-    virtual void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {};
-    virtual void compute_compliance(NodeData& displacement, ElementData& result) override {};
-    virtual void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override {};
+    }
 
-    ElDofs       dofs() override {
-        return ElDofs {true, true, true, true, true, true};
+    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+        (void)displacement;
+        (void)stress;
+        (void)strain;
     }
-    Dim dimensions() override {
-        return 3;
+
+    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+        (void)ip_stress;
+        (void)ip_strain;
+        (void)displacement;
+        (void)ip_offset;
     }
-    Dim n_nodes() override {
-        return N;
+
+    void apply_vload(NodeData& node_loads, Vec3 load) override {
+        (void)node_loads;
+        (void)load;
     }
-    Dim n_integration_points() override {
-        return 1;
+
+    void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {
+        (void)node_loads;
+        (void)node_temp;
+        (void)ref_temp;
     }
-    ID* nodes() override {
-        return node_ids.data();
+
+    void compute_compliance(NodeData& displacement, ElementData& result) override {
+        (void)displacement;
+        (void)result;
     }
+
+    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override {
+        (void)displacement;
+        (void)result;
+    }
+
+    ElDofs dofs() override { return ElDofs{true, true, true, true, true, true}; }
+    Dim dimensions() override { return 3; }
+    Dim n_nodes() override { return N; }
+    Dim n_integration_points() override { return 1; }
+    ID* nodes() override { return node_ids.data(); }
     SurfacePtr surface(ID surface_id) override {
+        (void)surface_id;
         return nullptr;
     }
     Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+        (void)displacement;
+        (void)rst;
         return {};
-    };
-    Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+    }
+    Strains strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+        (void)displacement;
+        (void)rst;
         return {};
-    };
+    }
 };
 
-}    // namespace fem::model
+} // namespace model
+} // namespace fem
 
-#endif    // BEAM_H

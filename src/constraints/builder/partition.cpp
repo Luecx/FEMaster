@@ -1,52 +1,69 @@
 /******************************************************************************
-* @file partition.cpp
- * @brief Split permutation P into local slaves/masters and map to global indices.
+ * @file partition.cpp
+ * @brief Splits permutation data into slave and master DOF sets.
+ *
+ * The partitioning step maps local QR column indices back to global DOFs while
+ * filtering out fixed entries.
+ *
+ * @see src/constraints/builder/partition.h
+ * @see src/constraints/builder/preprocess.h
+ * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #include "partition.h"
 
 #include "../../core/logging.h"
+
 #include <algorithm>
 
-namespace fem { namespace constraint {
+namespace fem {
+namespace constraint {
 
-PartitionOutput partition_and_map(const PartitionInput& in, const std::vector<char>& is_used)
-{
-    PartitionOutput out{};
+/******************************************************************************
+ * @copydoc partition_and_map
+ ******************************************************************************/
+PartitionOutput partition_and_map(const PartitionInput& input, const std::vector<char>& is_used) {
+    PartitionOutput output;
 
-    const auto& p = in.P.indices();
+    const auto& indices = input.P.indices();
 
-    // Local indices according to P: first r are slaves, remaining are masters (within C_use)
-    out.slaves_loc.reserve(in.r);
-    for (int i = 0; i < in.r; ++i) out.slaves_loc.push_back(p(i));
-
-    const int n_use = (int)in.used->size();
-    out.nm_use = n_use - in.r;
-    out.masters_loc.reserve(std::max(0, out.nm_use));
-    for (int j = 0; j < out.nm_use; ++j) out.masters_loc.push_back(p(in.r + j));
-
-    // Map to global and filter fixed columns
-    out.slaves_glob.reserve(in.r);
-    for (int i = 0; i < in.r; ++i) {
-        const int cg = in.used->at(out.slaves_loc[i]);
-        if (!in.is_fixed_col->at(cg)) out.slaves_glob.push_back(cg);
+    output.slaves_loc.reserve(input.r);
+    for (int i = 0; i < input.r; ++i) {
+        output.slaves_loc.push_back(indices(i));
     }
 
-    // masters_glob: constrained masters + never-used (identity), both excluding fixed
-    out.masters_glob.reserve(in.n);
-
-    // constrained masters (from QR)
-    for (int j = 0; j < out.nm_use; ++j) {
-        const int cg = in.used->at(out.masters_loc[j]);
-        if (!in.is_fixed_col->at(cg)) out.masters_glob.push_back(cg);
+    const int n_use = static_cast<int>(input.used->size());
+    output.nm_use = n_use - input.r;
+    output.masters_loc.reserve(std::max(0, output.nm_use));
+    for (int j = 0; j < output.nm_use; ++j) {
+        output.masters_loc.push_back(indices(input.r + j));
     }
 
-    // append never-used columns (not in used, not fixed)
-    for (int g = 0; g < in.n; ++g) {
-        if (!is_used[g] && !in.is_fixed_col->at(g)) out.masters_glob.push_back(g);
+    output.slaves_glob.reserve(input.r);
+    for (int i = 0; i < input.r; ++i) {
+        const int cg = input.used->at(output.slaves_loc[i]);
+        if (!input.is_fixed_col->at(cg)) {
+            output.slaves_glob.push_back(cg);
+        }
     }
 
-    return out;
+    output.masters_glob.reserve(input.n);
+    for (int j = 0; j < output.nm_use; ++j) {
+        const int cg = input.used->at(output.masters_loc[j]);
+        if (!input.is_fixed_col->at(cg)) {
+            output.masters_glob.push_back(cg);
+        }
+    }
+
+    for (int g = 0; g < input.n; ++g) {
+        if (!is_used[g] && !input.is_fixed_col->at(g)) {
+            output.masters_glob.push_back(g);
+        }
+    }
+
+    return output;
 }
 
-}} // namespace fem::constraint
+} // namespace constraint
+} // namespace fem

@@ -1,55 +1,65 @@
 /******************************************************************************
-* @file preprocess.h
- * @brief Preprocess constraints: detect direct DOF fixes, apply substitutions,
- *        and compress zero columns with row filtering.
+ * @file preprocess.h
+ * @brief Declares preprocessing steps for constraint assembly.
  *
- * Steps:
- *  1) Scan single-NNZ rows   → direct fixed DOFs u[j] = d/a.
- *  2) Substitute into (C,d)   → d := d − C(:,j)*ufix; zero fixed columns.
- *  3) Keep rows not handled by (1); compress zero columns → C_use, used list.
+ * Preprocessing detects directly fixable DOFs, substitutes them into the
+ * constraint system, and compacts the remaining rows and columns.
  *
- * All operations are sparse; no dense QR or dense intermediates.
- *
- * @date 19.09.2025
- * @author Finn
+ * @see src/constraints/builder/preprocess.cpp
+ * @see src/constraints/constraint_set.h
+ * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #pragma once
+
 #include "../../core/types_eig.h"
 #include "../constraint_set.h"
+
 #include <vector>
 
-namespace fem { namespace constraint {
+namespace fem {
+namespace constraint {
 
+/******************************************************************************
+ * @struct PreprocessInput
+ * @brief Raw constraint data supplied to the preprocessing stage.
+ ******************************************************************************/
 struct PreprocessInput {
-    SparseMatrix   C;       ///< original C (will not be modified)
-    DynamicVector  d;       ///< original d (empty or size m)
-    int            n;       ///< number of DOFs (columns)
-    int            m;       ///< number of equations (rows)
-    bool           homogeneous; ///< true if d == 0
+    SparseMatrix C;        ///< Original constraint matrix.
+    DynamicVector d;       ///< Original right-hand side (may be empty).
+    int n = 0;             ///< Number of DOFs (columns).
+    int m = 0;             ///< Number of equations (rows).
+    bool homogeneous = true; ///< True if `d` is numerically zero.
 };
 
+/******************************************************************************
+ * @struct PreprocessOutput
+ * @brief Result of preprocessing including compacted matrices and metadata.
+ ******************************************************************************/
 struct PreprocessOutput {
-    // Kept rows mask (for rank/redundancy stats)
-    std::vector<char> keep_row;
+    std::vector<char> keep_row; ///< Mask indicating rows retained after filtering.
 
-    // Column filtering result
-    std::vector<int>  used;       ///< old column indices kept in C_use
-    Eigen::VectorXi   old2new;    ///< size n, -1 if dropped
+    std::vector<int> used;      ///< Mapping of retained columns to original indices.
+    Eigen::VectorXi old2new;    ///< Maps original columns to compacted indices (`-1` if dropped).
 
-    // Fixed columns from single-NNZ rows
-    std::vector<char>     is_fixed_col; ///< size n
-    std::vector<Precision> fixed_val;   ///< size n
+    std::vector<char> is_fixed_col;    ///< Flags indicating directly fixed DOFs.
+    std::vector<Precision> fixed_val;  ///< Values assigned to fixed DOFs.
 
-    // Modified system for QR
-    SparseMatrix  C_use;  ///< m' x n_use (rows are original indices; cols compacted)
-    DynamicVector d_mod;  ///< size m (matches original row indexing)
+    SparseMatrix C_use; ///< Compacted constraint matrix.
+    DynamicVector d_mod;///< Modified right-hand side aligned to original rows.
 
-    // Counts for quick reporting
-    int n_use = 0;        ///< number of used columns (nonzero in kept rows)
-    int n_fixed = 0;      ///< number of directly fixed columns
+    int n_use = 0;   ///< Number of columns kept for QR.
+    int n_fixed = 0; ///< Number of columns fixed directly.
 };
 
-PreprocessOutput preprocess_constraints(const PreprocessInput& in);
+/******************************************************************************
+ * @brief Preprocesses the constraint system before QR factorisation.
+ *
+ * @param input Input constraint data.
+ * @return PreprocessOutput Filtered matrices and metadata.
+ ******************************************************************************/
+PreprocessOutput preprocess_constraints(const PreprocessInput& input);
 
-}} // namespace
+} // namespace constraint
+} // namespace fem

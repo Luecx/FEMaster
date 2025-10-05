@@ -1,18 +1,29 @@
 /******************************************************************************
-* @file factorize_qr.cpp
-* @brief SparseQR factorization wrapper with configurable pivot threshold.
-******************************************************************************/
+ * @file factorize_qr.cpp
+ * @brief Wraps Eigen sparse QR factorisation with custom settings.
+ *
+ * The implementation forwards the configured pivot threshold and exposes the
+ * resulting `R` factor and column permutation.
+ *
+ * @see src/constraints/builder/factorize_qr.h
+ * @see src/constraints/builder/preprocess.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
 
 #include "factorize_qr.h"
 
 #include "../../core/logging.h"
 #include "../../core/timer.h"
 
-namespace fem { namespace constraint {
+namespace fem {
+namespace constraint {
 
-void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& s, QRResult& out)
-{
-    out.qr.setPivotThreshold(s.pivot_rel <= 0 ? 0 : std::min<Precision>(0.1, s.pivot_rel));
+/******************************************************************************
+ * @copydoc factorize_sparse_qr
+ ******************************************************************************/
+void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& settings, QRResult& out) {
+    out.qr.setPivotThreshold(settings.pivot_rel <= 0 ? 0 : std::min<Precision>(0.1, settings.pivot_rel));
     out.qr.compute(C_use);
     logging::error(out.qr.info() == Eigen::Success, "[ConstraintBuilder] SparseQR failed.");
 
@@ -20,4 +31,5 @@ void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& s, QRResul
     out.P = out.qr.colsPermutation();
 }
 
-}} // namespace fem::constraint
+} // namespace constraint
+} // namespace fem

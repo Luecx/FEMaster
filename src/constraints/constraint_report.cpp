@@ -1,3 +1,16 @@
+/******************************************************************************
+ * @file constraint_report.cpp
+ * @brief Implements utilities to format constraint equations for logging.
+ *
+ * Helper routines build readable strings from individual constraint equations
+ * or full equation sets, including optional tagging of their origin.
+ *
+ * @see src/constraints/constraint_report.h
+ * @see src/constraints/equation.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
+
 #include "constraint_report.h"
 
 #include <algorithm>
@@ -5,11 +18,14 @@
 #include <iomanip>
 #include <sstream>
 
-namespace fem::constraint {
-
+namespace fem {
+namespace constraint {
 namespace {
-std::string format_entry(const EquationEntry& entry,
-                         const EquationFormatOptions& opt) {
+
+/******************************************************************************
+ * @brief Formats a single equation entry as `coeff * N<id>.<dof>`.
+ ******************************************************************************/
+std::string format_entry(const EquationEntry& entry, const EquationFormatOptions& opt) {
     std::ostringstream oss;
     oss.setf(std::ios::fixed, std::ios::floatfield);
     oss.precision(opt.precision);
@@ -21,11 +37,11 @@ std::string format_entry(const EquationEntry& entry,
     oss << 'N' << entry.node_id << '.' << static_cast<int>(entry.dof);
     return oss.str();
 }
-} // namespace
 
-namespace {
-std::string build_rhs(const Equation& equation,
-                      const EquationFormatOptions& opt) {
+/******************************************************************************
+ * @brief Builds the right-hand side representation for an equation.
+ ******************************************************************************/
+std::string build_rhs(const Equation& equation, const EquationFormatOptions& opt) {
     std::ostringstream rhs;
     rhs.setf(std::ios::fixed, std::ios::floatfield);
     rhs.precision(opt.precision);
@@ -34,8 +50,10 @@ std::string build_rhs(const Equation& equation,
     return rhs.str();
 }
 
-std::string build_lhs(const Equation& equation,
-                      const EquationFormatOptions& opt) {
+/******************************************************************************
+ * @brief Builds the left-hand side representation for an equation.
+ ******************************************************************************/
+std::string build_lhs(const Equation& equation, const EquationFormatOptions& opt) {
     if (equation.entries.empty()) {
         return std::string("0");
     }
@@ -57,17 +75,10 @@ std::string build_lhs(const Equation& equation,
     }
     return lhs.str();
 }
-} // namespace
 
-std::string format_equation(const Equation& equation,
-                            const EquationFormatOptions& opt) {
-    std::ostringstream line;
-    const auto lhs = build_lhs(equation, opt);
-    const auto rhs = build_rhs(equation, opt);
-    line << lhs << " = " << rhs;
-    return line.str();
-}
-
+/******************************************************************************
+ * @brief Creates a compact tag describing the equation origin.
+ ******************************************************************************/
 std::string make_tag(EquationSourceKind source, Index idx) {
     char code = 0;
     switch (source) {
@@ -84,8 +95,23 @@ std::string make_tag(EquationSourceKind source, Index idx) {
     return std::string(1, code) + std::to_string(idx);
 }
 
-std::vector<std::string> format_equations(const Equations& equations,
-                                          const EquationFormatOptions& opt) {
+} // namespace
+
+/******************************************************************************
+ * @copydoc format_equation
+ ******************************************************************************/
+std::string format_equation(const Equation& equation, const EquationFormatOptions& opt) {
+    std::ostringstream line;
+    const auto lhs = build_lhs(equation, opt);
+    const auto rhs = build_rhs(equation, opt);
+    line << lhs << " = " << rhs;
+    return line.str();
+}
+
+/******************************************************************************
+ * @copydoc format_equations
+ ******************************************************************************/
+std::vector<std::string> format_equations(const Equations& equations, const EquationFormatOptions& opt) {
     std::vector<std::string> lhs_parts;
     std::vector<std::string> rhs_parts;
     std::vector<std::string> tags;
@@ -138,4 +164,5 @@ std::vector<std::string> format_equations(const Equations& equations,
     return lines;
 }
 
-} // namespace fem::constraint
+} // namespace constraint
+} // namespace fem

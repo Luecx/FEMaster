@@ -1,155 +1,128 @@
 /******************************************************************************
-* @file timer.h
-* @brief Provides functionality for timing code execution in the FEMaster solver.
-*
-* This class allows for measuring the time taken to execute functions, either by
-* logging the results or returning the elapsed time in milliseconds. It supports
-* both void and non-void function calls and logs the execution time if desired.
-*
-* The `Timer` class can be used to measure time by calling `start()` and `stop()`,
-* or by using the `measure` function to time a callable and optionally log the result.
-*
-* @note The class uses high-resolution clocks from the `<chrono>` library to ensure
-* precise time measurements.
-*
-* @author Finn Eggers
-* @date 24.10.2024
-******************************************************************************/
+ * @file timer.h
+ * @brief Declares utilities for timing code execution.
+ *
+ * Provides a small `Timer` helper with RAII-style measurement helpers that
+ * integrate with the logging subsystem.
+ *
+ * @see src/core/timer.cpp
+ * @see src/core/logging.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
 
-#pragma once  // Ensures this file is only included once during compilation
+#pragma once
 
-#include "logging.h"  // For logging timing information
-#include "types_eig.h"    // For Time typedef
+#include "logging.h"
+#include "types_eig.h"
 
-#include <chrono>     // For high-resolution timing
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <type_traits>
+#include <utility>
 
 namespace fem {
 
+/******************************************************************************
+ * @class Timer
+ * @brief Measures elapsed wall-clock time.
+ ******************************************************************************/
 class Timer {
-   public:
-   /******************************************************************************
-    * @brief Starts the timer by capturing the current time.
-    *
-    * This function stores the current time using a high-resolution clock, marking
-    * the beginning of a timed section.
-    ******************************************************************************/
-   void start();
+public:
+    /// Captures the current time and starts the timer.
+    void start();
 
-   /******************************************************************************
-    * @brief Stops the timer by capturing the current time.
-    *
-    * This function stores the current time, marking the end of the timed section.
-    ******************************************************************************/
-   void stop();
+    /// Captures the current time and stops the timer.
+    void stop();
 
-   /******************************************************************************
-    * @brief Returns the elapsed time between the start and stop in milliseconds.
-    *
-    * This function calculates the time elapsed between the last call to `start()`
-    * and `stop()`, returning it as a `Time` (defined as `uint64_t`).
-    *
-    * @return Time Elapsed time in milliseconds.
-    ******************************************************************************/
-   [[nodiscard]] Time elapsed() const;
+    /// Returns the elapsed time in milliseconds between `start` and `stop`.
+    [[nodiscard]] Time elapsed() const;
 
-   /******************************************************************************
-    * @brief Measures the time taken to execute a function and optionally logs it.
-    *
-    * This template function times the execution of a provided function, logs the
-    * description and time taken (in milliseconds) if logging is enabled, and
-    * returns the result of the function.
-    *
-    * @tparam Func A callable type (e.g., lambda, function).
-    * @param func The function to execute and time.
-    * @param description A string describing the timed operation.
-    * @param log_output A boolean flag indicating whether to log the output (default: true).
-    * @return If `func` is non-void, returns the result of the function. If `func` is void, nothing is returned.
-    ******************************************************************************/
-   template<typename Func>
-   static auto measure(Func&& func, const std::string& description, bool log_output = true) {
-       Timer timer;
+    /******************************************************************************
+     * @brief Measures a callable and optionally logs the duration.
+     *
+     * @tparam Func Callable type.
+     * @param func Callable to invoke.
+     * @param description Textual description used for logging.
+     * @param log_output Whether to emit timing information via logging.
+     * @return The callable's return value if non-void.
+     ******************************************************************************/
+    template<typename Func>
+    static auto measure(Func&& func, const std::string& description, bool log_output = true);
 
-       // If logging is enabled, print the start message
-       if (log_output) {
-           logging::info(true, "");  // Log empty line for clarity
-           logging::info(true, "Begin of ", std::setw(75), std::left, description);  // Log the start of the operation
-           logging::up();  // Increase log indentation
-       }
+    /******************************************************************************
+     * @brief Measures a callable and returns only the elapsed time.
+     *
+     * @tparam Func Callable type.
+     * @param func Callable to invoke.
+     * @return Elapsed time in milliseconds.
+     ******************************************************************************/
+    template<typename Func>
+    static double measure_time(Func&& func);
 
-       // Start the timer
-       timer.start();
-
-       // Check if the function returns void
-       if constexpr (std::is_void_v<decltype(func())>) {
-           func();          // Execute the function if it returns void
-           timer.stop();    // Stop the timer
-
-           if (log_output) {
-               logging::down();  // Decrease log indentation
-               logging::info(true,
-                             "Finished ",
-                             std::setw(75),
-                             std::left,
-                             description,
-                             "[",
-                             std::setw(6),
-                             std::right,
-                             std::setprecision(4),
-                             timer.elapsed(),
-                             " ms]");  // Log the elapsed time
-           }
-       } else {
-           // Execute the function and return the result if it does not return void
-           auto result = func();
-           timer.stop();    // Stop the timer
-
-           if (log_output) {
-               logging::down();  // Decrease log indentation
-               logging::info(true,
-                             "Finished ",
-                             std::setw(75),
-                             std::left,
-                             description,
-                             "[",
-                             std::setw(6),
-                             std::right,
-                             std::setprecision(4),
-                             timer.elapsed(),
-                             " ms]");  // Log the elapsed time
-           }
-
-           return result;  // Return the result of the function
-       }
-   }
-
-   /******************************************************************************
-    * @brief Measures the time taken to execute a function and returns it.
-    *
-    * This function times the execution of a provided function (assumed to return void)
-    * and returns the elapsed time in milliseconds.
-    *
-    * @tparam Func A callable type (e.g., lambda, function).
-    * @param func The function to execute and time.
-    * @return double The time taken by the function in milliseconds.
-    ******************************************************************************/
-   template<typename Func>
-   static double measure_time(Func&& func) {
-       Timer timer;
-
-       // Start the timer
-       timer.start();
-
-       // Execute the function (assumed to return void)
-       func();
-
-       // Stop the timer and return the elapsed time
-       timer.stop();
-       return timer.elapsed();
-   }
-
-   private:
-   std::chrono::high_resolution_clock::time_point start_time;  ///< The start time of the timer
-   std::chrono::high_resolution_clock::time_point end_time;    ///< The end time of the timer
+private:
+    std::chrono::high_resolution_clock::time_point start_time{};
+    std::chrono::high_resolution_clock::time_point end_time{};
 };
 
-}  // namespace fem
+template<typename Func>
+auto Timer::measure(Func&& func, const std::string& description, bool log_output) {
+    Timer timer;
+    if (log_output) {
+        logging::info(true, "");
+        logging::info(true, "Begin of ", std::setw(75), std::left, description);
+        logging::up();
+    }
+
+    timer.start();
+
+    if constexpr (std::is_void_v<std::invoke_result_t<Func&>>) {
+        std::forward<Func>(func)();
+        timer.stop();
+        if (log_output) {
+            logging::down();
+            logging::info(true,
+                          "Finished ",
+                          std::setw(75),
+                          std::left,
+                          description,
+                          "[",
+                          std::setw(6),
+                          std::right,
+                          std::setprecision(4),
+                          timer.elapsed(),
+                          " ms]");
+        }
+    } else {
+        auto result = std::forward<Func>(func)();
+        timer.stop();
+        if (log_output) {
+            logging::down();
+            logging::info(true,
+                          "Finished ",
+                          std::setw(75),
+                          std::left,
+                          description,
+                          "[",
+                          std::setw(6),
+                          std::right,
+                          std::setprecision(4),
+                          timer.elapsed(),
+                          " ms]");
+        }
+        return result;
+    }
+}
+
+template<typename Func>
+double Timer::measure_time(Func&& func) {
+    Timer timer;
+    timer.start();
+    func();
+    timer.stop();
+    return timer.elapsed();
+}
+
+} // namespace fem

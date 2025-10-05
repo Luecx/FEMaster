@@ -1,43 +1,40 @@
+/******************************************************************************
+ * @file loadcase.cpp
+ * @brief Implements the base load-case utilities.
+ *
+ * Provides diagnostic helpers that report the assembled constraints for a
+ * particular load case.
+ *
+ * @see src/loadcase/loadcase.h
+ * @see src/model/constraint_groups.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
+
 #include "loadcase.h"
 
-#include "../constraints/constraint_report.h"
-#include "../core/logging.h"
+#include "../constraints/constraint_groups.h"
 
 namespace fem {
 namespace loadcase {
 
-void LoadCase::report_constraint_groups(const model::Model::ConstraintGroups& groups) const {
-    using fem::logging::info;
+/******************************************************************************
+ * @copydoc LoadCase::LoadCase
+ ******************************************************************************/
+LoadCase::LoadCase(ID case_id, reader::Writer* writer_in, model::Model* model_in)
+    : id(case_id)
+    , writer(writer_in)
+    , model(model_in) {}
+
+/******************************************************************************
+ * @copydoc LoadCase::report_constraint_groups
+ ******************************************************************************/
+void LoadCase::report_constraint_groups(const model::ConstraintGroups& groups) const {
     if (!report_constraints) {
         return;
     }
 
-    const constraint::EquationFormatOptions fmt{};
-
-    const struct {
-        const char* name;
-        const constraint::Equations& eqs;
-    } categories[] = {
-        {"Supports",   groups.supports},
-        {"Connectors", groups.connectors},
-        {"Couplings",  groups.couplings},
-        {"Ties",       groups.ties},
-        {"Other",      groups.others},
-    };
-
-    info(true, "Constraint overview for loadcase ", m_id, " (", m_model->element_dims, "D elements)");
-    logging::up();
-    for (const auto& category : categories) {
-        info(true, category.name, " (", category.eqs.size(), ")");
-        if (!category.eqs.empty()) {
-            logging::up();
-            for (const auto& line : constraint::format_equations(category.eqs, fmt)) {
-                info(true, "    ", line);
-            }
-            logging::down();
-        }
-    }
-    logging::down();
+    groups.report(id, model->element_dims);
 }
 
 } // namespace loadcase

@@ -1,21 +1,21 @@
-#include "quadrature.h"
+/******************************************************************************
+ * @file quadrature_iso_hex.cpp
+ * @brief Registers quadrature schemes for the isoparametric hexahedron.
+ *
+ * @see src/math/quadrature.h
+ ******************************************************************************/
 
-#include <cmath>
+#include "quadrature.h"
 
 namespace fem {
 namespace quadrature {
 
-using namespace fem::math;
+namespace {
+constexpr std::array<Point, 1> hex_linear{{Point(0.0, 0.0, 0.0, 8.0)}};
 
-// ORDER_LINEAR or ORDER_CONSTANT
-constexpr Point domain_iso_hex_points_1[] = {
-    Point(0.0, 0.0, 0.0, 8.0)
-};
+constexpr Precision one_over_sqrt_3 = csqrt(1.0 / 3.0);
 
-constexpr Precision one_over_sqrt_3 = 1 / csqrt(3.0);
-
-// ORDER_QUADRATIC or ORDER_CUBIC
-constexpr Point domain_iso_hex_points_8[] = {
+constexpr std::array<Point, 8> hex_quadratic{{
     Point( one_over_sqrt_3,  one_over_sqrt_3,  one_over_sqrt_3, 1.0),
     Point( one_over_sqrt_3,  one_over_sqrt_3, -one_over_sqrt_3, 1.0),
     Point( one_over_sqrt_3, -one_over_sqrt_3,  one_over_sqrt_3, 1.0),
@@ -23,63 +23,50 @@ constexpr Point domain_iso_hex_points_8[] = {
     Point(-one_over_sqrt_3,  one_over_sqrt_3,  one_over_sqrt_3, 1.0),
     Point(-one_over_sqrt_3,  one_over_sqrt_3, -one_over_sqrt_3, 1.0),
     Point(-one_over_sqrt_3, -one_over_sqrt_3,  one_over_sqrt_3, 1.0),
-    Point(-one_over_sqrt_3, -one_over_sqrt_3, -one_over_sqrt_3, 1.0)
-};
+    Point(-one_over_sqrt_3, -one_over_sqrt_3, -one_over_sqrt_3, 1.0),
+}};
 
-// ORDER_QUARTIC or ORDER_QUINTIC
-constexpr Precision coords_hex[] = { -csqrt(3.0 / 5.0), 0.0, csqrt(3.0 / 5.0) };
-constexpr Precision weights_hex[] = { 5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0 };
-constexpr Point domain_iso_hex_points_27[] = {
-    // x = coords_hex[0]
-    Point(coords_hex[0], coords_hex[0], coords_hex[0], weights_hex[0] * weights_hex[0] * weights_hex[0]),
-    Point(coords_hex[0], coords_hex[0], coords_hex[1], weights_hex[0] * weights_hex[0] * weights_hex[1]),
-    Point(coords_hex[0], coords_hex[0], coords_hex[2], weights_hex[0] * weights_hex[0] * weights_hex[2]),
+constexpr std::array<Precision, 3> hex_coords{ -csqrt(3.0 / 5.0), 0.0, csqrt(3.0 / 5.0) };
+constexpr std::array<Precision, 3> hex_weights{ 5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0 };
 
-    Point(coords_hex[0], coords_hex[1], coords_hex[0], weights_hex[0] * weights_hex[1] * weights_hex[0]),
-    Point(coords_hex[0], coords_hex[1], coords_hex[1], weights_hex[0] * weights_hex[1] * weights_hex[1]),
-    Point(coords_hex[0], coords_hex[1], coords_hex[2], weights_hex[0] * weights_hex[1] * weights_hex[2]),
+constexpr std::array<Point, 27> hex_quartic{{
+    Point(hex_coords[0], hex_coords[0], hex_coords[0], hex_weights[0] * hex_weights[0] * hex_weights[0]),
+    Point(hex_coords[0], hex_coords[0], hex_coords[1], hex_weights[0] * hex_weights[0] * hex_weights[1]),
+    Point(hex_coords[0], hex_coords[0], hex_coords[2], hex_weights[0] * hex_weights[0] * hex_weights[2]),
+    Point(hex_coords[0], hex_coords[1], hex_coords[0], hex_weights[0] * hex_weights[1] * hex_weights[0]),
+    Point(hex_coords[0], hex_coords[1], hex_coords[1], hex_weights[0] * hex_weights[1] * hex_weights[1]),
+    Point(hex_coords[0], hex_coords[1], hex_coords[2], hex_weights[0] * hex_weights[1] * hex_weights[2]),
+    Point(hex_coords[0], hex_coords[2], hex_coords[0], hex_weights[0] * hex_weights[2] * hex_weights[0]),
+    Point(hex_coords[0], hex_coords[2], hex_coords[1], hex_weights[0] * hex_weights[2] * hex_weights[1]),
+    Point(hex_coords[0], hex_coords[2], hex_coords[2], hex_weights[0] * hex_weights[2] * hex_weights[2]),
+    Point(hex_coords[1], hex_coords[0], hex_coords[0], hex_weights[1] * hex_weights[0] * hex_weights[0]),
+    Point(hex_coords[1], hex_coords[0], hex_coords[1], hex_weights[1] * hex_weights[0] * hex_weights[1]),
+    Point(hex_coords[1], hex_coords[0], hex_coords[2], hex_weights[1] * hex_weights[0] * hex_weights[2]),
+    Point(hex_coords[1], hex_coords[1], hex_coords[0], hex_weights[1] * hex_weights[1] * hex_weights[0]),
+    Point(hex_coords[1], hex_coords[1], hex_coords[1], hex_weights[1] * hex_weights[1] * hex_weights[1]),
+    Point(hex_coords[1], hex_coords[1], hex_coords[2], hex_weights[1] * hex_weights[1] * hex_weights[2]),
+    Point(hex_coords[1], hex_coords[2], hex_coords[0], hex_weights[1] * hex_weights[2] * hex_weights[0]),
+    Point(hex_coords[1], hex_coords[2], hex_coords[1], hex_weights[1] * hex_weights[2] * hex_weights[1]),
+    Point(hex_coords[1], hex_coords[2], hex_coords[2], hex_weights[1] * hex_weights[2] * hex_weights[2]),
+    Point(hex_coords[2], hex_coords[0], hex_coords[0], hex_weights[2] * hex_weights[0] * hex_weights[0]),
+    Point(hex_coords[2], hex_coords[0], hex_coords[1], hex_weights[2] * hex_weights[0] * hex_weights[1]),
+    Point(hex_coords[2], hex_coords[0], hex_coords[2], hex_weights[2] * hex_weights[0] * hex_weights[2]),
+    Point(hex_coords[2], hex_coords[1], hex_coords[0], hex_weights[2] * hex_weights[1] * hex_weights[0]),
+    Point(hex_coords[2], hex_coords[1], hex_coords[1], hex_weights[2] * hex_weights[1] * hex_weights[1]),
+    Point(hex_coords[2], hex_coords[1], hex_coords[2], hex_weights[2] * hex_weights[1] * hex_weights[2]),
+    Point(hex_coords[2], hex_coords[2], hex_coords[0], hex_weights[2] * hex_weights[2] * hex_weights[0]),
+    Point(hex_coords[2], hex_coords[2], hex_coords[1], hex_weights[2] * hex_weights[2] * hex_weights[1]),
+    Point(hex_coords[2], hex_coords[2], hex_coords[2], hex_weights[2] * hex_weights[2] * hex_weights[2]),
+}};
+} // namespace
 
-    Point(coords_hex[0], coords_hex[2], coords_hex[0], weights_hex[0] * weights_hex[2] * weights_hex[0]),
-    Point(coords_hex[0], coords_hex[2], coords_hex[1], weights_hex[0] * weights_hex[2] * weights_hex[1]),
-    Point(coords_hex[0], coords_hex[2], coords_hex[2], weights_hex[0] * weights_hex[2] * weights_hex[2]),
-
-    // x = coords_hex[1]
-    Point(coords_hex[1], coords_hex[0], coords_hex[0], weights_hex[1] * weights_hex[0] * weights_hex[0]),
-    Point(coords_hex[1], coords_hex[0], coords_hex[1], weights_hex[1] * weights_hex[0] * weights_hex[1]),
-    Point(coords_hex[1], coords_hex[0], coords_hex[2], weights_hex[1] * weights_hex[0] * weights_hex[2]),
-
-    Point(coords_hex[1], coords_hex[1], coords_hex[0], weights_hex[1] * weights_hex[1] * weights_hex[0]),
-    Point(coords_hex[1], coords_hex[1], coords_hex[1], weights_hex[1] * weights_hex[1] * weights_hex[1]),
-    Point(coords_hex[1], coords_hex[1], coords_hex[2], weights_hex[1] * weights_hex[1] * weights_hex[2]),
-
-    Point(coords_hex[1], coords_hex[2], coords_hex[0], weights_hex[1] * weights_hex[2] * weights_hex[0]),
-    Point(coords_hex[1], coords_hex[2], coords_hex[1], weights_hex[1] * weights_hex[2] * weights_hex[1]),
-    Point(coords_hex[1], coords_hex[2], coords_hex[2], weights_hex[1] * weights_hex[2] * weights_hex[2]),
-
-    // x = coords_hex[2]
-    Point(coords_hex[2], coords_hex[0], coords_hex[0], weights_hex[2] * weights_hex[0] * weights_hex[0]),
-    Point(coords_hex[2], coords_hex[0], coords_hex[1], weights_hex[2] * weights_hex[0] * weights_hex[1]),
-    Point(coords_hex[2], coords_hex[0], coords_hex[2], weights_hex[2] * weights_hex[0] * weights_hex[2]),
-
-    Point(coords_hex[2], coords_hex[1], coords_hex[0], weights_hex[2] * weights_hex[1] * weights_hex[0]),
-    Point(coords_hex[2], coords_hex[1], coords_hex[1], weights_hex[2] * weights_hex[1] * weights_hex[1]),
-    Point(coords_hex[2], coords_hex[1], coords_hex[2], weights_hex[2] * weights_hex[1] * weights_hex[2]),
-
-    Point(coords_hex[2], coords_hex[2], coords_hex[0], weights_hex[2] * weights_hex[2] * weights_hex[0]),
-    Point(coords_hex[2], coords_hex[2], coords_hex[1], weights_hex[2] * weights_hex[2] * weights_hex[1]),
-    Point(coords_hex[2], coords_hex[2], coords_hex[2], weights_hex[2] * weights_hex[2] * weights_hex[2])
-};
-
-
-// Register the schemes
-REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_CONSTANT  , domain_iso_hex_points_1);
-REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_LINEAR    , domain_iso_hex_points_1);
-
-REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUADRATIC , domain_iso_hex_points_8);
-REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_CUBIC     , domain_iso_hex_points_8);
-
-REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUARTIC   , domain_iso_hex_points_27);
-REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUINTIC   , domain_iso_hex_points_27);
+REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_CONSTANT, hex_linear);
+REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_LINEAR, hex_linear);
+REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUADRATIC, hex_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_CUBIC, hex_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUARTIC, hex_quartic);
+REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUINTIC, hex_quartic);
 
 } // namespace quadrature
 } // namespace fem
+

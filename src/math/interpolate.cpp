@@ -1,26 +1,28 @@
-//
-// Created by Luecx on 30.09.2023.
-//
-
+/******************************************************************************
+ * @file interpolate.cpp
+ * @brief Implements polynomial interpolation for scattered nodal data.
+ *
+ * @see src/math/interpolate.h
+ ******************************************************************************/
 
 #include "interpolate.h"
-#include <iostream>
 
-#include <Eigen/QR>
 #include <Eigen/Eigen>
+#include <Eigen/QR>
+
+#include <cmath>
 
 namespace fem {
 namespace math {
 namespace interpolate {
 
-/**
- * \brief Determine the number of terms for a given interpolation function.
- *
- * \tparam F The interpolation function.
- * \return Number of terms for interpolation function F.
- */
+namespace {
+
+/******************************************************************************
+ * @brief Returns the number of coefficients required for interpolation order `F`.
+ ******************************************************************************/
 template<InterpolationFunction F>
-constexpr inline int n_terms() {
+constexpr int term_count() {
     if constexpr (F == CONSTANT) {
         return 1;
     } else if constexpr (F == LINEAR) {
@@ -34,273 +36,258 @@ constexpr inline int n_terms() {
     } else if constexpr (F == CUBIC) {
         return 20;
     } else {
-        return 0;    // Default case, should not be reached.
+        return 0;
     }
 }
 
+/******************************************************************************
+ * @brief Demotes the interpolation order to the next simpler option.
+ ******************************************************************************/
 template<InterpolationFunction F>
-constexpr InterpolationFunction get_next_lower() {
-    switch (F) {
-        case CUBIC: return BILINQUAD;
-        case BILINQUAD: return QUADRATIC;
-        case QUADRATIC: return BILINEAR;
-        case BILINEAR: return LINEAR;
-        case LINEAR: return CONSTANT;
-        case CONSTANT: return CONSTANT; // or throw an exception, etc.
-        default: return CONSTANT;
+constexpr InterpolationFunction demote_order() {
+    if constexpr (F == CUBIC) {
+        return BILINQUAD;
+    } else if constexpr (F == BILINQUAD) {
+        return QUADRATIC;
+    } else if constexpr (F == QUADRATIC) {
+        return BILINEAR;
+    } else if constexpr (F == BILINEAR) {
+        return LINEAR;
+    } else if constexpr (F == LINEAR) {
+        return CONSTANT;
+    } else {
+        return CONSTANT;
     }
 }
 
-/**
- * \brief Evaluates an interpolation polynomial at a given point.
- *
- * \tparam F The interpolation function.
- * \param[in] coeff The coefficients of the interpolation polynomial.
- * \param[in] center The point where the polynomial is to be evaluated.
- * \return Resultant value after interpolation evaluation.
- *
- * \example
- * DynamicVector coefficients = {2, 3, 4};
- * Vec3 point = {1, 2, 3};
- * Precision result = evaluate<LINEAR>(coefficients, point);
- */
+/******************************************************************************
+ * @brief Evaluates the polynomial defined by `coefficients` at `position`.
+ ******************************************************************************/
 template<InterpolationFunction F>
-inline Precision evaluate(const DynamicVector& coeff, const Vec3& center) {
-    Precision result = 0;
-
-    int       idx    = 0;
+Precision evaluate(const DynamicVector& coefficients, const Vec3& position) {
+    Precision result = 0.0;
+    int idx = 0;
 
     if constexpr (F >= CONSTANT) {
-        result += coeff(idx++);
+        result += coefficients(idx++);
     }
     if constexpr (F >= LINEAR) {
-        result += coeff(idx++) * center(0);
-        result += coeff(idx++) * center(1);
-        result += coeff(idx++) * center(2);
+        result += coefficients(idx++) * position(0);
+        result += coefficients(idx++) * position(1);
+        result += coefficients(idx++) * position(2);
     }
     if constexpr (F >= BILINEAR) {
-        result += coeff(idx++) * center(1) * center(2);
-        result += coeff(idx++) * center(0) * center(2);
-        result += coeff(idx++) * center(0) * center(1);
+        result += coefficients(idx++) * position(1) * position(2);
+        result += coefficients(idx++) * position(0) * position(2);
+        result += coefficients(idx++) * position(0) * position(1);
     }
     if constexpr (F >= QUADRATIC) {
-        result += coeff(idx++) * center(0) * center(0);
-        result += coeff(idx++) * center(1) * center(1);
-        result += coeff(idx++) * center(2) * center(2);
+        result += coefficients(idx++) * position(0) * position(0);
+        result += coefficients(idx++) * position(1) * position(1);
+        result += coefficients(idx++) * position(2) * position(2);
     }
     if constexpr (F >= BILINQUAD) {
-        result += coeff(idx++) * center(0) * center(1) * center(1);
-        result += coeff(idx++) * center(0) * center(2) * center(2);
-
-        result += coeff(idx++) * center(1) * center(0) * center(0);
-        result += coeff(idx++) * center(1) * center(2) * center(2);
-
-        result += coeff(idx++) * center(2) * center(0) * center(0);
-        result += coeff(idx++) * center(2) * center(1) * center(1);
-
-        result += coeff(idx++) * center(0) * center(1) * center(2);
+        result += coefficients(idx++) * position(0) * position(1) * position(1);
+        result += coefficients(idx++) * position(0) * position(2) * position(2);
+        result += coefficients(idx++) * position(1) * position(0) * position(0);
+        result += coefficients(idx++) * position(1) * position(2) * position(2);
+        result += coefficients(idx++) * position(2) * position(0) * position(0);
+        result += coefficients(idx++) * position(2) * position(1) * position(1);
+        result += coefficients(idx++) * position(0) * position(1) * position(2);
     }
     if constexpr (F >= CUBIC) {
-        result += coeff(idx++) * center(0) * center(0) * center(0);
-        result += coeff(idx++) * center(1) * center(1) * center(1);
-        result += coeff(idx++) * center(2) * center(2) * center(2);
+        result += coefficients(idx++) * position(0) * position(0) * position(0);
+        result += coefficients(idx++) * position(1) * position(1) * position(1);
+        result += coefficients(idx++) * position(2) * position(2) * position(2);
     }
 
     return result;
 }
 
-
-/**
- * \brief Computes the predicted values for given coefficients and interpolation nodes.
- *
- * \tparam F The interpolation function.
- * \param[in] coe The coefficients matrix.
- * \param[in] xyz The interpolation nodes.
- * \return Matrix containing the predicted values.
- */
+/******************************************************************************
+ * @brief Computes predicted values for all nodes using the fitted coefficients.
+ ******************************************************************************/
 template<InterpolationFunction F>
-DynamicMatrix compute_predicted_values(const DynamicMatrix& coe, const NodeData& xyz) {
-    DynamicMatrix predicted_values(xyz.rows(), coe.cols());
-    for (int i = 0; i < coe.cols(); i++) {
-        for (int j = 0; j < xyz.rows(); j++) {
-            predicted_values(j, i) = evaluate<F>(coe.col(i), xyz.row(j));
+DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const NodeData& xyz) {
+    DynamicMatrix predicted(xyz.rows(), coefficients.cols());
+    for (Index column = 0; column < coefficients.cols(); ++column) {
+        for (Index row = 0; row < xyz.rows(); ++row) {
+            predicted(row, column) = evaluate<F>(coefficients.col(column), xyz.row(row));
         }
     }
-    return predicted_values;
+    return predicted;
 }
 
-/**
- * \brief Computes the coefficient of determination (R^2) for predicted vs actual values.
- *
- * \param[in] predicted_values The predicted values from interpolation.
- * \param[in] values The actual values.
- * \return Vector of R^2 values for each column of input matrices.
- */
-DynamicVector compute_r2(const DynamicMatrix& predicted_values, const NodeData& values) {
-    DynamicVector r2_values(values.cols());
-    for (int i = 0; i < values.cols(); i++) {
-        Precision mean   = values.col(i).mean();
-        Precision ss_tot = (values.col(i).array() - mean).square().sum();
-        Precision ss_res = (values.col(i).array() - predicted_values.col(i).array()).square().sum();
-
-        // Check for very small variance
-        if (ss_tot < 1e-10) {
-            r2_values(i) = 1.0;    // If variance is negligible, assign R^2 to be 1.
-        } else {
-            r2_values(i) = 1 - ss_res / ss_tot;
-        }
+/******************************************************************************
+ * @brief Computes column-wise coefficients of determination (R²).
+ ******************************************************************************/
+DynamicVector compute_r2(const DynamicMatrix& predicted, const NodeData& values) {
+    DynamicVector r2(values.cols());
+    for (Index column = 0; column < values.cols(); ++column) {
+        const Precision mean = values.col(column).mean();
+        const Precision ss_tot = (values.col(column).array() - mean).square().sum();
+        const Precision ss_res = (values.col(column).array() - predicted.col(column).array()).square().sum();
+        r2(column) = ss_tot < 1e-10 ? Precision(1) : Precision(1) - ss_res / ss_tot;
     }
-    return r2_values;
+    return r2;
 }
 
-template<InterpolationFunction F>
-DynamicMatrix
-    interpolate(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values) {
+} // namespace
 
+/******************************************************************************
+ * @brief Template implementation of the polynomial interpolation routine.
+ ******************************************************************************/
+template<InterpolationFunction F>
+DynamicMatrix interpolate(const NodeData& xyz,
+                          const NodeData& values,
+                          const Vec3& center,
+                          DynamicVector* r2_values) {
     NodeData adjusted_xyz = xyz;
-    // Subtract center from each row of xyz
-    for (int i = 0; i < xyz.rows(); ++i) {
-        for (int j = 0; j < 3; ++j) {
-            adjusted_xyz(i, j) -= center(j);
-        }
+    for (Index row = 0; row < adjusted_xyz.rows(); ++row) {
+        adjusted_xyz.row(row) -= center.transpose();
     }
 
-    // Subtract center from center (which makes it a zero vector)
-    Vec3 adjusted_center = center;
-    for (int j = 0; j < 3; ++j) {
-        adjusted_center(j) -= center(j);
-    }
-    
-    SemiStaticMatrix<n_terms<F>()> lhs {adjusted_xyz.rows(), n_terms<F>()};
-    for (int r = 0; r < adjusted_xyz.rows(); r++) {
+    Vec3 adjusted_center = Vec3::Zero();
+
+    SemiStaticMatrix<term_count<F>()> lhs{adjusted_xyz.rows(), term_count<F>()};
+    for (Index row = 0; row < adjusted_xyz.rows(); ++row) {
         if constexpr (F >= CONSTANT) {
-            lhs(r, 0) = 1;
+            lhs(row, 0) = 1.0;
         }
         if constexpr (F >= LINEAR) {
-            lhs(r, 1) = adjusted_xyz(r, 0);
-            lhs(r, 2) = adjusted_xyz(r, 1);
-            lhs(r, 3) = adjusted_xyz(r, 2);
+            lhs(row, 1) = adjusted_xyz(row, 0);
+            lhs(row, 2) = adjusted_xyz(row, 1);
+            lhs(row, 3) = adjusted_xyz(row, 2);
         }
         if constexpr (F >= BILINEAR) {
-            lhs(r, 4) = adjusted_xyz(r, 1) * adjusted_xyz(r, 2);
-            lhs(r, 5) = adjusted_xyz(r, 0) * adjusted_xyz(r, 2);
-            lhs(r, 6) = adjusted_xyz(r, 0) * adjusted_xyz(r, 1);
+            lhs(row, 4) = adjusted_xyz(row, 1) * adjusted_xyz(row, 2);
+            lhs(row, 5) = adjusted_xyz(row, 0) * adjusted_xyz(row, 2);
+            lhs(row, 6) = adjusted_xyz(row, 0) * adjusted_xyz(row, 1);
         }
         if constexpr (F >= QUADRATIC) {
-            lhs(r, 7) = adjusted_xyz(r, 0) * adjusted_xyz(r, 0);
-            lhs(r, 8) = adjusted_xyz(r, 1) * adjusted_xyz(r, 1);
-            lhs(r, 9) = adjusted_xyz(r, 2) * adjusted_xyz(r, 2);
+            lhs(row, 7) = adjusted_xyz(row, 0) * adjusted_xyz(row, 0);
+            lhs(row, 8) = adjusted_xyz(row, 1) * adjusted_xyz(row, 1);
+            lhs(row, 9) = adjusted_xyz(row, 2) * adjusted_xyz(row, 2);
         }
         if constexpr (F >= BILINQUAD) {
-            lhs(r, 10) = adjusted_xyz(r, 0) * adjusted_xyz(r, 1) * adjusted_xyz(r, 1);
-            lhs(r, 11) = adjusted_xyz(r, 0) * adjusted_xyz(r, 2) * adjusted_xyz(r, 2);
-
-            lhs(r, 12) = adjusted_xyz(r, 1) * adjusted_xyz(r, 0) * adjusted_xyz(r, 0);
-            lhs(r, 13) = adjusted_xyz(r, 1) * adjusted_xyz(r, 2) * adjusted_xyz(r, 2);
-
-            lhs(r, 14) = adjusted_xyz(r, 2) * adjusted_xyz(r, 0) * adjusted_xyz(r, 0);
-            lhs(r, 15) = adjusted_xyz(r, 2) * adjusted_xyz(r, 1) * adjusted_xyz(r, 1);
-
-            lhs(r, 16) = adjusted_xyz(r, 0) * adjusted_xyz(r, 1) * adjusted_xyz(r, 2);
+            lhs(row, 10) = adjusted_xyz(row, 0) * adjusted_xyz(row, 1) * adjusted_xyz(row, 1);
+            lhs(row, 11) = adjusted_xyz(row, 0) * adjusted_xyz(row, 2) * adjusted_xyz(row, 2);
+            lhs(row, 12) = adjusted_xyz(row, 1) * adjusted_xyz(row, 0) * adjusted_xyz(row, 0);
+            lhs(row, 13) = adjusted_xyz(row, 1) * adjusted_xyz(row, 2) * adjusted_xyz(row, 2);
+            lhs(row, 14) = adjusted_xyz(row, 2) * adjusted_xyz(row, 0) * adjusted_xyz(row, 0);
+            lhs(row, 15) = adjusted_xyz(row, 2) * adjusted_xyz(row, 1) * adjusted_xyz(row, 1);
+            lhs(row, 16) = adjusted_xyz(row, 0) * adjusted_xyz(row, 1) * adjusted_xyz(row, 2);
         }
         if constexpr (F >= CUBIC) {
-            lhs(r, 17) = adjusted_xyz(r, 0) * adjusted_xyz(r, 0) * adjusted_xyz(r, 0);
-            lhs(r, 18) = adjusted_xyz(r, 1) * adjusted_xyz(r, 1) * adjusted_xyz(r, 1);
-            lhs(r, 19) = adjusted_xyz(r, 2) * adjusted_xyz(r, 2) * adjusted_xyz(r, 2);
+            lhs(row, 17) = adjusted_xyz(row, 0) * adjusted_xyz(row, 0) * adjusted_xyz(row, 0);
+            lhs(row, 18) = adjusted_xyz(row, 1) * adjusted_xyz(row, 1) * adjusted_xyz(row, 1);
+            lhs(row, 19) = adjusted_xyz(row, 2) * adjusted_xyz(row, 2) * adjusted_xyz(row, 2);
         }
     }
-    DynamicMatrix results(1, values.cols());
 
-    DynamicMatrix ATA = lhs.transpose() * lhs;
-    Precision determinant = ATA.determinant();
+    DynamicMatrix ata = lhs.transpose() * lhs;
+    const Precision determinant = ata.determinant();
 
     if (determinant < 1e-10 || determinant > 1e20) {
-        // If the determinant is too small, we cannot solve the system.
-        // In this case, we will try to use a simpler interpolation method.
         if (r2_values) {
             *r2_values = DynamicVector::Zero(values.cols());
         }
-        return interpolate<get_next_lower<F>()>(xyz, values, center, r2_values);
+        return interpolate<demote_order<F>()>(xyz, values, center, r2_values);
     }
 
-    DynamicMatrix ATB = lhs.transpose() * values;
-
-    DynamicMatrix coe {ATA.rows(), ATB.cols()};
-    for (int i = 0; i < values.cols(); i++) {
-        coe.col(i) = ATA.fullPivHouseholderQr().solve(ATB.col(i));
+    DynamicMatrix atb = lhs.transpose() * values;
+    DynamicMatrix coefficients{ata.rows(), atb.cols()};
+    auto solver = ata.fullPivHouseholderQr();
+    for (Index column = 0; column < values.cols(); ++column) {
+        coefficients.col(column) = solver.solve(atb.col(column));
     }
 
-    for (int i = 0; i < values.cols(); i++) {
-        results(0, i) = evaluate<F>(coe.col(i), adjusted_center);
+    DynamicMatrix results(1, values.cols());
+    for (Index column = 0; column < values.cols(); ++column) {
+        results(0, column) = evaluate<F>(coefficients.col(column), adjusted_center);
     }
 
-    // if any nan or inf, redo with lower order
-    for (int i = 0; i < results.cols(); i++) {
-        for (int j = 0; j < results.rows(); j++) {
-            if (std::isnan(results(j, i)) || std::isinf(results(j, i))) {
-                return interpolate<get_next_lower<F>()>(xyz, values, center, r2_values);
+    for (Index column = 0; column < results.cols(); ++column) {
+        for (Index row = 0; row < results.rows(); ++row) {
+            if (std::isnan(results(row, column)) || std::isinf(results(row, column))) {
+                return interpolate<demote_order<F>()>(xyz, values, center, r2_values);
             }
         }
     }
 
     if (r2_values) {
-        DynamicMatrix predicted_vals = compute_predicted_values<F>(coe, adjusted_xyz);
-        *r2_values                   = compute_r2(predicted_vals, values);
+        const DynamicMatrix predicted = compute_predicted_values<F>(coefficients, adjusted_xyz);
+        *r2_values = compute_r2(predicted, values);
     }
 
     return results;
 }
 
-template DynamicMatrix interpolate<CONSTANT> (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<LINEAR>   (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<BILINEAR> (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<QUADRATIC>(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<BILINQUAD>(const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
-template DynamicMatrix interpolate<CUBIC>    (const NodeData& xyz, const NodeData& values, const Vec3& center, DynamicVector* r2_values);
+#define INSTANTIATE(FUNC) \
+    template DynamicMatrix interpolate<FUNC>(const NodeData&, const NodeData&, const Vec3&, DynamicVector*);
 
-DynamicMatrix interpolate(const NodeData&        xyz,
-                          const NodeData&        values,
+INSTANTIATE(CONSTANT)
+INSTANTIATE(LINEAR)
+INSTANTIATE(BILINEAR)
+INSTANTIATE(QUADRATIC)
+INSTANTIATE(BILINQUAD)
+INSTANTIATE(CUBIC)
+
+#undef INSTANTIATE
+
+DynamicMatrix interpolate(const NodeData& xyz,
+                          const NodeData& values,
                           const Vec3& center,
-                          DynamicVector*         r2_values,
-                          float                  accuracy_factor,
-                          InterpolationFunction  max_accuracy) {
-    float adjusted_rows = xyz.rows() * accuracy_factor;
+                          DynamicVector* r2_values,
+                          float accuracy_factor,
+                          InterpolationFunction max_accuracy) {
+    const float weighted_rows = static_cast<float>(xyz.rows()) * accuracy_factor;
 
-    if (adjusted_rows < n_terms<CONSTANT>() || max_accuracy == InterpolationFunction::CONSTANT) {
+    if (weighted_rows < term_count<CONSTANT>() || max_accuracy == InterpolationFunction::CONSTANT) {
         return interpolate<CONSTANT>(xyz, values, center, r2_values);
-    } else if (adjusted_rows < n_terms<LINEAR>() || max_accuracy == InterpolationFunction::LINEAR) {
-        return interpolate<LINEAR>(xyz, values, center, r2_values);
-    } else if (adjusted_rows < n_terms<BILINEAR>() || max_accuracy == InterpolationFunction::BILINEAR) {
-        return interpolate<BILINEAR>(xyz, values, center, r2_values);
-    } else if (adjusted_rows < n_terms<QUADRATIC>() || max_accuracy == InterpolationFunction::QUADRATIC) {
-        return interpolate<QUADRATIC>(xyz, values, center, r2_values);
-    } else if (adjusted_rows < n_terms<BILINQUAD>() || max_accuracy == InterpolationFunction::BILINQUAD) {
-        return interpolate<BILINQUAD>(xyz, values, center, r2_values);
-    } else {
-        return interpolate<CUBIC>(xyz, values, center, r2_values);
     }
+    if (weighted_rows < term_count<LINEAR>() || max_accuracy == InterpolationFunction::LINEAR) {
+        return interpolate<LINEAR>(xyz, values, center, r2_values);
+    }
+    if (weighted_rows < term_count<BILINEAR>() || max_accuracy == InterpolationFunction::BILINEAR) {
+        return interpolate<BILINEAR>(xyz, values, center, r2_values);
+    }
+    if (weighted_rows < term_count<QUADRATIC>() || max_accuracy == InterpolationFunction::QUADRATIC) {
+        return interpolate<QUADRATIC>(xyz, values, center, r2_values);
+    }
+    if (weighted_rows < term_count<BILINQUAD>() || max_accuracy == InterpolationFunction::BILINQUAD) {
+        return interpolate<BILINQUAD>(xyz, values, center, r2_values);
+    }
+    return interpolate<CUBIC>(xyz, values, center, r2_values);
 }
 
-Interpolator::Interpolator(InterpolationFunction method_, float accuracy_)
-    : method(method_), accuracy(accuracy_) {}
-void Interpolator::set_function(InterpolationFunction method_) {
-    method = method_;
+Interpolator::Interpolator(InterpolationFunction method, float accuracy)
+    : m_method(method), m_accuracy(accuracy) {}
+
+void Interpolator::set_function(InterpolationFunction method) {
+    m_method = method;
 }
+
 InterpolationFunction Interpolator::get_function() const {
-    return method;
+    return m_method;
 }
-void Interpolator::set_accuracy(float accuracy_) {
-    accuracy = accuracy_;
+
+void Interpolator::set_accuracy(float accuracy) {
+    m_accuracy = accuracy;
 }
+
 float Interpolator::get_accuracy() const {
-    return accuracy;
+    return m_accuracy;
 }
-DynamicMatrix Interpolator::operator()(const NodeData&        xyz,
-                                       const NodeData&        values,
+
+DynamicMatrix Interpolator::operator()(const NodeData& xyz,
+                                       const NodeData& values,
                                        const Vec3& center,
-                                       DynamicVector*         r2_values) {
-    return interpolate(xyz, values, center, r2_values, accuracy, method);
+                                       DynamicVector* r2_values) {
+    return interpolate(xyz, values, center, r2_values, m_accuracy, m_method);
 }
-}    // namespace interpolate
-}    // namespace math
-}    // namespace fem
+
+} // namespace interpolate
+} // namespace math
+} // namespace fem
+

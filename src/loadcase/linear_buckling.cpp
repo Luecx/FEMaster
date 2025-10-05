@@ -151,18 +151,18 @@ void LinearBuckling::run() {
     logging::info(true, "");
 
     // (0) Sections/materials
-    m_model->assign_sections();
+    model->assign_sections();
 
     // (1) Unconstrained DOF index (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return m_model->build_unconstrained_index_matrix(); },
+        [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 
     // (2) Build constraint equations from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->m_model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
             report_constraint_groups(groups);
             return groups.flatten();
         },
@@ -171,13 +171,13 @@ void LinearBuckling::run() {
 
     // (3) Global load matrix (node x 6) -> keep for reporting if you like
     auto global_load_mat = Timer::measure(
-        [&]() { return m_model->build_load_matrix(loads); },
+        [&]() { return model->build_load_matrix(loads); },
         "building global load matrix"
     );
 
     // (4) Active stiffness K (n x n)
     auto K = Timer::measure(
-        [&]() { return m_model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K"
     );
 
@@ -252,13 +252,13 @@ void LinearBuckling::run() {
             "expanding u to node x DOF for IP stress"
         );
         std::tie(ip_stress, ip_strain_unused) = Timer::measure(
-            [&]() { return m_model->compute_ip_stress_strain(U_mat); },
+            [&]() { return model->compute_ip_stress_strain(U_mat); },
             "computing IP stress/strain for Kg"
         );
     }
 
     auto Kg = Timer::measure(
-        [&]() { return m_model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
+        [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
         "assembling geometric stiffness K_g"
     );
 
@@ -320,15 +320,15 @@ void LinearBuckling::run() {
     print_buckling_summary(modes, eigopt.sigma, k_req);
 
     // (11) Write results
-    m_writer->add_loadcase(m_id);
+    writer->add_loadcase(id);
     {
         DynamicVector lambdas(modes.size());
         for (size_t i = 0; i < modes.size(); ++i) {
             lambdas(i) = modes[i].lambda;
-            m_writer->write_eigen_matrix(modes[i].mode_mat,
+            writer->write_eigen_matrix(modes[i].mode_mat,
                                          "BUCKLING_MODE_" + std::to_string(i + 1));
         }
-        m_writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
+        writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
     }
 
     // After (4) K assembled

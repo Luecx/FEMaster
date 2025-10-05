@@ -110,9 +110,9 @@ NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
 }
 
 
-Model::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
+constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
                                                    const std::vector<std::string>& supp_sets) {
-    ConstraintGroups groups{};
+    constraint::ConstraintGroups groups{};
 
     Index support_idx = 0;
     if (supp_sets.empty() && this->_data->supp_cols.has_all()) {

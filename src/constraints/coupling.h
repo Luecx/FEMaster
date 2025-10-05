@@ -86,7 +86,7 @@ class Coupling {
      * @brief Distribute loads from the master to slaves with static equivalence.
      *
      * Reads the generalized load stored at @p load_matrix for @p master_node
-     * (translations → forces, rotations → moments), removes it (so it is not
+     * (translations -> forces, rotations -> moments), removes it (so it is not
      * applied at the master), and scatters **equivalent nodal forces** to the
      * slave nodes so that:
      * \f[
@@ -103,21 +103,21 @@ class Coupling {
      * alternative (constant + linear traction field reproduction).
      *
      * @param model_data  Provides master/slave coordinates and mesh topology.
-     * @param load_matrix In/out per-node load storage (RHS): the master’s load
+     * @param load_matrix In/out per-node load storage (RHS): the master's load
      *                    is consumed and equivalent slave nodal loads are added.
      *
-     * @pre @p load_matrix contains the master’s intended load (Fx,Fy,Fz,Mx,My,Mz).
+     * @pre @p load_matrix contains the master's intended load (Fx,Fy,Fz,Mx,My,Mz).
      * @pre Slave node set derivable from @c slave_nodes or @c slave_surfaces.
      * @post @p load_matrix[master_node] is cleared (or reduced by what was
      *       redistributed); slave nodes receive the distributed forces.
      *
-     * @warning If slave geometry is rank-deficient (e.g., all slaves on the
+     * @warning If slave geometry is rank-deficient (for example, all slaves on the
      *          master point), some moments cannot be reproduced; implementation
      *          should detect this and either damp/invert in the attainable
      *          subspace or issue a warning.
      * @note This method **does not** add constraints; it only assembles the RHS.
-     * @note Use this also when you conceptually “apply a load to a reference
-     *       point” but want the structure to carry it through a patch of nodes.
+     * @note Use this also when you conceptually "apply a load to a reference
+     *       point" but want the structure to carry it through a patch of nodes.
      */
     void apply_loads(model::ModelData& model_data, NodeData& load_matrix);
 

@@ -1,9 +1,16 @@
-//
-// Created by f_eggers on 11.11.2024.
-//
+/******************************************************************************
+ * @file model_data.h
+ * @brief Declares the container that stores all FEM model input data.
+ *
+ * `ModelData` hosts elements, surfaces, materials, sections, fields, and the
+ * various registries needed to assemble global matrices. It is shared across
+ * higher-level model utilities and load-case builders.
+ *
+ * @see src/model/model_data.cpp
+ * @see src/model/model.h
+ ******************************************************************************/
 
-#ifndef MODEL_DATA_H
-#define MODEL_DATA_H
+#pragma once
 
 #include "../bc/load.h"
 #include "../bc/load_collector.h"
@@ -13,6 +20,8 @@
 #include "../constraints/coupling.h"
 #include "../constraints/equation.h"
 #include "../constraints/tie.h"
+#include "../material/material.h"
+#include "../cos/coordinate_system.h"
 #include "../core/types_eig.h"
 #include "../data/dict.h"
 #include "../data/elem_data_dict.h"
@@ -23,90 +32,103 @@
 #include "../section/profile.h"
 #include "../section/section.h"
 
-namespace fem::model {
+#include <memory>
+#include <vector>
 
+namespace fem {
+namespace model {
+
+/******************************************************************************
+ * @struct ModelData
+ * @brief Shared repository for model topology, fields, materials, and loads.
+ ******************************************************************************/
 struct ModelData {
-
-    // constants
+    // Capacity information -----------------------------------------------------
     ID max_nodes;
     ID max_elems;
     ID max_surfaces;
 
-    // geometric entities
+    // Geometric entities -------------------------------------------------------
     std::vector<ElementPtr> elements;
     std::vector<SurfacePtr> surfaces;
 
-    // sections with their respective data
+    // Sections and profiles ----------------------------------------------------
     std::vector<Section::Ptr> sections;
     Dict<Profile> profiles;
 
-    // data for nodes, elements. Only one allowed per field
-    // other data is stored in sets
+    // Core data tables ---------------------------------------------------------
     NodeDataDict node_data;
     ElemDataDict elem_data;
 
-    // field data
+    // Field dictionaries -------------------------------------------------------
     NodeFieldDict node_fields;
     ElemFieldDict elem_fields;
 
-    // regions
-    Sets<NodeRegion>     node_sets    {SET_NODE_ALL};
-    Sets<ElementRegion>  elem_sets    {SET_ELEM_ALL};
-    Sets<SurfaceRegion>  surface_sets {SET_SURF_ALL};
+    // Region registries --------------------------------------------------------
+    Sets<NodeRegion> node_sets{SET_NODE_ALL};
+    Sets<ElementRegion> elem_sets{SET_ELEM_ALL};
+    Sets<SurfaceRegion> surface_sets{SET_SURF_ALL};
 
-    // other things which are named
+    // Named resources ----------------------------------------------------------
     Dict<material::Material> materials;
     Dict<cos::CoordinateSystem> coordinate_systems;
 
-    // constraints
-    std::vector<constraint::Connector>  connectors {};
-    std::vector<constraint::Coupling>   couplings {};
-    std::vector<constraint::Tie>        ties {};
-    std::vector<constraint::Equation>   equations {};
+    // Constraints --------------------------------------------------------------
+    std::vector<constraint::Connector> connectors{};
+    std::vector<constraint::Coupling> couplings{};
+    std::vector<constraint::Tie> ties{};
+    std::vector<constraint::Equation> equations{};
 
-    // mechanical loads and supports
-    Sets<SupportCollector> supp_cols{};
-    Sets<LoadCollector>    load_cols{};
-    // Dict<NodeData>  load_cols{};
+    // Load and support collectors ---------------------------------------------
+    Sets<bc::SupportCollector> supp_cols{};
+    Sets<bc::LoadCollector> load_cols{};
 
-    //
-    // Constructor
-    //
+    /******************************************************************************
+     * @brief Constructs the data repository with preallocated containers.
+     ******************************************************************************/
     ModelData(ID max_nodes, ID max_elems, ID max_surfaces)
         : max_nodes(max_nodes),
           max_elems(max_elems),
           max_surfaces(max_surfaces),
-            node_data(max_nodes),
-            elem_data(max_elems){
+          node_data(max_nodes),
+          elem_data(max_elems) {
         elements.resize(max_elems);
         surfaces.resize(max_surfaces);
     }
 
-    // managing of data for nodes and elements (not for fields)
-    void create_data(const NodeDataEntries key, int entries) {
+    // Data management ---------------------------------------------------------
+
+    /// Creates nodal data storage for the specified entry.
+    void create_data(NodeDataEntries key, int entries) {
         node_data.create(key, entries);
     }
-    void create_data(const ElementDataEntries key, int entries) {
+
+    /// Creates element data storage for the specified entry.
+    void create_data(ElementDataEntries key, int entries) {
         elem_data.create(key, entries);
     }
 
-    NodeData& get(const NodeDataEntries key) {
+    /// Returns mutable access to the nodal data block referenced by `key`.
+    NodeData& get(NodeDataEntries key) {
         return node_data.get(key);
     }
-    ElementData& get(const ElementDataEntries key) {
+
+    /// Returns mutable access to the element data block referenced by `key`.
+    ElementData& get(ElementDataEntries key) {
         return elem_data.get(key);
     }
 
-    void remove(const NodeDataEntries key) {
+    /// Removes nodal data for the given entry.
+    void remove(NodeDataEntries key) {
         node_data.remove(key);
     }
-    void remove(const ElementDataEntries key) {
+
+    /// Removes element data for the given entry.
+    void remove(ElementDataEntries key) {
         elem_data.remove(key);
     }
-
 };
 
-}
+} // namespace model
+} // namespace fem
 
-
-#endif //MODEL_DATA_H

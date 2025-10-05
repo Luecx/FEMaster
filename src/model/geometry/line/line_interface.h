@@ -1,23 +1,11 @@
 /******************************************************************************
-* @file line_interface.h
- * @brief Interface definition for isoparametric line elements in finite element models.
+ * @file line_interface.h
+ * @brief Declares the templated interface for isoparametric line geometries.
  *
- * @details This file provides a generic interface for line elements with various node configurations,
- *          such as linear, quadratic, and cubic line elements (2, 3, or 4 nodes). The interface defines
- *          essential functions for computing shape functions, their derivatives, and coordinate transformations
- *          between local and global coordinates. Additionally, utility functions such as length computation
- *          and global-to-local coordinate mapping are provided to facilitate geometric analysis of line elements.
+ * Provides shape functions, derivatives, and utility helpers shared by all
+ * line-based geometry definitions.
  *
- * @tparam N  Number of nodes in the line element (must be 2, 3, or 4).
- * @tparam CR Coordinate range type: MINUS_ONE_TO_ONE (default) or ZERO_TO_ONE.
- *
- * @note This file is part of the finite element model library and is used to build higher-level element
- *       types and analysis routines. Users can create custom line elements by extending this interface.
- *
- * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
- *         All rights reserved.
- * @date Created on 30.09.2024
- *
+ * @see src/model/geometry/line/line2a.h
  ******************************************************************************/
 
 #pragma once
@@ -29,7 +17,8 @@
 #include "../../../math/quadrature.h"
 #include "../../../core/types_eig.h"
 
-namespace fem::model {
+namespace fem {
+namespace model {
 
 /**
  * @enum IsoParametricLineRange
@@ -290,3 +279,6 @@ struct LineInterface {
     }
 };
 }
+} // namespace model
+} // namespace fem
+

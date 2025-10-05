@@ -1,42 +1,37 @@
-#ifndef QUADRATURE_ISO_LINE_B_H
-#define QUADRATURE_ISO_LINE_B_H
+/******************************************************************************
+ * @file quadrature_iso_line_b.cpp
+ * @brief Registers Gauss-Legendre schemes for the shifted isoparametric line.
+ *
+ * @see src/math/quadrature.h
+ ******************************************************************************/
 
 #include "quadrature.h"
-#include "csqrt.h"
+
 namespace fem {
 namespace quadrature {
 
-using namespace fem::math;
+namespace {
+constexpr std::array<Point, 1> line_b_linear{{Point(0.5, 1.0)}};
 
-// ORDER_CONSTANT and ORDER_LINEAR
-constexpr Point domain_iso_line_b_points_1[] = {
-    Point(0.5, 1.0)
-};
-
-// ORDER_QUADRATIC and ORDER_CUBIC
-constexpr Point domain_iso_line_b_points_2[] = {
+constexpr std::array<Point, 2> line_b_quadratic{{
     Point(0.5 - 0.5 / csqrt(3.0), 0.5),
-    Point(0.5 + 0.5 / csqrt(3.0), 0.5)
-};
+    Point(0.5 + 0.5 / csqrt(3.0), 0.5),
+}};
 
-// ORDER_QUARTIC and ORDER_QUINTIC
-constexpr Point domain_iso_line_b_points_3[] = {
+constexpr std::array<Point, 3> line_b_quartic{{
     Point(0.5 - 0.5 * csqrt(3.0 / 5.0), 5.0 / 18.0),
     Point(0.5, 8.0 / 18.0),
-    Point(0.5 + 0.5 * csqrt(3.0 / 5.0), 5.0 / 18.0)
-};
+    Point(0.5 + 0.5 * csqrt(3.0 / 5.0), 5.0 / 18.0),
+}};
+} // namespace
 
-
-REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_CONSTANT, domain_iso_line_b_points_1);
-REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_LINEAR  , domain_iso_line_b_points_1);
-
-REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUADRATIC, domain_iso_line_b_points_2);
-REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_CUBIC    , domain_iso_line_b_points_2);
-
-REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUARTIC  , domain_iso_line_b_points_3);
-REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUINTIC  , domain_iso_line_b_points_3);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_CONSTANT, line_b_linear);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_LINEAR, line_b_linear);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUADRATIC, line_b_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_CUBIC, line_b_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUARTIC, line_b_quartic);
+REGISTER_SCHEME(DOMAIN_ISO_LINE_B, ORDER_QUINTIC, line_b_quartic);
 
 } // namespace quadrature
 } // namespace fem
 
-#endif // QUADRATURE_ISO_LINE_B_H

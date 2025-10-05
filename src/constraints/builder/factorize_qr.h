@@ -1,29 +1,52 @@
 /******************************************************************************
-* @file factorize_qr.h
-* @brief SparseQR factorization wrapper with configurable pivot threshold.
-******************************************************************************/
+ * @file factorize_qr.h
+ * @brief Declares wrappers around Eigen's sparse QR factorisation.
+ *
+ * The wrapper exposes configurable pivot thresholds and returns the factor in a
+ * reusable form without moving the Eigen QR object.
+ *
+ * @see src/constraints/builder/factorize_qr.cpp
+ * @see src/constraints/builder/preprocess.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
+
 #pragma once
+
 #include "../../core/types_eig.h"
 
-#include <Eigen/SparseQR>
 #include <Eigen/OrderingMethods>
+#include <Eigen/SparseQR>
 
-namespace fem { namespace constraint {
+namespace fem {
+namespace constraint {
 
+/******************************************************************************
+ * @struct QRSettings
+ * @brief Configures the sparse QR factorisation.
+ ******************************************************************************/
 struct QRSettings {
-    Precision pivot_rel = 0.0;  ///< 0..0.1 typical; interpreted by SparseQR
+    Precision pivot_rel = 0.0; ///< Relative pivot threshold passed to SparseQR.
 };
 
+/******************************************************************************
+ * @struct QRResult
+ * @brief Holds the sparse QR factor and associated data.
+ ******************************************************************************/
 struct QRResult {
-    // Keep the handle so callers can call qr.solve later.
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr; ///< handle
-    SparseMatrix R;    ///< matrixR() copy (upper-triangular)
-    Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic, int> P; ///< cols permutation
+    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr; ///< Factorisation handle.
+    SparseMatrix R; ///< Upper-triangular factor `R`.
+    Eigen::PermutationMatrix<Eigen::Dynamic, Eigen::Dynamic, int> P; ///< Column permutation.
 };
 
-/**
- * @brief Factorize C_use into QR; writes into @p out to avoid moving SparseQR.
- */
-void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& s, QRResult& out);
+/******************************************************************************
+ * @brief Factorises the constraint matrix using sparse QR.
+ *
+ * @param C_use Constraint matrix to factorise.
+ * @param settings QR configuration options.
+ * @param out Result container populated in-place.
+ ******************************************************************************/
+void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& settings, QRResult& out);
 
-}} // namespace fem::constraint
+} // namespace constraint
+} // namespace fem

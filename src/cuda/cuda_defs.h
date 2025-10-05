@@ -1,6 +1,13 @@
+/******************************************************************************
+ * @file cuda_defs.h
+ * @brief Maps precision-specific CUDA routines to unified identifiers.
+ *
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
+
 #pragma once
 
-// define relevant cuda instructions as templates
 #ifdef CUDA_DOUBLE_PRECISION
 #define CUDA_P_TYPE      CUDA_R_64F
 #define CUBLAS_DOT       cublasDdot

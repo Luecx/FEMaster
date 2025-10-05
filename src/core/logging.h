@@ -1,34 +1,59 @@
+/******************************************************************************
+ * @file logging.h
+ * @brief Declares lightweight logging helpers used throughout the project.
+ *
+ * Provides indentation management and templated logging utilities implemented
+ * in `logging.ipp`.
+ *
+ * @see src/core/logging.ipp
+ * @see src/core/timer.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
+
 #pragma once
 
 #include <string>
 
-namespace fem::logging{
-inline int indentation_level = 0;
+namespace fem {
+namespace logging {
 
-inline void up() {
-    indentation_level++;
-}
+extern int indentation_level; ///< Tracks the current indentation depth for log output.
 
-inline void down() {
-    if (indentation_level > 0) {
-        indentation_level--;
-    }
-}
+/******************************************************************************
+ * @brief Increases the indentation used for subsequent log messages.
+ ******************************************************************************/
+void up();
 
-inline std::string get_indentation() {
-    std::string res{};
-    for(int i = 0; i < indentation_level; i++){
-        res += "  ";
-    }
-    return res;
-}
+/******************************************************************************
+ * @brief Decreases the indentation level if possible.
+ ******************************************************************************/
+void down();
 
-// Forward declarations of the functions
-template<typename... Args> inline void warning(bool condition, Args... args);
-template<typename... Args> inline void info(bool condition, Args... args);
-template<typename... Args> inline void error(bool condition, Args... args);
+/******************************************************************************
+ * @brief Returns the indentation prefix string associated with the current level.
+ ******************************************************************************/
+std::string get_indentation();
 
-} // namespace fem::logging
+/******************************************************************************
+ * @brief Logs a warning when the supplied condition evaluates to false.
+ ******************************************************************************/
+template<typename... Args>
+void warning(bool condition, Args... args);
+
+/******************************************************************************
+ * @brief Logs an informational message when the supplied condition is true.
+ ******************************************************************************/
+template<typename... Args>
+void info(bool condition, Args... args);
+
+/******************************************************************************
+ * @brief Logs an error and aborts when the supplied condition evaluates to false.
+ ******************************************************************************/
+template<typename... Args>
+void error(bool condition, Args... args);
+
+} // namespace logging
+} // namespace fem
 
 #include "logging.ipp"
-

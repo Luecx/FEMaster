@@ -1,15 +1,14 @@
 /******************************************************************************
  * @file support.h
- * @brief Defines the Support class for managing boundary conditions in an FEM model.
+ * @brief Declares structural supports that constrain degrees of freedom.
  *
- * @details The Support class provides a unified interface for applying constraints to nodes,
- *          elements, or surfaces in an FEM model. Each instance holds a region (node, element,
- *          or surface), a vector of constraint values, and an optional local coordinate system
- *          for transformations. The class ensures proper application of boundary conditions,
- *          with transformations applied where necessary.
+ * Supports impose kinematic constraints on selected model entities, producing
+ * constraint equations that are later assembled into the solver system.
  *
- * @date Created on 28.11.2024
+ * @see src/bc/support.cpp
+ * @see src/constraints/equation.h
  * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #pragma once
@@ -20,63 +19,83 @@
 #include "../data/region.h"
 
 namespace fem {
+namespace model {
+class ModelData;
+}
+}
 
-/**
+namespace fem {
+namespace bc {
+
+/******************************************************************************
  * @struct Support
- * @brief Represents a boundary condition applied to nodes, elements, or surfaces.
+ * @brief Represents a kinematic boundary condition over model regions.
  *
- * @details The Support class applies constraints to the specified region (node, element, or surface).
- *          Constraints can be defined in the global or a local coordinate system. The class supports
- *          transformation of constraint values when a local coordinate system is provided.
- */
+ * A support may target node, element, or surface regions. If a local coordinate
+ * system is provided, constraint directions are transformed accordingly before
+ * being converted into algebraic equations.
+ ******************************************************************************/
 struct Support {
-    using NodeRegionPtr    = model::NodeRegion::Ptr;
-    using ElementRegionPtr = model::ElementRegion::Ptr;
-    using SurfaceRegionPtr = model::SurfaceRegion::Ptr;
+    using NodeRegionPtr = model::NodeRegion::Ptr;       ///< Alias for node-region pointer.
+    using ElementRegionPtr = model::ElementRegion::Ptr; ///< Alias for element-region pointer.
+    using SurfaceRegionPtr = model::SurfaceRegion::Ptr; ///< Alias for surface-region pointer.
 
-    /// Default constructor
+    /******************************************************************************
+     * @brief Default constructor.
+     ******************************************************************************/
     Support() = default;
 
-    /**
-     * @brief Constructs a Support for a node region.
-     * @param node_region Region of nodes to apply constraints.
-     * @param values Vector of constraint values for the degrees of freedom.
-     * @param coordinate_system Optional local coordinate system for transformations.
-     */
+    /******************************************************************************
+     * @brief Creates a support acting on a node region.
+     *
+     * @param node_region Region of nodes receiving the constraint.
+     * @param values Generalized displacement/rotation specification.
+     * @param coordinate_system Optional local coordinate system.
+     ******************************************************************************/
     Support(NodeRegionPtr node_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Constructs a Support for an element region.
-     * @param element_region Region of elements to apply constraints.
-     * @param values Vector of constraint values for the degrees of freedom.
-     * @param coordinate_system Optional local coordinate system for transformations.
-     */
+    /******************************************************************************
+     * @brief Creates a support acting on an element region.
+     *
+     * @param element_region Region of elements whose nodes are constrained.
+     * @param values Generalized displacement/rotation specification.
+     * @param coordinate_system Optional local coordinate system.
+     ******************************************************************************/
     Support(ElementRegionPtr element_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Constructs a Support for a surface region.
-     * @param surface_region Region of surfaces to apply constraints.
-     * @param values Vector of constraint values for the degrees of freedom.
-     * @param coordinate_system Optional local coordinate system for transformations.
-     */
+    /******************************************************************************
+     * @brief Creates a support acting on a surface region.
+     *
+     * @param surface_region Region of surfaces whose nodes are constrained.
+     * @param values Generalized displacement/rotation specification.
+     * @param coordinate_system Optional local coordinate system.
+     ******************************************************************************/
     Support(SurfaceRegionPtr surface_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Applies the support constraints to the model data.
-     * @param model_data The FEM model data.
-     * @param bc The boundary condition data structure.
-     * @param equations The constraint equations structure.
-     */
+    /******************************************************************************
+     * @brief Applies the support and generates constraint equations.
+     *
+     * @param model_data FEM model data with geometry and topology.
+     * @param equations Container receiving the generated constraint equations.
+     ******************************************************************************/
     void apply(model::ModelData& model_data, constraint::Equations& equations);
 
 private:
-    NodeRegionPtr node_region = nullptr;       ///< Pointer to the node region, if applicable.
-    ElementRegionPtr element_region = nullptr; ///< Pointer to the element region, if applicable.
-    SurfaceRegionPtr surface_region = nullptr; ///< Pointer to the surface region, if applicable.
-    Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN}; ///< Constraint values for the degrees of freedom.
-    cos::CoordinateSystem::Ptr coordinate_system = nullptr; ///< Local coordinate system, if applicable.
+    NodeRegionPtr node_region = nullptr;          ///< Targeted node region.
+    ElementRegionPtr element_region = nullptr;    ///< Targeted element region.
+    SurfaceRegionPtr surface_region = nullptr;    ///< Targeted surface region.
+    Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN};    ///< Constraint specification per DOF.
+    cos::CoordinateSystem::Ptr coordinate_system = nullptr; ///< Optional local coordinate frame.
 
+    /******************************************************************************
+     * @brief Applies the support to a single node and generates equations.
+     *
+     * @param model_data FEM model data with geometry and topology.
+     * @param equations Container receiving the generated constraint equations.
+     * @param node_id Identifier of the node to constrain.
+     ******************************************************************************/
     void apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id);
 };
 
+} // namespace bc
 } // namespace fem

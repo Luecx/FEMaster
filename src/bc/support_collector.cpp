@@ -1,45 +1,62 @@
 /******************************************************************************
-* @file support_collector.cpp
- * @brief Implements the SupportCollector class for managing collections of supports in an FEM model.
+ * @file support_collector.cpp
+ * @brief Implements aggregation of support boundary conditions.
  *
- * @details The SupportCollector class provides methods for adding supports to various regions
- *          and applying them collectively to the FEM model.
+ * The collector offers convenience routines for defining supports over various
+ * regions and producing constraint equations in a single call.
  *
- * @date Created on 27.11.2024
+ * @see src/bc/support_collector.h
+ * @see src/bc/support.cpp
  * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #include "support_collector.h"
+
 #include "../data/node_data_dict.h"
 
+#include <utility>
+
 namespace fem {
+namespace bc {
 
-// Constructor
-SupportCollector::SupportCollector(const std::string& p_name)
-    : model::Collection<Support>(p_name, true, false) {}
+/******************************************************************************
+ * @copydoc SupportCollector::SupportCollector
+ ******************************************************************************/
+SupportCollector::SupportCollector(const std::string& name)
+    : model::Collection<Support>(name, true, false) {}
 
-// Applies all supports in the collector to the FEM model
+/******************************************************************************
+ * @copydoc SupportCollector::get_equations
+ ******************************************************************************/
 constraint::Equations SupportCollector::get_equations(model::ModelData& model_data) {
     constraint::Equations equations{};
-    for (Support& sup : _data) {
-        sup.apply(model_data, equations);
+    for (Support& support : this->_data) {
+        support.apply(model_data, equations);
     }
     return equations;
 }
 
-// Adds a Support for a node region
+/******************************************************************************
+ * @copydoc SupportCollector::add_supp(model::NodeRegion::Ptr,Vec6,cos::CoordinateSystem::Ptr)
+ ******************************************************************************/
 void SupportCollector::add_supp(model::NodeRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system) {
-    _data.emplace_back(Support{region, values, coordinate_system});
+    this->_data.emplace_back(Support{std::move(region), values, std::move(coordinate_system)});
 }
 
-// Adds a Support for an element region
+/******************************************************************************
+ * @copydoc SupportCollector::add_supp(model::ElementRegion::Ptr,Vec6,cos::CoordinateSystem::Ptr)
+ ******************************************************************************/
 void SupportCollector::add_supp(model::ElementRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system) {
-    _data.emplace_back(Support{region, values, coordinate_system});
+    this->_data.emplace_back(Support{std::move(region), values, std::move(coordinate_system)});
 }
 
-// Adds a Support for a surface region
+/******************************************************************************
+ * @copydoc SupportCollector::add_supp(model::SurfaceRegion::Ptr,Vec6,cos::CoordinateSystem::Ptr)
+ ******************************************************************************/
 void SupportCollector::add_supp(model::SurfaceRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system) {
-    _data.emplace_back(Support{region, values, coordinate_system});
+    this->_data.emplace_back(Support{std::move(region), values, std::move(coordinate_system)});
 }
 
+} // namespace bc
 } // namespace fem

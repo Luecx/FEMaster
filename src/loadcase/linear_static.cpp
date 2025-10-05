@@ -1,44 +1,45 @@
 /******************************************************************************
- * @file LinearStatic.cpp
- * @brief Linear static analysis using affine null-space constraints (u = u_p + T q).
+ * @file linear_static.cpp
+ * @brief Implements the linear static load case leveraging constraint maps.
  *
- * This implementation:
- *  - Builds the unconstrained system DOF indexing (active_dof_idx_mat).
- *  - Assembles global equations (constraints), global loads, and the active stiffness.
- *  - Builds the constraint transformer (C u = d  →  u = u_p + T q).
- *  - Reduces K and f: A = Tᵀ K T, b = Tᵀ (f - K u_p).
- *  - Solves A q = b, recovers u, computes reactions r = K u - f.
- *  - Expands u and r back to (nodes × 6) matrices for writing.
+ * The algorithm assembles the constrained system, reduces it via the null-space
+ * map, solves for the reduced coordinates, and expands the solution and
+ * reactions back to global DOFs.
  *
- * Notes:
- *  - Loads are first reduced to the active DOFs via reduce_mat_to_vec(...) before use.
- *  - This path preserves SPD on A (for SPD K and feasible constraints).
- *  - The same transformer is re-usable across static/modal/buckling setups.
- *
- * @date Created on 04.09.2023
+ * @see src/loadcase/linear_static.h
+ * @see src/constraints/constraint_transformer.h
+ * @author Finn Eggers
+ * @date 06.03.2025
  ******************************************************************************/
 
 #include "linear_static.h"
 
-#include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_mat_to_mat.h"
-
-#include "../solve/eigen.h"
-#include "../core/logging.h"
-#include "../reader/write_mtx.h"
-
 #include "../constraints/builder/builder.h"
-#include "../constraints/constraint_map.h"
-#include "../constraints/constraint_set.h"
 #include "../constraints/constraint_transformer.h"
+#include "../core/logging.h"
+#include "../core/timer.h"
+#include "../mattools/reduce_mat_to_mat.h"
+#include "../mattools/reduce_mat_to_vec.h"
+#include "../reader/write_mtx.h"
+#include "../solve/eigen.h"
 
-using fem::constraint::ConstraintTransformer;
+#include <utility>
 
-fem::loadcase::LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
+namespace fem {
+namespace loadcase {
+
+using constraint::ConstraintTransformer;
+
+/******************************************************************************
+ * @copydoc LinearStatic::LinearStatic
+ ******************************************************************************/
+LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
-void fem::loadcase::LinearStatic::run() {
-    // Banner
+/******************************************************************************
+ * @copydoc LinearStatic::run
+ ******************************************************************************/
+void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
     logging::info(true, "================================================================================================");
@@ -46,159 +47,124 @@ void fem::loadcase::LinearStatic::run() {
     logging::info(true, "================================================================================================");
     logging::info(true, "");
 
-    // (0) Section assignment (as before)
-    m_model->assign_sections();
+    model->assign_sections();
 
-    // (1) Unconstrained system DOF index matrix (node×6 → active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return this->m_model->build_unconstrained_index_matrix(); },
-        "generating active_dof_idx_mat index matrix"
-    );
+        [&]() { return model->build_unconstrained_index_matrix(); },
+        "generating active_dof_idx_mat index matrix");
 
-    // (2) Build constraint equations (supports, ties, couplings, …)
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->m_model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = model->collect_constraints(active_dof_idx_mat, supps);
             report_constraint_groups(groups);
             return groups.flatten();
         },
-        "building constraints"
-    );
+        "building constraints");
 
-    // (3) Global load matrix (node×6 layout); keep for output
     auto global_load_mat = Timer::measure(
-        [&]() { return this->m_model->build_load_matrix(loads); },
-        "constructing load matrix (node x 6)"
-    );
+        [&]() { return model->build_load_matrix(loads); },
+        "constructing load matrix (node x 6)");
 
-    // (4) Active global stiffness K (n×n), assembled using active_dof_idx_mat
     auto K = Timer::measure(
-        [&]() { return this->m_model->build_stiffness_matrix(active_dof_idx_mat); },
-        "constructing stiffness matrix K"
-    );
+        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        "constructing stiffness matrix K");
 
-    // (5) Reduce global loads to active RHS vector f (n×1)
     auto f = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f"
-    );
+        "reducing load matrix -> active RHS vector f");
 
-    // (6) Build constraint transformer (Set -> Builder -> Map)
-    //     Uses the system DOF ids from the model and the active dimension n = K.rows().
-    // Wrap creation of the transformer
-    auto CT = Timer::measure(
+    auto transformer = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions copt;
-            // Recommended: scale columns of C for robust QR:
-            copt.set.scale_columns = true;
-            // Optional tolerances:
-            // copt.builder.rank_tol_rel = 1e-12;
-            // copt.builder.feas_tol_rel = 1e-10;
+            ConstraintTransformer::BuildOptions options;
+            options.set.scale_columns = true;
             return std::make_unique<ConstraintTransformer>(
                 equations,
-                active_dof_idx_mat,   // maps (node, dof) to global index
-                K.rows(),             // total active DOFs n
-                copt
-            );
+                active_dof_idx_mat,
+                K.rows(),
+                options);
         },
-        "building constraint transformer"
-    );
+        "building constraint transformer");
 
-    // Diagnostics
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", CT->report().m);
-    logging::info(true, "n (cols of C)     : ", CT->report().n);
-    logging::info(true, "rank(C)           : ", CT->rank());
-    logging::info(true, "masters (n-r)     : ", CT->n_master());
-    logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
-    logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");
-    if (!CT->feasible()) {
-        logging::info(true, "residual ||C u - d|| : ", CT->report().residual_norm);
+    logging::info(true, "m (rows of C)     : ", transformer->report().m);
+    logging::info(true, "n (cols of C)     : ", transformer->report().n);
+    logging::info(true, "rank(C)           : ", transformer->rank());
+    logging::info(true, "masters (n-r)     : ", transformer->n_master());
+    logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
+    logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");
+    if (!transformer->feasible()) {
+        logging::info(true, "residual ||C u - d|| : ", transformer->report().residual_norm);
     }
     logging::down();
 
-    // (7) Assemble reduced system A q = b with A = Tᵀ K T, b = Tᵀ (f - K u_p)
     auto A = Timer::measure(
-        [&]() { return CT->assemble_A(K); },
-        "assembling reduced stiffness A = T^T K T"
-    );
-    auto b = Timer::measure(
-        [&]() { return CT->assemble_b(K, f); },
-        "assembling reduced RHS b = T^T (f - K u_p)"
-    );
+        [&]() { return transformer->assemble_A(K); },
+        "assembling reduced stiffness A = T^T K T");
 
-    // (6a) Sanity check for NaN/Inf in A and b
+    auto b = Timer::measure(
+        [&]() { return transformer->assemble_b(K, f); },
+        "assembling reduced RHS b = T^T (f - K u_p)");
+
     {
-        bool badA = false;
+        bool bad_matrix = false;
         for (int k = 0; k < A.outerSize(); ++k) {
             for (Eigen::SparseMatrix<Precision>::InnerIterator it(A, k); it; ++it) {
                 if (!std::isfinite(it.value())) {
-                    badA = true;
+                    bad_matrix = true;
                     break;
                 }
             }
-            if (badA) break;
+            if (bad_matrix) {
+                break;
+            }
         }
-        logging::error(!badA, "Matrix A contains NaN/Inf entries");
+        logging::error(!bad_matrix, "Matrix A contains NaN/Inf entries");
         logging::error(b.allFinite(), "b contains NaN/Inf entries");
     }
 
-    // (8) Solve reduced system
     auto q = Timer::measure(
         [&]() { return solve(device, method, A, b); },
-        "solving reduced system A q = b"
-    );
+        "solving reduced system A q = b");
 
-    // (9) Recover full displacement vector u (n×1)
     auto u = Timer::measure(
-        [&]() { return CT->recover_u(q); },
-        "recovering full displacement vector u"
-    );
+        [&]() { return transformer->recover_u(q); },
+        "recovering full displacement vector u");
 
-    // (10) Full reactions r = K u - f (n×1)
     auto r = Timer::measure(
-        [&]() { return CT->reactions(K, f, q); },
-        "computing reactions r = K u - f"
-    );
+        [&]() { return transformer->reactions(K, f, q); },
+        "computing reactions r = K u - f");
 
-    // (11) Expand u and r back to (node×6) for writer output
     auto global_disp_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
-        "expanding displacement vector to matrix form"
-    );
+        "expanding displacement vector to matrix form");
+
     auto global_force_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r); },
-        "expanding reactions to matrix form"
-    );
+        "expanding reactions to matrix form");
 
-    // (12) Compute stresses and strains at the nodes (unchanged)
-    NodeData stress, strain;
+    NodeData stress;
+    NodeData strain;
     std::tie(stress, strain) = Timer::measure(
-        [&]() { return m_model->compute_stress_strain(global_disp_mat); },
-        "Interpolating stress and strain at nodes"
-    );
+        [&]() { return model->compute_stress_strain(global_disp_mat); },
+        "interpolating stress and strain at nodes");
 
-    // Optional: export K/A/b if a path is configured
     if (!stiffness_file.empty()) {
         write_mtx(stiffness_file + "_K.mtx", K);
         write_mtx(stiffness_file + "_A.mtx", A);
         write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
-    // (13) Write results
-    m_writer->add_loadcase(m_id);
-    m_writer->write_eigen_matrix(global_disp_mat, "DISPLACEMENT");
-    m_writer->write_eigen_matrix(strain,          "STRAIN");
-    m_writer->write_eigen_matrix(stress,          "STRESS");
-    m_writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
-    m_writer->write_eigen_matrix(global_force_mat,"NODAL_FORCES");
+    writer->add_loadcase(id);
+    writer->write_eigen_matrix(global_disp_mat, "DISPLACEMENT");
+    writer->write_eigen_matrix(strain,          "STRAIN");
+    writer->write_eigen_matrix(stress,          "STRESS");
+    writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
+    writer->write_eigen_matrix(global_force_mat,"NODAL_FORCES");
 
-    // (14) Post-checks
-    CT->post_check_static(K, f, u);
-
-    logging::info(true, "");
-    logging::info(true, "LINEAR STATIC ANALYSIS FINISHED");
-    logging::info(true, "");
+    transformer->post_check_static(K, f, u);
 }
+
+} // namespace loadcase
+} // namespace fem

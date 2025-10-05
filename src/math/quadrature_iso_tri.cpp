@@ -1,41 +1,39 @@
-#ifndef QUADRATURE_ISO_TRI_H
-#define QUADRATURE_ISO_TRI_H
+/******************************************************************************
+ * @file quadrature_iso_tri.cpp
+ * @brief Registers quadrature schemes for the isoparametric triangle.
+ *
+ * The definitions populate the global registry via the `REGISTER_SCHEME` macro.
+ *
+ * @see src/math/quadrature.h
+ ******************************************************************************/
 
 #include "quadrature.h"
 
 namespace fem {
 namespace quadrature {
 
-using namespace fem::math;
+namespace {
+constexpr std::array<Point, 1> tri_constant{{Point(1.0 / 3.0, 1.0 / 3.0, 1.0 / 2.0)}};
 
-// ORDER_CONSTANT and ORDER_LINEAR
-constexpr Point domain_iso_tri_points_1[] = {
-    Point(1.0 / 3.0, 1.0 / 3.0, 1.0 / 2.0)
-};
-
-// ORDER_QUADRATIC
-constexpr Point domain_iso_tri_points_3[] = {
+constexpr std::array<Point, 3> tri_quadratic{{
     Point(1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0),
     Point(2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0),
-    Point(1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0)
-};
+    Point(1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0),
+}};
 
-// ORDER_CUBIC
-constexpr Point domain_iso_tri_points_4[] = {
+constexpr std::array<Point, 4> tri_cubic{{
     Point(1.0 / 3.0, 1.0 / 3.0, -27.0 / 96.0),
     Point(1.0 / 5.0, 3.0 / 5.0, 25.0 / 96.0),
     Point(1.0 / 5.0, 1.0 / 5.0, 25.0 / 96.0),
-    Point(3.0 / 5.0, 1.0 / 5.0, 25.0 / 96.0)
-};
+    Point(3.0 / 5.0, 1.0 / 5.0, 25.0 / 96.0),
+}};
+} // namespace
 
-REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_CONSTANT, domain_iso_tri_points_1);
-REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_LINEAR  , domain_iso_tri_points_1);
-
-REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_QUADRATIC, domain_iso_tri_points_3);
-
-REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_CUBIC    , domain_iso_tri_points_4);
+REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_CONSTANT, tri_constant);
+REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_LINEAR, tri_constant);
+REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_QUADRATIC, tri_quadratic);
+REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_CUBIC, tri_cubic);
 
 } // namespace quadrature
 } // namespace fem
 
-#endif // QUADRATURE_ISO_TRI_H

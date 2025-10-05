@@ -1,74 +1,52 @@
 /******************************************************************************
-* @file isotropic_elasticity.h
-* @brief Defines the IsotropicElasticity class for isotropic material behavior.
-*
-* The IsotropicElasticity class computes the material stiffness matrices for 
-* isotropic materials under 2D, 3D, shear, and bending conditions. It derives 
-* from the Elasticity base class and uses material properties such as Young's 
-* modulus and Poisson's ratio to calculate the stiffness matrices.
-*
-* @see isotropic_elasticity.cpp
-* @author Finn Eggers
-* @date 20.12.2024
-******************************************************************************/
+ * @file isotropic_elasticity.h
+ * @brief Declares the isotropic elasticity model.
+ *
+ * Computes stiffness matrices for isotropic materials in 2D/3D as well as shear
+ * and bending contributions for shell formulations.
+ *
+ * @see src/material/isotropic_elasticity.cpp
+ * @see src/material/elasticity.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ ******************************************************************************/
 
-#pragma once  // Ensures this file is included only once during compilation
+#pragma once
 
-#include "elasticity.h"          // Base Elasticity class
-#include "../core/core.h"        // Core FEM types
+#include "elasticity.h"
 
-namespace fem::material {
+namespace fem {
+namespace material {
 
 /******************************************************************************
-* @class IsotropicElasticity
-* @brief Class representing isotropic material elasticity.
-*
-* This class provides methods to compute stiffness matrices for 2D and 3D 
-* isotropic materials, as well as for shear and bending in plate and shell 
-* formulations. The material behavior is defined by Young's modulus and 
-* Poisson's ratio.
-******************************************************************************/
+ * @struct IsotropicElasticity
+ * @brief Elasticity model for isotropic materials.
+ ******************************************************************************/
 struct IsotropicElasticity : Elasticity {
-    Precision youngs;    ///< Young's modulus (E).
-    Precision poisson;   ///< Poisson's ratio (ν).
-    Precision shear;     ///< Shear modulus (G).
+    Precision youngs;  ///< Young's modulus (E).
+    Precision poisson; ///< Poisson's ratio (nu).
+    Precision shear;   ///< Shear modulus (G).
 
     /******************************************************************************
-    * @brief Constructor for the IsotropicElasticity class.
-    *
-    * Initializes the material properties based on Young's modulus and Poisson's ratio.
-    * The shear modulus is computed automatically.
-    *
-    * @param youngs Young's modulus (E).
-    * @param poisson Poisson's ratio (ν).
-    ******************************************************************************/
-    IsotropicElasticity(Precision youngs, Precision poisson);
+     * @brief Constructs the isotropic elasticity model.
+     *
+     * @param youngs_in Young's modulus.
+     * @param poisson_in Poisson's ratio.
+     ******************************************************************************/
+    IsotropicElasticity(Precision youngs_in, Precision poisson_in);
 
-    /******************************************************************************
-    * @brief Computes the 2D stiffness matrix for isotropic material.
-    * @return A 3x3 static matrix representing 2D stiffness.
-    ******************************************************************************/
-    fem::StaticMatrix<3, 3> get_2d() override;
+    /// Returns the plane-stress stiffness matrix.
+    StaticMatrix<3, 3> get_2d() override;
 
-    /******************************************************************************
-    * @brief Computes the 3D stiffness matrix for isotropic material.
-    * @return A 6x6 static matrix representing 3D stiffness.
-    ******************************************************************************/
-    fem::StaticMatrix<6, 6> get_3d() override;
+    /// Returns the full 3D stiffness matrix.
+    StaticMatrix<6, 6> get_3d() override;
 
-    /******************************************************************************
-    * @brief Computes the shear stiffness matrix for isotropic material.
-    * @param t Thickness of the material.
-    * @return A 2x2 static matrix representing shear stiffness.
-    ******************************************************************************/
-    StaticMatrix<2, 2> get_shear(Precision t) override;
+    /// Returns the shear stiffness matrix for shell elements.
+    StaticMatrix<2, 2> get_shear(Precision thickness) override;
 
-    /******************************************************************************
-    * @brief Computes the bending stiffness matrix for isotropic material.
-    * @param t Thickness of the material.
-    * @return A 3x3 static matrix representing bending stiffness.
-    ******************************************************************************/
-    StaticMatrix<3, 3> get_bend(Precision t) override;
+    /// Returns the bending stiffness matrix for shell elements.
+    StaticMatrix<3, 3> get_bend(Precision thickness) override;
 };
 
-}    // namespace fem::material
+} // namespace material
+} // namespace fem

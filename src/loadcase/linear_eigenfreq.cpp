@@ -222,18 +222,18 @@ void LinearEigenfrequency::run() {
     logging::info(true, "");
 
     // (0) Sections/materials
-    m_model->assign_sections();
+    model->assign_sections();
 
     // (1) Unconstrained system DOF indices (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return m_model->build_unconstrained_index_matrix(); },
+        [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 
     // (2) Constraints from supports/ties/couplings
     auto equations = Timer::measure(
         [&]() {
-            auto groups = this->m_model->collect_constraints(active_dof_idx_mat, supps);
+            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
             report_constraint_groups(groups);
             return groups.flatten();
         },
@@ -242,11 +242,11 @@ void LinearEigenfrequency::run() {
 
     // (3) Assemble active stiffness K and mass M (n x n)
     auto K = Timer::measure(
-        [&]() { return m_model->build_stiffness_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K"
     );
     auto M = Timer::measure(
-        [&]() { return m_model->build_lumped_mass_matrix(active_dof_idx_mat); },
+        [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
         "constructing mass matrix M"
     );
 
@@ -335,7 +335,7 @@ void LinearEigenfrequency::run() {
 
     // (8) Print + write
     display_eigen_summary(modes);
-    write_results(modes, m_writer, m_id);
+    write_results(modes, writer, id);
 
     logging::info(true, "Eigenfrequency analysis completed.");
 }
