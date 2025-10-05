@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file interpolate.cpp
  * @brief Implements polynomial interpolation for scattered nodal data.
  *
  * @see src/math/interpolate.h
- ******************************************************************************/
+ */
 
 #include "interpolate.h"
 
@@ -18,9 +18,9 @@ namespace interpolate {
 
 namespace {
 
-/******************************************************************************
+/**
  * @brief Returns the number of coefficients required for interpolation order `F`.
- ******************************************************************************/
+ */
 template<InterpolationFunction F>
 constexpr int term_count() {
     if constexpr (F == CONSTANT) {
@@ -40,9 +40,9 @@ constexpr int term_count() {
     }
 }
 
-/******************************************************************************
+/**
  * @brief Demotes the interpolation order to the next simpler option.
- ******************************************************************************/
+ */
 template<InterpolationFunction F>
 constexpr InterpolationFunction demote_order() {
     if constexpr (F == CUBIC) {
@@ -60,9 +60,9 @@ constexpr InterpolationFunction demote_order() {
     }
 }
 
-/******************************************************************************
+/**
  * @brief Evaluates the polynomial defined by `coefficients` at `position`.
- ******************************************************************************/
+ */
 template<InterpolationFunction F>
 Precision evaluate(const DynamicVector& coefficients, const Vec3& position) {
     Precision result = 0.0;
@@ -104,9 +104,9 @@ Precision evaluate(const DynamicVector& coefficients, const Vec3& position) {
     return result;
 }
 
-/******************************************************************************
+/**
  * @brief Computes predicted values for all nodes using the fitted coefficients.
- ******************************************************************************/
+ */
 template<InterpolationFunction F>
 DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const NodeData& xyz) {
     DynamicMatrix predicted(xyz.rows(), coefficients.cols());
@@ -118,9 +118,9 @@ DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const 
     return predicted;
 }
 
-/******************************************************************************
+/**
  * @brief Computes column-wise coefficients of determination (R²).
- ******************************************************************************/
+ */
 DynamicVector compute_r2(const DynamicMatrix& predicted, const NodeData& values) {
     DynamicVector r2(values.cols());
     for (Index column = 0; column < values.cols(); ++column) {
@@ -134,9 +134,9 @@ DynamicVector compute_r2(const DynamicMatrix& predicted, const NodeData& values)
 
 } // namespace
 
-/******************************************************************************
+/**
  * @brief Template implementation of the polynomial interpolation routine.
- ******************************************************************************/
+ */
 template<InterpolationFunction F>
 DynamicMatrix interpolate(const NodeData& xyz,
                           const NodeData& values,

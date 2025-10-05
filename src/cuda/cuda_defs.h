@@ -1,10 +1,10 @@
-/******************************************************************************
+/**
  * @file cuda_defs.h
  * @brief Maps precision-specific CUDA routines to unified identifiers.
  *
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

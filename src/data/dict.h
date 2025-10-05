@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file dict.h
  * @brief Declares a heterogeneous dictionary for FEM entities.
  *
@@ -9,7 +9,7 @@
  *
  * @see src/data/dict.cpp
  * @see src/data/collection.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -25,14 +25,14 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct Dict
  * @brief Stores shared pointers keyed either by string or by index.
  *
  * @tparam T   Stored type.
  * @tparam Key Key type (`std::string` for associative access, otherwise assumed
  *             to be an indexable integral type).
- ******************************************************************************/
+ */
 template<typename T, typename Key = std::string>
 struct Dict {
     using Ptr = std::shared_ptr<Dict<T, Key>>; ///< Shared pointer alias used by callers.
@@ -46,9 +46,9 @@ struct Dict {
 
     TPtr _cur = nullptr; ///< Tracks the most recently accessed entry.
 
-    /******************************************************************************
+    /**
      * @brief Checks whether an entry exists for `key`.
-     ******************************************************************************/
+     */
     bool has(const Key& key) {
         if constexpr (std::is_same_v<Key, std::string>) {
             return has_key(key);
@@ -57,9 +57,9 @@ struct Dict {
         }
     }
 
-    /******************************************************************************
+    /**
      * @brief Checks existence using only key look-up (string specialisation).
-     ******************************************************************************/
+     */
     bool has_key(const Key& key) {
         if constexpr (std::is_same_v<Key, std::string>) {
             return _data.find(key) != _data.end();
@@ -73,11 +73,11 @@ struct Dict {
     /// Returns the last activated/created entry.
     TPtr get() { return _cur; }
 
-    /******************************************************************************
+    /**
      * @brief Retrieves the entry associated with `key`.
      *
      * @return Shared pointer or `nullptr` when the entry is missing.
-     ******************************************************************************/
+     */
     TPtr get(const Key& key) {
         if (!has(key)) {
             return nullptr;
@@ -90,12 +90,12 @@ struct Dict {
         }
     }
 
-    /******************************************************************************
+    /**
      * @brief Activates the entry at `key`, creating it if necessary.
      *
      * @tparam Derived Concrete type deriving from `T`.
      * @tparam Args    Constructor argument types.
-     ******************************************************************************/
+     */
     template<typename Derived = T, typename... Args>
     TPtr activate(const Key& key, Args... args) {
         static_assert(std::is_base_of_v<T, Derived>, "Derived must be derived from T");
@@ -108,9 +108,9 @@ struct Dict {
         return _cur;
     }
 
-    /******************************************************************************
+    /**
      * @brief Removes the entry identified by `key`.
-     ******************************************************************************/
+     */
     void remove(const Key& key) {
         if constexpr (std::is_same_v<Key, std::string>) {
             _data.erase(key);
@@ -121,12 +121,12 @@ struct Dict {
         }
     }
 
-    /******************************************************************************
+    /**
      * @brief Creates and stores a new instance associated with `key`.
      *
      * When `Key` is a string, the constructor forwards the key to the stored
      * type if it inherits from `Namable`.
-     ******************************************************************************/
+     */
     template<typename Derived = T, typename... Args>
     TPtr create(const Key& key, Args... args) {
         static_assert(std::is_base_of_v<T, Derived>, "Derived must be derived from T");

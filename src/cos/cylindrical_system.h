@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file cylindrical_system.h
  * @brief Declares a cylindrical coordinate system implementation.
  *
@@ -8,7 +8,7 @@
  * @see src/cos/coordinate_system.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -19,10 +19,10 @@
 namespace fem {
 namespace cos {
 
-/******************************************************************************
+/**
  * @class CylindricalSystem
  * @brief Implements conversions between cylindrical and Cartesian frames.
- ******************************************************************************/
+ */
 class CylindricalSystem : public CoordinateSystem {
 public:
     CylindricalSystem(const std::string& name, const Vec3& base_point, const Vec3& r_point, const Vec3& theta_point);

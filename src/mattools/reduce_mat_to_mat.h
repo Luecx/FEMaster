@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file reduce_mat.h
  * @brief Provides a function that reduces a sparse matrix by removing rows
  * that correspond to non-`NaN` values in a vector.
@@ -13,7 +13,7 @@
  * corresponding to `NaN` values in `b`.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -24,7 +24,7 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Reduces a sparse matrix by removing rows that correspond to non-`NaN`
  * values in the vector `b`.
  *
@@ -36,7 +36,7 @@ namespace fem { namespace mattools {
  * (non-`NaN` values).
  * @return SparseMatrix The reduced sparse matrix containing only rows corresponding
  * to `NaN` values in `b`.
- ******************************************************************************/
+ */
 SparseMatrix reduce_mat_to_mat(const SparseMatrix& matrix, const DynamicVector& b);
 
 } } // namespace fem::mattools

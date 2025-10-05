@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file linear_static.cpp
  * @brief Implements the linear static load case leveraging constraint maps.
  *
@@ -10,7 +10,7 @@
  * @see src/constraints/constraint_transformer.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "linear_static.h"
 
@@ -30,15 +30,15 @@ namespace loadcase {
 
 using constraint::ConstraintTransformer;
 
-/******************************************************************************
+/**
  * @copydoc LinearStatic::LinearStatic
- ******************************************************************************/
+ */
 LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
-/******************************************************************************
+/**
  * @copydoc LinearStatic::run
- ******************************************************************************/
+ */
 void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");

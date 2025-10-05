@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file orthotropic_elasticity.cpp
  * @brief Implements the orthotropic elasticity model.
  *
@@ -9,7 +9,7 @@
  * @see src/material/elasticity.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "orthotropic_elasticity.h"
 
@@ -19,9 +19,9 @@
 namespace fem {
 namespace material {
 
-/******************************************************************************
+/**
  * @copydoc OrthotropicElasticity::OrthotropicElasticity
- ******************************************************************************/
+ */
 OrthotropicElasticity::OrthotropicElasticity(Precision ex,
                                              Precision ey,
                                              Precision ez,
@@ -41,9 +41,9 @@ OrthotropicElasticity::OrthotropicElasticity(Precision ex,
     , vzx(vzx_in)
     , vxy(vxy_in) {}
 
-/******************************************************************************
+/**
  * @copydoc OrthotropicElasticity::get_2d
- ******************************************************************************/
+ */
 StaticMatrix<3, 3> OrthotropicElasticity::get_2d() {
     const Precision vyx = vxy * Ey / Ex;
     const Precision denom = 1 - vxy * vyx;
@@ -53,9 +53,9 @@ StaticMatrix<3, 3> OrthotropicElasticity::get_2d() {
         {0, 0, Gxy}});
 }
 
-/******************************************************************************
+/**
  * @copydoc OrthotropicElasticity::get_3d
- ******************************************************************************/
+ */
 StaticMatrix<6, 6> OrthotropicElasticity::get_3d() {
     const Precision vyx = vxy * Ey / Ex;
     const Precision vzy = vyz * Ez / Ey;
@@ -73,16 +73,16 @@ StaticMatrix<6, 6> OrthotropicElasticity::get_3d() {
     return compliance.inverse();
 }
 
-/******************************************************************************
+/**
  * @copydoc OrthotropicElasticity::get_shear
- ******************************************************************************/
+ */
 StaticMatrix<2, 2> OrthotropicElasticity::get_shear(Precision) {
     throw std::runtime_error("Shear stiffness is not implemented for orthotropic materials.");
 }
 
-/******************************************************************************
+/**
  * @copydoc OrthotropicElasticity::get_bend
- ******************************************************************************/
+ */
 StaticMatrix<3, 3> OrthotropicElasticity::get_bend(Precision) {
     throw std::runtime_error("Bending stiffness is not implemented for orthotropic materials.");
 }

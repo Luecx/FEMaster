@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assemble_TX.h
  * @brief Declares helpers that assemble the `T` and `X` matrices.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/build_x.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -21,10 +21,10 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @struct AssembleInput
  * @brief Holds the data required to assemble `T` and `X`.
- ******************************************************************************/
+ */
 struct AssembleInput {
     int n = 0;                       ///< Total number of DOFs.
     int r = 0;                       ///< Numerical rank.
@@ -34,22 +34,22 @@ struct AssembleInput {
     std::vector<Index> masters_glob; ///< Final master ordering in global indices.
 };
 
-/******************************************************************************
+/**
  * @struct AssembleOutput
  * @brief Contains the assembled `T` and `X` matrices.
- ******************************************************************************/
+ */
 struct AssembleOutput {
     SparseMatrix T; ///< Transformation matrix mapping reduced to full DOFs.
     SparseMatrix X; ///< Constraint matrix expressing slaves in terms of masters.
 };
 
-/******************************************************************************
+/**
  * @brief Builds the `T` and `X` matrices from partitioning and column data.
  *
  * @param in Assembly input data.
  * @param cols Reduced column data for `X`.
  * @return AssembleOutput Populated matrices.
- ******************************************************************************/
+ */
 AssembleOutput assemble_T_and_X(const AssembleInput& in, const XCols& cols);
 
 } // namespace constraint

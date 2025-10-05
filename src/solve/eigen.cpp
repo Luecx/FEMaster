@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file eigen.cpp
  * @brief Public dispatchers for sparse symmetric eigenvalue solvers.
  *
@@ -16,7 +16,7 @@
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *         All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 
 #include "eigen_internal.h"
 

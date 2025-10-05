@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file builder.cpp
  * @brief Implements the constraint builder pipeline.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "builder.h"
 
@@ -29,17 +29,17 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc ConstraintBuilder::build(const ConstraintSet&)
- ******************************************************************************/
+ */
 std::pair<ConstraintMap, ConstraintBuilder::Report> ConstraintBuilder::build(const ConstraintSet& set) {
     Options opt;
     return build(set, opt);
 }
 
-/******************************************************************************
+/**
  * @copydoc ConstraintBuilder::build(const ConstraintSet&,const Options&)
- ******************************************************************************/
+ */
 std::pair<ConstraintMap, ConstraintBuilder::Report> ConstraintBuilder::build(const ConstraintSet& set,
                                                                              const Options& opt) {
     ConstraintMap map;

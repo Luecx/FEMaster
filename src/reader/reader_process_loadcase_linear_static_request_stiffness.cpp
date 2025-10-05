@@ -6,7 +6,7 @@ void Reader::process_loadcase_linear_static_request_stiffness(fem::loadcase::Lin
     if (m_current_line.has_key("FILE")) {
         lc->stiffness_file = m_current_line.parse<std::string>("FILE", "");
     } else {
-        lc->stiffness_file = "stiffness_" + std::to_string(lc->id()) + ".txt";
+        lc->stiffness_file = "stiffness_" + std::to_string(lc->get_id()) + ".txt";
     }
     next_line();
 }

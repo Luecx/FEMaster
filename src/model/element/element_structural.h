@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file element_structural.h
  * @brief Declares the abstract base class for structural FEM elements.
  *
@@ -6,7 +6,7 @@
  * mass, volume, load application, and stress/strain recovery.
  *
  * @see src/model/beam/beam.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -18,10 +18,10 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct StructuralElement
  * @brief Extends `ElementInterface` with structural-specific operations.
- ******************************************************************************/
+ */
 struct StructuralElement : ElementInterface {
     explicit StructuralElement(ID elem_id)
         : ElementInterface(elem_id) {}

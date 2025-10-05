@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file coupling.cpp
  * @brief Implements the Coupling class for handling kinematic _couplings in FEM.
  *
@@ -9,7 +9,7 @@
  * @see coupling.h
  * @author Finn Eggers
  * @date 04.09.2024
- ******************************************************************************/
+ */
 
 #include "coupling.h"
 
@@ -18,12 +18,12 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @brief Constructor for the Coupling class.
  *
  * Initializes the coupling constraint with the specified master node, slave nodes,
  * DOFs to couple, and the type of coupling.
- ******************************************************************************/
+ */
 Coupling::Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type)
     : master_node(master_node)
     , slave_nodes(slave_nodes)
@@ -38,7 +38,7 @@ Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dof
     , type(type) {
 }
 
-/******************************************************************************
+/**
  * @brief Generates the coupling equations for the specified DOFs.
  *
  * This method computes the coupling equations between the master and slave nodes,
@@ -52,7 +52,7 @@ Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dof
  * @param node_coords The coordinates of all nodes in the system.
  * @param row_offset The row offset for inserting the equations into the global system.
  * @return TripletList A list of triplets representing the coupling equations.
- ******************************************************************************/
+ */
 Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     Equations equations {};
 
@@ -237,7 +237,7 @@ void Coupling::apply_loads(model::ModelData& model_data, NodeData& load_matrix) 
 }
 
 
-/******************************************************************************
+/**
  * @brief Computes the necessary DOFs for the master node based on the coupling.
  *
  * This method checks which degrees of freedom (DOFs) need to be active for the
@@ -245,7 +245,7 @@ void Coupling::apply_loads(model::ModelData& model_data, NodeData& load_matrix) 
  *
  * @param system_dof_mask A mask of active DOFs for all nodes in the system.
  * @return Dofs A Dofs object indicating which DOFs are required for the master node.
- ******************************************************************************/
+ */
 Dofs Coupling::master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data) {
     Dofs slave_dofs = {false, false, false, false, false, false};
 

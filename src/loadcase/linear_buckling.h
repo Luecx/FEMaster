@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file linear_buckling.h
  * @brief Linear buckling analysis using affine null-space constraints.
  *
@@ -32,7 +32,7 @@
  *
  * @author  Finn
  * @date    15.09.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

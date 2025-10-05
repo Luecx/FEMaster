@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file builder.h
  * @brief Declares the constraint builder that produces null-space maps.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -25,15 +25,15 @@ namespace constraint {
 
 class ConstraintMap;
 
-/******************************************************************************
+/**
  * @struct ConstraintBuilder
  * @brief Provides static helpers to construct constraint maps.
- ******************************************************************************/
+ */
 struct ConstraintBuilder {
-    /******************************************************************************
+    /**
      * @struct Options
      * @brief Configuration parameters for the builder.
-     ******************************************************************************/
+     */
     struct Options {
         Precision rank_tol_rel = 1e-12; ///< Relative tolerance on diag(R) for rank detection.
         Precision feas_tol_rel = 1e-10; ///< Relative tolerance for feasibility check `||C u_p - d||`.
@@ -42,10 +42,10 @@ struct ConstraintBuilder {
         int suspect_rows_k = 10;          ///< Reserved parameter for suspect-row reporting.
     };
 
-    /******************************************************************************
+    /**
      * @struct Report
      * @brief Diagnostics describing the builder outcome.
-     ******************************************************************************/
+     */
     struct Report {
         Index m = 0;          ///< Number of constraint equations.
         Index n = 0;          ///< Number of DOFs in the original system.
@@ -65,21 +65,21 @@ struct ConstraintBuilder {
         std::string log;                   ///< Reserved log output.
     };
 
-    /******************************************************************************
+    /**
      * @brief Builds a constraint map using default options.
      *
      * @param set Assembled constraint set to process.
      * @return std::pair<ConstraintMap, Report> Map and diagnostics.
-     ******************************************************************************/
+     */
     static std::pair<class ConstraintMap, Report> build(const ConstraintSet& set);
 
-    /******************************************************************************
+    /**
      * @brief Builds a constraint map using the provided options.
      *
      * @param set Assembled constraint set to process.
      * @param opt Builder configuration parameters.
      * @return std::pair<ConstraintMap, Report> Map and diagnostics.
-     ******************************************************************************/
+     */
     static std::pair<class ConstraintMap, Report> build(const ConstraintSet& set, const Options& opt);
 };
 

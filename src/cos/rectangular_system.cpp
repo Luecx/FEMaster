@@ -1,13 +1,15 @@
-/******************************************************************************
+/**
  * @file rectangular_system.cpp
  * @brief Implements the rectangular coordinate system utilities.
  *
  * @see src/cos/rectangular_system.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "rectangular_system.h"
+
+#include <Eigen/Geometry>
 
 namespace fem {
 namespace cos {
@@ -33,15 +35,13 @@ RectangularSystem::RectangularSystem(const std::string& name, const Vec3& x_axis
 }
 
 RectangularSystem::RectangularSystem(const std::string& name, const Vec3& x_axis)
-    : CoordinateSystem(name)
-    , x_axis_(x_axis) {
-    Vec3 auxiliary = (std::abs(x_axis_.normalized().dot(Vec3::UnitZ())) > 0.9) ? Vec3::UnitY() : Vec3::UnitZ();
-    y_axis_ = x_axis_.cross(auxiliary);
-    z_axis_ = x_axis_.cross(y_axis_);
-    orthogonalize();
-    normalize();
+    : CoordinateSystem(name), x_axis_(x_axis) {
+    x_axis_.normalize();
+    y_axis_ = x_axis_.unitOrthogonal();
+    z_axis_ = x_axis_.cross(y_axis_).normalized();
     compute_transformations();
 }
+
 
 Vec3 RectangularSystem::to_local(const Vec3& global_point) const {
     return global_to_local_ * global_point;
@@ -128,9 +128,16 @@ void RectangularSystem::normalize() {
 }
 
 void RectangularSystem::orthogonalize() {
+    x_axis_.normalize();
+    if (y_axis_.norm() == 0) y_axis_ = x_axis_.unitOrthogonal();
+    else {
+        y_axis_ = (y_axis_ - (x_axis_.dot(y_axis_) * x_axis_)).normalized();
+        if (!std::isfinite(y_axis_.squaredNorm()) || y_axis_.squaredNorm() < 1e-30)
+            y_axis_ = x_axis_.unitOrthogonal();
+    }
     z_axis_ = x_axis_.cross(y_axis_).normalized();
-    y_axis_ = z_axis_.cross(x_axis_).normalized();
 }
+
 
 void RectangularSystem::compute_transformations() {
     local_to_global_.col(0) = x_axis_;

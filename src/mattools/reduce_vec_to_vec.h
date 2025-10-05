@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file reduce_vec_to_vec.h
  * @brief Provides functions to reduce and expand vectors based on another vector.
  *
@@ -15,7 +15,7 @@
  * @return DynamicVector The reduced or expanded vector depending on the function.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -25,7 +25,7 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Reduces vector `a` by discarding elements that correspond to
  * non-`NaN` values in vector `b`.
  *
@@ -38,10 +38,10 @@ namespace fem { namespace mattools {
  * (non-`NaN` values).
  * @return DynamicVector The reduced vector containing only the elements from `a`
  * corresponding to `NaN` values in `b`.
- ******************************************************************************/
+ */
 DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b);
 
-/******************************************************************************
+/**
  * @brief Expands a reduced vector back to its original size based on the `NaN`
  * values in vector `b`. The `NaN` values in `b` indicate where to insert the
  * values from the reduced vector.
@@ -51,7 +51,7 @@ DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b);
  * @return DynamicVector The expanded vector, with values from the reduced vector
  * inserted at positions corresponding to `NaN` values in `b`, and the original
  * non-`NaN` values in `b` retained.
- ******************************************************************************/
+ */
 DynamicVector expand_vec_to_vec(const DynamicVector& reduced_vector, const DynamicVector& b);
 
 } } // namespace fem::mattools

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface3.cpp
  * @brief Implementation file for the Surface3 class.
  *
@@ -8,7 +8,7 @@
  *          derivatives, and element boundary projections.
  *
  * @date Created on 27.09.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #include "surface3.h"
 

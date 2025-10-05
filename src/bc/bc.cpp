@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file bc.cpp
  * @brief Provides the translation unit for boundary-condition base utilities.
  *
@@ -9,7 +9,7 @@
  * @see src/bc/bc.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "bc.h"
 

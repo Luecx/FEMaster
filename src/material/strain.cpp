@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file strain.cpp
  * @brief Implements strain rotation utilities in Voigt notation.
  *
@@ -6,22 +6,22 @@
  * @see src/cos/coordinate_system.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "strain.h"
 
 namespace fem {
 
-/******************************************************************************
+/**
  * @copydoc Strain::transform
- ******************************************************************************/
+ */
 Strain Strain::transform(const cos::Basis& basis) const {
     return Strain{Strain::get_transformation_matrix(basis) * (*this)};
 }
 
-/******************************************************************************
+/**
  * @copydoc Strain::get_transformation_matrix
- ******************************************************************************/
+ */
 Mat6 Strain::get_transformation_matrix(const cos::Basis& basis) {
     Precision R11 = basis(0, 0), R12 = basis(0, 1), R13 = basis(0, 2);
     Precision R21 = basis(1, 0), R22 = basis(1, 1), R23 = basis(1, 2);

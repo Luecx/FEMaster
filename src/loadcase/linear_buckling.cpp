@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file linear_buckling.cpp
  * @brief Linear buckling analysis using affine null-space constraints (u = u_p + T q).
  *
@@ -37,7 +37,7 @@
  *
  * @date    15.09.2025
  * @author  Finn
- ******************************************************************************/
+ */
 
 #include "linear_buckling.h"
 
@@ -60,7 +60,7 @@ namespace fem { namespace loadcase {
 
 using fem::constraint::ConstraintTransformer;
 
-/******************************************************************************
+/**
  * @struct BucklingMode
  * @brief Container for one buckling mode in reduced space with expanded output.
  *
@@ -69,7 +69,7 @@ using fem::constraint::ConstraintTransformer;
  * - lambda  : buckling factor (eigenvalue of the generalized EVP).
  * - q_mode  : eigenvector in reduced coordinates (size = n_master).
  * - mode_mat: full displacement shape in node x DOF layout for writer output.
- ******************************************************************************/
+ */
 struct BucklingMode {
     Precision     lambda;       // buckling factor (eigenvalue)
     DynamicVector q_mode;       // reduced coordinates (in q-space)
@@ -78,7 +78,7 @@ struct BucklingMode {
     BucklingMode(Precision lam, DynamicVector q) : lambda(lam), q_mode(std::move(q)) {}
 };
 
-/******************************************************************************
+/**
  * @brief Cheap Rayleigh quotient estimate: lambda ~= (q^T A q) / (q^T (-B) q).
  *
  * Purpose
@@ -86,7 +86,7 @@ struct BucklingMode {
  * Provides a quick, scale-informed initial shift estimate from the preload
  * solution (expressed in reduced coordinates). This is not essential, but can
  * improve robustness of the eigensolver in buckling problems.
- ******************************************************************************/
+ */
 static inline double estimate_lambda_rayleigh(const SparseMatrix& A,
                                               const SparseMatrix& B,
                                               const DynamicVector& q) {
@@ -99,9 +99,9 @@ static inline double estimate_lambda_rayleigh(const SparseMatrix& A,
     return num / den;
 }
 
-/******************************************************************************
+/**
  * @brief Pretty-print a short table of buckling factors and settings.
- ******************************************************************************/
+ */
 static void print_buckling_summary(const std::vector<BucklingMode>& modes,
                                    double sigma_used,
                                    int k_requested) {
@@ -121,10 +121,10 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
     }
 }
 
-/******************************************************************************
+/**
  * @class LinearBuckling
  * @brief Buckling analysis entry point (constrained via null-space).
- ******************************************************************************/
+ */
 LinearBuckling::LinearBuckling(ID id,
                                reader::Writer* writer,
                                model::Model* model,
@@ -132,7 +132,7 @@ LinearBuckling::LinearBuckling(ID id,
     : LoadCase(id, writer, model)
     , num_eigenvalues(numEigenvalues) {}
 
-/******************************************************************************
+/**
  * @brief Execute the linear buckling analysis.
  *
  * Implementation notes
@@ -141,7 +141,7 @@ LinearBuckling::LinearBuckling(ID id,
  *   performance diagnostics (same style as LinearStatic and LinearEigenfrequency).
  * - The ConstraintTransformer creation is wrapped for timing, and diagnostics
  *   (rank, homogeneity, feasibility) are printed.
- ******************************************************************************/
+ */
 void LinearBuckling::run() {
     // Banner
     logging::info(true, "");

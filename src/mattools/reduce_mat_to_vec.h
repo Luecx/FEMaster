@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file reduce_mat_to_vec.h
  * @brief Provides functions to reduce a SystemDofIds matrix and NodeData into
  * a DynamicVector and to expand it back. Reduction ignores inactive DOFs, and
@@ -13,7 +13,7 @@
  * @author Created by Finn Eggers (c)
  * all rights reserved
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -22,7 +22,7 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Reduces a NodeData into a DynamicVector by selecting active DOFs based
  * on the given SystemDofIds matrix.
  *
@@ -32,10 +32,10 @@ namespace fem { namespace mattools {
  * @param dof_ids An Nx6 matrix that stores DOF indices, with -1 indicating inactive DOFs.
  * @param bc_matrix An Nx6 matrix that stores boundary condition values for each DOF.
  * @return DynamicVector The reduced vector containing only the active DOFs.
- ******************************************************************************/
+ */
 DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const NodeData& bc_matrix);
 
-/******************************************************************************
+/**
  * @brief Expands a reduced DynamicVector back into a NodeData based on the
  * SystemDofIds matrix.
  *
@@ -45,7 +45,7 @@ DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const NodeData& bc_
  * @param dof_ids An Nx6 matrix that stores DOF indices, with -1 indicating inactive DOFs.
  * @param reduced_vector The DynamicVector containing values for the active DOFs.
  * @return NodeData The expanded matrix containing the boundary conditions.
- ******************************************************************************/
+ */
 NodeData expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector& reduced_vector);
 
 } } // namespace fem::mattools

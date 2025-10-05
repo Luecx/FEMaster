@@ -1,6 +1,8 @@
 #include "reader.h"
 
 #include "../material/elasticity.h"
+#include "../material/isotropic_elasticity.h"
+#include "../material/orthotropic_elasticity.h"
 #include "../model/model.h"
 
 namespace fem::reader {

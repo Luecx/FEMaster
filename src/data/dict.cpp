@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file dict.cpp
  * @brief Hosts explicit instantiations for the `Dict` template.
  *
@@ -6,7 +6,7 @@
  * actual template implementation resides entirely in the header.
  *
  * @see src/data/dict.h
- ******************************************************************************/
+ */
 
 #include "dict.h"
 

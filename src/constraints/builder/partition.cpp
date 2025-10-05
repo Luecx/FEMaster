@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file partition.cpp
  * @brief Splits permutation data into slave and master DOF sets.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/preprocess.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "partition.h"
 
@@ -20,9 +20,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc partition_and_map
- ******************************************************************************/
+ */
 PartitionOutput partition_and_map(const PartitionInput& input, const std::vector<char>& is_used) {
     PartitionOutput output;
 

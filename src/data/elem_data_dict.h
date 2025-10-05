@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file elem_data_dict.h
  * @brief Declares containers that manage element-level data fields.
  *
@@ -9,7 +9,7 @@
  * @see src/data/elem_data_dict.cpp
  * @see src/data/data_storage.h
  * @see src/data/dict.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -30,10 +30,10 @@ enum ElementDataEntries : Index {
     TOPO_ANGLES     ///< Orientation angles for topology optimisation workflows.
 };
 
-/******************************************************************************
+/**
  * @struct ElementField
  * @brief Extends `NodeData` with a stable name for element-level datasets.
- ******************************************************************************/
+ */
 struct ElementField : NodeData, Namable {
     using Ptr = std::shared_ptr<ElementField>; ///< Shared pointer alias for element fields.
 

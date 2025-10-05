@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface6.h
  * @brief Defines the Surface6 class for a 6-node triangular surface element.
  *
@@ -9,7 +9,7 @@
  *          used for higher-order surface approximations in FEM.
  *
  * @date Created on 01.10.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -17,7 +17,7 @@
 
 namespace fem::model {
 
-/******************************************************************************
+/**
  * @class Surface6
  * @brief Represents a triangular surface element with 6 nodes (S3D6).
  *
@@ -27,7 +27,7 @@ namespace fem::model {
  *          supports operations such as projecting points onto the surface,
  *          computing local coordinates, and performing surface integration
  *          using a higher-order quadrature scheme.
- ******************************************************************************/
+ */
 struct Surface6 : public Surface<6> {
     using Surface<6>::num_nodes;
     using Surface<6>::num_edges;

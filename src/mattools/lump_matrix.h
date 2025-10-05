@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file lump_matrix.h
  * @brief Provides a function that computes a lumped mass matrix by summing
  * each row of a sparse matrix and placing the result on the diagonal.
@@ -11,7 +11,7 @@
  * @return SparseMatrix The lumped mass matrix as a diagonal sparse matrix.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -21,7 +21,7 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Computes a lumped mass matrix by summing each row of the input sparse
  * matrix and placing the result on the diagonal.
  *
@@ -30,7 +30,7 @@ namespace fem { namespace mattools {
  *
  * @param matrix The input sparse matrix.
  * @return SparseMatrix The lumped mass matrix as a diagonal sparse matrix.
- ******************************************************************************/
+ */
 SparseMatrix lump_matrix(const SparseMatrix& matrix);
 
 } } // namespace fem::mattools

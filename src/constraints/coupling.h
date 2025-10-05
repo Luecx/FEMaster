@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file coupling.h
  * @brief Defines the Coupling class for handling kinematic _couplings in FEM.
  *
@@ -11,7 +11,7 @@
  * @see coupling.cpp
  * @author Finn Eggers
  * @date 04.09.2024
- ******************************************************************************/
+ */
 
 #pragma once    // Ensures this file is only included once during compilation
 
@@ -23,26 +23,26 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @enum CouplingType
  * @brief Defines the available types of _couplings in FEM.
  *
  * Currently, only kinematic coupling is supported, but additional types can be
  * added in the future.
- ******************************************************************************/
+ */
 enum class CouplingType {
     KINEMATIC,    ///< Kinematic coupling between master and slave nodes
     STRUCTURAL,   ///< Structural distribution coupling
 };
 
-/******************************************************************************
+/**
  * @class Coupling
  * @brief Implements a coupling constraint between master and slave nodes.
  *
  * The Coupling class generates the necessary equations to couple the degrees
  * of freedom (DOFs) of slave nodes with a master node, based on a specified
  * coupling type and the system's DOF configurations.
- ******************************************************************************/
+ */
 class Coupling {
 
     public:
@@ -53,7 +53,7 @@ class Coupling {
     CouplingType              type;                        ///< Type of coupling (e.g., kinematic)
 
     public:
-    /******************************************************************************
+    /**
      * @brief Constructor for the Coupling class.
      *
      * Initializes the coupling constraint with a master node, a set of slave nodes,
@@ -63,11 +63,11 @@ class Coupling {
      * @param slave_nodes A vector of IDs representing the slave nodes.
      * @param coupled_dofs A Dofs object specifying the DOFs to couple.
      * @param type The type of coupling to apply (e.g., kinematic).
-     ******************************************************************************/
+     */
     Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coupled_dofs, CouplingType type);
     Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dofs coupled_dofs, CouplingType type);
 
-    /******************************************************************************
+    /**
      * @brief Generates the coupling equations for the coupled DOFs.
      *
      * This function generates the necessary equations to couple the slave node
@@ -79,7 +79,7 @@ class Coupling {
      * @param model_data model data which has the coordinates of all nodes in the system.
      * @param row_offset The row offset for inserting the equations into the global system.
      * @return TripletList A list of triplets representing the coupling equations.
-     ******************************************************************************/
+     */
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
 
     /**
@@ -121,7 +121,7 @@ class Coupling {
      */
     void apply_loads(model::ModelData& model_data, NodeData& load_matrix);
 
-    /******************************************************************************
+    /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.
      *
      * This function determines which degrees of freedom (DOFs) are required for the
@@ -129,7 +129,7 @@ class Coupling {
      *
      * @param system_dof_mask A mask of active DOFs for all nodes in the system.
      * @return Dofs A Dofs object indicating which DOFs are required for the master node.
-     ******************************************************************************/
+     */
     Dofs master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data);
 };
 

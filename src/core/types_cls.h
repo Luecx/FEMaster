@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file types_cls.h
  * @brief Forward declarations and shared-pointer aliases for key classes.
  *
@@ -9,7 +9,7 @@
  * @see src/cos/coordinate_system.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

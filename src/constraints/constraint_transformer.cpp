@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_transformer.cpp
  * @brief Implements the `ConstraintTransformer` facade utilities.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/builder.cpp
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "constraint_transformer.h"
 
@@ -26,9 +26,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc ConstraintTransformer::ConstraintTransformer
- ******************************************************************************/
+ */
 ConstraintTransformer::ConstraintTransformer(const Equations& eqs,
                                              const SystemDofIds& dofs,
                                              Index n_dofs,
@@ -39,9 +39,9 @@ ConstraintTransformer::ConstraintTransformer(const Equations& eqs,
     std::tie(map_, report_) = ConstraintBuilder::build(set_, opt.builder);
 }
 
-/******************************************************************************
+/**
  * @copydoc ConstraintTransformer::post_check_static
- ******************************************************************************/
+ */
 void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                                               const DynamicVector& f,
                                               const DynamicVector& u,

@@ -11,9 +11,9 @@
 namespace fem {
 namespace reader {
 
-/******************************************************************************
+/**
  * @brief Enum representing the type of line parsed from the input.
- ******************************************************************************/
+ */
 enum LineType {
     COMMENT = -1,  ///< Line is a comment.
     EMPTY_LINE = 0, ///< Line is empty or whitespace.
@@ -22,14 +22,14 @@ enum LineType {
     END_OF_FILE = 3, ///< End of file marker.
 };
 
-/******************************************************************************
+/**
  * @brief Represents a single line in the input file, handling comments,
  * keywords, and data.
  *
  * This struct can parse the line into relevant data, such as keyword commands
  * and associated keys, or raw data values. It supports access and querying
  * of the parsed information, and type-safe conversions of values.
- ******************************************************************************/
+ */
 struct Line {
 private:
     std::string m_line; ///< Raw line data.

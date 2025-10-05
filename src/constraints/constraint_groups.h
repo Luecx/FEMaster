@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_groups.h
  * @brief Declares the container that categorises model constraint equations.
  *
@@ -6,7 +6,7 @@
  * reported or flattened into a single list for solver consumption.
  *
  * @see src/constraints/constraint_groups.cpp
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -18,10 +18,10 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @struct ConstraintGroups
  * @brief Stores constraint equations grouped by their origin.
- ******************************************************************************/
+ */
 struct ConstraintGroups {
     constraint::Equations supports;   ///< Equations originating from supports.
     constraint::Equations connectors; ///< Equations originating from connectors.
@@ -43,13 +43,10 @@ struct ConstraintGroups {
         return all;
     }
 
-    /******************************************************************************
+    /**
      * @brief Writes a formatted summary of all constraint groups to the logger.
-     *
-     * @param loadcase_id Identifier of the load case being reported.
-     * @param element_dims Spatial dimension of the model's elements.
-     ******************************************************************************/
-    void report(ID loadcase_id, Dim element_dims) const;
+     */
+    void report() const;
 };
 
 } // namespace constraint

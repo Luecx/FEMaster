@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface4.h
  * @brief Defines the Surface4 class for a quadrilateral surface element.
  *
@@ -10,7 +10,7 @@
  *          surface integration.
  *
  * @date Created on 27.09.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -23,7 +23,7 @@
 
 namespace fem::model {
 
-/******************************************************************************
+/**
  * @class Surface4
  * @brief Represents a quadrilateral surface element with 4 nodes (S3D4).
  *
@@ -33,7 +33,7 @@ namespace fem::model {
  *          such as checking element bounds, projecting points onto the
  *          element, and determining the closest point on the element's
  *          boundary.
- ******************************************************************************/
+ */
 struct Surface4 : public Surface<4> {
 
     using Surface<4>::num_nodes;

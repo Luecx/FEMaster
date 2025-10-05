@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface8.h
  * @brief Defines the Surface8 class for an 8-node quadrilateral surface element.
  *
@@ -10,7 +10,7 @@
  *          surface representations for complex geometries.
  *
  * @date Created on 01.10.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -18,7 +18,7 @@
 
 namespace fem::model {
 
-/******************************************************************************
+/**
  * @class Surface8
  * @brief Represents a quadrilateral surface element with 8 nodes (S3D8).
  *
@@ -28,7 +28,7 @@ namespace fem::model {
  *          The class supports operations such as projecting points onto the
  *          surface, computing local coordinates, and performing surface integration
  *          using a higher-order quadrature scheme.
- ******************************************************************************/
+ */
 struct Surface8 : public Surface<8> {
 
     using Surface<8>::num_nodes;

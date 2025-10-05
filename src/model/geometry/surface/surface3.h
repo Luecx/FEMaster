@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface3.h
  * @brief Derived class for a triangular surface element with 3 nodes (S3D3).
  *
@@ -13,7 +13,7 @@
  *          tie constraints and boundary condition enforcement.
  *
  * @date Created on 27.09.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -25,7 +25,7 @@
 
 namespace fem::model {
 
-/******************************************************************************
+/**
  * @class Surface3
  * @brief Represents a triangular surface element with 3 nodes (S3D3).
  *
@@ -33,7 +33,7 @@ namespace fem::model {
  *          schemes, and boundary checks for a simple triangular surface element.
  *          It supports common surface operations such as projection to the
  *          element, finding local coordinates, and computing surface areas.
- ******************************************************************************/
+ */
 struct Surface3 : public Surface<3> {
     using Surface<3>::num_nodes;
     using Surface<3>::num_edges;

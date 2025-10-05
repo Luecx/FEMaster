@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface.hpp
  * @brief Defines the SurfaceInterface template class, which serves as a base
  *        class for surface finite elements in both 2D and 3D spaces. It provides
@@ -23,7 +23,7 @@
  *
  * @date Created on 27.09.2024
  * @author Finn Eggers
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -80,7 +80,7 @@ struct SurfaceInterface {
     using Ptr = std::shared_ptr<SurfaceInterface>;
 };
 
-/******************************************************************************
+/**
  * @class Surface
  * @brief Base class template for a surface element in finite element analysis.
  *
@@ -90,7 +90,7 @@ struct SurfaceInterface {
  *          surface elements such as triangular and quadrilateral elements. The class
  *          provides virtual methods for calculating shape functions, computing derivatives,
  *          performing projection of 3D points to the surface, and conducting surface integration.
- ******************************************************************************/
+ */
 template<Index N>
 struct Surface : public SurfaceInterface {
     static constexpr Index num_edges          = (N > 4 ? N / 2 : N);

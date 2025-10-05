@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file element.h
  * @brief Declares the base interface implemented by all finite elements.
  *
@@ -6,7 +6,7 @@
  * structural elements such as connectivity, sections, and model data.
  *
  * @see src/model/element/element_structural.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -18,10 +18,10 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct ElementInterface
  * @brief Minimal polymorphic interface for FEM elements.
- ******************************************************************************/
+ */
 struct ElementInterface {
     const ID elem_id = 0; ///< Unique element identifier.
 

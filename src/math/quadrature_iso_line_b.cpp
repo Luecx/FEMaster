@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file quadrature_iso_line_b.cpp
  * @brief Registers Gauss-Legendre schemes for the shifted isoparametric line.
  *
  * @see src/math/quadrature.h
- ******************************************************************************/
+ */
 
 #include "quadrature.h"
 
@@ -14,14 +14,14 @@ namespace {
 constexpr std::array<Point, 1> line_b_linear{{Point(0.5, 1.0)}};
 
 constexpr std::array<Point, 2> line_b_quadratic{{
-    Point(0.5 - 0.5 / csqrt(3.0), 0.5),
-    Point(0.5 + 0.5 / csqrt(3.0), 0.5),
+    Point(0.5 - 0.5 / fem::math::csqrt(3.0), 0.5),
+    Point(0.5 + 0.5 / fem::math::csqrt(3.0), 0.5),
 }};
 
 constexpr std::array<Point, 3> line_b_quartic{{
-    Point(0.5 - 0.5 * csqrt(3.0 / 5.0), 5.0 / 18.0),
+    Point(0.5 - 0.5 * fem::math::csqrt(3.0 / 5.0), 5.0 / 18.0),
     Point(0.5, 8.0 / 18.0),
-    Point(0.5 + 0.5 * csqrt(3.0 / 5.0), 5.0 / 18.0),
+    Point(0.5 + 0.5 * fem::math::csqrt(3.0 / 5.0), 5.0 / 18.0),
 }};
 } // namespace
 

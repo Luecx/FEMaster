@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file rectangular_system.h
  * @brief Declares a Cartesian coordinate system implementation.
  *
@@ -10,7 +10,7 @@
  * @see src/cos/cylindrical_system.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -21,10 +21,10 @@
 namespace fem {
 namespace cos {
 
-/******************************************************************************
+/**
  * @class RectangularSystem
  * @brief Implements a right-handed rectangular coordinate system.
- ******************************************************************************/
+ */
 class RectangularSystem : public CoordinateSystem {
 public:
     RectangularSystem(const std::string& name, const Vec3& x_axis, const Vec3& y_axis, const Vec3& z_axis);

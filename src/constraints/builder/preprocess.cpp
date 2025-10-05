@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file preprocess.cpp
  * @brief Implements preprocessing of constraint systems prior to QR.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/particular_solution.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "preprocess.h"
 
@@ -22,9 +22,9 @@ namespace fem {
 namespace constraint {
 namespace {
 
-/******************************************************************************
+/**
  * @brief Describes a single non-zero row encountered during scanning.
- ******************************************************************************/
+ */
 struct SimpleRow {
     int row = -1;
     int col = -1;
@@ -32,9 +32,9 @@ struct SimpleRow {
     Precision rhs = Precision(0);
 };
 
-/******************************************************************************
+/**
  * @brief Finds rows with exactly one non-zero entry.
- ******************************************************************************/
+ */
 std::vector<SimpleRow> find_single_nnz_rows(const SparseMatrix& C,
                                             const DynamicVector& d,
                                             bool homogeneous) {
@@ -72,9 +72,9 @@ std::vector<SimpleRow> find_single_nnz_rows(const SparseMatrix& C,
     return singles;
 }
 
-/******************************************************************************
+/**
  * @brief Compacts zero columns while respecting a row-keep mask.
- ******************************************************************************/
+ */
 void compress_zero_columns_with_row_filter(const SparseMatrix& C,
                                            const std::vector<char>& keep_row,
                                            std::vector<int>& used_cols,
@@ -123,9 +123,9 @@ void compress_zero_columns_with_row_filter(const SparseMatrix& C,
 
 } // namespace
 
-/******************************************************************************
+/**
  * @copydoc preprocess_constraints
- ******************************************************************************/
+ */
 PreprocessOutput preprocess_constraints(const PreprocessInput& input) {
     PreprocessOutput output;
 

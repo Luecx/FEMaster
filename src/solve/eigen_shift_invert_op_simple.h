@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file eigen_shift_invert_op_simple.h
  * @brief Spectra-compatible operator: y = (A - σ I)^{-1} x for symmetric A.
  *
@@ -23,7 +23,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date Created on 19.09.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -42,10 +42,10 @@
 
 namespace fem::solver {
 
-/******************************************************************************
+/**
  * @class ShiftInvertOpSimple
  * @brief Applies y = (A - σ I)^{-1} x with cached factorization.
- ******************************************************************************/
+ */
 class ShiftInvertOpSimple {
 public:
     using Scalar = Precision;

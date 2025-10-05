@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file tie.cpp
  * @brief Implements the tie constraint used to couple slave nodes to surfaces.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "tie.h"
 
@@ -18,9 +18,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc Tie::Tie
- ******************************************************************************/
+ */
 Tie::Tie(model::SurfaceRegion::Ptr master,
          model::NodeRegion::Ptr slave,
          Precision max_distance,
@@ -30,9 +30,9 @@ Tie::Tie(model::SurfaceRegion::Ptr master,
     , distance(max_distance)
     , adjust(do_adjust) {}
 
-/******************************************************************************
+/**
  * @copydoc Tie::get_equations
- ******************************************************************************/
+ */
 Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     auto& node_coords = model_data.get(model::NodeDataEntries::POSITION);
     auto& surfaces = model_data.surfaces;

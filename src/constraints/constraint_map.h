@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_map.h
  * @brief Declares the null-space map used to eliminate constrained DOFs.
  *
@@ -10,7 +10,7 @@
  * @see src/constraints/builder/builder.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -21,15 +21,15 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @class ConstraintMap
  * @brief Stores the null-space representation `u = u_p + T q`.
- ******************************************************************************/
+ */
 class ConstraintMap {
 public:
-    /******************************************************************************
+    /**
      * @brief Default constructor leaves the map uninitialized.
-     ******************************************************************************/
+     */
     ConstraintMap() = default;
 
     /// Returns the full system size (`n`).
@@ -56,83 +56,83 @@ public:
     /// Accesses the transformation matrix `T`.
     const SparseMatrix& T() const { return T_; }
 
-    /******************************************************************************
+    /**
      * @brief Applies the transformation `u = T q + u_p`.
      *
      * @param q Reduced coordinates.
      * @param u Output vector of full coordinates.
-     ******************************************************************************/
+     */
     void apply_T(const DynamicVector& q, DynamicVector& u) const;
 
-    /******************************************************************************
+    /**
      * @brief Applies the adjoint transformation `z = T^T y`.
      *
      * @param y Full-space vector.
      * @param z Output vector in the reduced space.
-     ******************************************************************************/
+     */
     void apply_Tt(const DynamicVector& y, DynamicVector& z) const;
 
-    /******************************************************************************
+    /**
      * @brief Returns `T q + u_p` without overwriting an existing vector.
      *
      * @param q Reduced coordinates.
      * @return DynamicVector Full coordinate vector.
-     ******************************************************************************/
+     */
     DynamicVector apply_T(const DynamicVector& q) const;
 
-    /******************************************************************************
+    /**
      * @brief Returns `T^T y` without overwriting an existing vector.
      *
      * @param y Full-space vector.
      * @return DynamicVector Reduced-space result.
-     ******************************************************************************/
+     */
     DynamicVector apply_Tt(const DynamicVector& y) const;
 
-    /******************************************************************************
+    /**
      * @brief Assembles the reduced stiffness matrix `A = T^T K T`.
      *
      * @param K Full-space stiffness matrix.
      * @return SparseMatrix Reduced stiffness matrix.
-     ******************************************************************************/
+     */
     SparseMatrix assemble_A(const SparseMatrix& K) const;
 
-    /******************************************************************************
+    /**
      * @brief Assembles the reduced geometric matrix `B = T^T K_g T`.
      *
      * @param Kg Full-space geometric matrix.
      * @return SparseMatrix Reduced geometric matrix.
-     ******************************************************************************/
+     */
     SparseMatrix assemble_B(const SparseMatrix& Kg) const;
 
-    /******************************************************************************
+    /**
      * @brief Assembles the reduced right-hand side `b = T^T (f - K u_p)`.
      *
      * @param K Full-space stiffness matrix.
      * @param f Full-space load vector.
      * @return DynamicVector Reduced right-hand side vector.
-     ******************************************************************************/
+     */
     DynamicVector assemble_b(const SparseMatrix& K, const DynamicVector& f) const;
 
-    /******************************************************************************
+    /**
      * @class OpA
      * @brief Matrix-free operator that evaluates `y = T^T K T x`.
-     ******************************************************************************/
+     */
     class OpA {
     public:
-        /******************************************************************************
+        /**
          * @brief Constructs a matrix-free operator for a given stiffness matrix.
          *
          * @param map Constraint map providing `T`.
          * @param K Full-space stiffness matrix.
-         ******************************************************************************/
+         */
         OpA(const ConstraintMap& map, const SparseMatrix& K);
 
-        /******************************************************************************
+        /**
          * @brief Performs the matrix-free operation `y = T^T K T x`.
          *
          * @param x Reduced-space input vector.
          * @param y Reduced-space output vector.
-         ******************************************************************************/
+         */
         void perform_op(const DynamicVector& x, DynamicVector& y) const;
 
     private:
@@ -142,26 +142,26 @@ public:
         mutable DynamicVector y_full_;
     };
 
-    /******************************************************************************
+    /**
      * @class OpB
      * @brief Matrix-free operator that evaluates `y = T^T K_g T x`.
-     ******************************************************************************/
+     */
     class OpB {
     public:
-        /******************************************************************************
+        /**
          * @brief Constructs a matrix-free operator for a geometric matrix.
          *
          * @param map Constraint map providing `T`.
          * @param Kg Full-space geometric matrix.
-         ******************************************************************************/
+         */
         OpB(const ConstraintMap& map, const SparseMatrix& Kg);
 
-        /******************************************************************************
+        /**
          * @brief Performs the matrix-free operation `y = T^T K_g T x`.
          *
          * @param x Reduced-space input vector.
          * @param y Reduced-space output vector.
-         ******************************************************************************/
+         */
         void perform_op(const DynamicVector& x, DynamicVector& y) const;
 
     private:
@@ -171,22 +171,22 @@ public:
         mutable DynamicVector y_full_;
     };
 
-    /******************************************************************************
+    /**
      * @brief Recovers the full solution `u = T q + u_p`.
      *
      * @param q Reduced coordinates.
      * @return DynamicVector Full coordinate vector.
-     ******************************************************************************/
+     */
     DynamicVector recover_u(const DynamicVector& q) const;
 
-    /******************************************************************************
+    /**
      * @brief Computes reaction forces associated with constrained DOFs.
      *
      * @param K Full-space stiffness matrix.
      * @param f Full-space load vector.
      * @param q Reduced coordinates.
      * @return DynamicVector Reaction forces in the full space.
-     ******************************************************************************/
+     */
     DynamicVector reactions(const SparseMatrix& K, const DynamicVector& f, const DynamicVector& q) const;
 
 public:

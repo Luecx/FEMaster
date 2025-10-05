@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file ip_data_dict.h
  * @brief Declares integration-point data containers.
  *
@@ -8,7 +8,7 @@
  *
  * @see src/data/ip_data_dict.cpp
  * @see src/data/data_storage.h
- ******************************************************************************/
+ */
 
 #pragma once
 

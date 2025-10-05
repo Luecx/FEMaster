@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file startup.h
  * @brief Declares the startup helper that prints build information at launch.
  *
@@ -9,17 +9,17 @@
  * @see src/core/version.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
 namespace fem {
 namespace startup {
 
-/******************************************************************************
+/**
  * @struct Startup
  * @brief Emits build information during static initialisation.
- ******************************************************************************/
+ */
 struct Startup {
     Startup();
 };

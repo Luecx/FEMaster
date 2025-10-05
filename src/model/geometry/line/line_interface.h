@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file line_interface.h
  * @brief Declares the templated interface for isoparametric line geometries.
  *
@@ -6,7 +6,7 @@
  * line-based geometry definitions.
  *
  * @see src/model/geometry/line/line2a.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -278,7 +278,6 @@ struct LineInterface {
         return node_ids;
     }
 };
-}
 } // namespace model
 } // namespace fem
 

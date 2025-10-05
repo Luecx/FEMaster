@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file load_collector.cpp
  * @brief Implements aggregation of load boundary conditions.
  *
@@ -10,7 +10,7 @@
  * @see src/bc/load.cpp
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "load_collector.h"
 
@@ -19,24 +19,24 @@
 namespace fem {
 namespace bc {
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::LoadCollector
- ******************************************************************************/
+ */
 LoadCollector::LoadCollector(const std::string& name)
     : model::Collection<Load::Ptr>(name) {}
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::apply
- ******************************************************************************/
+ */
 void LoadCollector::apply(model::ModelData& model_data, NodeData& bc) {
     for (const auto& load : this->_data) {
         load->apply(model_data, bc);
     }
 }
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::add_cload
- ******************************************************************************/
+ */
 void LoadCollector::add_cload(model::NodeRegion::Ptr region, Vec6 values) {
     auto cload = std::make_shared<CLoad>();
     cload->region = std::move(region);
@@ -44,9 +44,9 @@ void LoadCollector::add_cload(model::NodeRegion::Ptr region, Vec6 values) {
     this->add(cload);
 }
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::add_dload
- ******************************************************************************/
+ */
 void LoadCollector::add_dload(model::SurfaceRegion::Ptr region, Vec3 values) {
     auto dload = std::make_shared<DLoad>();
     dload->region = std::move(region);
@@ -54,9 +54,9 @@ void LoadCollector::add_dload(model::SurfaceRegion::Ptr region, Vec3 values) {
     this->add(dload);
 }
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::add_pload
- ******************************************************************************/
+ */
 void LoadCollector::add_pload(model::SurfaceRegion::Ptr region, Precision pressure) {
     auto pload = std::make_shared<PLoad>();
     pload->region = std::move(region);
@@ -64,9 +64,9 @@ void LoadCollector::add_pload(model::SurfaceRegion::Ptr region, Precision pressu
     this->add(pload);
 }
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::add_vload
- ******************************************************************************/
+ */
 void LoadCollector::add_vload(model::ElementRegion::Ptr region, Vec3 values) {
     auto vload = std::make_shared<VLoad>();
     vload->region = std::move(region);
@@ -74,9 +74,9 @@ void LoadCollector::add_vload(model::ElementRegion::Ptr region, Vec3 values) {
     this->add(vload);
 }
 
-/******************************************************************************
+/**
  * @copydoc LoadCollector::add_tload
- ******************************************************************************/
+ */
 void LoadCollector::add_tload(model::NodeField::Ptr temp_field, Precision ref_temp) {
     auto tload = std::make_shared<TLoad>();
     tload->temp_field = std::move(temp_field);

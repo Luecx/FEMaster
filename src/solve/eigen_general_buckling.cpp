@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file eigen_general_buckling.cpp
  * @brief Generalized Buckling: (A - σB)^{-1} A x.
  *
@@ -13,7 +13,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 
 #include "eigen_internal.h"
 #include "eigen_shift_invert_op_gen.h"

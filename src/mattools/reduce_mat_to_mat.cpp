@@ -1,10 +1,10 @@
-/******************************************************************************
+/**
 * @file reduce_mat.cpp
  * @brief Implements a function that reduces a sparse matrix by removing rows
  * that correspond to non-`NaN` values in a vector.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "reduce_mat_to_mat.h"
 #include "assert.h"

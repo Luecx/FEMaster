@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file types_eig.h
  * @brief Declares Eigen-based matrix and vector aliases used across the solver.
  *
@@ -9,7 +9,7 @@
  * @see src/core/types_cls.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

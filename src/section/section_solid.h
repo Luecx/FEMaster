@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file section_solid.h
 * @brief Defines the SolidSection class for solid FEM sections.
 *
@@ -7,7 +7,7 @@
 *
 * @see section_solid.cpp
 * @date 21.11.2024
-******************************************************************************/
+*/
 
 #pragma once
 
@@ -15,18 +15,18 @@
 
 namespace fem {
 
-/******************************************************************************
+/**
 * @class SolidSection
 * @brief Represents a solid FEM section.
 *
 * A solid section contains material and region information.
-******************************************************************************/
+*/
 struct SolidSection : Section {
    using Ptr = std::shared_ptr<SolidSection>;
 
-   /******************************************************************************
+   /**
     * @brief Outputs information about the solid section.
-    ******************************************************************************/
+    */
    void info() override;
 };
 

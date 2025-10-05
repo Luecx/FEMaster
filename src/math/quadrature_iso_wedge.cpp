@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file quadrature_iso_wedge.cpp
  * @brief Registers quadrature schemes for the isoparametric wedge.
  *
  * @see src/math/quadrature.h
- ******************************************************************************/
+ */
 
 #include "quadrature.h"
 
@@ -12,11 +12,11 @@ namespace quadrature {
 
 namespace {
 constexpr std::array<Point, 2> wedge_linear{{
-    Point(1.0 / 3.0, 1.0 / 3.0, -csqrt(3.0) / 3.0, 1.0 / 2.0),
-    Point(1.0 / 3.0, 1.0 / 3.0,  csqrt(3.0) / 3.0, 1.0 / 2.0),
+    Point(1.0 / 3.0, 1.0 / 3.0, -fem::math::csqrt(3.0) / 3.0, 1.0 / 2.0),
+    Point(1.0 / 3.0, 1.0 / 3.0,  fem::math::csqrt(3.0) / 3.0, 1.0 / 2.0),
 }};
 
-constexpr Precision wedge_coord = csqrt(0.6);
+constexpr Precision wedge_coord = fem::math::csqrt(0.6);
 constexpr Precision wedge_weight_lower = 5.0 / 9.0;
 constexpr Precision wedge_weight_middle = 8.0 / 9.0;
 

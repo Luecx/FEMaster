@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assemble.h
  * @brief Provides assembly functions for system matrices in FEM using
  * user-defined lambda functions and element pointers.
@@ -10,7 +10,7 @@
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -22,7 +22,7 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Assembles a global sparse matrix in FEM using a user-provided lambda
  * function that generates local element contributions for each element.
  *
@@ -46,7 +46,7 @@ namespace fem { namespace mattools {
  * @param indices An SystemDofIds mapping element node and DOF indices to global DOF indices.
  * @param lambda The lambda function responsible for producing the local element matrix.
  * @return SparseMatrix The assembled global sparse matrix.
- ******************************************************************************/
+ */
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements, const SystemDofIds &indices, Lambda&& lambda);
 

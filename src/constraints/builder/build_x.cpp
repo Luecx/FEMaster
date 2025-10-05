@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file build_x.cpp
  * @brief Computes sparse columns of `X = -R11^{-1} R12` using back substitution.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/detect_rank.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "build_x.h"
 
@@ -20,9 +20,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc build_X_cols_from_R
- ******************************************************************************/
+ */
 XCols build_X_cols_from_R(const SparseMatrix& R, int r) {
     XCols cols;
 

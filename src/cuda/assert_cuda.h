@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assert_cuda.h
  * @brief Declares helper functions that translate CUDA error codes into exceptions.
  *
@@ -9,7 +9,7 @@
  * @see src/cuda/cuda.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

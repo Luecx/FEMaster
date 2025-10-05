@@ -5,6 +5,8 @@
 #ifndef SHELL_H
 #define SHELL_H
 
+#include "../../material/stress.h"
+#include "../../material/isotropic_elasticity.h"
 #include "../../core/core.h"
 #include "../element/element_structural.h"
 #include "../../section/section_shell.h"

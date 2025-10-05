@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file material.h
  * @brief Declares material property containers for FEM analyses.
  *
@@ -9,7 +9,7 @@
  * @see src/material/elasticity.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -23,18 +23,18 @@
 namespace fem {
 namespace material {
 
-/******************************************************************************
+/**
  * @struct Material
  * @brief Holds scalar material data and an elasticity model.
- ******************************************************************************/
+ */
 struct Material : public Namable {
     using Ptr = std::shared_ptr<Material>; ///< Shared pointer alias used across the codebase.
 
-    /******************************************************************************
+    /**
      * @brief Constructs a material with the provided name.
      *
      * @param name Identifier of the material.
-     ******************************************************************************/
+     */
     explicit Material(std::string name);
 
     /// Returns `true` when an elasticity model is associated with this material.
@@ -46,13 +46,13 @@ struct Material : public Namable {
     /// Logs material information for diagnostics.
     void info() const;
 
-    /******************************************************************************
+    /**
      * @brief Replaces the elasticity model with a newly constructed instance.
      *
      * @tparam T Elasticity type deriving from `Elasticity`.
      * @tparam Args Constructor argument types.
      * @param args Arguments forwarded to the elasticity constructor.
-     ******************************************************************************/
+     */
     template<typename T, typename... Args>
     void set_elasticity(Args&&... args) {
         m_elastic = ElasticityPtr(new T(std::forward<Args>(args)...));

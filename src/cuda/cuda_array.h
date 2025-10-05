@@ -1,11 +1,11 @@
-/******************************************************************************
+/**
  * @file cuda_array.h
  * @brief Declares a simple RAII wrapper for device memory allocations.
  *
  * @see src/cuda/cuda_array.cu
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

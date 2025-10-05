@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file cuda.h
  * @brief Declares the CUDA resource manager and associated helpers.
  *
@@ -9,7 +9,7 @@
  * @see src/cuda/assert_cuda.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -27,10 +27,10 @@
 namespace fem {
 namespace cuda {
 
-/******************************************************************************
+/**
  * @struct Manager
  * @brief Owns CUDA library handles and exposes GPU properties.
- ******************************************************************************/
+ */
 struct Manager {
     cusolverSpHandle_t handle_cusolver_sp{};
     cusolverDnHandle_t handle_cusolver_dn{};

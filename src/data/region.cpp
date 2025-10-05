@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file region.cpp
  * @brief Provides the translation unit anchor for the `Region` template.
  *
@@ -6,7 +6,7 @@
  * instantiations and improved IDE navigation.
  *
  * @see src/data/region.h
- ******************************************************************************/
+ */
 
 #include "region.h"
 

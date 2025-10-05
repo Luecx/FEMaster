@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file extract_scaled_row_sum.cpp
  * @brief Implements a function that extracts rows of a sparse matrix, scales
  * them by corresponding entries in a vector, and sums the result. `NaN` values
@@ -10,7 +10,7 @@
  * The sparse matrix representation improves performance for larger data sets.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "extract_scaled_row_sum.h"
 

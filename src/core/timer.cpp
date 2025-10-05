@@ -1,11 +1,11 @@
-/******************************************************************************
+/**
  * @file timer.cpp
  * @brief Implements the timer helper used for performance measurements.
  *
  * @see src/core/timer.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "timer.h"
 

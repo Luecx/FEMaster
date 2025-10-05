@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface8.cpp
  * @brief Implements the functions for the Surface8 class.
  *
@@ -7,7 +7,7 @@
  *          integration schemes for the 8-node quadrilateral surface element.
  *
  * @date Created on 01.10.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #include "surface8.h"
 #include "../line/line3a.h"

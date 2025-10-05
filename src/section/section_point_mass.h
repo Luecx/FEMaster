@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file section_point_mass.h
 * @brief Defines the PointMassSection class for FEM point mass sections.
 *
@@ -6,7 +6,7 @@
 *
 * @see point_mass_section.cpp
 * @date 21.11.2024
-******************************************************************************/
+*/
 
 #pragma once
 
@@ -15,12 +15,12 @@
 
 namespace fem {
 
-/******************************************************************************
+/**
 * @class PointMassSection
 * @brief Represents a point mass FEM section.
 *
 * A point mass section includes mass, rotary inertia, and spring constants.
-******************************************************************************/
+*/
 struct PointMassSection : Section {
    using Ptr = std::shared_ptr<PointMassSection>;
 
@@ -29,9 +29,9 @@ struct PointMassSection : Section {
    Vec3 spring_constants = Vec3::Zero(); ///< Spring constants for translation.
    Vec3 rotary_spring_constants = Vec3::Zero(); ///< Spring constants for rotation.
 
-   /******************************************************************************
+   /**
     * @brief Outputs information about the point mass section.
-    ******************************************************************************/
+    */
    void info() override;
 };
 

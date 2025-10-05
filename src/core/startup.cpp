@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file startup.cpp
  * @brief Implements the startup helper that reports build information.
  *
@@ -6,7 +6,7 @@
  * @see src/core/version.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "startup.h"
 

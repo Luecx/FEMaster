@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file LinearEigenfrequency.h
  * @brief Linear eigenfrequency analysis using affine null-space constraints.
  *
@@ -13,7 +13,7 @@
  *
  * @date    15.09.2025
  * @author  Finn
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -23,12 +23,12 @@
 namespace fem {
 namespace loadcase {
 
-/******************************************************************************
+/**
  * LinearEigenfrequency class
  * This class performs linear eigenfrequency analysis on a finite element model
  * to compute natural frequencies and mode shapes. It extends the LoadCase class,
  * implementing a run function for solving the eigenvalue problem.
- ******************************************************************************/
+ */
 struct LinearEigenfrequency : public LoadCase {
 
     //-------------------------------------------------------------------------

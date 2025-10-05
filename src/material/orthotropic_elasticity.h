@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file orthotropic_elasticity.h
  * @brief Declares the orthotropic elasticity model.
  *
@@ -9,7 +9,7 @@
  * @see src/material/elasticity.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -18,10 +18,10 @@
 namespace fem {
 namespace material {
 
-/******************************************************************************
+/**
  * @struct OrthotropicElasticity
  * @brief Elasticity model for orthotropic materials.
- ******************************************************************************/
+ */
 struct OrthotropicElasticity : Elasticity {
     Precision Ex;
     Precision Ey;
@@ -33,7 +33,7 @@ struct OrthotropicElasticity : Elasticity {
     Precision vzx;
     Precision vxy;
 
-    /******************************************************************************
+    /**
      * @brief Constructs the orthotropic elasticity model.
      *
      * @param ex Young's modulus in the X direction.
@@ -45,7 +45,7 @@ struct OrthotropicElasticity : Elasticity {
      * @param vyz Poisson ratio for YZ coupling.
      * @param vzx Poisson ratio for ZX coupling.
      * @param vxy Poisson ratio for XY coupling.
-     ******************************************************************************/
+     */
     OrthotropicElasticity(Precision ex,
                           Precision ey,
                           Precision ez,

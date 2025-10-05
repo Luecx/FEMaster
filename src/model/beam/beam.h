@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file beam.h
  * @brief Declares the templated base class for structural beam elements.
  *
@@ -6,23 +6,25 @@
  * concrete beam implementations while deriving from `StructuralElement`.
  *
  * @see src/model/beam/b33.h
- ******************************************************************************/
+ */
 
 #pragma once
 
 #include "../../core/core.h"
 #include "../../section/section_beam.h"
 #include "../element/element_structural.h"
+#include "../../material/stress.h"
+#include "../../material/isotropic_elasticity.h"
 
 #include <array>
 
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct BeamElement
  * @brief Provides shared functionality for beam formulations with `N` nodes.
- ******************************************************************************/
+ */
 template<Index N>
 struct BeamElement : StructuralElement {
     std::array<ID, N> node_ids{}; ///< Connectivity of the beam element.

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file node_data_dict.h
  * @brief Declares containers that store nodal field data.
  *
@@ -8,7 +8,7 @@
  * @see src/data/node_data_dict.cpp
  * @see src/data/data_storage.h
  * @see src/data/dict.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -24,10 +24,10 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct NodeField
  * @brief Wraps nodal data together with a human-readable name.
- ******************************************************************************/
+ */
 struct NodeField : Namable, NodeData {
     using Ptr = std::shared_ptr<NodeField>; ///< Shared pointer alias for node fields.
 

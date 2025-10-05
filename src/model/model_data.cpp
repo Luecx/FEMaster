@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file model_data.cpp
  * @brief Provides the translation unit companion for `ModelData`.
  *
@@ -6,7 +6,7 @@
  * expect a `.cpp` next to the declaration.
  *
  * @see src/model/model_data.h
- ******************************************************************************/
+ */
 
 #include "model_data.h"
 

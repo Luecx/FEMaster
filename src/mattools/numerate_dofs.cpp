@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file numerate_dofs.cpp
  * @brief numerate_dofs.cpp defines the function for numerating system DOF IDs
  * from a SystemDofs matrix in FEM simulations.
@@ -6,13 +6,13 @@
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "numerate_dofs.h"
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Generates SystemDofIds from a SystemDofs matrix by numerating
  * the degrees of freedom.
  *
@@ -22,7 +22,7 @@ namespace fem { namespace mattools {
  *
  * @param systemDofs The SystemDofs matrix to be converted.
  * @return SystemDofIds The matrix of numerated DOF IDs.
- ******************************************************************************/
+ */
 SystemDofIds numerate_dofs(const SystemDofs& systemDofs) {
     SystemDofIds dofIds(systemDofs.rows(), 6);
     int idCounter = 0;

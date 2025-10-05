@@ -1,11 +1,11 @@
-/******************************************************************************
+/**
  * @file cuda.cu
  * @brief Implements the CUDA resource manager.
  *
  * @see src/cuda/cuda.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #ifdef SUPPORT_GPU
 

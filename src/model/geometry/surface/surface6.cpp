@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file surface6.cpp
  * @brief Implements the functions for the Surface6 class.
  *
@@ -7,7 +7,7 @@
  *          integration schemes for the 6-node triangular surface element.
  *
  * @date Created on 01.10.2024 by Finn Eggers
- ******************************************************************************/
+ */
 
 #include "surface6.h"
 #include "../line/line3b.h"

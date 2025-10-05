@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file tie.h
  * @brief Declares the tie constraint relating slave nodes to master surfaces.
  *
@@ -10,7 +10,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -21,10 +21,10 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @class Tie
  * @brief Couples slave nodes to master surfaces via closest-point projection.
- ******************************************************************************/
+ */
 class Tie {
     model::SurfaceRegion::Ptr master_set; ///< Master surface region.
     model::NodeRegion::Ptr slave_set;     ///< Slave node region.
@@ -32,26 +32,26 @@ class Tie {
     bool adjust;                         ///< Whether to move slave nodes onto the master surface.
 
 public:
-    /******************************************************************************
+    /**
      * @brief Builds a tie constraint for the given regions.
      *
      * @param master Master surface region.
      * @param slave Slave node region.
      * @param max_distance Maximum allowed projection distance.
      * @param do_adjust Whether slave nodes should be adjusted to the surface.
-     ******************************************************************************/
+     */
     Tie(model::SurfaceRegion::Ptr master,
         model::NodeRegion::Ptr slave,
         Precision max_distance,
         bool do_adjust);
 
-    /******************************************************************************
+    /**
      * @brief Generates the constraint equations associated with the tie.
      *
      * @param system_nodal_dofs Global DOF numbering.
      * @param model_data Model data providing geometry information.
      * @return Equations Coupling equations enforcing the tie.
-     ******************************************************************************/
+     */
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data);
 };
 

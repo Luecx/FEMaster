@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file quadrature.h
  * @brief Declares Gauss-type quadrature schemes used throughout the solver.
  *
@@ -9,7 +9,7 @@
  * @see src/math/quadrature.cpp
  * @see src/math/quadrature_iso_tri.cpp
  * @see src/math/quadrature_iso_hex.cpp
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -28,10 +28,10 @@
 namespace fem {
 namespace quadrature {
 
-/******************************************************************************
+/**
  * @enum Order
  * @brief Enumerates polynomial orders supported by the quadrature collection.
- ******************************************************************************/
+ */
 enum Order {
     ORDER_CONSTANT = 0,
     ORDER_LINEAR = 1,
@@ -43,10 +43,10 @@ enum Order {
     ORDER_SUPER_QUADRATIC = 2,
 };
 
-/******************************************************************************
+/**
  * @enum Domain
  * @brief Enumerates reference domains covered by the integration schemes.
- ******************************************************************************/
+ */
 enum Domain {
     DOMAIN_ISO_TRI = 1,
     DOMAIN_ISO_QUAD = 2,
@@ -58,10 +58,10 @@ enum Domain {
     DOMAIN_ISO_PYRAMID = 8,
 };
 
-/******************************************************************************
+/**
  * @struct Point
  * @brief Represents a quadrature point with coordinates and weight.
- ******************************************************************************/
+ */
 struct Point {
     Precision r{0}; ///< First isoparametric coordinate.
     Precision s{0}; ///< Second isoparametric coordinate.
@@ -96,10 +96,10 @@ struct Point {
     }
 };
 
-/******************************************************************************
+/**
  * @struct Scheme
  * @brief Bundles all points belonging to a domain/order combination.
- ******************************************************************************/
+ */
 struct Scheme {
     Domain domain{DOMAIN_ISO_TRI}; ///< Reference domain of the scheme.
     Order order{ORDER_CONSTANT};   ///< Supported polynomial order.
@@ -113,17 +113,17 @@ struct Scheme {
 /// Alias for the key type that indexes all schemes.
 using SchemeKey = std::tuple<Domain, Order>;
 
-/******************************************************************************
+/**
  * @brief Converts an `std::array` of points into a `std::vector`.
- ******************************************************************************/
+ */
 template<std::size_t N>
 std::vector<Point> create_vector_from_array(const std::array<Point, N>& arr) {
     return std::vector<Point>(arr.begin(), arr.end());
 }
 
-/******************************************************************************
+/**
  * @brief Converts a C-style array of points into a `std::vector`.
- ******************************************************************************/
+ */
 template<std::size_t N>
 std::vector<Point> create_vector_from_array(const Point (&arr)[N]) {
     return std::vector<Point>(arr, arr + N);
@@ -132,9 +132,9 @@ std::vector<Point> create_vector_from_array(const Point (&arr)[N]) {
 /// Global lookup table populated by the registration macros.
 extern std::map<SchemeKey, Scheme> quadrature_scheme_map;
 
-/******************************************************************************
+/**
  * @brief Helper that executes a callable at static initialisation time.
- ******************************************************************************/
+ */
 struct Executor {
     explicit Executor(std::function<void()> f) {
         f();
@@ -155,10 +155,10 @@ struct Executor {
         ::fem::quadrature::Scheme(domain_, order_, ::fem::quadrature::create_vector_from_array(points_)); \
     })
 
-/******************************************************************************
+/**
  * @class Quadrature
  * @brief Provides access to a registered quadrature scheme.
- ******************************************************************************/
+ */
 struct Quadrature {
 private:
     Domain domain; ///< Domain associated with the instance.
@@ -166,17 +166,17 @@ private:
     Scheme scheme; ///< Cached scheme retrieved from the registry.
 
 public:
-    /******************************************************************************
+    /**
      * @brief Constructs a quadrature instance for the specified domain/order pair.
-     ******************************************************************************/
+     */
     Quadrature(Domain d, Order o);
 
-    /******************************************************************************
+    /**
      * @brief Integrates a callable using all points of the scheme.
      *
      * @tparam F Integrand functor type.
      * @tparam T Result type inferred from the callable.
-     ******************************************************************************/
+     */
     template<typename F, typename T = std::invoke_result_t<F, Precision, Precision, Precision>>
     T integrate(const F& func) const {
         T res = T();
@@ -189,9 +189,9 @@ public:
         return res;
     }
 
-    /******************************************************************************
+    /**
      * @brief Extrapolates point-wise values back to nodal values (currently unimplemented).
-     ******************************************************************************/
+     */
     template<int M, int N>
     StaticVector<N> extrapolate(const StaticMatrix<M, N>& values) const {
         runtime_assert(M == count(), "Number of values must match number of quadrature points");

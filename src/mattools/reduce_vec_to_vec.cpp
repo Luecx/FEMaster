@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file reduce_vec_to_vec.cpp
  * @brief Implements functions to reduce and expand vectors based on another vector.
  *
@@ -10,7 +10,7 @@
  * retaining non-`NaN` values from `b`.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "reduce_vec_to_vec.h"
 #include "../core/core.h"

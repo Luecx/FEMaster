@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file elasticity.cpp
  * @brief Implements the base elasticity interface utilities.
  *
@@ -9,7 +9,7 @@
  * @see src/material/isotropic_elasticity.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "elasticity.h"
 
@@ -18,9 +18,9 @@
 namespace fem {
 namespace material {
 
-/******************************************************************************
+/**
  * @copydoc Elasticity::get
- ******************************************************************************/
+ */
 template<Dim D>
 StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Elasticity::get() {
     if constexpr (D == 2) {
@@ -31,9 +31,9 @@ StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Elasticity::get() {
     throw std::out_of_range("Invalid dimension for elasticity matrix (must be 2 or 3).");
 }
 
-/******************************************************************************
+/**
  * @copydoc Elasticity::transformation
- ******************************************************************************/
+ */
 StaticMatrix<6, 6> Elasticity::transformation(StaticMatrix<3, 3> R) {
     Precision R11 = R(0, 0), R12 = R(0, 1), R13 = R(0, 2);
     Precision R21 = R(1, 0), R22 = R(1, 1), R23 = R(1, 2);
@@ -51,9 +51,9 @@ StaticMatrix<6, 6> Elasticity::transformation(StaticMatrix<3, 3> R) {
     return T_eps;
 }
 
-/******************************************************************************
+/**
  * @copydoc Elasticity::transformation_der
- ******************************************************************************/
+ */
 StaticMatrix<6, 6> Elasticity::transformation_der(StaticMatrix<3, 3> R, StaticMatrix<3, 3> dR) {
     Precision R11 = R(0, 0), R12 = R(0, 1), R13 = R(0, 2);
     Precision R21 = R(1, 0), R22 = R(1, 1), R23 = R(1, 2);
@@ -75,9 +75,9 @@ StaticMatrix<6, 6> Elasticity::transformation_der(StaticMatrix<3, 3> R, StaticMa
     return dT_eps;
 }
 
-/******************************************************************************
+/**
  * @copydoc Elasticity::get_transformed
- ******************************************************************************/
+ */
 template<Dim D>
 StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Elasticity::get_transformed(StaticMatrix<D, D> R) {
     static_assert(D == 3, "Only 3D transformation is implemented.");
@@ -85,9 +85,9 @@ StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Elasticity::get_transformed(Sta
     return T_eps.transpose() * get<D>() * T_eps;
 }
 
-/******************************************************************************
+/**
  * @copydoc Elasticity::get_transformed_derivative
- ******************************************************************************/
+ */
 template<Dim D>
 StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Elasticity::get_transformed_derivative(StaticMatrix<D, D> R,
                                                                                          StaticMatrix<D, D> R_der) {

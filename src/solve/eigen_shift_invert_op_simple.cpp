@@ -1,11 +1,11 @@
-/******************************************************************************
+/**
  * @file eigen_shift_invert_op_simple.cpp
  * @brief Implementation of y = (A - σ I)^{-1} x with cached factorization.
  *
  * @details
  * Builds and caches the LDLT factorization of (A - σ I). If σ changes via
  * set_shift(), the next call to perform_op() will re-factorize.
- ******************************************************************************/
+ */
 
 #include "eigen_shift_invert_op_simple.h"
 #include "../core/logging.h"

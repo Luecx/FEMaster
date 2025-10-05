@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file quadrature_iso_pyramid.cpp
  * @brief Registers quadrature schemes for the isoparametric pyramid.
  *
  * @see src/math/quadrature.h
- ******************************************************************************/
+ */
 
 #include "quadrature.h"
 

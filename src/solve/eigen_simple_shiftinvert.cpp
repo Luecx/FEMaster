@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file eigen_simple_shiftinvert.cpp
  * @brief Simple shift–invert: A x = λ x using (A - σI)^{-1}.
  *
@@ -13,7 +13,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 
 #include "eigen_internal.h"
 #include "eigen_shift_invert_op_simple.h"

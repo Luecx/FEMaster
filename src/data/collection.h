@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file collection.h
  * @brief Declares a generic container that manages named collections of items.
  *
@@ -8,7 +8,7 @@
  *
  * @see src/data/collection.cpp
  * @see src/data/sets.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -24,33 +24,33 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @class Collection
  * @brief Manages a list of items with optional sorting and duplicate control.
  *
  * @tparam T Value type stored inside the collection.
- ******************************************************************************/
+ */
 template<typename T>
 class Collection : public Namable {
 public:
     using value_type = T;                      ///< Value stored in the collection.
     using Ptr = std::shared_ptr<Collection<T>>; ///< Shared pointer alias for derived collections.
 
-    /******************************************************************************
+    /**
      * @brief Constructs a collection with the supplied name and policies.
      *
      * Sorting and duplicate removal are only available when `T` is sortable
      * (either arithmetic or pointer types).
-     ******************************************************************************/
+     */
     Collection(std::string p_name, bool p_duplicates = false, bool p_sorted = true)
         : Namable(std::move(p_name)), _sorted(false), _duplicates(false) {
         sorted(p_sorted);
         duplicates(p_duplicates);
     }
 
-    /******************************************************************************
+    /**
      * @brief Enables or disables automatic sorting of inserted items.
-     ******************************************************************************/
+     */
     Collection& sorted(bool p_sorted) {
         if constexpr (is_sortable) {
             if (p_sorted == _sorted) {
@@ -69,9 +69,9 @@ public:
         return *this;
     }
 
-    /******************************************************************************
+    /**
      * @brief Configures whether the collection suppresses duplicates.
-     ******************************************************************************/
+     */
     Collection& duplicates(bool p_duplicates) {
         if constexpr (is_sortable) {
             if (p_duplicates == _duplicates) {
@@ -91,9 +91,9 @@ public:
     /// Assigns a parent collection that mirrors insertions.
     void set_parent(Ptr p_parent) { _parent = std::move(p_parent); }
 
-    /******************************************************************************
+    /**
      * @brief Inserts a single item respecting the configured policies.
-     ******************************************************************************/
+     */
     void add(const T& item) {
         if constexpr (is_sortable) {
             if (_sorted) {
@@ -109,9 +109,9 @@ public:
         }
     }
 
-    /******************************************************************************
+    /**
      * @brief Inserts all items from another collection.
-     ******************************************************************************/
+     */
     void add(const Collection<T>& items) {
         if constexpr (is_sortable) {
             if (_sorted) {

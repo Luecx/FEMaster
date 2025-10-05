@@ -3,6 +3,8 @@
 #include "../../core/core.h"
 #include "../element/element_structural.h"
 #include "../../section/section_beam.h"
+#include "../../material/stress.h"
+#include "../../material/isotropic_elasticity.h"
 
 namespace fem::model {
 

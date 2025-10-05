@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assemble_bc.h
  * @brief Provides functions for handling and assembling constraints into NodeData,
  * with options for handling duplicate entries, either summing values or enforcing
@@ -14,7 +14,7 @@
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -22,16 +22,16 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Enum to define the behavior when handling duplicate entries in the
  * NodeData during the assembly process.
- ******************************************************************************/
+ */
 enum class DuplicateHandling {
     ADD,    ///< Add the values of duplicate entries
     SET     ///< Set constraints and ensure consistency; throw an error if duplicate values differ
 };
 
-/******************************************************************************
+/**
  * @brief Assembles constraints from two NodeData objects, handling duplicate
  * entries based on the provided option.
  *
@@ -40,7 +40,7 @@ enum class DuplicateHandling {
  * @param handling Option specifying how to handle duplicate non-NaN values (either ADD or SET).
  *
  * @throws std::runtime_error if duplicate non-NaN values are inconsistent when handling is set to SET.
- ******************************************************************************/
+ */
 void assemble_bc(NodeData& target_bc, const NodeData& source_bc, DuplicateHandling handling);
 
 } } // namespace fem::mattools

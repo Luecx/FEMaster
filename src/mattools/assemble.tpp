@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assemble.tpp
  * @brief Provides the implementation of the assemble_matrix function for system
  * matrices in FEM, using user-defined lambda functions.
@@ -13,7 +13,7 @@
  *
  * @author Created by Finn Eggers
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "../model/element/element.h"
 #include "../core/logging.h"

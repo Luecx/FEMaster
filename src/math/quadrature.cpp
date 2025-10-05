@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file quadrature.cpp
  * @brief Implements quadrature scheme lookup helpers.
  *
@@ -7,7 +7,7 @@ enumeration-based lookup API and provides the light-weight `Quadrature`
 constructor/queries.
  *
  * @see src/math/quadrature.h
- ******************************************************************************/
+ */
 
 #include "quadrature.h"
 

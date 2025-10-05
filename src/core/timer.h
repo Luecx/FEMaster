@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file timer.h
  * @brief Declares utilities for timing code execution.
  *
@@ -9,7 +9,7 @@
  * @see src/core/logging.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -25,10 +25,10 @@
 
 namespace fem {
 
-/******************************************************************************
+/**
  * @class Timer
  * @brief Measures elapsed wall-clock time.
- ******************************************************************************/
+ */
 class Timer {
 public:
     /// Captures the current time and starts the timer.
@@ -40,7 +40,7 @@ public:
     /// Returns the elapsed time in milliseconds between `start` and `stop`.
     [[nodiscard]] Time elapsed() const;
 
-    /******************************************************************************
+    /**
      * @brief Measures a callable and optionally logs the duration.
      *
      * @tparam Func Callable type.
@@ -48,17 +48,17 @@ public:
      * @param description Textual description used for logging.
      * @param log_output Whether to emit timing information via logging.
      * @return The callable's return value if non-void.
-     ******************************************************************************/
+     */
     template<typename Func>
     static auto measure(Func&& func, const std::string& description, bool log_output = true);
 
-    /******************************************************************************
+    /**
      * @brief Measures a callable and returns only the elapsed time.
      *
      * @tparam Func Callable type.
      * @param func Callable to invoke.
      * @return Elapsed time in milliseconds.
-     ******************************************************************************/
+     */
     template<typename Func>
     static double measure_time(Func&& func);
 

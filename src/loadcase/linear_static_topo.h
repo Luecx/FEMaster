@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file LinearStaticTopo.h
  * @brief LinearStaticTopo.h defines a load case that extends linear static 
  * analysis to include topology optimization parameters such as element density 
@@ -9,7 +9,7 @@
  * all rights reserved
  * @date Created on 27.08.2024
  *
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -20,13 +20,13 @@
 namespace fem {
 namespace loadcase {
 
-/******************************************************************************
+/**
  * LinearStaticTopo class
  * This class represents a load case for linear static analysis with topology
  * optimization considerations. It extends the LinearStatic class, adding
  * element density and a penalization exponent to account for _material
  * interpolation during topology optimization.
- ******************************************************************************/
+ */
 struct LinearStaticTopo : public LinearStatic {
 
     //-------------------------------------------------------------------------

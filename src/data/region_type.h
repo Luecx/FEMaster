@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file region_type.h
  * @brief Declares the enumeration that categorises region collections.
  *
@@ -7,7 +7,7 @@
  *
  * @see src/data/region_type.cpp
  * @see src/data/region.h
- ******************************************************************************/
+ */
 
 #pragma once
 

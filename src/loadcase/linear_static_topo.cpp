@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file LinearStaticTopo.cpp
  * @brief Linear static analysis with topology optimization (density/orientation).
  *
@@ -43,7 +43,7 @@
  *
  * @date    27.08.2024
  * @author  Finn Eggers
- ******************************************************************************/
+ */
 
 #include "linear_static_topo.h"
 
@@ -64,7 +64,7 @@ using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
 
-/******************************************************************************
+/**
  * @class LinearStaticTopo
  * @brief Linear static analysis with topology parameters (density/orientation).
  *
@@ -72,7 +72,7 @@ namespace fem { namespace loadcase {
  * -------
  * - density    : per-element densities (initialized to 1.0).
  * - orientation: per-element orientation angles (3 per element, initialized to 0).
- ******************************************************************************/
+ */
 LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
     : LinearStatic(id, writer, model),
       density(model->_data->max_elems, 1),
@@ -82,7 +82,7 @@ LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* 
     orientation.setZero();
 }
 
-/******************************************************************************
+/**
  * @brief Execute the topology-aware linear static analysis.
  *
  * Implementation notes
@@ -91,7 +91,7 @@ LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* 
  *   stages are wrapped with Timer::measure(...) and produce consistent labels.
  * - ConstraintTransformer creation is wrapped for timing; diagnostics are
  *   printed (rank, homogeneity, feasibility).
- ******************************************************************************/
+ */
 void LinearStaticTopo::run() {
     // Banner
     logging::info(true, "");

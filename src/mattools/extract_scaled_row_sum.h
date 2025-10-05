@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file extract_scaled_row_sum.h
  * @brief Provides a function that extracts rows of a sparse matrix, scales
  * them by corresponding entries in a vector, and sums the result. The vector
@@ -17,7 +17,7 @@
  * output vector.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -29,7 +29,7 @@
 
 namespace fem { namespace mattools {
 
-/******************************************************************************
+/**
  * @brief Extracts non-`NaN` entries from a vector, multiplies corresponding
  * rows of a sparse matrix by the vector's values, and sums the resulting scaled rows.
  *
@@ -41,7 +41,7 @@ namespace fem { namespace mattools {
  * @param matrix The input sparse matrix with rows to be scaled and summed.
  * @param scale_vector A vector of scalars, where some values may be `NaN`.
  * @return DynamicMatrix The resulting vector of the sum of all scaled rows.
- ******************************************************************************/
+ */
 DynamicVector extract_scaled_row_sum(const SparseMatrix& matrix, const DynamicMatrix& scale_vector);
 
 } } // namespace fem::mattools

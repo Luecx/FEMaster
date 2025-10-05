@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file LinearEigenfrequency.cpp
  * @brief Linear eigenfrequency (modal) analysis via affine null-space constraints.
  *
@@ -46,7 +46,7 @@
  *
  * @date    15.09.2025
  * @author  Finn
- ******************************************************************************/
+ */
 
 #include "linear_eigenfreq.h"
 
@@ -69,7 +69,7 @@ using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
 
-/******************************************************************************
+/**
  * @struct EigenMode
  * @brief Small container that holds one modal eigenpair in reduced space
  *        together with derived/expanded quantities for output.
@@ -81,7 +81,7 @@ namespace fem { namespace loadcase {
  * - q_mode: eigenvector in reduced coordinates (size = n_master).
  * - mode_mat: full mode in node x 6 layout, suitable for writer output.
  * - participation: simple mass-weighted projections onto global axes (x,y,z,rx,ry,rz).
- ******************************************************************************/
+ */
 struct EigenMode {
     Precision     lambda;        // eigenvalue (omega^2)
     Precision     freq;          // f = sqrt(lambda) / (2 * pi)
@@ -95,7 +95,7 @@ struct EigenMode {
           q_mode(std::move(q)) {}
 };
 
-/******************************************************************************
+/**
  * @brief Build 6 "unit" direction vectors over active DOFs (length n).
  *
  * The returned matrix U (n x 6) has one column per global axis:
@@ -105,7 +105,7 @@ struct EigenMode {
  * For each active (node, dof) pair, we place a 1.0 in the corresponding axis
  * column at the global active DOF index. This provides a quick basis to
  * compute axis participations by dotting with M*u.
- ******************************************************************************/
+ */
 static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx_mat) {
     const int n = active_dof_idx_mat.maxCoeff() + 1; // active system size
     DynamicMatrix U = DynamicMatrix::Zero(n, 6);
@@ -122,10 +122,10 @@ static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx
     return U;
 }
 
-/******************************************************************************
+/**
  * @brief Compute a power-of-ten scaling exponent so that reported participations
  *        are O(1). If all participations are zero, returns 0.
- ******************************************************************************/
+ */
 static int compute_scaling_exponent(const std::vector<EigenMode>& modes) {
     Precision max_abs = 0;
     for (const auto& m : modes) {
@@ -139,9 +139,9 @@ static int compute_scaling_exponent(const std::vector<EigenMode>& modes) {
     return static_cast<int>(e);
 }
 
-/******************************************************************************
+/**
  * @brief Pretty-print a summary table (lambda, frequency, participations).
- ******************************************************************************/
+ */
 static void display_eigen_summary(const std::vector<EigenMode>& modes) {
     const int       exp10 = compute_scaling_exponent(modes);
     const Precision scale = std::pow(Precision(10), exp10);
@@ -173,9 +173,9 @@ static void display_eigen_summary(const std::vector<EigenMode>& modes) {
     logging::info(true, "");
 }
 
-/******************************************************************************
+/**
  * @brief Write eigenvalues, eigenfrequencies, mode shapes, and participations.
- ******************************************************************************/
+ */
 static void write_results(const std::vector<EigenMode>& modes,
                           reader::Writer*               writer,
                           int                           loadcase_id)
@@ -195,24 +195,24 @@ static void write_results(const std::vector<EigenMode>& modes,
     writer->write_eigen_matrix(DynamicMatrix(eigenfreqs ), "EIGENFREQUENCIES");
 }
 
-/******************************************************************************
+/**
  * @class LinearEigenfrequency
  * @brief Modal analysis entry point (constrained via null-space).
- ******************************************************************************/
+ */
 LinearEigenfrequency::LinearEigenfrequency(ID id,
                                            reader::Writer* writer,
                                            model::Model*   model,
                                            int             numEigenvalues)
     : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
 
-/******************************************************************************
+/**
  * @brief Execute the modal analysis as described in the file header.
  *
  * Logging
  * -------
  * Mirroring LinearStatic, all heavyweight steps are wrapped with Timer::measure
  * for consistent performance diagnostics in your logs.
- ******************************************************************************/
+ */
 void LinearEigenfrequency::run() {
     // Banner
     logging::info(true, "");

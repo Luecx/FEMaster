@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file quadrature_iso_tet.cpp
  * @brief Registers quadrature schemes for the isoparametric tetrahedron.
  *
  * @see src/math/quadrature.h
- ******************************************************************************/
+ */
 
 #include "quadrature.h"
 
@@ -13,8 +13,8 @@ namespace quadrature {
 namespace {
 constexpr std::array<Point, 1> tet_linear{{Point(1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0, 1.0 / 6.0)}};
 
-constexpr Precision tet_p1 = 1.0 / (3.0 * csqrt(5.0) - 5.0);
-constexpr Precision tet_p2 = 1.0 / (csqrt(5.0) + 5.0);
+constexpr Precision tet_p1 = 1.0 / (3.0 * fem::math::csqrt(5.0) - 5.0);
+constexpr Precision tet_p2 = 1.0 / (fem::math::csqrt(5.0) + 5.0);
 constexpr std::array<Point, 4> tet_quadratic{{
     Point(tet_p2, tet_p2, tet_p2, 1.0 / 24.0),
     Point(tet_p1, tet_p2, tet_p2, 1.0 / 24.0),

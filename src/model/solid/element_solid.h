@@ -7,7 +7,7 @@
 
 namespace fem::model {
 
-/******************************************************************************
+/**
  * @class SolidElement
  * @brief Base class template for a solid element in finite element analysis.
  *
@@ -17,7 +17,7 @@ namespace fem::model {
  * implement, including methods for calculating shape functions, Jacobians,
  * stiffness matrices, and mass matrices. Derived classes should provide
  * concrete implementations of the shape functions and integration schemes.
- ******************************************************************************/
+ */
 template<Index N>
 struct SolidElement : public StructuralElement {
 

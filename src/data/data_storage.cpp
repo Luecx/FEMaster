@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file data_storage.cpp
  * @brief Provides explicit template instantiations for `DataStorage`.
  *
@@ -7,7 +7,7 @@
  * the header to preserve inlining.
  *
  * @see src/data/data_storage.h
- ******************************************************************************/
+ */
 
 #include "data_storage.h"
 

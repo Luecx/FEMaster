@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_set.h
  * @brief Declares the sparse constraint system builder `C u = d`.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -22,18 +22,18 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @struct ConstraintSet
  * @brief Aggregates constraint equations into a sparse representation.
- ******************************************************************************/
+ */
 struct ConstraintSet {
     Equations equations;            ///< High-level constraint equations.
     const SystemDofIds* dof_map = nullptr; ///< Pointer to DOF numbering state.
 
-    /******************************************************************************
+    /**
      * @struct Options
      * @brief Configuration options for constraint assembly.
-     ******************************************************************************/
+     */
     struct Options {
         bool scale_columns = false;    ///< Enable column scaling when assembling `C`.
         bool scale_rows = false;       ///< Enable row scaling when assembling `C`.
@@ -49,12 +49,12 @@ struct ConstraintSet {
     DynamicVector col_scale;         ///< Per-column scaling factors.
     DynamicVector row_scale;         ///< Per-row scaling factors.
 
-    /******************************************************************************
+    /**
      * @brief Assembles the sparse representation from the stored equations.
      *
      * @param dofs DOF numbering map used to locate matrix columns.
      * @param n_dofs Total number of DOFs in the system.
-     ******************************************************************************/
+     */
     void assemble(const SystemDofIds& dofs, Index n_dofs);
 };
 

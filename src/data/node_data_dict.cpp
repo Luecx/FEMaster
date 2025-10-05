@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file node_data_dict.cpp
  * @brief Provides explicit instantiation anchors for nodal data containers.
  *
@@ -6,7 +6,7 @@
  * header. The definitions remain header-only to preserve inlining.
  *
  * @see src/data/node_data_dict.h
- ******************************************************************************/
+ */
 
 #include "node_data_dict.h"
 

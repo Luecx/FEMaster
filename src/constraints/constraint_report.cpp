@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_report.cpp
  * @brief Implements utilities to format constraint equations for logging.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "constraint_report.h"
 
@@ -22,9 +22,9 @@ namespace fem {
 namespace constraint {
 namespace {
 
-/******************************************************************************
+/**
  * @brief Formats a single equation entry as `coeff * N<id>.<dof>`.
- ******************************************************************************/
+ */
 std::string format_entry(const EquationEntry& entry, const EquationFormatOptions& opt) {
     std::ostringstream oss;
     oss.setf(std::ios::fixed, std::ios::floatfield);
@@ -38,9 +38,9 @@ std::string format_entry(const EquationEntry& entry, const EquationFormatOptions
     return oss.str();
 }
 
-/******************************************************************************
+/**
  * @brief Builds the right-hand side representation for an equation.
- ******************************************************************************/
+ */
 std::string build_rhs(const Equation& equation, const EquationFormatOptions& opt) {
     std::ostringstream rhs;
     rhs.setf(std::ios::fixed, std::ios::floatfield);
@@ -50,9 +50,9 @@ std::string build_rhs(const Equation& equation, const EquationFormatOptions& opt
     return rhs.str();
 }
 
-/******************************************************************************
+/**
  * @brief Builds the left-hand side representation for an equation.
- ******************************************************************************/
+ */
 std::string build_lhs(const Equation& equation, const EquationFormatOptions& opt) {
     if (equation.entries.empty()) {
         return std::string("0");
@@ -76,9 +76,9 @@ std::string build_lhs(const Equation& equation, const EquationFormatOptions& opt
     return lhs.str();
 }
 
-/******************************************************************************
+/**
  * @brief Creates a compact tag describing the equation origin.
- ******************************************************************************/
+ */
 std::string make_tag(EquationSourceKind source, Index idx) {
     char code = 0;
     switch (source) {
@@ -97,9 +97,9 @@ std::string make_tag(EquationSourceKind source, Index idx) {
 
 } // namespace
 
-/******************************************************************************
+/**
  * @copydoc format_equation
- ******************************************************************************/
+ */
 std::string format_equation(const Equation& equation, const EquationFormatOptions& opt) {
     std::ostringstream line;
     const auto lhs = build_lhs(equation, opt);
@@ -108,9 +108,9 @@ std::string format_equation(const Equation& equation, const EquationFormatOption
     return line.str();
 }
 
-/******************************************************************************
+/**
  * @copydoc format_equations
- ******************************************************************************/
+ */
 std::vector<std::string> format_equations(const Equations& equations, const EquationFormatOptions& opt) {
     std::vector<std::string> lhs_parts;
     std::vector<std::string> rhs_parts;

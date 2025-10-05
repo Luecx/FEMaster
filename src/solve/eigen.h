@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file eigen.h
  * @brief Sparse symmetric partial-eigen solvers (CPU, optional MKL/PARDISO).
  *
@@ -25,7 +25,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -37,19 +37,19 @@
 
 namespace fem::solver {
 
-/******************************************************************************
+/**
  * @struct EigenValueVectorPair
  * @brief A single eigenpair (λ, x).
- ******************************************************************************/
+ */
 struct EigenValueVectorPair {
     Precision     value;   ///< Eigenvalue λ
     DynamicVector vector;  ///< Eigenvector x (size n)
 };
 
-/******************************************************************************
+/**
  * @enum EigenMode
  * @brief Selects the transformation/operator to be used by the solver.
- ******************************************************************************/
+ */
 enum class EigenMode {
     Regular,      ///< No shift: standard operator (A or pair (A,B) with Cholesky)
     ShiftInvert,  ///< Simple: (A - σI)^{-1};  Generalized: (A - σB)^{-1}B
@@ -57,10 +57,10 @@ enum class EigenMode {
     Cayley        ///< Generalized: (A - σB)^{-1}B   (alternate transform)
 };
 
-/******************************************************************************
+/**
  * @struct EigenOpts
  * @brief Execution parameters for the eigensolvers.
- ******************************************************************************/
+ */
 struct EigenOpts {
     EigenMode mode = EigenMode::Regular; ///< Transform / operator
     double    sigma = 0.0;               ///< Shift (used by ShiftInvert/Buckling/Cayley)
@@ -71,21 +71,21 @@ struct EigenOpts {
     enum class Sort { LargestAlge, LargestMagn, SmallestAlge, SmallestMagn } sort = Sort::SmallestAlge;
 };
 
-/******************************************************************************
+/**
  * @brief Simple symmetric problem:  A x = λ x
  * @param device  CPU/GPU (GPU currently falls back to CPU)
  * @param A       Symmetric sparse matrix
  * @param k       Number of eigenpairs to compute (k > 0 and k < n)
  * @param opts    Algorithm options (mode must be Regular or ShiftInvert)
  * @return        Vector of k eigenpairs (sorted per `opts.sort`)
- ******************************************************************************/
+ */
 std::vector<EigenValueVectorPair>
 eigs(SolverDevice device,
      const SparseMatrix& A,
      int k,
      const EigenOpts& opts = {});
 
-/******************************************************************************
+/**
  * @brief Generalized symmetric problem:  A x = λ B x
  * @param device  CPU/GPU (GPU currently falls back to CPU)
  * @param A       Symmetric sparse stiffness/left matrix
@@ -93,7 +93,7 @@ eigs(SolverDevice device,
  * @param k       Number of eigenpairs to compute (k > 0 and k < n)
  * @param opts    Algorithm options (mode must be ShiftInvert, Buckling, or Cayley)
  * @return        Vector of k eigenpairs (sorted per `opts.sort`)
- ******************************************************************************/
+ */
 std::vector<EigenValueVectorPair>
 eigs(SolverDevice device,
      const SparseMatrix& A,

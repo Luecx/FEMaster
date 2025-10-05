@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file config.h
  * @brief Declares global configuration parameters for the FEM runtime.
  *
@@ -9,7 +9,7 @@
  * @see src/core/types_num.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -17,17 +17,17 @@
 
 namespace fem {
 
-/******************************************************************************
+/**
  * @struct Config
  * @brief Holds shared runtime configuration values.
- ******************************************************************************/
+ */
 struct Config {
     ID max_threads = 1; ///< Maximum number of threads used by the solver.
 };
 
-/******************************************************************************
+/**
  * @brief Global configuration object accessible throughout the codebase.
- ******************************************************************************/
+ */
 extern Config global_config;
 
 } // namespace fem

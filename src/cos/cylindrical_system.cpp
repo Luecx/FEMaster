@@ -1,13 +1,15 @@
-/******************************************************************************
+/**
  * @file cylindrical_system.cpp
  * @brief Implements the cylindrical coordinate system utilities.
  *
  * @see src/cos/cylindrical_system.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "cylindrical_system.h"
+
+#include <Eigen/Geometry>
 
 namespace fem {
 namespace cos {

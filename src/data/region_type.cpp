@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file region_type.cpp
  * @brief Provides a translation unit anchor for region type declarations.
  *
@@ -6,7 +6,7 @@
  * instantiations become necessary.
  *
  * @see src/data/region_type.h
- ******************************************************************************/
+ */
 
 #include "region_type.h"
 

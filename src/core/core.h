@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file core.h
  * @brief Convenience umbrella header for frequently used core utilities.
  *
@@ -9,7 +9,7 @@
  * @see src/core/logging.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

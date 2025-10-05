@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file preprocess.h
  * @brief Declares preprocessing steps for constraint assembly.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_set.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -21,10 +21,10 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @struct PreprocessInput
  * @brief Raw constraint data supplied to the preprocessing stage.
- ******************************************************************************/
+ */
 struct PreprocessInput {
     SparseMatrix C;        ///< Original constraint matrix.
     DynamicVector d;       ///< Original right-hand side (may be empty).
@@ -33,10 +33,10 @@ struct PreprocessInput {
     bool homogeneous = true; ///< True if `d` is numerically zero.
 };
 
-/******************************************************************************
+/**
  * @struct PreprocessOutput
  * @brief Result of preprocessing including compacted matrices and metadata.
- ******************************************************************************/
+ */
 struct PreprocessOutput {
     std::vector<char> keep_row; ///< Mask indicating rows retained after filtering.
 
@@ -53,12 +53,12 @@ struct PreprocessOutput {
     int n_fixed = 0; ///< Number of columns fixed directly.
 };
 
-/******************************************************************************
+/**
  * @brief Preprocesses the constraint system before QR factorisation.
  *
  * @param input Input constraint data.
  * @return PreprocessOutput Filtered matrices and metadata.
- ******************************************************************************/
+ */
 PreprocessOutput preprocess_constraints(const PreprocessInput& input);
 
 } // namespace constraint

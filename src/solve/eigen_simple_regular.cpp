@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file eigen_simple_regular.cpp
  * @brief Simple regular eigensolver: A x = λ x (A symmetric).
  *
@@ -11,7 +11,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 
 #include "eigen_internal.h"
 

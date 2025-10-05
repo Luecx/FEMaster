@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file C3D4.h
  * @brief C3D4.h defines a 4-node tetrahedral element (C3D4) for solid
  * mechanics within a finite element model (FEM). This element computes 
@@ -9,7 +9,7 @@
  * all rights reserved
  * @date Created on 27.08.2024
  *
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -18,13 +18,13 @@
 
 namespace fem { namespace model {
 
-/******************************************************************************
+/**
  * C3D4 class
  * This class defines a 4-node tetrahedral solid element used in finite 
  * element analysis. It provides methods to compute shape functions, their 
  * derivatives, and handle integration with a linear tetrahedral quadrature 
  * scheme.
- ******************************************************************************/
+ */
 struct C3D4 : public SolidElement<4> {
 
     //-------------------------------------------------------------------------

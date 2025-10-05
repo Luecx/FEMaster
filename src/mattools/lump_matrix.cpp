@@ -1,10 +1,10 @@
-/******************************************************************************
+/**
 * @file lump_matrix.cpp
  * @brief Implementation of the function that computes a lumped mass matrix by
  * summing each row of a sparse matrix and placing the result on the diagonal.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "lump_matrix.h"
 

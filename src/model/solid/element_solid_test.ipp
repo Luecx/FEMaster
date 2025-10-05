@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file element_solid.ipp
  * @brief Implementation of the SolidElement class template. This file contains
  * the definitions for methods declared in the SolidElement class, including
@@ -7,7 +7,7 @@
  *
  * @date Created on 12.06.2023
  * @author Finn Eggers
- ******************************************************************************/
+ */
 
 #pragma once
 

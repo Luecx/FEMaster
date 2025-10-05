@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file invariants.h
  * @brief Declares debug-time invariant checks for constraint maps.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -19,12 +19,12 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @brief Validates basic invariants of the assembled constraint map.
  *
  * @param map Constraint map to test.
  * @param C Original constraint matrix.
- ******************************************************************************/
+ */
 void check_invariants(const ConstraintMap& map, const SparseMatrix& C);
 
 } // namespace constraint

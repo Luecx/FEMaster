@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file region.h
  * @brief Declares generic region collections used by FEM models.
  *
@@ -8,7 +8,7 @@
  * @see src/data/region.cpp
  * @see src/data/region_type.h
  * @see src/data/collection.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -26,30 +26,30 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct Region
  * @brief Named collection of entity identifiers.
  *
  * @tparam RT Compile-time region type (`NODE`, `ELEMENT`, or `SURFACE`).
- ******************************************************************************/
+ */
 template<RegionTypes RT>
 struct Region : public Collection<ID> {
     using Ptr = std::shared_ptr<Region<RT>>; ///< Shared pointer alias for region ownership.
 
-    /******************************************************************************
+    /**
      * @brief Constructs a region with duplicate tracking but without sorting.
-     ******************************************************************************/
+     */
     explicit Region(std::string name)
         : Collection<ID>(std::move(name), true, false) {}
 
-    /******************************************************************************
+    /**
      * @brief Emits logging information about the region contents.
-     ******************************************************************************/
+     */
     void info();
 
-    /******************************************************************************
+    /**
      * @brief Streams a textual representation into `os`.
-     ******************************************************************************/
+     */
     std::ostream& operator<<(std::ostream& os) const {
         os << "Region: " << this->name;
         os << "   Type: " << RT;
@@ -59,9 +59,9 @@ struct Region : public Collection<ID> {
     }
 };
 
-/******************************************************************************
+/**
  * @copydoc Region<RT>::info
- ******************************************************************************/
+ */
 template<RegionTypes RT>
 void Region<RT>::info() {
     logging::info(true, "Region: ", this->name);

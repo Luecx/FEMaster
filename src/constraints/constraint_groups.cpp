@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file constraint_groups.cpp
  * @brief Implements logging helpers for grouped constraint equations.
  *
  * @see src/constraints/constraint_groups.h
- ******************************************************************************/
+ */
 
 #include "constraint_groups.h"
 
@@ -13,7 +13,7 @@
 namespace fem {
 namespace constraint {
 
-void ConstraintGroups::report(ID loadcase_id, Dim element_dims) const {
+void ConstraintGroups::report() const {
     using fem::logging::info;
 
     const constraint::EquationFormatOptions format{};
@@ -28,7 +28,7 @@ void ConstraintGroups::report(ID loadcase_id, Dim element_dims) const {
         {"Other", others},
     };
 
-    info(true, "Constraint overview for loadcase ", loadcase_id, " (", element_dims, "D elements)");
+    info(true, "Constraint overview:");
     logging::up();
     for (const auto& category : categories) {
         info(true, category.name, " (", category.equations.size(), ")");

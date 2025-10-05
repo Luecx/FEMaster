@@ -6,6 +6,7 @@
 #define SHELL_SIMPLE_H
 
 #include "../../material/stress.h"
+#include "../../material/isotropic_elasticity.h"
 #include "../geometry/surface/surface.h"
 #include "../geometry/surface/surface3.h"
 #include "../geometry/surface/surface4.h"

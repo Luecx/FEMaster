@@ -1,8 +1,8 @@
-// /******************************************************************************
+// /**
 //  * @file demo_nullspace_10k_explicit.cpp
 //  * @brief 10k x 10k SPD system with ~1000 constraints; EXPLICIT T, assemble
 //  *        A = Tᵀ K T and B = Tᵀ K_g T; direct solve on A; timings + nnz.
-//  ******************************************************************************/
+//  */
 //
 // #include <iostream>
 // #include <random>

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file collection.cpp
  * @brief Companion TU for the `Collection` template.
  *
@@ -6,7 +6,7 @@
  * and potential explicit instantiations.
  *
  * @see src/data/collection.h
- ******************************************************************************/
+ */
 
 #include "collection.h"
 

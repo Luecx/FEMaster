@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file particular_solution.cpp
  * @brief Computes and projects particular solutions for constraint systems.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "particular_solution.h"
 
@@ -19,9 +19,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc compute_particular_and_project
- ******************************************************************************/
+ */
 ParticularOutput compute_particular_and_project(const ParticularInput& input,
                                                 const Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>>& qr,
                                                 const ConstraintMap& map,

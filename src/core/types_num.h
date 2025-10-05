@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file types_num.h
  * @brief Declares core numeric type aliases used throughout the project.
  *
@@ -9,7 +9,7 @@
  * @see src/cuda/cuda_defs.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 

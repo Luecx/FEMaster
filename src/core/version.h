@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file version.h
 * @brief Defines the version number for the FEMaster solver.
 *
@@ -11,31 +11,31 @@
 *
 * @author Finn Eggers
 * @date 24.10.2024
-******************************************************************************/
+*/
 
 #pragma once
 
 namespace fem {
 
-/******************************************************************************
+/**
 * @brief The major version number for the FEMaster solver.
 *
 * This number increments when incompatible API changes are introduced.
-******************************************************************************/
+*/
 #define VERSION_MAJOR 1
 
-/******************************************************************************
+/**
 * @brief The minor version number for the FEMaster solver.
 *
 * This number increments when backward-compatible functionality is added.
-******************************************************************************/
+*/
 #define VERSION_MINOR 1
 
-/******************************************************************************
+/**
 * @brief The patch version number for the FEMaster solver.
 *
 * This number increments for backward-compatible bug fixes.
-******************************************************************************/
+*/
 #define VERSION_PATCH 0
 
 } // namespace fem

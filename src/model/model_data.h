@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file model_data.h
  * @brief Declares the container that stores all FEM model input data.
  *
@@ -8,7 +8,7 @@
  *
  * @see src/model/model_data.cpp
  * @see src/model/model.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -38,10 +38,10 @@
 namespace fem {
 namespace model {
 
-/******************************************************************************
+/**
  * @struct ModelData
  * @brief Shared repository for model topology, fields, materials, and loads.
- ******************************************************************************/
+ */
 struct ModelData {
     // Capacity information -----------------------------------------------------
     ID max_nodes;
@@ -83,9 +83,9 @@ struct ModelData {
     Sets<bc::SupportCollector> supp_cols{};
     Sets<bc::LoadCollector> load_cols{};
 
-    /******************************************************************************
+    /**
      * @brief Constructs the data repository with preallocated containers.
-     ******************************************************************************/
+     */
     ModelData(ID max_nodes, ID max_elems, ID max_surfaces)
         : max_nodes(max_nodes),
           max_elems(max_elems),

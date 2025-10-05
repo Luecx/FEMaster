@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file b33.h
  * @brief Declares the two-node 3D beam element (B33).
  *
@@ -6,7 +6,7 @@
  * stiffness, and mass matrices together with basic stress recovery.
  *
  * @see src/model/beam/beam.h
- ******************************************************************************/
+ */
 
 #pragma once
 

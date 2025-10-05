@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_set.cpp
  * @brief Implements assembly of the sparse constraint system `C u = d`.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "constraint_set.h"
 
@@ -18,9 +18,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc ConstraintSet::assemble
- ******************************************************************************/
+ */
 void ConstraintSet::assemble(const SystemDofIds& dofs, Index n_dofs) {
     dof_map = &dofs;
     n = n_dofs;

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file support.cpp
  * @brief Implements the support boundary condition logic.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "support.h"
 
@@ -22,27 +22,27 @@
 namespace fem {
 namespace bc {
 
-/******************************************************************************
+/**
  * @copydoc Support::Support(NodeRegionPtr,const Vec6&,cos::CoordinateSystem::Ptr)
- ******************************************************************************/
+ */
 Support::Support(NodeRegionPtr node_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
     : node_region(std::move(node_region)), values(values), coordinate_system(std::move(coordinate_system)) {}
 
-/******************************************************************************
+/**
  * @copydoc Support::Support(ElementRegionPtr,const Vec6&,cos::CoordinateSystem::Ptr)
- ******************************************************************************/
+ */
 Support::Support(ElementRegionPtr element_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
     : element_region(std::move(element_region)), values(values), coordinate_system(std::move(coordinate_system)) {}
 
-/******************************************************************************
+/**
  * @copydoc Support::Support(SurfaceRegionPtr,const Vec6&,cos::CoordinateSystem::Ptr)
- ******************************************************************************/
+ */
 Support::Support(SurfaceRegionPtr surface_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
     : surface_region(std::move(surface_region)), values(values), coordinate_system(std::move(coordinate_system)) {}
 
-/******************************************************************************
+/**
  * @copydoc Support::apply
- ******************************************************************************/
+ */
 void Support::apply(model::ModelData& model_data, constraint::Equations& equations) {
     if (node_region) {
         for (ID node_id : *node_region) {
@@ -71,9 +71,9 @@ void Support::apply(model::ModelData& model_data, constraint::Equations& equatio
     }
 }
 
-/******************************************************************************
+/**
  * @copydoc Support::apply_to_node
- ******************************************************************************/
+ */
 void Support::apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id) {
     Vec6 position_vec = model_data.get(model::POSITION).row(node_id);
     Vec3 position = position_vec.head<3>();

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file loadcase.cpp
  * @brief Implements the base load-case utilities.
  *
@@ -9,7 +9,7 @@
  * @see src/model/constraint_groups.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "loadcase.h"
 
@@ -18,23 +18,22 @@
 namespace fem {
 namespace loadcase {
 
-/******************************************************************************
+/**
  * @copydoc LoadCase::LoadCase
- ******************************************************************************/
+ */
 LoadCase::LoadCase(ID case_id, reader::Writer* writer_in, model::Model* model_in)
     : id(case_id)
     , writer(writer_in)
     , model(model_in) {}
 
-/******************************************************************************
+/**
  * @copydoc LoadCase::report_constraint_groups
- ******************************************************************************/
-void LoadCase::report_constraint_groups(const model::ConstraintGroups& groups) const {
+ */
+void LoadCase::report_constraint_groups(const constraint::ConstraintGroups& groups) const {
     if (!report_constraints) {
         return;
     }
-
-    groups.report(id, model->element_dims);
+    groups.report();
 }
 
 } // namespace loadcase

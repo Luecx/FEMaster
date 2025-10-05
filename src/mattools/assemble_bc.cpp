@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assemble_bc.cpp
  * @brief Implementation of functions for handling and assembling constraints into NodeData,
  * with options for handling duplicate entries, either summing values or enforcing
@@ -12,7 +12,7 @@
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "assemble_bc.h"
 

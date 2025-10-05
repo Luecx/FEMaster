@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file constraint_transformer.h
  * @brief Declares a facade for building and using constraint maps.
  *
@@ -10,7 +10,7 @@
  * @see src/constraints/builder/builder.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -23,29 +23,29 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @class ConstraintTransformer
  * @brief High-level helper that creates and applies constraint maps.
- ******************************************************************************/
+ */
 class ConstraintTransformer {
 public:
-    /******************************************************************************
+    /**
      * @struct BuildOptions
      * @brief Aggregates options for constraint set assembly and map building.
-     ******************************************************************************/
+     */
     struct BuildOptions {
         ConstraintSet::Options set;           ///< Options forwarded to `ConstraintSet`.
         ConstraintBuilder::Options builder;   ///< Options forwarded to the builder.
     };
 
-    /******************************************************************************
+    /**
      * @brief Constructs the transformer and prepares the constraint map.
      *
      * @param eqs Constraint equations to assemble.
      * @param dofs DOF numbering map providing global IDs.
      * @param n_dofs Total number of DOFs.
      * @param opt Build options for set assembly and map creation.
-     ******************************************************************************/
+     */
     ConstraintTransformer(const Equations& eqs,
                           const SystemDofIds& dofs,
                           Index n_dofs,
@@ -103,7 +103,7 @@ public:
         return map_.reactions(K, f, q);
     }
 
-    /******************************************************************************
+    /**
      * @brief Performs diagnostic checks on a static equilibrium solution.
      *
      * @param K Full-space stiffness matrix.
@@ -112,7 +112,7 @@ public:
      * @param tol_constraint_rel Relative tolerance for constraint satisfaction.
      * @param tol_reduced_rel Relative tolerance for reduced equilibrium.
      * @param tol_full_rel Relative tolerance for full equilibrium (use `inf` to skip).
-     ******************************************************************************/
+     */
     void post_check_static(const SparseMatrix& K,
                            const DynamicVector& f,
                            const DynamicVector& u,

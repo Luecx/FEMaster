@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file invariants.cpp
  * @brief Implements debug-time checks for constraint map invariants.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "invariants.h"
 
@@ -20,9 +20,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc check_invariants
- ******************************************************************************/
+ */
 void check_invariants(const ConstraintMap& map, const SparseMatrix& C) {
     const int nm = static_cast<int>(map.nm_);
     DynamicVector basis = DynamicVector::Zero(nm);

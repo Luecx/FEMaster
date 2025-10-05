@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file beam.cpp
  * @brief Provides the translation unit anchor for beam elements.
  *
@@ -6,7 +6,7 @@
  * systems and IDE navigation.
  *
  * @see src/model/beam/beam.h
- ******************************************************************************/
+ */
 
 #include "beam.h"
 

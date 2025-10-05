@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file detect_rank.cpp
  * @brief Determines the numerical rank from a sparse QR factor.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/factorize_qr.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "detect_rank.h"
 
@@ -19,9 +19,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc detect_rank_from_R
- ******************************************************************************/
+ */
 RankInfo detect_rank_from_R(const SparseMatrix& R, const RankSettings& settings) {
     RankInfo info;
 

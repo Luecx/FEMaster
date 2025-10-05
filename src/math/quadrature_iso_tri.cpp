@@ -1,11 +1,11 @@
-/******************************************************************************
+/**
  * @file quadrature_iso_tri.cpp
  * @brief Registers quadrature schemes for the isoparametric triangle.
  *
  * The definitions populate the global registry via the `REGISTER_SCHEME` macro.
  *
  * @see src/math/quadrature.h
- ******************************************************************************/
+ */
 
 #include "quadrature.h"
 

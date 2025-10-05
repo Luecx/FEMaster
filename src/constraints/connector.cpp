@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file connector.cpp
  * @brief Implements connector constraints that tie node DOFs.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "connector.h"
 
@@ -25,9 +25,9 @@ namespace {
 constexpr Precision kEps = static_cast<Precision>(1e-8); ///< Numerical tolerance for projections.
 }
 
-/******************************************************************************
+/**
  * @copydoc Connector::Connector
- ******************************************************************************/
+ */
 Connector::Connector(ID node_1_id,
                      ID node_2_id,
                      fem::cos::CoordinateSystem::Ptr coordinate_system,
@@ -44,9 +44,9 @@ Connector::Connector(ID node_1_id,
     , node_1_id_(node_1_id)
     , node_2_id_(node_2_id) {}
 
-/******************************************************************************
+/**
  * @copydoc Connector::get_equations
- ******************************************************************************/
+ */
 Equations Connector::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     (void)model_data;
     Equations equations{};
@@ -96,9 +96,9 @@ Equations Connector::get_equations(SystemDofIds& system_nodal_dofs, model::Model
     return equations;
 }
 
-/******************************************************************************
+/**
  * @copydoc Connector::dofs
- ******************************************************************************/
+ */
 Dofs Connector::dofs() const {
     Dofs impacted;
     impacted.setZero();

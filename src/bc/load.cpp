@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file load.cpp
  * @brief Implements the concrete load boundary conditions.
  *
@@ -9,7 +9,7 @@
  * @see src/bc/load_collector.cpp
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "load.h"
 
@@ -22,9 +22,9 @@
 namespace fem {
 namespace bc {
 
-/******************************************************************************
+/**
  * @copydoc CLoad::apply
- ******************************************************************************/
+ */
 void CLoad::apply(model::ModelData& model_data, NodeData& bc) {
     (void)model_data;
     for (auto& node_id : *region) {
@@ -36,9 +36,9 @@ void CLoad::apply(model::ModelData& model_data, NodeData& bc) {
     }
 }
 
-/******************************************************************************
+/**
  * @copydoc DLoad::apply
- ******************************************************************************/
+ */
 void DLoad::apply(model::ModelData& model_data, NodeData& bc) {
     auto& node_positions = model_data.get(model::POSITION);
     for (auto& surf_id : *region) {
@@ -46,9 +46,9 @@ void DLoad::apply(model::ModelData& model_data, NodeData& bc) {
     }
 }
 
-/******************************************************************************
+/**
  * @copydoc PLoad::apply
- ******************************************************************************/
+ */
 void PLoad::apply(model::ModelData& model_data, NodeData& bc) {
     auto& node_positions = model_data.get(model::POSITION);
     for (auto& surf_id : *region) {
@@ -56,9 +56,9 @@ void PLoad::apply(model::ModelData& model_data, NodeData& bc) {
     }
 }
 
-/******************************************************************************
+/**
  * @copydoc VLoad::apply
- ******************************************************************************/
+ */
 void VLoad::apply(model::ModelData& model_data, NodeData& bc) {
     for (auto& el_id : *region) {
         auto& el_ptr = model_data.elements[el_id];
@@ -69,9 +69,9 @@ void VLoad::apply(model::ModelData& model_data, NodeData& bc) {
     }
 }
 
-/******************************************************************************
+/**
  * @copydoc TLoad::apply
- ******************************************************************************/
+ */
 void TLoad::apply(model::ModelData& model_data, NodeData& bc) {
     for (auto& element_ptr : model_data.elements) {
         if (auto structural = element_ptr->as<model::StructuralElement>()) {

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file particular_solution.h
  * @brief Declares routines to compute particular solutions for constraints.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -22,10 +22,10 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @struct ParticularInput
  * @brief Input data required to compute the particular solution.
- ******************************************************************************/
+ */
 struct ParticularInput {
     bool homogeneous = true;             ///< Whether the system is homogeneous.
     SparseMatrix C_use;                  ///< Reduced constraint matrix.
@@ -36,17 +36,17 @@ struct ParticularInput {
     DynamicVector d_original;            ///< Original right-hand side for residual estimation.
 };
 
-/******************************************************************************
+/**
  * @struct ParticularOutput
  * @brief Result of the particular-solution computation.
- ******************************************************************************/
+ */
 struct ParticularOutput {
     DynamicVector u_p; ///< Particular solution vector of length `n`.
     Precision residual_norm = 0; ///< Norm of the residual `||C u_p - d||`.
     bool feasible = true;        ///< Indicates whether feasibility tolerances are met.
 };
 
-/******************************************************************************
+/**
  * @brief Computes and projects the particular solution for the constraint system.
  *
  * @param input Particular-solution input data.
@@ -55,7 +55,7 @@ struct ParticularOutput {
  * @param feas_tol_rel Relative feasibility tolerance.
  * @param d_norm Norm of the original right-hand side.
  * @return ParticularOutput Computed particular solution and diagnostics.
- ******************************************************************************/
+ */
 ParticularOutput compute_particular_and_project(const ParticularInput& input,
                                                 const Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>>& qr,
                                                 const ConstraintMap& map,

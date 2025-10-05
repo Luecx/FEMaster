@@ -1,9 +1,9 @@
-/******************************************************************************
+/**
  * @file logging.ipp
  * @brief Implements templated logging helpers.
  *
  * @see src/core/logging.h
- ******************************************************************************/
+ */
 
 #include <iomanip>
 #include <iostream>
@@ -13,7 +13,7 @@
 namespace fem {
 namespace logging {
 
-int indentation_level = 0;
+inline int indentation_level = 0;
 
 inline void up() {
     ++indentation_level;
@@ -36,7 +36,7 @@ inline std::string get_indentation() {
 namespace detail {
 
 template<typename T>
-std::string process(T value, std::ostringstream& stream) {
+inline std::string process(T value, std::ostringstream& stream) {
     stream << value;
     return stream.str();
 }

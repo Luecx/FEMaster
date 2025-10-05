@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file eigen_common.h
  * @brief Shared utilities, includes, and helpers for eigen solvers.
  *
@@ -14,7 +14,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 #pragma once
 #include "eigen.h"                // public API
 #include "../core/logging.h"
@@ -34,9 +34,9 @@
 
 namespace fem::solver::detail {
 
-/******************************************************************************
+/**
  * @brief Map high-level sorting rule to Spectra’s SortRule.
- ******************************************************************************/
+ */
 inline Spectra::SortRule to_rule(EigenOpts::Sort s) {
     using SR   = Spectra::SortRule;
     using Sort = EigenOpts::Sort;
@@ -48,9 +48,9 @@ inline Spectra::SortRule to_rule(EigenOpts::Sort s) {
     }
 }
 
-/******************************************************************************
+/**
  * @brief Choose subspace size ncv heuristically: k < ncv ≤ n.
- ******************************************************************************/
+ */
 inline int choose_ncv(int n, int k) {
     const int lo  = k + 2;
     const int hi  = 2 * k + 20;
@@ -59,9 +59,9 @@ inline int choose_ncv(int n, int k) {
     return ncv;
 }
 
-/******************************************************************************
+/**
  * @brief Ensure a sparse matrix is in compressed (CSC) storage.
- ******************************************************************************/
+ */
 inline void ensure_compressed(const SparseMatrix& M_const) {
     auto& M = const_cast<SparseMatrix&>(M_const);
     if (!M.isCompressed()) M.makeCompressed();

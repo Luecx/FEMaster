@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file sets.h
  * @brief Declares the `Sets` helper for managing named collections of regions.
  *
@@ -8,7 +8,7 @@
  *
  * @see src/data/sets.cpp
  * @see src/data/collection.h
- ******************************************************************************/
+ */
 
 #pragma once
 
@@ -27,12 +27,12 @@ namespace model {
 #define SET_ELEM_ALL "EALL" ///< Convenience literal describing the global element set.
 #define SET_SURF_ALL "SFALL" ///< Convenience literal describing the global surface set.
 
-/******************************************************************************
+/**
  * @struct Sets
  * @brief Manages a family of named collections and an optional aggregate set.
  *
  * @tparam T Collection type derived from `Collection<ValueType>`.
- ******************************************************************************/
+ */
 template<typename T>
 struct Sets {
     using ValueType = typename T::value_type; ///< Values stored inside each collection.
@@ -69,9 +69,9 @@ struct Sets {
     /// Retrieves the collection associated with `name` (may return `nullptr`).
     TPtr get(const Key& name) { return _data[name]; }
 
-    /******************************************************************************
+    /**
      * @brief Constructs the registry and optionally creates the aggregate set.
-     ******************************************************************************/
+     */
     explicit Sets(const Key& all_key = "")
         : _all_key(all_key) {
         if (!_all_key.empty()) {
@@ -81,11 +81,11 @@ struct Sets {
         }
     }
 
-    /******************************************************************************
+    /**
      * @brief Activates the collection associated with `name`, creating it when needed.
      *
      * Passing an empty `name` activates the aggregate collection when available.
-     ******************************************************************************/
+     */
     template<typename... Args>
     TPtr activate(const Key& name, Args... c) {
         Key key = name;
@@ -104,9 +104,9 @@ struct Sets {
         return _cur;
     }
 
-    /******************************************************************************
+    /**
      * @brief Adds a single value to the active and aggregate collections.
-     ******************************************************************************/
+     */
     void add(const ValueType& item) {
         if (_cur) {
             _cur->add(item);
@@ -116,9 +116,9 @@ struct Sets {
         }
     }
 
-    /******************************************************************************
+    /**
      * @brief Adds an arithmetic range [first, last] with the provided `step`.
-     ******************************************************************************/
+     */
     template<typename U = ValueType>
     std::enable_if_t<std::is_integral_v<U>> add(U first, U last, U step) {
         for (U value = first; value <= last; value += step) {
@@ -131,9 +131,9 @@ struct Sets {
     auto end() { return _data.end(); }
 
 private:
-    /******************************************************************************
+    /**
      * @brief Creates a new collection and registers it under `name`.
-     ******************************************************************************/
+     */
     template<typename... Args>
     TPtr create(const Key& name, Args... c) {
         auto collection = std::make_shared<T>(name, std::forward<Args>(c)...);

@@ -1,11 +1,11 @@
-/******************************************************************************
+/**
  * @file assert_cuda.cu
  * @brief Implements CUDA error translation helpers.
  *
  * @see src/cuda/assert_cuda.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #ifdef SUPPORT_GPU
 

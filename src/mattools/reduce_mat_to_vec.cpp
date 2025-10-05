@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file reduce_mat_to_vec.cpp
  * @brief Implements functions to reduce a SystemDofIds matrix and NodeData into
  * a DynamicVector and to expand it back.
@@ -8,7 +8,7 @@
  * DynamicVector.
  *
  * @date Created on 28.08.2024
- ******************************************************************************/
+ */
 
 #include "reduce_mat_to_vec.h"
 #include <iostream>  // Optional: For debug output

@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
 * @file eigen_internal.h
  * @brief Internal entry points for the eigen solver implementations.
  *
@@ -13,7 +13,7 @@
  *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  *   All rights reserved.
  * @date   Created on 19.09.2025
- ******************************************************************************/
+ */
 #pragma once
 #include "eigen_common.h"
 

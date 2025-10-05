@@ -1,4 +1,4 @@
-/******************************************************************************
+/**
  * @file assemble_TX.cpp
  * @brief Builds the `T` and `X` matrices from reduced column data.
  *
@@ -9,7 +9,7 @@
  * @see src/constraints/builder/build_x.h
  * @author Finn Eggers
  * @date 06.03.2025
- ******************************************************************************/
+ */
 
 #include "assemble_TX.h"
 
@@ -18,9 +18,9 @@
 namespace fem {
 namespace constraint {
 
-/******************************************************************************
+/**
  * @copydoc assemble_T_and_X
- ******************************************************************************/
+ */
 AssembleOutput assemble_T_and_X(const AssembleInput& in, const XCols& cols) {
     AssembleOutput out;
     const int nm_use = static_cast<int>(in.masters_loc.size());
