@@ -1,3 +1,4 @@
+
 #include "line.h"
 
 #include <algorithm>

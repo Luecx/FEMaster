@@ -5,7 +5,6 @@
 
 #include "pattern.h"
 
-
 namespace fem::reader2 {
 
 Pattern Pattern::make() {
@@ -18,12 +17,10 @@ Pattern& Pattern::allow_multiline(bool on) {
 }
 
 Pattern& Pattern::desc(std::string description) {
-    // If an element already exists, apply to the latest one.
-    if (!_elements.empty()) {
-        _elements.back().set_description(std::move(description));
-    } else {
-        throw new std::runtime_error("Pattern: cannot set description without elements");
+    if (_elements.empty()) {
+        throw std::runtime_error("Pattern::desc(): no element to describe (call fixed()/var() first)");
     }
+    _elements.back().set_description(std::move(description));
     return *this;
 }
 
@@ -109,11 +106,11 @@ std::shared_ptr<void> Pattern::convert(const std::vector<std::string>& tokens,
     return _converter(tokens, counts);
 }
 
-void Pattern::invoke(Context& context, void* tuple_ptr, const LineMeta& meta) const {
-    if (!_invoker) {
-        throw std::runtime_error("Pattern not bound");
+void Pattern::invoke(Context& context, const Keyword& kw, void* tuple_ptr, const LineMeta& meta) const {
+    if (!_invoker_with_kv) {
+        throw std::runtime_error("Pattern not bound (bind_kv missing)");
     }
-    _invoker(context, tuple_ptr, meta);
+    _invoker_with_kv(context, kw.kv(), tuple_ptr, meta);
 }
 
 size_t Pattern::arity() const {

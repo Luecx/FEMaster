@@ -229,7 +229,8 @@ void Reader::run(const std::string& filepath) {
                 }
 
                 auto tup_ptr = pat.convert(toks, counts);
-                pat.invoke(_context, tup_ptr.get(), last_meta);
+                pat.invoke(_context, kw, tup_ptr.get(), last_meta);
+
                 ++groups;
             }
 

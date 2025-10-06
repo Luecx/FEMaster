@@ -17,13 +17,12 @@
 
 #include "context.h"
 #include "pattern_element.h"
+#include "keyword.h"   // for Keyword::Map
 #include "types.h"
 
 namespace fem::reader2 {
 
-/**
- * @brief Convert a string token into a strongly-typed value.
- */
+/** @brief Convert a string token into a strongly-typed value. */
 template<class T>
 inline T parse_cell(const std::string& token) {
     if constexpr (std::is_same_v<T, std::string>) {
@@ -89,7 +88,7 @@ public:
                                std::move(name),
                                N,
                                N,
-                               "");
+                               std::string{} /* desc set via desc() */);
         return *this;
     }
 
@@ -104,33 +103,30 @@ public:
                                std::move(base),
                                min_count,
                                max_count,
-                               "");
+                               std::string{} /* desc set via desc() */);
         return *this;
     }
 
     /**
-     * @brief Attach documentation that describes the most recently added element.
-     *
-     * If no element has been added yet, the description is stored
-     * and applied to the next element added.
+     * @brief Attach documentation to the most recently added element.
+     * @throws std::runtime_error if called before any element was added.
      */
     Pattern& desc(std::string description);
 
     /** @brief Provide a summary for documentation output. */
     Pattern& summary(std::string text);
-
     /** @brief Provide additional notes for documentation output. */
     Pattern& notes(std::string text);
 
     /**
-     * @brief Bind a callback that will receive the parsed tuple of values.
-     * The callback signature is: void(Context&, Ts..., const LineMeta&).
+     * @brief Bind a callback that receives the current keyword key→value map and parsed values.
+     * Signature: void(Context&, const Keyword::Map&, Ts..., const LineMeta&)
      */
     template<class... Ts, class F>
-    Pattern& bind(F callback) {
-        _invoker = [fun = std::move(callback)](Context& context, void* tuple_ptr, const LineMeta& meta) {
+    Pattern& bind_kv(F callback) {
+        _invoker_with_kv = [fun = std::move(callback)](Context& context, const Keyword::Map& kv, void* tuple_ptr, const LineMeta& meta) {
             auto& tuple = *static_cast<std::tuple<Ts...>*>(tuple_ptr);
-            std::apply([&](auto&... xs) { fun(context, xs..., meta); }, tuple);
+            std::apply([&](auto&... xs) { fun(context, kv, xs..., meta); }, tuple);
         };
         _converter = [](const std::vector<std::string>& tokens, const std::vector<size_t>& counts) {
             return convert_to_tuple<Ts...>(tokens, counts);
@@ -156,7 +152,6 @@ public:
 
     /** @brief Summary text for documentation. */
     [[nodiscard]] const std::string& doc_summary() const;
-
     /** @brief Notes text for documentation. */
     [[nodiscard]] const std::string& doc_notes() const;
 
@@ -167,8 +162,10 @@ public:
     std::shared_ptr<void> convert(const std::vector<std::string>& tokens,
                                   const std::vector<size_t>& counts) const;
 
-    /** @brief Invoke the bound callback with the converted tuple. */
-    void invoke(Context& context, void* tuple_ptr, const LineMeta& meta) const;
+    /**
+     * @brief Invoke the bound callback with the converted tuple (always passes Keyword::Map).
+     */
+    void invoke(Context& context, const Keyword& kw, void* tuple_ptr, const LineMeta& meta) const;
 
     /** @brief Number of bound tuple entries. */
     [[nodiscard]] size_t arity() const;
@@ -214,9 +211,11 @@ private:
     bool                        _multiline = false;
     std::string                 _summary;
     std::string                 _notes;
-    std::function<std::shared_ptr<void>(const std::vector<std::string>&, const std::vector<size_t>&)> _converter;
-    std::function<void(Context&, void*, const LineMeta&)>                                              _invoker;
-    size_t                                                                                             _arity = 0;
+
+    std::function<void(Context&, const Keyword::Map&, void*, const LineMeta&)> _invoker_with_kv;
+    std::function<std::shared_ptr<void>(const std::vector<std::string>&,
+                                        const std::vector<size_t>&)>           _converter;
+    size_t                                                                        _arity = 0;
 };
 
 } // namespace fem::reader2
