@@ -1,58 +1,78 @@
 #pragma once
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
 
+#include "key_rule.h"
+
 namespace fem::reader2 {
 
+/**
+ * \brief Fluent helper that validates keyword arguments against configured rules.
+ */
 struct KeyRules {
-    struct Rule {
-        bool required = false;
-        std::optional<std::string> def;          // default (if not required)
-        std::unordered_set<std::string> allowed; // allowed choices (already uppercased by parser)
-        std::string description;                  // human doc
-    };
-
     // name -> rule (names are already uppercased by line parser)
-    std::unordered_map<std::string, Rule> rules;
+    std::unordered_map<std::string, KeyRule> _rules;
 
-    KeyRules& describe(std::string name, std::string text){
-        rules[std::move(name)].description = std::move(text); return *this;
+    /// \brief Expose the underlying rule map for inspection.
+    const std::unordered_map<std::string, KeyRule>& rules() const
+    {
+        return _rules;
     }
-    KeyRules& require(std::string name) {
-        rules[std::move(name)].required = true; return *this;
+
+    /// \brief Provide descriptive text for documentation.
+    KeyRules& describe(std::string name, std::string text)
+    {
+        _rules[std::move(name)].description = std::move(text);
+        return *this;
     }
-    KeyRules& optional(std::string name, std::optional<std::string> def = std::nullopt) {
-        auto& r = rules[std::move(name)];
-        r.required = false; r.def = std::move(def); return *this;
+
+    /// \brief Mark a key as required.
+    KeyRules& require(std::string name)
+    {
+        _rules[std::move(name)].required = true;
+        return *this;
     }
-    KeyRules& allowed(std::string name, std::initializer_list<std::string> xs) {
-        auto& r = rules[name];
-        r.allowed.insert(xs.begin(), xs.end()); return *this;
+
+    /// \brief Mark a key as optional and optionally supply a default.
+    KeyRules& optional(std::string name, std::optional<std::string> def = std::nullopt)
+    {
+        auto& rule = _rules[std::move(name)];
+        rule.required = false;
+        rule.default_value = std::move(def);
+        return *this;
+    }
+
+    /// \brief Restrict a key to a fixed set of uppercase values.
+    KeyRules& allowed(std::string name, std::initializer_list<std::string> values)
+    {
+        auto& rule = _rules[name];
+        rule.allowed_values.insert(values.begin(), values.end());
+        return *this;
     }
 
     // Validate & materialize a final key map (string->string), applying defaults & enums.
     // Throws with a helpful message on violation.
+    /// \brief Validate an input map and apply defaults.
     std::unordered_map<std::string, std::string>
     apply(const std::unordered_map<std::string,std::string>& input) const {
         std::unordered_map<std::string, std::string> out = input; // start with given keys
-        for (const auto& [k, r] : rules) {
+        for (const auto& [k, r] : _rules) {
             auto it = out.find(k);
             if (it == out.end()) {
                 if (r.required) {
                     throw std::runtime_error("Missing required key: " + k);
                 }
-                if (r.def) out[k] = *r.def;
+                if (r.default_value) out[k] = *r.default_value;
                 continue;
             }
-            if (!r.allowed.empty() && !r.allowed.count(it->second)) {
+            if (!r.allowed_values.empty() && !r.allowed_values.count(it->second)) {
                 std::ostringstream oss;
                 oss << "Invalid value '" << it->second << "' for key " << k << ". Allowed: {";
-                bool first=true; for (auto& v : r.allowed){ if(!first) oss<<","; first=false; oss<<v; } oss<<"}";
+                bool first=true; for (auto& v : r.allowed_values){ if(!first) oss<<","; first=false; oss<<v; } oss<<"}";
                 throw std::runtime_error(oss.str());
             }
         }
@@ -60,6 +80,7 @@ struct KeyRules {
     }
 
     // Typed getter helper
+    /// \brief Convert a string value into the requested type.
     template<class T>
     static T convert(const std::string& s){
         if constexpr (std::is_same_v<T,std::string>) return s;

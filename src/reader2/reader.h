@@ -1,10 +1,4 @@
-// parser/reader.h
 #pragma once
-/**
- * @file reader.h
- * @brief Reader that streams a File, manages scopes, and dispatches to CommandSpec handlers.
- */
-
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,31 +8,44 @@
 #include "registry.h"
 #include "context.h"
 #include "command_spec.h"
+#include "pattern.h"
 
 namespace fem::reader2 {
 
-    class Reader {
-    public:
-        /// Run the reader on a given file path.
-        void run(const std::string& filepath);
+class Reader {
+public:
+    /**
+     * \brief Execute the reader pipeline for the provided file.
+     */
+    void run(const std::string& filepath);
 
-    private:
-        struct ActiveBlock {
-            std::string scope_name;                   // e.g. "MATERIAL", "LOADCASE", etc.
-            std::function<void(Context&)> on_exit_cb; // optional on-exit for the opening command
-        };
-
-        Context cx_;
-        std::optional<Line> look_;
-        Line scratch_; // to return a stable ref when consuming look_
-        std::vector<ActiveBlock> blocks_; // stack of open scopes (top = current)
-
-        Line& next_effective(File& f);
-        Line& peek_effective(File& f);
-
-        // Bubble up until we find a scope that allows `name`; call on_exit while popping.
-        // Returns the scope index (0..top) where the command belongs. Throws if not found at ROOT.
-        size_t ensure_scope_accepts_or_bubble(const std::string& name);
+private:
+    /// \brief Tracks an open scope with its exit callback.
+    struct ActiveBlock {
+        std::string                 scope_name;
+        std::function<void(Context&)> on_exit_cb;
     };
+
+    Context                 _context;
+    std::optional<Line>     _look;            ///< Current buffered line.
+    size_t                  _tokenIndex = 0; ///< Index within the buffered data line.
+    std::vector<ActiveBlock> _blocks;        ///< Stack of open blocks.
+
+    /// \brief Peek the next non-ignorable line without consuming it fully.
+    Line& peek_effective(File& file);
+
+    // token helpers for DATA lines
+    /// \brief Ensure the buffered line exists and represents data.
+    bool ensure_data_line(File& file);
+    /// \brief Count remaining tokens on the buffered data line.
+    size_t tokens_available() const;
+    /// \brief Transfer up to count tokens into the output vector.
+    size_t take_tokens(size_t count, std::vector<std::string>& out, const std::string& file, int& last_line_no);
+    /// \brief Release the buffered line once consumed.
+    void maybe_pop_line();
+
+    /// \brief Bubble scopes until one accepts the specified command.
+    size_t ensure_scope_accepts_or_bubble(const std::string& name);
+};
 
 } // namespace fem::reader2

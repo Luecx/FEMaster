@@ -34,38 +34,56 @@ public:
                              const std::optional<KeyRules>& rules);
 
     /// Current scope (e.g. "ROOT", "MATERIAL", ...).
-    const Scope& scope()  const { return scope_; }
+    const Scope& scope() const
+    {
+        return _scope;
+    }
     /// Uppercased command name (e.g. "MATERIAL", "ELASTIC", ...).
-    const std::string& name()   const { return name_;  }
+    const std::string& name() const
+    {
+        return _name;
+    }
     /// Validated key map (uppercased keys).
-    const Map& kv()      const { return kv_; }
+    const Map& kv() const
+    {
+        return _kv;
+    }
 
     /// True if a key exists.
-    bool has(const std::string& k) const { return kv_.find(k) != kv_.end(); }
+    bool has(const std::string& key) const
+    {
+        return _kv.find(key) != _kv.end();
+    }
 
     /// Typed getter with default.
     template<class T>
-    T get(const std::string& k, const T& def) const {
-        auto it = kv_.find(k);
-        if (it == kv_.end()) return def;
+    T get(const std::string& key, const T& def) const
+    {
+        auto it = _kv.find(key);
+        if (it == _kv.end()) {
+            return def;
+        }
         return convert<T>(it->second);
     }
 
     /// Typed getter, throws if missing.
     template<class T>
-    T require(const std::string& k) const {
-        auto it = kv_.find(k);
-        if (it == kv_.end()) throw std::runtime_error("Missing required key: " + k);
+    T require(const std::string& key) const
+    {
+        auto it = _kv.find(key);
+        if (it == _kv.end()) {
+            throw std::runtime_error("Missing required key: " + key);
+        }
         return convert<T>(it->second);
     }
 
 private:
-    Scope        scope_;
-    std::string  name_;
-    Map          kv_;
+    Scope        _scope;
+    std::string  _name;
+    Map          _kv;
 
-    Keyword(Scope s, std::string n, Map m)
-        : scope_(std::move(s)), name_(std::move(n)), kv_(std::move(m)) {}
+    Keyword(Scope scope, std::string name, Map map)
+        : _scope(std::move(scope)), _name(std::move(name)), _kv(std::move(map)) {}
 
     template<class T>
     static T convert(const std::string& s) {

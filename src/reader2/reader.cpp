@@ -1,8 +1,3 @@
-// parser/reader.cpp
-/**
- * @file reader.cpp
- * @brief Streaming reader that walks a File, resolves scopes, and dispatches to CommandSpec.
- */
 #include "reader.h"
 #include "registry.h"
 #include "types.h"
@@ -10,58 +5,82 @@
 
 #include <stdexcept>
 #include <sstream>
-#include <iostream>
 
 namespace fem::reader2 {
 
 //------------------------------------------------------------------------------
-// Helper: next_effective / peek_effective
+// basic line buffering
 //------------------------------------------------------------------------------
-Line& Reader::next_effective(File& f) {
-    if (look_) {
-        scratch_ = *look_;
-        look_.reset();
-        return scratch_;
+Line& Reader::peek_effective(File& file) {
+    if (!_look) {
+        _look = file.next_effective();
     }
-    return f.next_effective();
+    return *_look;
 }
 
-Line& Reader::peek_effective(File& f) {
-    if (!look_) look_ = f.next_effective();
-    return *look_;
+bool Reader::ensure_data_line(File& file){
+    Line& P = peek_effective(file);
+    if (P.type() != LineType::DATA) return false;
+    return true;
+}
+
+size_t Reader::tokens_available() const {
+    if (!_look || _look->type()!=LineType::DATA) return 0;
+    const auto& values = _look->values();
+    if (_tokenIndex >= values.size()) return 0;
+    return values.size() - _tokenIndex;
+}
+
+size_t Reader::take_tokens(size_t count,
+                           std::vector<std::string>& out,
+                           [[maybe_unused]] const std::string& file,
+                           [[maybe_unused]] int& last_line_no)
+{
+    if (!_look || _look->type() != LineType::DATA) return 0;
+    const auto& values = _look->values();
+    size_t avail = tokens_available();
+    size_t take = (count < avail ? count : avail);
+    for (size_t index = 0; index < take; ++index) {
+        out.push_back(values[_tokenIndex++]);
+    }
+    return take;
+}
+
+void Reader::maybe_pop_line(){
+    if (!_look || _look->type()!=LineType::DATA) return;
+    const auto& values = _look->values();
+    if (_tokenIndex >= values.size()) {
+        _look.reset();
+        _tokenIndex = 0;
+    }
 }
 
 //------------------------------------------------------------------------------
 // ensure_scope_accepts_or_bubble()
-// - Checks whether current scope (or its ancestors) accept a command.
-// - If not accepted, automatically closes scopes upward, calling on_exit.
-// - Returns index in scope_stack of accepting scope.
 //------------------------------------------------------------------------------
 size_t Reader::ensure_scope_accepts_or_bubble(const std::string& name) {
     while (true) {
-        const Scope& scope = cx_.current_scope();
+        const Scope& scope = _context.current_scope();
 
-        // 1) Does current scope handle this command?
         if (Registry::instance().find(scope, name)) {
-            return cx_.scope_stack.size() - 1;
+            return _context.depth() - 1;
         }
 
-        // 2) If we’re at ROOT and still no match → error
         if (scope == "ROOT") {
             throw std::runtime_error(
                 "Unexpected command '" + name +
                 "' at ROOT (no matching handler registered).");
         }
 
-        // 3) Otherwise: close this scope properly and bubble up
-        if (!blocks_.empty() && blocks_.back().scope_name == scope) {
-            auto blk = blocks_.back();
-            blocks_.pop_back();
-            if (blk.on_exit_cb)
-                blk.on_exit_cb(cx_);
+        if (!_blocks.empty() && _blocks.back().scope_name == scope) {
+            auto blk = _blocks.back();
+            _blocks.pop_back();
+            if (blk.on_exit_cb) {
+                blk.on_exit_cb(_context);
+            }
         }
 
-        cx_.pop_scope();  // move one level up and retry
+        _context.pop_scope();
     }
 }
 
@@ -76,184 +95,174 @@ void Reader::run(const std::string& filepath) {
         if (L.type() == LineType::EOF_MARK) break;
 
         if (L.type() != LineType::KEYWORD) {
-            look_.reset();
+            // ignore stray data/comments until a keyword
+            _look.reset();
+            _tokenIndex = 0;
             continue;
         }
 
         std::string name = L.command();
 
-        // Automatically close any scopes that do not accept this command.
+        // Close scopes until a scope accepts this command
         ensure_scope_accepts_or_bubble(name);
 
-        const Scope& scope = cx_.current_scope();
+        const Scope& scope = _context.current_scope();
         const CommandSpec* spec = Registry::instance().find(scope, name);
         if (!spec) {
-            look_.reset();
+            _look.reset();
+            _tokenIndex = 0;
             continue;
         }
 
-        // Build Keyword (parsing + KeyRules application centralized)
+        // Build validated Keyword
         Keyword kw = Keyword::from_line(L, scope, spec->key_rules);
 
-        // Consume this keyword line
-        scratch_ = *look_;
-        look_.reset();
+        // consume keyword
+        _look.reset();
+        _tokenIndex = 0;
 
-        // Callbacks for entering
-        if (spec->on_enter_cb)
-            spec->on_enter_cb(cx_, kw);
-        if (spec->on_keyword_cb)
-            spec->on_keyword_cb(cx_, kw);
-
-        //===========================================================
-        // MODE C: token accumulation (e.g. collect N numbers)
-        //===========================================================
-        if (spec->token_collect) {
-            const size_t need = spec->token_collect->required(kw);
-            std::vector<std::string> tokens;
-            tokens.reserve(need);
-
-            LineMeta last_meta{file.path(), file.line_number()};
-
-            while (tokens.size() < need) {
-                Line& P = peek_effective(file);
-                if (P.type() == LineType::EOF_MARK) break;
-                if (P.type() != LineType::DATA) break;
-
-                last_meta = {file.path(), file.line_number()};
-                const auto& vals = P.values();
-                tokens.insert(tokens.end(), vals.begin(), vals.end());
-
-                scratch_ = *look_;
-                look_.reset();
-            }
-
-            if (tokens.size() < need) {
-                throw std::runtime_error("Insufficient values for '" + name +
-                    "': required " + std::to_string(need) +
-                    ", got " + std::to_string(tokens.size()));
-            }
-            if (tokens.size() > need) {
-                throw std::runtime_error("Too many values for '" + name +
-                    "': required " + std::to_string(need) +
-                    ", got " + std::to_string(tokens.size()));
-            }
-
-            spec->token_collect->handle(cx_, tokens, last_meta);
+        // callbacks
+        if (spec->on_enter_cb) {
+            spec->on_enter_cb(_context, kw);
+        }
+        if (spec->on_keyword_cb) {
+            spec->on_keyword_cb(_context, kw);
         }
 
-        //===========================================================
-        // MODE B: conditional schemas
-        //===========================================================
-        else if (!spec->conditional_lines.empty()) {
-            const CommandSpec::ConditionalLines* chosen = nullptr;
-            for (auto& v : spec->conditional_lines) {
-                if (v.when(kw)) {
-                    chosen = &v;
-                    break;
-                }
-            }
-            if (!chosen) {
-                throw std::runtime_error("No conditional schema matched for '" + name + "'");
-            }
+        // pick plan
+        const ConditionalPlan* plan = nullptr;
+        for (const auto& p : spec->plans) {
+            if (p.cond()(kw)) { plan = &p; break; }
+        }
+        if (!plan) {
+            throw std::runtime_error("No plan matched for command '" + name + "' at scope '" + scope + "'");
+        }
 
-            size_t consumed = 0;
-            while (consumed < chosen->range.max_lines) {
+        // execute segments in order
+        for (const auto& seg : plan->segments()) {
+            const Pattern& pat = seg.pattern();
+            pat.validate();
+
+            size_t groups = 0;
+            while (groups < seg.range().max()) {
+                // Can we start a new group?
                 Line& P = peek_effective(file);
-                if (P.type() == LineType::EOF_MARK) break;
-                if (P.type() == LineType::KEYWORD) break;
+                if (P.type() == LineType::EOF_MARK || P.type() == LineType::KEYWORD) break;
                 if (P.type() != LineType::DATA) {
-                    look_.reset();
+                    _look.reset();
+                    _tokenIndex = 0;
                     break;
                 }
 
-                bool matched = false;
-                for (auto& alt : chosen->schema.alternatives) {
-                    LineMeta meta{file.path(), file.line_number()};
-                    if (alt(cx_, P.values(), meta)) {
-                        matched = true;
-                        break;
+                // gather tokens
+                const size_t min_need = pat.min_required_tokens();
+                const size_t max_allow = pat.max_allowed_tokens();
+
+                std::vector<std::string> toks;
+                toks.reserve(max_allow);
+                LineMeta last_meta{file.path(), file.line_number()};
+                int last_line_no = file.line_number();
+
+                // Step 1: fulfill minimum
+                size_t have = 0;
+                if (!pat.multiline()) {
+                    const auto& vals = P.values();
+                    (void)vals;
+                    size_t avail = tokens_available();
+                    if (avail < min_need) {
+                        if (groups >= seg.range().min()) break;
+                        std::ostringstream oss;
+                        oss << "Too few columns for pattern (need " << min_need
+                            << ", have " << avail << ") at " << file.path() << ":" << file.line_number();
+                        throw std::runtime_error(oss.str());
+                    }
+                    size_t t = take_tokens(min_need, toks, file.path(), last_line_no);
+                    last_meta = {file.path(), static_cast<int>(last_line_no)};
+                    have += t;
+                } else {
+                    // multiline: slurp across lines until min_need reached
+                    while (have < min_need) {
+                        if (!ensure_data_line(file)) break;
+                        size_t t = take_tokens(min_need - have, toks, file.path(), last_line_no);
+                        if (t == 0) break;
+                        have += t;
+                        last_meta = {file.path(), static_cast<int>(last_line_no)};
+                        if (have < min_need) {
+                            // need a new line
+                            maybe_pop_line();
+                            Line& nxt = peek_effective(file);
+                            if (nxt.type() != LineType::DATA) break;
+                        }
+                    }
+                    if (have < min_need) {
+                        if (groups >= seg.range().min()) break;
+                        std::ostringstream oss;
+                        oss << "Pattern requires at least " << min_need << " tokens, got " << have
+                            << " at " << file.path() << ":" << file.line_number();
+                        throw std::runtime_error(oss.str());
                     }
                 }
-                if (!matched) {
-                    throw std::runtime_error("No schema matched at " + file.path() +
-                        ":" + std::to_string(file.line_number()));
-                }
 
-                scratch_ = *look_;
-                look_.reset();
-                ++consumed;
-            }
-            if (consumed < chosen->range.min_lines) {
-                throw std::runtime_error("Too few data lines for '" + name +
-                    "' (min=" + std::to_string(chosen->range.min_lines) + ")");
-            }
-        }
-
-        //===========================================================
-        // MODE A: simple schema
-        //===========================================================
-        else if (spec->has_lines) {
-            size_t consumed = 0;
-            while (consumed < spec->range.max_lines) {
-                Line& P = peek_effective(file);
-                if (P.type() == LineType::EOF_MARK) break;
-                if (P.type() == LineType::KEYWORD) break;
-                if (P.type() != LineType::DATA) {
-                    look_.reset();
-                    break;
-                }
-
-                bool matched = false;
-                for (auto& alt : spec->schema.alternatives) {
-                    LineMeta meta{file.path(), file.line_number()};
-                    if (alt(cx_, P.values(), meta)) {
-                        matched = true;
-                        break;
+                // Step 2: optional extras only from the same last line
+                size_t extras_cap = max_allow - min_need;
+                size_t extras_take = 0;
+                if (extras_cap > 0) {
+                    extras_take = std::min(extras_cap, tokens_available());
+                    if (extras_take) {
+                        size_t t = take_tokens(extras_take, toks, file.path(), last_line_no);
+                        (void)t;
+                        last_meta = {file.path(), static_cast<int>(last_line_no)};
                     }
                 }
-                if (!matched) {
-                    throw std::runtime_error("No schema matched at " + file.path() +
-                        ":" + std::to_string(file.line_number()));
+
+                maybe_pop_line();
+
+                // counts per element
+                std::vector<size_t> counts;
+                counts.reserve(pat.elements().size());
+                for (const auto& element : pat.elements()) {
+                    if (element.type() == PatternElement::Type::Variable) {
+                        counts.push_back(element.effective_count(extras_take));
+                    } else {
+                        counts.push_back(element.effective_count(0));
+                    }
                 }
 
-                scratch_ = *look_;
-                look_.reset();
-                ++consumed;
+                auto tup_ptr = pat.convert(toks, counts);
+                pat.invoke(_context, tup_ptr.get(), last_meta);
+                ++groups;
             }
-            if (consumed < spec->range.min_lines) {
-                throw std::runtime_error("Too few data lines for '" + name +
-                    "' (min=" + std::to_string(spec->range.min_lines) + ")");
+
+            if (groups < seg.range().min()) {
+                std::ostringstream oss;
+                oss << "Too few groups for segment '" << (seg.label().empty()?std::string("Segment"):seg.label())
+                    << "' (min=" << seg.range().min() << ")";
+                throw std::runtime_error(oss.str());
             }
         }
 
-        //===========================================================
-        // Scope management
-        //===========================================================
+        // scope mgmt (unchanged)
         const Scope open_as = spec->open_scope ? *spec->open_scope : spec->name;
-
         bool explicit_scope = static_cast<bool>(spec->open_scope);
         bool has_children   = Registry::instance().scope_has_children(open_as);
 
-        // Always open explicitly declared scopes (like MATERIAL)
         if (explicit_scope) {
-            cx_.push_scope(open_as);
-            blocks_.push_back(ActiveBlock{open_as, spec->on_exit_cb});
-        }
-        // Automatically open scopes that have known children
-        else if (has_children) {
-            cx_.push_scope(open_as);
-            blocks_.push_back(ActiveBlock{open_as, spec->on_exit_cb});
+            _context.push_scope(open_as);
+            _blocks.push_back(ActiveBlock{open_as, spec->on_exit_cb});
+        } else if (has_children) {
+            _context.push_scope(open_as);
+            _blocks.push_back(ActiveBlock{open_as, spec->on_exit_cb});
         }
     }
 
-    // --- Ensure all blocks are closed at EOF ---
-    while (!blocks_.empty()) {
-        auto blk = blocks_.back();
-        blocks_.pop_back();
-        if (blk.on_exit_cb)
-            blk.on_exit_cb(cx_);
-        cx_.scope_stack.pop_back();
+    // close all blocks at EOF
+    while (!_blocks.empty()) {
+        auto blk = _blocks.back();
+        _blocks.pop_back();
+        if (blk.on_exit_cb) {
+            blk.on_exit_cb(_context);
+        }
+        _context.pop_scope();
     }
 }
 

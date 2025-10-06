@@ -5,6 +5,7 @@
 
 namespace fem::reader2 {
 
+/// \brief Convenience sentinel representing an unbounded size.
 inline constexpr size_t kInf = std::numeric_limits<size_t>::max();
 
 /// Basic line kinds detected by the parser
