@@ -20,10 +20,7 @@ struct Condition {
     Fn         test;
     std::string text;   // human-readable, used in documentation
 
-    bool operator()(const Keyword& kw) const
-    {
-        return test ? test(kw) : false;
-    }
+    bool operator()(const Keyword& kw) const;
 
     // ---- Builders ----
     /// \brief Condition that always evaluates to true.
@@ -43,6 +40,8 @@ struct Condition {
     /// \brief Logical OR across many conditions.
     static Condition any(std::initializer_list<Condition> xs);
 };
+
+
 
 inline Condition Condition::always() {
     return Condition{

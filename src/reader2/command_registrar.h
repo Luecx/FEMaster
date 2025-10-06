@@ -9,7 +9,7 @@ namespace fem::reader2 {
  */
 struct CommandRegistrar {
     /// \brief Register the provided handler immediately.
-    CommandRegistrar(const char* scope, const char* name, Registry::Configure cfg);
+    CommandRegistrar(const Scope& scope, const std::string& name, Registry::Configure cfg);
 };
 
 } // namespace fem::reader2

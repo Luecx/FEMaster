@@ -1,4 +1,20 @@
 #pragma once
+/**
+ * @file conditional_plan.h
+ * @brief Defines the ConditionalPlan class, representing a sequence of parsing segments
+ *        that apply only when a specific condition is satisfied.
+ *
+ * @details
+ * The ConditionalPlan acts as a fluent container for defining conditional parsing logic.
+ * It links a Condition with one or more Segments and provides helper methods for
+ * configuration and inspection. This is primarily used inside the command parsing
+ * framework to define optional or context-sensitive blocks.
+ *
+ * @date 06.10.2025
+ * @version 1.0
+ * @author Finn Eggers
+ */
+
 #include <vector>
 #include <string>
 #include <initializer_list>
@@ -8,82 +24,45 @@
 namespace fem::reader2 {
 
 /**
- * \brief Describes a sequence of segments that apply when a condition is satisfied.
+ * @class ConditionalPlan
+ * @brief Associates a Condition with a sequence of Segments.
+ *
+ * A ConditionalPlan defines a parsing plan that is only activated if its condition
+ * evaluates to true. It supports fluent-style setup for chaining configuration calls.
  */
-struct ConditionalPlan {
+class ConditionalPlan {
 private:
-    Condition            _condition = Condition::always();
-    std::string          _displayName;
-    std::vector<Segment> _segments;
+    Condition            _condition;     ///< Condition determining applicability
+    std::string          _displayName;   ///< Human-readable plan name
+    std::vector<Segment> _segments;      ///< Sequence of segments for this plan
 
 public:
-    /**
-     * \brief Factory helper for fluent configuration.
-     */
-    static ConditionalPlan make()
-    {
-        return ConditionalPlan{};
-    }
+    /** @brief Default constructor initializing to an always-true condition. */
+    ConditionalPlan();
 
-    /**
-     * \brief Attach the condition that needs to hold for this plan.
-     */
-    ConditionalPlan& when(Condition condition)
-    {
-        _condition = std::move(condition);
-        return *this;
-    }
+    /** @brief Factory helper for fluent configuration. */
+    static ConditionalPlan make();
 
-    /**
-     * \brief Set a human-friendly display name.
-     */
-    ConditionalPlan& name(std::string value)
-    {
-        _displayName = std::move(value);
-        return *this;
-    }
+    /** @brief Attach the condition that must hold for this plan. */
+    ConditionalPlan& when(Condition condition);
 
-    /**
-     * \brief Append a segment to the execution list.
-     */
-    ConditionalPlan& add(Segment segment)
-    {
-        _segments.push_back(std::move(segment));
-        return *this;
-    }
+    /** @brief Set a human-readable display name. */
+    ConditionalPlan& name(std::string value);
 
-    /**
-     * \brief Replace the segment list using an initializer list.
-     */
-    ConditionalPlan& segments(std::initializer_list<Segment> list)
-    {
-        _segments.assign(list.begin(), list.end());
-        return *this;
-    }
+    /** @brief Append a segment to the execution list. */
+    ConditionalPlan& add(Segment segment);
 
-    /**
-     * \brief Access the configured condition.
-     */
-    const Condition& cond() const
-    {
-        return _condition;
-    }
+    /** @brief Replace the segment list using an initializer list. */
+    ConditionalPlan& segments(std::initializer_list<Segment> list);
 
-    /**
-     * \brief Obtain the display name.
-     */
-    const std::string& display_name() const
-    {
-        return _displayName;
-    }
+    /** @brief Access the configured condition. */
+    const Condition& cond() const;
 
-    /**
-     * \brief Inspect the configured segment sequence.
-     */
-    const std::vector<Segment>& segments() const
-    {
-        return _segments;
-    }
+    /** @brief Obtain the display name. */
+    const std::string& display_name() const;
+
+    /** @brief Inspect the configured segment sequence. */
+    const std::vector<Segment>& segments() const;
 };
 
 } // namespace fem::reader2
