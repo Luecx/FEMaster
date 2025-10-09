@@ -6,7 +6,7 @@
 #include "cuda_defs.h"
 
 #ifdef SUPPORT_GPU
-namespace cuda {
+namespace fem::cuda {
 
 struct CudaVector : CudaArray<CudaPrecision> {
     cusparseDnVecDescr_t descr;
@@ -16,7 +16,7 @@ struct CudaVector : CudaArray<CudaPrecision> {
         runtime_check_cuda(cusparseCreateDnVec(&descr , size, this->data , CUDA_P_TYPE));
     }
 
-    ~CudaVector() override {
+    ~CudaVector() {
         runtime_check_cuda(cusparseDestroyDnVec(descr));
     }
 

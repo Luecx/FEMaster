@@ -15,7 +15,9 @@
 
 #ifdef SUPPORT_GPU
 
-#include "../core/core.h"
+#include "../core/types_cls.h"
+#include "../core/types_num.h"
+#include "../core/types_eig.h"
 
 #include <cublas_v2.h>
 #include <cuComplex.h>

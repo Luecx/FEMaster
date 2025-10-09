@@ -2,6 +2,9 @@
 
 #include "../cuda/cuda_csr.h"
 #include "../cuda/cuda_array.h"
+#include "../cuda/assert_cuda.h"
+#include "../cuda/cuda_vec.h"
+#include "../cuda/cuda_defs.h"
 #include "device.h"  // Import SolverDevice
 #include "method.h"  // Import SolverMethod
 #include "../core/types_eig.h"

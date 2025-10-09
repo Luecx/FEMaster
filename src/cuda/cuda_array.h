@@ -12,6 +12,7 @@
 #ifdef SUPPORT_GPU
 
 #include "cuda.h"
+#include "../core/assert.h"
 
 #include <type_traits>
 #include <vector>
@@ -41,7 +42,7 @@ public:
 
     static std::size_t estimate_mem(std::size_t count);
 
-private:
+protected:
     void allocate();
     void release();
 

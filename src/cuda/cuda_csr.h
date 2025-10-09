@@ -3,11 +3,12 @@
 #ifdef SUPPORT_GPU
 
 #include "../core/types_eig.h"
+#include "../core/types_num.h"
 #include "cuda_array.h"
 
 #include <memory>
 
-namespace cuda{
+namespace fem::cuda{
 
 struct CudaCSR{
 

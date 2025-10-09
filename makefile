@@ -45,7 +45,7 @@ endif
 
 # OpenMP support
 CXXFLAGS  += $(if $(filter 1,$(openmp)),-fopenmp)
-NVCCFLAGS += $(if $(filter 1,$(openmp)),-Xcompiler=-fopenmp)
+NVCCFLAGS += $(if $(filter 1,$(openmp)),-Xcompiler=-fopenmp) -diag-suppress 20014ws
 
 # Ensure MKL is enabled when sequential MKL is requested
 mkl := $(if $(filter 1,$(mkl_sequential)),1,$(mkl))
@@ -281,6 +281,89 @@ $(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
 -include $(GPP_OBJS:.o=.d)
 -include $(GPU_CPP_OBJS:.o=.d)
 -include $(CU_OBJS:.o=.d)
+
+
+#===============================================================
+# IWYU (Include-What-You-Use) Integration  [CPU-only version]
+#===============================================================
+
+
+# Detect IWYU tools
+IWYU           ?= $(shell command -v include-what-you-use 2>/dev/null || echo include-what-you-use)
+IWYU_TOOL      ?= $(shell command -v iwyu_tool 2>/dev/null || echo iwyu_tool)
+FIX_INCLUDES   ?= $(shell command -v fix_includes.py 2>/dev/null || echo fix_includes.py)
+
+# Default scope and options
+IWYU_SCOPE       ?= $(SRCDIR)
+IWYU_TOOL_ARGS   ?= -j $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) -p .
+IWYU_IWYU_ARGS   ?= -Xiwyu --no_fwd_decls
+IWYU_OUT         ?= iwyu.out
+
+# Capture tool (bear preferred)
+BEAR             := $(shell command -v bear 2>/dev/null)
+INTERCEPT        := $(shell command -v intercept-build 2>/dev/null)
+
+.PHONY: iwyu iwyu-apply iwyu-diff iwyu-file iwyu-clean compile_commands.json
+
+compile_commands.json:
+	@if [ -n "$(BEAR)" ]; then \
+	    echo "[IWYU] capturing CPU build compile commands with bear"; \
+	    $(BEAR) -- $(MAKE) -B cpu; \
+	elif [ -n "$(INTERCEPT)" ]; then \
+	    echo "[IWYU] capturing CPU build compile commands with intercept-build"; \
+	    $(INTERCEPT) --cdb compile_commands.json -- $(MAKE) -B cpu; \
+	else \
+	    echo "ERROR: need 'bear' or 'intercept-build' to produce compile_commands.json"; \
+	    echo "       install with: sudo apt install bear"; \
+	    exit 2; \
+	fi; \
+	if [ ! -f compile_commands.json ]; then \
+	    echo "compile_commands.json not generated."; \
+	    exit 2; \
+	fi
+
+iwyu: compile_commands.json
+	@echo "[IWYU] analyzing CPU build (MKL=$(mkl), OpenMP=$(openmp))"
+	@if $(IWYU_TOOL) $(IWYU_TOOL_ARGS) $(IWYU_SCOPE) -- $(IWYU_IWYU_ARGS) > "$(IWYU_OUT)" 2>&1; then \
+	    echo "[IWYU] wrote $(IWYU_OUT)"; \
+	    echo "Tip:  make iwyu-diff   # preview edits"; \
+	    echo "      make iwyu-apply  # apply edits"; \
+	else \
+	    echo "[IWYU] finished with non-zero exit (check $(IWYU_OUT))"; \
+	fi
+
+iwyu-diff:
+	@if [ ! -f "$(IWYU_OUT)" ]; then \
+	    echo "Run 'make iwyu' first."; \
+	    exit 2; \
+	fi; \
+	$(FIX_INCLUDES) --nosafe_headers --reorder --nocomments --dry_run < "$(IWYU_OUT)" | head -n 200
+
+iwyu-apply:
+	@if [ ! -f "$(IWYU_OUT)" ]; then \
+	    echo "Run 'make iwyu' first."; \
+	    exit 2; \
+	fi; \
+	$(FIX_INCLUDES) --nosafe_headers --reorder --nocomments < "$(IWYU_OUT)"; \
+	echo "[IWYU] includes updated. Rebuild to verify."
+
+iwyu-file: compile_commands.json
+	@if [ -z "$(FILE)" ]; then \
+	    echo "Usage: make iwyu-file FILE=src/your_file.cpp"; \
+	    exit 2; \
+	fi; \
+	echo "[IWYU] analyzing $(FILE)"; \
+	if $(IWYU_TOOL) $(IWYU_TOOL_ARGS) $(FILE) -- $(IWYU_IWYU_ARGS) > "iwyu.$(notdir $(FILE)).out" 2>&1; then \
+	    echo "[IWYU] wrote iwyu.$(notdir $(FILE)).out"; \
+	    echo "Apply: $(FIX_INCLUDES) --nosafe_headers --reorder --nocomments < iwyu.$(notdir $(FILE)).out"; \
+	else \
+	    echo "[IWYU] finished with non-zero exit (check iwyu.$(notdir $(FILE)).out)"; \
+	fi
+
+iwyu-clean:
+	@rm -f "$(IWYU_OUT)" compile_commands.json iwyu.*.out
+	@echo "[IWYU] cleaned"
+
 
 #===============================================================
 # Clean Targets
