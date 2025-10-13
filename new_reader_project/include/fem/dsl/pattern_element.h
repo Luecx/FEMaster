@@ -13,14 +13,16 @@
  * Defaults and tolerance:
  *  - `on_empty(v)`: permits empty tokens (`""`) and substitutes `v`.
  *  - `on_missing(v)`: permits missing tokens at the tail and substitutes `v`.
+ *    These defaults are stored **separately**.
  *
  * Documentation hooks:
  *  - `desc(text)`: human-readable description of this element.
  *  - `name(base)`: base name for tokens (e.g., `"x"` → `x` or `x1,x2,...` for `N>1`).
  *  - `type_name()` returns a stable, human-readable type name (e.g., `"int"`, `"double"`).
  *
- * The engine consults these flags during parsing; help-printers use `desc(...)`,
- * `name(...)`, `count()`, and `type_name()` to render compact Data-Layouts.
+ * Engine hooks:
+ *  - `accepts_token(s)`: lightweight, type-aware validation for a single token string.
+ *  - `empty_token_string()` and `missing_token_string()` for default injection.
  */
 
 #pragma once
@@ -32,12 +34,14 @@
 #include <type_traits>
 #include <typeinfo>
 #include <sstream>
+#include <vector>
+#include <charconv>
 
 namespace fem {
 namespace dsl {
 
 /**
- * @brief Internal utilities to map C++ types to friendly names for docs.
+ * @brief Internal utilities to map C++ types to friendly names for docs and to validate tokens.
  */
 namespace detail {
 
@@ -48,7 +52,8 @@ namespace detail {
  * @return A generic name for unrecognized types.
  */
 template<class T>
-struct TypeName {
+struct TypeName
+{
     /**
      * @brief Returns a generic, human-readable type name.
      *
@@ -61,7 +66,8 @@ struct TypeName {
  * @brief Specialization for int.
  */
 template<>
-struct TypeName<int> {
+struct TypeName<int>
+{
     /**
      * @brief Returns the human-readable type name.
      *
@@ -74,7 +80,8 @@ struct TypeName<int> {
  * @brief Specialization for long.
  */
 template<>
-struct TypeName<long> {
+struct TypeName<long>
+{
     /**
      * @brief Returns the human-readable type name.
      *
@@ -87,7 +94,8 @@ struct TypeName<long> {
  * @brief Specialization for unsigned.
  */
 template<>
-struct TypeName<unsigned> {
+struct TypeName<unsigned>
+{
     /**
      * @brief Returns the human-readable type name.
      *
@@ -100,7 +108,8 @@ struct TypeName<unsigned> {
  * @brief Specialization for float.
  */
 template<>
-struct TypeName<float> {
+struct TypeName<float>
+{
     /**
      * @brief Returns the human-readable type name.
      *
@@ -113,7 +122,8 @@ struct TypeName<float> {
  * @brief Specialization for double.
  */
 template<>
-struct TypeName<double> {
+struct TypeName<double>
+{
     /**
      * @brief Returns the human-readable type name.
      *
@@ -126,7 +136,8 @@ struct TypeName<double> {
  * @brief Specialization for std::string.
  */
 template<>
-struct TypeName<std::string> {
+struct TypeName<std::string>
+{
     /**
      * @brief Returns the human-readable type name.
      *
@@ -134,6 +145,87 @@ struct TypeName<std::string> {
      */
     static const char* get() { return "string"; }
 };
+
+/**
+ * @brief Checks if a token is a valid signed integer (no decimal point or exponent).
+ *
+ * Accepts optional leading '+' or '-'.
+ */
+inline bool is_int_token(const std::string& s)
+{
+    if (s.empty()) return false;
+    std::size_t i = 0;
+    if (s[i] == '+' || s[i] == '-') { ++i; if (i == s.size()) return false; }
+    bool any_digit = false;
+    for (; i < s.size(); ++i) {
+        char c = s[i];
+        if (c < '0' || c > '9') return false;
+        any_digit = true;
+    }
+    return any_digit;
+}
+
+/**
+ * @brief Checks if a token is a valid floating point literal.
+ *
+ * Accepts optional leading sign, optional decimal point, and optional scientific exponent.
+ * Examples:  "1", "-2.3", "+.5", "6.", "1e3", "-2.5E-2"
+ * Rejects:   ".", "e10", "1e", "1.2.3"
+ */
+inline bool is_float_token(const std::string& s)
+{
+    if (s.empty()) return false;
+
+    std::size_t i = 0;
+    if (s[i] == '+' || s[i] == '-') {
+        ++i;
+        if (i == s.size()) return false;
+    }
+
+    bool any_digit_before_e = false;
+    bool seen_dot = false;
+    bool seen_e = false;
+
+    for (; i < s.size(); ++i) {
+        char c = s[i];
+
+        if (c >= '0' && c <= '9') {
+            if (!seen_e) any_digit_before_e = true;
+            continue;
+        }
+
+        if (c == '.') {
+            if (seen_dot || seen_e) return false;
+            seen_dot = true;
+            continue;
+        }
+
+        if (c == 'e' || c == 'E') {
+            if (seen_e) return false;
+            if (!any_digit_before_e && !seen_dot) return false; // need digits before 'e'
+            seen_e = true;
+
+            ++i;
+            if (i == s.size()) return false; // needs exponent digits
+            if (s[i] == '+' || s[i] == '-') {
+                ++i;
+                if (i == s.size()) return false;
+            }
+            bool exp_digits = false;
+            for (; i < s.size(); ++i) {
+                char ce = s[i];
+                if (ce < '0' || ce > '9') return false;
+                exp_digits = true;
+            }
+            return exp_digits; // must have exponent digits
+        }
+
+        return false;
+    }
+
+    // Accept integer-looking tokens too (e.g., "42") as valid floats.
+    return any_digit_before_e || seen_dot;
+}
 
 } // namespace detail
 
@@ -145,13 +237,15 @@ struct TypeName<std::string> {
  * For documentation, elements can expose a type name, a human-readable description,
  * and an optional base-token name used by help printers.
  *
- * It also provides type-erased setters so `Pattern` can fluently modify the
- * last added element (desc, name, on_empty, on_missing) without exposing concrete types.
+ * Type-erased setters let `Pattern` modify the last added element (desc, name,
+ * on_empty, on_missing) without exposing concrete types.
  *
- * Additionally, minimal query accessors (`allow_empty`, `allow_missing`, `default_token_string`)
- * are provided so the engine can apply defaults uniformly without knowing `T`.
+ * Engine helpers:
+ *  - `accepts_token(s)` answers whether the token can be parsed as this element’s type.
+ *  - `empty_token_string()` and `missing_token_string()` provide separate defaults.
  */
-struct PatternElementBase {
+struct PatternElementBase
+{
     /**
      * @brief Virtual destructor.
      */
@@ -176,7 +270,8 @@ struct PatternElementBase {
      *
      * @return Description text or an empty string reference if unset.
      */
-    virtual const std::string& description() const {
+    virtual const std::string& description() const
+    {
         static const std::string kEmpty;
         return kEmpty;
     }
@@ -188,7 +283,8 @@ struct PatternElementBase {
      *
      * @return Base name or an empty string reference if unset.
      */
-    virtual const std::string& name_base() const {
+    virtual const std::string& name_base() const
+    {
         static const std::string kEmpty;
         return kEmpty;
     }
@@ -199,7 +295,8 @@ struct PatternElementBase {
      * @param d Description to set.
      * @return True on success, false if unsupported by the implementation.
      */
-    virtual bool set_desc(const std::string& d) {
+    virtual bool set_desc(const std::string& d)
+    {
         (void)d;
         return false;
     }
@@ -210,32 +307,35 @@ struct PatternElementBase {
      * @param n Base name to set.
      * @return True on success, false if unsupported by the implementation.
      */
-    virtual bool set_name(const std::string& n) {
+    virtual bool set_name(const std::string& n)
+    {
         (void)n;
         return false;
     }
 
     /**
-     * @brief Type-erased setter to permit empty tokens and set a default value.
+     * @brief Type-erased setter to permit empty tokens and set the empty-default value.
      *
      * @param value Pointer to a value of the element's underlying type.
-     * @param ti Type info describing the pointed-to value.
+     * @param ti    Type info describing the pointed-to value.
      * @return True if the type matches and the value was applied, otherwise false.
      */
-    virtual bool set_on_empty_any(const void* value, const std::type_info& ti) {
+    virtual bool set_on_empty_any(const void* value, const std::type_info& ti)
+    {
         (void)value;
         (void)ti;
         return false;
     }
 
     /**
-     * @brief Type-erased setter to permit missing tail tokens and set a default value.
+     * @brief Type-erased setter to permit missing tail tokens and set the missing-default value.
      *
      * @param value Pointer to a value of the element's underlying type.
-     * @param ti Type info describing the pointed-to value.
+     * @param ti    Type info describing the pointed-to value.
      * @return True if the type matches and the value was applied, otherwise false.
      */
-    virtual bool set_on_missing_any(const void* value, const std::type_info& ti) {
+    virtual bool set_on_missing_any(const void* value, const std::type_info& ti)
+    {
         (void)value;
         (void)ti;
         return false;
@@ -256,13 +356,46 @@ struct PatternElementBase {
     virtual bool allow_missing() const { return false; }
 
     /**
-     * @brief Returns the stringified default token to use for both empty/missing positions.
+     * @brief Returns the stringified empty-default token.
      *
-     * Implementations may store the default in typed form and stringify here.
+     * Used when a token is present but empty (`""`).
      *
-     * @return Default token string (may be empty if unset).
+     * @return Default token string for empty positions (may be empty if unset).
      */
-    virtual std::string default_token_string() const { return {}; }
+    virtual std::string empty_token_string() const { return {}; }
+
+    /**
+     * @brief Returns the stringified missing-default token.
+     *
+     * Used to pad missing tail tokens at a record boundary.
+     *
+     * @return Default token string for missing positions (may be empty if unset).
+     */
+    virtual std::string missing_token_string() const { return {}; }
+
+    /**
+     * @brief Emits `how_many` missing-default tokens to complete a record.
+     *
+     * @param out       Destination token vector to append to.
+     * @param how_many  Number of default tokens to emit.
+     * @return True if defaults were emitted; false if missing is not allowed.
+     */
+    virtual bool emit_missing(std::vector<std::string>& out, std::size_t how_many) const
+    {
+        (void)out;
+        (void)how_many;
+        return false;
+    }
+
+    /**
+     * @brief Lightweight, type-aware check whether a single token string is acceptable.
+     *
+     * Concrete elements implement this for their underlying type.
+     *
+     * @param s Input token string (may be empty).
+     * @return True if the token can be parsed as this element's type (considering empties).
+     */
+    virtual bool accepts_token(const std::string& s) const = 0;
 };
 
 /**
@@ -274,16 +407,15 @@ struct PatternElementBase {
  * - When `N > 1`, this element maps to `std::array<T,N>`.
  * - `desc(text)` attaches a human-readable description (for diagnostics/docs).
  * - `name(base)` sets an optional base name for the token(s): `base` or `base1..baseN`.
- * - `on_empty(v)` allows empty tokens (`""`) and replaces them with `v`.
- * - `on_missing(v)` allows missing tail tokens and fills them with `v`.
- *
- * The engine is responsible for enforcing and applying these flags during parsing.
+ * - `on_empty(v)` allows empty tokens (`""`) and replaces them with **`v` (empty-default)**.
+ * - `on_missing(v)` allows missing tail tokens and fills them with **`v` (missing-default)**.
  *
  * @tparam T Value type for tokens (e.g., `int`, `double`, `std::string`).
  * @tparam N Number of tokens reserved by this element (compile-time constant).
  */
 template<class T, std::size_t N>
-struct Fixed : PatternElementBase {
+struct Fixed : PatternElementBase
+{
     /**
      * @brief Human-readable description used in diagnostics/help output (optional).
      */
@@ -295,22 +427,27 @@ struct Fixed : PatternElementBase {
     std::string _name_base;
 
     /**
-     * @brief If true, empty tokens are permitted and substituted with defaults.
+     * @brief If true, empty tokens are permitted and substituted with `_default_empty_single`.
      */
     bool _allow_empty = false;
 
     /**
-     * @brief If true, missing tail tokens are permitted and substituted with defaults.
+     * @brief If true, missing tail tokens are permitted and substituted with `_default_missing_single`.
      */
     bool _allow_missing = false;
 
     /**
-     * @brief Default used for single-value substitution.
+     * @brief Default used for substituting empty tokens.
      */
-    T _default_single{};
+    T _default_empty_single{};
 
     /**
-     * @brief Default used to fill arrays (`N > 1`) or multiple empties.
+     * @brief Default used for substituting missing tokens.
+     */
+    T _default_missing_single{};
+
+    /**
+     * @brief Kept for backward compatibility (not required by the engine).
      */
     std::array<T, N> _default_array{};
 
@@ -320,7 +457,8 @@ struct Fixed : PatternElementBase {
      * @param d Free-form text; kept verbatim.
      * @return Reference to `*this` for fluent chaining.
      */
-    Fixed& desc(std::string d) {
+    Fixed& desc(std::string d)
+    {
         _description = std::move(d);
         return *this;
     }
@@ -333,40 +471,41 @@ struct Fixed : PatternElementBase {
      * @param base Base identifier (no spaces).
      * @return Reference to `*this` for fluent chaining.
      */
-    Fixed& name(std::string base) {
+    Fixed& name(std::string base)
+    {
         _name_base = std::move(base);
         return *this;
     }
 
     /**
-     * @brief Permits empty tokens and substitutes the provided default.
+     * @brief Permits empty tokens and sets the empty-default.
      *
      * If a token is present but empty (`""`), the engine may replace it with `v`.
-     * Also initializes the internal default array uniformly with `v`.
      *
      * @param v Default value to substitute for empty tokens.
      * @return Reference to `*this` for fluent chaining.
      */
-    Fixed& on_empty(const T& v) {
-        _allow_empty    = true;
-        _default_single = v;
+    Fixed& on_empty(const T& v)
+    {
+        _allow_empty          = true;
+        _default_empty_single = v;
         _default_array.fill(v);
         return *this;
     }
 
     /**
-     * @brief Permits missing tail tokens and substitutes the provided default.
+     * @brief Permits missing tail tokens and sets the missing-default.
      *
      * If fewer than `N` tokens are provided, the engine may fill the trailing
-     * positions with `v`. Also initializes the internal default array uniformly with `v`.
+     * positions with `v`.
      *
      * @param v Default value to substitute for missing tokens.
      * @return Reference to `*this` for fluent chaining.
      */
-    Fixed& on_missing(const T& v) {
-        _allow_missing  = true;
-        _default_single = v;
-        _default_array.fill(v);
+    Fixed& on_missing(const T& v)
+    {
+        _allow_missing          = true;
+        _default_missing_single = v;
         return *this;
     }
 
@@ -375,7 +514,8 @@ struct Fixed : PatternElementBase {
      *
      * @return The constant `N`.
      */
-    std::size_t count() const override {
+    std::size_t count() const override
+    {
         return N;
     }
 
@@ -384,7 +524,8 @@ struct Fixed : PatternElementBase {
      *
      * @return A string literal describing the token type (e.g., "int").
      */
-    const char* type_name() const override {
+    const char* type_name() const override
+    {
         return detail::TypeName<T>::get();
     }
 
@@ -393,7 +534,8 @@ struct Fixed : PatternElementBase {
      *
      * @return Description string reference (may be empty).
      */
-    const std::string& description() const override {
+    const std::string& description() const override
+    {
         return _description;
     }
 
@@ -402,7 +544,8 @@ struct Fixed : PatternElementBase {
      *
      * @return Base name string reference (may be empty).
      */
-    const std::string& name_base() const override {
+    const std::string& name_base() const override
+    {
         return _name_base;
     }
 
@@ -412,7 +555,8 @@ struct Fixed : PatternElementBase {
      * @param d Description to set.
      * @return Always true for Fixed elements.
      */
-    bool set_desc(const std::string& d) override {
+    bool set_desc(const std::string& d) override
+    {
         _description = d;
         return true;
     }
@@ -423,21 +567,23 @@ struct Fixed : PatternElementBase {
      * @param n Base name to set.
      * @return Always true for Fixed elements.
      */
-    bool set_name(const std::string& n) override {
+    bool set_name(const std::string& n) override
+    {
         _name_base = n;
         return true;
     }
 
     /**
-     * @brief Type-erased setter to permit empty tokens with default value.
+     * @brief Type-erased setter to permit empty tokens with empty-default value.
      *
      * Applies only if `ti` matches the underlying type `T`.
      *
      * @param value Pointer to a value of type `T`.
-     * @param ti Type info for the pointed-to value.
-     * @return True if the type matches and the default was applied, false otherwise.
+     * @param ti    Type info for the pointed-to value.
+     * @return True if the type matches and the default was applied, otherwise false.
      */
-    bool set_on_empty_any(const void* value, const std::type_info& ti) override {
+    bool set_on_empty_any(const void* value, const std::type_info& ti) override
+    {
         if (ti == typeid(T)) {
             on_empty(*reinterpret_cast<const T*>(value));
             return true;
@@ -446,15 +592,16 @@ struct Fixed : PatternElementBase {
     }
 
     /**
-     * @brief Type-erased setter to permit missing tokens with default value.
+     * @brief Type-erased setter to permit missing tokens with missing-default value.
      *
      * Applies only if `ti` matches the underlying type `T`.
      *
      * @param value Pointer to a value of type `T`.
-     * @param ti Type info for the pointed-to value.
-     * @return True if the type matches and the default was applied, false otherwise.
+     * @param ti    Type info for the pointed-to value.
+     * @return True if the type matches and the default was applied, otherwise false.
      */
-    bool set_on_missing_any(const void* value, const std::type_info& ti) override {
+    bool set_on_missing_any(const void* value, const std::type_info& ti) override
+    {
         if (ti == typeid(T)) {
             on_missing(*reinterpret_cast<const T*>(value));
             return true;
@@ -467,7 +614,8 @@ struct Fixed : PatternElementBase {
      *
      * @return True if `on_empty(...)` has been set, otherwise false.
      */
-    bool allow_empty() const override {
+    bool allow_empty() const override
+    {
         return _allow_empty;
     }
 
@@ -476,19 +624,81 @@ struct Fixed : PatternElementBase {
      *
      * @return True if `on_missing(...)` has been set, otherwise false.
      */
-    bool allow_missing() const override {
+    bool allow_missing() const override
+    {
         return _allow_missing;
     }
 
     /**
-     * @brief Returns the stringified default token used for both empty/missing positions.
+     * @brief Returns the stringified empty-default token.
      *
-     * @return Default token string created from `_default_single`.
+     * @return Default token string created from `_default_empty_single`.
      */
-    std::string default_token_string() const override {
+    std::string empty_token_string() const override
+    {
         std::ostringstream os;
-        os << _default_single;
+        os << _default_empty_single;
         return os.str();
+    }
+
+    /**
+     * @brief Returns the stringified missing-default token.
+     *
+     * @return Default token string created from `_default_missing_single`.
+     */
+    std::string missing_token_string() const override
+    {
+        std::ostringstream os;
+        os << _default_missing_single;
+        return os.str();
+    }
+
+    /**
+     * @brief Emits `how_many` missing-default tokens to complete a record.
+     *
+     * @param out       Destination token vector to append to.
+     * @param how_many  Number of default tokens to emit.
+     * @return True if defaults were emitted; false if missing is not allowed.
+     */
+    bool emit_missing(std::vector<std::string>& out, std::size_t how_many) const override
+    {
+        if (!_allow_missing) return false;
+        const std::string s = missing_token_string();
+        for (std::size_t i = 0; i < how_many; ++i) out.push_back(s);
+        return true;
+    }
+
+    /**
+     * @brief Lightweight, type-aware check whether a token is acceptable for type `T`.
+     *
+     * Strings always accept non-empty tokens; empty tokens require `_allow_empty`.
+     * Numeric types validate lexeme shape strictly:
+     *  - Signed integrals (`int`, `long`, etc.) require an integer literal.
+     *  - Unsigned integrals require an integer literal without a leading '-'.
+     *  - Floating-point (`float`, `double`) accept integer-looking or float-looking literals.
+     *
+     * @param s Input token string (may be empty).
+     * @return True if the token can be parsed as `T` (considering empty allowance).
+     */
+    bool accepts_token(const std::string& s) const override
+    {
+        if (s.empty()) {
+            return _allow_empty;
+        }
+
+        if constexpr (std::is_same_v<T, std::string>) {
+            return true; // any non-empty string token is fine
+        } else if constexpr (std::is_floating_point_v<T>) {
+            return detail::is_float_token(s);
+        } else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T>) {
+            if (!detail::is_int_token(s)) return false;
+            return s.empty() ? false : (s[0] != '-'); // forbid leading '-'
+        } else if constexpr (std::is_integral_v<T> && std::is_signed_v<T>) {
+            return detail::is_int_token(s);
+        } else {
+            // Fallback: accept anything non-empty
+            return true;
+        }
     }
 };
 

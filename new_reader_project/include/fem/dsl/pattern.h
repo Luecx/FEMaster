@@ -188,6 +188,7 @@ struct Pattern {
      */
     bool normalize_and_complete_tokens(std::vector<std::string>& toks, std::string& err_out) const {
         std::size_t pos = 0;
+
         for (const auto& e_ptr : _elems) {
             const auto cnt = e_ptr->count();
 
@@ -195,32 +196,52 @@ struct Pattern {
                 const std::size_t idx = pos + i;
 
                 if (idx < toks.size()) {
+                    // present token
                     if (toks[idx].empty()) {
-                        if (e_ptr->allow_empty()) {
-                            toks[idx] = e_ptr->default_token_string();
-                        } else {
+                        // empty token: only allowed if element permits empty and we have a default
+                        if (!e_ptr->allow_empty()) {
                             err_out = "Empty token not allowed for element";
+                            return false;
+                        }
+                        toks[idx] = e_ptr->empty_token_string();
+                        // the substituted default must also be acceptable (paranoia check)
+                        if (!e_ptr->accepts_token(toks[idx])) {
+                            err_out = "Element’s empty default is not acceptable for its type";
+                            return false;
+                        }
+                    } else {
+                        // non-empty: must match the element’s type shape
+                        if (!e_ptr->accepts_token(toks[idx])) {
+                            err_out = "Token does not match the expected type (" + std::string(e_ptr->type_name()) + ")";
                             return false;
                         }
                     }
                 } else {
-                    if (e_ptr->allow_missing()) {
-                        toks.push_back(e_ptr->default_token_string());
-                    } else {
+                    // missing token position at the tail of the record
+                    if (!e_ptr->allow_missing()) {
                         err_out = "Missing token(s) not allowed for element";
                         return false;
                     }
+                    const std::string def = e_ptr->missing_token_string();
+                    // sanity: default itself must be acceptable
+                    if (!e_ptr->accepts_token(def)) {
+                        err_out = "Element’s missing default is not acceptable for its type";
+                        return false;
+                    }
+                    toks.push_back(def);
                 }
             }
 
             pos += cnt;
         }
 
-        if (toks.size() > pos) {
-            toks.resize(pos);
-        }
+        // Truncate excess tokens to pattern’s size is NOT done here anymore for strictness.
+        // The engine enforces “no extra tokens” before calling this (both single & multiline).
+        // If you still want a defensive trim in other contexts, you can keep the resize, but
+        // the engine already rejects extras, so we leave toks as-is.
         return true;
     }
+
 
     /**
      * @brief Returns the total number of tokens this pattern expects.
