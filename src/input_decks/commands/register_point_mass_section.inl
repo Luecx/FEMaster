@@ -1,6 +1,7 @@
 // register_point_mass_section.inl — DSL registration for *POINTMASSSECTION
 
 #include <array>
+#include <memory>
 #include <string>
 
 #include "../../core/types_eig.h"
@@ -16,22 +17,22 @@ inline void register_point_mass_section(fem::dsl::Registry& registry, model::Mod
         command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
         command.doc("Assign point-mass properties to an element set.");
 
-        std::string elset;
+        // Persistent per-command state
+        auto elset = std::make_shared<std::string>();
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
-                .key("ELSET")
-                    .required()
-                    .doc("Target element set")
+                .key("ELSET").required().doc("Target element set")
         );
 
-        command.on_enter([&](const fem::dsl::Keys& keys) {
-            elset = keys.raw("ELSET");
+        // Capture shared_ptr BY VALUE so it’s valid later
+        command.on_enter([elset](const fem::dsl::Keys& keys) {
+            *elset = keys.raw("ELSET");
         });
 
         command.variant(fem::dsl::Variant::make()
             .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
+                .range(fem::dsl::LineRange{}.min(1)) // no explicit max: keeps reading until boundary
                 .pattern(fem::dsl::Pattern::make()
                     .allow_multiline()
                     .one<fem::Precision>().name("MASS").desc("Point mass")
@@ -43,20 +44,15 @@ inline void register_point_mass_section(fem::dsl::Registry& registry, model::Mod
                     .fixed<fem::Precision, 3>().name("ROTSPRING").desc("Rotational spring constants")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
-                .bind([&model, &elset](fem::Precision mass,
-                                       const std::array<fem::Precision, 3>& inertia_data,
-                                       const std::array<fem::Precision, 3>& spring_data,
-                                       const std::array<fem::Precision, 3>& rotary_data) {
-                    fem::Vec3 inertia;
-                    inertia << inertia_data[0], inertia_data[1], inertia_data[2];
-
-                    fem::Vec3 spring;
-                    spring << spring_data[0], spring_data[1], spring_data[2];
-
-                    fem::Vec3 rotary;
-                    rotary << rotary_data[0], rotary_data[1], rotary_data[2];
-
-                    model.point_mass_section(elset, mass, inertia, spring, rotary);
+                .bind([&model, elset](
+                          fem::Precision mass,
+                          const std::array<fem::Precision, 3>& inertia_data,
+                          const std::array<fem::Precision, 3>& spring_data,
+                          const std::array<fem::Precision, 3>& rotary_data) {
+                    fem::Vec3 inertia{inertia_data[0], inertia_data[1], inertia_data[2]};
+                    fem::Vec3 spring {spring_data[0],  spring_data[1],  spring_data[2]};
+                    fem::Vec3 rotary {rotary_data[0],  rotary_data[1],  rotary_data[2]};
+                    model.point_mass_section(*elset, mass, inertia, spring, rotary);
                 })
             )
         );

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -14,11 +15,12 @@
 namespace fem::input_decks::commands {
 
 inline void register_support(fem::dsl::Registry& registry, model::Model& model) {
-    std::string orientation;
-
     registry.command("SUPPORT", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
         command.doc("Define nodal supports via support collectors.");
+
+        // Persistent per-command state (captured by value in lambdas)
+        auto orientation = std::make_shared<std::string>();
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
@@ -26,9 +28,10 @@ inline void register_support(fem::dsl::Registry& registry, model::Model& model) 
                 .key("ORIENTATION").optional().doc("Optional orientation coordinate system")
         );
 
-        command.on_enter([&](const fem::dsl::Keys& keys) {
-            const std::string& collector = keys.raw("SUPPORT_COLLECTOR");
-            orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
+        command.on_enter([orientation, &model](const fem::dsl::Keys& keys) {
+            // NOTE: raw() presumably returns by value; if not, copy explicitly.
+            const std::string collector = keys.raw("SUPPORT_COLLECTOR");
+            *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             model._data->supp_cols.activate(collector);
         });
 
@@ -41,19 +44,19 @@ inline void register_support(fem::dsl::Registry& registry, model::Model& model) 
                         .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
                         .on_empty(std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
-                .bind([&](const std::string& target,
-                          const std::array<fem::Precision, 6>& values) {
+                .bind([&model, orientation](const std::string& target,
+                                            const std::array<fem::Precision, 6>& values) {
                     fem::StaticVector<6> constraint;
                     for (int i = 0; i < 6; ++i) constraint(i) = values[i];
 
                     if (model._data->node_sets.has(target)) {
-                        model.add_support(target, constraint, orientation);
+                        model.add_support(target, constraint, *orientation);
                         return;
                     }
 
                     try {
                         const fem::ID id = static_cast<fem::ID>(std::stoi(target));
-                        model.add_support(id, constraint, orientation);
+                        model.add_support(id, constraint, *orientation);
                     } catch (const std::exception&) {
                         throw std::runtime_error("SUPPORT target '" + target + "' is neither a node set nor an id");
                     }
