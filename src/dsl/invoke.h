@@ -117,13 +117,15 @@ inline std::array<U,N> parse_array(const std::vector<std::string>& toks, std::si
  * @brief Consumes tokens to produce a value of type `T`, advancing the index.
  */
 template<class T>
-inline T take(const std::vector<std::string>& toks, std::size_t& i) {
-    if constexpr (std::is_same_v<T, std::string> || std::is_arithmetic_v<T>) {
+inline auto take(const std::vector<std::string>& toks, std::size_t& i) {
+    using Decayed = std::remove_cv_t<std::remove_reference_t<T>>;
+
+    if constexpr (std::is_same_v<Decayed, std::string> || std::is_arithmetic_v<Decayed>) {
         if (i >= toks.size()) throw std::runtime_error("insufficient tokens for scalar/string");
-        return parse_scalar<T>(toks[i++]);
-    } else if constexpr (is_std_array_v<T>) {
-        using U = typename T::value_type;
-        constexpr std::size_t N = std::tuple_size<T>::value;
+        return parse_scalar<Decayed>(toks[i++]);
+    } else if constexpr (is_std_array_v<Decayed>) {
+        using U = typename Decayed::value_type;
+        constexpr std::size_t N = std::tuple_size<Decayed>::value;
         return parse_array<U,N>(toks, i);
     } else {
         static_assert(!sizeof(T), "Unsupported parameter type in DSL invocation");
@@ -136,8 +138,10 @@ inline T take(const std::vector<std::string>& toks, std::size_t& i) {
  */
 template<class T>
 constexpr std::size_t token_count_for() {
-    if constexpr (is_std_array_v<T>) {
-        return std::tuple_size<T>::value;
+    using Decayed = std::remove_cv_t<std::remove_reference_t<T>>;
+
+    if constexpr (is_std_array_v<Decayed>) {
+        return std::tuple_size<Decayed>::value;
     } else {
         return 1;
     }
@@ -157,7 +161,7 @@ struct Invoker {
     template<class F>
     static void run(F&& f, const std::vector<std::string>& toks) {
         std::size_t i = 0;
-        auto args = std::tuple<Us...>{ take<Us>(toks, i)... };
+        auto args = std::tuple<std::remove_cv_t<std::remove_reference_t<Us>>...>{ take<Us>(toks, i)... };
         std::apply(std::forward<F>(f), args);
     }
 };

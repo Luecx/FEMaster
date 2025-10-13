@@ -36,8 +36,11 @@
 #include <type_traits>
 #include <utility>
 #include <algorithm>
+#include <stdexcept>
+#include <sstream>
 
 #include "line.h"
+#include "keyword.h"
 
 namespace fem {
 namespace dsl {
@@ -125,9 +128,9 @@ struct Keys {
      * @param def  Default to return if the key is not present.
      */
     template<class T>
-    T get(const std::string& k, T def) const {
+    T get(const std::string& k) const {
         auto it = _kv.find(k);
-        if (it == _kv.end()) return def;
+        if (it == _kv.end()) throw std::runtime_error("Key '" + k + "' not found");
 
         if constexpr (std::is_same_v<T, bool>) {
             // Flag without value -> true
@@ -172,7 +175,11 @@ struct Keys {
             std::istringstream ss(it->second);
             T out{};
             ss >> out;
-            return ss.fail() ? def : out;
+            if (ss.eof() && !ss.fail()) {
+                return out;
+            } else {
+                throw std::runtime_error("Failed to parse key '" + k + "' with value '" + it->second + "'");
+            }
         }
     }
 
@@ -192,6 +199,55 @@ struct Keys {
         std::ostringstream os;
         os << v;
         return it->second == os.str();
+    }
+
+    /**
+     * @brief Applies a keyword specification to normalize aliases, defaults, and value domains.
+     *
+     * @param spec   Keyword specification declared by the command registration.
+     * @param cmd    Command name (for diagnostics).
+     *
+     * @throws std::runtime_error on missing required keys, duplicate alias usage, or invalid values.
+     */
+    void apply_spec(const KeywordSpec& spec, const std::string& cmd) {
+        for (const auto& [alias, canonical] : spec.alias_map()) {
+            auto alias_it = _kv.find(alias);
+            if (alias_it == _kv.end())
+                continue;
+
+            if (_kv.find(canonical) != _kv.end()) {
+                throw std::runtime_error("Command '" + cmd + "' provides both '" + canonical + "' and its alias '" + alias + "'.");
+            }
+
+            std::string value = std::move(alias_it->second);
+            _kv.erase(alias_it);
+            _kv.emplace(canonical, std::move(value));
+        }
+
+        for (const auto& [canonical, entry] : spec.entries()) {
+            auto it = _kv.find(canonical);
+
+            if (it == _kv.end()) {
+                if (entry.required && !entry.has_default) {
+                    throw std::runtime_error("Command '" + cmd + "' missing required key '" + canonical + "'.");
+                }
+                if (entry.has_default) {
+                    _kv[canonical] = entry.default_value;
+                }
+                continue;
+            }
+
+            if (!entry.allowed.empty() && !entry.is_flag) {
+                if (std::find(entry.allowed.begin(), entry.allowed.end(), it->second) == entry.allowed.end()) {
+                    throw std::runtime_error("Command '" + cmd + "' key '" + canonical + "' has value '" + it->second + "' outside allowed domain.");
+                }
+            }
+
+            if (entry.is_flag && !it->second.empty()) {
+                // Interpret any explicit value for a flag as truthy without validation.
+                // No additional handling needed; normalization already removed aliases.
+            }
+        }
     }
 };
 

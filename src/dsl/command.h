@@ -37,11 +37,13 @@
  */
 
 #pragma once
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 #include "condition.h"
 #include "variant.h"
+#include "keyword.h"
 
 namespace fem {
 namespace dsl {
@@ -62,6 +64,13 @@ struct Command {
 
     /** Optional short description used by documentation printers. */
     std::string doc_;
+
+    /** Optional hook executed once when the command is entered (before segments run). */
+    std::function<void(const Keys&)> on_enter_;
+
+    /** Optional keyword-argument specification for normalization and validation. */
+    KeywordSpec keyword_spec_;
+    bool has_keyword_spec_ = false;
 
     /**
      * @brief Constructs a command with the given name.
@@ -105,6 +114,32 @@ struct Command {
     */
     Command& doc(std::string d) {
         doc_ = std::move(d);
+        return *this;
+    }
+
+    /**
+     * @brief Registers a hook invoked once per keyword before any variant segments.
+     *
+     * Typical use-cases: activate target sets, allocate per-command context, etc.
+     * The hook receives the keyword-line keys (parsed via `Keys::from_keyword_line`).
+     *
+     * @param fn Callback taking the command's keyword keys.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& on_enter(std::function<void(const Keys&)> fn) {
+        on_enter_ = std::move(fn);
+        return *this;
+    }
+
+    /**
+     * @brief Declares the keyword argument specification for this command.
+     *
+     * The engine uses the specification to normalize aliases (e.g. `NAME` → `NSET`),
+     * inject defaults, and validate value domains before variants execute.
+     */
+    Command& keyword(KeywordSpec spec) {
+        keyword_spec_ = std::move(spec);
+        has_keyword_spec_ = true;
         return *this;
     }
 };

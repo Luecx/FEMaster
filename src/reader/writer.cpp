@@ -5,7 +5,9 @@
 #include "../core/core.h"
 
 fem::reader::Writer::Writer(const std::string& filename) {
-    this->open(filename);
+    if (!filename.empty()) {
+        this->open(filename);
+    }
 }
 fem::reader::Writer::~Writer() {
     if (file_path.is_open()) {

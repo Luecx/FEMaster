@@ -162,6 +162,10 @@ struct Engine {
                 continue;
             }
 
+            if (spec->has_keyword_spec_) {
+                self_keys.apply_spec(spec->keyword_spec_, cmd);
+            }
+
             // Admission: climb scope
             int chosen_parent_index = admit_command(*spec, scope, self_keys);
             if (chosen_parent_index < 0) {
@@ -187,6 +191,10 @@ struct Engine {
                     return a.variant->rank_ > b.variant->rank_;
                 return a.order < b.order;
             });
+
+            if (spec->on_enter_) {
+                spec->on_enter_(self_keys);
+            }
 
             std::string last_err;
             bool        matched = false;
