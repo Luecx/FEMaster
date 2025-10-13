@@ -13,14 +13,13 @@
  *      * If the command is **not** registered: treat it as a structural parent and push it.
  *      * If the command **is** registered:
  *          - Attempt to **admit** it against the current scope (climb upwards until allowed).
- *          - Choose a **fitting variant** (preferring non-multiline variants first).
+ *          - Choose the **highest-ranked fitting variant**.
  *          - Execute its **segments** according to their `LineRange` and `Pattern`.
  *          - Push this command as the new parent (scope goes “down”).
  *
- * ## Variant selection (trial & backtrack)
- *  - Variants whose conditions hold are tried in two passes:
- *      1) All variants whose segments are **all non-multiline** (strict per-line layouts).
- *      2) All remaining variants (any **multiline** segment present).
+ * ## Variant selection (ranked trial & backtrack)
+ *  - Variants whose conditions hold are ordered by descending `Variant::rank()`; ties keep
+ *    their registration order via `Command::variant(...)`.
  *  - Each candidate variant is **attempted** by reading lines, strictly validating
  *    token counts/types, and applying `on_empty`/`on_missing`:
  *      * If it **succeeds**, its effects are committed.
@@ -64,6 +63,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <algorithm>
 #include <stdexcept>
 #include <sstream>
 #include <functional>
@@ -102,7 +102,7 @@ struct Engine {
      *  3. For each keyword line:
      *      a. If command is unregistered → push as structural parent and continue.
      *      b. If registered → climb scope upwards until the command is admitted.
-     *      c. Try fitting variants (non-multiline first, then multiline) with backtracking.
+     *      c. Try fitting variants in descending rank with backtracking.
      *      d. Execute its segments and push the processed command as the new parent.
      *
      * @param file Input file object providing normalized lines (with include support).
@@ -170,62 +170,63 @@ struct Engine {
             scope.resize(static_cast<std::size_t>(chosen_parent_index + 1));
 
             // Collect candidate variants whose condition holds
-            std::vector<const Variant*> non_multi;
-            std::vector<const Variant*> multi;
-            for (const auto& v : spec->variants_) {
+            struct Candidate {
+                const Variant* variant;
+                std::size_t order;
+            };
+            std::vector<Candidate> candidates;
+            candidates.reserve(spec->variants_.size());
+            for (std::size_t idx = 0; idx < spec->variants_.size(); ++idx) {
+                const Variant& v = spec->variants_[idx];
                 if (v.has_condition_ && !v.condition_.eval(scope.back(), self_keys))
                     continue;
-                bool any_multi = false;
-                for (const auto& s : v._segments) {
-                    if (s._pattern.is_multiline()) { any_multi = true; break; }
-                }
-                (any_multi ? multi : non_multi).push_back(&v);
+                candidates.push_back(Candidate{ &v, idx });
             }
+            std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+                if (a.variant->rank_ != b.variant->rank_)
+                    return a.variant->rank_ > b.variant->rank_;
+                return a.order < b.order;
+            });
 
-            // Two-pass attempt: non-multiline first, then multiline
             std::string last_err;
             bool        matched = false;
+            for (const Candidate& cand : candidates) {
+                const Variant* vptr = cand.variant;
 
-            auto try_pass = [&](const std::vector<const Variant*>& pass_list) {
-                for (const Variant* vptr : pass_list) {
-                    // Record every line consumed during this attempt
-                    std::vector<Line> consumed;
+                // Record every line consumed during this attempt
+                std::vector<Line> consumed;
 
-                    // Local keyword lookahead inside the attempt
-                    Line attempt_kw;
-                    bool have_attempt_kw = false;
+                // Local keyword lookahead inside the attempt
+                Line attempt_kw;
+                bool have_attempt_kw = false;
 
-                    // Recording puller for the attempt (wraps base_pull)
-                    auto attempt_pull = [&](bool skip_ignorable) -> Line {
-                        Line got = base_pull(skip_ignorable);
-                        consumed.push_back(got);
-                        return got;
-                    };
+                // Recording puller for the attempt (wraps base_pull)
+                auto attempt_pull = [&](bool skip_ignorable) -> Line {
+                    Line got = base_pull(skip_ignorable);
+                    consumed.push_back(got);
+                    return got;
+                };
 
-                    try {
-                        execute_variant(cmd, *vptr, attempt_pull, attempt_kw, have_attempt_kw);
-                        // Success → commit attempt's keyword lookahead to outer
-                        if (have_attempt_kw) {
-                            outer_buffered_kw = attempt_kw;
-                            outer_have_kw = true;
-                        }
-                        matched = true;
-                        return; // stop trying variants
-                    } catch (const std::exception& e) {
-                        last_err = e.what();
-
-                        // Rewind: push consumed lines back to the front in reverse order
-                        for (std::size_t i = consumed.size(); i-- > 0; ) {
-                            replay.push_front(consumed[i]);
-                        }
-                        // Also clear any attempt-local keyword lookahead (not committed)
-                        have_attempt_kw = false;
+                try {
+                    execute_variant(cmd, *vptr, attempt_pull, attempt_kw, have_attempt_kw);
+                    // Success → commit attempt's keyword lookahead to outer
+                    if (have_attempt_kw) {
+                        outer_buffered_kw = attempt_kw;
+                        outer_have_kw = true;
                     }
-                }
-            };
+                    matched = true;
+                    break; // stop trying variants
+                } catch (const std::exception& e) {
+                    last_err = e.what();
 
-            try_pass(non_multi);
-            if (!matched) try_pass(multi);
+                    // Rewind: push consumed lines back to the front in reverse order
+                    for (std::size_t i = consumed.size(); i-- > 0; ) {
+                        replay.push_front(consumed[i]);
+                    }
+                    // Also clear any attempt-local keyword lookahead (not committed)
+                    have_attempt_kw = false;
+                }
+            }
 
             if (!matched) {
                 std::ostringstream os;

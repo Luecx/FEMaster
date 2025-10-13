@@ -3,8 +3,8 @@
  * @brief Declares `Variant`, a selectable layout of segments under a key/parent condition.
  *
  * A `Variant` groups one or more `Segment`s and is optionally guarded by a key/parent
- * condition. During parsing, the engine selects the **first** variant whose condition
- * evaluates to true (or the first without a condition).
+ * condition. During parsing, the engine selects the variant with the **highest rank**
+ * whose condition evaluates to true (ties break by registration order).
  *
  * Example:
  * @code
@@ -16,6 +16,8 @@
  *
  * Notes:
  *  - `when(...)` stores the provided condition by value.
+ *  - `rank(value)` lets you bias the selection priority. Higher ranks win. Variants
+ *    with equal ranks keep the registration order (`command.variant(...)`).
  *  - This implementation enforces a simple "no-overlap" style:
  *      * All previously added segments of the same variant must be single-line
  *        (`pattern.is_multiline() == false`) and have a fixed line count
@@ -50,9 +52,9 @@ namespace dsl {
  * @class Variant
  * @brief A conditional collection of segments representing one admissible data layout.
  *
- * A command may define multiple variants; the engine will pick the first variant whose
- * condition is satisfied (or has no condition). Each variant contains an ordered list of
- * segments that are executed sequentially.
+ * A command may define multiple variants; the engine will test admissible variants in
+ * descending `rank()` order (ties keep registration order) until one succeeds. Each
+ * variant contains an ordered list of segments that are executed sequentially.
  */
 struct Variant {
     /** Whether a condition has been explicitly provided via `when(...)`. */
@@ -63,6 +65,9 @@ struct Variant {
 
     /** Ordered list of segments that compose this variant. */
     std::vector<Segment> _segments;
+
+    /** Selection priority. Higher rank values take precedence. */
+    int rank_ = 0;
 
     /** Optional short description used by documentation printers. */
     std::string doc_;
@@ -81,6 +86,21 @@ struct Variant {
     Variant& when(Condition c) {
         condition_ = std::move(c);
         has_condition_ = true;
+        return *this;
+    }
+
+    /**
+     * @brief Sets the selection priority for this variant.
+     *
+     * Higher rank values are considered before lower ones when the engine chooses
+     * between admissible variants of the same command. Variants with identical ranks
+     * retain the registration order (i.e. call order of `command.variant(...)`).
+     *
+     * @param value Rank value to assign (default is 0 for unranked variants).
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Variant& rank(int value) {
+        rank_ = value;
         return *this;
     }
 

@@ -86,8 +86,9 @@ struct Command {
     /**
      * @brief Appends a variant definition to this command.
      *
-     * Variants are evaluated in insertion order; the first variant whose condition
-     * holds (or has no condition) is selected and executed.
+     * Variants are evaluated in descending `rank()` order; ties keep the insertion
+     * sequence. The first variant in that ordering whose condition holds (or has no
+     * condition) is selected and executed.
      *
      * @param v Variant to add (moved in).
      * @return Reference to `*this` for fluent chaining.
