@@ -48,6 +48,11 @@
  *  - A one-line **keyword lookahead** (`buffered_line`) is propagated from a successful
  *    attempt so the outer loop sees the next command.
  *
+ * ## Hooks
+ *  - If a command defines `on_enter(...)`, it is called **before** any of its segments run.
+ *  - If a command defines `on_exit(...)`, it is called when the command’s scope is popped,
+ *    including at **EOF** for any scopes left open.
+ *
  * ## Errors
  *  - DATA line outside of an active command → error.
  *  - Unadmitted command in current scope → error (with scope trace).
@@ -67,6 +72,7 @@
 #include <stdexcept>
 #include <sstream>
 #include <functional>
+#include <iostream>  // for diagnostic "Entering command '...'" prints
 
 #include "registry.h"
 #include "file.h"
@@ -104,6 +110,7 @@ struct Engine {
      *      b. If registered → climb scope upwards until the command is admitted.
      *      c. Try fitting variants in descending rank with backtracking.
      *      d. Execute its segments and push the processed command as the new parent.
+     *  4. At EOF, call `on_exit` for **all scopes still open** (except ROOT).
      *
      * @param file Input file object providing normalized lines (with include support).
      *
@@ -112,10 +119,29 @@ struct Engine {
     void run(File& file) {
         using LT = LineType;
 
+        // Scope of parents we have entered (ROOT at index 0).
         std::vector<ParentInfo> scope;
         scope.push_back( ParentInfo{ "ROOT", Keys{} } );
 
-        // Global one-line keyword lookahead between commands (propagated from a successful attempt)
+        // To support on_exit without changing ParentInfo, keep a parallel stack of Command specs.
+        // Each entry mirrors `scope[i]`. Unregistered (structural) parents use nullptr.
+        std::vector<const Command*> scope_specs;
+        scope_specs.push_back(nullptr); // ROOT has no Command*
+
+        // Helper to pop scope to target size, firing on_exit hooks as needed.
+        auto pop_scope_to = [&](std::size_t new_size) {
+            while (scope.size() > new_size) {
+                const Command* spec_ptr = scope_specs.back();
+                if (spec_ptr && spec_ptr->on_exit_) {
+                    // Pass the Keys captured at on_enter time for this scope entry.
+                    spec_ptr->on_exit_(scope.back().keys);
+                }
+                scope_specs.pop_back();
+                scope.pop_back();
+            }
+        };
+
+        // One-line keyword lookahead between commands (propagated from a successful attempt)
         Line  outer_buffered_kw;
         bool  outer_have_kw = false;
 
@@ -156,22 +182,26 @@ struct Engine {
             // Lookup command
             const Command* spec = _reg.find(cmd);
 
-            // Not registered → structural node
+            // Not registered → structural node. Push and continue.
             if (!spec) {
                 scope.push_back( ParentInfo{ cmd, self_keys } );
+                scope_specs.push_back(nullptr);
                 continue;
             }
 
+            // Apply keyword spec normalization/validation if present
             if (spec->has_keyword_spec_) {
                 self_keys.apply_spec(spec->keyword_spec_, cmd);
             }
 
-            // Admission: climb scope
+            // Admission: climb scope upwards until allowed
             int chosen_parent_index = admit_command(*spec, scope, self_keys);
             if (chosen_parent_index < 0) {
                 throw_unadmitted(cmd, scope);
             }
-            scope.resize(static_cast<std::size_t>(chosen_parent_index + 1));
+
+            // Pop scopes that are deeper than the chosen parent — fire on_exit for each
+            pop_scope_to(static_cast<std::size_t>(chosen_parent_index + 1));
 
             // Collect candidate variants whose condition holds
             struct Candidate {
@@ -192,6 +222,10 @@ struct Engine {
                 return a.order < b.order;
             });
 
+            // Minimal diagnostic (kept from your previous version)
+            logging::info("Processing command: *", cmd);
+
+            // on_enter (before running any segments)
             if (spec->on_enter_) {
                 spec->on_enter_(self_keys);
             }
@@ -245,7 +279,11 @@ struct Engine {
 
             // After successful processing, this keyword becomes the new parent (scope descends)
             scope.push_back( ParentInfo{ cmd, self_keys } );
+            scope_specs.push_back(spec);
         }
+
+        // ---- EOF reached: fire on_exit for any scopes still open (except ROOT) ----
+        pop_scope_to(1); // leave only ROOT in the stack
     }
 
 private:

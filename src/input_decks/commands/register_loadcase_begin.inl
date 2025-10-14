@@ -51,6 +51,21 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
             parser.set_active_loadcase(std::move(lc), type);
         });
 
+        // When the LOADCASE scope exits, run and clear it.
+        command.on_exit([&parser](const fem::dsl::Keys&) {
+            auto* lc = parser.active_loadcase();
+            if (!lc) {
+                // Nothing to do (either already cleared, or mis-scoped END).
+                return;
+            }
+            try {
+                lc->run();
+            } catch (const std::exception& e) {
+                throw std::runtime_error(std::string("LOADCASE execution failed: ") + e.what());
+            }
+            parser.clear_active_loadcase();
+        });
+
         command.variant(fem::dsl::Variant::make());
     });
 }

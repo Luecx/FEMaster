@@ -10,12 +10,16 @@
  *    `ParentInfo` and the command's own `Keys`);
  *  - provide one or more **variants** (`variant(...)`). The engine selects the first
  *    variant whose condition evaluates to true (or that has no condition) and then
- *    executes its segments.
+ *    executes its segments;
+ *  - register **entry** and **exit hooks** (`on_enter(...)`, `on_exit(...)`) that are
+ *    executed when the command is entered or left in the parsing scope hierarchy.
  *
  * Typical usage:
  * @code
  * reg.command("ELASTIC", [](Command& c){
  *     c.allow_if( parent_is("MATERIAL") );
+ *     c.on_enter([](const Keys& k){ ... }); // before segments
+ *     c.on_exit([](const Keys& k){ ... });  // after scope exits
  *     c.variant( Variant::make()
  *         .segment( Segment::make()
  *             .range(LineRange{}.min(1).max(1))
@@ -30,10 +34,14 @@
  *  - If no admission condition is set (`allow_if` never called), `admit_` defaults to
  *    `Condition{}` which is the `Always` condition (i.e., admissible under any parent).
  *  - Variants are checked in the order they were added; the first matching one is used.
+ *  - `on_enter` is executed before segments of the variant run.
+ *  - `on_exit` is executed when the command scope leaves (e.g. next command climbs up
+ *    the scope stack or at end-of-file if still active).
  *
  * @see variant.h
  * @see condition.h
- * @date 12.10.2025
+ * @see keyword.h
+ * @date 14.10.2025
  */
 
 #pragma once
@@ -41,6 +49,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+
 #include "condition.h"
 #include "variant.h"
 #include "keyword.h"
@@ -67,6 +76,9 @@ struct Command {
 
     /** Optional hook executed once when the command is entered (before segments run). */
     std::function<void(const Keys&)> on_enter_;
+
+    /** Optional hook executed when the command's scope is exited. */
+    std::function<void(const Keys&)> on_exit_;
 
     /** Optional keyword-argument specification for normalization and validation. */
     KeywordSpec keyword_spec_;
@@ -108,10 +120,10 @@ struct Command {
     }
 
     /**
-    * @brief Sets a human-readable description for this command (shown in help output).
-    * @param d Short description text.
-    * @return Reference to `*this` for fluent chaining.
-    */
+     * @brief Sets a human-readable description for this command (shown in help output).
+     * @param d Short description text.
+     * @return Reference to `*this` for fluent chaining.
+     */
     Command& doc(std::string d) {
         doc_ = std::move(d);
         return *this;
@@ -132,10 +144,32 @@ struct Command {
     }
 
     /**
+     * @brief Registers a hook invoked when the command's scope exits.
+     *
+     * This is useful for cleanup or finalization actions such as closing blocks
+     * (e.g. `END`), committing accumulated data, or restoring global state.
+     * The hook receives the same `Keys` that were passed to `on_enter`.
+     *
+     * Note: The engine must explicitly trigger `on_exit_` when a command's
+     * scope is popped from the scope stack (for example, when another command
+     * is encountered that is not admitted under the same parent).
+     *
+     * @param fn Callback taking the command's keyword keys.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& on_exit(std::function<void(const Keys&)> fn) {
+        on_exit_ = std::move(fn);
+        return *this;
+    }
+
+    /**
      * @brief Declares the keyword argument specification for this command.
      *
      * The engine uses the specification to normalize aliases (e.g. `NAME` → `NSET`),
      * inject defaults, and validate value domains before variants execute.
+     *
+     * @param spec Keyword argument specification (moved in).
+     * @return Reference to `*this` for fluent chaining.
      */
     Command& keyword(KeywordSpec spec) {
         keyword_spec_ = std::move(spec);

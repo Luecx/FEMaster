@@ -113,10 +113,6 @@ void Parser::parse() {
     dsl::Engine engine(m_registry);
     engine.run(file);
 
-    if (m_active_loadcase) {
-        throw std::runtime_error("Encountered EOF while load case block was still open");
-    }
-
     m_writer.close();
 }
 
