@@ -42,7 +42,7 @@ inline void register_support(fem::dsl::Registry& registry, model::Model& model) 
                     .one<std::string>().name("TARGET").desc("Node set or id")
                     .fixed<fem::Precision, 6>().name("DOF").desc("Support values for ux,uy,uz,rx,ry,rz")
                         .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
-                        .on_empty(std::numeric_limits<fem::Precision>::quiet_NaN())
+                        .on_empty  (std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
                 .bind([&model, orientation](const std::string& target,
                                             const std::array<fem::Precision, 6>& values) {

@@ -141,29 +141,39 @@ struct B33 : BeamElement<2> {
         const Precision L2 = L * L;
         const Precision f = N / (30.0 * L);
 
+        // build Kg4 as before
+        // 4×4 geometric block in local axes (already scaled by f = N/(30L))
         Eigen::Matrix<Precision, 4, 4> Kg4;
         Kg4 <<
-            36.0,   3.0 * L, -36.0,   3.0 * L,
-            3.0 * L,  4.0 * L2, -3.0 * L, -1.0 * L2,
-           -36.0, -3.0 * L,  36.0, -3.0 * L,
-            3.0 * L, -1.0 * L2, -3.0 * L,  4.0 * L2;
+            36.0,    3.0 * L,  -36.0,    3.0 * L,
+             3.0 * L, 4.0 * L2, -3.0 * L, -1.0 * L2,
+            -36.0,   -3.0 * L,  36.0,   -3.0 * L,
+             3.0 * L, -1.0 * L2, -3.0 * L,  4.0 * L2;
         Kg4 *= f;
 
         StaticMatrix<12, 12> Kg_local = StaticMatrix<12, 12>::Zero();
 
+        // DOF maps: [u_z, th_y] plane (“y-bending”)
         const int map_y[4] = {2, 4, 8, 10};
-        for (int r = 0; r < 4; ++r) {
-            for (int c = 0; c < 4; ++c) {
-                Kg_local(map_y[r], map_y[c]) += Kg4(r, c);
-            }
-        }
-
+        // DOF maps: [u_y, th_z] plane (“z-bending”)
         const int map_z[4] = {1, 5, 7, 11};
-        for (int r = 0; r < 4; ++r) {
-            for (int c = 0; c < 4; ++c) {
-                Kg_local(map_z[r], map_z[c]) += Kg4(r, c);
-            }
-        }
+
+        // Helper to scatter a 4×4 into the 12×12
+        auto scatter = [&](const Eigen::Matrix<Precision,4,4>& B, const int map[4]) {
+            for (int r = 0; r < 4; ++r)
+                for (int c = 0; c < 4; ++c)
+                    Kg_local(map[r], map[c]) += B(r, c);
+        };
+
+        // --- Place y-plane as-is (its (u,θ) sign already matches your K: +) ---
+        scatter(Kg4, map_y);
+
+        // --- Flip rotation sign in z-plane so (u_y, θ_z) coupling becomes negative ---
+        Eigen::Matrix<Precision,4,4> S = Eigen::Matrix<Precision,4,4>::Identity();
+        S(1,1) = -1; // flip θ at node 1 (second dof inside the 4×4)
+        S(3,3) = -1; // flip θ at node 2 (fourth dof inside the 4×4)
+        Eigen::Matrix<Precision,4,4> Kg4_z = S.transpose() * Kg4 * S;
+        scatter(Kg4_z, map_z);
 
         return T.transpose() * Kg_local * T;
     }
