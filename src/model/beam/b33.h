@@ -119,21 +119,10 @@ struct B33 : BeamElement<2> {
         const Precision L = length();
         const Precision A = get_profile()->A;
 
-        constexpr bool use_sigma = false;
-        Precision Nsum = 0.0;
-        int nip = 0;
-        int count = 1;
-        for (int i = 0; i < count; ++i) {
-            const Index row = offset + i;
-            Precision val = ip_stress(row, 0);
-            if (use_sigma) {
-                val *= A;
-            }
-            Nsum += val;
-            ++nip;
-        }
-        const Precision N = (nip > 0 ? Nsum / nip : 0.0);
+        // actually contains the normal force (see above)
+        Precision N = ip_stress(offset, 0);
 
+        // If no axial force, no geometric stiffness
         if (std::abs(N) <= std::numeric_limits<Precision>::epsilon()) {
             return StaticMatrix<12, 12>::Zero();
         }
@@ -141,21 +130,19 @@ struct B33 : BeamElement<2> {
         const Precision L2 = L * L;
         const Precision f = N / (30.0 * L);
 
-        // build Kg4 as before
-        // 4×4 geometric block in local axes (already scaled by f = N/(30L))
         Eigen::Matrix<Precision, 4, 4> Kg41;
         Eigen::Matrix<Precision, 4, 4> Kg42;
         Kg41 <<
-            36.0,    3.0 * L,  -36.0,    3.0 * L,
-             3.0 * L, 4.0 * L2, -3.0 * L, -1.0 * L2,
-            -36.0,   -3.0 * L,  36.0,   -3.0 * L,
-             3.0 * L, -1.0 * L2, -3.0 * L,  4.0 * L2;
+             36.0    ,  3.0 * L , -36.0    ,  3.0 * L,
+              3.0 * L,  4.0 * L2, - 3.0 * L, -1.0 * L2,
+            -36.0    , -3.0 * L ,  36.0    , -3.0 * L,
+              3.0 * L, -1.0 * L2, - 3.0 * L,  4.0 * L2;
         Kg41 *= f;
         Kg42 <<
-            36.0,     -3.0 * L,  -36.0,    -3.0 * L,
-             -3.0 * L, 4.0 * L2,  3.0 * L, -1.0 * L2,
-            -36.0,    3.0 * L,   36.0,    3.0 * L,
-             -3.0 * L, -1.0 * L2,  3.0 * L,  4.0 * L2;
+             36.0    , -3.0 * L , -36.0    , -3.0 * L,
+            - 3.0 * L,  4.0 * L2,   3.0 * L, -1.0 * L2,
+            -36.0    ,  3.0 * L ,  36.0    ,  3.0 * L,
+            - 3.0 * L, -1.0 * L2,   3.0 * L,  4.0 * L2;
         Kg42 *= f;
 
 
