@@ -1,23 +1,3 @@
-// ===== FILE: ./include/fem/dsl/registry.h =====
-/**
- * @file
- * @brief Command registry for the DSL: declares and looks up command specifications.
- *
- * The `Registry` owns all `Command` specifications keyed by their command name
- * (e.g. "ELASTIC", "NUMEIGENVALUES"). It provides:
- *
- *  - `command(name, fn)`: create-or-get and configure a `Command` in-place via a callback.
- *  - `find(name)`: retrieve a pointer to a registered `Command` (const and non-const).
- *  - `print_help([filter]) const`: header-only console documentation via fem::logging::info.
- *
- * Notes:
- *  - Registration is idempotent per name; calling `command()` multiple times for the same
- *    name will reuse and further configure the existing `Command`.
- *  - The help printer renders compact output per Command/Variant and uses Pattern elements
- *    (`name(base)`, `desc(...)`, `count()`, `type_name()`) to label tokens.
- *  - Output intentionally avoids leading vertical bars; indentation is done with spaces only.
- */
-
 #pragma once
 
 #include <functional>
@@ -29,6 +9,7 @@
 #include <iomanip>
 #include <sstream>
 #include <limits>
+#include <regex>
 
 #include "command.h"
 #include "condition.h"
@@ -45,9 +26,6 @@ namespace dsl {
  * @brief Owns and exposes all command specifications of the DSL.
  */
 struct Registry {
-    /**
-     * @brief Storage mapping command names to their specifications.
-     */
     std::unordered_map<std::string, Command> _map;
 
     /**
@@ -68,38 +46,36 @@ struct Registry {
         fn(it->second);
     }
 
-    /**
-     * @brief Finds a command by name (mutable access).
-     *
-     * @param name Command name to look up.
-     * @return Pointer to the stored `Command`, or `nullptr` if not found.
-     */
     Command* find(const std::string& name) {
         auto it = _map.find(name);
         return it == _map.end() ? nullptr : &it->second;
     }
-
-    /**
-     * @brief Finds a command by name (const access).
-     *
-     * @param name Command name to look up.
-     * @return Pointer to the stored `Command` (const), or `nullptr` if not found.
-     */
     const Command* find(const std::string& name) const {
         auto it = _map.find(name);
         return it == _map.end() ? nullptr : &it->second;
     }
 
     // ---------------------------------------------------------------------
-    // Header-only console help output (uses fem::logging::info)
+    // Documentation helpers
     // ---------------------------------------------------------------------
+
+    // Index (just names)
+    void print_index() const {
+        std::vector<std::string> names;
+        names.reserve(_map.size());
+        for (const auto& kv : _map) names.push_back(kv.first);
+        std::sort(names.begin(), names.end());
+        std::cout << "= FEM DSL — Command Index =\n\n";
+        for (const auto& n : names) std::cout << n << "\n";
+    }
 
     /**
      * @brief Prints a compact reference of all (or one) commands.
      *
-     * @param filter Optional exact command name to restrict output; empty = all.
+     * @param filter  Optional exact command name to restrict output; empty = all.
+     * @param compact If true, per-token doc rows are hidden (short output).
      *
-     * Output schema (no '|' pipes, only spaces for indentation):
+     * Output schema (keine '|' Pipes, nur Leerzeichen für Einrückungen):
      * @code
      * = FEM DSL — Kurzreferenz =
      *
@@ -118,8 +94,8 @@ struct Registry {
      *         <token-name>: <doc> [<type>]
      * @endcode
      */
-    void print_help(const std::string& filter = {}) const {
-        // Renders a Condition tree into a single-line string.
+    void print_help(const std::string& filter = {}, bool compact = false) const {
+        // Condition -> string
         auto cond_to_string = [](const Condition& c,
                                  const std::string& self,
                                  const std::string& parent,
@@ -130,53 +106,33 @@ struct Registry {
                 case K::Always: return "(none)";
                 case K::ParentCommandIs: {
                     std::ostringstream os; os << parent << ".command in { ";
-                    for (size_t i = 0; i < c.values.size(); ++i) {
-                        if (i) os << ", ";
-                        os << c.values[i];
-                    }
-                    os << " }";
-                    return os.str();
+                    for (size_t i = 0; i < c.values.size(); ++i) { if (i) os << ", "; os << c.values[i]; }
+                    os << " }"; return os.str();
                 }
                 case K::ParentKeyEquals: {
                     std::ostringstream os; os << parent << ".keys[\"" << c.key << "\"] in { ";
-                    for (size_t i = 0; i < c.values.size(); ++i) {
-                        if (i) os << ", ";
-                        os << c.values[i];
-                    }
-                    os << " }";
-                    return os.str();
+                    for (size_t i = 0; i < c.values.size(); ++i) { if (i) os << ", "; os << c.values[i]; }
+                    os << " }"; return os.str();
                 }
                 case K::ParentHasKey: {
-                    std::ostringstream os; os << parent << ".has_key(\"" << c.key << "\")";
-                    return os.str();
+                    std::ostringstream os; os << parent << ".has_key(\"" << c.key << "\")"; return os.str();
                 }
                 case K::KeyPresent: {
-                    std::ostringstream os; os << self << ".has_key(\"" << c.key << "\")";
-                    return os.str();
+                    std::ostringstream os; os << self << ".has_key(\"" << c.key << "\")"; return os.str();
                 }
                 case K::KeyEquals: {
                     std::ostringstream os; os << self << ".keys[\"" << c.key << "\"] in { ";
-                    for (size_t i = 0; i < c.values.size(); ++i) {
-                        if (i) os << ", ";
-                        os << c.values[i];
-                    }
-                    os << " }";
-                    return os.str();
+                    for (size_t i = 0; i < c.values.size(); ++i) { if (i) os << ", "; os << c.values[i]; }
+                    os << " }"; return os.str();
                 }
                 case K::All: {
                     std::ostringstream os;
-                    for (size_t i = 0; i < c.children.size(); ++i) {
-                        if (i) os << " AND ";
-                        os << recurse(c.children[i], self, parent, recurse);
-                    }
+                    for (size_t i = 0; i < c.children.size(); ++i) { if (i) os << " AND "; os << recurse(c.children[i], self, parent, recurse); }
                     return os.str();
                 }
                 case K::Any: {
                     std::ostringstream os;
-                    for (size_t i = 0; i < c.children.size(); ++i) {
-                        if (i) os << " OR ";
-                        os << recurse(c.children[i], self, parent, recurse);
-                    }
+                    for (size_t i = 0; i < c.children.size(); ++i) { if (i) os << " OR "; os << recurse(c.children[i], self, parent, recurse); }
                     return os.str();
                 }
                 case K::Not: {
@@ -197,8 +153,8 @@ struct Registry {
             return os.str();
         };
 
-        // Renders a Pattern (header tokens + per-element docs), without pipes.
-        auto render_pattern = [](const Pattern& pat) {
+        // Pattern render (header + optional token docs), using fem::logging::info
+        auto render_pattern = [compact](const Pattern& pat) {
             std::vector<std::string> header_items;
             header_items.reserve(pat.required_tokens());
             std::size_t unnamed_next = 1;
@@ -225,17 +181,18 @@ struct Registry {
                         docs.push_back({ base, doc, tname, false });
                     }
                 } else {
-                    for (std::size_t i = 0; i < cnt; ++i) {
-                        std::ostringstream nm; nm << "t" << (unnamed_next++);
-                        header_items.push_back(nm.str());
-                        docs.push_back({ nm.str(), doc, tname, false });
+                    if (cnt > 0) {
+                        for (std::size_t i = 0; i < cnt; ++i) {
+                            std::ostringstream nm; nm << "t" << (unnamed_next++);
+                            header_items.push_back(nm.str());
+                            docs.push_back({ nm.str(), doc, tname, false });
+                        }
                     }
                 }
             }
 
-            // Header line: "  h1, h2, ..., g"
+            // Header line: "        h1, h2, ..., g"
             if (!header_items.empty()) {
-                // Join with ", "
                 std::ostringstream joined;
                 for (std::size_t i = 0; i < header_items.size(); ++i) {
                     if (i) joined << ", ";
@@ -244,9 +201,10 @@ struct Registry {
                 fem::logging::info(true, "        ", joined.str());
             }
 
+            if (compact) return;
+
             // Doc lines
             for (const auto& r : docs) {
-                // We can still use manipulators directly through logging::info
                 fem::logging::info(true,
                     "        ",
                     std::left, std::setw(14), (r.left + ":"),
@@ -310,6 +268,213 @@ struct Registry {
 
             fem::logging::info(true); // blank line between commands
         }
+    }
+
+    void print_variants(const std::string& cmd) const {
+        const Command* c = find(cmd);
+        if (!c) { std::cout << "Command not found: " << cmd << "\n"; return; }
+
+        auto cond_to_string = [](const Condition& c,
+                                 const std::string& self,
+                                 const std::string& parent,
+                                 const auto& recurse) -> std::string
+        {
+            using K = Condition::Kind;
+            switch (c.kind) {
+                case K::Always: return "(none)";
+                case K::ParentCommandIs: {
+                    std::ostringstream os; os << parent << ".command in { ";
+                    for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
+                    os << " }"; return os.str();
+                }
+                case K::ParentKeyEquals: {
+                    std::ostringstream os; os << parent << ".keys[\"" << c.key << "\"] in { ";
+                    for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
+                    os << " }"; return os.str();
+                }
+                case K::ParentHasKey: {
+                    std::ostringstream os; os << parent << ".has_key(\"" << c.key << "\")"; return os.str();
+                }
+                case K::KeyPresent: {
+                    std::ostringstream os; os << self << ".has_key(\"" << c.key << "\")"; return os.str();
+                }
+                case K::KeyEquals: {
+                    std::ostringstream os; os << self << ".keys[\"" << c.key << "\"] in { ";
+                    for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
+                    os << " }"; return os.str();
+                }
+                case K::All: {
+                    std::ostringstream os;
+                    for (size_t i=0;i<c.children.size();++i) {
+                        if (i) os << " AND ";
+                        os << recurse(c.children[i], self, parent, recurse);
+                    }
+                    return os.str();
+                }
+                case K::Any: {
+                    std::ostringstream os;
+                    for (size_t i=0;i<c.children.size();++i) {
+                        if (i) os << " OR ";
+                        os << recurse(c.children[i], self, parent, recurse);
+                    }
+                    return os.str();
+                }
+                case K::Not: {
+                    std::ostringstream os;
+                    os << "NOT(" << (c.children.empty() ? "(none)" : recurse(c.children.front(), self, parent, recurse)) << ")";
+                    return os.str();
+                }
+            }
+            return "";
+        };
+
+        std::cout << "= Variants — " << cmd << " =\n\n";
+        if (c->variants_.empty()) { std::cout << "(none)\n"; return; }
+
+        for (std::size_t vi=0; vi<c->variants_.size(); ++vi) {
+            const Variant& v = c->variants_[vi];
+            std::cout << "- Variant #" << (vi+1) << " — When: "
+                      << (v.has_condition_ ? cond_to_string(v.condition_, "self", "parent", cond_to_string) : "(none)") << "\n";
+            std::cout << "  Doc: " << (v.doc_.empty() ? "-" : v.doc_) << "\n";
+        }
+    }
+
+    void print_tokens(const std::string& cmd) const {
+        const Command* c = find(cmd);
+        if (!c) { std::cout << "Command not found: " << cmd << "\n"; return; }
+
+        auto render_pattern_compact = [](const Pattern& pat, std::ostream& os) {
+            std::vector<std::string> header_items;
+            header_items.reserve(pat.required_tokens());
+            std::size_t unnamed_next = 1;
+
+            struct DocRow { std::string left; std::string doc; std::string type; bool is_range; };
+            std::vector<DocRow> docs;
+
+            for (const auto& pe : pat._elems) {
+                const std::size_t cnt = pe->count();
+                const std::string base = pe->name_base();
+                const std::string doc  = pe->description();
+                const char* tname      = pe->type_name();
+
+                if (!base.empty()) {
+                    if (cnt > 1) {
+                        for (std::size_t i=1; i<=cnt; ++i) {
+                            std::ostringstream h; h << base << i;
+                            header_items.push_back(h.str());
+                        }
+                        std::ostringstream left; left << base << "1 - " << base << cnt;
+                        docs.push_back({ left.str(), doc, tname, true });
+                    } else {
+                        header_items.push_back(base);
+                        std::ostringstream left; left << base;
+                        docs.push_back({ left.str(), doc, tname, false });
+                    }
+                } else {
+                    if (cnt > 0) {
+                        for (std::size_t i=0; i<cnt; ++i) {
+                            std::ostringstream nm; nm << "t" << (unnamed_next++);
+                            header_items.push_back(nm.str());
+                            std::ostringstream left; left << nm.str();
+                            docs.push_back({ left.str(), doc, tname, false });
+                        }
+                    }
+                }
+            }
+
+            os << "Header: ";
+            for (std::size_t i=0; i<header_items.size(); ++i) {
+                if (i) os << ", ";
+                os << header_items[i];
+            }
+            os << "\n";
+
+            for (const auto& r : docs) {
+                os << "  - " << std::left << std::setw(12) << (r.left + ":")
+                   << " " << (r.doc.empty() ? "-" : r.doc) << " [" << r.type << "]\n";
+            }
+        };
+
+        std::cout << "= Tokens — " << cmd << " =\n\n";
+        if (c->variants_.empty()) { std::cout << "(none)\n"; return; }
+
+        for (std::size_t vi=0; vi<c->variants_.size(); ++vi) {
+            const Variant& v = c->variants_[vi];
+            std::cout << "Variant #" << (vi+1) << ":\n";
+            for (std::size_t si=0; si<v._segments.size(); ++si) {
+                const auto& s = v._segments[si];
+                render_pattern_compact(s._pattern, std::cout);
+            }
+            std::cout << "\n";
+        }
+    }
+
+    void print_search(const std::string& query, bool regex=false) const {
+        std::cout << "= Search: " << query << " =\n\n";
+        std::vector<std::string> names;
+        names.reserve(_map.size());
+        for (const auto& kv : _map) names.push_back(kv.first);
+        std::sort(names.begin(), names.end());
+
+        std::regex rx;
+        if (regex) rx = std::regex(query, std::regex::icase);
+
+        int hits = 0;
+        for (const auto& name : names) {
+            const Command& c = _map.at(name);
+            const auto in = [&](const std::string& s)->bool{
+                if (regex) {
+                    return std::regex_search(s, rx);
+                } else {
+                    auto hay = s; auto needle = query;
+                    std::transform(hay.begin(), hay.end(), hay.begin(), ::tolower);
+                    std::transform(needle.begin(), needle.end(), needle.begin(), ::tolower);
+                    return hay.find(needle) != std::string::npos;
+                }
+            };
+            bool match = in(name) || in(c.doc_);
+            if (match) {
+                std::cout << name << "  —  " << (c.doc_.empty() ? "-" : c.doc_) << "\n";
+                ++hits;
+            }
+        }
+        if (hits == 0) std::cout << "(no matches)\n";
+    }
+
+    void print_where_token(const std::string& token_substr) const {
+        std::cout << "= Where Token: " << token_substr << " =\n\n";
+        std::vector<std::string> names;
+        names.reserve(_map.size());
+        for (const auto& kv : _map) names.push_back(kv.first);
+        std::sort(names.begin(), names.end());
+
+        auto contains_ci = [](const std::string& s, const std::string& sub)->bool{
+            std::string a = s, b = sub;
+            std::transform(a.begin(), a.end(), a.begin(), ::tolower);
+            std::transform(b.begin(), b.end(), b.begin(), ::tolower);
+            return a.find(b) != std::string::npos;
+        };
+
+        int hits = 0;
+        for (const auto& nm : names) {
+            const Command& c = _map.at(nm);
+            bool found = false;
+
+            for (const auto& v : c.variants_) {
+                for (const auto& seg : v._segments) {
+                    for (const auto& pe : seg._pattern._elems) {
+                        if (contains_ci(pe->name_base(), token_substr) || contains_ci(pe->description(), token_substr)) {
+                            found = true; break;
+                        }
+                    }
+                    if (found) break;
+                }
+                if (found) break;
+            }
+
+            if (found) { std::cout << nm << "\n"; ++hits; }
+        }
+        if (hits == 0) std::cout << "(no matches)\n";
     }
 };
 

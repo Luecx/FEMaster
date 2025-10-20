@@ -42,9 +42,9 @@ LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
 void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
-    logging::info(true, "================================================================================================");
+    logging::info(true, "===============================================================================================");
     logging::info(true, "LINEAR STATIC ANALYSIS");
-    logging::info(true, "================================================================================================");
+    logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
     model->assign_sections();

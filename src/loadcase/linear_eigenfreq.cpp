@@ -216,9 +216,9 @@ LinearEigenfrequency::LinearEigenfrequency(ID id,
 void LinearEigenfrequency::run() {
     // Banner
     logging::info(true, "");
-    logging::info(true, "================================================================================");
+    logging::info(true, "===============================================================================================");
     logging::info(true, "LINEAR EIGENFREQUENCY ANALYSIS");
-    logging::info(true, "================================================================================");
+    logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
     // (0) Sections/materials

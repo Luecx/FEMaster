@@ -48,7 +48,7 @@ void print_banner() {
     std::cout << "*           Bytes of GPU Precision: " << sizeof(CudaPrecision);
     std::cout << std::string(33 - std::to_string(sizeof(CudaPrecision)).length(), ' ') << "*\n";
 #else
-    std::cout << "*           Bytes of GPU Precision: N/A                             *\n";
+    std::cout << "*           Bytes of GPU Precision: N/A                              *\n";
 #endif
 #ifdef SUPPORT_GPU
     std::cout << "*           GPU Supported         : Yes                              *\n";

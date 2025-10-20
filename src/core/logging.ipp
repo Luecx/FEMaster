@@ -17,7 +17,7 @@ namespace fem {
 namespace logging {
 
 inline int indentation_level = 0;
-inline std::size_t g_console_width = 100; // default; configurable
+inline std::size_t g_console_width = 102; // default; configurable
 
 inline void set_console_width(std::size_t cols) {
     g_console_width = std::max<std::size_t>(cols, 20);

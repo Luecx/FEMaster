@@ -145,9 +145,9 @@ LinearBuckling::LinearBuckling(ID id,
 void LinearBuckling::run() {
     // Banner
     logging::info(true, "");
-    logging::info(true, "================================================================================");
+    logging::info(true, "===============================================================================================");
     logging::info(true, "LINEAR BUCKLING ANALYSIS");
-    logging::info(true, "================================================================================");
+    logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
     // (0) Sections/materials
