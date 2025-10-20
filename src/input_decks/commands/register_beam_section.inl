@@ -1,4 +1,13 @@
 // register_beam_section.inl — DSL registration for *BEAMSECTION
+#pragma once
+/**
+ * @file register_beam_section.inl
+ * @brief Register *BEAMSECTION command.
+ *
+ * Assigns a beam section (material + profile) and a local section orientation vector.
+ * The orientation is orthonormalized against the element axis internally; near-collinear
+ * inputs trigger a robust fallback (implementation-defined).
+ */
 
 #include <array>
 #include <memory>
@@ -15,39 +24,55 @@ namespace fem::input_decks::commands {
 inline void register_beam_section(fem::dsl::Registry& registry, model::Model& model) {
     registry.command("BEAMSECTION", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
-        command.doc("Assign a beam section with orientation to an element set.");
 
-        // Persistent per-command state (lives beyond this function):
+        // Keep this concise; no explicit “scope/keywords/data” lists here.
+        command.doc(
+            "Assign a beam section with a local orientation. "
+            "The target element set must contain only beam elements. "
+            "The provided direction n1 is normalized and orthogonalized internally; "
+            "if n1 is (near-)collinear with the element axis, a stable fallback is applied."
+        );
+
+        // Persistent per-command state:
         auto material = std::make_shared<std::string>();
         auto elset    = std::make_shared<std::string>();
         auto profile  = std::make_shared<std::string>();
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
-                .key("MATERIAL").alternative("MAT").required().doc("Material name")
-                .key("ELSET").required().doc("Target element set")
-                .key("PROFILE").required().doc("Beam profile identifier")
+                .key("MATERIAL").alternative("MAT").required()
+                    .doc("Material name (must exist).")
+                .key("ELSET").required()
+                    .doc("Target element set; must contain only beam elements.")
+                .key("PROFILE").required()
+                    .doc("Section/profile identifier, e.g., IPE80, RECT_20x10, CHS60x3.")
         );
 
-        // Capture shared_ptrs BY VALUE so they remain valid when executed later
         command.on_enter([material, elset, profile](const fem::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
             *profile  = keys.raw("PROFILE");
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
-                    .fixed<fem::Precision, 3>().name("N1").desc("Section orientation vector")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+        command.variant(
+            fem::dsl::Variant::make()
+                .doc("One data line with the section direction n1 = (N1_x, N1_y, N1_z).")
+                .segment(
+                    fem::dsl::Segment::make()
+                        .range(fem::dsl::LineRange{}.min(1).max(1))
+                        .pattern(
+                            fem::dsl::Pattern::make()
+                                .fixed<fem::Precision, 3>()
+                                .name("N1")
+                                .desc("Section orientation vector components: N1_x, N1_y, N1_z.")
+                                .on_missing(fem::Precision{0})
+                                .on_empty  (fem::Precision{0})
+                        )
+                        .bind([&model, material, elset, profile](const std::array<fem::Precision, 3>& n1_data) {
+                            fem::Vec3 n1; n1 << n1_data[0], n1_data[1], n1_data[2];
+                            model.beam_section(*elset, *material, *profile, n1);
+                        })
                 )
-                .bind([&model, material, elset, profile](const std::array<fem::Precision, 3>& n1_data) {
-                    fem::Vec3 n1; n1 << n1_data[0], n1_data[1], n1_data[2];
-                    model.beam_section(*elset, *material, *profile, n1);
-                })
-            )
         );
     });
 }

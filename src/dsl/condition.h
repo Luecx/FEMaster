@@ -33,6 +33,7 @@
  *  - Structural:   All / Any / Not / Always
  *  - Parent-based: ParentCommandIs / ParentKeyEquals / ParentHasKey
  *  - Self-based:   KeyPresent / KeyEquals
+ *  - Boolean-aware: ParentKeyBool / KeyBool  (uses `Keys::get<bool>` semantics)
  *
  * ## Evaluation
  * `cond.eval(parent, self_keys)` returns true/false by recursively evaluating the tree.
@@ -98,7 +99,9 @@ struct Condition {
         ParentKeyEquals,   ///< `parent.keys.raw(key)` equals any of `values`
         ParentHasKey,      ///< `parent.keys.has(key)`
         KeyPresent,        ///< `self_keys.has(key)`
-        KeyEquals          ///< `self_keys.raw(key)` equals any of `values`
+        KeyEquals,         ///< `self_keys.raw(key)` equals any of `values`
+        ParentKeyBool,     ///< boolean check using Keys::get<bool>
+        KeyBool            ///< boolean check using Keys::get<bool>
     };
 
     // --- Data ---
@@ -106,6 +109,7 @@ struct Condition {
     std::string key;                         ///< Optional key (for key-based kinds).
     std::vector<std::string> values;         ///< Optional value set.
     std::vector<Condition> children;         ///< Child nodes (for All/Any/Not).
+    bool bool_value = false;                 ///< Expected boolean value for *Bool kinds.
 
     /// Default constructor → `Always`.
     Condition() = default;
@@ -164,6 +168,19 @@ struct Condition {
                 for (const auto& v : values)
                     if (v == raw) return true;
                 return false;
+            }
+
+            case ParentKeyBool: {
+                // Require presence to avoid throwing in Keys::get<bool>
+                if (!parent.keys.has(key)) return false;
+                bool v = parent.keys.get<bool>(key);
+                return v == bool_value;
+            }
+
+            case KeyBool: {
+                if (!self_keys.has(key)) return false;
+                bool v = self_keys.get<bool>(key);
+                return v == bool_value;
             }
         }
         return false; // unreachable, but keeps some compilers happy
@@ -262,6 +279,30 @@ struct Condition {
         return c;
     }
 
+    /**
+     * @brief Boolean-aware: requires that the parent's key `k` evaluates to true.
+     * Uses `Keys::get<bool>` semantics (flags without value count as true).
+     */
+    static Condition parent_key_true(const std::string& k) {
+        Condition c;
+        c.kind = ParentKeyBool;
+        c.key = k;
+        c.bool_value = true;
+        return c;
+    }
+
+    /**
+     * @brief Boolean-aware: requires that the parent's key `k` evaluates to false.
+     * Uses `Keys::get<bool>` semantics.
+     */
+    static Condition parent_key_false(const std::string& k) {
+        Condition c;
+        c.kind = ParentKeyBool;
+        c.key = k;
+        c.bool_value = false;
+        return c;
+    }
+
     // ---------------------------------------------------------------------
     // Static factory helpers — SELF KEYS (current keyword line)
     // ---------------------------------------------------------------------
@@ -291,6 +332,30 @@ struct Condition {
     /// @overload Single-value convenience.
     static Condition key_equals(const std::string& k, const std::string& value) {
         return key_equals(k, {value});
+    }
+
+    /**
+     * @brief Boolean-aware: requires that the current line's key `k` evaluates to true.
+     * Uses `Keys::get<bool>` semantics (flags without value count as true).
+     */
+    static Condition key_true(const std::string& k) {
+        Condition c;
+        c.kind = KeyBool;
+        c.key = k;
+        c.bool_value = true;
+        return c;
+    }
+
+    /**
+     * @brief Boolean-aware: requires that the current line's key `k` evaluates to false.
+     * Uses `Keys::get<bool>` semantics.
+     */
+    static Condition key_false(const std::string& k) {
+        Condition c;
+        c.kind = KeyBool;
+        c.key = k;
+        c.bool_value = false;
+        return c;
     }
 };
 

@@ -4,20 +4,22 @@
  * @brief Command registry for the DSL: declares and looks up command specifications.
  *
  * The `Registry` owns all `Command` specifications keyed by their command name
- * (e.g. `"ELASTIC"`, `"NUMEIGENVALUES"`). It provides:
+ * (e.g. "ELASTIC", "NUMEIGENVALUES"). It provides:
  *
  *  - `command(name, fn)`: create-or-get and configure a `Command` in-place via a callback.
  *  - `find(name)`: retrieve a pointer to a registered `Command` (const and non-const).
- *  - `print_help([filter]) const`: header-only console documentation using `std::cout`.
+ *  - `print_help([filter]) const`: header-only console documentation via fem::logging::info.
  *
  * Notes:
  *  - Registration is idempotent per name; calling `command()` multiple times for the same
  *    name will reuse and further configure the existing `Command`.
  *  - The help printer renders compact output per Command/Variant and uses Pattern elements
  *    (`name(base)`, `desc(...)`, `count()`, `type_name()`) to label tokens.
+ *  - Output intentionally avoids leading vertical bars; indentation is done with spaces only.
  */
 
 #pragma once
+
 #include <functional>
 #include <unordered_map>
 #include <string>
@@ -33,6 +35,7 @@
 #include "pattern.h"
 #include "pattern_element.h"
 #include "segment.h"
+#include "../core/logging.h"   // fem::logging::info(...)
 
 namespace fem {
 namespace dsl {
@@ -55,7 +58,7 @@ struct Registry {
      * with a reference to the stored `Command`, allowing in-place configuration
      * (admission rules, variants, segments, etc.).
      *
-     * @param name Command name (e.g. `"ELASTIC"`).
+     * @param name Command name (e.g. "ELASTIC").
      * @param fn   Configuration callback receiving `Command&`.
      */
     void command(const std::string& name, const std::function<void(Command&)>& fn) {
@@ -88,46 +91,35 @@ struct Registry {
     }
 
     // ---------------------------------------------------------------------
-    // Header-only console help output (std::cout)
+    // Header-only console help output (uses fem::logging::info)
     // ---------------------------------------------------------------------
 
     /**
-     * @brief Prints a compact reference of all (or one) commands to `std::cout`.
+     * @brief Prints a compact reference of all (or one) commands.
      *
      * @param filter Optional exact command name to restrict output; empty = all.
      *
-     * Output schema:
+     * Output schema (no '|' pipes, only spaces for indentation):
      * @code
      * = FEM DSL — Kurzreferenz =
      *
      * *COMMAND
-     * | Description:
-     * |   ...
-     * | Admitted under:
-     * |   ...
-     * | Variants:
-     * |   - Variant #1 — When: ...
-     * |     Description:
-     * |       <variant-doc or '-'>
-     * |     Data-Layout:
-     * |       • Lines [min..max] (multiline/single-line):
-     * |         header (explicit names, e.g., h1, h2, ..., h10, g)
-     * |         per-element docs:
-     * |           - named multi-count element as a single line (e.g. h1 - h10: ...)
-     * |           - others as one line per token (or per element if single)
-     * |
+     * Description:
+     *   ...
+     * Admitted under:
+     *   ...
+     * Variants:
+     *   - Variant #1 — When: ...
+     *     Description:
+     *       <variant-doc or '-'>
+     *     Data-Layout:
+     *       • Lines [min..max] (multiline/single-line):
+     *         h1, h2, ..., g
+     *         <token-name>: <doc> [<type>]
      * @endcode
      */
     void print_help(const std::string& filter = {}) const {
-        /**
-         * @brief Renders a `Condition` tree into a compact, human-readable string.
-         *
-         * @param c        Condition to render.
-         * @param self     Symbolic name representing "self" in the docs (usually "self").
-         * @param parent   Symbolic name representing "parent" in the docs (usually "parent").
-         * @param recurse  Reference to this lambda for recursion.
-         * @return A compact string representation of the condition.
-         */
+        // Renders a Condition tree into a single-line string.
         auto cond_to_string = [](const Condition& c,
                                  const std::string& self,
                                  const std::string& parent,
@@ -136,51 +128,57 @@ struct Registry {
             using K = Condition::Kind;
             switch (c.kind) {
                 case K::Always: return "(none)";
-
                 case K::ParentCommandIs: {
                     std::ostringstream os; os << parent << ".command in { ";
-                    for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
-                    os << " }"; return os.str();
+                    for (size_t i = 0; i < c.values.size(); ++i) {
+                        if (i) os << ", ";
+                        os << c.values[i];
+                    }
+                    os << " }";
+                    return os.str();
                 }
-
                 case K::ParentKeyEquals: {
                     std::ostringstream os; os << parent << ".keys[\"" << c.key << "\"] in { ";
-                    for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
-                    os << " }"; return os.str();
+                    for (size_t i = 0; i < c.values.size(); ++i) {
+                        if (i) os << ", ";
+                        os << c.values[i];
+                    }
+                    os << " }";
+                    return os.str();
                 }
-
                 case K::ParentHasKey: {
-                    std::ostringstream os; os << parent << ".has_key(\"" << c.key << "\")"; return os.str();
+                    std::ostringstream os; os << parent << ".has_key(\"" << c.key << "\")";
+                    return os.str();
                 }
-
                 case K::KeyPresent: {
-                    std::ostringstream os; os << self << ".has_key(\"" << c.key << "\")"; return os.str();
+                    std::ostringstream os; os << self << ".has_key(\"" << c.key << "\")";
+                    return os.str();
                 }
-
                 case K::KeyEquals: {
                     std::ostringstream os; os << self << ".keys[\"" << c.key << "\"] in { ";
-                    for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
-                    os << " }"; return os.str();
+                    for (size_t i = 0; i < c.values.size(); ++i) {
+                        if (i) os << ", ";
+                        os << c.values[i];
+                    }
+                    os << " }";
+                    return os.str();
                 }
-
                 case K::All: {
                     std::ostringstream os;
-                    for (size_t i=0;i<c.children.size();++i) {
+                    for (size_t i = 0; i < c.children.size(); ++i) {
                         if (i) os << " AND ";
                         os << recurse(c.children[i], self, parent, recurse);
                     }
                     return os.str();
                 }
-
                 case K::Any: {
                     std::ostringstream os;
-                    for (size_t i=0;i<c.children.size();++i) {
+                    for (size_t i = 0; i < c.children.size(); ++i) {
                         if (i) os << " OR ";
                         os << recurse(c.children[i], self, parent, recurse);
                     }
                     return os.str();
                 }
-
                 case K::Not: {
                     std::ostringstream os;
                     os << "NOT(" << (c.children.empty() ? "(none)" : recurse(c.children.front(), self, parent, recurse)) << ")";
@@ -190,13 +188,6 @@ struct Registry {
             return "";
         };
 
-        /**
-         * @brief Formats a line range as `[min..max]`, printing `∞` for an unbounded max.
-         *
-         * @param min_v Inclusive minimum line count.
-         * @param max_v Inclusive maximum line count.
-         * @return A formatted string for the range.
-         */
         auto fmt_range = [](std::size_t min_v, std::size_t max_v) -> std::string {
             std::ostringstream os;
             os << "[" << min_v << "..";
@@ -206,131 +197,118 @@ struct Registry {
             return os.str();
         };
 
-        /**
-         * @brief Renders a `Pattern` into compact documentation.
-         *
-         * Rules:
-         *  - The header line (CSV) **expands** any named multi-count element `base[N]`
-         *    to explicit names: `base1, base2, ..., baseN`.
-         *  - For docs:
-         *      • A **named** multi-count element prints **one** line: `base1 - baseN:  desc [type]`.
-         *      • A **named** single-count element prints one line: `base:  desc [type]`.
-         *      • An **unnamed** element falls back to synthetic names `tK` (expanded).
-         *
-         * @param pat Pattern to render.
-         * @param os  Output stream to write to (usually std::cout).
-         */
-        auto render_pattern = [](const Pattern& pat, std::ostream& os) {
-            // Build header items (explicit enumeration for named multi-count elements).
+        // Renders a Pattern (header tokens + per-element docs), without pipes.
+        auto render_pattern = [](const Pattern& pat) {
             std::vector<std::string> header_items;
             header_items.reserve(pat.required_tokens());
-
-            // For unnamed elements we still generate t1, t2, ... with a running counter.
             std::size_t unnamed_next = 1;
 
-            // Also collect doc rows:
             struct DocRow { std::string left; std::string doc; std::string type; bool is_range; };
             std::vector<DocRow> docs;
 
             for (const auto& pe : pat._elems) {
-                const std::size_t cnt = pe->count();
+                const std::size_t cnt  = pe->count();
                 const std::string base = pe->name_base();
                 const std::string doc  = pe->description();
                 const char* tname      = pe->type_name();
 
                 if (!base.empty()) {
                     if (cnt > 1) {
-                        // Header explicit: base1, base2, ..., baseN
-                        for (std::size_t i=1; i<=cnt; ++i) {
+                        for (std::size_t i = 1; i <= cnt; ++i) {
                             std::ostringstream h; h << base << i;
                             header_items.push_back(h.str());
                         }
-                        // Doc compact: base1 - baseN: doc [type]
-                        {
-                            std::ostringstream left; left << base << "1 - " << base << cnt;
-                            docs.push_back({ left.str(), doc, tname, true });
-                        }
+                        std::ostringstream left; left << base << "1 - " << base << cnt;
+                        docs.push_back({ left.str(), doc, tname, true });
                     } else {
-                        // Single named element
                         header_items.push_back(base);
-                        std::ostringstream left; left << base;
-                        docs.push_back({ left.str(), doc, tname, false });
+                        docs.push_back({ base, doc, tname, false });
                     }
                 } else {
-                    // Unnamed element: enumerate synthetic names tK
-                    if (cnt > 0) {
-                        for (std::size_t i=0; i<cnt; ++i) {
-                            std::ostringstream nm; nm << "t" << (unnamed_next++);
-                            header_items.push_back(nm.str());
-                            std::ostringstream left; left << nm.str();
-                            docs.push_back({ left.str(), doc, tname, false });
-                        }
+                    for (std::size_t i = 0; i < cnt; ++i) {
+                        std::ostringstream nm; nm << "t" << (unnamed_next++);
+                        header_items.push_back(nm.str());
+                        docs.push_back({ nm.str(), doc, tname, false });
                     }
                 }
             }
 
-            // Header line (explicit names)
-            os << "|         ";
-            for (std::size_t i=0; i<header_items.size(); ++i) {
-                if (i) os << ", ";
-                os << header_items[i];
+            // Header line: "  h1, h2, ..., g"
+            if (!header_items.empty()) {
+                // Join with ", "
+                std::ostringstream joined;
+                for (std::size_t i = 0; i < header_items.size(); ++i) {
+                    if (i) joined << ", ";
+                    joined << header_items[i];
+                }
+                fem::logging::info(true, "        ", joined.str());
             }
-            os << "\n";
 
             // Doc lines
             for (const auto& r : docs) {
-                os << "|         " << std::left << std::setw(12) << (r.left + ":")
-                   << " " << (r.doc.empty() ? "-" : r.doc) << " [" << r.type << "]\n";
+                // We can still use manipulators directly through logging::info
+                fem::logging::info(true,
+                    "        ",
+                    std::left, std::setw(14), (r.left + ":"),
+                    " ", (r.doc.empty() ? "-" : r.doc), " [", r.type, "]"
+                );
             }
         };
 
-        // Sort command names for stable output
+        // Sorted command names
         std::vector<std::string> names;
         names.reserve(_map.size());
         for (const auto& kv : _map) names.push_back(kv.first);
         std::sort(names.begin(), names.end());
 
-        std::cout << "= FEM DSL — Kurzreferenz =\n\n";
+        fem::logging::info(true, "= FEM DSL — Kurzreferenz =\n");
 
         for (const auto& cmd_name : names) {
             if (!filter.empty() && cmd_name != filter) continue;
             const Command& c = _map.at(cmd_name);
 
-            std::cout << "*" << cmd_name << "\n";
-            std::cout << "| Description:\n";
-            std::cout << "|   " << (c.doc_.empty() ? "-" : c.doc_) << "\n";
-            std::cout << "| Admitted under:\n";
-            std::cout << "|   " << cond_to_string(c.admit_, "self", "parent", cond_to_string) << "\n";
+            fem::logging::info(true, "*", cmd_name);
+            fem::logging::info(true, "Description:");
+            fem::logging::info(true, "  ", (c.doc_.empty() ? std::string("-") : c.doc_));
+            fem::logging::info(true, "Admitted under:");
+            fem::logging::info(true, "  ", cond_to_string(c.admit_, "self", "parent", cond_to_string));
 
             if (c.variants_.empty()) {
-                std::cout << "| Variants:\n";
-                std::cout << "|   (none)\n|\n";
+                fem::logging::info(true, "Variants:");
+                fem::logging::info(true, "  (none)");
+                fem::logging::info(true); // blank line
                 continue;
             }
 
-            std::cout << "| Variants:\n";
-            for (std::size_t vi=0; vi<c.variants_.size(); ++vi) {
+            fem::logging::info(true, "Variants:");
+            for (std::size_t vi = 0; vi < c.variants_.size(); ++vi) {
                 const Variant& v = c.variants_[vi];
 
-                // Variant header
-                std::cout << "|   - Variant #" << (vi+1) << " — When: "
-                          << (v.has_condition_ ? cond_to_string(v.condition_, "self", "parent", cond_to_string) : "(none)") << "\n";
+                fem::logging::info(true,
+                    "  - Variant #", (vi + 1), " — When: ",
+                    (v.has_condition_
+                        ? cond_to_string(v.condition_, "self", "parent", cond_to_string)
+                        : std::string("(none)"))
+                );
 
-                // Variant description block (placed BETWEEN header and Data-Layout)
-                std::cout << "|     Description:\n";
-                std::cout << "|       " << (v.doc_.empty() ? "-" : v.doc_) << "\n";
+                fem::logging::info(true, "    Description:");
+                fem::logging::info(true, "      ", (v.doc_.empty() ? std::string("-") : v.doc_));
+                fem::logging::info(true, "    Data-Layout:");
 
-                // Data-Layout
-                std::cout << "|     Data-Layout:\n";
-                for (std::size_t si=0; si<v._segments.size(); ++si) {
-                    const auto& s = v._segments[si];
+                for (std::size_t si = 0; si < v._segments.size(); ++si) {
+                    const auto& s   = v._segments[si];
                     const bool multi = s._pattern.is_multiline();
-                    std::cout << "|       • Lines " << fmt_range(s._range.min_, s._range.max_)
-                              << " (" << (multi ? "multiline" : "single-line") << "):\n";
-                    render_pattern(s._pattern, std::cout);
+
+                    fem::logging::info(true,
+                        "      • Lines ", fmt_range(s._range.min_, s._range.max_),
+                        " (", (multi ? "multiline" : "single-line"), "):"
+                    );
+
+                    render_pattern(s._pattern);
                 }
             }
-            std::cout << "|\n";
+
+            fem::logging::info(true); // blank line between commands
         }
     }
 };

@@ -78,6 +78,27 @@ template<class T> inline constexpr bool is_std_array_v = is_std_array<T>::value;
 template<class T>
 inline T parse_arithmetic(const std::string& s) {
     static_assert(std::is_arithmetic_v<T>, "parse_arithmetic requires arithmetic type");
+
+    if constexpr (std::is_floating_point_v<T>) {
+        // Handle IEEE specials explicitly (tokens arrive UPPERCASED by your tokenizer)
+        std::string up = s;
+        for (auto& c : up) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+        bool neg = false;
+        if (!up.empty() && (up[0] == '+' || up[0] == '-')) {
+            neg = (up[0] == '-');
+            up.erase(0, 1);
+        }
+
+        if (up == "NAN") {
+            return std::numeric_limits<T>::quiet_NaN();
+        }
+        if (up == "INF" || up == "INFINITY") {
+            return neg ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
+        }
+        // Fall through to normal numeric parsing below
+    }
+
     std::istringstream ss(s);
     T v{};
     ss >> v;

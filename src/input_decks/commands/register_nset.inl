@@ -30,9 +30,12 @@ inline void register_nset(fem::dsl::Registry& registry, model::Model& model) {
 
         const fem::ID missing_id = std::numeric_limits<fem::ID>::min();
 
-        // Variant for *NSET, GENERATE
+        // Variant for *NSET with boolean-aware GENERATE flag.
+        // Only matches when GENERATE is present and evaluates to true
+        // (flag without value, or values like 1/ON/YES/TRUE).
         command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_present("GENERATE"))
+            .rank(10)
+            .when(fem::dsl::Condition::key_true("GENERATE"))
             .segment(fem::dsl::Segment::make()
                 .range(fem::dsl::LineRange{}.min(1))
                 .pattern(fem::dsl::Pattern::make()
@@ -67,8 +70,13 @@ inline void register_nset(fem::dsl::Registry& registry, model::Model& model) {
             )
         );
 
-        // Variant for explicit node id lists (up to 32 per line)
+        // Variant for explicit node id lists (up to 32 per line).
+        // Matches when GENERATE is missing OR explicitly false (0/OFF/NO/FALSE).
         command.variant(fem::dsl::Variant::make()
+            .when(fem::dsl::Condition::any_of({
+                fem::dsl::Condition::negate(fem::dsl::Condition::key_present("GENERATE")),
+                fem::dsl::Condition::key_false("GENERATE")
+            }))
             .segment(fem::dsl::Segment::make()
                 .range(fem::dsl::LineRange{}.min(0))
                 .pattern(fem::dsl::Pattern::make()

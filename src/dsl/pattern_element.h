@@ -36,6 +36,7 @@
 #include <sstream>
 #include <vector>
 #include <charconv>
+#include <cmath>
 
 namespace fem {
 namespace dsl {
@@ -634,8 +635,11 @@ struct Fixed : PatternElementBase
      *
      * @return Default token string created from `_default_empty_single`.
      */
-    std::string empty_token_string() const override
-    {
+    std::string empty_token_string() const override {
+        if constexpr (std::is_floating_point_v<T>) {
+            if (std::isnan(_default_empty_single)) return "NAN";
+            if (std::isinf(_default_empty_single)) return std::signbit(_default_empty_single) ? "-INF" : "INF";
+        }
         std::ostringstream os;
         os << _default_empty_single;
         return os.str();
@@ -646,8 +650,11 @@ struct Fixed : PatternElementBase
      *
      * @return Default token string created from `_default_missing_single`.
      */
-    std::string missing_token_string() const override
-    {
+    std::string missing_token_string() const override {
+        if constexpr (std::is_floating_point_v<T>) {
+            if (std::isnan(_default_missing_single)) return "NAN";
+            if (std::isinf(_default_missing_single)) return std::signbit(_default_missing_single) ? "-INF" : "INF";
+        }
         std::ostringstream os;
         os << _default_missing_single;
         return os.str();
@@ -689,6 +696,15 @@ struct Fixed : PatternElementBase
         if constexpr (std::is_same_v<T, std::string>) {
             return true; // any non-empty string token is fine
         } else if constexpr (std::is_floating_point_v<T>) {
+            // Accept normal numeric lexemes OR special IEEE spellings
+            // Normal path
+            std::string up = s;
+            for (auto& c : up) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+            if (up == "NAN" || up == "+NAN" || up == "-NAN" ||
+                up == "INF" || up == "+INF" || up == "-INF") {
+                return true;
+                }
             return detail::is_float_token(s);
         } else if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T>) {
             if (!detail::is_int_token(s)) return false;
