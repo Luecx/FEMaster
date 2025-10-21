@@ -47,6 +47,13 @@ fempy/mtxviewer/tabs_formats.py
 fempy/mtxviewer/tabs_io.py
 fempy/mtxviewer/tabs_overview.py
 fempy/mtxviewer/tabs_spectral.py
+fempy/projopt/__init__.py
+fempy/projopt/constraint.py
+fempy/projopt/objective.py
+fempy/projopt/opt.py
+fempy/projopt/optimizer.py
+fempy/projopt/responses.py
+fempy/projopt/types.py
 fempy/sensopt/__init__.py
 fempy/sensopt/console.py
 fempy/sensopt/fim_selector.py
@@ -58,6 +65,7 @@ fempy/sensopt/select.py
 fempy/solution/__init__.py
 fempy/solution/solution.py
 fempy/solution/tovtk.py
+fempy/solution/tovtu.py
 fempy/topopt/__init__.py
 fempy/topopt/adam.py
 fempy/topopt/constraint.py

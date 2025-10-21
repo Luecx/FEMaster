@@ -56,6 +56,12 @@
 #include "commands/register_loadcase_topoexponent.inl"
 #include "commands/register_loadcase_constraintsummary.inl"
 
+// NEW transient-related commands
+#include "commands/register_loadcase_time.inl"
+#include "commands/register_loadcase_write_every.inl"
+#include "commands/register_loadcase_damping.inl"
+#include "commands/register_loadcase_newmark.inl"
+
 namespace fem::input_decks {
 
 Parser::Parser()
@@ -286,8 +292,8 @@ void Parser::register_commands() {
     commands::register_node(reg, mdl);
     commands::register_nset(reg, mdl);
     commands::register_elset(reg, mdl);
-	commands::register_surface(reg, mdl);
-	commands::register_sfset(reg, mdl);
+    commands::register_surface(reg, mdl);
+    commands::register_sfset(reg, mdl);
     commands::register_material(reg, mdl);
     commands::register_elastic(reg, mdl);
     commands::register_density(reg, mdl);
@@ -329,6 +335,12 @@ void Parser::register_commands() {
     commands::register_loadcase_topoorient(reg, *this);
     commands::register_loadcase_topoexponent(reg, *this);
     commands::register_loadcase_constraintsummary(reg, *this);
+
+    // NEW: Transient-specific loadcase commands
+    commands::register_loadcase_time(reg, *this);
+    commands::register_loadcase_write_every(reg, *this);
+    commands::register_loadcase_damping(reg, *this);
+    commands::register_loadcase_newmark(reg, *this);
 
     m_commands_registered = true;
 }

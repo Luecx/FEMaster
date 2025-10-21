@@ -10,6 +10,7 @@
 #include "../../loadcase/linear_eigenfreq.h"
 #include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_static_topo.h"
+#include "../../loadcase/linear_transient.h"
 
 namespace fem::input_decks::commands {
 
@@ -21,7 +22,7 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
-                    "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ"})
+                    "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT"})
                 .key("NAME").optional()
         );
 
@@ -44,6 +45,8 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
                 lc = std::make_unique<loadcase::LinearStaticTopo>(id, &wrt, &mdl);
             } else if (type == "EIGENFREQ") {
                 lc = std::make_unique<loadcase::LinearEigenfrequency>(id, &wrt, &mdl, 10);
+            } else if (type == "LINEARTRANSIENT") {
+                lc = std::make_unique<loadcase::Transient>(id, &wrt, &mdl);
             } else {
                 throw std::runtime_error("Unsupported loadcase type: " + type);
             }

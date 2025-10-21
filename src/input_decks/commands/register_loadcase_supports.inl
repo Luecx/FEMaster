@@ -54,6 +54,10 @@ inline void register_loadcase_supports(fem::dsl::Registry& registry, Parser& par
                         append_tokens(names, lc->supps);
                         return;
                     }
+                    if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
+                        append_tokens(names, lc->supps);
+                        return;
+                    }
 
                     throw std::runtime_error("SUPPORTS not supported for loadcase type " + parser.active_loadcase_type());
                 })

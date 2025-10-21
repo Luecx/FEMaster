@@ -8,6 +8,7 @@
 #include "../../loadcase/linear_buckling.h"
 #include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_static_topo.h"
+#include "../../loadcase/linear_transient.h"
 
 namespace fem::input_decks::commands {
 
@@ -24,9 +25,7 @@ inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parse
 
         command.on_enter([&parser](const fem::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
-            if (!base) {
-                throw std::runtime_error("SOLVER must appear inside *LOADCASE");
-            }
+            logging::error(base != nullptr, "SOLVER must appear inside *LOADCASE");
 
             const auto device = keys.raw("DEVICE");
             const auto method = keys.raw("METHOD");
@@ -41,6 +40,7 @@ inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parse
             if (configure(dynamic_cast<loadcase::LinearBuckling*>(base))) return;
             if (configure(dynamic_cast<loadcase::LinearStaticTopo*>(base))) return;
             if (configure(dynamic_cast<loadcase::LinearStatic*>(base))) return;
+            if (configure(dynamic_cast<loadcase::Transient*>(base))) return;
 
             throw std::runtime_error("SOLVER not supported for loadcase type " + parser.active_loadcase_type());
         });
