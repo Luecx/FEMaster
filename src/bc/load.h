@@ -16,6 +16,7 @@
 #pragma once
 
 #include "../core/types_cls.h"
+#include "../core/types_eig.h"
 #include "../data/node_data_dict.h"
 #include "../data/region.h"
 #include "bc.h"
@@ -23,6 +24,7 @@
 namespace fem {
 namespace model {
 class ModelData;
+class NodeField;
 }
 }
 
@@ -65,7 +67,7 @@ struct CLoad : public Load {
     using Ptr = std::shared_ptr<CLoad>; ///< Shared pointer alias for concentrated loads.
 
     Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN}; ///< Generalized load vector (Fx,Fy,Fz,Mx,My,Mz).
-    model::NodeRegion::Ptr region = nullptr;   ///< Target node region.
+    SPtr<model::NodeRegion> region = nullptr;   ///< Target node region.
 
     /**
      * @brief Default constructor.
@@ -97,7 +99,7 @@ struct DLoad : public Load {
     using Ptr = std::shared_ptr<DLoad>; ///< Shared pointer alias for distributed loads.
 
     Vec3 values{NAN, NAN, NAN};                ///< Surface traction components.
-    model::SurfaceRegion::Ptr region = nullptr; ///< Target surface region.
+    SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
 
     /**
      * @brief Default constructor.
@@ -129,7 +131,7 @@ struct PLoad : public Load {
     using Ptr = std::shared_ptr<PLoad>; ///< Shared pointer alias for pressure loads.
 
     Precision pressure{NAN};                  ///< Magnitude of the applied pressure.
-    model::SurfaceRegion::Ptr region = nullptr; ///< Target surface region.
+    SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
 
     /**
      * @brief Default constructor.
@@ -161,7 +163,7 @@ struct VLoad : public Load {
     using Ptr = std::shared_ptr<VLoad>; ///< Shared pointer alias for volumetric loads.
 
     Vec3 values{NAN, NAN, NAN};                 ///< Body-force components.
-    model::ElementRegion::Ptr region = nullptr; ///< Target element region.
+    SPtr<model::ElementRegion> region = nullptr; ///< Target element region.
 
     /**
      * @brief Default constructor.
@@ -192,7 +194,7 @@ struct VLoad : public Load {
 struct TLoad : public Load {
     using Ptr = std::shared_ptr<TLoad>; ///< Shared pointer alias for thermal loads.
 
-    model::NodeField::Ptr temp_field = nullptr; ///< Temperature field reference.
+    SPtr<model::NodeField> temp_field = nullptr; ///< Temperature field reference.
     Precision ref_temp{NAN};                    ///< Reference temperature for zero load.
 
     /**

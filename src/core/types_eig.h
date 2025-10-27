@@ -64,14 +64,14 @@ using Mat23 = StaticMatrix<2, 3>;
 using Mat43 = StaticMatrix<4, 3>;
 using Mat34 = StaticMatrix<3, 4>;
 
-using IndexVector = Eigen::Matrix<ID, Eigen::Dynamic, 1>;
-using IndexMatrix = Eigen::Matrix<ID, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using IndexVector   = Eigen::Matrix<ID, Eigen::Dynamic, 1>;
+using IndexMatrix   = Eigen::Matrix<ID, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 using BooleanVector = Eigen::Matrix<bool, Eigen::Dynamic, 1>;
 using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>;
 
-using NodeData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using ElementData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using IPData = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using NodeData      = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using ElementData   = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using IPData        = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 template<std::size_t Cols>
 using NodeDataM = Eigen::Matrix<Precision, Eigen::Dynamic, Cols, Eigen::RowMajor>;

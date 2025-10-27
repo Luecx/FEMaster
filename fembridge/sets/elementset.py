@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Iterable, List, Union, Iterator
-from elements.element import Element
+from ..elements.element import Element
 
 ElemListLike = Union[Element, Iterable[Element], "ElementSet"]
 

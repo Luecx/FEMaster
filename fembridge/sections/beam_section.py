@@ -2,9 +2,9 @@
 from __future__ import annotations
 from typing import Tuple
 from .section_base import Section
-from materials.material import Material
-from profiles.profile_base import Profile
-from sets.elementset import ElementSet
+from ..materials.material import Material
+from ..profiles.profile_base import Profile
+from ..sets.elementset import ElementSet
 
 class BeamSection(Section):
     def __init__(

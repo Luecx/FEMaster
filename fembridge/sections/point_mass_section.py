@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Tuple
 from .section_base import Section
-from sets.nodeset import NodeSet
+from ..sets.nodeset import NodeSet
 
 
 class PointMassSection(Section):

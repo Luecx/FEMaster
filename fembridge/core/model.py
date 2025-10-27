@@ -1,31 +1,33 @@
 from __future__ import annotations
 
-from nodes.nodes import Nodes
-from elements.elements import Elements
-from constraints.constraints import Constraints
+from ..nodes.nodes import Nodes
+from ..elements.elements import Elements
+from ..constraints.constraints import Constraints
+from ..steps.steps import Steps
 
 # runtime-light type hints (no hard import dependency at runtime)
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 if TYPE_CHECKING:
-    from nodes.node import Node
-    from elements.element_base import Element
-    from sets.nodeset import NodeSet
-    from sets.elementset import ElementSet
-    from sets.surfaceset import SurfaceSet         # <-- NEW
-    from materials.material_base import Material
-    from sections.section_base import Section
-    from supports.support_collector import SupportCollector   # <-- NEW
-    from loads.load_collector import LoadCollector            # <-- NEW
-    from coordinates.coordinate_system_base import CoordinateSystem
-    from constraints.constraint_base import ConstraintBase
+    from ..nodes.node import Node
+    from ..elements.element_base import Element
+    from ..sets.nodeset import NodeSet
+    from ..sets.elementset import ElementSet
+    from ..sets.surfaceset import SurfaceSet         # <-- NEW
+    from ..materials.material_base import Material
+    from ..sections.section_base import Section
+    from ..supports.support_collector import SupportCollector   # <-- NEW
+    from ..loads.load_collector import LoadCollector            # <-- NEW
+    from ..coordinates.coordinate_system_base import CoordinateSystem
+    from ..constraints.constraint_base import ConstraintBase
+    from ..steps.step_base import StepBase
 
-from sets.nodesets import NodeSets
-from sets.elementsets import ElementSets
-from sets.surfacesets import SurfaceSets           # <-- NEW
-from materials.materials import Materials
-from sections.sections import Sections
-from profiles.profiles import Profiles
-from coordinates.coordinate_systems import CoordinateSystems  # <-- NEW
+from ..sets.nodesets import NodeSets
+from ..sets.elementsets import ElementSets
+from ..sets.surfacesets import SurfaceSets           # <-- NEW
+from ..materials.materials import Materials
+from ..sections.sections import Sections
+from ..profiles.profiles import Profiles
+from ..coordinates.coordinate_systems import CoordinateSystems  # <-- NEW
 
 
 class Model:
@@ -47,6 +49,7 @@ class Model:
         self.sections = Sections()
         self.elements.model = self
         self.constraints = Constraints()
+        self.steps = Steps()
 
         # --- collectors (simple lists) ---
         self.support_collectors: list["SupportCollector"] = []  # <-- NEW
@@ -92,6 +95,13 @@ class Model:
         self.load_collectors.append(c)
         return c
 
+    # --- step management -------------------------------------------------
+    def add_step(self, step: "StepBase") -> "StepBase":
+        return self.steps.add(step)
+
+    def extend_steps(self, steps: Iterable["StepBase"]) -> None:
+        self.steps.extend(steps)
+
     # --- serialization ---
     def to_femaster(self) -> str:
         parts = [
@@ -116,6 +126,10 @@ class Model:
             parts.append(sc.to_femaster())
         for lc in self.load_collectors:
             parts.append(lc.to_femaster())
+
+        steps_block = self.steps.to_femaster()
+        if steps_block:
+            parts.append(steps_block)
 
         return "\n".join(parts)
 

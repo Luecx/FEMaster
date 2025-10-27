@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import Union
 
-from elements.element import Element
-from sets.elementset import ElementSet
+from ..elements.element import Element
+from ..sets.elementset import ElementSet
 
 SideLike = Union[int, str]
 

@@ -43,11 +43,11 @@ class Material:
 
     def to_femaster(self) -> str:
         lines: List[str] = [f"*MATERIAL, NAME={self.name}"]
-        if self.elasticity: lines.extend(self.elasticity.to_femaster_lines())
-        if self.density: lines.extend(self.density.to_femaster_lines())
-        if self.expansion: lines.extend(self.expansion.to_femaster_lines())
-        if self.conductivity: lines.extend(self.conductivity.to_femaster_lines())
-        if self.specific_heat: lines.extend(self.specific_heat.to_femaster_lines())
+        if self.elasticity: lines.extend(self.elasticity.to_femaster())
+        if self.density: lines.extend(self.density.to_femaster())
+        if self.expansion: lines.extend(self.expansion.to_femaster())
+        if self.conductivity: lines.extend(self.conductivity.to_femaster())
+        if self.specific_heat: lines.extend(self.specific_heat.to_femaster())
         return "\n".join(lines)
 
     def to_asami(self) -> str:

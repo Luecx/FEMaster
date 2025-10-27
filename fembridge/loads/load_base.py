@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Callable, Optional, Tuple, Union
 from ..coordinates.coordinate_system_base import CoordinateSystem
 
+
+TIME_DEPENDENT_ERROR = "Time-dependent loads are not supported by FEMaster yet."
+
+AmplitudeFunction = Callable[[float], Union[float, Tuple[float, ...]]]
 
 
 class Load:
@@ -10,26 +14,19 @@ class Load:
 
     load_type: str = "LOAD"
 
-    def __init__(self, coordinate_system: Optional[CoordinateSystem] = None) -> None:
-        self.coordinate_system: Optional[str] = None
-        if coordinate_system is not None:
-            self.coordinate_system = self._resolve_coordinate_system(coordinate_system)
-
-    @staticmethod
-    def _resolve_coordinate_system(value: CoordinateSystem) -> str:
-        if hasattr(value, "name"):
-            name = getattr(value, "name")
-        else:
-            name = value  # type: ignore[assignment]
-        name_str = str(name).strip()
-        if not name_str:
-            raise ValueError("Coordinate system reference must have a non-empty name.")
-        return name_str
+    def __init__(
+        self,
+        coordinate_system: Optional[CoordinateSystem] = None,
+        amplitude: Optional[AmplitudeFunction] = None,
+    ) -> None:
+        self.coordinate_system: Optional[CoordinateSystem] = coordinate_system
+        self.amplitude: Optional[AmplitudeFunction] = amplitude
+        self.is_time_dependent: bool = amplitude is not None
 
     def _header(self, collector_name: str) -> str:
         header = f"*{self.load_type}, LOAD_COLLECTOR={collector_name}"
         if self.coordinate_system:
-            header += f", CSYS={self.coordinate_system}"
+            header += f", CSYS={self.coordinate_system.name}"
         return header
 
     def to_femaster(self, collector_name: str) -> str:  # pragma: no cover - interface only

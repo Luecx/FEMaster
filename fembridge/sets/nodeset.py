@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Iterable, List, Union, Iterator
-from nodes.node import Node
+from ..nodes.node import Node
 
 NodeListLike = Union[Node, Iterable[Node], "NodeSet"]
 

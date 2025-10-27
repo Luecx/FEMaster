@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional, Union
 
-from sets.nodeset import NodeSet
+from ..sets.nodeset import NodeSet
 
 from .constraint_base import ConstraintBase, CoordinateSystemLike
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:  # pragma: no cover - typing helper only
-    from coordinates.coordinate_system_base import CoordinateSystem
+    from ..coordinates.coordinate_system_base import CoordinateSystem
 
 CoordinateSystemLike = Union["CoordinateSystem", str]
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Union
+from typing import Optional, Union
 
-from sets.surfaceset import SurfaceSet
+from ..sets.surfaceset import SurfaceSet
 
-from .load_base import Load
+from .load_base import Load, AmplitudeFunction, TIME_DEPENDENT_ERROR
 
 
 class PLoad(Load):
@@ -16,8 +16,9 @@ class PLoad(Load):
         self,
         surface_set: Union[SurfaceSet, str],
         p: float,
+        amplitude: Optional[AmplitudeFunction] = None,
     ) -> None:
-        super().__init__()
+        super().__init__(amplitude=amplitude)
         self.name = self._resolve_name(surface_set)
         self.p = float(p)
 
@@ -32,6 +33,8 @@ class PLoad(Load):
         return name
 
     def to_femaster(self, collector_name: str) -> str:
+        if self.is_time_dependent:
+            raise NotImplementedError(TIME_DEPENDENT_ERROR)
         payload = f"{self.name}, {self.p}"
         return "\n".join((self._header(collector_name), payload))
 

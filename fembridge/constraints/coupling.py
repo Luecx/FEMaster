@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Tuple
 
-from sets.nodeset import NodeSet
+from ..sets.nodeset import NodeSet
 
 from .constraint_base import ConstraintBase
 

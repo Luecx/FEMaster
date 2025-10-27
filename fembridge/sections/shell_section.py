@@ -1,7 +1,7 @@
 from __future__ import annotations
 from .section_base import Section
-from materials.material import Material
-from sets.elementset import ElementSet
+from ..materials.material import Material
+from ..sets.elementset import ElementSet
 
 class ShellSection(Section):
     def __init__(self, thickness: float, material: Material, elset: ElementSet):

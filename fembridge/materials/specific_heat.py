@@ -3,5 +3,5 @@ class SpecificHeat:
     def __init__(self, cp: float):
         self.cp = float(cp)
 
-    def to_femaster_lines(self):
+    def to_femaster(self):
         return ["*SPECIFIC HEAT", f"{self.cp}"]

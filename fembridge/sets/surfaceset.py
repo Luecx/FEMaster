@@ -1,15 +1,15 @@
 from __future__ import annotations
 from typing import List, Optional, Iterable, Union
 
-from surfaces.surface import Surface
+from ..surfaces.surface import Surface
 
 # Lazy type hints to avoid import cycles
 try:
-    from elements.element import Element
+    from ..elements.element import Element
 except Exception:
     Element = object  # type: ignore
 try:
-    from sets.elementset import ElementSet
+    from .elementset import ElementSet
 except Exception:
     ElementSet = object  # type: ignore
 

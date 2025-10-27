@@ -15,7 +15,7 @@ class ElasticityOrthotropic:
         self.Gxz = float(Gxz)
         self.Gyz = float(Gyz)
 
-    def to_femaster_lines(self):
+    def to_femaster(self):
         return [
             "*ELASTIC, TYPE=ORTHOTROPIC",
             f"{self.Ex}, {self.Ey}, {self.Ez}, {self.nuxy}, {self.nuxz}, {self.nyz}, {self.Gxy}, {self.Gxz}, {self.Gyz}",

@@ -1,5 +1,5 @@
 from typing import Sequence, Union
-from nodes.node import Node
+from ..nodes.node import Node
 
 NodeLike = Union[int, Node]
 

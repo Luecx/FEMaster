@@ -4,5 +4,5 @@ class ElasticityIsotropic:
         self.E = float(E)
         self.nu = float(nu)
 
-    def to_femaster_lines(self):
+    def to_femaster(self):
         return ["*ELASTIC, TYPE=ISOTROPIC", f"{self.E}, {self.nu}"]

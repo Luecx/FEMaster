@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Tuple, Union
 
-from nodes.node import Node
-from sets.nodeset import NodeSet
+from ..nodes.node import Node
+from ..sets.nodeset import NodeSet
 
 from .support_base import SupportBase, CoordinateSystemLike
 

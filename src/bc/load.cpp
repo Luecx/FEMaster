@@ -13,11 +13,10 @@
 
 #include "load.h"
 
+#include <cmath>
+#include "../model/model_data.h"
 #include "../model/element/element.h"
 #include "../model/element/element_structural.h"
-#include "../model/model_data.h"
-
-#include <cmath>
 
 namespace fem {
 namespace bc {
