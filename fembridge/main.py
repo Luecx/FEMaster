@@ -109,9 +109,14 @@ if __name__ == "__main__":
     engine_path = Path(__file__).resolve().parent.parent / "bin" / "FEMaster"
     runner = Runner().set_model(model)
     runner.set_engine(Runner.Engine.FEMASTER, path=engine_path)
-    runner.set_option(Runner.Option.NO_TEMP_FILES)
+    # runner.set_option(Runner.Option.NO_TEMP_FILES)
     solution = runner.run()
     print()
     print(solution)
 
-    print(solution.steps[0].fields["DISPLACEMENT"])
+    import numpy as np
+    print(np.sqrt(np.asarray(solution.steps[1].fields["EIGENVALUES"])) / (2 * np.pi))
+
+    for frame in solution.steps[1].frames:
+        print(f"Mode {frame.index + 1} frequencies:")
+        print(frame.fields["MODE_SHAPE"])
