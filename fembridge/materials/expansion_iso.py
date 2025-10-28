@@ -4,4 +4,4 @@ class ThermalExpansionIsotropic:
         self.alpha = float(alpha)
 
     def to_femaster(self):
-        return ["*EXPANSION", f"{self.alpha}"]
+        return ["*THERMAL EXPANSION", f"{self.alpha}"]

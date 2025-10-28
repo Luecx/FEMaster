@@ -2,6 +2,7 @@ from .constraints import *
 from .coordinates import *
 from .core import *
 from .elements import *
+from .geometry import *
 from .loads import *
 from .materials import *
 from .profiles import *

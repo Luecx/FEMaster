@@ -4,6 +4,7 @@ from ..nodes.node import Node
 
 NodeListLike = Union[Node, Iterable[Node], "NodeSet"]
 
+
 class NodeSet:
     """
     Container nur für Node-Objekte (niemals ints).
@@ -46,12 +47,10 @@ class NodeSet:
             return [value]
         if isinstance(value, NodeSet):
             return list(value.nodes)
-
         try:
             lst = list(value)  # type: ignore[arg-type]
         except TypeError:
             raise TypeError("Erwarte Node, Iterable[Node] oder NodeSet.")
-
         for n in lst:
             if not isinstance(n, Node):
                 raise TypeError("Iterable muss ausschließlich Node-Instanzen enthalten.")
@@ -69,19 +68,45 @@ class NodeSet:
     def __len__(self) -> int:
         return len(self.nodes)
 
+    def __bool__(self) -> bool:
+        return bool(self.nodes)
+
+    # ---------------- Mengen-Operatoren ----------------
+
+    def __or__(self, other: NodeSet) -> NodeSet:
+        """Vereinigung (stabile Reihenfolge, Deduplizierung nach node.node_id)."""
+        if not isinstance(other, NodeSet):
+            return NotImplemented
+        out: List[Node] = []
+        seen: set[int] = set()
+        for n in self.nodes + other.nodes:
+            nid = n.node_id
+            if nid not in seen:
+                out.append(n)
+                seen.add(nid)
+        return NodeSet(None, out)
+
+    def __and__(self, other: NodeSet) -> NodeSet:
+        """Schnittmenge (Reihenfolge nach self, Deduplizierung nach node.node_id)."""
+        if not isinstance(other, NodeSet):
+            return NotImplemented
+        other_ids = {n.node_id for n in other.nodes}
+        out: List[Node] = []
+        seen: set[int] = set()
+        for n in self.nodes:
+            nid = n.node_id
+            if nid in other_ids and nid not in seen:
+                out.append(n)
+                seen.add(nid)
+        return NodeSet(None, out)
+
     # ---------------- Exports ----------------
 
     def to_femaster(self) -> str:
         if not self.name:
             raise ValueError("Unbenanntes NodeSet kann nicht exportiert werden. Verwende NodeSet.create(name, ...).")
 
-        ids: List[int] = []
-        for n in self.nodes:
-            nid = getattr(n, "node_id", None)
-            if nid is None:
-                raise ValueError(f"NodeSet '{self.name}' enthält Node ohne ID.")
-            ids.append(int(nid))
-
+        ids = [n.node_id for n in self.nodes]
         lines = [f"*NSET, NAME={self.name}"]
         line: List[str] = []
         for i, nid in enumerate(ids, 1):

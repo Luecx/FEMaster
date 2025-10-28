@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import List, Optional, Dict
+from functools import lru_cache
+from typing import Dict, List, Optional
 from .element import Element
 
 class Elements:
@@ -63,3 +64,74 @@ class Elements:
 
     def to_asami(self) -> str:
         raise NotImplementedError("Elements.to_asami not implemented yet.")
+
+    # --- helpers for geometry utilities -----------------------------------
+    @staticmethod
+    @lru_cache(maxsize=None)
+    def _element_type_map() -> Dict[str, type[Element]]:
+        from . import (
+            C2D3,
+            C2D4,
+            C2D6,
+            C2D8,
+            S3,
+            S4,
+            S6,
+            S8,
+            C3D4,
+            C3D5,
+            C3D6,
+            C3D8,
+            C3D10,
+            C3D15,
+            C3D20,
+        )
+
+        return {
+            "C2D3": C2D3,
+            "C2D4": C2D4,
+            "C2D6": C2D6,
+            "C2D8": C2D8,
+            "S3": S3,
+            "S4": S4,
+            "S6": S6,
+            "S8": S8,
+            "C3D4": C3D4,
+            "C3D5": C3D5,
+            "C3D6": C3D6,
+            "C3D8": C3D8,
+            "C3D10": C3D10,
+            "C3D15": C3D15,
+            "C3D20": C3D20,
+        }
+
+    @classmethod
+    def element_class_for(cls, elem_type: str) -> type[Element]:
+        try:
+            return cls._element_type_map()[elem_type.upper()]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported element type '{elem_type}'.") from exc
+
+    def determine_element_order(self) -> int:
+        first_order = {
+            "C2D3",
+            "C2D4",
+            "C3D4",
+            "C3D6",
+            "C3D8",
+            "S3",
+            "S4",
+            "S6",
+            "S8",
+        }
+        second_order = {"C2D6", "C2D8", "C3D10", "C3D15", "C3D20"}
+
+        for element in self._items:
+            if element is None:
+                continue
+            etype = element.elem_type
+            if etype in first_order:
+                return 1
+            if etype in second_order:
+                return 2
+        return 0
