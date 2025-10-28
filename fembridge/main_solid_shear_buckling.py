@@ -61,33 +61,47 @@ def make_abaqus_like_bspline(
 
 
 # -----------------------------------------------------------------------------
-# Model builder
+# Model builder (structured grid if no_holes, element size configurable)
 # -----------------------------------------------------------------------------
-def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, SupportCollector, LoadCollector, dict]:
+def build_model(
+        width: int,
+        height: int,
+        no_holes: bool,
+        elem_size: float = 2.0,   # <— new: target in-plane element size
+) -> tuple[Model, SupportCollector, LoadCollector, dict]:
     """
     Erstellt das 3D-Modell (extrudierte Platte) mit/ohne Loch.
-    WICHTIG: Nur die BREITE variiert; die HÖHE ist fix (über --height).
+    - Nur die BREITE variiert; die HÖHE kommt von --height.
+    - Falls kein Loch: strukturiertes Rechteckgitter (mesh_type=0).
+    - Falls Loch: unstrukturiert quad-ish (mesh_type=2).
+    - Knotenlasten sind so skaliert, dass die Summe je Kante = Kantenlänge ist.
     """
-    # Outer rectangle: centered at origin
-    # Ziel-Kantenlänge ≈ 2.0 ⇒ Unterteilungen nx ~ width/2, ny ~ height/2
-    nx = max(1, int(round(width / 2)))
-    ny = max(1, int(round(height / 2)))
-    half_w = width / 2.0
-    half_h = height / 2.0
+    # ---- Grid resolution from element size
+    # ensure at least 1 subdivision per edge
+    nx = max(1, int(round(float(width)  / float(elem_size))))
+    ny = max(1, int(round(float(height) / float(elem_size))))
+    half_w = float(width)  / 2.0
+    half_h = float(height) / 2.0
 
+    # ---- Boundary segments (named for node sets later)
     seg_bottom = StraightSegment((-half_w, -half_h), (+half_w, -half_h), n_subdivisions=nx, name="BOTTOM")
     seg_right  = StraightSegment((+half_w, -half_h), (+half_w, +half_h), n_subdivisions=ny, name="RIGHT")
     seg_top    = StraightSegment((+half_w, +half_h), (-half_w, +half_h), n_subdivisions=nx, name="TOP")
     seg_left   = StraightSegment((-half_w, +half_h), (-half_w, -half_h), n_subdivisions=ny, name="LEFT")
     outer = SegmentGroup([seg_bottom, seg_right, seg_top, seg_left], name="OUTER")
 
-    # Hole (optional)
+    # ---- Optional hole
     hole_meta = {"present": False}
-    boundaries = [outer]
-    if not no_holes:
+    if no_holes:
+        boundaries = [outer]
+        mesh_name = f"Plate{width}x{height}_STRUCT_2D"
+        mesh_type = 0  # structured rectangle
+    else:
         bspline, ctrl_pts, radius = make_abaqus_like_bspline(name="HOLE")
         hole = SegmentGroup([bspline], name="HOLE")
         boundaries = [outer, hole]
+        mesh_name = f"Plate{width}x{height}_withHole_2D"
+        mesh_type = 2  # quad-ish with inner loop
         hole_meta = {
             "present": True,
             "radius": float(radius),
@@ -95,12 +109,12 @@ def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, Support
             "note": "Abaqus-like: uniform angles with ±2 x/y jitter",
         }
 
-    # Mesh 2D (quads), then extrude to thickness 1.0 (5 layers × 0.2)
-    plate2d = Model.mesh_2d(boundaries, mesh_type=2, name=f"Plate{width}x{height}{'_noHole' if no_holes else '_withHole'}_2D")
+    # ---- Mesh 2D, then extrude to thickness 1.0 (5 layers × 0.2)
+    plate2d = Model.mesh_2d(boundaries, mesh_type=mesh_type, name=mesh_name)
     solid = plate2d.extruded(n=5, spacing=0.2)
     solid.name = f"SolidPlate_{width}x{height}_t1p0_n5{'_noHole' if no_holes else '_bspline'}"
 
-    # Elements & section
+    # ---- Elements & section
     all_elems = [e for e in solid.elements._items if e is not None]
     elem_set = ElementSet("EALL", all_elems)
     solid.add_elementset(elem_set)
@@ -108,11 +122,11 @@ def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, Support
     steel = solid.add_material(
         Material("STEEL")
         .set_elasticity(ElasticityIsotropic(210e3, 0.30))   # MPa (210 GPa)
-        .set_density(Density(7850.0e-12))                  # tonne/mm^3 (bei mm)
+        .set_density(Density(7850.0e-12))                  # tonne/mm^3 (mm units)
     )
     solid.add_section(SolidSection(material=steel, elset=elem_set))
 
-    # Node sets (edges auto-named; persist corner sets)
+    # ---- Node sets (edges auto-named; persist corner sets)
     ns_bottom = solid.node_sets["BOTTOM"]
     ns_right  = solid.node_sets["RIGHT"]
     ns_top    = solid.node_sets["TOP"]
@@ -125,7 +139,7 @@ def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, Support
     solid.add_nodeset(ns_bl)
     solid.add_nodeset(ns_br)
 
-    # Supports
+    # ---- Supports
     supports = SupportCollector("SUPPORTS")
     supports.add(Support(ns_bl, (0.0, 0.0, None, None, None, None)))   # BL: u1=0, u2=0
     supports.add(Support(ns_br, (None, 0.0, None, None, None, None)))  # BR:      u2=0
@@ -133,7 +147,7 @@ def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, Support
         supports.add(Support(edge, (None, None, 0.0, None, None, None)))  # w=0
     solid.add_supportcollector(supports)
 
-    # Edge loads: Sum per edge equals its length (width for bottom/top, height for right/left).
+    # ---- Edge loads: Σ(node loads) = edge length
     def count_nodes(ns) -> int:
         c = 0
         for _ in ns:
@@ -145,11 +159,10 @@ def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, Support
     N_top = count_nodes(ns_top)
     N_lef = count_nodes(ns_left)
 
-    # Per-node magnitudes so that Σ(node loads) = edge_length
-    T_bottom = (width  / N_bot)
-    T_right  = (height / N_rig)
-    T_top    = (width  / N_top)
-    T_left   = (height / N_lef)
+    T_bottom = (float(width)  / N_bot)
+    T_right  = (float(height) / N_rig)
+    T_top    = (float(width)  / N_top)
+    T_left   = (float(height) / N_lef)
 
     loads = LoadCollector("EDGE_TANGENTIAL")
     loads.add(CLoad(ns_bottom, (+T_bottom, 0.0     , 0.0)))  # +x
@@ -162,9 +175,13 @@ def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, Support
         "width": int(width),
         "height": int(height),
         "plate_centered": True,
-        "mesh_target_edge_size": 2.0,
+        "mesh_target_edge_size": float(elem_size),
+        "mesh_type": int(mesh_type),
+        "nx": int(nx),
+        "ny": int(ny),
     }
     return solid, supports, loads, hole_meta, meta
+
 
 
 # -----------------------------------------------------------------------------
