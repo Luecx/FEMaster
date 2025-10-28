@@ -11,6 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import set_start_method
 import sys
 import yaml
+from typing import Iterable, List, Tuple
 
 if __package__ in (None, ""):
     import os
@@ -62,22 +63,41 @@ def make_abaqus_like_bspline(
 # -----------------------------------------------------------------------------
 # Model builder
 # -----------------------------------------------------------------------------
-def build_model_with_bspline_hole() -> tuple[Model, SupportCollector, LoadCollector, dict]:
-    # Outer rectangle: (-20,-20) .. (20,20), ~2.0 target edge size (20 divs)
-    seg_bottom = StraightSegment((-20.0, -20.0), (+20.0, -20.0), n_subdivisions=20, name="BOTTOM")
-    seg_right  = StraightSegment((+20.0, -20.0), (+20.0, +20.0), n_subdivisions=20, name="RIGHT")
-    seg_top    = StraightSegment((+20.0, +20.0), (-20.0, +20.0), n_subdivisions=20, name="TOP")
-    seg_left   = StraightSegment((-20.0, +20.0), (-20.0, -20.0), n_subdivisions=20, name="LEFT")
+def build_model(width: int, no_holes: bool) -> tuple[Model, SupportCollector, LoadCollector, dict]:
+    """Erstellt das 3D-Modell (extrudierte Platte) mit/ohne Loch bei gegebener Breite (Höhe=Breite)."""
+    height = width  # quadratisch
+
+    # Outer rectangle: centered at origin
+    # Ziel-Kantenlänge ≈ 2.0 ⇒ ~width/2 Unterteilungen horizontal/vertikal
+    nx = max(1, int(round(width / 2)))
+    ny = max(1, int(round(height / 2)))
+    half_w = width / 2
+    half_h = height / 2
+
+    seg_bottom = StraightSegment((-half_w, -half_h), (+half_w, -half_h), n_subdivisions=nx, name="BOTTOM")
+    seg_right  = StraightSegment((+half_w, -half_h), (+half_w, +half_h), n_subdivisions=ny, name="RIGHT")
+    seg_top    = StraightSegment((+half_w, +half_h), (-half_w, +half_h), n_subdivisions=nx, name="TOP")
+    seg_left   = StraightSegment((-half_w, +half_h), (-half_w, -half_h), n_subdivisions=ny, name="LEFT")
     outer = SegmentGroup([seg_bottom, seg_right, seg_top, seg_left], name="OUTER")
 
-    # Hole: Abaqus-like B-spline (centered roughly at origin by construction)
-    bspline, ctrl_pts, radius = make_abaqus_like_bspline(name="HOLE")
-    hole = SegmentGroup([bspline], name="HOLE")
+    # Hole (optional)
+    hole_meta = {"present": False}
+    boundaries = [outer]
+    if not no_holes:
+        bspline, ctrl_pts, radius = make_abaqus_like_bspline(name="HOLE")
+        hole = SegmentGroup([bspline], name="HOLE")
+        boundaries = [outer, hole]
+        hole_meta = {
+            "present": True,
+            "radius": float(radius),
+            "control_points_xy": [[float(x), float(y)] for (x, y) in ctrl_pts],
+            "note": "Abaqus-like: uniform angles with ±2 x/y jitter",
+        }
 
     # Mesh 2D (quads), then extrude to thickness 1.0 (5 layers × 0.2)
-    plate2d = Model.mesh_2d([outer, hole], mesh_type=2, name="Plate40x40_withBSplineHole_2D")
+    plate2d = Model.mesh_2d(boundaries, mesh_type=2, name=f"Plate{width}x{height}{'_noHole' if no_holes else '_withHole'}_2D")
     solid = plate2d.extruded(n=5, spacing=0.2)
-    solid.name = "SolidPlate_40x40_t1p0_n5_bspline"
+    solid.name = f"SolidPlate_{width}x{height}_t1p0_n5{'_noHole' if no_holes else '_bspline'}"
 
     # Elements & section
     all_elems = [e for e in solid.elements._items if e is not None]
@@ -121,23 +141,28 @@ def build_model_with_bspline_hole() -> tuple[Model, SupportCollector, LoadCollec
     loads.add(CLoad(ns_left,   (0.0, +T, 0.0)))   # +y
     solid.add_loadcollector(loads)
 
-    hole_meta = {
-        "radius": float(radius),
-        "control_points_xy": [[float(x), float(y)] for (x, y) in ctrl_pts],
-        "note": "Abaqus-like: uniform angles with ±2 x/y jitter",
+    meta = {
+        "width": int(width),
+        "height": int(height),
+        "plate_centered": True,
+        "mesh_target_edge_size": 2.0,
     }
-    return solid, supports, loads, hole_meta
+    return solid, supports, loads, hole_meta, meta
 
 
 # -----------------------------------------------------------------------------
-# Solution helpers (use your canonical location)
+# Solution helpers
 # -----------------------------------------------------------------------------
 def first_buckling_value(solution) -> float:
     return float(solution.steps[0].fields["BUCKLING_FACTORS"][0].item())
 
 
 def collect_hole_nodes_xy_at_midplane(model: Model) -> list[tuple[float, float]]:
-    ns_hole = model.node_sets["HOLE"]
+    # Robust: falls kein HOLE-Nodeset existiert, leere Liste zurückgeben
+    try:
+        ns_hole = model.node_sets["HOLE"]
+    except KeyError:
+        return []
     out_xy: list[tuple[float, float]] = []
     seen: set[tuple[float, float]] = set()
     for n in ns_hole:
@@ -152,10 +177,10 @@ def collect_hole_nodes_xy_at_midplane(model: Model) -> list[tuple[float, float]]
 # -----------------------------------------------------------------------------
 # Single run (returns output path)
 # -----------------------------------------------------------------------------
-def run_single(out_dir: Path, engine_path: Path) -> Path:
+def run_single(out_dir: Path, engine_path: Path, width: int, no_holes: bool) -> Path:
     random.seed()
 
-    model, supports, loads, hole_meta = build_model_with_bspline_hole()
+    model, supports, loads, hole_meta, plate_meta = build_model(width=width, no_holes=no_holes)
     model.add_step(
         LinearBucklingStep(
             num_eigenvalues=10,
@@ -173,13 +198,18 @@ def run_single(out_dir: Path, engine_path: Path) -> Path:
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"buckling_bspline_run_{timestamp}.yaml"
+    # Dateiname inkl. Breite und Hole-Flag
+    hole_tag = "nohole" if no_holes else "bspline"
+    out_path = out_dir / f"buckling_{hole_tag}_w{width}_{timestamp}.yaml"
+
     payload = {
         "meta": {
             "timestamp": timestamp,
             "plate": {
-                "min_xy": [-20.0, -20.0],
-                "max_xy": [ 20.0,  20.0],
+                "min_xy": [-plate_meta["width"]/2.0, -plate_meta["height"]/2.0],
+                "max_xy": [ plate_meta["width"]/2.0,  plate_meta["height"]/2.0],
+                "width": int(plate_meta["width"]),
+                "height": int(plate_meta["height"]),
                 "extruded_layers": 5,
                 "layer_spacing": 0.2,
             },
@@ -197,25 +227,58 @@ def run_single(out_dir: Path, engine_path: Path) -> Path:
     return out_path
 
 
-def _run_once(seed: int, out_dir: Path, engine_path: Path):
+def _run_once(seed: int, out_dir: Path, engine_path: Path, width: int, no_holes: bool):
     random.seed(seed)
     try:
-        p = run_single(out_dir, engine_path)
-        return True, seed, str(p)
+        p = run_single(out_dir, engine_path, width=width, no_holes=no_holes)
+        return True, seed, width, str(p)
     except Exception as e:
-        return False, seed, str(e)
+        return False, seed, width, str(e)
+
+
+# -----------------------------------------------------------------------------
+# CLI helpers
+# -----------------------------------------------------------------------------
+def parse_width_seq(spec: str) -> List[int]:
+    """
+    Parse "start:end[:step]" into an inclusive list.
+    Defaults: step=20 wenn nicht angegeben.
+    Beispiel: "40:200:20" -> [40,60,80,...,200]
+              "40:200"    -> [40,60,80,...,200] (step=20)
+    """
+    parts = spec.split(":")
+    if len(parts) not in (2, 3):
+        raise ValueError("width_seq must be 'start:end[:step]'")
+    start = int(parts[0])
+    end = int(parts[1])
+    step = int(parts[2]) if len(parts) == 3 else 20
+    if step <= 0:
+        raise ValueError("step must be > 0")
+    if end < start:
+        raise ValueError("end must be >= start")
+    vals = list(range(start, end + 1, step))
+    if vals[-1] != end:
+        # auf Ende erweitern, falls nicht exakt getroffen
+        vals.append(end)
+    return vals
 
 
 # -----------------------------------------------------------------------------
 # CLI
 # -----------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Generate buckling samples with a circular B-spline hole.")
-    parser.add_argument("--n", type=int, required=True, help="Number of samples to generate.")
+    parser = argparse.ArgumentParser(description="Generate buckling samples with an optional B-spline hole and width sequences.")
+    parser.add_argument("--n", type=int, required=True, help="Number of samples to generate. If --width_seq is given: per width.")
     parser.add_argument("--out", type=Path, required=True, help="Output directory for YAML files.")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel workers.")
     parser.add_argument("--seed", type=int, default=None, help="Base RNG seed (optional).")
     parser.add_argument("--engine", type=Path, default=None, help="Path to FEMaster engine (overrides default).")
+
+    # NEW: control hole & width(s)
+    parser.add_argument("--no_holes", action="store_true", help="Generate plates without a hole.")
+    parser.add_argument("--width", type=int, default=40, help="Plate width/height for single-width runs (ignored if --width_seq is given).")
+    parser.add_argument("--width_seq", type=str, default=None, help="Generate for multiple widths: 'start:end[:step]'. n is per-width.")
+
     args = parser.parse_args()
 
     # Engine path
@@ -228,23 +291,41 @@ def main():
     except RuntimeError:
         pass
 
+    # Widths
+    if args.width_seq:
+        widths = parse_width_seq(args.width_seq)
+    else:
+        widths = [int(args.width)]
+
     # Seeds
     base_rng = random.Random(args.seed) if args.seed is not None else random.Random()
-    seeds = [base_rng.getrandbits(64) for _ in range(args.n)]
+    total_runs = args.n * len(widths)
+    # Wir vergeben seeds deterministisch pro (idx, width)
+    seeds: List[int] = [base_rng.getrandbits(64) for _ in range(total_runs)]
 
     ok = fail = 0
     args.out.mkdir(parents=True, exist_ok=True)
 
+    # Jobs aufsetzen
+    jobs: List[Tuple[int, int]] = []
+    # n pro width
+    for w in widths:
+        for _ in range(args.n):
+            jobs.append((w, 0))  # zweite Komponente ungenutzt; nur Platzhalter
+
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
-        futs = [ex.submit(_run_once, s, args.out, engine_path) for s in seeds]
-        with tqdm.tqdm(total=args.n, desc="Buckling runs", ncols=100, file=sys.stdout) as bar:
+        futs = []
+        for i, (w, _) in enumerate(jobs):
+            futs.append(ex.submit(_run_once, seeds[i], args.out, engine_path, w, args.no_holes))
+
+        with tqdm.tqdm(total=len(futs), desc="Buckling runs", ncols=100, file=sys.stdout) as bar:
             for fut in as_completed(futs):
-                success, seed, msg = fut.result()
+                success, seed, width, msg = fut.result()
                 if success:
                     ok += 1
                 else:
                     fail += 1
-                    tqdm.tqdm.write(f"[seed={seed}] ERROR: {msg}", file=sys.stdout)
+                    tqdm.tqdm.write(f"[seed={seed} width={width}] ERROR: {msg}", file=sys.stdout)
                 bar.update(1)
                 bar.set_postfix(ok=ok, fail=fail)
 
