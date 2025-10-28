@@ -11,7 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import set_start_method
 import sys
 import yaml
-from typing import Iterable, List, Tuple
+from typing import List, Tuple
 
 if __package__ in (None, ""):
     import os
@@ -29,7 +29,7 @@ from fembridge.steps import LinearBucklingStep
 
 
 # -----------------------------------------------------------------------------
-# Geometry helpers (Abaqus-style randomness)
+# Geometry helpers (Abaqus-style randomness) — only used if holes are enabled
 # -----------------------------------------------------------------------------
 def make_abaqus_like_bspline(
         *,
@@ -63,16 +63,17 @@ def make_abaqus_like_bspline(
 # -----------------------------------------------------------------------------
 # Model builder
 # -----------------------------------------------------------------------------
-def build_model(width: int, no_holes: bool) -> tuple[Model, SupportCollector, LoadCollector, dict]:
-    """Erstellt das 3D-Modell (extrudierte Platte) mit/ohne Loch bei gegebener Breite (Höhe=Breite)."""
-    height = width  # quadratisch
-
+def build_model(width: int, height: int, no_holes: bool) -> tuple[Model, SupportCollector, LoadCollector, dict]:
+    """
+    Erstellt das 3D-Modell (extrudierte Platte) mit/ohne Loch.
+    WICHTIG: Nur die BREITE variiert; die HÖHE ist fix (über --height).
+    """
     # Outer rectangle: centered at origin
-    # Ziel-Kantenlänge ≈ 2.0 ⇒ ~width/2 Unterteilungen horizontal/vertikal
+    # Ziel-Kantenlänge ≈ 2.0 ⇒ Unterteilungen nx ~ width/2, ny ~ height/2
     nx = max(1, int(round(width / 2)))
     ny = max(1, int(round(height / 2)))
-    half_w = width / 2
-    half_h = height / 2
+    half_w = width / 2.0
+    half_h = height / 2.0
 
     seg_bottom = StraightSegment((-half_w, -half_h), (+half_w, -half_h), n_subdivisions=nx, name="BOTTOM")
     seg_right  = StraightSegment((+half_w, -half_h), (+half_w, +half_h), n_subdivisions=ny, name="RIGHT")
@@ -106,8 +107,8 @@ def build_model(width: int, no_holes: bool) -> tuple[Model, SupportCollector, Lo
 
     steel = solid.add_material(
         Material("STEEL")
-        .set_elasticity(ElasticityIsotropic(210e3, 0.30))     # MPa units (210 GPa)
-        .set_density(Density(7850.0e-12))                    # tonne/mm^3 if mm
+        .set_elasticity(ElasticityIsotropic(210e3, 0.30))   # MPa (210 GPa)
+        .set_density(Density(7850.0e-12))                  # tonne/mm^3 (bei mm)
     )
     solid.add_section(SolidSection(material=steel, elset=elem_set))
 
@@ -132,13 +133,29 @@ def build_model(width: int, no_holes: bool) -> tuple[Model, SupportCollector, Lo
         supports.add(Support(edge, (None, None, 0.0, None, None, None)))  # w=0
     solid.add_supportcollector(supports)
 
-    # Tangential edge loads (use same magnitude across edges)
-    T = 1.0 / 6.0
+    # Edge loads: Sum per edge equals its length (width for bottom/top, height for right/left).
+    def count_nodes(ns) -> int:
+        c = 0
+        for _ in ns:
+            c += 1
+        return max(1, c)
+
+    N_bot = count_nodes(ns_bottom)
+    N_rig = count_nodes(ns_right)
+    N_top = count_nodes(ns_top)
+    N_lef = count_nodes(ns_left)
+
+    # Per-node magnitudes so that Σ(node loads) = edge_length
+    T_bottom = (width  / N_bot)
+    T_right  = (height / N_rig)
+    T_top    = (width  / N_top)
+    T_left   = (height / N_lef)
+
     loads = LoadCollector("EDGE_TANGENTIAL")
-    loads.add(CLoad(ns_bottom, (+T, 0.0, 0.0)))   # +x
-    loads.add(CLoad(ns_right,  (0.0, -T, 0.0)))   # -y
-    loads.add(CLoad(ns_top,    (-T, 0.0, 0.0)))   # -x
-    loads.add(CLoad(ns_left,   (0.0, +T, 0.0)))   # +y
+    loads.add(CLoad(ns_bottom, (+T_bottom, 0.0     , 0.0)))  # +x
+    loads.add(CLoad(ns_right,  (0.0     , -T_right, 0.0)))  # -y
+    loads.add(CLoad(ns_top,    (-T_top ,  0.0     , 0.0)))  # -x
+    loads.add(CLoad(ns_left,   (0.0     , +T_left , 0.0)))  # +y
     solid.add_loadcollector(loads)
 
     meta = {
@@ -177,10 +194,10 @@ def collect_hole_nodes_xy_at_midplane(model: Model) -> list[tuple[float, float]]
 # -----------------------------------------------------------------------------
 # Single run (returns output path)
 # -----------------------------------------------------------------------------
-def run_single(out_dir: Path, engine_path: Path, width: int, no_holes: bool) -> Path:
+def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_holes: bool) -> Path:
     random.seed()
 
-    model, supports, loads, hole_meta, plate_meta = build_model(width=width, no_holes=no_holes)
+    model, supports, loads, hole_meta, plate_meta = build_model(width=width, height=height, no_holes=no_holes)
     model.add_step(
         LinearBucklingStep(
             num_eigenvalues=10,
@@ -198,23 +215,23 @@ def run_single(out_dir: Path, engine_path: Path, width: int, no_holes: bool) -> 
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Dateiname inkl. Breite und Hole-Flag
+
     hole_tag = "nohole" if no_holes else "bspline"
-    out_path = out_dir / f"buckling_{hole_tag}_w{width}_{timestamp}.yaml"
+    out_path = out_dir / f"buckling_{hole_tag}_w{width}_h{height}_{timestamp}.yaml"
 
     payload = {
         "meta": {
             "timestamp": timestamp,
             "plate": {
-                "min_xy": [-plate_meta["width"]/2.0, -plate_meta["height"]/2.0],
-                "max_xy": [ plate_meta["width"]/2.0,  plate_meta["height"]/2.0],
+                "min_xy": [-plate_meta["width"] / 2.0, -plate_meta["height"] / 2.0],
+                "max_xy": [ plate_meta["width"] / 2.0,  plate_meta["height"] / 2.0],
                 "width": int(plate_meta["width"]),
                 "height": int(plate_meta["height"]),
                 "extruded_layers": 5,
                 "layer_spacing": 0.2,
             },
             "material": {"E_MPa": 210e3, "nu": 0.30, "rho_t_per_mm3": 7850.0e-12},
-            "loads": "outer edges tangential (+x bottom, -y right, -x top, +y left), magnitude 1/6 per node",
+            "loads": "outer edges tangential (+x bottom, -y right, -x top, +y left), per-node magnitude (edge_length / N_edge)",
             "supports": "BL: u1=u2=0; BR: u2=0; all outer edges: w=0",
         },
         "hole": hole_meta,
@@ -227,10 +244,10 @@ def run_single(out_dir: Path, engine_path: Path, width: int, no_holes: bool) -> 
     return out_path
 
 
-def _run_once(seed: int, out_dir: Path, engine_path: Path, width: int, no_holes: bool):
+def _run_once(seed: int, out_dir: Path, engine_path: Path, width: int, height: int, no_holes: bool):
     random.seed(seed)
     try:
-        p = run_single(out_dir, engine_path, width=width, no_holes=no_holes)
+        p = run_single(out_dir, engine_path, width=width, height=height, no_holes=no_holes)
         return True, seed, width, str(p)
     except Exception as e:
         return False, seed, width, str(e)
@@ -258,7 +275,6 @@ def parse_width_seq(spec: str) -> List[int]:
         raise ValueError("end must be >= start")
     vals = list(range(start, end + 1, step))
     if vals[-1] != end:
-        # auf Ende erweitern, falls nicht exakt getroffen
         vals.append(end)
     return vals
 
@@ -267,17 +283,18 @@ def parse_width_seq(spec: str) -> List[int]:
 # CLI
 # -----------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Generate buckling samples with an optional B-spline hole and width sequences.")
+    parser = argparse.ArgumentParser(description="Generate buckling samples with optional B-spline hole. Width can vary; height stays fixed.")
     parser.add_argument("--n", type=int, required=True, help="Number of samples to generate. If --width_seq is given: per width.")
     parser.add_argument("--out", type=Path, required=True, help="Output directory for YAML files.")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel workers.")
     parser.add_argument("--seed", type=int, default=None, help="Base RNG seed (optional).")
     parser.add_argument("--engine", type=Path, default=None, help="Path to FEMaster engine (overrides default).")
 
-    # NEW: control hole & width(s)
+    # Control hole & width(s)
     parser.add_argument("--no_holes", action="store_true", help="Generate plates without a hole.")
-    parser.add_argument("--width", type=int, default=40, help="Plate width/height for single-width runs (ignored if --width_seq is given).")
+    parser.add_argument("--width", type=int, default=40, help="Plate width for single-width runs (ignored if --width_seq is given).")
     parser.add_argument("--width_seq", type=str, default=None, help="Generate for multiple widths: 'start:end[:step]'. n is per-width.")
+    parser.add_argument("--height", type=int, default=40, help="Fixed plate height (does not vary).")
 
     args = parser.parse_args()
 
@@ -285,7 +302,7 @@ def main():
     default_engine = Path(__file__).resolve().parent.parent / "bin" / "FEMaster"
     engine_path = args.engine if args.engine is not None else default_engine
 
-    # Multiprocessing start method (safer cross-platform)
+    # Multiprocessing start method
     try:
         set_start_method("spawn")
     except RuntimeError:
@@ -300,7 +317,6 @@ def main():
     # Seeds
     base_rng = random.Random(args.seed) if args.seed is not None else random.Random()
     total_runs = args.n * len(widths)
-    # Wir vergeben seeds deterministisch pro (idx, width)
     seeds: List[int] = [base_rng.getrandbits(64) for _ in range(total_runs)]
 
     ok = fail = 0
@@ -308,15 +324,14 @@ def main():
 
     # Jobs aufsetzen
     jobs: List[Tuple[int, int]] = []
-    # n pro width
     for w in widths:
         for _ in range(args.n):
-            jobs.append((w, 0))  # zweite Komponente ungenutzt; nur Platzhalter
+            jobs.append((w, 0))  # Platzhalter
 
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = []
         for i, (w, _) in enumerate(jobs):
-            futs.append(ex.submit(_run_once, seeds[i], args.out, engine_path, w, args.no_holes))
+            futs.append(ex.submit(_run_once, seeds[i], args.out, engine_path, w, args.height, args.no_holes))
 
         with tqdm.tqdm(total=len(futs), desc="Buckling runs", ncols=100, file=sys.stdout) as bar:
             for fut in as_completed(futs):
