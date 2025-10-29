@@ -1,188 +1,180 @@
+# file: tovtk.py
 """
-tovtk.py
+tovtk.py  —  Batch converter (multi-.inp → .vtk in same directories)
 
-Script for converting FEM geometry and solution data to VTK format for visualization in tools like ParaView.
-Supports a variety of 2D and 3D element types and handles node-based and element-based solution fields.
+Converts one or more FEM .inp + optional .res files to VTK (legacy .vtk).
+Each output .vtk is written alongside its corresponding .inp.
 
 Author: Finn Eggers
-Date: 07.10.2024
+Date: 29.10.2025
 
-Usage:
-    python tovtk.py geometry.inp [--solution_path solution.res] [--output output.vtk]
-
-Arguments:
-    geometry_path: Path to the geometry input file (.inp).
-    --solution_path: Optional path to the solution file (.res). If not provided, deduced from the input file.
-    --output: Optional output VTK file name. If not provided, deduced from the input file by replacing '.inp' with '.vtk'.
+Examples:
+  python tovtk.py mesh1.inp mesh2.inp
+  python tovtk.py ./cases --recursive
+  python tovtk.py ./cases --solution_ext .dat --workers 8
 """
 
-# library imports
-import argparse
+from __future__ import annotations
+import argparse, time, sys
+from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
-import time
 
-# imports from the same directory
+# local imports
 from ..geometry import Geometry
 from .solution import Solution
 
 
-def log_info(message):
-    """Prints an info message with the [INFO] tag."""
-    print(f"[INFO] {message}")
-
-def log_timing(start_time, task_name):
-    """Prints the time taken for a task."""
-    elapsed_time = (time.time() - start_time) * 1000
-    print(f"[INFO] Finished {task_name:<60} [{elapsed_time:8.2f} ms]")
+# -----------------------------------------------------------------------------#
+def log_info(msg): print(f"[INFO] {msg}")
+def log_warn(msg): print(f"[WARNING] {msg}")
+def log_timing(start, name): print(f"[INFO] Finished {name:<55} [{(time.time()-start)*1000:8.2f} ms]")
 
 
+# -----------------------------------------------------------------------------#
 class Converter:
-    def __init__(self, geometry_path, solution_path=None, output_filename=None):
-        self.geometry = Geometry.read_input_deck(geometry_path)
+    def __init__(self, geometry_path: Path, solution_path: Path | None, output_filename: Path):
+        self.geometry_path = geometry_path
+        self.output_filename = output_filename
+        self.geometry = Geometry.read_input_deck(str(geometry_path))
 
-        # Deduce solution path if not provided
-        if solution_path is None:
-            solution_path = geometry_path.replace(".inp", ".res")
+        # Try to load optional solution
+        self.solution = None
+        self.has_solution = False
+        if solution_path is not None:
+            log_info(f"Loading solution '{solution_path}'")
+            try:
+                self.solution = Solution.open(str(solution_path))
+                self.has_solution = True
+            except FileNotFoundError:
+                log_warn(f"Solution file '{solution_path}' not found – geometry only.")
 
-        # Try loading the solution file
-        log_info(f"Loading solution file '{solution_path}'")
-        try:
-            self.solution = Solution.open(solution_path)
-            self.has_solution = True
-            log_info(f"Solution file '{solution_path}' loaded successfully")
-        except FileNotFoundError:
-            log_info(f"Warning: Solution file '{solution_path}' not found. Geometry will be written without solution fields.")
-            self.solution = None
-            self.has_solution = False
-
-        # Deduce output filename if not provided
-        self.output_filename = output_filename or geometry_path.replace(".inp", ".vtk")
         self._ugrid = vtk.vtkUnstructuredGrid()
 
+    # -------------------------------------------------------------------------
     def convert(self):
-        """Main function to convert geometry and optional solution data to a VTK file."""
-        log_info("Begin conversion process")
-        start_time = time.time()
+        log_info(f"Converting '{self.geometry_path.name}'")
+        t0 = time.time()
         self._generate_geometry()
         if self.has_solution:
             self._add_solution_fields()
         self._write_vtk()
-        log_timing(start_time, "conversion process")
+        log_timing(t0, f"conversion '{self.geometry_path.name}'")
 
     def _generate_geometry(self):
-        """Generates the VTK unstructured grid from the geometry data."""
-        log_info("Begin geometry generation")
-        start_time = time.time()
+        t0 = time.time()
         self._set_points()
         self._set_cells()
-        log_timing(start_time, "geometry generation")
+        log_timing(t0, "geometry generation")
 
     def _set_points(self):
-        """Set up the points (nodes) in the unstructured grid."""
-        log_info("Begin setting points (nodes)")
-        start_time = time.time()
-        points = vtk.vtkPoints()
-        for node in self.geometry.nodes:
-            points.InsertNextPoint(node if node else [0, 0, 0])
-        self._ugrid.SetPoints(points)
-        log_timing(start_time, "setting points (nodes)")
+        pts = vtk.vtkPoints()
+        for n in self.geometry.nodes:
+            pts.InsertNextPoint(n if n is not None else (0,0,0))
+        self._ugrid.SetPoints(pts)
 
     def _set_cells(self):
-        """Define the cells (elements) in the unstructured grid."""
-        log_info("Begin setting cells (elements)")
-        start_time = time.time()
-        for element in self.geometry.elements:
-            cell_type, cell = self._create_vtk_cell(element)
-            if cell:
-                self._ugrid.InsertNextCell(cell_type, cell.GetPointIds())
-            else:
-                self._ugrid.InsertNextCell(0, vtk.vtkIdList())
-        log_timing(start_time, "setting cells (elements)")
-
-    def _create_vtk_cell(self, element):
-        """Create a VTK cell based on the element type."""
-        if element is None:
-            return None, None
         cell_map = {
-            'C3D4': vtk.vtkTetra,
-            'C3D6': vtk.vtkWedge,
-            'C3D8': vtk.vtkHexahedron,
-            'C3D10': vtk.vtkQuadraticTetra,
-            'C3D15': vtk.vtkQuadraticWedge,
-            'C3D20': vtk.vtkQuadraticHexahedron,
-            'C3D20R': vtk.vtkQuadraticHexahedron,
-            'C2D3': vtk.vtkTriangle,
-            'C2D4': vtk.vtkQuad,
-            'C2D6': vtk.vtkQuadraticTriangle,
-            'C2D8': vtk.vtkQuadraticQuad,
-            'S4': vtk.vtkQuad,
-            'S8': vtk.vtkQuadraticQuad,
-            'S3': vtk.vtkTriangle,
-            'S6': vtk.vtkQuadraticTriangle,
-            "B33": vtk.vtkLine,
+            'C3D4': vtk.vtkTetra, 'C3D6': vtk.vtkWedge, 'C3D8': vtk.vtkHexahedron,
+            'C3D10': vtk.vtkQuadraticTetra, 'C3D15': vtk.vtkQuadraticWedge,
+            'C3D20': vtk.vtkQuadraticHexahedron, 'C3D20R': vtk.vtkQuadraticHexahedron,
+            'C2D3': vtk.vtkTriangle, 'C2D4': vtk.vtkQuad, 'C2D6': vtk.vtkQuadraticTriangle,
+            'C2D8': vtk.vtkQuadraticQuad, 'S3': vtk.vtkTriangle, 'S4': vtk.vtkQuad,
+            'S6': vtk.vtkQuadraticTriangle, 'S8': vtk.vtkQuadraticQuad, 'B33': vtk.vtkLine,
         }
-
-        cell_class = cell_map.get(element.elem_type)
-        if cell_class is None:
-            print (f'[WARNING] Unknown cell type: {element.elem_type}')
-            return None, None
-        cell = cell_class()
-        for j, node_id in enumerate(element.node_ids):
-            cell.GetPointIds().SetId(j, node_id)
-        return cell.GetCellType(), cell
+        for e in self.geometry.elements:
+            if e is None:
+                self._ugrid.InsertNextCell(0, vtk.vtkIdList()); continue
+            cls = cell_map.get(e.elem_type)
+            if not cls: log_warn(f"Unknown elem {e.elem_type}"); continue
+            cell = cls()
+            for j,nid in enumerate(e.node_ids): cell.GetPointIds().SetId(j,int(nid))
+            self._ugrid.InsertNextCell(cell.GetCellType(), cell.GetPointIds())
 
     def _add_solution_fields(self):
-        """Add solution fields to the VTK file if available."""
-        log_info("Begin adding solution fields")
-        start_time = time.time()
-        fields_dict = self.solution.list_fields_reduced(None)
-        for field_name, field_func in fields_dict.items():
-            field_data = field_func().copy()
-            vtk_data = numpy_to_vtk(field_data)
-            vtk_data.SetName(field_name)
-
-            log_info(f"   Adding field '{field_name}' with shape {field_data.shape}")
-
-            # if its 6 columns, reorder them to match VTK's ordering
-            # FEMaster uses XX, YY, ZZ, YZ, XZ, XY
-            # VTK      uses XX, YY, ZZ, XY, YZ, XZ
-            if len(field_data.shape) > 1 and field_data.shape[1] == 6:
-                field_data[:, [3, 4, 5]] = field_data[:, [5, 3, 4]]
-
-            if len(field_data) == len(self.geometry.nodes):
-                self._ugrid.GetPointData().AddArray(vtk_data)
-            elif len(field_data) == len(self.geometry.elements):
-                self._ugrid.GetCellData().AddArray(vtk_data)
-            else:
-                print(f"[WARNING] Field '{field_name}' size does not match nodes or elements.")
-        log_timing(start_time, "adding solution fields")
+        fields = self.solution.list_fields_reduced(None)
+        n_nodes, n_elems = len(self.geometry.nodes), len(self.geometry.elements)
+        for name, func in fields.items():
+            data = np.asarray(func())
+            if data.ndim==2 and data.shape[1]==6:
+                data = data.copy(); data[:,[3,4,5]] = data[:,[5,3,4]]  # reorder
+            vtk_data = numpy_to_vtk(np.ascontiguousarray(data), deep=True)
+            if data.ndim==2: vtk_data.SetNumberOfComponents(data.shape[1])
+            vtk_data.SetName(name)
+            if len(data)==n_nodes: self._ugrid.GetPointData().AddArray(vtk_data)
+            elif len(data)==n_elems: self._ugrid.GetCellData().AddArray(vtk_data)
+            else: log_warn(f"'{name}' size {len(data)} mismatch")
 
     def _write_vtk(self):
-        """Write the generated unstructured grid to a VTK file."""
-        log_info(f"Begin writing VTK file: {self.output_filename}")
-        start_time = time.time()
         writer = vtk.vtkUnstructuredGridWriter()
-        writer.SetFileName(self.output_filename)
-        writer.SetFileTypeToBinary()  # Set the file type to binary
+        writer.SetFileName(str(self.output_filename))
+        writer.SetFileTypeToBinary()
         writer.SetInputData(self._ugrid)
         writer.Write()
-        log_timing(start_time, "writing VTK file")
+        log_info(f"→ {self.output_filename}")
 
 
+# -----------------------------------------------------------------------------#
+def gather_inp_files(inputs, recursive=False):
+    files=[]
+    for p in inputs:
+        pth=Path(p)
+        if pth.is_dir():
+            files+=sorted(pth.rglob("*.inp") if recursive else pth.glob("*.inp"))
+        elif pth.is_file() and pth.suffix.lower()==".inp":
+            files.append(pth)
+    seen=set(); uniq=[]
+    for f in files:
+        if f not in seen: seen.add(f); uniq.append(f)
+    return uniq
+
+def deduce_paths(geometry_path:Path, solution_ext:str)->tuple[Path,Path]:
+    stem=geometry_path.with_suffix("")
+    return geometry_path.with_suffix(solution_ext), geometry_path.with_suffix(".vtk")
+
+def convert_one(geometry_path:Path, solution_ext:str)->tuple[bool,str]:
+    try:
+        sol_path,out_path=deduce_paths(geometry_path,solution_ext)
+        conv=Converter(geometry_path,sol_path,out_path)
+        conv.convert()
+        return True,str(out_path)
+    except Exception as e:
+        return False,f"{geometry_path}: {e}"
+
+
+# -----------------------------------------------------------------------------#
 def main():
-    parser = argparse.ArgumentParser(description="Convert geometry and solution data to VTK format.")
-    parser.add_argument("geometry_path", help="Path to the geometry input file (.inp).")
-    parser.add_argument("--solution_path", help="Optional path to the solution file (.res).", default=None)
-    parser.add_argument("--output", help="Output VTK file name.", default=None)
+    ap=argparse.ArgumentParser(description="Convert one or many FEM .inp files to .vtk (written next to input).")
+    ap.add_argument("inputs",nargs="+",help="One or more .inp files and/or directories.")
+    ap.add_argument("--solution_ext",type=str,default=".res",help="Extension of solution file (default: .res).")
+    ap.add_argument("--recursive",action="store_true",help="Recurse into directories.")
+    ap.add_argument("--workers",type=int,default=1,help="Parallel workers.")
+    args=ap.parse_args()
 
-    args = parser.parse_args()
+    inp_files=gather_inp_files(args.inputs,args.recursive)
+    if not inp_files:
+        log_warn("No .inp files found."); return
 
-    # Create the converter instance and perform the conversion
-    converter = Converter(geometry_path=args.geometry_path, solution_path=args.solution_path, output_filename=args.output)
-    converter.convert()
+    log_info(f"Found {len(inp_files)} file(s). Output beside each .inp.")
+    ok=fail=0
+
+    if args.workers<=1:
+        for f in inp_files:
+            success,msg=convert_one(f,args.solution_ext)
+            ok+=success; fail+=not success
+            log_info(f"OK  -> {msg}" if success else f"ERR -> {msg}")
+    else:
+        with ProcessPoolExecutor(max_workers=args.workers) as ex:
+            futs=[ex.submit(convert_one,f,args.solution_ext) for f in inp_files]
+            for fut in as_completed(futs):
+                success,msg=fut.result()
+                ok+=success; fail+=not success
+                log_info(f"OK  -> {msg}" if success else f"ERR -> {msg}")
+
+    print(f"\nDone. ok={ok}, failed={fail}.")
 
 
-if __name__ == '__main__':
+if __name__=="__main__":
     main()

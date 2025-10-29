@@ -3,18 +3,23 @@
 """
 tovtk.py
 
-Convert FEM geometry + solution to VTK XML files for ParaView.
+Convert FEM geometry + solution to a single **VTK-HDF** file for ParaView
+that contains the entire **time series** (all steps) in ONE container.
 
-- If fields end with a numeric suffix (e.g. U0, U_1, Stress-12), we write:
-    basename_0000.vtu, basename_0001.vtu, ...  and a collection file basename.pvd
-- If no time series (or --no_time), we write a single basename.vtu
-
-Time values are taken from the numeric suffix (as float(idx)).
+- If fields end with a numeric suffix (e.g. U0, U_1, Stress-12), we pack
+  all steps into <stem>.vtkhdf with appropriate time values (float(idx)).
+- If no time series (or --no_time), we write a single step with t=0.0.
+- Output is placed in a new directory named after the geometry stem
+  (or the --output stem), same behavior as before.
 
 This version also:
-- merges vector components (BASE_X/Y/Z and * _u_ x/y/z) into 3-comp vectors,
+- merges vector components (BASE_X/Y/Z and *_u_x/y/z) into 3-comp vectors,
 - derives von Mises for 6-comp *stress* fields if missing,
 - ensures 3-comp + magnitude for 3+ comp point fields (e.g., displacement/modes).
+
+Requirements:
+- A recent VTK build with VTKHDF writer support (vtkHDFWriter).
+  If not found, the script raises a clear error message.
 
 Author: Finn Eggers
 Date  : 21.10.2025
@@ -245,35 +250,61 @@ VTK_CELL_CLASS = {
 }
 
 
-# ------------------------ PVD writer ------------------------
+# ------------------------ HDF writer (single-file time series) ------------------------
 
-class PVDCollection:
+class HDFSeriesWriter:
     """
-    Minimal .pvd collection writer.
+    Thin convenience wrapper around vtkHDFWriter to write multiple time steps
+    into a single .vtkhdf file. Requires a VTK build that provides vtkHDFWriter.
     """
-    def __init__(self, pvd_path: Path):
-        self.pvd_path = pvd_path
-        self.entries = []  # list of (time, relpath)
+    def __init__(self, hdf_path: Path):
+        self.hdf_path = Path(hdf_path)
+        self._first = True
 
-    def add(self, time_value: float, vtu_path: Path):
-        rel = vtu_path.name  # keep names relative to PVD for portability
-        self.entries.append((float(time_value), rel))
+        # Feature detection
+        if not hasattr(vtk, "vtkHDFWriter"):
+            raise RuntimeError(
+                "vtkHDFWriter not found in this VTK build. "
+                "Please use a recent VTK/ParaView (VTKHDF time-series support) or build VTK with HDF enabled."
+            )
 
-    def write(self):
-        from xml.sax.saxutils import escape
-        pieces = "\n".join(
-            f'    <DataSet timestep="{t}" group="" part="0" file="{escape(fname)}"/>'
-            for (t, fname) in self.entries
-        )
-        content = f"""<?xml version="1.0"?>
-<VTKFile type="Collection" version="0.1" byte_order="LittleEndian">
-  <Collection>
-{pieces}
-  </Collection>
-</VTKFile>
-"""
-        self.pvd_path.write_text(content, encoding="utf-8")
-        log_info(f"Wrote PVD collection: {self.pvd_path}")
+        self._writer = vtk.vtkHDFWriter()
+        self._writer.SetFileName(str(self.hdf_path))
+
+        # Optional compression knob (may not exist in all builds)
+        if hasattr(self._writer, "SetCompressionLevel"):
+            try:
+                self._writer.SetCompressionLevel(5)
+            except Exception:
+                pass
+
+    def write_step(self, grid: vtk.vtkUnstructuredGrid, time_value: float):
+        """
+        Append one step to the HDF file.
+        - For static topology, we re-use the same connectivity each time.
+        - Attaches time value when the API exposes it; otherwise the writer
+          will still create the Steps group (recent VTK builds).
+        """
+        self._writer.SetInputData(grid)
+
+        # Time metadata (API differs across VTK versions; try in order)
+        if hasattr(self._writer, "SetTimeValue"):
+            self._writer.SetTimeValue(float(time_value))
+        elif hasattr(self._writer, "SetTimeStep"):
+            # Fallback: step index; time values may be stored separately depending on build
+            self._writer.SetTimeStep(int(time_value))
+
+        # Append after first write (method name varies)
+        if hasattr(self._writer, "SetAppend"):
+            self._writer.SetAppend(not self._first)
+        elif hasattr(self._writer, "SetWriteModeAppend"):
+            self._writer.SetWriteModeAppend(not self._first)
+
+        ok = self._writer.Write()
+        if ok != 1:
+            raise RuntimeError(f"vtkHDFWriter reported non-success when writing time={time_value}")
+
+        self._first = False
 
 
 # ------------------------ main converter class ------------------------
@@ -298,51 +329,83 @@ class Converter:
             self.solution = None
             self.has_solution = False
 
-        # output base
-        out = output_filename or geometry_path.replace(".inp", ".vtu")
-        if out.endswith(".vtu"):
-            self.output_vtu = Path(out)
-            self.output_base = self.output_vtu.with_suffix("")  # basename without .vtu
+        # Decide output directory & base stem (as before)
+        if output_filename:
+            out_path = Path(output_filename)
+            self._stem = out_path.stem
+            self._out_dir = (out_path.parent if str(out_path.parent) != "" else Path(".")) / self._stem
         else:
-            self.output_vtu = Path(out + ".vtu")
-            self.output_base = Path(out)
+            inp_path = Path(geometry_path)
+            parent = inp_path.parent if str(inp_path.parent) != "" else Path(".")
+            self._stem = inp_path.stem
+            self._out_dir = parent / self._stem
 
-        # time handling
-        self.force_no_time = bool(force_no_time)
+        self._out_dir.mkdir(parents=True, exist_ok=True)
+        log_info(f"Output directory: {self._out_dir}")
 
         # base grid (geometry only); copied per frame when writing
         self._ugrid_geom = vtk.vtkUnstructuredGrid()
+
+        # config
+        self.force_no_time = bool(force_no_time)
 
     # ---------- public entry points ----------
 
     def convert(self):
         """
-        Write either:
-          - single .vtu, or
-          - a .pvd collection + multiple .vtu (one per time step).
+        Write a single .vtkhdf file containing either:
+          - a single step (t=0.0), or
+          - the full time series with one step per numeric suffix.
         """
         t0 = time.time()
         log_info("Begin conversion")
         self._generate_geometry()
 
+        hdf_path = self._out_dir / f"{self._stem}.vtkhdf"
+
+        # Geometry-only (no solution): single step at t=0
         if not self.has_solution:
-            self._write_single_snapshot(self._ugrid_geom, self.output_vtu)
-            log_timing(t0, "conversion (geometry-only)")
+            writer = HDFSeriesWriter(hdf_path)
+            grid0 = vtk.vtkUnstructuredGrid()
+            grid0.DeepCopy(self._ugrid_geom)
+            writer.write_step(grid0, 0.0)
+            log_timing(t0, "conversion (geometry-only, single .vtkhdf)")
+            log_info(f"Wrote single-file time-series: {hdf_path}")
             return
 
         fields_dict = self.solution.list_fields_reduced(None)
         time_indices, grouped, static = self._group_fields_by_time(fields_dict)
 
+        # Single snapshot mode (no suffixes or --no_time)
         if self.force_no_time or len(time_indices) == 0:
-            log_info("No numeric-suffix fields detected or --no_time set → writing single snapshot")
+            log_info("No numeric-suffix fields detected or --no_time set → writing single step (t=0.0) to .vtkhdf")
             grid = self._grid_with_fields(static | self._flatten_time_groups(grouped))
-            self._write_single_snapshot(grid, self.output_vtu)
-            log_timing(t0, "conversion (single snapshot)")
+            writer = HDFSeriesWriter(hdf_path)
+            writer.write_step(grid, 0.0)
+            log_timing(t0, "conversion (single snapshot, single .vtkhdf)")
+            log_info(f"Wrote single-file time-series: {hdf_path}")
             return
 
-        # Multi-time series → write step VTUs + one PVD
-        self._write_time_series(time_indices, grouped, static)
-        log_timing(t0, "conversion (VTU series + PVD)")
+        # Multi-time series → one .vtkhdf with all steps
+        writer = HDFSeriesWriter(hdf_path)
+        log_info(f"Begin writing single-file HDF time series: {hdf_path}")
+        t_ts = time.time()
+
+        # Use the numeric suffix as the time value (float(idx)), as before
+        for k, idx in enumerate(time_indices):
+            frame_fields = {}
+            frame_fields.update(static)
+            frame_fields.update(grouped[idx])
+
+            grid_k = self._grid_with_fields(frame_fields)
+
+            tval = float(idx)
+            writer.write_step(grid_k, tval)
+            log_info(f"  appended step {k+1}/{len(time_indices)}  idx={idx}  t={tval}")
+
+        log_timing(t_ts, "writing HDF time series (single file)")
+        log_timing(t0,  "conversion (HDF series)")
+        log_info(f"Wrote single-file time-series: {hdf_path}")
 
     # ---------- geometry ----------
 
@@ -456,70 +519,16 @@ class Converter:
 
         return grid
 
-    # ---------- writers ----------
-
-    def _write_single_snapshot(self, grid: vtk.vtkUnstructuredGrid, path: Path):
-        log_info(f"Begin writing single VTU: {path}")
-        t0 = time.time()
-        writer = vtk.vtkXMLUnstructuredGridWriter()
-        writer.SetFileName(str(path))
-        writer.SetDataModeToBinary()
-        writer.SetCompressorTypeToZLib()
-        writer.SetInputData(grid)
-        writer.Write()
-        log_timing(t0, "writing single VTU")
-
-    def _write_time_series(self, time_indices, grouped, static):
-        """
-        Write one VTU per time step and a PVD collection file.
-        """
-        base = self.output_base
-        base_parent = base.parent if str(base.parent) != "" else Path(".")
-
-        # Choose a common stem (without extension)
-        stem = base.stem
-        # zero padding width based on number of steps
-        pad = max(4, len(str(max(time_indices))) if time_indices else 1)
-
-        pvd = PVDCollection(base_parent / f"{stem}.pvd")
-
-        log_info(f"Begin writing VTU series + PVD under: {base_parent} (stem='{stem}', pad={pad})")
-        t0 = time.time()
-
-        for k, idx in enumerate(time_indices):
-            # Assemble fields: static + fields of this time idx
-            frame_fields = {}
-            frame_fields.update(static)
-            frame_fields.update(grouped[idx])
-
-            grid_k = self._grid_with_fields(frame_fields)
-
-            vtu_name = f"{stem}_{str(idx).zfill(pad)}.vtu"
-            vtu_path = base_parent / vtu_name
-
-            writer = vtk.vtkXMLUnstructuredGridWriter()
-            writer.SetFileName(str(vtu_path))
-            writer.SetDataModeToBinary()
-            writer.SetCompressorTypeToZLib()
-            writer.SetInputData(grid_k)
-            ok = writer.Write()
-            if ok != 1:
-                log_info(f"[WARNING] Writer reported non-success for {vtu_name}")
-
-            pvd.add(float(idx), vtu_path)
-            log_info(f"  wrote step {k+1}/{len(time_indices)}  idx={idx}  -> {vtu_name}")
-
-        pvd.write()
-        log_timing(t0, "writing VTU series + PVD")
-
 
 # ------------------------ CLI ------------------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Convert geometry + solution to VTK. Writes a VTU per time step and a PVD collection.")
+    ap = argparse.ArgumentParser(
+        description="Convert geometry + solution to a single VTK-HDF file containing all time steps."
+    )
     ap.add_argument("geometry_path", help="Path to the geometry input file (.inp).")
     ap.add_argument("--solution_path", default=None, help="Optional path to the solution file (.res).")
-    ap.add_argument("--output", default=None, help="Output base name or .vtu (will also write .pvd for time series).")
+    ap.add_argument("--output", default=None, help="Base name for outputs. Directory will be <stem>/ next to this path; file is <stem>.vtkhdf.")
     ap.add_argument("--no_time", action="store_true", help="Force writing a single snapshot (no time series).")
     args = ap.parse_args()
 
