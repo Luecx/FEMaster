@@ -522,7 +522,7 @@ def run_single(
 
     runner = Runner().set_model(model)
     runner.set_engine(Runner.Engine.FEMASTER, path=engine_path)
-    runner.set_option(Runner.Option.NO_TEMP_FILES, True)
+    runner.set_option(Runner.Option.NO_TEMP_FILES, False)
     solution = runner.run()
 
     lam1 = first_buckling_value(solution)
