@@ -13,24 +13,27 @@ import sys
 import yaml
 from typing import List, Tuple
 
+
 if __package__ in (None, ""):
     import os
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     __package__ = "fembridge"
 
+# ---- fembridge imports -------------------------------------------------------
 from fembridge.core import Model, Runner
 from fembridge.geometry import StraightSegment, SegmentGroup, BSplineSegment
 from fembridge.materials import Material, ElasticityIsotropic, Density
 from fembridge.sections.solid_section import SolidSection
 from fembridge.sets.elementset import ElementSet
+from fembridge.sets.nodeset import NodeSet
 from fembridge.supports import Support, SupportCollector
 from fembridge.loads import CLoad, LoadCollector
 from fembridge.steps import LinearBucklingStep
 
 
-# -----------------------------------------------------------------------------
-# Geometry helpers (Abaqus-style randomness) — only used if holes are enabled
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Abaqus-like random B-spline hole (for the with-hole branch)
+# =============================================================================
 def make_abaqus_like_bspline(
         *,
         radius_min: float = 4.0,
@@ -60,48 +63,135 @@ def make_abaqus_like_bspline(
     return bspline, ctrl, radius
 
 
-# -----------------------------------------------------------------------------
-# Model builder (structured grid if no_holes, element size configurable)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Helpers for NodeSets
+# =============================================================================
+def _get_or_create_named_nodeset(model: Model, name: str, ns_or_iter) -> NodeSet:
+    """
+    Fetch a NodeSet by name if it exists; otherwise create it from `ns_or_iter`
+    and add it to the model with the given name.
+    """
+    try:
+        return model.node_sets[name]
+    except KeyError:
+        base = ns_or_iter if isinstance(ns_or_iter, NodeSet) else NodeSet.internal(ns_or_iter)
+        created = NodeSet.create(name, base)
+        model.add_nodeset(created)
+        return created
+
+
+# =============================================================================
+# Tangential edge load builder (corners get half the weight)
+# =============================================================================
+def make_tangential_edge_loads(
+        *,
+        model: Model,
+        width: float,
+        height: float,
+        ns_bottom: NodeSet,
+        ns_right: NodeSet,
+        ns_top: NodeSet,
+        ns_left: NodeSet,
+        name: str = "EDGE_TANGENTIAL",
+) -> LoadCollector:
+    """
+    Creates tangential edge loads on the four outer edges with a trapezoidal
+    node distribution so that:
+      - interior nodes get w = L/(N-1)
+      - end (corner) nodes get w/2
+      - sum over a given edge equals its geometric length L
+
+    Directions:
+      bottom: +x, right: -y, top: -x, left: +y
+
+    All intermediate NodeSets are **named** and added to the model to avoid
+    'internal set' semantics (which would otherwise take only the first id).
+    """
+
+    def _count(ns: NodeSet) -> int:
+        c = 0
+        for _ in ns:
+            c += 1
+        return max(1, c)
+
+    loads = LoadCollector(name)
+
+    # Corner sets (re-use if already present, else create & add)
+    ns_bl = _get_or_create_named_nodeset(model, "BOTTOM_LEFT", (ns_bottom & ns_left))
+    ns_br = _get_or_create_named_nodeset(model, "BOTTOM_RIGHT", (ns_bottom & ns_right))
+    ns_tr = _get_or_create_named_nodeset(model, "TOP_RIGHT",   (ns_top    & ns_right))
+    ns_tl = _get_or_create_named_nodeset(model, "TOP_LEFT",    (ns_top    & ns_left))
+
+    # For each edge: create named CORNERS and INTERIOR sets, add to model, then place loads
+    def _edge(name_prefix: str, ns_edge: NodeSet, L: float, vec: tuple[float, float, float], cornerA: NodeSet, cornerB: NodeSet) -> None:
+        N = _count(ns_edge)
+        if N == 1:
+            # Degenerate: put full length onto the single node
+            only = _get_or_create_named_nodeset(model, f"{name_prefix}_ALL", ns_edge)
+            loads.add(CLoad(only, (vec[0]*L, vec[1]*L, vec[2]*L)))
+            return
+
+        w = float(L) / float(N - 1)  # interior node weight
+        w_end = 0.5 * w              # end node weight
+
+        ns_corners_raw = (cornerA | cornerB)
+        ns_corners = _get_or_create_named_nodeset(model, f"{name_prefix}_CORNERS", ns_corners_raw)
+
+        ns_interior_raw = ns_edge - ns_corners
+        ns_interior = _get_or_create_named_nodeset(model, f"{name_prefix}_INTERIOR", ns_interior_raw)
+
+        if len(ns_interior) > 0:
+            loads.add(CLoad(ns_interior, (vec[0]*w, vec[1]*w, vec[2]*w)))
+        if len(ns_corners) > 0:
+            loads.add(CLoad(ns_corners, (vec[0]*w_end, vec[1]*w_end, vec[2]*w_end)))
+
+    # bottom: +x
+    _edge("BOTTOM", ns_bottom, float(width),  (+1.0, 0.0, 0.0), ns_bl, ns_br)
+    # right:  -y
+    _edge("RIGHT",  ns_right,  float(height), (0.0, -1.0, 0.0), ns_br, ns_tr)
+    # top:    -x
+    _edge("TOP",    ns_top,    float(width),  (-1.0, 0.0, 0.0), ns_tl, ns_tr)
+    # left:   +y
+    _edge("LEFT",   ns_left,   float(height), (0.0, +1.0, 0.0), ns_bl, ns_tl)
+
+    return loads
+
+
+# =============================================================================
+# Model builder (no-hole uses 2D C2D4 mesh; with-hole as before, then extrude)
+# =============================================================================
 def build_model(
         width: int,
         height: int,
         no_holes: bool,
-        elem_size: float = 2.0,   # <— new: target in-plane element size
-) -> tuple[Model, SupportCollector, LoadCollector, dict]:
+        elem_size: float = 2.0,
+) -> tuple[Model, SupportCollector, LoadCollector, dict, dict]:
     """
-    Erstellt das 3D-Modell (extrudierte Platte) mit/ohne Loch.
-    - Nur die BREITE variiert; die HÖHE kommt von --height.
-    - Falls kein Loch: strukturiertes Rechteckgitter (mesh_type=0).
-    - Falls Loch: unstrukturiert quad-ish (mesh_type=2).
-    - Knotenlasten sind so skaliert, dass die Summe je Kante = Kantenlänge ist.
+    - no_holes=True  → 2D-Rect (C2D4) ohne Innenkontur, dann extrudiert.
+    - no_holes=False → Outer + HOLE-Loop, 2D (C2D4/C2D3 je nach Topologie), dann extrudiert.
     """
-    # ---- Grid resolution from element size
-    # ensure at least 1 subdivision per edge
-    nx = max(1, int(round(float(width)  / float(elem_size))))
-    ny = max(1, int(round(float(height) / float(elem_size))))
-    half_w = float(width)  / 2.0
-    half_h = float(height) / 2.0
 
-    # ---- Boundary segments (named for node sets later)
+    half_w = width / 2.0
+    half_h = height / 2.0
+
+    # discrete subdivisions derived from target elem_size
+    nx = max(1, int(round(width  / elem_size)))
+    ny = max(1, int(round(height / elem_size)))
+
+    # Outer boundary (CCW, start at bottom edge)
     seg_bottom = StraightSegment((-half_w, -half_h), (+half_w, -half_h), n_subdivisions=nx, name="BOTTOM")
     seg_right  = StraightSegment((+half_w, -half_h), (+half_w, +half_h), n_subdivisions=ny, name="RIGHT")
     seg_top    = StraightSegment((+half_w, +half_h), (-half_w, +half_h), n_subdivisions=nx, name="TOP")
     seg_left   = StraightSegment((-half_w, +half_h), (-half_w, -half_h), n_subdivisions=ny, name="LEFT")
     outer = SegmentGroup([seg_bottom, seg_right, seg_top, seg_left], name="OUTER")
 
-    # ---- Optional hole
+    boundaries = [outer]
     hole_meta = {"present": False}
-    if no_holes:
-        boundaries = [outer]
-        mesh_name = f"Plate{width}x{height}_STRUCT_2D"
-        mesh_type = 0  # structured rectangle
-    else:
+
+    if not no_holes:
         bspline, ctrl_pts, radius = make_abaqus_like_bspline(name="HOLE")
         hole = SegmentGroup([bspline], name="HOLE")
         boundaries = [outer, hole]
-        mesh_name = f"Plate{width}x{height}_withHole_2D"
-        mesh_type = 2  # quad-ish with inner loop
         hole_meta = {
             "present": True,
             "radius": float(radius),
@@ -109,12 +199,18 @@ def build_model(
             "note": "Abaqus-like: uniform angles with ±2 x/y jitter",
         }
 
-    # ---- Mesh 2D, then extrude to thickness 1.0 (5 layers × 0.2)
-    plate2d = Model.mesh_2d(boundaries, mesh_type=mesh_type, name=mesh_name)
+    # --- 2D meshing (C2D4/C2D3 depending on topology), then extrude ---
+    plate2d = Model.mesh_2d(
+        boundaries,
+        mesh_type=2,  # quads where possible (rectangles get transfinite quads)
+        name=f"Plate{width}x{height}{'_noHole' if no_holes else '_withHole'}_2D",
+        open_fltk=False
+    )
+
     solid = plate2d.extruded(n=5, spacing=0.2)
     solid.name = f"SolidPlate_{width}x{height}_t1p0_n5{'_noHole' if no_holes else '_bspline'}"
 
-    # ---- Elements & section
+    # --- ElementSet + Section/Material ---
     all_elems = [e for e in solid.elements._items if e is not None]
     elem_set = ElementSet("EALL", all_elems)
     solid.add_elementset(elem_set)
@@ -122,24 +218,23 @@ def build_model(
     steel = solid.add_material(
         Material("STEEL")
         .set_elasticity(ElasticityIsotropic(210e3, 0.30))   # MPa (210 GPa)
-        .set_density(Density(7850.0e-12))                  # tonne/mm^3 (mm units)
+        .set_density(Density(7850.0e-12))                  # tonne/mm^3 (if mm units)
     )
     solid.add_section(SolidSection(material=steel, elset=elem_set))
 
-    # ---- Node sets (edges auto-named; persist corner sets)
+    # --- NodeSets from mesher (names propagated from segments) ---
     ns_bottom = solid.node_sets["BOTTOM"]
     ns_right  = solid.node_sets["RIGHT"]
     ns_top    = solid.node_sets["TOP"]
     ns_left   = solid.node_sets["LEFT"]
 
-    ns_bl = ns_bottom & ns_left
-    ns_br = ns_bottom & ns_right
-    ns_bl.name = "BOTTOM_LEFT"
-    ns_br.name = "BOTTOM_RIGHT"
-    solid.add_nodeset(ns_bl)
-    solid.add_nodeset(ns_br)
+    # Corner sets (make them persistent with names; if they already exist, getter returns them)
+    ns_bl = _get_or_create_named_nodeset(solid, "BOTTOM_LEFT",  (ns_bottom & ns_left))
+    ns_br = _get_or_create_named_nodeset(solid, "BOTTOM_RIGHT", (ns_bottom & ns_right))
+    ns_tr = _get_or_create_named_nodeset(solid, "TOP_RIGHT",    (ns_top    & ns_right))
+    ns_tl = _get_or_create_named_nodeset(solid, "TOP_LEFT",     (ns_top    & ns_left))
 
-    # ---- Supports
+    # --- Supports ---
     supports = SupportCollector("SUPPORTS")
     supports.add(Support(ns_bl, (0.0, 0.0, None, None, None, None)))   # BL: u1=0, u2=0
     supports.add(Support(ns_br, (None, 0.0, None, None, None, None)))  # BR:      u2=0
@@ -147,52 +242,42 @@ def build_model(
         supports.add(Support(edge, (None, None, 0.0, None, None, None)))  # w=0
     solid.add_supportcollector(supports)
 
-    # ---- Edge loads: Σ(node loads) = edge length
-    def count_nodes(ns) -> int:
-        c = 0
-        for _ in ns:
-            c += 1
-        return max(1, c)
-
-    N_bot = count_nodes(ns_bottom)
-    N_rig = count_nodes(ns_right)
-    N_top = count_nodes(ns_top)
-    N_lef = count_nodes(ns_left)
-
-    T_bottom = (float(width)  / N_bot)
-    T_right  = (float(height) / N_rig)
-    T_top    = (float(width)  / N_top)
-    T_left   = (float(height) / N_lef)
-
-    loads = LoadCollector("EDGE_TANGENTIAL")
-    loads.add(CLoad(ns_bottom, (+T_bottom, 0.0     , 0.0)))  # +x
-    loads.add(CLoad(ns_right,  (0.0     , -T_right, 0.0)))  # -y
-    loads.add(CLoad(ns_top,    (-T_top ,  0.0     , 0.0)))  # -x
-    loads.add(CLoad(ns_left,   (0.0     , +T_left , 0.0)))  # +y
+    # --- Edge loads (corners half, sum per edge equals edge length) ---
+    loads = make_tangential_edge_loads(
+        model=solid,
+        width=width,
+        height=height,
+        ns_bottom=ns_bottom,
+        ns_right=ns_right,
+        ns_top=ns_top,
+        ns_left=ns_left,
+        name="EDGE_TANGENTIAL",
+    )
     solid.add_loadcollector(loads)
 
     meta = {
         "width": int(width),
         "height": int(height),
         "plate_centered": True,
+        "mesh_type": 2,
         "mesh_target_edge_size": float(elem_size),
-        "mesh_type": int(mesh_type),
         "nx": int(nx),
         "ny": int(ny),
+        "extruded_layers": 5,
+        "layer_spacing": 0.2,
     }
     return solid, supports, loads, hole_meta, meta
 
 
-
-# -----------------------------------------------------------------------------
+# =============================================================================
 # Solution helpers
-# -----------------------------------------------------------------------------
+# =============================================================================
 def first_buckling_value(solution) -> float:
     return float(solution.steps[0].fields["BUCKLING_FACTORS"][0].item())
 
 
 def collect_hole_nodes_xy_at_midplane(model: Model) -> list[tuple[float, float]]:
-    # Robust: falls kein HOLE-Nodeset existiert, leere Liste zurückgeben
+    # If there is no HOLE set → empty list
     try:
         ns_hole = model.node_sets["HOLE"]
     except KeyError:
@@ -208,16 +293,19 @@ def collect_hole_nodes_xy_at_midplane(model: Model) -> list[tuple[float, float]]
     return out_xy
 
 
-# -----------------------------------------------------------------------------
-# Single run (returns output path)
-# -----------------------------------------------------------------------------
-def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_holes: bool) -> Path:
+# =============================================================================
+# One run → YAML path
+# =============================================================================
+def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_holes: bool, elem_size: float) -> Path:
     random.seed()
 
-    model, supports, loads, hole_meta, plate_meta = build_model(width=width, height=height, no_holes=no_holes)
+    model, supports, loads, hole_meta, plate_meta = build_model(
+        width=width, height=height, no_holes=no_holes, elem_size=elem_size
+    )
     model.add_step(
         LinearBucklingStep(
-            num_eigenvalues=10,
+            sigma=1,
+            num_eigenvalues=1,
             load_collectors=[loads],
             support_collectors=[supports],
         )
@@ -225,6 +313,7 @@ def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_hol
 
     runner = Runner().set_model(model)
     runner.set_engine(Runner.Engine.FEMASTER, path=engine_path)
+    runner.set_option(Runner.Option.NO_TEMP_FILES, False)
     solution = runner.run()
 
     lam1 = first_buckling_value(solution)
@@ -232,7 +321,6 @@ def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_hol
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     out_dir.mkdir(parents=True, exist_ok=True)
-
     hole_tag = "nohole" if no_holes else "bspline"
     out_path = out_dir / f"buckling_{hole_tag}_w{width}_h{height}_{timestamp}.yaml"
 
@@ -240,16 +328,22 @@ def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_hol
         "meta": {
             "timestamp": timestamp,
             "plate": {
-                "min_xy": [-plate_meta["width"] / 2.0, -plate_meta["height"] / 2.0],
-                "max_xy": [ plate_meta["width"] / 2.0,  plate_meta["height"] / 2.0],
+                "min_xy": [-plate_meta["width"]/2.0, -plate_meta["height"]/2.0],
+                "max_xy": [ plate_meta["width"]/2.0,  plate_meta["height"]/2.0],
                 "width": int(plate_meta["width"]),
                 "height": int(plate_meta["height"]),
-                "extruded_layers": 5,
-                "layer_spacing": 0.2,
+                "extruded_layers": plate_meta.get("extruded_layers", 5),
+                "layer_spacing": plate_meta.get("layer_spacing", 0.2),
             },
             "material": {"E_MPa": 210e3, "nu": 0.30, "rho_t_per_mm3": 7850.0e-12},
-            "loads": "outer edges tangential (+x bottom, -y right, -x top, +y left), per-node magnitude (edge_length / N_edge)",
+            "loads": "outer edges tangential (+x bottom, -y right, -x top, +y left), sum per edge = edge length; corner nodes get half",
             "supports": "BL: u1=u2=0; BR: u2=0; all outer edges: w=0",
+            "mesh": {
+                "type": plate_meta["mesh_type"],
+                "target_edge_size": plate_meta["mesh_target_edge_size"],
+                "nx": plate_meta["nx"],
+                "ny": plate_meta["ny"],
+            }
         },
         "hole": hole_meta,
         "first_buckling_factor": float(lam1),
@@ -261,31 +355,29 @@ def run_single(out_dir: Path, engine_path: Path, width: int, height: int, no_hol
     return out_path
 
 
-def _run_once(seed: int, out_dir: Path, engine_path: Path, width: int, height: int, no_holes: bool):
+def _run_once(seed: int, out_dir: Path, engine_path: Path, width: int, height: int, no_holes: bool, elem_size: float):
     random.seed(seed)
     try:
-        p = run_single(out_dir, engine_path, width=width, height=height, no_holes=no_holes)
-        return True, seed, width, str(p)
+        p = run_single(out_dir, engine_path, width=width, height=height, no_holes=no_holes, elem_size=elem_size)
+        return True, seed, (width, height), str(p)
     except Exception as e:
-        return False, seed, width, str(e)
+        return False, seed, (width, height), str(e)
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # CLI helpers
-# -----------------------------------------------------------------------------
-def parse_width_seq(spec: str) -> List[int]:
+# =============================================================================
+def parse_seq(spec: str, default_step: int = 20) -> List[int]:
     """
-    Parse "start:end[:step]" into an inclusive list.
-    Defaults: step=20 wenn nicht angegeben.
-    Beispiel: "40:200:20" -> [40,60,80,...,200]
-              "40:200"    -> [40,60,80,...,200] (step=20)
+    Parse "start:end[:step]" into an inclusive int list.
+    Example: "40:200:20" -> [40,60,80,...,200]
+             "40:200"    -> same with default step
     """
     parts = spec.split(":")
     if len(parts) not in (2, 3):
-        raise ValueError("width_seq must be 'start:end[:step]'")
-    start = int(parts[0])
-    end = int(parts[1])
-    step = int(parts[2]) if len(parts) == 3 else 20
+        raise ValueError("range must be 'start:end[:step]'")
+    start = int(parts[0]); end = int(parts[1])
+    step = int(parts[2]) if len(parts) == 3 else default_step
     if step <= 0:
         raise ValueError("step must be > 0")
     if end < start:
@@ -296,42 +388,41 @@ def parse_width_seq(spec: str) -> List[int]:
     return vals
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # CLI
-# -----------------------------------------------------------------------------
+# =============================================================================
 def main():
-    parser = argparse.ArgumentParser(description="Generate buckling samples with optional B-spline hole. Width can vary; height stays fixed.")
-    parser.add_argument("--n", type=int, required=True, help="Number of samples to generate. If --width_seq is given: per width.")
+    parser = argparse.ArgumentParser(
+        description="Generate buckling samples (2D mesh → extrude; optional B-spline hole)."
+    )
+    parser.add_argument("--n", type=int, required=True,
+                        help="Number of samples to generate (per width if width range is used).")
     parser.add_argument("--out", type=Path, required=True, help="Output directory for YAML files.")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel workers.")
     parser.add_argument("--seed", type=int, default=None, help="Base RNG seed (optional).")
     parser.add_argument("--engine", type=Path, default=None, help="Path to FEMaster engine (overrides default).")
 
-    # Control hole & width(s)
-    parser.add_argument("--no_holes", action="store_true", help="Generate plates without a hole.")
-    parser.add_argument("--width", type=int, default=40, help="Plate width for single-width runs (ignored if --width_seq is given).")
-    parser.add_argument("--width_seq", type=str, default=None, help="Generate for multiple widths: 'start:end[:step]'. n is per-width.")
-    parser.add_argument("--height", type=int, default=40, help="Fixed plate height (does not vary).")
+    parser.add_argument("--no_holes", action="store_true", help="Use rectangle-only 2D mesh (C2D4), then extrude.")
+    parser.add_argument("--width", type=int, default=40, help="Plate width (ignored if --width_seq is given).")
+    parser.add_argument("--height", type=int, default=40, help="Plate height (fixed if only width varies).")
+    parser.add_argument("--width_seq", type=str, default=None,
+                        help="Generate for multiple widths: 'start:end[:step]'. --n is per width.")
+    parser.add_argument("--elem_size", type=float, default=2.0, help="Target in-plane element size for meshing.")
 
     args = parser.parse_args()
 
-    # Engine path
     default_engine = Path(__file__).resolve().parent.parent / "bin" / "FEMaster"
     engine_path = args.engine if args.engine is not None else default_engine
 
-    # Multiprocessing start method
     try:
         set_start_method("spawn")
     except RuntimeError:
         pass
 
-    # Widths
-    if args.width_seq:
-        widths = parse_width_seq(args.width_seq)
-    else:
-        widths = [int(args.width)]
+    # width list
+    widths = parse_seq(args.width_seq) if args.width_seq else [int(args.width)]
+    height = int(args.height)
 
-    # Seeds
     base_rng = random.Random(args.seed) if args.seed is not None else random.Random()
     total_runs = args.n * len(widths)
     seeds: List[int] = [base_rng.getrandbits(64) for _ in range(total_runs)]
@@ -339,25 +430,24 @@ def main():
     ok = fail = 0
     args.out.mkdir(parents=True, exist_ok=True)
 
-    # Jobs aufsetzen
     jobs: List[Tuple[int, int]] = []
     for w in widths:
         for _ in range(args.n):
-            jobs.append((w, 0))  # Platzhalter
+            jobs.append((w, height))
 
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = []
-        for i, (w, _) in enumerate(jobs):
-            futs.append(ex.submit(_run_once, seeds[i], args.out, engine_path, w, args.height, args.no_holes))
+        for i, (w, h) in enumerate(jobs):
+            futs.append(ex.submit(_run_once, seeds[i], args.out, engine_path, w, h, args.no_holes, args.elem_size))
 
         with tqdm.tqdm(total=len(futs), desc="Buckling runs", ncols=100, file=sys.stdout) as bar:
             for fut in as_completed(futs):
-                success, seed, width, msg = fut.result()
+                success, seed, wh, msg = fut.result()
                 if success:
                     ok += 1
                 else:
                     fail += 1
-                    tqdm.tqdm.write(f"[seed={seed} width={width}] ERROR: {msg}", file=sys.stdout)
+                    tqdm.tqdm.write(f"[seed={seed} w={wh[0]} h={wh[1]}] ERROR: {msg}", file=sys.stdout)
                 bar.update(1)
                 bar.set_postfix(ok=ok, fail=fail)
 

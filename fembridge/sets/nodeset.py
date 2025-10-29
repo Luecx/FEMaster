@@ -100,6 +100,20 @@ class NodeSet:
                 seen.add(nid)
         return NodeSet(None, out)
 
+    def __sub__(self, other: "NodeSet") -> "NodeSet":
+        """Mengendifferenz: alle Nodes aus self, die NICHT in other sind."""
+        if not isinstance(other, NodeSet):
+            return NotImplemented
+        other_ids = {n.node_id for n in other.nodes}
+        out: List[Node] = []
+        seen: set[int] = set()
+        for n in self.nodes:
+            nid = n.node_id
+            if nid not in other_ids and nid not in seen:
+                out.append(n)
+                seen.add(nid)
+        return NodeSet(None, out)
+
     # ---------------- Exports ----------------
 
     def to_femaster(self) -> str:

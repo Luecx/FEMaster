@@ -17,12 +17,14 @@ class LinearBucklingStep:
     def __init__(
         self,
         num_eigenvalues: int,
+        sigma: int = None,
         load_collectors: Optional[LoadCollectorInput] = None,
         support_collectors: Optional[SupportCollectorInput] = None,
     ) -> None:
         if num_eigenvalues <= 0:
             raise ValueError("num_eigenvalues must be positive.")
         self.num_eigenvalues = int(num_eigenvalues)
+        self.sigma = int(sigma)
 
         self.load_collectors: List[LoadCollector] = []
         self.support_collectors: List[SupportCollector] = []
@@ -71,6 +73,10 @@ class LinearBucklingStep:
 
         blocks.append("*NUMEIGENVALUES")
         blocks.append(str(self.num_eigenvalues))
+
+        if self.sigma:
+            blocks.append("*SIGMA")
+            blocks.append(str(self.sigma))
 
         return "\n".join(blocks)
 
