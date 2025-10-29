@@ -13,6 +13,8 @@ import sys
 import yaml
 from typing import List, Tuple, Dict, Iterable
 
+Z_TOL = 1e-9  # numerische Toleranz für Midplane-Auswahl
+
 
 if __package__ in (None, ""):
     import os
@@ -28,13 +30,17 @@ from fembridge.sets.elementset import ElementSet
 from fembridge.sets.nodeset import NodeSet
 from fembridge.supports import Support, SupportCollector
 from fembridge.loads import CLoad, LoadCollector
-from fembridge.steps import LinearBucklingStep, LinearStaticStep  # ⟵ NEU
+from fembridge.steps import LinearBucklingStep, LinearStaticStep
 
 
 # =============================================================================
 # Helpers for NodeSets
 # =============================================================================
 def _get_or_create_named_nodeset(model: Model, name: str, ns_or_iter) -> NodeSet:
+    """
+    Fetch a NodeSet by name if it exists; otherwise create it from `ns_or_iter`
+    and add it to the model with the given name.
+    """
     try:
         return model.node_sets[name]
     except KeyError:
@@ -42,6 +48,31 @@ def _get_or_create_named_nodeset(model: Model, name: str, ns_or_iter) -> NodeSet
         created = NodeSet.create(name, base)
         model.add_nodeset(created)
         return created
+
+
+def ensure_hole_mid_nodeset(model: Model, z_tol: float = Z_TOL) -> NodeSet:
+    """
+    Nimmt das NodeSet 'HOLE', filtert auf |z| <= z_tol und legt/aktualisiert
+    ein persistentes NodeSet 'HOLE_MID' an (nur diese Knoten).
+    """
+    ns_hole = model.node_sets["HOLE"]  # es gibt genau ein HOLE-Set
+    mid_nodes = [n for n in ns_hole if abs(float(n.z)) <= z_tol]
+
+    ns_mid_internal = NodeSet.internal(mid_nodes)
+    ns_mid_internal.name = "HOLE_MID"
+
+    model.add_nodeset(ns_mid_internal)
+
+    return ns_mid_internal
+
+
+def get_hole_mid_nodes(model: Model) -> list:
+    """Gibt die Knoten im NodeSet 'HOLE_MID' zurück (soeben erzeugt oder bereits vorhanden)."""
+    try:
+        ns_mid = model.node_sets["HOLE_MID"]
+    except KeyError:
+        ns_mid = ensure_hole_mid_nodeset(model, Z_TOL)
+    return [n for n in ns_mid]
 
 
 # =============================================================================
@@ -58,6 +89,20 @@ def make_tangential_edge_loads(
         ns_left: NodeSet,
         name: str = "EDGE_TANGENTIAL",
 ) -> LoadCollector:
+    """
+    Creates tangential edge loads on the four outer edges with a trapezoidal
+    node distribution so that:
+      - interior nodes get w = L/(N-1)
+      - end (corner) nodes get w/2
+      - sum over a given edge equals its geometric length L
+
+    Directions:
+      bottom: +x, right: -y, top: -x, left: +y
+
+    All intermediate NodeSets are **named** and added to the model to avoid
+    'internal set' semantics (which would otherwise take only the first id).
+    """
+
     def _count(ns: NodeSet) -> int:
         c = 0
         for _ in ns:
@@ -66,20 +111,23 @@ def make_tangential_edge_loads(
 
     loads = LoadCollector(name)
 
+    # Corner sets (re-use if already present, else create & add)
     ns_bl = _get_or_create_named_nodeset(model, "BOTTOM_LEFT", (ns_bottom & ns_left))
     ns_br = _get_or_create_named_nodeset(model, "BOTTOM_RIGHT", (ns_bottom & ns_right))
     ns_tr = _get_or_create_named_nodeset(model, "TOP_RIGHT",   (ns_top    & ns_right))
     ns_tl = _get_or_create_named_nodeset(model, "TOP_LEFT",    (ns_top    & ns_left))
 
+    # For each edge: create named CORNERS and INTERIOR sets, add to model, then place loads
     def _edge(name_prefix: str, ns_edge: NodeSet, L: float, vec: tuple[float, float, float], cornerA: NodeSet, cornerB: NodeSet) -> None:
         N = _count(ns_edge)
         if N == 1:
+            # Degenerate: put full length onto the single node
             only = _get_or_create_named_nodeset(model, f"{name_prefix}_ALL", ns_edge)
             loads.add(CLoad(only, (vec[0]*L, vec[1]*L, vec[2]*L)))
             return
 
-        w = float(L) / float(N - 1)
-        w_end = 0.5 * w
+        w = float(L) / float(N - 1)  # interior node weight
+        w_end = 0.5 * w              # end node weight
 
         ns_corners_raw = (cornerA | cornerB)
         ns_corners = _get_or_create_named_nodeset(model, f"{name_prefix}_CORNERS", ns_corners_raw)
@@ -92,9 +140,13 @@ def make_tangential_edge_loads(
         if len(ns_corners) > 0:
             loads.add(CLoad(ns_corners, (vec[0]*w_end, vec[1]*w_end, vec[2]*w_end)))
 
+    # bottom: +x
     _edge("BOTTOM", ns_bottom, float(width),  (+1.0, 0.0, 0.0), ns_bl, ns_br)
+    # right:  -y
     _edge("RIGHT",  ns_right,  float(height), (0.0, -1.0, 0.0), ns_br, ns_tr)
+    # top:    -x
     _edge("TOP",    ns_top,    float(width),  (-1.0, 0.0, 0.0), ns_tl, ns_tr)
+    # left:   +y
     _edge("LEFT",   ns_left,   float(height), (0.0, +1.0, 0.0), ns_bl, ns_tl)
 
     return loads
@@ -114,6 +166,10 @@ def _sample_hole_params_within_plate(
         n_ctrl_min: int,
         n_ctrl_max: int,
 ) -> tuple[float, float, float, int]:
+    """
+    Draw (cx, cy), radius, n_ctrl such that the *circle* of radius plus jitter stays
+    at least edge_clearance_min away from all edges.
+    """
     half_w = width / 2.0
     half_h = height / 2.0
 
@@ -126,6 +182,7 @@ def _sample_hole_params_within_plate(
     if n_ctrl_min < 3 or n_ctrl_max < n_ctrl_min:
         raise ValueError("n_ctrl_min >= 3 and n_ctrl_max >= n_ctrl_min")
 
+    # we ensure that (radius + jitter_xy + edge_clearance_min) fits inside half-width/height
     safety = radius_max + jitter_xy + edge_clearance_min
     if safety > min(half_w, half_h):
         raise ValueError(
@@ -136,6 +193,7 @@ def _sample_hole_params_within_plate(
     r = random.uniform(radius_min, radius_max)
     n_ctrl = random.randint(n_ctrl_min, n_ctrl_max)
 
+    # admissible ranges for center
     xmin = -half_w + (r + jitter_xy + edge_clearance_min)
     xmax = +half_w - (r + jitter_xy + edge_clearance_min)
     ymin = -half_h + (r + jitter_xy + edge_clearance_min)
@@ -156,6 +214,10 @@ def _make_bspline_hole(
         n_ctrl: int,
         name: str = "HOLE",
 ) -> tuple[BSplineSegment, list[tuple[float, float]]]:
+    """
+    Build a closed B-spline around center (cx, cy) with uniform-angle control points,
+    each perturbed in x and y by ±jitter_xy.
+    """
     angle_step = 2.0 * math.pi / n_ctrl
     ctrl: list[tuple[float, float]] = []
     for i in range(n_ctrl):
@@ -174,37 +236,72 @@ def _make_bspline_hole(
 
 
 # =============================================================================
-# Curvature helpers (on FE hole nodes)
+# Ordering + Curvature on HOLE nodes (nearest-neighbor ring)
 # =============================================================================
-def _order_nodes_around_center(nodes_xy: List[Tuple[float, float]], center: Tuple[float, float]) -> List[int]:
-    cx, cy = center
-    angles = [math.atan2(y - cy, x - cx) for (x, y) in nodes_xy]
-    order = sorted(range(len(nodes_xy)), key=lambda i: angles[i])
+def _order_nodes_nearest(nodes_xy: List[Tuple[float, float]]) -> List[int]:
+    """
+    Greedy nearest-neighbor ordering for a closed loop.
+    Starts at index 0 and repeatedly picks the closest unused point.
+    Returns a permutation of indices [i0, i1, ..., iN-1].
+    """
+    n = len(nodes_xy)
+    if n <= 1:
+        return list(range(n))
+
+    used = [False] * n
+    order = []
+    cur = 0  # start at the first node as requested
+    order.append(cur)
+    used[cur] = True
+
+    def dist2(i, j):
+        xi, yi = nodes_xy[i]
+        xj, yj = nodes_xy[j]
+        dx, dy = (xj - xi), (yj - yi)
+        return dx * dx + dy * dy
+
+    for _ in range(n - 1):
+        best = -1
+        best_d2 = float("inf")
+        for j in range(n):
+            if not used[j]:
+                d2 = dist2(cur, j)
+                if d2 < best_d2:
+                    best_d2 = d2
+                    best = j
+        cur = best
+        used[cur] = True
+        order.append(cur)
+
     return order
 
-def _triangle_curvature(p0, p1, p2) -> float:
-    # curvature k = 4*A / (|a||b||c|), where A is triangle area, signless here
-    ax, ay = p0; bx, by = p1; cx, cy = p2
-    a = math.hypot(bx - ax, by - ay)
-    b = math.hypot(cx - bx, cy - by)
-    c = math.hypot(ax - cx, ay - cy)
-    if a == 0 or b == 0 or c == 0:
-        return 0.0
-    area2 = abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax))  # 2*Area
-    return (2.0 * area2) / (a * b * c)
 
-def compute_curvature_on_hole_nodes(nodes_xy: List[Tuple[float, float]], center_xy: Tuple[float, float]) -> List[float]:
-    if len(nodes_xy) < 3:
-        return [0.0] * len(nodes_xy)
-    order = _order_nodes_around_center(nodes_xy, center_xy)
-    N = len(nodes_xy)
-    curv = [0.0] * N
-    for k in range(N):
-        i = order[k]
-        ip = order[(k - 1) % N]
-        inx = order[(k + 1) % N]
-        curv[i] = _triangle_curvature(nodes_xy[ip], nodes_xy[i], nodes_xy[inx])
-    return curv
+def curvature_from_neighbors_ring(nodes_xy: List[Tuple[float, float]]) -> List[float]:
+    """
+    Unsigned curvature k at each node using immediate neighbors on the ordered ring:
+      k = 4*A / (|a||b||c|), where A is triangle area and a,b,c side lengths.
+    Uses the already-nearest-neighbor-ordered list (wrap-around).
+    """
+    n = len(nodes_xy)
+    if n < 3:
+        return [0.0] * n
+
+    def tri_curv(p0, p1, p2) -> float:
+        ax, ay = p0; bx, by = p1; cx, cy = p2
+        a = math.hypot(bx - ax, by - ay)
+        b = math.hypot(cx - bx, cy - by)
+        c = math.hypot(ax - cx, ay - cy)
+        if a == 0.0 or b == 0.0 or c == 0.0:
+            return 0.0
+        area2 = abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax))  # 2*Area
+        return (2.0 * area2) / (a * b * c)
+
+    kappa = [0.0] * n
+    for i in range(n):
+        ip = (i - 1) % n
+        inx = (i + 1) % n
+        kappa[i] = tri_curv(nodes_xy[ip], nodes_xy[i], nodes_xy[inx])
+    return kappa
 
 
 # =============================================================================
@@ -216,6 +313,7 @@ def build_model(
         no_holes: bool,
         elem_size: float = 2.0,
         *,
+        # hole controls (used only if no_holes=False)
         edge_clearance_min: float = 4.0,
         radius_min: float = 4.0,
         radius_max: float = 12.0,
@@ -223,12 +321,25 @@ def build_model(
         n_ctrl_min: int = 3,
         n_ctrl_max: int = 5,
 ) -> tuple[Model, SupportCollector, LoadCollector, dict, dict]:
+    """
+    - no_holes=True  → 2D-Rect (C2D4) ohne Innenkontur, dann extrudiert.
+    - no_holes=False → Outer + HOLE-Loop, 2D (C2D4/C2D3 je nach Topologie), dann extrudiert.
+
+    Hole parameters:
+      - edge_clearance_min: minimaler Abstand (inkl. Radius+Jitter) von Loch zu allen Rändern
+      - radius_min/max: Radius-Bereich für die runden Kontrollpunkte
+      - jitter_xy: identischer ±Jitter in x und y für jeden Kontrollpunkt
+      - n_ctrl_min/max: Anzahl Kontrollpunkte (inkl. gleichmäßiger Winkelverteilung)
+    """
+
     half_w = width / 2.0
     half_h = height / 2.0
 
+    # discrete subdivisions derived from target elem_size
     nx = max(1, int(round(width  / elem_size)))
     ny = max(1, int(round(height / elem_size)))
 
+    # Outer boundary (CCW, start at bottom edge)
     seg_bottom = StraightSegment((-half_w, -half_h), (+half_w, -half_h), n_subdivisions=nx, name="BOTTOM")
     seg_right  = StraightSegment((+half_w, -half_h), (+half_w, +half_h), n_subdivisions=ny, name="RIGHT")
     seg_top    = StraightSegment((+half_w, +half_h), (-half_w, +half_h), n_subdivisions=nx, name="TOP")
@@ -239,6 +350,7 @@ def build_model(
     hole_meta = {"present": False}
 
     if not no_holes:
+        # Sample feasible hole params and build B-spline loop
         cx, cy, radius, n_ctrl = _sample_hole_params_within_plate(
             width=width, height=height,
             radius_min=radius_min, radius_max=radius_max,
@@ -248,7 +360,7 @@ def build_model(
         bspline, ctrl_pts = _make_bspline_hole(
             cx=cx, cy=cy, radius=radius, jitter_xy=jitter_xy, n_ctrl=n_ctrl, name="HOLE"
         )
-        hole = SegmentGroup([bspline], name="HOLE")
+        hole = SegmentGroup([bspline])
         boundaries = [outer, hole]
         hole_meta = {
             "present": True,
@@ -261,9 +373,11 @@ def build_model(
             "note": "Uniform-angle ctrl points with ±jitter_xy; center sampled to satisfy clearance.",
         }
 
+    # --- 2D meshing (C2D4/C2D3 depending on topology), then extrude ---
     plate2d = Model.mesh_2d(
         boundaries,
-        mesh_type=2,
+        tolerance=1e-1,
+        mesh_type=2,  # quads where possible (rectangles get transfinite quads)
         name=f"Plate{width}x{height}{'_noHole' if no_holes else '_withHole'}_2D",
         open_fltk=False
     )
@@ -271,34 +385,39 @@ def build_model(
     solid = plate2d.extruded(n=5, spacing=0.2)
     solid.name = f"SolidPlate_{width}x{height}_t1p0_n5{'_noHole' if no_holes else '_bspline'}"
 
+    # --- ElementSet + Section/Material ---
     all_elems = [e for e in solid.elements._items if e is not None]
     elem_set = ElementSet("EALL", all_elems)
     solid.add_elementset(elem_set)
 
     steel = solid.add_material(
         Material("STEEL")
-        .set_elasticity(ElasticityIsotropic(210e3, 0.30))
-        .set_density(Density(7850.0e-12))
+        .set_elasticity(ElasticityIsotropic(210e3, 0.30))   # MPa (210 GPa)
+        .set_density(Density(7850.0e-12))                  # tonne/mm^3 (if mm units)
     )
     solid.add_section(SolidSection(material=steel, elset=elem_set))
 
+    # --- NodeSets from mesher (names propagated from segments) ---
     ns_bottom = solid.node_sets["BOTTOM"]
     ns_right  = solid.node_sets["RIGHT"]
     ns_top    = solid.node_sets["TOP"]
     ns_left   = solid.node_sets["LEFT"]
 
+    # Corner sets (persistent names)
     ns_bl = _get_or_create_named_nodeset(solid, "BOTTOM_LEFT",  (ns_bottom & ns_left))
     ns_br = _get_or_create_named_nodeset(solid, "BOTTOM_RIGHT", (ns_bottom & ns_right))
     ns_tr = _get_or_create_named_nodeset(solid, "TOP_RIGHT",    (ns_top    & ns_right))
     ns_tl = _get_or_create_named_nodeset(solid, "TOP_LEFT",     (ns_top    & ns_left))
 
+    # --- Supports ---
     supports = SupportCollector("SUPPORTS")
-    supports.add(Support(ns_bl, (0.0, 0.0, None, None, None, None)))
-    supports.add(Support(ns_br, (None, 0.0, None, None, None, None)))
+    supports.add(Support(ns_bl, (0.0, 0.0, None, None, None, None)))   # BL: u1=0, u2=0
+    supports.add(Support(ns_br, (None, 0.0, None, None, None, None)))  # BR:      u2=0
     for edge in (ns_bottom, ns_right, ns_top, ns_left):
-        supports.add(Support(edge, (None, None, 0.0, None, None, None)))
+        supports.add(Support(edge, (None, None, 0.0, None, None, None)))  # w=0
     solid.add_supportcollector(supports)
 
+    # --- Edge loads (corners half, sum per edge equals edge length) ---
     loads = make_tangential_edge_loads(
         model=solid,
         width=width,
@@ -338,66 +457,24 @@ def build_model(
 # Solution helpers
 # =============================================================================
 def first_buckling_value(solution) -> float:
-    return float(solution.steps[1 if len(solution.steps) > 1 else 0].fields["BUCKLING_FACTORS"][0].item())
+    # Wenn ein statischer Schritt davor lief, ist Buckling bei Index 1, sonst 0
+    idx = 1 if len(solution.steps) > 1 else 0
+    return float(solution.steps[idx].fields["BUCKLING_FACTORS"][0].item())
 
-def collect_hole_nodes_at_midplane(model: Model) -> List:
-    try:
-        ns_hole = model.node_sets["HOLE"]
-    except KeyError:
-        return []
-    out_nodes = []
-    seen = set()
-    for n in ns_hole:
-        if abs(float(n.z) - 0.0) < 1e-12:
-            key = (int(n.node_id), round(float(n.x), 12), round(float(n.y), 12))
-            if key not in seen:
-                seen.add(key)
-                out_nodes.append(n)
-    return out_nodes
 
-def _mises_from_voigt6(s: Iterable[float]) -> float:
-    # s = [sx, sy, sz, sxy, syz, szx]  (VTK order!)
-    sx, sy, sz, sxy, syz, szx = map(float, s)
-    sxx, syy, szz = sx, sy, sz
-    txy, tyz, tzx = sxy, syz, szx
-    term = ((sxx - syy) ** 2 + (syy - szz) ** 2 + (szz - sxx) ** 2 + 6.0 * (txy ** 2 + tyz ** 2 + tzx ** 2))
-    return math.sqrt(0.5 * term)
-
-def extract_node_fields(solution, step_index: int, node_ids: List[int], want_fields: List[str]) -> Dict[str, List]:
-    """Extract selected nodal fields by name (case-insensitive contains)."""
-    out: Dict[str, List] = {}
+def extract_node_field_by_id(solution, step_index: int, node_ids: list[int], field_name: str):
     fields = solution.steps[step_index].fields
-    # map candidate names to actual
-    for wf in want_fields:
-        actual = next((k for k in fields.keys() if wf.lower() in k.lower()), None)
-        if actual is None:
-            continue
-        arr = fields[actual]
-        # assume arr is (N, m) or (N,)
-        if hasattr(arr, "__len__"):
-            vals = []
-            for nid in node_ids:
-                vals.append(arr[nid] if nid < len(arr) else None)
-            out[actual] = vals
-    # add MISES if 6-comp stress found
-    stress_key = next((k for k in out.keys() if "stress" in k.lower()), None)
-    if stress_key is not None:
-        S = out[stress_key]
-        try:
-            mises = []
-            for row in S:
-                if row is None:
-                    mises.append(None)
-                else:
-                    # ensure order is VTK: XX,YY,ZZ,XY,YZ,XZ ; FEMaster array may already be reordered upstream
-                    vv = list(map(float, row))
-                    if len(vv) == 6:
-                        mises.append(_mises_from_voigt6(vv))
-                    else:
-                        mises.append(None)
-            out["MISES"] = mises
-        except Exception:
-            pass
+    if field_name in fields:
+        arr = fields[field_name]
+    else:
+        # exakter case-insensitive Match
+        key = next((k for k in fields.keys() if k.lower() == field_name.lower()), None)
+        if key is None:
+            return [None] * len(node_ids)
+        arr = fields[key]
+    out = []
+    for nid in node_ids:
+        out.append(arr[nid] if 0 <= nid < len(arr) else None)
     return out
 
 
@@ -437,41 +514,58 @@ def run_single(
     )
 
     # Steps:
-    #  - optional LinearStaticStep (for stresses)
-    #  - LinearBucklingStep (as before)
-    steps = []
+    #  - optional LinearStaticStep (für STRESS/DISPLACEMENT)
+    #  - LinearBucklingStep
     if compute_stresses:
-        steps.append(LinearStaticStep(load_collectors=[loads], support_collectors=[supports]))
-    steps.append(LinearBucklingStep(sigma=1, num_eigenvalues=1, load_collectors=[loads], support_collectors=[supports]))
-    for st in steps:
-        model.add_step(st)
+        model.add_step(LinearStaticStep(load_collectors=[loads], support_collectors=[supports]))
+    model.add_step(LinearBucklingStep(sigma=1, num_eigenvalues=1, load_collectors=[loads], support_collectors=[supports]))
 
     runner = Runner().set_model(model)
     runner.set_engine(Runner.Engine.FEMASTER, path=engine_path)
-    runner.set_option(Runner.Option.NO_TEMP_FILES, False)
+    runner.set_option(Runner.Option.NO_TEMP_FILES, True)
     solution = runner.run()
 
     lam1 = first_buckling_value(solution)
 
-    # hole nodes @ midplane with IDs and XY
-    hole_nodes = collect_hole_nodes_at_midplane(model)
+    # Hole-Midplane-Knoten bestimmen (und persistentes Set anlegen)
+    ensure_hole_mid_nodeset(model, Z_TOL)
+    hole_nodes = get_hole_mid_nodes(model)
     hole_nodes_xy = [(float(n.x), float(n.y)) for n in hole_nodes]
     hole_node_ids = [int(n.node_id) for n in hole_nodes]
 
+    # --- NEW: order hole nodes along the loop by greedy nearest-neighbor ---
+    order = _order_nodes_nearest(hole_nodes_xy)
+    hole_nodes    = [hole_nodes[i] for i in order]
+    hole_nodes_xy = [hole_nodes_xy[i] for i in order]
+    hole_node_ids = [hole_node_ids[i] for i in order]
+
     curvature_vals: List[float] = []
-    if compute_curvature and hole_meta.get("present", False):
-        cx, cy = hole_meta["center_xy"]
-        curvature_vals = compute_curvature_on_hole_nodes(hole_nodes_xy, (cx, cy))
+    if compute_curvature and hole_meta.get("present", False) and hole_nodes:
+        # simply use previous/next neighbors on the ordered ring
+        curvature_vals = curvature_from_neighbors_ring(hole_nodes_xy)
 
     node_outputs: Dict[str, List] = {}
-    if compute_stresses and len(solution.steps) >= 1:
-        static_step_index = 0  # we appended static first
-        node_outputs = extract_node_fields(
-            solution,
-            static_step_index,
-            hole_node_ids,
-            want_fields=["STRESS", "DISPLACEMENT"]  # add more if you like
-        )
+    if compute_stresses and len(solution.steps) >= 1 and hole_nodes:
+        static_step_index = 0  # statische Stufe wurde vor Buckling hinzugefügt
+        stress_rows = extract_node_field_by_id(solution, static_step_index, hole_node_ids, "STRESS")
+        disp_rows   = extract_node_field_by_id(solution, static_step_index, hole_node_ids, "DISPLACEMENT")
+
+        # (Optional) Mises – falls deine 6er-Voigtfolge noch FEMaster-Reihenfolge hat:
+        mises_vals = []
+        for row in stress_rows:
+            if row is None:
+                mises_vals.append(None); continue
+            v = list(map(float, row))
+            if len(v) == 6:
+                # FEMaster -> VTK: (XX,YY,ZZ, YZ,XZ,XY) -> (XX,YY,ZZ, XY,YZ,XZ)
+                v[3], v[4], v[5] = v[5], v[3], v[4]
+                sx, sy, sz, sxy, syz, szx = v
+                term = ((sx - sy)**2 + (sy - sz)**2 + (sz - sx)**2 + 6.0*(sxy**2 + syz**2 + szx**2))
+                mises_vals.append(math.sqrt(0.5*term))
+            else:
+                mises_vals.append(None)
+
+        node_outputs["MISES"] = mises_vals
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -489,11 +583,10 @@ def run_single(
         }
         if compute_curvature and curvature_vals:
             entry["curvature"] = float(curvature_vals[i])
-        # attach any extracted node fields
         for k, arr in node_outputs.items():
             val = arr[i]
             if hasattr(val, "__len__") and not isinstance(val, (str, bytes)):
-                entry[k] = [float(v) for v in val]  # cast to float list
+                entry[k] = [float(v) for v in val]
             elif val is None:
                 entry[k] = None
             else:
@@ -527,7 +620,7 @@ def run_single(
         },
         "hole": hole_meta,
         "first_buckling_factor": float(lam1),
-        "hole_nodes": per_node,  # ⟵ Spannungen/Krümmung pro HOLE-Knoten (Midplane)
+        "hole_nodes": per_node,  # Spannungen/Krümmung pro HOLE-MID Knoten – in Loop-Reihenfolge
     }
 
     with open(out_path, "w", encoding="utf-8") as f:
@@ -571,6 +664,11 @@ def _run_once(
 # CLI helpers
 # =============================================================================
 def parse_seq(spec: str, default_step: int = 20) -> List[int]:
+    """
+    Parse "start:end[:step]" into an inclusive int list.
+    Example: "40:200:20" -> [40,60,80,...,200]
+             "40:200"    -> same with default step
+    """
     parts = spec.split(":")
     if len(parts) not in (2, 3):
         raise ValueError("range must be 'start:end[:step]'")
@@ -591,7 +689,7 @@ def parse_seq(spec: str, default_step: int = 20) -> List[int]:
 # =============================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate buckling samples (2D mesh → extrude). Optional: linear static stresses on HOLE nodes and curvature."
+        description="Generate buckling samples (2D mesh → extrude; optional: linear static stresses on HOLE midplane nodes + curvature)."
     )
     parser.add_argument("--n", type=int, required=True,
                         help="Number of samples to generate (per width/height combo if seq is used).")
@@ -621,9 +719,9 @@ def main():
 
     # Optional analyses on HOLE nodes
     parser.add_argument("--compute_stresses", action="store_true",
-                        help="Add a LinearStatic step (using same loads/supports) and extract nodal fields on HOLE nodes.")
+                        help="Add a LinearStatic step (using same loads/supports) and extract nodal fields on HOLE midplane nodes.")
     parser.add_argument("--compute_curvature", action="store_true",
-                        help="Compute curvature on HOLE nodes (midplane) from their polygonal geometry.")
+                        help="Compute curvature on HOLE midplane nodes from their polygonal geometry.")
 
     args = parser.parse_args()
 
@@ -635,6 +733,7 @@ def main():
     except RuntimeError:
         pass
 
+    # width/height lists
     widths = parse_seq(args.width_seq) if args.width_seq else [int(args.width)]
     heights = parse_seq(args.height_seq) if args.height_seq else [int(args.height)]
 

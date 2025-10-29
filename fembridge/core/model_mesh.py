@@ -2,7 +2,7 @@ from __future__ import annotations
 """
 model_mesh.py — gmsh-backed 2D meshing for SegmentGroups
 
-Builds native Gmsh geometry (Line, CircleArc, Spline, BSpline) from your
+Builds native Gmsh geometry (Line, CircleArc, piecewise-Linear) from your
 segments, hands subdivision to Gmsh (Transfinite), generates a 2D mesh,
 and maps it back into your Model (nodes, elements, nodesets).
 
@@ -65,48 +65,84 @@ def _circle_center_from_three(p1, p2, p3) -> Tuple[float, float]:
     cy = -c / (2.0 * a)
     return float(cx), float(cy)
 
+def _add_polyline_from_points(occ, pcache, pts, closed: bool) -> List[int]:
+    """
+    Create a chain of OCC lines from sampled 2D points.
+    Returns a list of curve tags (each tag is a line).
+    """
+    pts = np.asarray(pts, dtype=float)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError(f"Expected (N,2) array of points, got shape {pts.shape}")
+
+    # Close if requested (ensure the chain returns to start)
+    if closed and len(pts) > 0 and not np.allclose(pts[0], pts[-1], atol=1e-12):
+        pts = np.vstack([pts, pts[0]])
+
+    p_tags = [_add_point_cached(occ, pcache, (p[0], p[1])) for p in pts]
+    curve_tags: List[int] = []
+    for a, b in zip(p_tags[:-1], p_tags[1:]):
+        curve_tags.append(int(occ.addLine(int(a), int(b))))
+    if len(curve_tags) == 0:
+        raise ValueError("Polyline requires at least two distinct points.")
+    return curve_tags
+
 # -----------------------------------------------------------------------------
 # Curves per segment (collect transfinite wishes; don't set yet)
 # -----------------------------------------------------------------------------
 
-def _add_curve_for_segment(occ, pcache: Dict[Tuple[float, float], int], seg) -> Tuple[int, Optional[int]]:
-    """Create a native OCC curve for seg and return (curve_tag, n_subdivisions_or_None)."""
+def _add_curve_for_segment(occ, pcache: Dict[Tuple[float, float], int], seg) -> Tuple[List[int], Optional[int]]:
+    """
+    Create native OCC curve(s) for seg and return (list_of_curve_tags, n_subdiv_or_None).
+
+    For polylines we return many curve tags; caller must extend the list.
+    For true single curves (line/arc) we return a single tag in a list.
+    """
     nsub = getattr(seg, "n_subdivisions", None)
+
+    # Exact straight line
     if isinstance(seg, StraightSegment):
         a = _add_point_cached(occ, pcache, seg.p_start)
         b = _add_point_cached(occ, pcache, seg.p_end)
-        return int(occ.addLine(a, b)), nsub
+        return [int(occ.addLine(a, b))], nsub
+
+    # Exact circular arc
     if isinstance(seg, CircleSegment):
         a = _add_point_cached(occ, pcache, seg.p_start)
         b = _add_point_cached(occ, pcache, seg.p_end)
         c = _add_point_cached(occ, pcache, seg.center)
-        return int(occ.addCircleArc(a, c, b)), nsub
+        return [int(occ.addCircleArc(a, c, b))], nsub
+
+    # Filet: approximate with exact circle arc via three points on the filet circle
     if isinstance(seg, Filet):
         a = _add_point_cached(occ, pcache, seg.p_start)
         b = _add_point_cached(occ, pcache, seg.p_end)
         mid = seg.at(0.5)
         cx, cy = _circle_center_from_three(seg.p_start, mid, seg.p_end)
         c = _add_point_cached(occ, pcache, (cx, cy))
-        return int(occ.addCircleArc(a, c, b)), nsub
-    if isinstance(seg, CurvedSegment):
-        a = _add_point_cached(occ, pcache, seg.p_start)
-        m = _add_point_cached(occ, pcache, np.asarray(seg.mid))
-        b = _add_point_cached(occ, pcache, seg.p_end)
-        return int(occ.addSpline([a, m, b])), nsub
-    if isinstance(seg, BSplineSegment):
-        p_tags = [_add_point_cached(occ, pcache, np.asarray(p)) for p in seg.control_points]
-        if getattr(seg, "closed", False) and len(p_tags) > 0:
-            p_tags = list(p_tags) + [p_tags[0]]  # robust closure
-        return int(occ.addBSpline(list(map(int, p_tags)))), nsub
+        return [int(occ.addCircleArc(a, c, b))], nsub
 
-    # Fallback: polyline
-    pts = [_add_point_cached(occ, pcache, p) for p in seg.get_points()]
-    if len(pts) < 2:
-        raise ValueError("Segment produced < 2 points; cannot create curve.")
-    first = int(occ.addLine(int(pts[0]), int(pts[1])))
-    for s, e in zip(pts[1:-1], pts[2:]):
-        occ.addLine(int(s), int(e))
-    return int(first), nsub
+    # Curved segments (generic) → sampled polyline (no splines)
+    if isinstance(seg, CurvedSegment):
+        pts = seg.get_points()
+        # Optional light decimation for robustness
+        if len(pts) > 800:
+            idx = np.linspace(0, len(pts) - 1, 800).round().astype(int)
+            pts = np.asarray(pts, float)[idx]
+        return _add_polyline_from_points(occ, pcache, pts, closed=False), None  # no transfinite on sampled chains
+
+    # BSpline segments → sampled polyline (no splines)
+    if isinstance(seg, BSplineSegment):
+        pts = seg.get_points()
+        if len(pts) > 800:
+            idx = np.linspace(0, len(pts) - 1, 800).round().astype(int)
+            pts = np.asarray(pts, float)[idx]
+        return _add_polyline_from_points(occ, pcache, pts, closed=bool(getattr(seg, "closed", False))), None
+
+    # Fallback: use provided point sampler
+    pts = getattr(seg, "get_points", lambda: None)()
+    if pts is None or len(pts) < 2:
+        raise ValueError(f"Unsupported or too-short segment type: {type(seg).__name__}")
+    return _add_polyline_from_points(occ, pcache, np.asarray(pts, float), closed=False), None
 
 # -----------------------------------------------------------------------------
 # Rectangle detection for perfect quads
@@ -190,10 +226,12 @@ def _build_curves_for_groups(
         segs = list(group.segments)
         curve_tags: List[int] = []
         for s in segs:
-            ct, nsub = _add_curve_for_segment(occ, pcache, s)
-            curve_tags.append(int(ct))
+            cts, nsub = _add_curve_for_segment(occ, pcache, s)
+            curve_tags.extend(int(ct) for ct in cts)
+            # Only push transfinite for “true” single curves (lines/arcs) — polylines skip it
             if nsub is not None and int(nsub) >= 1:
-                pending_transfinite.append((int(ct), int(nsub)))
+                for ct in cts:
+                    pending_transfinite.append((int(ct), int(nsub)))
 
         if group.is_closed(tolerance=tolerance):
             loop = int(occ.addCurveLoop(curve_tags))
