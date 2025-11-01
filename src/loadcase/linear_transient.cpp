@@ -56,13 +56,7 @@ void Transient::run() {
         "building constraints"
     );
 
-    // (3) Global load matrix (node x 6) — time-independent for now
-    auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
-        "building global load matrix"
-    );
-
-    // (4) Active stiffness K and mass M
+    // (3) Active stiffness K and mass M
     auto K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K"
@@ -72,13 +66,7 @@ void Transient::run() {
         "constructing mass matrix M"
     );
 
-    // (5) Reduce global loads -> active RHS f (n x 1)
-    auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f"
-    );
-
-    // (6) Build constraint transformer (u = u_p + T q)
+    // (4) Build constraint transformer (u = u_p + T q)
     auto CT = Timer::measure(
         [&]() {
             ConstraintTransformer::BuildOptions copt;
@@ -104,7 +92,7 @@ void Transient::run() {
     logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
     logging::down();
 
-    // (7) Reduce operators to master space: A = Tᵀ K T, Mr = Tᵀ M T
+    // (5) Reduce operators to master space: A = Tᵀ K T, Mr = Tᵀ M T
     auto A = Timer::measure(
         [&]() { return CT->assemble_A(K); },
         "assembling reduced stiffness A = T^T K T"
@@ -114,20 +102,13 @@ void Transient::run() {
         "assembling reduced mass Mr = T^T M T"
     );
 
-    // (8) Rayleigh damping in reduced space: Cr = α Mr + β A
+    // (6) Rayleigh damping in reduced space: Cr = α Mr + β A
     SparseMatrix Cr(A.rows(), A.cols());
     if (rayleigh.has_value()) {
         Cr = rayleigh->build(Mr, A);
     } else {
         Cr.setZero();
     }
-
-    // (9) Reduced RHS (time-independent). With homogeneous supports u_p = 0:
-    //     fr = Tᵀ (f - K u_p)  = Tᵀ f
-    auto fr = Timer::measure(
-        [&]() { return CT->assemble_b(K, f); }, // matches buckling style; with u_p=0 ⇒ Tᵀ f
-        "reducing active RHS to master space (fr = T^T f)"
-    );
 
     // Optional: dump matrices
     if (!stiffness_file.empty()) {
@@ -142,10 +123,17 @@ void Transient::run() {
         write_mtx(damping_file + "_C.mtx", Cr, 0, 17);
     }
 
-    // (10) Build constant-force callback for the solver
-    auto reduced_force = [fr](double /*t*/) -> DynamicVector { return fr; };
+    // (7) Build time-dependent reduced force callback for the solver
+    auto reduced_force = [this,
+                           &active_dof_idx_mat,
+                           CT_ptr = CT.get(),
+                           &K](double time) -> DynamicVector {
+        auto load_matrix = model->build_load_matrix(this->loads, time);
+        auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
+        return CT_ptr->assemble_b(K, f_active);
+    };
 
-    // (11) Newmark options + IC (zeros in reduced space unless user-specified elsewhere)
+    // (8) Newmark options + IC (zeros in reduced space unless user-specified elsewhere)
     solver::NewmarkOpts optsNm;
     optsNm.beta   = beta;
     optsNm.gamma  = gamma;
@@ -158,10 +146,10 @@ void Transient::run() {
     DynamicVector qdot0 = DynamicVector::Zero(A.rows());
     solver::NewmarkIC ic{q0, qdot0, DynamicVector()}; // a0 computed internally
 
-    // (12) Solve reduced transient problem
+    // (9) Solve reduced transient problem
     auto result = solver::newmark_linear(Mr, Cr, A, ic, optsNm, reduced_force);
 
-    // (13) Write results with cadence
+    // (10) Write results with cadence
     const int n_steps = static_cast<int>(std::ceil(t_end / dt));
     int write_stride = std::max(1, write_every_steps);
     if (write_every_time > 0.0) {

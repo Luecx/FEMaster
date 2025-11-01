@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../bc/amplitude.h"
 #include "../constraints/connector.h"
 #include "../constraints/coupling.h"
 #include "../cos/coordinate_system.h"
@@ -48,15 +49,18 @@ struct Model {
 
     // -------------------- STRUCTURAL --------------------
     // load management
-    void add_cload      (const std::string& nset, Vec6 load);
-    void add_cload      (ID id, Vec6 load);
-    void add_dload      (const std::string& sfset, Vec3 load);
-    void add_dload      (ID id, Vec3 load);
-    void add_pload      (const std::string& sfset, Precision load);
-    void add_pload      (ID id, Precision load);
-    void add_vload      (const std::string& elset, Vec3 load);
-    void add_vload      (ID id, Vec3 load);
+    void add_cload      (const std::string& nset, Vec6 load, const std::string& orientation = "", const std::string& amplitude = "");
+    void add_cload      (ID id, Vec6 load, const std::string& orientation = "", const std::string& amplitude = "");
+    void add_dload      (const std::string& sfset, Vec3 load, const std::string& orientation = "", const std::string& amplitude = "");
+    void add_dload      (ID id, Vec3 load, const std::string& orientation = "", const std::string& amplitude = "");
+    void add_pload      (const std::string& sfset, Precision load, const std::string& amplitude = "");
+    void add_pload      (ID id, Precision load, const std::string& amplitude = "");
+    void add_vload      (const std::string& elset, Vec3 load, const std::string& orientation = "", const std::string& amplitude = "");
+    void add_vload      (ID id, Vec3 load, const std::string& orientation = "", const std::string& amplitude = "");
     void add_tload      (std::string& temp_field, Precision ref_temp);
+
+    void define_amplitude(const std::string& name, bc::Interpolation interpolation);
+    void add_amplitude_sample(const std::string& name, Precision time, Precision value);
 
     // support managment
     void add_support    (const std::string& nset, StaticVector<6> constraint, const std::string& orientation="");
@@ -82,7 +86,7 @@ struct Model {
     ElementData   build_integration_point_numeration();
 
     // building loads for every node including non existing ones
-    NodeData              build_load_matrix(std::vector<std::string> load_sets = {});
+    NodeData              build_load_matrix(std::vector<std::string> load_sets = {}, Precision time = 0);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids, const std::vector<std::string>& supp_sets = {});
     constraint::Equations build_constraints(SystemDofIds& system_dof_ids, std::vector<std::string> supp_sets = {});
 
@@ -104,4 +108,3 @@ struct Model {
 
 #include "model.ipp"
 } }    // namespace fem
-

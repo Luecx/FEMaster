@@ -58,52 +58,152 @@ void Model::add_tie(const std::string& master_set, const std::string& slave_set,
     _data->ties.emplace_back(master_ptr, slave_ptr, distance, adjust);
 }
 
-void Model::add_cload(const std::string& nset, Vec6 load){
+
+void Model::add_cload(const std::string& nset, Vec6 load, const std::string& orientation, const std::string& amplitude){
     logging::error(_data->node_sets.has(nset), "Node set ", nset, " does not exist");
     auto region_ptr = _data->node_sets.get(nset);
-    _data->load_cols.get()->add_cload(region_ptr, load);
+
+    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+        orientation_ptr = _data->coordinate_systems.get(orientation);
+    }
+
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+
+    _data->load_cols.get()->add_cload(region_ptr, load, orientation_ptr, amplitude_ptr);
 }
 
-void Model::add_cload(const ID id, Vec6 load) {
+void Model::add_cload(const ID id, Vec6 load, const std::string& orientation, const std::string& amplitude) {
     auto region_ptr = std::make_shared<NodeRegion>("INTERNAL");
     region_ptr->add(id);
-    _data->load_cols.get()->add_cload(region_ptr, load);
+
+    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+        orientation_ptr = _data->coordinate_systems.get(orientation);
+    }
+
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+
+    _data->load_cols.get()->add_cload(region_ptr, load, orientation_ptr, amplitude_ptr);
 }
 
-void Model::add_dload(const std::string& sfset, Vec3 load) {
+void Model::add_dload(const std::string& sfset, Vec3 load, const std::string& orientation, const std::string& amplitude) {
     logging::error(_data->surface_sets.has(sfset), "Surface set ", sfset, " does not exist");
     auto region_ptr = _data->surface_sets.get(sfset);
-    _data->load_cols.get()->add_dload(region_ptr, load);
+
+    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+        orientation_ptr = _data->coordinate_systems.get(orientation);
+    }
+
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+
+    _data->load_cols.get()->add_dload(region_ptr, load, orientation_ptr, amplitude_ptr);
 }
 
-void Model::add_dload(ID id, Vec3 load) {
+void Model::add_dload(ID id, Vec3 load, const std::string& orientation, const std::string& amplitude) {
     auto region_ptr = std::make_shared<SurfaceRegion>("INTERNAL");
     region_ptr->add(id);
-    _data->load_cols.get()->add_dload(region_ptr, load);
+
+    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+        orientation_ptr = _data->coordinate_systems.get(orientation);
+    }
+
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+
+    _data->load_cols.get()->add_dload(region_ptr, load, orientation_ptr, amplitude_ptr);
 }
 
-void Model::add_pload(const std::string& sfset, Precision load) {
+void Model::add_pload(const std::string& sfset, Precision load, const std::string& amplitude) {
     logging::error(_data->surface_sets.has(sfset), "Surface set ", sfset, " does not exist");
     auto region_ptr = _data->surface_sets.get(sfset);
-    _data->load_cols.get()->add_pload(region_ptr, load);
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+    _data->load_cols.get()->add_pload(region_ptr, load, amplitude_ptr);
 }
 
-void Model::add_pload(ID id, Precision load) {
+void Model::add_pload(ID id, Precision load, const std::string& amplitude) {
     auto region_ptr = std::make_shared<SurfaceRegion>("INTERNAL");
     region_ptr->add(id);
-    _data->load_cols.get()->add_pload(region_ptr, load);
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+    _data->load_cols.get()->add_pload(region_ptr, load, amplitude_ptr);
 }
 
-void Model::add_vload(const std::string& elset, Vec3 load) {
+void Model::add_vload(const std::string& elset, Vec3 load, const std::string& orientation, const std::string& amplitude) {
     logging::error(_data->elem_sets.has(elset), "Element set ", elset, " does not exist");
     auto region_ptr = _data->elem_sets.get(elset);
-    _data->load_cols.get()->add_vload(region_ptr, load);
+
+    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+        orientation_ptr = _data->coordinate_systems.get(orientation);
+    }
+
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+
+    _data->load_cols.get()->add_vload(region_ptr, load, orientation_ptr, amplitude_ptr);
 }
 
-void Model::add_vload(const ID id, Vec3 load) {
+void Model::add_vload(const ID id, Vec3 load, const std::string& orientation, const std::string& amplitude) {
     auto region_ptr = std::make_shared<ElementRegion>("INTERNAL");
     region_ptr->add(id);
-    _data->load_cols.get()->add_vload(region_ptr, load);
+
+    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+        orientation_ptr = _data->coordinate_systems.get(orientation);
+    }
+
+    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+    if (!amplitude.empty()) {
+        logging::error(_data->amplitudes.has(amplitude), "Amplitude ", amplitude, " does not exist");
+        amplitude_ptr = _data->amplitudes.get(amplitude);
+    }
+
+    _data->load_cols.get()->add_vload(region_ptr, load, orientation_ptr, amplitude_ptr);
+}
+
+void Model::define_amplitude(const std::string& name, bc::Interpolation interpolation) {
+    auto amplitude = _data->amplitudes.activate(name);
+    amplitude->set_interpolation(interpolation);
+    amplitude->clear_samples();
+}
+
+void Model::add_amplitude_sample(const std::string& name, Precision time, Precision value) {
+    logging::error(_data->amplitudes.has(name), "Amplitude ", name, " has not been defined");
+    _data->amplitudes.get(name)->add_sample(time, value);
 }
 
 void Model::add_tload(std::string& temp_field, Precision ref_temp) {

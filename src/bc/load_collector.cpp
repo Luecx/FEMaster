@@ -28,49 +28,70 @@ LoadCollector::LoadCollector(const std::string& name)
 /**
  * @copydoc LoadCollector::apply
  */
-void LoadCollector::apply(model::ModelData& model_data, NodeData& bc) {
+void LoadCollector::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
     for (const auto& load : this->_data) {
-        load->apply(model_data, bc);
+        if (!load) {
+            continue;
+        }
+        load->apply(model_data, bc, time);
     }
 }
 
 /**
  * @copydoc LoadCollector::add_cload
  */
-void LoadCollector::add_cload(model::NodeRegion::Ptr region, Vec6 values) {
+void LoadCollector::add_cload(model::NodeRegion::Ptr region,
+                              Vec6 values,
+                              cos::CoordinateSystem::Ptr orientation,
+                              Amplitude::Ptr amplitude) {
     auto cload = std::make_shared<CLoad>();
     cload->region = std::move(region);
     cload->values = values;
+    cload->orientation = std::move(orientation);
+    cload->amplitude = std::move(amplitude);
     this->add(cload);
 }
 
 /**
  * @copydoc LoadCollector::add_dload
  */
-void LoadCollector::add_dload(model::SurfaceRegion::Ptr region, Vec3 values) {
+void LoadCollector::add_dload(model::SurfaceRegion::Ptr region,
+                              Vec3 values,
+                              cos::CoordinateSystem::Ptr orientation,
+                              Amplitude::Ptr amplitude) {
     auto dload = std::make_shared<DLoad>();
     dload->region = std::move(region);
     dload->values = values;
+    dload->orientation = std::move(orientation);
+    dload->amplitude = std::move(amplitude);
     this->add(dload);
 }
 
 /**
  * @copydoc LoadCollector::add_pload
  */
-void LoadCollector::add_pload(model::SurfaceRegion::Ptr region, Precision pressure) {
+void LoadCollector::add_pload(model::SurfaceRegion::Ptr region,
+                              Precision pressure,
+                              Amplitude::Ptr amplitude) {
     auto pload = std::make_shared<PLoad>();
     pload->region = std::move(region);
     pload->pressure = pressure;
+    pload->amplitude = std::move(amplitude);
     this->add(pload);
 }
 
 /**
  * @copydoc LoadCollector::add_vload
  */
-void LoadCollector::add_vload(model::ElementRegion::Ptr region, Vec3 values) {
+void LoadCollector::add_vload(model::ElementRegion::Ptr region,
+                              Vec3 values,
+                              cos::CoordinateSystem::Ptr orientation,
+                              Amplitude::Ptr amplitude) {
     auto vload = std::make_shared<VLoad>();
     vload->region = std::move(region);
     vload->values = values;
+    vload->orientation = std::move(orientation);
+    vload->amplitude = std::move(amplitude);
     this->add(vload);
 }
 

@@ -17,6 +17,8 @@
 
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
+#include "amplitude.h"
+#include "../cos/coordinate_system.h"
 #include "../data/node_data_dict.h"
 #include "../data/region.h"
 #include "bc.h"
@@ -42,6 +44,9 @@ namespace bc {
 struct Load : public BoundaryCondition {
     using Ptr = std::shared_ptr<Load>; ///< Shared pointer alias for load storage.
 
+    cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional local orientation.
+    Amplitude::Ptr amplitude = nullptr;               ///< Optional time-dependent scaling.
+
     /**
      * @brief Virtual defaulted destructor to enable polymorphic deletion.
      */
@@ -53,7 +58,7 @@ struct Load : public BoundaryCondition {
      * @param model_data Model data that provides geometry and topology.
      * @param bc Boundary-condition storage where load contributions are added.
      */
-    virtual void apply(model::ModelData& model_data, NodeData& bc) = 0;
+    virtual void apply(model::ModelData& model_data, NodeData& bc, Precision time) = 0;
 };
 
 /**
@@ -61,7 +66,9 @@ struct Load : public BoundaryCondition {
  * @brief Concentrated nodal load.
  *
  * Applies up to six generalized force/moment components to each node in the
- * associated node region.
+ * associated node region. When an orientation coordinate system is provided,
+ * the components are interpreted in the local basis and rotated into the
+ * global frame prior to assembly.
  */
 struct CLoad : public Load {
     using Ptr = std::shared_ptr<CLoad>; ///< Shared pointer alias for concentrated loads.
@@ -85,7 +92,7 @@ struct CLoad : public Load {
      * @param model_data Provides access to nodal topology (unused).
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc) override;
+    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
 };
 
 /**
@@ -93,12 +100,14 @@ struct CLoad : public Load {
  * @brief Distributed surface load with vector traction.
  *
  * Applies translational forces to the nodes of each surface patch referenced by
- * the associated region.
+ * the associated region. If an orientation system is supplied, the traction
+ * components are defined in that local frame and mapped to global coordinates
+ * for every surface node.
  */
 struct DLoad : public Load {
     using Ptr = std::shared_ptr<DLoad>; ///< Shared pointer alias for distributed loads.
 
-    Vec3 values{NAN, NAN, NAN};                ///< Surface traction components.
+    Vec3 values{NAN, NAN, NAN};                  ///< Surface traction components.
     SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
 
     /**
@@ -117,7 +126,7 @@ struct DLoad : public Load {
      * @param model_data Provides surface connectivity and geometry.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc) override;
+    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
 };
 
 /**
@@ -149,7 +158,7 @@ struct PLoad : public Load {
      * @param model_data Provides surface connectivity and geometry.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc) override;
+    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
 };
 
 /**
@@ -157,13 +166,14 @@ struct PLoad : public Load {
  * @brief Volumetric load applied to structural elements.
  *
  * Applies a body-force vector to each structural element in the associated
- * element region.
+ * element region. For oriented loads the vector is taken in local coordinates
+ * and rotated at the element centroid before being scattered to the nodes.
  */
 struct VLoad : public Load {
     using Ptr = std::shared_ptr<VLoad>; ///< Shared pointer alias for volumetric loads.
 
-    Vec3 values{NAN, NAN, NAN};                 ///< Body-force components.
-    SPtr<model::ElementRegion> region = nullptr; ///< Target element region.
+    Vec3 values{NAN, NAN, NAN};                   ///< Body-force components.
+    SPtr<model::ElementRegion> region = nullptr;  ///< Target element region.
 
     /**
      * @brief Default constructor.
@@ -181,7 +191,7 @@ struct VLoad : public Load {
      * @param model_data Provides access to the element container.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc) override;
+    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
 };
 
 /**
@@ -213,7 +223,7 @@ struct TLoad : public Load {
      * @param model_data Provides access to the element container.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc) override;
+    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
 };
 
 } // namespace bc
