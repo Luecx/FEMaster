@@ -1,4 +1,4 @@
-/**
+wsl/**
  * @file amplitude.h
  * @brief Declares time-dependent amplitude series for boundary conditions.
  *
