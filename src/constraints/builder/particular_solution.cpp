@@ -44,12 +44,12 @@ ParticularOutput compute_particular_and_project(const ParticularInput& input,
         return output;
     }
 
-    Eigen::VectorXd d_dense(input.C_use.rows());
+    DynamicVector d_dense(input.C_use.rows());
     for (int i = 0; i < input.C_use.rows(); ++i) {
         d_dense[i] = input.d_mod[i];
     }
 
-    Eigen::VectorXd u_use = qr.solve(d_dense);
+    DynamicVector u_use = qr.solve(d_dense);
 
     DynamicVector u_any = DynamicVector::Zero(n);
     for (int k = 0; k < n_use; ++k) {
@@ -62,7 +62,7 @@ ParticularOutput compute_particular_and_project(const ParticularInput& input,
         }
     }
 
-    Eigen::VectorXd residual = input.C_use * u_use - d_dense;
+    DynamicVector residual = input.C_use * u_use - d_dense;
     output.residual_norm = residual.norm();
 
     const Precision feas_tol = feas_tol_rel * (d_norm > 0 ? d_norm : Precision(1));

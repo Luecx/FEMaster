@@ -17,6 +17,7 @@
 #include "config.h"
 #include "logging.h"
 #include "timer.h"
+#include "types_num.h"
 #include "types_eig.h"
 
 #ifdef SUPPORT_GPU

@@ -18,6 +18,10 @@
 #include "../model/element/element.h"
 #include "../core/logging.h"
 
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
+
 namespace fem { namespace mattools {
 
 /**

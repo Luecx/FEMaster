@@ -1,309 +1,326 @@
-#===============================================================
-# Project Settings
-#===============================================================
+# ===============================================================
+# FEMaster Makefile (Linux/WSL/macOS) — CPU/GPU, MKL, static OK
+# ===============================================================
 
-PROJECT_NAME = "FEMaster"
+PROJECT_NAME := FEMaster
+CXX          := g++
+NVCC         := nvcc
 
-#===============================================================
-# Compiler Options and Configurations
-#===============================================================
+# ---------------------------------------------------------------
+# Feature toggles (override via CLI, e.g. make mkl=1 static_link=1)
+# ---------------------------------------------------------------
+openmp             ?= 1   # 1: enable OpenMP (-fopenmp)
+mkl                ?= 1   # 1: link MKL
+mkl_sequential     ?= 0   # 1: libmkl_sequential; 0: libmkl_intel_thread (+iomp5)
+debug              ?= 0   # 1: -g3 and O2; 0: -DNDEBUG -DEIGEN_NO_DEBUG and O3
+double_precision   ?= 1   # 1: -DDOUBLE_PRECISION (and CUDA_DOUBLE_PRECISION)
+eigen_fast_compile ?= 1   # 1: Eigen compile-speed tweaks
+time_report        ?= 0   # 1: -ftime-report
+static_link        ?= 0   # 1: -static-libstdc++ -static-libgcc + MKL static archives
+cuda_dp            ?= 1   # keep for legacy guards in GPU code paths
 
-# Compiler settings
-NVCC = nvcc
-CXX  = g++
+# -------- Normalize toggles (empty env vars override ?=) --------
+define _norm_toggle
+$1 := $(strip $($1))
+ifeq ($($1),)
+  $1 := $2
+endif
+endef
+$(eval $(call _norm_toggle,openmp,1))
+$(eval $(call _norm_toggle,mkl,1))
+$(eval $(call _norm_toggle,mkl_sequential,0))
+$(eval $(call _norm_toggle,debug,0))
+$(eval $(call _norm_toggle,double_precision,1))
+$(eval $(call _norm_toggle,eigen_fast_compile,1))
+$(eval $(call _norm_toggle,time_report,0))
+$(eval $(call _norm_toggle,static_link,0))
+$(eval $(call _norm_toggle,cuda_dp,1))
 
+# if sequential is requested, force MKL on
+mkl := $(if $(filter 1,$(mkl_sequential)),1,$(mkl))
 
-#===============================================================
-# Default Feature Flags
-#===============================================================
+# ---------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------
+SRCDIR   := src
+TESTDIR  := tests
+OBJDIR   := obj
+BINDIR   := bin
+TARGET   := $(BINDIR)/$(PROJECT_NAME)
 
-openmp             ?= 1   # Enable/disable OpenMP
-mkl                ?= 0   # Enable/disable MKL (Math Kernel Library)
-mkl_sequential     ?= 0   # Enable/disable Sequential MKL
-cuda_dp            ?= 1   # Enable/disable CUDA Double Precision
-debug              ?= 0   # Enable/disable Debug mode
-double_precision   ?= 1   # Enable/disable Double Precision
-eigen_fast_compile ?= 1   # Enable/disable Eigen fast compile mode
-time_report        ?= 0   # Enable/disable time report for compilation
+# Adjust /usr/local/include if Eigen/argparse live elsewhere
+INCLUDES := -I/usr/local/include $(if $(MKLROOT),-I$(MKLROOT)/include)
 
-#===============================================================
-# General Compiler Flags
-#===============================================================
+# MKL paths
+MKL_PATH := $(MKLROOT)/lib/intel64
+ifeq ($(shell uname -s),Darwin)
+  MKL_PATH := $(MKLROOT)/lib
+endif
 
-WARNFLAGS  =
-CXXFLAGS   = -std=c++17 -O3 -I /usr/local/include $(WARNFLAGS)
-NVCCFLAGS  = -std=c++17 -O3 -I /usr/local/include --expt-relaxed-constexpr $(WARNFLAGS)
+# Static Intel OpenMP (iomp5) archive (adjust if different on your system)
+IOMP5_A  := /opt/intel/oneapi/compiler/2024.2/lib/libiomp5.a
 
+# ---------------------------------------------------------------
+# Sources / Objects
+# ---------------------------------------------------------------
+MAIN_SRC     := $(SRCDIR)/main.cpp
+CPP_SRCS     := $(filter-out $(MAIN_SRC), $(sort $(shell find $(SRCDIR) -name '*.cpp')))
+CU_SRCS      := $(sort $(shell find $(SRCDIR) -name '*.cu'))
+TST_SRCS     := $(sort $(shell find $(TESTDIR) -name '*.cpp'))
+
+GPP_OBJDIR   := $(OBJDIR)/gpp
+NVCC_OBJROOT := $(OBJDIR)/nvcc
+CPP_OBJDIR   := $(NVCC_OBJROOT)/cpp
+CU_OBJDIR    := $(NVCC_OBJROOT)/cuda
+
+GPP_OBJS     := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
+MAIN_OBJ_CPU := $(MAIN_SRC:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
+
+GPU_CPP_OBJS := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
+MAIN_OBJ_GPU := $(MAIN_SRC:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
+CU_OBJS      := $(CU_SRCS:$(SRCDIR)/%.cu=$(CU_OBJDIR)/%.o)
+
+TST_OBJS     := $(TST_SRCS:$(TESTDIR)/%.cpp=$(GPP_OBJDIR)/%.o) $(GPP_OBJS)
+
+# ---------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------
 ifneq (,$(shell which ccache 2>/dev/null))
   CXX  := ccache $(CXX)
   NVCC := ccache $(NVCC)
 endif
 
-#===============================================================
-# Custom Feature Flags (Conditional Flags)
-#===============================================================
+# ---------------------------------------------------------------
+# Flags
+# ---------------------------------------------------------------
+CXXFLAGS := -std=c++17 $(INCLUDES) -MMD -MP
+NVCCFLAGS := -std=c++17 $(INCLUDES) -MMD -MP --expt-relaxed-constexpr
+FEATURES :=
 
-# OpenMP support
-CXXFLAGS  += $(if $(filter 1,$(openmp)),-fopenmp)
-NVCCFLAGS += $(if $(filter 1,$(openmp)),-Xcompiler=-fopenmp) -diag-suppress 20014ws
+# Debug vs Release
+ifeq ($(debug),1)
+  CXXFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(CXXFLAGS)) -O2 -g3
+  NVCCFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(NVCCFLAGS)) -O2 -G -g
+else
+  CXXFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(CXXFLAGS)) -O3 -DNDEBUG -DEIGEN_NO_DEBUG
+  NVCCFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(NVCCFLAGS)) -O3
+endif
 
-# Ensure MKL is enabled when sequential MKL is requested
-mkl := $(if $(filter 1,$(mkl_sequential)),1,$(mkl))
+# Optional time report
+ifeq ($(time_report),1)
+  CXXFLAGS += -ftime-report
+endif
 
-# MKL support
-FEATURE_FLAGS += $(if $(filter 1,$(mkl)),-DMKL_LP64)
-FEATURE_FLAGS += $(if $(filter 1,$(mkl)),-DUSE_MKL)
+# OpenMP (compile-time)
+ifeq ($(openmp),1)
+  CXXFLAGS  += -fopenmp
+  NVCCFLAGS += -Xcompiler=-fopenmp -diag-suppress 20014
+  FEATURES  += -DEIGEN_DONT_PARALLELIZE
+endif
 
-# Sequential or parallel MKL
-FEATURE_FLAGS += $(if $(filter 1,$(mkl_sequential)),-DUSE_MKL_SEQUENTIAL)
-LIBS          += $(if $(filter 1,$(mkl_sequential)),$(MKL_LIBS),$(if $(filter 1,$(mkl)),$(MKL_LIBS)))
+# Double precision (CPU & CUDA guards unified)
+ifeq ($(double_precision),1)
+  FEATURES += -DDOUBLE_PRECISION -DCUDA_DOUBLE_PRECISION
+endif
 
-# Debug mode
-FEATURE_FLAGS += $(if $(filter 0,$(debug)),-DNDEBUG -DEIGEN_NO_DEBUG)
-CXXFLAGS      += $(if $(filter 1,$(debug)),-g3,-g0)
-NVCCFLAGS     += $(if $(filter 1,$(debug)),-G -g)
+# Keep legacy cuda_dp guard if used in code
+ifeq ($(cuda_dp),1)
+  FEATURES += -DCUDA_DOUBLE_PRECISION
+endif
 
-CXXFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(CXXFLAGS))
-CXXFLAGS += $(if $(filter 1,$(debug)),-O2,-O3)
-NVCCFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(NVCCFLAGS))
-NVCCFLAGS += $(if $(filter 1,$(debug)),-O2,-O3)
-
-# cuda double precision
-FEATURE_FLAGS += $(if $(filter 1,$(cuda_dp)),-DCUDA_DOUBLE_PRECISION)
-
-# double precision
-FEATURE_FLAGS += $(if $(filter 1,$(double_precision)),-DDOUBLE_PRECISION)
-
+# Eigen fast compile (keeps runtime same)
 ifeq ($(eigen_fast_compile),1)
-  FEATURE_FLAGS += -DEIGEN_DONT_PARALLELIZE    # Threading via OpenMP/MKL statt Eigen
-  FEATURE_FLAGS += -DEIGEN_UNROLLING_LIMIT=50  # weniger Aggro-Unrolling
-  FEATURE_FLAGS += -DEIGEN_DONT_INLINE         # weniger Inlining -> schnelleres Kompilieren
+  FEATURES += -DEIGEN_UNROLLING_LIMIT=50 -DEIGEN_DONT_INLINE
 endif
 
-CXXFLAGS += $(if $(filter 1,$(time_report)),-ftime-report)
+# ---------------------------------------------------------------
+# MKL linking (Linux/macOS)
+# ---------------------------------------------------------------
+LDLIBS  :=
+LDFLAGS :=
 
-#===============================================================
-# System Information (Optional Flags Based on System)
-#===============================================================
+ifeq ($(static_link),1)
+  LDFLAGS += -static-libstdc++ -static-libgcc
+endif
 
-UNAME := $(shell uname -s)
-
-#===============================================================
-# Test Libraries and Paths Based on System
-#===============================================================
-
-# Determine if the system is running on Apple Silicon
-ifeq ($(UNAME),Darwin)
-    ARCH := $(shell uname -m)
-    ifeq ($(ARCH),arm64)
-        TEST_LIBS = -L/opt/homebrew/lib -lgtest -lgtest_main -pthread
+ifeq ($(mkl),1)
+  FEATURES += -DMKL_LP64 -DUSE_MKL
+  # static vs dynamic MKL + runtime
+  ifeq ($(static_link),1)
+    ifeq ($(mkl_sequential),1)
+      MKL_LIBS := -Wl,--start-group \
+                    $(MKL_PATH)/libmkl_intel_lp64.a \
+                    $(MKL_PATH)/libmkl_core.a \
+                    $(MKL_PATH)/libmkl_sequential.a \
+                  -Wl,--end-group \
+                  -lpthread -lm -ldl
     else
-        TEST_LIBS = -L/usr/local/lib -lgtest -lgtest_main -pthread
+      MKL_LIBS := -Wl,--start-group \
+                    $(MKL_PATH)/libmkl_intel_lp64.a \
+                    $(MKL_PATH)/libmkl_core.a \
+                    $(MKL_PATH)/libmkl_intel_thread.a \
+                  -Wl,--end-group \
+                  -Wl,--whole-archive $(IOMP5_A) -Wl,--no-whole-archive \
+                  -lpthread -lm -ldl
     endif
-else
-    TEST_LIBS = -L/usr/local/lib -lgtest -lgtest_main -pthread
+  else
+    ifeq ($(mkl_sequential),1)
+      MKL_LIBS := -L$(MKL_PATH) -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl
+    else
+      MKL_LIBS := -L$(MKL_PATH) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -liomp5 -lpthread -lm -ldl
+    endif
+  endif
+  LDLIBS += $(MKL_LIBS)
 endif
 
-#===============================================================
-# Compiler
-#===============================================================
-
-COMPILER_VERSION = $(shell $(CXX) --version | head -n 1)
-# check if "clang" is inside the compiler version string
-ifeq (,$(findstring clang,$(COMPILER_VERSION)))
-	COMPILER = gcc
-else
-	COMPILER = clang
+# ---------------------------------------------------------------
+# Link flags: avoid pulling libgomp when using iomp5
+# ---------------------------------------------------------------
+CXXFLAGS_LINK := $(CXXFLAGS)
+ifeq ($(mkl),1)
+  ifeq ($(mkl_sequential),0)
+    CXXFLAGS_LINK := $(filter-out -fopenmp,$(CXXFLAGS))
+  endif
 endif
 
-#===============================================================
-# MKL Library Paths and Libraries
-#===============================================================
-
-# Define MKL paths for different OS
-MKL_PATH := $(MKLROOT)/lib/intel64
-ifeq ($(OS),Darwin)
-    MKL_PATH := $(MKLROOT)/lib
-endif
-
-# Define MKL library file (sequential or parallel)
-MKL_LIB_FILE := libmkl_$(if $(filter 1,$(mkl_sequential)),sequential,intel_thread).a
-
-# Compiler-specific MKL linking flags
-MKL_COMMON_LIBS := $(MKL_PATH)/libmkl_intel_lp64.a $(MKL_PATH)/libmkl_core.a -lpthread -lm -ldl
-ifeq ($(COMPILER), clang)
-    MKL_LIBS := -Wl,-force_load,$(MKL_COMMON_LIBS) -Wl,-force_load,$(MKL_PATH)/$(MKL_LIB_FILE) $(if $(filter 0,$(mkl_sequential)), -L$(MKL_PATH) -liomp5)
-else
-    MKL_LIBS := -Wl,--start-group $(MKL_COMMON_LIBS) $(MKL_PATH)/$(MKL_LIB_FILE) -Wl,--end-group $(if $(filter 0,$(mkl_sequential)), -L$(MKL_PATH) -liomp5)
-endif
-
-#===============================================================
-# CUDA Libraries
-#===============================================================
-
-NVCCLIBS := \
-    -lcusolver \
-    -lcublas \
-    -lcusparse
-
-#===============================================================
-# Directories and File Paths
-#===============================================================
-
-SRCDIR      = src
-TESTDIR     = tests
-OBJDIR      = obj/
-GPP_OBJDIR  = $(OBJDIR)gpp/
-NVCC_OBJDIR = $(OBJDIR)nvcc/
-CPP_OBJDIR  = $(NVCC_OBJDIR)cpp/
-CU_OBJDIR   = $(NVCC_OBJDIR)cuda/
-BINDIR      = bin
-
-#===============================================================
-# Source and Object Files
-#===============================================================
-
-# Define main source file and exclude it for test builds
-MAIN_SRC    := $(SRCDIR)/main.cpp
-CPP_SRCS    := $(filter-out $(MAIN_SRC), $(sort $(shell find $(SRCDIR) -name '*.cpp')))
-CU_SRCS     := $(sort $(shell find $(SRCDIR) -name '*.cu'))
-TST_SRCS    := $(sort $(shell find $(TESTDIR) -name '*.cpp'))
-
-# Object files
-GPP_OBJS     := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
-GPU_CPP_OBJS := $(CPP_SRCS:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
-CU_OBJS      := $(CU_SRCS:$(SRCDIR)/%.cu=$(CU_OBJDIR)/%.o)
-TST_OBJS     := $(TST_SRCS:$(TESTDIR)/%.cpp=$(GPP_OBJDIR)/%.o) $(GPP_OBJS)
-
-#===============================================================
-# Executable Files
-#===============================================================
-
-# Change the executable definitions to remove .exe
+# ===============================================================
+# Executables
+# ===============================================================
 EXE_CPU  := $(BINDIR)/$(PROJECT_NAME)
 EXE_GPU  := $(BINDIR)/$(PROJECT_NAME)_gpu
 EXE_TST  := $(BINDIR)/$(PROJECT_NAME)_test
 
-# Add these new utility targets at the end of your makefile
-info:
-	@echo "Build Configuration:"
-	@echo "  Project        : $(PROJECT_NAME)"
-	@echo "  Platform       : $(UNAME) ($(shell uname -m))"
-	@echo "  Compiler       : $(COMPILER_VERSION)"
-	@echo "  C++ Flags      : $(CXXFLAGS)"
-	@echo "  NVCC Flags     : $(NVCCFLAGS)"
-	@echo "  MKL Enabled    : $(mkl)"
-	@echo "  OpenMP Enabled : $(openmp)"
-	@echo "  Debug Mode     : $(debug)"
-
-clean:
-	@echo "Cleaning build artifacts..."
-	@rm -rf $(OBJDIR) $(BINDIR)
-
-help:
-	@echo "Available targets:"
-	@echo "  all    : Build everything (default)"
-	@echo "  cpu    : Build CPU-only version"
-	@echo "  gpu    : Build GPU-enabled version"
-	@echo "  tests  : Build test suite"
-	@echo "  clean  : Remove build artifacts"
-	@echo "  info   : Show build configuration"
-	@echo "  help   : Show this help message"
-
-#===============================================================
-# Build Targets
-#===============================================================
+# ===============================================================
+# Targets
+# ===============================================================
+.PHONY: all cpu gpu tests clean info help pp-startup iwyu iwyu-apply iwyu-diff iwyu-file iwyu-clean compile_commands.json clean-exp-lib
 
 all: info cpu gpu tests
 
 cpu: info $(EXE_CPU)
-
 gpu: CXXFLAGS  += -DSUPPORT_GPU
 gpu: NVCCFLAGS += -DSUPPORT_GPU
 gpu: info $(EXE_GPU) clean-exp-lib
 
 tests: info $(EXE_TST)
 
-#===============================================================
-# Build Rules
-#===============================================================
-
-CXXFLAGS   += -MMD -MP
-NVCCFLAGS  += -MMD -MP
-
-$(EXE_CPU): $(GPP_OBJS) $(MAIN_SRC:$(SRCDIR)/%.cpp=$(GPP_OBJDIR)/%.o)
+# ---------------------------------------------------------------
+# Link rules
+# ---------------------------------------------------------------
+$(EXE_CPU): $(GPP_OBJS) $(MAIN_OBJ_CPU)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) $^ $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS_LINK) $(FEATURES) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
-$(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS) $(MAIN_SRC:$(SRCDIR)/%.cpp=$(CPP_OBJDIR)/%.o)
+$(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS) $(MAIN_OBJ_GPU)
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $^ $(LIBS) -o $@
+	$(NVCC) $(NVCCFLAGS) $(FEATURES) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 $(EXE_TST): $(TST_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) $^ $(TEST_LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(FEATURES) $^ $(LDFLAGS) -L/usr/local/lib -lgtest -lgtest_main -pthread -o $@
 
-# Object generation rules with timing
+# ---------------------------------------------------------------
+# Compile rules with timing
+# ---------------------------------------------------------------
 $(GPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
 	@START=$$(date +%s%N); \
-	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@; \
+	$(CXX) $(CXXFLAGS) $(FEATURES) -c $< -o $@; \
 	END=$$(date +%s%N); \
-	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
-	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
+	DUR=$$(echo "scale=3; ($$END-$$START)/1000000000" | bc); \
+	printf "%-50s : %6s s\n" "Compiling $<" $$(echo $$DUR | awk '{printf "%.1f", $$1}')
 
 $(CPP_OBJDIR)/%.o: $(SRCDIR)/%.cpp
 	@mkdir -p $(@D)
 	@START=$$(date +%s%N); \
-	$(NVCC) $(NVCCFLAGS) $(FEATURE_FLAGS) -x cu -c $< -o $@; \
+	$(NVCC) $(NVCCFLAGS) $(FEATURES) -x cu -c $< -o $@; \
 	END=$$(date +%s%N); \
-	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
-	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
+	DUR=$$(echo "scale=3; ($$END-$$START)/1000000000" | bc); \
+	printf "%-50s : %6s s\n" "Compiling $< (nvcc -x cu)" $$(echo $$DUR | awk '{printf "%.1f", $$1}')
 
 $(CU_OBJDIR)/%.o: $(SRCDIR)/%.cu
 	@mkdir -p $(@D)
 	@START=$$(date +%s%N); \
-	$(NVCC) $(NVCCFLAGS) $(NVCCLIBS) $(FEATURE_FLAGS) -c $< -o $@; \
+	$(NVCC) $(NVCCFLAGS) $(FEATURES) -c $< -o $@; \
 	END=$$(date +%s%N); \
-	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
-	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
+	DUR=$$(echo "scale=3; ($$END-$$START)/1000000000" | bc); \
+	printf "%-50s : %6s s\n" "Compiling $< (cuda)" $$(echo $$DUR | awk '{printf "%.1f", $$1}')
 
 $(GPP_OBJDIR)/%.o: $(TESTDIR)/%.cpp
 	@mkdir -p $(@D)
 	@START=$$(date +%s%N); \
-	$(CXX) $(CXXFLAGS) $(FEATURE_FLAGS) -c $< -o $@; \
+	$(CXX) $(CXXFLAGS) $(FEATURES) -c $< -o $@; \
 	END=$$(date +%s%N); \
-	DURATION=$$(echo "scale=3; ($$END - $$START) / 1000000000" | bc); \
-	printf "%-50s : %6s seconds\n" "Compiling $<" $$(echo $$DURATION | awk '{printf "%.1f", $$1}')
+	DUR=$$(echo "scale=3; ($$END-$$START)/1000000000" | bc); \
+	printf "%-50s : %6s s\n" "Compiling test $<" $$(echo $$DUR | awk '{printf "%.1f", $$1}')
 
-
-# Include the generated dependency files
+# deps
 -include $(GPP_OBJS:.o=.d)
 -include $(GPU_CPP_OBJS:.o=.d)
 -include $(CU_OBJS:.o=.d)
+-include $(MAIN_OBJ_CPU:.o=.d)
+-include $(MAIN_OBJ_GPU:.o=.d)
+-include $(TST_OBJS:.o=.d)
 
+# ===============================================================
+# Info / Utils
+# ===============================================================
+info:
+	@echo "Build Configuration:"
+	@echo "  Target           : $(TARGET)"
+	@echo "  CXX              : $(CXX)"
+	@echo "  NVCC             : $(NVCC)"
+	@echo "  CXXFLAGS         : $(CXXFLAGS)"
+	@echo "  NVCCFLAGS        : $(NVCCFLAGS)"
+	@echo "  CXXFLAGS_LINK    : $(CXXFLAGS_LINK)"
+	@echo "  FEATURES         : $(FEATURES)"
+	@echo "  LDFLAGS          : $(LDFLAGS)"
+	@echo "  LDLIBS           : $(LDLIBS)"
+	@echo "  MKL Enabled      : $(mkl)"
+	@echo "  MKL Sequential   : $(mkl_sequential)"
+	@echo "  OpenMP           : $(openmp)"
+	@echo "  Debug            : $(debug)"
+ 	@echo "  Double Precision : $(double_precision)"
+	@echo "  Eigen Fast Comp. : $(eigen_fast_compile)"
+	@echo "  Static Link      : $(static_link)"
+	@echo "  MKLROOT          : $(MKLROOT)"
+	@echo "  MKL_PATH         : $(MKL_PATH)"
+	@echo "  IOMP5_A          : $(IOMP5_A)"
 
-#===============================================================
-# IWYU (Include-What-You-Use) Integration  [CPU-only version]
-#===============================================================
+pp-startup:
+	@echo "Preprocessor flags visible in startup.cpp (selected):"
+	@$(CXX) $(CXXFLAGS) $(FEATURES) -dM -E $(SRCDIR)/core/startup.cpp | \
+	  grep -E 'DOUBLE_PRECISION|CUDA_DOUBLE|USE_MKL|_OPENMP' || true
 
+clean:
+	@echo "Cleaning..."
+	@rm -rf $(OBJDIR) $(BINDIR)
 
-# Detect IWYU tools
+help:
+	@echo "Usage examples:"
+	@echo "  make -j                                 # default: MKL threaded, OpenMP on, release"
+	@echo "  make -j mkl=1 mkl_sequential=1          # MKL sequential (keine iomp5-Abhängigkeit)"
+	@echo "  make -j openmp=0                        # OpenMP komplett aus"
+	@echo "  make -j debug=1                         # Debug (O2 + -g3)"
+	@echo "  make -j static_link=1                   # statische libstdc++/libgcc + MKL-Archive"
+	@echo "  make -j static_link=1 mkl_sequential=1  # komplett ohne iomp5 (sequentielles MKL)"
+	@echo "  make clean"
+	@echo "  make info"
+
+# ===============================================================
+# IWYU (Include-What-You-Use) — optional
+# ===============================================================
 IWYU           ?= $(shell command -v include-what-you-use 2>/dev/null || echo include-what-you-use)
 IWYU_TOOL      ?= $(shell command -v iwyu_tool 2>/dev/null || echo iwyu_tool)
 FIX_INCLUDES   ?= $(shell command -v fix_includes.py 2>/dev/null || echo fix_includes.py)
 
-# Default scope and options
 IWYU_SCOPE       ?= $(SRCDIR)
 IWYU_TOOL_ARGS   ?= -j $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) -p .
 IWYU_IWYU_ARGS   ?= -Xiwyu --no_fwd_decls
 IWYU_OUT         ?= iwyu.out
 
-# Capture tool (bear preferred)
 BEAR             := $(shell command -v bear 2>/dev/null)
 INTERCEPT        := $(shell command -v intercept-build 2>/dev/null)
-
-.PHONY: iwyu iwyu-apply iwyu-diff iwyu-file iwyu-clean compile_commands.json
 
 compile_commands.json:
 	@if [ -n "$(BEAR)" ]; then \
@@ -364,11 +381,8 @@ iwyu-clean:
 	@rm -f "$(IWYU_OUT)" compile_commands.json iwyu.*.out
 	@echo "[IWYU] cleaned"
 
-
-#===============================================================
-# Clean Targets
-#===============================================================
-
+# ===============================================================
+# Clean extras
+# ===============================================================
 clean-exp-lib:
 	@-rm -f $(BINDIR)/*.exp $(BINDIR)/*.lib
-

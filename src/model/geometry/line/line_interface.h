@@ -162,9 +162,9 @@ struct LineInterface {
         if (N == 3) {
             initial_guesses = { min_r(), max_r() };
         } else if (N > 3) {
-            initial_guesses = { min_r(), (min_r() + max_r()) / 2.0, max_r() };
+            initial_guesses = { min_r(), (min_r() + max_r()) / Precision(2.0), max_r() };
         } else {
-            initial_guesses = { (min_r() + max_r()) / 2.0 };
+            initial_guesses = { (min_r() + max_r()) / Precision(2.0) };
         }
 
         // Retrieve global coordinates of nodes
