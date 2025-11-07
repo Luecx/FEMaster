@@ -54,23 +54,31 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      * @param model_data FEM model data that provides geometry and topology.
      * @param bc Boundary-condition storage receiving all load contributions.
      */
-    void apply(model::ModelData& model_data, NodeData& bc);
+    void apply(model::ModelData& model_data, NodeData& bc, Precision time);
 
     /**
      * @brief Adds a concentrated nodal load to the collector.
      *
      * @param region Node region receiving the load.
      * @param values Generalized load vector (Fx,Fy,Fz,Mx,My,Mz).
+     * @param orientation Optional orientation system for interpreting the components.
      */
-    void add_cload(model::NodeRegion::Ptr region, Vec6 values);
+    void add_cload(model::NodeRegion::Ptr region,
+                   Vec6 values,
+                   cos::CoordinateSystem::Ptr orientation = nullptr,
+                   Amplitude::Ptr amplitude = nullptr);
 
     /**
      * @brief Adds a distributed surface load to the collector.
      *
      * @param region Surface region receiving the traction.
      * @param values Surface traction vector.
+     * @param orientation Optional orientation system for the traction components.
      */
-    void add_dload(model::SurfaceRegion::Ptr region, Vec3 values);
+    void add_dload(model::SurfaceRegion::Ptr region,
+                   Vec3 values,
+                   cos::CoordinateSystem::Ptr orientation = nullptr,
+                   Amplitude::Ptr amplitude = nullptr);
 
     /**
      * @brief Adds a uniform pressure load to the collector.
@@ -78,15 +86,21 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      * @param region Surface region receiving the pressure.
      * @param pressure Magnitude of the pressure.
      */
-    void add_pload(model::SurfaceRegion::Ptr region, Precision pressure);
+    void add_pload(model::SurfaceRegion::Ptr region,
+                   Precision pressure,
+                   Amplitude::Ptr amplitude = nullptr);
 
     /**
      * @brief Adds a volumetric load to the collector.
      *
      * @param region Element region receiving the body forces.
      * @param values Body-force components.
+     * @param orientation Optional orientation system for the body-force vector.
      */
-    void add_vload(model::ElementRegion::Ptr region, Vec3 values);
+    void add_vload(model::ElementRegion::Ptr region,
+                   Vec3 values,
+                   cos::CoordinateSystem::Ptr orientation = nullptr,
+                   Amplitude::Ptr amplitude = nullptr);
 
     /**
      * @brief Adds a thermal load to the collector.

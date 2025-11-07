@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "../bc/amplitude.h"
 #include "../bc/load.h"
 #include "../bc/load_collector.h"
 #include "../bc/support.h"
@@ -72,6 +73,7 @@ struct ModelData {
     // Named resources ----------------------------------------------------------
     Dict<material::Material> materials;
     Dict<cos::CoordinateSystem> coordinate_systems;
+    Dict<bc::Amplitude> amplitudes;
 
     // Constraints --------------------------------------------------------------
     std::vector<constraint::Connector> connectors{};
@@ -131,4 +133,3 @@ struct ModelData {
 
 } // namespace model
 } // namespace fem
-

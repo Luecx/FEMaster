@@ -33,6 +33,7 @@
 #include "commands/register_vload.inl"
 #include "commands/register_support.inl"
 #include "commands/register_temperature.inl"
+#include "commands/register_amplitude.inl"
 #include "commands/register_orientation.inl"
 #include "commands/register_connector.inl"
 #include "commands/register_coupling.inl"
@@ -307,6 +308,7 @@ void Parser::register_commands() {
     commands::register_vload(reg, mdl);
     commands::register_support(reg, mdl);
     commands::register_temperature(reg, mdl);
+    commands::register_amplitude(reg, mdl);
 
     // Orientations & connectors/constraints
     commands::register_orientation(reg, mdl);

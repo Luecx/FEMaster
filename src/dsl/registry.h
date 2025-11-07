@@ -228,6 +228,60 @@ struct Registry {
             fem::logging::info(true, "*", cmd_name);
             fem::logging::info(true, "Description:");
             fem::logging::info(true, "  ", (c.doc_.empty() ? std::string("-") : c.doc_));
+
+            if (c.has_keyword_spec_) {
+                const auto& entries = c.keyword_spec_.entries();
+                if (!entries.empty()) {
+                    std::vector<const KeywordSpec::Entry*> keyword_entries;
+                    keyword_entries.reserve(entries.size());
+                    for (const auto& kv : entries) {
+                        keyword_entries.push_back(&kv.second);
+                    }
+                    std::sort(keyword_entries.begin(), keyword_entries.end(),
+                        [](const KeywordSpec::Entry* a, const KeywordSpec::Entry* b) {
+                            return a->canonical < b->canonical;
+                        });
+
+                    fem::logging::info(true, "Keywords:");
+                    for (const auto* entry : keyword_entries) {
+                        std::ostringstream header;
+                        header << "  - " << entry->canonical;
+                        if (entry->is_flag) {
+                            header << " (flag)";
+                        } else {
+                            header << " (" << (entry->required ? "required" : "optional") << ")";
+                        }
+                        if (entry->has_default) {
+                            header << ", default=\"" << entry->default_value << "\"";
+                        }
+                        if (!entry->allowed.empty()) {
+                            header << ", allowed={";
+                            for (std::size_t i = 0; i < entry->allowed.size(); ++i) {
+                                if (i) header << ", ";
+                                header << entry->allowed[i];
+                            }
+                            header << "}";
+                        }
+                        fem::logging::info(true, header.str());
+
+                        const std::string doc_line = entry->doc.empty() ? std::string("-") : entry->doc;
+                        fem::logging::info(true, "    ", doc_line);
+
+                        if (!entry->alternatives.empty()) {
+                            std::ostringstream aliases;
+                            aliases << "    aliases: ";
+                            for (std::size_t i = 0; i < entry->alternatives.size(); ++i) {
+                                if (i) aliases << ", ";
+                                aliases << entry->alternatives[i];
+                            }
+                            fem::logging::info(true, aliases.str());
+                        }
+                    }
+
+                    fem::logging::info(true);
+                }
+            }
+
             fem::logging::info(true, "Admitted under:");
             fem::logging::info(true, "  ", cond_to_string(c.admit_, "self", "parent", cond_to_string));
 

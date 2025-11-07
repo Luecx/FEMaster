@@ -92,13 +92,13 @@ ElementData Model::build_integration_point_numeration() {
 }
 
 
-NodeData Model::build_load_matrix(std::vector<std::string> load_sets) {
+NodeData Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
     NodeData load_matrix{this->_data->max_nodes, 6};
     load_matrix.setZero();
 
     for (auto &key: load_sets) {
         auto data = this->_data->load_cols.get(key);
-        data->apply(*_data, load_matrix);
+        data->apply(*_data, load_matrix, time);
     }
 
     // apply constrained loads
