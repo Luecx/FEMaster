@@ -352,7 +352,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
             const Precision h = this->get_section()->thickness;
             // Falls ip_stress bereits Resultierende enthält, setze scale=1
-            const Precision scale = h;    // oder 1.0, je nachdem was du speicherst
+            const Precision scale = 1.0;    // oder 1.0, je nachdem was du speicherst
             const Precision nxx   = scale * v(0);
             const Precision nyy   = scale * v(1);
             const Precision nxy   = scale * v(5);
@@ -503,8 +503,8 @@ struct DefaultShellElement : public ShellElement<N> {
             Vec3 disp_xyz            = displacement_glob.head(3);
             Vec3 disp_rot            = displacement_glob.tail(3);
 
-            disp_xyz                 = axes.transpose() * disp_xyz;
-            disp_rot                 = axes.transpose() * disp_rot;
+            disp_xyz = axes * disp_xyz;   // global → local
+            disp_rot = axes * disp_rot;   // global → local
 
             disp_membrane(2 * i)     = disp_xyz(0);
             disp_membrane(2 * i + 1) = disp_xyz(1);
@@ -568,17 +568,17 @@ struct DefaultShellElement : public ShellElement<N> {
         for (int i = 0; i < N; i++) {
             ID     node_id    = this->nodes()[i];
 
-            Vec3   top        = {coords(i, 0), coords(i, 1), 1};
-            Vec3   bot        = {coords(i, 0), coords(i, 1), 0};
-            Stress stress_bot = this->stress(displacement, top);
-            Stress stress_top = this->stress(displacement, bot);
+            Vec3   top        = {coords(i, 0), coords(i, 1), 1 };
+            Vec3   bot        = {coords(i, 0), coords(i, 1), -1};
+            Stress stress_bot = this->stress(displacement, bot);
+            Stress stress_top = this->stress(displacement, top);
 
             // choose the one with the larger norm
             Stress stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;
 
             // transform to global coordinates
             Mat3 axes    = get_xyz_axes();
-            stress_nodal = stress_nodal.transform(axes);
+            stress_nodal = stress_nodal.transform(axes.transpose());
 
             stress.row(node_id) += stress_nodal;
         }
@@ -603,7 +603,7 @@ struct DefaultShellElement : public ShellElement<N> {
             ID   node_id     = this->nodes()[i];
             Vec6 u_glob      = Vec6 {displacement.row(node_id)};    // (ux,uy,uz,rx,ry,rz)
             Vec3 t_glob      = u_glob.head<3>();
-            Vec3 t_loc       = axes.transpose() * t_glob;
+            Vec3 t_loc       = axes * t_glob;
             u_mem(2 * i)     = t_loc(0);    // ux
             u_mem(2 * i + 1) = t_loc(1);    // uy
         }
