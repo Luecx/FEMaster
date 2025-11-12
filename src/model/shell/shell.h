@@ -168,7 +168,6 @@ struct ShellElement : StructuralElement {
 
     protected:
     Precision topo_stiffness_scale() const {
-        return Precision(1);
         if (this->_model_data && this->_model_data->elem_data.has(TOPO_STIFFNESS)) {
             return this->_model_data->elem_data.get(TOPO_STIFFNESS)(this->elem_id);
         }

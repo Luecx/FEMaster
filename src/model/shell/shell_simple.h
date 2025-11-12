@@ -209,6 +209,10 @@ struct DefaultShellElement : public ShellElement<N> {
         auto mat_bend  = this->get_elasticity()->get_bend(this->get_section()->thickness);
         auto mat_shear = this->get_elasticity()->get_shear(this->get_section()->thickness);
 
+		auto topo_scale = this->topo_stiffness_scale();
+		mat_bend *= topo_scale;
+		mat_shear *= topo_scale;
+
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_bend =
             [this, &mat_bend, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
             ShapeDerivative shape_der = this->shape_derivative(r, s);
@@ -274,6 +278,10 @@ struct DefaultShellElement : public ShellElement<N> {
 
     StaticMatrix<6 * N, 6 * N> stiffness_membrane(LocalCoords& xy_coords) {
         auto mat_membrane = this->get_elasticity()->get_memb();
+
+		auto topo_scale   = this->topo_stiffness_scale();
+		mat_membrane *= topo_scale;
+
         std::function<StaticMatrix<2 * N, 2 * N>(Precision, Precision, Precision)> func_membrane =
             [this, &mat_membrane, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<2 * N, 2 * N> {
             ShapeDerivative shape_der = this->shape_derivative(r, s);
@@ -321,7 +329,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         MapMatrix mapped {buffer, 6 * N, 6 * N};
         auto      trans = transformation(axes);
-        ;
+
         auto stiff = stiffness_bending(xy_coords) + stiffness_membrane(xy_coords);
         mapped     = trans.transpose() * stiff * trans;
         return mapped;
@@ -521,6 +529,12 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 mat_membrane = this->get_elasticity()->get_memb();
         Mat3 mat_bend     = this->get_elasticity()->get_bend(this->get_section()->thickness);
         Mat2 mat_shear    = this->get_elasticity()->get_shear(this->get_section()->thickness);
+
+		// scale material matrices by topo stiffness
+		auto topo_scale   = this->topo_stiffness_scale();
+		mat_membrane *= topo_scale;
+		mat_bend     *= topo_scale;
+		mat_shear    *= topo_scale;
 
         // membrane stress
         LocalCoords     xy_coords  = get_xy_coords(axes);
