@@ -319,9 +319,6 @@ struct DefaultShellElement : public ShellElement<N> {
         return integration_scheme_;
     }
 
-    Precision volume() override {
-        return 0;
-    }
     MapMatrix stiffness(Precision* buffer) override {
         // compute axes and local coordinates
         auto      axes      = get_xyz_axes();
@@ -488,6 +485,21 @@ struct DefaultShellElement : public ShellElement<N> {
         return mapped;
     }
 
+	Precision volume() override {
+    	// Dicke aus der Section
+    	const Precision h = this->get_section()->thickness;
+
+    	// Globale Knotentabelle (POSITION) aus dem Modell
+    	const NodeData& node_coords_system = this->_model_data->get(POSITION);
+
+    	// Flächeninhalt über die Surface-Geometrie (macht 3D-Jacobian×cross-Produkt)
+    	const Precision A = geometry.area(node_coords_system);
+
+    	// Volumen = Dicke * Fläche
+    	return h * A;
+	}
+
+
     virtual Stress stress(NodeData& displacement, Vec3& xyz) {
         Precision r = xyz(0);
         Precision s = xyz(1);
@@ -572,31 +584,132 @@ struct DefaultShellElement : public ShellElement<N> {
         return Stress {res};
     }
 
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
-        (void) displacement;
-        (void) stress;
-        (void) strain;
+    void compute_stress_strain_nodal(NodeData& displacement,
+                                     NodeData& stress,
+                                     NodeData& strain) override {
+        (void) strain; // still unused for now
 
-        // local coordinates stored in the surface class
-        StaticMatrix<N, 2> coords = this->geometry.node_coords_local();
-        for (int i = 0; i < N; i++) {
-            ID     node_id    = this->nodes()[i];
+        // --- Precompute axes and transformation ---
+        Mat3 axes   = get_xyz_axes();
+        Mat3 axes_T = axes.transpose(); // local -> global
 
-            Vec3   top        = {coords(i, 0), coords(i, 1), 1 };
-            Vec3   bot        = {coords(i, 0), coords(i, 1), -1};
-            Stress stress_bot = this->stress(displacement, bot);
-            Stress stress_top = this->stress(displacement, top);
+        // --- Precompute thickness + material matrices ---
+        Precision h        = this->get_section()->thickness;
+        auto      topo_scale = this->topo_stiffness_scale();
 
-            // choose the one with the larger norm
-            Stress stress_nodal = stress_top.norm() > stress_bot.norm() ? stress_top : stress_bot;
+        Mat3 mat_membrane = this->get_elasticity()->get_memb();
+        Mat3 mat_bend     = this->get_elasticity()->get_bend(h);
+        Mat2 mat_shear    = this->get_elasticity()->get_shear(h);
 
-            // transform to global coordinates
-            Mat3 axes    = get_xyz_axes();
-            stress_nodal = stress_nodal.transform(axes.transpose());
+        mat_membrane *= topo_scale;
+        mat_bend     *= topo_scale;
+        mat_shear    *= topo_scale;
 
-            stress.row(node_id) += stress_nodal;
+        // remove h^3/12 from bending, divide shear by thickness once
+        mat_bend  *= 12.0 / (h * h * h);
+        mat_shear /= h;
+
+        // --- Build displacement vectors ONCE (global -> local) ---
+        StaticVector<2 * N> disp_membrane;
+        StaticVector<3 * N> disp_bending;
+        StaticVector<3 * N> disp_shear;
+
+        disp_membrane.setZero();
+        disp_bending.setZero();
+        disp_shear.setZero();
+
+        for (int a = 0; a < N; ++a) {
+            ID   node_id           = this->nodes()[a];
+
+            Vec6 displacement_glob = Vec6{ displacement.row(node_id) };
+            Vec3 disp_xyz          = displacement_glob.head(3);
+            Vec3 disp_rot          = displacement_glob.tail(3);
+
+            // global -> local only once
+            disp_xyz = axes * disp_xyz;
+            disp_rot = axes * disp_rot;
+
+            disp_membrane(2 * a    ) = disp_xyz(0);
+            disp_membrane(2 * a + 1) = disp_xyz(1);
+
+            disp_bending(3 * a    ) = disp_xyz(2);
+            disp_bending(3 * a + 1) = disp_rot(0);
+            disp_bending(3 * a + 2) = disp_rot(1);
+
+            // your current MITC-like shear uses same dofs as bending
+            disp_shear(3 * a    ) = disp_xyz(2);
+            disp_shear(3 * a + 1) = disp_rot(0);
+            disp_shear(3 * a + 2) = disp_rot(1);
         }
-    };
+
+        // --- Geometry: local node coordinates & xy coords once ---
+        StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
+        LocalCoords        xy_coords = get_xy_coords(axes);
+
+        // --- Loop over nodes and evaluate stress at top/bottom ---
+        for (int i = 0; i < N; ++i) {
+            ID node_id = this->nodes()[i];
+
+            Precision r = coords(i, 0);
+            Precision s = coords(i, 1);
+
+            // shape & jacobian at this (r,s): same for top/bottom
+            ShapeFunction   shape_func = this->shape_function(r, s);
+            ShapeDerivative shape_der  = this->shape_derivative(r, s);
+            Jacobian        jac        = this->jacobian(shape_der, xy_coords);
+
+            auto B_membrane = this->strain_disp_membrane(shape_der, jac);
+            auto B_bending  = this->strain_disp_bending(shape_der, jac);
+            auto B_shear    = this->strain_disp_shear(shape_func, shape_der, jac);
+
+            // mid-surface membrane + shear stress: independent of t
+            Vec6 res_mid = Vec6::Zero();
+
+            Vec3 stress_membrane = mat_membrane * (B_membrane * disp_membrane);
+            res_mid(0) += stress_membrane(0);
+            res_mid(1) += stress_membrane(1);
+            res_mid(5) += stress_membrane(2);
+
+            Vec2 stress_shear = mat_shear * (B_shear * disp_shear);
+            res_mid(3) += stress_shear(0);
+            res_mid(4) += stress_shear(1);
+
+            // bending contribution: changes sign with t
+            Vec6 res_bend_top = Vec6::Zero();
+            Vec6 res_bend_bot = Vec6::Zero();
+
+            Vec3 kappa      = B_bending * disp_bending; // curvature vector
+            Vec3 sigma_bend = mat_bend * kappa;         // bending stress factor
+
+            Precision t_top = +1.0;
+            Precision t_bot = -1.0;
+            Precision z_top = t_top * h * 0.5;
+            Precision z_bot = t_bot * h * 0.5;
+
+            // add bending part
+            res_bend_top(0) += z_top * sigma_bend(0);
+            res_bend_top(1) += z_top * sigma_bend(1);
+            res_bend_top(5) += z_top * sigma_bend(2);
+
+            res_bend_bot(0) += z_bot * sigma_bend(0);
+            res_bend_bot(1) += z_bot * sigma_bend(1);
+            res_bend_bot(5) += z_bot * sigma_bend(2);
+
+            Stress stress_top_local{ res_mid + res_bend_top };
+            Stress stress_bot_local{ res_mid + res_bend_bot };
+
+            // pick the one with larger norm (still in local coords)
+            Stress stress_nodal_local = (stress_top_local.norm() > stress_bot_local.norm())
+                                        ? stress_top_local
+                                        : stress_bot_local;
+
+            // transform to global once with axes_T
+            Stress stress_nodal_global = stress_nodal_local.transform(axes_T);
+
+            stress.row(node_id) += stress_nodal_global;
+        }
+    }
+
 
     // in DefaultShellElement<...>
     void compute_stress_strain(IPData& ip_stress,
