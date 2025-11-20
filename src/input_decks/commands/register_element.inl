@@ -86,7 +86,6 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
         FEM_ADD_ELEMENT_VARIANT("C3D15", fem::model::C3D15, 15, "C3D15 connectivity (15 nodes)");
         FEM_ADD_ELEMENT_VARIANT("C3D20", fem::model::C3D20, 20, "C3D20 connectivity (20 nodes)");
         FEM_ADD_ELEMENT_VARIANT("C3D20R", fem::model::C3D20R, 20, "C3D20R connectivity (20 nodes)");
-        FEM_ADD_ELEMENT_VARIANT("B33", fem::model::B33, 2, "B33 connectivity (2 nodes)");
         FEM_ADD_ELEMENT_VARIANT("T3", fem::model::T3, 2, "T3 connectivity (2 nodes)");
         FEM_ADD_ELEMENT_VARIANT("P", fem::model::Point, 1, "Point element node");
         FEM_ADD_ELEMENT_VARIANT("S3", fem::model::S3, 3, "S3 connectivity (3 nodes)");
@@ -96,6 +95,25 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
         FEM_ADD_ELEMENT_VARIANT("S8", fem::model::S8, 8, "S8 connectivity (8 nodes)");
 
 #undef FEM_ADD_ELEMENT_VARIANT
+
+        // Beam elements accept an optional third "orientation" node encoding the n1 direction
+        command.variant(fem::dsl::Variant::make()
+            .when(fem::dsl::Condition::key_equals("TYPE", {"B33"}))
+            .segment(fem::dsl::Segment::make()
+                .range(fem::dsl::LineRange{}.min(1))
+                .pattern(fem::dsl::Pattern::make()
+                    .one<fem::ID>().name("ID").desc("Element id")
+                    .fixed<fem::ID, 3>()
+                        .name("N")
+                        .desc("B33 connectivity (2 nodes plus optional orientation node)")
+                        .on_missing(fem::ID{-1})
+                )
+                .bind([&model](fem::ID id, const std::array<fem::ID, 3>& nodes) {
+                    const fem::ID orientation_id = nodes[2];
+                    model.set_beam_element<fem::model::B33>(id, orientation_id, nodes[0], nodes[1]);
+                })
+            )
+        );
 
         // Special case: C3D5 mapped onto C3D8 with repeated apex node
         command.variant(fem::dsl::Variant::make()

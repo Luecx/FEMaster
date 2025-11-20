@@ -28,10 +28,12 @@ namespace model {
 template<Index N>
 struct BeamElement : StructuralElement {
     std::array<ID, N> node_ids{}; ///< Connectivity of the beam element.
+    ID orientation_node_id_ = static_cast<ID>(-1); ///< Optional node encoding the n1 direction.
 
-    BeamElement(ID elem_id, std::array<ID, N> node_ids_in)
+    BeamElement(ID elem_id, std::array<ID, N> node_ids_in, ID orientation_node_id = static_cast<ID>(-1))
         : StructuralElement(elem_id)
-        , node_ids(node_ids_in) {}
+        , node_ids(node_ids_in)
+        , orientation_node_id_(orientation_node_id) {}
 
     ~BeamElement() override = default;
 
@@ -75,6 +77,33 @@ struct BeamElement : StructuralElement {
         return Vec3(row(0), row(1), row(2));
     }
 
+    ID orientation_node() const { return orientation_node_id_; }
+
+    bool has_orientation_node() const { return orientation_node_id_ >= 0; }
+
+    Vec3 orientation_direction() {
+        constexpr Precision kOrientationEps = static_cast<Precision>(1e-12);
+        BeamSection* section = get_section();
+        const bool section_has_direction = section && section->n1.norm() > kOrientationEps;
+        const bool element_has_node = has_orientation_node();
+
+        logging::error(element_has_node || section_has_direction,
+                       "Beam element ", this->elem_id,
+                       " requires either an orientation node or a section-defined n1 vector");
+
+        Vec3 n1_vec = Vec3::Zero();
+        if (element_has_node) {
+            auto row = this->_model_data->node_data.get(POSITION).row(orientation_node_id_);
+            n1_vec = Vec3(row(0), row(1), row(2));
+        } else {
+            n1_vec = section->n1;
+        }
+
+        logging::error(n1_vec.norm() > kOrientationEps,
+                       "Orientation vector for element ", this->elem_id, " must be non-zero");
+        return n1_vec.normalized();
+    }
+
     Precision length() {
         Precision l = 0;
         for (Index i = 0; i < N - 1; i++) {
@@ -87,7 +116,7 @@ struct BeamElement : StructuralElement {
 
     Mat3 rotation_matrix() {
         Vec3 x = (coordinate(1) - coordinate(0)).normalized();
-        Vec3 y = get_section()->n1;
+        Vec3 y = orientation_direction();
         Vec3 z = x.cross(y).normalized();
         y = z.cross(x).normalized();
 
@@ -199,4 +228,3 @@ struct BeamElement : StructuralElement {
 
 } // namespace model
 } // namespace fem
-

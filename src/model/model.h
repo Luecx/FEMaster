@@ -37,6 +37,8 @@ struct Model {
     inline void set_element(ID id, Args&&... args);
     inline void set_surface(ID id, ID element_id, ID surface_id);
     inline void set_surface(const std::string& elset, ID surface_id);
+    template<typename T, typename... Args>
+    inline void set_beam_element(ID id, ID orientation_node, Args&&... args);
 
     // setting coordinate systems
     template<typename T, typename... Args>

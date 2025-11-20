@@ -26,7 +26,7 @@ namespace fem {
 struct BeamSection : Section {
    using Ptr = std::shared_ptr<BeamSection>;
 
-   Vec3 n1;                       ///< Direction vector for the beam section.
+   Vec3 n1 = Vec3::Zero();         ///< Direction vector for the beam section (optional).
    Profile::Ptr profile = nullptr; ///< Profile associated with the beam section.
 
    /**

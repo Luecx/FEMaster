@@ -34,6 +34,24 @@ inline void Model::set_element(ID id, Args&&... args) {
     _data->elem_sets.add(id);
 }
 
+template<typename T, typename... Args>
+inline void Model::set_beam_element(ID id, ID orientation_node, Args&&... args) {
+    logging::error(id < _data->max_elems, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
+
+    auto el = ElementPtr{new T{id, {args...}, orientation_node}};
+    if (element_dims == 0) {
+        element_dims = el->dimensions();
+    }
+    el->_model_data = _data;
+    logging::error(element_dims == el->dimensions(), "different number of dimensions across elements of model; element with id=",
+                   id, " has ", el->dimensions(), " while all other elements have ", element_dims, " dimensions");
+
+    logging::error(_data->elements[id] == nullptr, "element with id=", id, " has already been defined");
+
+    _data->elements[id] = std::move(el);
+    _data->elem_sets.add(id);
+}
+
 inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
     logging::error(id < _data->max_surfaces, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
 

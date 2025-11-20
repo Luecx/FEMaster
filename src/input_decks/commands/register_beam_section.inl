@@ -34,9 +34,10 @@ inline void register_beam_section(fem::dsl::Registry& registry, model::Model& mo
         );
 
         // Persistent per-command state:
-        auto material = std::make_shared<std::string>();
-        auto elset    = std::make_shared<std::string>();
-        auto profile  = std::make_shared<std::string>();
+        auto material    = std::make_shared<std::string>();
+        auto elset       = std::make_shared<std::string>();
+        auto profile     = std::make_shared<std::string>();
+        auto orientation = std::make_shared<fem::Vec3>(fem::Vec3::Zero());
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
@@ -48,18 +49,23 @@ inline void register_beam_section(fem::dsl::Registry& registry, model::Model& mo
                     .doc("Section/profile identifier, e.g., IPE80, RECT_20x10, CHS60x3.")
         );
 
-        command.on_enter([material, elset, profile](const fem::dsl::Keys& keys) {
+        command.on_enter([material, elset, profile, orientation](const fem::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
             *profile  = keys.raw("PROFILE");
+            orientation->setZero();
+        });
+
+        command.on_exit([&model, material, elset, profile, orientation](const fem::dsl::Keys&) {
+            model.beam_section(*elset, *material, *profile, *orientation);
         });
 
         command.variant(
             fem::dsl::Variant::make()
-                .doc("One data line with the section direction n1 = (N1_x, N1_y, N1_z).")
+                .doc("Optional data line with the section direction n1 = (N1_x, N1_y, N1_z).")
                 .segment(
                     fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1).max(1))
+                        .range(fem::dsl::LineRange{}.min(0).max(1))
                         .pattern(
                             fem::dsl::Pattern::make()
                                 .fixed<fem::Precision, 3>()
@@ -68,9 +74,9 @@ inline void register_beam_section(fem::dsl::Registry& registry, model::Model& mo
                                 .on_missing(fem::Precision{0})
                                 .on_empty  (fem::Precision{0})
                         )
-                        .bind([&model, material, elset, profile](const std::array<fem::Precision, 3>& n1_data) {
+                        .bind([orientation](const std::array<fem::Precision, 3>& n1_data) {
                             fem::Vec3 n1; n1 << n1_data[0], n1_data[1], n1_data[2];
-                            model.beam_section(*elset, *material, *profile, n1);
+                            *orientation = n1;
                         })
                 )
         );
