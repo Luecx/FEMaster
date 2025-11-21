@@ -75,6 +75,10 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
             }
         }
     }
+    {
+        std::sort(ids.begin(), ids.end());
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    }
 
     for (ID slave_node : ids) {
         for (Dim i = 0; i < 6; i++) {
