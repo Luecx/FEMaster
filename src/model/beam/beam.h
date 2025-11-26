@@ -224,6 +224,45 @@ struct BeamElement : StructuralElement {
         (void)rst;
         return {};
     }
+
+    std::vector<Vec6> section_forces(NodeData& displacement) override {
+        std::vector<Vec6> result;
+        result.resize(N);
+
+        // 1) collect global element displacement DOFs into u_global (N*6 x 1)
+        Eigen::Matrix<Precision, N * 6, 1> u_global;
+        for (Index i = 0; i < N; ++i) {
+            const ID nid = node_ids[i];
+            auto row = displacement.row(nid); // [ux, uy, uz, rx, ry, rz]
+            for (Index d = 0; d < 6; ++d) {
+                u_global(i * 6 + d) = row(d);
+            }
+        }
+
+        // 2) local stiffness and transformation
+        const auto K_loc = stiffness_impl();   // N*6 x N*6, local formulation
+        const auto T     = transformation();   // N*6 x N*6
+
+        // With K_global = T^T * K_local * T,
+    	// the correct local displacement is:
+    	//     u_local = T * u_global
+        const auto u_loc = T * u_global;
+
+        // 3) local nodal forces = section forces
+        const auto q_loc = K_loc * u_loc;      // N*6 x 1
+
+        // 4) split q_loc into N Vec6 blocks
+        for (Index i = 0; i < N; ++i) {
+            Vec6 q_i;
+            for (Index d = 0; d < 6; ++d) {
+                q_i(d) = q_loc(i * 6 + d);
+            }
+            result[i] = q_i;
+        }
+
+        return result;
+    }
+
 };
 
 } // namespace model

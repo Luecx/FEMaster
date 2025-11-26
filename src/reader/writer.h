@@ -10,21 +10,26 @@
 namespace fem {
 namespace reader {
 
+// Import DynamicMatrix from the outer fem namespace
+using fem::DynamicMatrix;
+
+/**
+ * @brief Simple result file writer for FEMaster .res format.
+ */
 class Writer {
-private:
+    private:
     std::ofstream file_path;
 
-public:
+    public:
     // Constructor
-    Writer(const std::string& filename);
+    explicit Writer(const std::string& filename);
 
     // Destructor
     ~Writer();
 
     // Move constructor
     Writer(Writer&& other) noexcept
-            : file_path(std::move(other.file_path)) {
-    }
+        : file_path(std::move(other.file_path)) {}
 
     // Move assignment operator
     Writer& operator=(Writer&& other) noexcept;
@@ -42,10 +47,21 @@ public:
     // Function to add a loadcase string
     void add_loadcase(int id);
 
-    // Function to write any eigen matrix
+    /**
+     * @brief Write any Eigen matrix as a FIELD block.
+     *
+     * If index_cols == 0 (default), the legacy format is used:
+     *   FIELD, NAME=..., COLS=..., ROWS=...
+     *
+     * If index_cols > 0, the new indexed format is used:
+     *   FIELD, NAME=..., INDEX_COLS=..., VALUE_COLS=..., ROWS=...
+     *
+     * where VALUE_COLS = matrix.cols() - index_cols.
+     */
     void write_eigen_matrix(const DynamicMatrix& matrix,
-                            const std::string& field_name);
+                            const std::string& field_name,
+                            int index_cols = 0);
 };
 
-}    // namespace reader
-}    // namespace fem
+} // namespace reader
+} // namespace fem

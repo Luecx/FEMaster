@@ -35,6 +35,7 @@ struct StructuralElement : ElementInterface {
 
     virtual Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) = 0;
     virtual Strains strain(NodeData& displacement, std::vector<Vec3>& rst) = 0;
+    virtual std::vector<Vec6> section_forces(NodeData& displacement) {return std::vector<Vec6>();};
 
     virtual void compute_stress_strain(IPData& ip_stress,
                                        IPData& ip_strain,

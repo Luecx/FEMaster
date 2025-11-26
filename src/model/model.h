@@ -105,7 +105,7 @@ struct Model {
     ElementData                    compute_compliance   (NodeData& displacement);
     ElementData                    compute_compliance_angle_derivative(NodeData& displacement);
     ElementData                    compute_volumes      ();
-
+    DynamicMatrix                  compute_section_forces(NodeData& displacement);
 };
 
 #include "model.ipp"

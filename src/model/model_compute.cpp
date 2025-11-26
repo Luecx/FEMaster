@@ -140,5 +140,58 @@ ElementData Model::compute_volumes() {
 
     return volumes;
 }
+DynamicMatrix
+Model::compute_section_forces(NodeData& displacement) {
+
+    using Entry = std::tuple<ID, Index, Vec6>;
+    std::vector<Entry> entries;
+    entries.reserve(_data->elements.size() * 2); // heuristic: mostly 2-node beams
+
+    // 1) Collect (elem_id, local_node, Vec6) for all beam elements
+    for (auto el : _data->elements) {
+        if (!el) continue;
+
+        if (auto sel = el->as<StructuralElement>()) {
+
+            auto per_node_forces = sel->section_forces(displacement);
+
+            // non-beam elements return empty vector{}; skip them
+            if (per_node_forces.empty())
+                continue;
+
+            const ID eid = sel->elem_id;
+
+            for (Index ln = 0; ln < static_cast<Index>(per_node_forces.size()); ++ln) {
+                entries.emplace_back(eid, ln, per_node_forces[ln]);
+            }
+        }
+    }
+
+    // 2) Pack into DynamicMatrix: [elem_id, local_node, f1..f6]
+    const Index n_rows = static_cast<Index>(entries.size());
+    const Index n_cols = 2 + 6; // 2 index columns + 6 value columns
+
+    DynamicMatrix mat(n_rows, n_cols);
+    mat.setZero();
+
+    for (Index i = 0; i < n_rows; ++i) {
+        ID    eid;
+        Index ln;
+        Vec6  v;
+        std::tie(eid, ln, v) = entries[static_cast<std::size_t>(i)];
+
+        mat(i, 0) = static_cast<Precision>(eid);
+        // use ln or (ln + 1) depending on whether you want 0- or 1-based in the .res file
+        mat(i, 1) = static_cast<Precision>(ln);
+
+        for (Index k = 0; k < 6; ++k) {
+            mat(i, 2 + k) = v(k);
+        }
+    }
+
+    return mat;
+}
+
+
 
 } }

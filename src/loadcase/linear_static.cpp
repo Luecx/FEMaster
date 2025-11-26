@@ -144,6 +144,10 @@ void LinearStatic::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r); },
         "expanding reactions to matrix form");
 
+    auto section_force_mat = Timer::measure(
+        [&]() { return model->compute_section_forces(global_disp_mat); },
+        "computing beam section forces");
+
     NodeData stress;
     NodeData strain;
     std::tie(stress, strain) = Timer::measure(
@@ -157,11 +161,12 @@ void LinearStatic::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_eigen_matrix(global_disp_mat, "DISPLACEMENT");
-    writer->write_eigen_matrix(strain,          "STRAIN");
-    writer->write_eigen_matrix(stress,          "STRESS");
-    writer->write_eigen_matrix(global_load_mat, "DOF_LOADS");
-    writer->write_eigen_matrix(global_force_mat,"NODAL_FORCES");
+    writer->write_eigen_matrix(global_disp_mat,  "DISPLACEMENT");
+    writer->write_eigen_matrix(strain,           "STRAIN");
+    writer->write_eigen_matrix(stress,           "STRESS");
+    writer->write_eigen_matrix(global_load_mat,  "DOF_LOADS");
+    writer->write_eigen_matrix(global_force_mat ,"NODAL_FORCES");
+    writer->write_eigen_matrix(section_force_mat,"SECTION_FORCES", 2);
 
     transformer->post_check_static(K, f, u);
 }
