@@ -56,6 +56,9 @@ struct SupportCollector : model::Collection<Support> {
      */
     constraint::Equations get_equations(model::ModelData& model_data);
 
+    /// Read-only access to stored supports
+    const std::vector<Support>& entries() const { return this->_data; }
+
     /**
      * @brief Adds a node-region support to the collector.
      *

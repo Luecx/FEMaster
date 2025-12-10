@@ -18,6 +18,8 @@ struct Point : fem::model::StructuralElement {
         : StructuralElement(p_elem_id)
         , node_id(p_node_id) {}
 
+    std::string type_name() const override { return "P"; }
+
     ElDofs     dofs() override {
         return ElDofs {false, false, false, false, false, false};
     }

@@ -22,6 +22,8 @@
 #include "../data/node_data_dict.h"
 #include "../data/region.h"
 #include "bc.h"
+#include "../core/printable.h"
+#include <string>
 
 namespace fem {
 namespace model {
@@ -41,7 +43,7 @@ namespace bc {
  * into the boundary-condition data for all entities referenced by their target
  * region.
  */
-struct Load : public BoundaryCondition {
+struct Load : public BoundaryCondition, public fem::Printable {
     using Ptr = std::shared_ptr<Load>; ///< Shared pointer alias for load storage.
 
     cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional local orientation.
@@ -59,6 +61,9 @@ struct Load : public BoundaryCondition {
      * @param bc Boundary-condition storage where load contributions are added.
      */
     virtual void apply(model::ModelData& model_data, NodeData& bc, Precision time) = 0;
+
+    /// One-line description of the load (type, target, parameters)
+    std::string str() const override = 0;
 };
 
 /**
@@ -93,6 +98,7 @@ struct CLoad : public Load {
      * @param bc Node-based boundary-condition storage.
      */
     void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    std::string str() const override;
 };
 
 /**
@@ -127,6 +133,7 @@ struct DLoad : public Load {
      * @param bc Node-based boundary-condition storage.
      */
     void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    std::string str() const override;
 };
 
 /**
@@ -159,6 +166,7 @@ struct PLoad : public Load {
      * @param bc Node-based boundary-condition storage.
      */
     void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    std::string str() const override;
 };
 
 /**
@@ -192,6 +200,7 @@ struct VLoad : public Load {
      * @param bc Node-based boundary-condition storage.
      */
     void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    std::string str() const override;
 };
 
 /**
@@ -224,6 +233,7 @@ struct TLoad : public Load {
      * @param bc Node-based boundary-condition storage.
      */
     void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    std::string str() const override;
 };
 
 } // namespace bc

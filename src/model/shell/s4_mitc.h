@@ -15,6 +15,8 @@ struct MITC4 : DefaultShellElement<4, Surface4,
 
     MITC4(ID id, std::array<ID,4> nodes) : Base(id, nodes) {}
 
+    std::string type_name() const override { return "MITC4"; }
+
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
         return std::make_shared<Surface4>(
             surface_id == 1

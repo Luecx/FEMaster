@@ -33,6 +33,11 @@ struct BeamSection : Section {
     * @brief Outputs information about the beam section.
     */
    void info() override;
+
+   /**
+    * @brief One-line section description.
+    */
+   std::string str() const override;
 };
 
 } // namespace fem

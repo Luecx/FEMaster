@@ -6,6 +6,7 @@ namespace fem { namespace model {
 
 struct C3D15 : public SolidElement<15>{
     C3D15(ID p_elem_id, const std::array<ID, 15>& p_node_ids);
+    std::string type_name() const override { return "C3D15"; }
 
     const quadrature::Quadrature& integration_scheme() override;
 

@@ -47,6 +47,11 @@ void Model::add_coupling(const std::string &master_set, const std::string &slave
     } else {
         _data->couplings.emplace_back(master_node, _data->node_sets.get(slave_set), coupled_dofs, type);
     }
+    // Attach master region pointer for reporting
+    if (!_data->couplings.empty()) {
+        auto& c = _data->couplings.back();
+        c.master_region = _data->node_sets.get(master_set);
+    }
 }
 
 void Model::add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust) {

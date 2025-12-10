@@ -14,6 +14,7 @@
 #include "load.h"
 
 #include <cmath>
+#include <sstream>
 #include <utility>
 #include "../model/model_data.h"
 #include "../model/element/element.h"
@@ -193,6 +194,59 @@ void TLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
             structural->apply_tload(bc, *temp_field, ref_temp);
         }
     }
+}
+
+static std::string vec3_to_string(const Vec3& v) {
+    std::ostringstream os; os << v[0] << ", " << v[1] << ", " << v[2]; return os.str();
+}
+static std::string vec6_to_string(const Vec6& v) {
+    std::ostringstream os; os << v[0] << ", " << v[1] << ", " << v[2] << ", " << v[3] << ", " << v[4] << ", " << v[5]; return os.str();
+}
+
+std::string CLoad::str() const {
+    std::ostringstream os;
+    os << "CLOAD: target=NSET " << (region ? region->name : std::string("?"))
+       << " (" << (region ? (int)region->size() : 0) << ")"
+       << ", values=[" << vec6_to_string(values) << "]";
+    if (orientation) os << ", orientation=" << orientation->name;
+    if (amplitude)   os << ", amplitude=" << amplitude->name;
+    return os.str();
+}
+
+std::string DLoad::str() const {
+    std::ostringstream os;
+    os << "DLOAD: target=SFSET " << (region ? region->name : std::string("?"))
+       << " (" << (region ? (int)region->size() : 0) << ")"
+       << ", values=[" << vec3_to_string(values) << "]";
+    if (orientation) os << ", orientation=" << orientation->name;
+    if (amplitude)   os << ", amplitude=" << amplitude->name;
+    return os.str();
+}
+
+std::string PLoad::str() const {
+    std::ostringstream os;
+    os << "PLOAD: target=SFSET " << (region ? region->name : std::string("?"))
+       << " (" << (region ? (int)region->size() : 0) << ")"
+       << ", p=" << pressure;
+    if (amplitude) os << ", amplitude=" << amplitude->name;
+    return os.str();
+}
+
+std::string VLoad::str() const {
+    std::ostringstream os;
+    os << "VLOAD: target=ELSET " << (region ? region->name : std::string("?"))
+       << " (" << (region ? (int)region->size() : 0) << ")"
+       << ", values=[" << vec3_to_string(values) << "]";
+    if (orientation) os << ", orientation=" << orientation->name;
+    if (amplitude)   os << ", amplitude=" << amplitude->name;
+    return os.str();
+}
+
+std::string TLoad::str() const {
+    std::ostringstream os;
+    os << "TLOAD: field=" << (temp_field ? temp_field->name : std::string("?"))
+       << ", ref_temp=" << ref_temp;
+    return os.str();
 }
 
 } // namespace bc

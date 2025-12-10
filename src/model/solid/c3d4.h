@@ -37,6 +37,7 @@ struct C3D4 : public SolidElement<4> {
      * @param pNodeIds Array containing IDs of the 4 nodes.
      */
     C3D4(ID pElemId, const std::array<ID, 4>& pNodeIds);
+    std::string type_name() const override { return "C3D4"; }
 
     //-------------------------------------------------------------------------
     // Shape Function

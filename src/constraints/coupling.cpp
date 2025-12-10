@@ -14,6 +14,8 @@
 #include "coupling.h"
 
 #include "../model/model_data.h"
+#include <sstream>
+#include <stdexcept>
 
 namespace fem {
 namespace constraint {
@@ -29,6 +31,7 @@ Coupling::Coupling(ID master_node, model::NodeRegion::Ptr slave_nodes, Dofs coup
     , slave_nodes(slave_nodes)
     , coupled_dofs(coupled_dofs)
     , type(type) {
+    // no-op: reporting pointers set by Model::add_coupling
 }
 
 Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dofs coupled_dofs, CouplingType type)
@@ -36,6 +39,7 @@ Coupling::Coupling(ID master_node, model::SurfaceRegion::Ptr slave_surfaces, Dof
     , slave_surfaces(slave_surfaces)
     , coupled_dofs(coupled_dofs)
     , type(type) {
+    // no-op: reporting pointers set by Model::add_coupling
 }
 
 /**
@@ -294,6 +298,42 @@ Dofs Coupling::master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_
                  x_rotation_needed,
                  y_rotation_needed,
                  z_rotation_needed};
+}
+
+static inline std::string dofs_to_string(const Dofs& m) {
+    // Order: Ux, Uy, Uz, Rx, Ry, Rz
+    static const char* labels[6] = {"Ux","Uy","Uz","Rx","Ry","Rz"};
+    std::ostringstream oss;
+    bool first = true;
+    for (int i = 0; i < 6; ++i) {
+        if (m(i)) {
+            if (!first) oss << ", ";
+            oss << labels[i];
+            first = false;
+        }
+    }
+    if (first) oss << "(none)";
+    return oss.str();
+}
+
+std::string Coupling::str() const {
+    std::ostringstream s;
+    // Type
+    s << (type == CouplingType::KINEMATIC ? "Kinematic" : "Structural") << ": ";
+    // Master
+    if (master_region) {
+        s << "master=" << master_region->name << " (node " << master_node << ")";
+    } else {
+        s << "master=node " << master_node;
+    }
+    // Slave
+    s << ", slave=";
+    if (!slave_nodes && !slave_surfaces) throw std::runtime_error("Coupling::str(): neither slave_nodes nor slave_surfaces set");
+    if (slave_nodes)    s << "NSET "  << slave_nodes->name;
+    if (slave_surfaces) s << "SFSET " << slave_surfaces->name;
+    // DOFs
+    s << ", dofs=[" << dofs_to_string(coupled_dofs) << "]";
+    return s.str();
 }
 
 }    // namespace constraint

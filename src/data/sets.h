@@ -57,12 +57,14 @@ struct Sets {
 
     /// Returns whether the aggregate collection exists.
     bool has_all() { return _all != nullptr; }
+    bool has_all() const { return _all != nullptr; }
 
     /// Returns whether any collection is currently active.
     bool has_any() { return _cur != nullptr; }
 
     /// Provides access to the aggregate collection.
     TPtr all() { return _all; }
+    TPtr all() const { return _all; }
 
     /// Returns the currently active collection.
     TPtr get() { return _cur; }
@@ -130,6 +132,8 @@ struct Sets {
     /// Iterator access to the underlying associative container.
     auto begin() { return _data.begin(); }
     auto end() { return _data.end(); }
+    auto begin() const { return _data.cbegin(); }
+    auto end() const { return _data.cend(); }
 
 private:
     /**

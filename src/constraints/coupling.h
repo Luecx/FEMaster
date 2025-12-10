@@ -19,6 +19,8 @@
 #include "../core/types_cls.h"
 #include "../data/region.h"
 #include "equation.h"
+#include "../core/printable.h"
+#include <string>
 
 namespace fem {
 namespace constraint {
@@ -43,7 +45,7 @@ enum class CouplingType {
  * of freedom (DOFs) of slave nodes with a master node, based on a specified
  * coupling type and the system's DOF configurations.
  */
-class Coupling {
+class Coupling : public fem::Printable {
 
     public:
     ID                        master_node;                 ///< Master node ID
@@ -51,6 +53,9 @@ class Coupling {
     model::SurfaceRegion::Ptr slave_surfaces = nullptr;    ///< List of slave surface IDs
     Dofs                      coupled_dofs;                ///< DOFs that are to be coupled (6 DOFs per node)
     CouplingType              type;                        ///< Type of coupling (e.g., kinematic)
+
+    // Reporting: keep pointer to the original master region for its name
+    model::NodeRegion::Ptr    master_region = nullptr;    ///< Name and id of the master set (expects size==1)
 
     public:
     /**
@@ -131,6 +136,14 @@ class Coupling {
      * @return Dofs A Dofs object indicating which DOFs are required for the master node.
      */
     Dofs master_dofs(SystemDofs& system_dof_mask, model::ModelData& model_data);
+
+    /**
+     * @brief One-line string representation describing this coupling.
+     *
+     * Includes coupling type, master (set name or node id), slave set name,
+     * whether it is a node or surface set, and the coupled DOFs.
+     */
+    std::string str() const override;
 };
 
 }    // namespace constraint

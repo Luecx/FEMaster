@@ -21,6 +21,8 @@ struct B33 : BeamElement<2> {
     B33(ID elem_id, std::array<ID, 2> node_ids_in, ID orientation_node_id = static_cast<ID>(-1))
         : BeamElement(elem_id, node_ids_in, orientation_node_id) {}
 
+    std::string type_name() const override { return "B33"; }
+
     StaticMatrix<12, 12> stiffness_impl() override {
         StaticMatrix<12, 12> T = transformation();
         StaticMatrix<12, 12> K = StaticMatrix<12, 12>::Zero();

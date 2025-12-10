@@ -18,6 +18,7 @@
 #include "../model/model_data.h"
 
 #include <cmath>
+#include <sstream>
 
 namespace fem {
 namespace bc {
@@ -97,6 +98,32 @@ void Support::apply_to_node(model::ModelData& model_data, constraint::Equations&
             equations.emplace_back(std::initializer_list<constraint::EquationEntry>{entry}, values[i]);
         }
     }
+}
+
+std::string Support::str() const {
+    auto region_name = [&]() -> std::string {
+        if (node_region)    return std::string("NSET ") + node_region->name + " (" + std::to_string(node_region->size()) + ")";
+        if (surface_region) return std::string("SFSET ") + surface_region->name + " (" + std::to_string(surface_region->size()) + ")";
+        if (element_region) return std::string("ELSET ") + element_region->name + " (" + std::to_string(element_region->size()) + ")";
+        return std::string("(unknown)");
+    }();
+
+    static const char* labels[6] = {"Ux","Uy","Uz","Rx","Ry","Rz"};
+    std::ostringstream os;
+    os << "Support: target=" << region_name << ", dof=[";
+    bool first = true;
+    for (int i = 0; i < 6; ++i) {
+        if (!std::isnan(values[i])) {
+            if (!first) os << ", ";
+            os << labels[i] << "=" << values[i];
+            first = false;
+        }
+    }
+    if (first) os << "(none)";
+    if (coordinate_system) {
+        os << ", orientation=" << coordinate_system->name;
+    }
+    return os.str();
 }
 
 } // namespace bc

@@ -15,6 +15,8 @@ struct C3D6 : public SolidElement<6>{
     StaticMatrix<6, 3> shape_derivative(Precision r, Precision s, Precision t) override;
     StaticMatrix<6, 3> node_coords_local() override;
 
+    std::string type_name() const override { return "C3D6"; }
+
 };
 
 } }

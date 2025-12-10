@@ -15,6 +15,7 @@
 
 #include "../constraints/equation.h"
 #include "../core/core.h"
+#include "../core/printable.h"
 #include "../cos/coordinate_system.h"
 #include "../data/region.h"
 
@@ -35,7 +36,7 @@ namespace bc {
  * system is provided, constraint directions are transformed accordingly before
  * being converted into algebraic equations.
  */
-struct Support {
+struct Support : public fem::Printable {
     using NodeRegionPtr = model::NodeRegion::Ptr;       ///< Alias for node-region pointer.
     using ElementRegionPtr = model::ElementRegion::Ptr; ///< Alias for element-region pointer.
     using SurfaceRegionPtr = model::SurfaceRegion::Ptr; ///< Alias for surface-region pointer.
@@ -79,6 +80,11 @@ struct Support {
      * @param equations Container receiving the generated constraint equations.
      */
     void apply(model::ModelData& model_data, constraint::Equations& equations);
+
+    /**
+     * @brief One-line description with target and DOF spec.
+     */
+    std::string str() const override;
 
 private:
     NodeRegionPtr node_region = nullptr;          ///< Targeted node region.

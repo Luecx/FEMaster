@@ -33,6 +33,11 @@ struct PointMassSection : Section {
     * @brief Outputs information about the point mass section.
     */
    void info() override;
+
+   /**
+    * @brief One-line section description.
+    */
+   std::string str() const override;
 };
 
 } // namespace fem

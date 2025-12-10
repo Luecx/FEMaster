@@ -30,6 +30,11 @@ struct ShellSection : Section {
     * @brief Outputs information about the shell section.
     */
    void info() override;
+
+   /**
+    * @brief One-line section description.
+    */
+    std::string str() const override;
 };
 
 } // namespace fem

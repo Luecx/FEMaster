@@ -21,7 +21,9 @@
 
 #include "../material/material.h"
 #include "../data/region.h"
+#include "../core/printable.h"
 #include <memory>
+#include <string>
 
 namespace fem {
 
@@ -33,7 +35,7 @@ namespace fem {
 * for different section types in the FEM solver. Each derived class
 * specializes the section properties and behavior.
 */
-struct Section {
+struct Section : public fem::Printable {
    using Ptr = std::shared_ptr<Section>;
 
    virtual ~Section() = default; ///< Default virtual destructor for polymorphism.
@@ -58,6 +60,11 @@ struct Section {
     * @brief Outputs information about the section.
     */
    virtual void info() = 0;
+
+   /**
+    * @brief One-line string summary of the section.
+    */
+   virtual std::string str() const override = 0;
 };
 
 } // namespace fem

@@ -14,6 +14,8 @@ struct S4 : DefaultShellElement<4, Surface4, quadrature::Domain::DOMAIN_ISO_QUAD
     S4(ID p_elem_id, std::array<ID, 4> p_node)
         : DefaultShellElement(p_elem_id, p_node) {}
 
+    std::string type_name() const override { return "S4"; }
+
     virtual std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
         return std::make_shared<Surface4>(
             surface_id == 1

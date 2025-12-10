@@ -11,6 +11,7 @@
 #pragma once
 
 #include "../../core/types_cls.h"
+#include <string>
 #include "../../section/section.h"
 #include "../geometry/surface/surface.h"
 #include "../model_data.h"
@@ -51,6 +52,9 @@ struct ElementInterface {
 
     virtual SurfacePtr surface(ID surface_id) = 0;
 
+    /// Short type tag (e.g., "C3D8", "S4", "B33"). Override in derived types.
+    virtual std::string type_name() const { return std::string{}; }
+
     /// Iterator access over nodal identifiers.
     ID* begin() { return nodes(); }
     ID* end() { return nodes() + n_nodes(); }
@@ -64,4 +68,3 @@ struct ElementInterface {
 
 } // namespace model
 } // namespace fem
-

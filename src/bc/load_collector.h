@@ -109,6 +109,9 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      * @param ref_temp Reference temperature used as the unloaded state.
      */
     void add_tload(model::NodeField::Ptr temp_field, Precision ref_temp);
+
+    /// Read-only access to stored loads
+    const std::vector<Load::Ptr>& entries() const { return this->_data; }
 };
 
 } // namespace bc

@@ -18,6 +18,8 @@ struct TrussElement : StructuralElement {
     TrussElement(ID p_elem_id, std::array<ID, N> p_node_ids)
         : StructuralElement(p_elem_id), node_ids{p_node_ids} {}
 
+    std::string type_name() const override { return (N == 2 ? std::string("T3") : std::string("TRUSS")); }
+
     ~TrussElement() override = default;
 
     // --- Section and material access ---
