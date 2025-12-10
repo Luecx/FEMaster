@@ -185,8 +185,16 @@ struct BeamElement : StructuralElement {
     }
 
     void apply_vload(NodeData& node_loads, Vec3 load) override {
-        (void)node_loads;
-        (void)load;
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return;
+        const Vec3 F = load * (A * L / Precision(N));
+        for (Index i = 0; i < N; ++i) {
+            const ID n_id = node_ids[i];
+            node_loads(n_id, 0) += F(0);
+            node_loads(n_id, 1) += F(1);
+            node_loads(n_id, 2) += F(2);
+        }
     }
 
     void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {

@@ -101,8 +101,18 @@ struct ShellElement : StructuralElement {
         (void) ip_offset;
     };
     void apply_vload(NodeData& node_loads, Vec3 load) override {
-        (void) node_loads;
-        (void) load;
+        auto& node_positions = this->_model_data->get(POSITION);
+        auto surf = this->surface(1);
+        if (!surf) return;
+        auto contrib = surf->shape_function_integral(node_positions);
+        const Precision t = get_section()->thickness;
+        for (Index local_id = 0; local_id < N; ++local_id) {
+            const ID n_id = node_ids[local_id];
+            const Precision w = contrib(local_id) * t;
+            node_loads(n_id, 0) += w * load(0);
+            node_loads(n_id, 1) += w * load(1);
+            node_loads(n_id, 2) += w * load(2);
+        }
     };
     void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {
         (void) node_loads;
