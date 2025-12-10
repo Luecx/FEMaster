@@ -26,10 +26,12 @@ namespace constraint {
  * @brief Couples slave nodes to master surfaces via closest-point projection.
  */
 class Tie {
-    model::SurfaceRegion::Ptr master_set; ///< Master surface region.
-    model::NodeRegion::Ptr slave_set;     ///< Slave node region.
-    Precision distance;                  ///< Maximum search distance for projection.
-    bool adjust;                         ///< Whether to move slave nodes onto the master surface.
+    // Either a surface region or a line region may be provided as master.
+    model::SurfaceRegion::Ptr master_surfaces; ///< Master surface region (2D).
+    model::LineRegion::Ptr    master_lines;    ///< Master line region (1D).
+    model::NodeRegion::Ptr    slave_set;       ///< Slave node region.
+    Precision distance;                        ///< Maximum search distance for projection.
+    bool adjust;                               ///< Whether to move slave nodes onto the master geometry.
 
 public:
     /**
@@ -41,6 +43,12 @@ public:
      * @param do_adjust Whether slave nodes should be adjusted to the surface.
      */
     Tie(model::SurfaceRegion::Ptr master,
+        model::NodeRegion::Ptr slave,
+        Precision max_distance,
+        bool do_adjust);
+
+    /** Construct a tie with a line master region (1D). */
+    Tie(model::LineRegion::Ptr master,
         model::NodeRegion::Ptr slave,
         Precision max_distance,
         bool do_adjust);

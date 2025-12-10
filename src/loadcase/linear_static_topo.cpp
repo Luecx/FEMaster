@@ -119,13 +119,13 @@ void LinearStaticTopo::run() {
     );
 
     // (2) Constraint equations from supports/ties/couplings
-    auto equations = Timer::measure(
-        [&]() {
-            auto groups = this->model->collect_constraints(active_dof_idx_mat, supps);
-            report_constraint_groups(groups);
-            return groups.flatten(); },
+    // Keep grouped constraints to later mask reactions to support-constrained DOFs
+    auto groups = Timer::measure(
+        [&]() { return this->model->collect_constraints(active_dof_idx_mat, supps); },
         "building constraints"
     );
+    report_constraint_groups(groups);
+    auto equations = groups.flatten();
 
     // (3) Global loads (node x 6) and reduction to active RHS vector f
     auto global_load_mat = Timer::measure(
@@ -249,12 +249,36 @@ void LinearStaticTopo::run() {
     ElementData angle_grad     = model->compute_compliance_angle_derivative(global_disp_mat);
 
     // (11) Write results
+    // Mask reactions to supports only (NaN elsewhere)
+    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
+    support_mask.setConstant(false);
+    for (const auto& eq : groups.supports) {
+        for (const auto& e : eq.entries) {
+            if (e.node_id >= 0 && e.node_id < support_mask.rows() &&
+                e.dof >= 0 && e.dof < support_mask.cols())
+            {
+                if (active_dof_idx_mat(e.node_id, e.dof) != -1) {
+                    support_mask(e.node_id, e.dof) = true;
+                }
+            }
+        }
+    }
+    NodeData reaction_masked = NodeData::Constant(global_force_mat.rows(), global_force_mat.cols(),
+                                                  std::numeric_limits<Precision>::quiet_NaN());
+    for (int i = 0; i < reaction_masked.rows(); ++i) {
+        for (int j = 0; j < reaction_masked.cols(); ++j) {
+            if (support_mask(i, j)) {
+                reaction_masked(i, j) = global_force_mat(i, j);
+            }
+        }
+    }
+
     writer->add_loadcase(id);
     writer->write_eigen_matrix(global_disp_mat , "DISPLACEMENT");
     writer->write_eigen_matrix(strain          , "STRAIN");
     writer->write_eigen_matrix(stress          , "STRESS");
-    writer->write_eigen_matrix(global_load_mat , "DOF_LOADS");
-    writer->write_eigen_matrix(global_force_mat, "NODAL_FORCES");
+    writer->write_eigen_matrix(global_load_mat , "EXTERNAL_FORCES");
+    writer->write_eigen_matrix(reaction_masked , "REACTION_FORCES");
     writer->write_eigen_matrix(compliance_raw  , "COMPLIANCE_RAW");
     writer->write_eigen_matrix(compliance_adj  , "COMPLIANCE_ADJ");
     writer->write_eigen_matrix(dens_grad       , "DENS_GRAD");

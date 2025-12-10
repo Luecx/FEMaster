@@ -58,7 +58,43 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
     auto& elptr = _data->elements[element_id];
     logging::error(elptr != nullptr, "element with id=", element_id, " has not been defined");
     auto surfptr = elptr->surface(surface_id);
-    logging::error(surfptr != nullptr, "surface with id=", surface_id, " has not been defined for element with id=", element_id);
+    // If the element has no surface for the given side, consider 1D geometry case
+    // (e.g., beams or trusses with 2-node connectivity) and create a line entry.
+    if (surfptr == nullptr) {
+        // Heuristic: elements with exactly 2 nodes represent 1D members here
+        if (elptr->n_nodes() == 2) {
+            // allow negative id = automatically assign id for lines too
+            std::array<ID,2> ln{elptr->nodes()[0], elptr->nodes()[1]};
+
+            // Deduplicate: reuse existing line id if same connectivity already present (either order)
+            ID existing = -1;
+            for (std::size_t i = 0; i < _data->lines.size(); ++i) {
+                auto cur = _data->lines[i];
+                if ((cur[0] == ln[0] && cur[1] == ln[1]) || (cur[0] == ln[1] && cur[1] == ln[0])) {
+                    existing = static_cast<ID>(i);
+                    break;
+                }
+            }
+
+            if (existing >= 0) {
+                id = existing;
+            } else {
+                if (id < 0) {
+                    id = static_cast<ID>(_data->lines.size());
+                    _data->lines.reserve(static_cast<std::size_t>(id + 128));
+                    _data->lines.resize(static_cast<std::size_t>(id + 1));
+                } else if (static_cast<std::size_t>(id) >= _data->lines.size()) {
+                    _data->lines.resize(static_cast<std::size_t>(id + 1));
+                }
+                _data->lines[static_cast<std::size_t>(id)] = ln;
+            }
+            // Add to the currently active line set (activated in register_surface)
+            _data->line_sets.add(id);
+            return;
+        }
+
+        logging::error(false, "surface with id=", surface_id, " has not been defined for element with id=", element_id);
+    }
 
     // allow negative id = automatically assign id
     if (id < 0) {

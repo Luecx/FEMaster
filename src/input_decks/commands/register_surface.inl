@@ -5,8 +5,7 @@
  *
  * Define surfaces from element faces or element sets.
  * Header:
- *   TYPE=ELEMENT (required)
- *   SFSET|NAME=<surfset> (optional, default "SFALL")
+ *   SFSET|NAME=<set> (optional, default "SFALL")
  *
  * Data (repeatable lines):
  *   1) ID, ELEM_ID, SIDE
@@ -44,20 +43,20 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
         // --- Header keywords ---
         command.keyword(
             fem::dsl::KeywordSpec::make()
-                .key("TYPE").required().allowed({"ELEMENT"})
-                    .doc("Creation mode (only ELEMENT is supported).")
                 .key("SFSET").alternative("NAME").optional("SFALL")
-                    .doc("Surface set to activate/create (default: SFALL).")
+                    .doc("Set name to activate/create (default: SFALL).\n"
+                         "Elements with 2D faces contribute surfaces; beam elements contribute 1D lines under the same set name.")
         );
 
         // --- On enter: validate + activate sfset ---
         command.on_enter([&model](const fem::dsl::Keys& keys) {
-            const std::string& type_raw = keys.raw("TYPE");
-            if (type_raw != "ELEMENT") {
-                logging::error(false, "SURFACE: only TYPE=ELEMENT is supported.");
-            }
             const std::string& sfset = keys.get<std::string>("SFSET"); // resolves NAME alias
-            model._data->surface_sets.activate(sfset);
+            // Activate both surface and line sets under the same name so beam elements
+            // can contribute their 1D geometry to a parallel line-set with identical key.
+            auto s = model._data->surface_sets.activate(sfset);
+            auto l = model._data->line_sets.activate(sfset);
+            if (s) { s->sorted(true).duplicates(false); }
+            if (l) { l->sorted(true).duplicates(false); }
         });
 
         // --- Variant 1: ID, ELEM_ID, SIDE ---

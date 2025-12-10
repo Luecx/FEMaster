@@ -35,6 +35,7 @@
 
 #include <memory>
 #include <vector>
+#include <array>
 
 namespace fem {
 namespace model {
@@ -52,6 +53,8 @@ struct ModelData {
     // Geometric entities -------------------------------------------------------
     std::vector<ElementPtr> elements;
     std::vector<SurfacePtr> surfaces;
+    // For 1D geometry (lines) used by line-based ties/couplings
+    std::vector<std::array<ID, 2>> lines; ///< Currently supports 2-node lines (e.g., beam axes)
 
     // Sections and profiles ----------------------------------------------------
     std::vector<Section::Ptr> sections;
@@ -69,6 +72,7 @@ struct ModelData {
     Sets<NodeRegion> node_sets{SET_NODE_ALL};
     Sets<ElementRegion> elem_sets{SET_ELEM_ALL};
     Sets<SurfaceRegion> surface_sets{SET_SURF_ALL};
+    Sets<LineRegion> line_sets{SET_LINE_ALL};
 
     // Named resources ----------------------------------------------------------
     Dict<material::Material> materials;

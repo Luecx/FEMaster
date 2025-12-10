@@ -24,6 +24,7 @@
 #include "../solve/eigen.h"
 
 #include <utility>
+#include <limits>
 
 namespace fem {
 namespace loadcase {
@@ -53,13 +54,13 @@ void LinearStatic::run() {
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    auto equations = Timer::measure(
-        [&]() {
-            auto groups = model->collect_constraints(active_dof_idx_mat, supps);
-            report_constraint_groups(groups);
-            return groups.flatten();
-        },
+    // Collect grouped constraints so we can both flatten for solver and later
+    // identify which DOFs were constrained by supports for reaction masking.
+    auto groups = Timer::measure(
+        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
         "building constraints");
+    report_constraint_groups(groups);
+    auto equations = groups.flatten();
 
     auto global_load_mat = Timer::measure(
         [&]() { return model->build_load_matrix(loads); },
@@ -160,13 +161,40 @@ void LinearStatic::run() {
         write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
+    // Build a support-only mask for reaction reporting: NaN everywhere except
+    // DOFs that were constrained by supports.
+    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
+    support_mask.setConstant(false);
+    for (const auto& eq : groups.supports) {
+        for (const auto& e : eq.entries) {
+            if (e.node_id >= 0 && e.node_id < support_mask.rows() &&
+                e.dof >= 0 && e.dof < support_mask.cols())
+            {
+                // Only mark if DOF exists in the active numbering
+                if (active_dof_idx_mat(e.node_id, e.dof) != -1) {
+                    support_mask(e.node_id, e.dof) = true;
+                }
+            }
+        }
+    }
+
+    NodeData reaction_masked = NodeData::Constant(global_force_mat.rows(), global_force_mat.cols(),
+                                                  std::numeric_limits<Precision>::quiet_NaN());
+    for (int i = 0; i < reaction_masked.rows(); ++i) {
+        for (int j = 0; j < reaction_masked.cols(); ++j) {
+            if (support_mask(i, j)) {
+                reaction_masked(i, j) = global_force_mat(i, j);
+            }
+        }
+    }
+
     writer->add_loadcase(id);
-    writer->write_eigen_matrix(global_disp_mat,  "DISPLACEMENT");
-    writer->write_eigen_matrix(strain,           "STRAIN");
-    writer->write_eigen_matrix(stress,           "STRESS");
-    writer->write_eigen_matrix(global_load_mat,  "DOF_LOADS");
-    writer->write_eigen_matrix(global_force_mat ,"NODAL_FORCES");
-    writer->write_eigen_matrix(section_force_mat,"SECTION_FORCES", 2);
+    writer->write_eigen_matrix(global_disp_mat , "DISPLACEMENT");
+    writer->write_eigen_matrix(strain          , "STRAIN");
+    writer->write_eigen_matrix(stress          , "STRESS");
+    writer->write_eigen_matrix(global_load_mat , "EXTERNAL_FORCES");
+    writer->write_eigen_matrix(reaction_masked , "REACTION_FORCES");
+    writer->write_eigen_matrix(section_force_mat, "SECTION_FORCES", 2);
 
     transformer->post_check_static(K, f, u);
 }

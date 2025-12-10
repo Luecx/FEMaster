@@ -20,9 +20,9 @@ using RegionType = int; ///< Underlying type used by the `RegionTypes` enumerati
 enum RegionTypes : RegionType {
     NODE,    ///< Collection of node identifiers.
     ELEMENT, ///< Collection of element identifiers.
-    SURFACE  ///< Collection of surface identifiers.
+    SURFACE, ///< Collection of surface identifiers.
+    LINE     ///< Collection of line identifiers (1D geometry).
 };
 
 } // namespace model
 } // namespace fem
-

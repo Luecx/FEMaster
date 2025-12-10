@@ -76,7 +76,7 @@ void Region<RT>::info() {
 using NodeRegion = Region<RegionTypes::NODE>;       ///< Region alias for nodes.
 using ElementRegion = Region<RegionTypes::ELEMENT>; ///< Region alias for elements.
 using SurfaceRegion = Region<RegionTypes::SURFACE>; ///< Region alias for surfaces.
+using LineRegion = Region<RegionTypes::LINE>;       ///< Region alias for lines (1D geometry).
 
 } // namespace model
 } // namespace fem
-

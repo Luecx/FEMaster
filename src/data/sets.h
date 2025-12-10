@@ -26,6 +26,7 @@ namespace model {
 #define SET_NODE_ALL "NALL" ///< Convenience literal describing the global node set.
 #define SET_ELEM_ALL "EALL" ///< Convenience literal describing the global element set.
 #define SET_SURF_ALL "SFALL" ///< Convenience literal describing the global surface set.
+#define SET_LINE_ALL "LALL" ///< Convenience literal describing the global line set.
 
 /**
  * @struct Sets
@@ -147,4 +148,3 @@ private:
 
 } // namespace model
 } // namespace fem
-

@@ -229,7 +229,7 @@ struct BeamElement : StructuralElement {
         std::vector<Vec6> result;
         result.resize(N);
 
-        // 1) collect global element displacement DOFs into u_global (N*6 x 1)
+        // 1) globale Verschiebungen einsammeln: u_global (N*6 x 1)
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index i = 0; i < N; ++i) {
             const ID nid = node_ids[i];
@@ -239,29 +239,28 @@ struct BeamElement : StructuralElement {
             }
         }
 
-        // 2) local stiffness and transformation
-        const auto K_loc = stiffness_impl();   // N*6 x N*6, local formulation
-        const auto T     = transformation();   // N*6 x N*6
+        // 2) globale Steifigkeit und Transformation holen
+        const auto K_global = stiffness_impl(); // K_global = T^T * K_local * T
+        const auto T        = transformation(); // u_local = T * u_global
 
-        // With K_global = T^T * K_local * T,
-    	// the correct local displacement is:
-    	//     u_local = T * u_global
-        const auto u_loc = T * u_global;
+        // 3) globale Knotenkräfte
+        const auto f_global = K_global * u_global; // N*6 x 1
 
-        // 3) local nodal forces = section forces
-        const auto q_loc = K_loc * u_loc;      // N*6 x 1
+        // 4) lokale Schnittgrößen (N, Vy, Vz, T, My, Mz) im Balkensystem
+        const auto q_local = T * f_global; // N*6 x 1
 
-        // 4) split q_loc into N Vec6 blocks
+        // 5) in N Vec6-Blöcke zuschneiden
         for (Index i = 0; i < N; ++i) {
             Vec6 q_i;
             for (Index d = 0; d < 6; ++d) {
-                q_i(d) = q_loc(i * 6 + d);
+                q_i(d) = q_local(i * 6 + d);
             }
             result[i] = q_i;
         }
 
         return result;
     }
+
 
 };
 
