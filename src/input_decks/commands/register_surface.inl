@@ -59,6 +59,19 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
             if (l) { l->sorted(true).duplicates(false); }
         });
 
+        // Helper: parse SIDE tokens like "S1", integer, and SPOS/SNEG (case-insensitive)
+        auto parse_side = [](const std::string& side_tok) -> int {
+            if (side_tok.empty()) return 1;
+            std::string s = side_tok;
+            for (char& c : s) c = static_cast<char>(std::toupper(c));
+            if (s == "SPOS") return 1; // positive normal (shells)
+            if (s == "SNEG") return 2; // negative normal (shells use !=1 to flip)
+            if (s[0] == 'S' && s.size() > 1) {
+                return std::stoi(s.substr(1));
+            }
+            return std::stoi(s);
+        };
+
         // --- Variant 1: ID, ELEM_ID, SIDE ---
         command.variant(
             fem::dsl::Variant::make()
@@ -72,13 +85,8 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
                                 .one<fem::ID>().name("ELEM_ID").desc("Element id")
                                 .one<std::string>().name("SIDE").desc("Face id, e.g. S1 or 1")
                         )
-                        .bind([&model](fem::ID id, fem::ID elem_id, const std::string& side_tok) {
-                            int side = 0;
-                            if (!side_tok.empty() && (side_tok[0] == 'S' || side_tok[0] == 's'))
-                                side = std::stoi(side_tok.substr(1));
-                            else
-                                side = std::stoi(side_tok);
-
+                        .bind([&model, parse_side](fem::ID id, fem::ID elem_id, const std::string& side_tok) {
+                            int side = parse_side(side_tok);
                             model.set_surface(id, elem_id, side);
                         })
                 )
@@ -96,12 +104,8 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
                                 .one<std::string>().name("TARGET").desc("ELSET name or element id (int)")
                                 .one<std::string>().name("SIDE").desc("Face id, e.g. S1 or 1")
                         )
-                        .bind([&model](const std::string& target, const std::string& side_tok) {
-                            int side = 0;
-                            if (!side_tok.empty() && (side_tok[0] == 'S' || side_tok[0] == 's'))
-                                side = std::stoi(side_tok.substr(1));
-                            else
-                                side = std::stoi(side_tok);
+                        .bind([&model, parse_side](const std::string& target, const std::string& side_tok) {
+                            int side = parse_side(side_tok);
 
                             // First: ELSET name?
                             if (model._data->elem_sets.has(target)) {
