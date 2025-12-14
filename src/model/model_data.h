@@ -53,8 +53,7 @@ struct ModelData {
     // Geometric entities -------------------------------------------------------
     std::vector<ElementPtr> elements;
     std::vector<SurfacePtr> surfaces;
-    // For 1D geometry (lines) used by line-based ties/couplings
-    std::vector<std::array<ID, 2>> lines; ///< Currently supports 2-node lines (e.g., beam axes)
+    std::vector<LinePtr>    lines;
 
     // Sections and profiles ----------------------------------------------------
     std::vector<Section::Ptr> sections;

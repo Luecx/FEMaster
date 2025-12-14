@@ -11,6 +11,7 @@
 #pragma once
 
 #include "beam.h"
+#include "../geometry/line/line2a.h"
 
 #include <limits>
 
@@ -167,6 +168,10 @@ struct B33 : BeamElement<2> {
         scatter(Kg41, map_z);
 
         return T.transpose() * Kg_local * T;
+    }
+
+    LinePtr line(ID line_id) override {
+        return std::make_shared<Line2A>(this->node_ids);
     }
 };
 

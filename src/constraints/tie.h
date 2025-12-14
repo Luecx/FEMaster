@@ -16,6 +16,7 @@
 
 #include "../data/region.h"
 #include "../model/geometry/surface/surface.h"
+#include "../model/geometry/line/line_interface.h"
 #include "equation.h"
 
 namespace fem {

@@ -13,6 +13,9 @@
 #include <array>
 #include <Eigen/Dense>
 #include <functional>
+#include <vector>
+#include <limits>
+#include <cmath>
 
 #include "../../../math/quadrature.h"
 #include "../../../core/types_eig.h"
@@ -33,6 +36,27 @@ enum IsoParametricLineRange {
     ZERO_TO_ONE       ///< Coordinate range from 0 to 1.
 };
 
+
+struct LineInterface {
+    const Index n_nodes = 0;
+
+    explicit LineInterface(Index n) : n_nodes(n) {}
+    virtual ~LineInterface() = default;
+
+    virtual DynamicVector shape_function(Precision r) const = 0;
+
+    virtual Vec3      local_to_global(Precision local, const NodeData& node_coords_system) const = 0;
+    virtual Precision global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const = 0;
+
+    virtual const ID* nodes() const = 0;
+    virtual ID*       nodes() = 0;
+
+    const ID* begin() const { return nodes(); }
+    const ID* end()   const { return nodes() + n_nodes; }
+    ID* begin() { return nodes(); }
+    ID* end()   { return nodes() + n_nodes; }
+};
+
 /**
  * @brief Interface for isoparametric line elements in finite element analysis.
  *
@@ -44,7 +68,7 @@ enum IsoParametricLineRange {
  *          between local (parametric) and global coordinate systems.
  */
 template<Index N, IsoParametricLineRange CR = MINUS_ONE_TO_ONE>
-struct LineInterface {
+struct Line : LineInterface{
     /**
      * @brief Number of nodes in the line element.
      */
@@ -62,7 +86,10 @@ struct LineInterface {
      *
      * @param pNodeIds Array of node IDs for the line element.
      */
-    LineInterface(const std::array<ID, N>& pNodeIds) : node_ids(pNodeIds) {}
+    Line(const std::array<ID, N>& pNodeIds) : LineInterface(N), node_ids(pNodeIds) {}
+
+    const ID* nodes() const override { return node_ids.data(); }
+    ID*       nodes()       override { return node_ids.data(); }
 
     /**
      * @brief Compute the shape functions at a given local coordinate.
@@ -70,7 +97,15 @@ struct LineInterface {
      * @param r Local coordinate (parametric coordinate along the line element).
      * @return StaticMatrix<N,1> Vector of shape function values at coordinate r.
      */
-    virtual StaticMatrix<N, 1> shape_function(Precision r) const = 0;
+    virtual StaticMatrix<N, 1> _shape_function(Precision r) const = 0;
+
+    /**
+    * @brief Compute the shape functions at a given local coordinate and return as DynamicVector.
+    */
+    DynamicVector shape_function(Precision r) const override {
+        StaticMatrix<N, 1> shape_func = this->_shape_function(r);
+        return DynamicVector{shape_func};
+    }
 
     /**
      * @brief Compute the first derivative of shape functions at a given local coordinate.
@@ -153,7 +188,7 @@ struct LineInterface {
      *          minimizes the distance between the point 'p' and the position vector of the line element. Multiple
      *          initial guesses are used to ensure convergence to the global minimum distance.
      */
-    Precision global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip=true) const {
+    Precision global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip=true) const override {
         constexpr int max_iter = 32;
         constexpr Precision eps = 1e-12;
         std::vector<Precision> initial_guesses;
@@ -179,8 +214,8 @@ struct LineInterface {
 
             for (Index iter = 0; iter < max_iter; iter++) {
                 // Compute shape functions and derivatives at current r
-                StaticMatrix<N, 1> N_vals = shape_function(r);
-                StaticMatrix<N, 1> dN_dr = shape_derivative(r);
+                StaticMatrix<N, 1> N_vals  = _shape_function(r);
+                StaticMatrix<N, 1> dN_dr   = shape_derivative(r);
                 StaticMatrix<N, 1> d2N_dr2 = shape_second_derivative(r);
 
                 // Compute position x(r) and its derivatives dx/dr and d²x/dr²
@@ -202,6 +237,8 @@ struct LineInterface {
 
                 // Compute the second derivative of the squared distance
                 Precision d2D_dr2 = (dx_dr.dot(dx_dr) + diff.dot(d2x_dr2));
+
+                if (std::abs(d2D_dr2) < 1e-14) break;
 
                 // Newton-Raphson update
                 Precision delta_r = -dD_dr / d2D_dr2;
@@ -245,10 +282,10 @@ struct LineInterface {
      * @details This function computes the global position vector at a given local coordinate 'r' by evaluating
      *          the shape functions at 'r' and summing the contributions from each node.
      */
-    Vec3 local_to_global(Precision r, const NodeData& node_coords_system) const {
+    Vec3 local_to_global(Precision r, const NodeData& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
         Vec3 res = Vec3::Zero();
-        StaticMatrix<N, 1> N_vals = shape_function(r);
+        StaticMatrix<N, 1> N_vals = _shape_function(r);
         for (Index i = 0; i < N; i++) {
             res += N_vals(i) * node_coords_global.row(i);
         }

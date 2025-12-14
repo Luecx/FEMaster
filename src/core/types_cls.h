@@ -22,11 +22,13 @@ struct ModelData;
 struct Model;
 struct ElementInterface;
 struct SurfaceInterface;
+struct LineInterface;
 
-using ModelPtr = std::shared_ptr<Model>;
+using ModelPtr     = std::shared_ptr<Model>;
 using ModelDataPtr = std::shared_ptr<ModelData>;
-using ElementPtr = std::shared_ptr<ElementInterface>;
-using SurfacePtr = std::shared_ptr<SurfaceInterface>;
+using ElementPtr   = std::shared_ptr<ElementInterface>;
+using SurfacePtr   = std::shared_ptr<SurfaceInterface>;
+using LinePtr      = std::shared_ptr<LineInterface>;
 
 } // namespace model
 

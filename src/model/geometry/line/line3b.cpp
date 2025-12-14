@@ -2,7 +2,7 @@
 
 namespace fem::model {
 
-StaticMatrix<3,1> Line3B::shape_function(Precision r) const {
+StaticMatrix<3,1> Line3B::_shape_function(Precision r) const {
     r = 2.0 * r - 1.0;  // Sets from [0, 1] to [-1, 1]
     StaticMatrix<3,1> N;
     N(0) = 0.5 * r * (r - 1);  // N1

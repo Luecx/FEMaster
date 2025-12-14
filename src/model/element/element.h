@@ -50,7 +50,8 @@ struct ElementInterface {
     virtual Dim n_integration_points() = 0;
     virtual ID* nodes() = 0;
 
-    virtual SurfacePtr surface(ID surface_id) = 0;
+    virtual SurfacePtr surface(ID surface_id) {return nullptr;};
+    virtual LinePtr    line   (ID surface_id) {return nullptr;};
 
     /// Short type tag (e.g., "C3D8", "S4", "B33"). Override in derived types.
     virtual std::string type_name() const { return std::string{}; }
