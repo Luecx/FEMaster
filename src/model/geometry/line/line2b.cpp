@@ -2,7 +2,7 @@
 
 namespace fem::model {
 
-StaticMatrix<2,1> Line2B::shape_function(Precision r) const {
+StaticMatrix<2,1> Line2B::_shape_function(Precision r) const {
     // Shape functions for a 2-node line element in the range [0, 1]
     r = 2.0 * r - 1.0;  // Sets from [0, 1] to [-1, 1]
     StaticMatrix<2,1> N;

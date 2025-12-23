@@ -2,7 +2,7 @@
 
 namespace fem::model {
 
-StaticMatrix<3,1> Line3A::shape_function(Precision r) const {
+StaticMatrix<3,1> Line3A::_shape_function(Precision r) const {
     // Shape functions for a 3-node quadratic line element in the range [-1, 1]
     StaticMatrix<3,1> N;
     N(0) = 0.5 * r * (r - 1);  // N1

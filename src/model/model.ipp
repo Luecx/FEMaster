@@ -57,55 +57,39 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
 
     auto& elptr = _data->elements[element_id];
     logging::error(elptr != nullptr, "element with id=", element_id, " has not been defined");
+
+    // we are creating surfaces as well as lines
     auto surfptr = elptr->surface(surface_id);
-    // If the element has no surface for the given side, consider 1D geometry case
-    // (e.g., beams or trusses with 2-node connectivity) and create a line entry.
-    if (surfptr == nullptr) {
-        // Heuristic: elements with exactly 2 nodes represent 1D members here
-        if (elptr->n_nodes() == 2) {
-            // allow negative id = automatically assign id for lines too
-            std::array<ID,2> ln{elptr->nodes()[0], elptr->nodes()[1]};
+    auto lineptr = elptr->line(surface_id);
 
-            // Deduplicate: reuse existing line id if same connectivity already present (either order)
-            ID existing = -1;
-            for (std::size_t i = 0; i < _data->lines.size(); ++i) {
-                auto cur = _data->lines[i];
-                if ((cur[0] == ln[0] && cur[1] == ln[1]) || (cur[0] == ln[1] && cur[1] == ln[0])) {
-                    existing = static_cast<ID>(i);
-                    break;
-                }
-            }
+    ID surf_id = id;
+    ID line_id = id;
 
-            if (existing >= 0) {
-                id = existing;
-            } else {
-                if (id < 0) {
-                    id = static_cast<ID>(_data->lines.size());
-                    _data->lines.reserve(static_cast<std::size_t>(id + 128));
-                    _data->lines.resize(static_cast<std::size_t>(id + 1));
-                } else if (static_cast<std::size_t>(id) >= _data->lines.size()) {
-                    _data->lines.resize(static_cast<std::size_t>(id + 1));
-                }
-                _data->lines[static_cast<std::size_t>(id)] = ln;
-            }
-            // Add to the currently active line set (activated in register_surface)
-            _data->line_sets.add(id);
-            return;
+    if (surfptr) {
+        // allow negative id = automatically assign id
+        if (surf_id < 0) {
+            surf_id = _data->surfaces.size();
+            _data->surfaces.reserve(surf_id + 128);
+            _data->surfaces.resize(surf_id + 1);
         }
+        logging::error(_data->surfaces[surf_id] == nullptr, "surface with id=", id, " has already been defined");
 
-        logging::error(false, "surface with id=", surface_id, " has not been defined for element with id=", element_id);
+        _data->surfaces[surf_id] = surfptr;
+        _data->surface_sets.add(surf_id);
     }
 
-    // allow negative id = automatically assign id
-    if (id < 0) {
-        id = _data->surfaces.size();
-        _data->surfaces.reserve(id + 128);
-        _data->surfaces.resize(id + 1);
-    }
-    logging::error(_data->surfaces[id] == nullptr, "surface with id=", id, " has already been defined");
+    if (lineptr) {
+    	// allow negative id = automatically assign id
+        if (line_id < 0) {
+            line_id = _data->lines.size();
+            _data->lines.reserve(line_id + 128);
+            _data->lines.resize(line_id + 1);
+        }
+        logging::error(_data->lines[line_id] == nullptr, "line with id=", id, " has already been defined");
 
-    _data->surfaces[id] = surfptr;
-    _data->surface_sets.add(id);
+        _data->lines[line_id] = lineptr;
+        _data->line_sets.add(line_id);
+    }
 }
 
 inline void Model::set_surface(const std::string& elset, ID surface_id) {
