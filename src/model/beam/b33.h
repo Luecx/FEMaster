@@ -32,8 +32,24 @@ struct B33 : BeamElement<2> {
         Precision A = get_profile()->A;
         Precision Iy = get_profile()->I_y;
         Precision Iz = get_profile()->I_z;
+        Precision Iyz = get_profile()->I_yz;
         Precision It = get_profile()->I_t;
         Precision L = length();
+
+        // Rotate to principal bending axes if product inertia present
+        const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
+        if (std::abs(Iyz) > scale * Precision(1e-14)) {
+            const Precision phi = principal_angle();
+            const Precision cph = std::cos(phi);
+            const Precision sph = std::sin(phi);
+            const Precision c2 = cph * cph;
+            const Precision s2 = sph * sph;
+            const Precision sc = sph * cph;
+            const Precision Iy_p = Iy * c2 + Iz * s2 - 2 * Iyz * sc;
+            const Precision Iz_p = Iy * s2 + Iz * c2 + 2 * Iyz * sc;
+            Iy = Iy_p;
+            Iz = Iz_p;
+        }
 
         Precision a = E * A / L;
         Precision b = G * It / L;

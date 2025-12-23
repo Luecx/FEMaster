@@ -17,6 +17,7 @@
 #include "../../material/isotropic_elasticity.h"
 
 #include <array>
+#include <cmath>
 
 namespace fem {
 namespace model {
@@ -114,24 +115,57 @@ struct BeamElement : StructuralElement {
 
     Precision volume() override { return get_profile()->A * length(); }
 
-    Mat3 rotation_matrix() {
+    // Base rotation (provided section frame; no principal rotation)
+    Mat3 base_rotation_matrix() {
         Vec3 x = (coordinate(1) - coordinate(0)).normalized();
         Vec3 y = orientation_direction();
         Vec3 z = x.cross(y).normalized();
         y = z.cross(x).normalized();
 
         Mat3 mat{};
-        mat(0, 0) = x(0);
-        mat(0, 1) = x(1);
-        mat(0, 2) = x(2);
-        mat(1, 0) = y(0);
-        mat(1, 1) = y(1);
-        mat(1, 2) = y(2);
-        mat(2, 0) = z(0);
-        mat(2, 1) = z(1);
-        mat(2, 2) = z(2);
+        mat(0, 0) = x(0); mat(0, 1) = x(1); mat(0, 2) = x(2);
+        mat(1, 0) = y(0); mat(1, 1) = y(1); mat(1, 2) = y(2);
+        mat(2, 0) = z(0); mat(2, 1) = z(1); mat(2, 2) = z(2);
         return mat;
     }
+
+    // Compute principal rotation angle about local x from section inertias
+    Precision principal_angle() {
+        Profile* pr = get_profile();
+        const Precision Iy  = pr->I_y;
+        const Precision Iz  = pr->I_z;
+        const Precision Iyz = pr->I_yz;
+
+        const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
+        if (std::abs(Iyz) <= scale * Precision(1e-14)) return Precision(0);
+        return Precision(0.5) * std::atan2(Precision(2) * Iyz, Iy - Iz);
+    }
+
+    // Rotation aligning y/z to principal bending axes
+    Mat3 principal_rotation_matrix() {
+        Mat3 Rb = base_rotation_matrix();
+        const Precision phi = principal_angle();
+        if (phi == Precision(0)) return Rb;
+
+        Eigen::Matrix<Precision, 1, 3> rx = Rb.row(0);
+        Eigen::Matrix<Precision, 1, 3> ry = Rb.row(1);
+        Eigen::Matrix<Precision, 1, 3> rz = Rb.row(2);
+
+        const Precision c = std::cos(phi);
+        const Precision s = std::sin(phi);
+
+        Eigen::Matrix<Precision, 1, 3> ry_p =  c * ry + s * rz;
+        Eigen::Matrix<Precision, 1, 3> rz_p = -s * ry + c * rz;
+
+        Mat3 Rp = Rb;
+        Rp.row(0) = rx;
+        Rp.row(1) = ry_p;
+        Rp.row(2) = rz_p;
+        return Rp;
+    }
+
+    // Backward-compatible alias used by internal computations
+    Mat3 rotation_matrix() { return principal_rotation_matrix(); }
 
     virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
     virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(IPData& ip_stress, int offset) = 0;
@@ -141,6 +175,23 @@ struct BeamElement : StructuralElement {
         StaticMatrix<N * 6, N * 6> T;
         T.setZero();
         Mat3 R = rotation_matrix();
+
+        for (Index i = 0; i < N; i++) {
+            for (Dim j = 0; j < 3; j++) {
+                for (Dim k = 0; k < 3; k++) {
+                    T(i * 6 + j, i * 6 + k) = R(j, k);
+                    T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
+                }
+            }
+        }
+        return T;
+    }
+
+    // Transformation using original section frame (no principal rotation)
+    StaticMatrix<N * 6, N * 6> transformation_base() {
+        StaticMatrix<N * 6, N * 6> T;
+        T.setZero();
+        Mat3 R = base_rotation_matrix();
 
         for (Index i = 0; i < N; i++) {
             for (Dim j = 0; j < 3; j++) {
@@ -248,20 +299,20 @@ struct BeamElement : StructuralElement {
         }
 
         // 2) globale Steifigkeit und Transformation holen
-        const auto K_global = stiffness_impl(); // K_global = T^T * K_local * T
-        const auto T        = transformation(); // u_local = T * u_global
+        const auto K_global = stiffness_impl(); // K_global = T^T * K_local * T (T uses principal frame)
+        const auto T        = transformation_base(); // For output, use original (non-rotated) local frame
 
         // 3) globale Knotenkräfte
         const auto f_global = K_global * u_global; // N*6 x 1
 
         // 4) lokale Schnittgrößen (N, Vy, Vz, T, My, Mz) im Balkensystem
-        const auto q_local = T * f_global; // N*6 x 1
+        const auto q_local = T * f_global; // N*6 x 1, in original local frame
 
         // 5) in N Vec6-Blöcke zuschneiden
         for (Index i = 0; i < N; ++i) {
             Vec6 q_i;
             for (Index d = 0; d < 6; ++d) {
-                q_i(d) = q_local(i * 6 + d);
+                q_i(d) = q_local(i * 6 + d) * ((i == 1 && N==2) ? -1:1);
             }
             result[i] = q_i;
         }
@@ -274,3 +325,4 @@ struct BeamElement : StructuralElement {
 
 } // namespace model
 } // namespace fem
+

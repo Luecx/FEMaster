@@ -194,7 +194,7 @@ void LinearStatic::run() {
     writer->write_eigen_matrix(stress          , "STRESS");
     writer->write_eigen_matrix(global_load_mat , "EXTERNAL_FORCES");
     writer->write_eigen_matrix(reaction_masked , "REACTION_FORCES");
-    writer->write_eigen_matrix(section_force_mat, "SECTION_FORCES", 2);
+    writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);
 
     transformer->post_check_static(K, f, u);
 }

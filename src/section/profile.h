@@ -17,9 +17,16 @@ struct Profile : public Namable {
     Precision I_y;
     Precision I_z;
     Precision I_t;
+    // Optional product of inertia around local y-z (about the element axis x)
+    Precision I_yz;
 
     // constructor
-    Profile(const std::string& name, Precision A, Precision I_y, Precision I_z, Precision I_t);
+    Profile(const std::string& name,
+            Precision A,
+            Precision I_y,
+            Precision I_z,
+            Precision I_t,
+            Precision I_yz = 0);
 
     using Ptr = std::shared_ptr<Profile>;
 

@@ -13,7 +13,7 @@ namespace fem::input_decks::commands {
 inline void register_profile(fem::dsl::Registry& registry, model::Model& model) {
     registry.command("PROFILE", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
-        command.doc("Define a beam profile (A, Iy, Iz, Jt).");
+        command.doc("Define a beam profile (A, Iy, Iz, Jt[, Iyz]).");
 
         // Persistent state for this command's handlers:
         auto profile_name = std::make_shared<std::string>();
@@ -31,6 +31,7 @@ inline void register_profile(fem::dsl::Registry& registry, model::Model& model) 
             *profile_name = keys.raw("PROFILE");  // spec canonicalizes NAME→PROFILE
         });
 
+        // Variant 1: 4 values (backward compatible)
         command.variant(fem::dsl::Variant::make()
             .segment(fem::dsl::Segment::make()
                 .range(fem::dsl::LineRange{}.min(1).max(1))
@@ -41,6 +42,20 @@ inline void register_profile(fem::dsl::Registry& registry, model::Model& model) 
                 .bind([&model, profile_name](const std::array<fem::Precision, 4>& data) {
                     // use *profile_name safely
                     model._data->profiles.activate(*profile_name, data[0], data[1], data[2], data[3]);
+                })
+            )
+        );
+
+        // Variant 2: optional 5th value Iyz
+        command.variant(fem::dsl::Variant::make()
+            .segment(fem::dsl::Segment::make()
+                .range(fem::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::dsl::Pattern::make()
+                    .fixed<fem::Precision, 5>().name("DATA5").desc("Area, Iy, Iz, Jt, Iyz")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                )
+                .bind([&model, profile_name](const std::array<fem::Precision, 5>& data) {
+                    model._data->profiles.activate(*profile_name, data[0], data[1], data[2], data[3], data[4]);
                 })
             )
         );

@@ -5,12 +5,13 @@
 #include "profile.h"
 #include "../core/logging.h"
 
-fem::Profile::Profile(const std::string& name, Precision A, Precision I_y, Precision I_z, Precision I_t)
+fem::Profile::Profile(const std::string& name, Precision A, Precision I_y, Precision I_z, Precision I_t, Precision I_yz)
     : Namable(name)
     , A(A)
     , I_y(I_y)
     , I_z(I_z)
-    , I_t(I_t) {}
+    , I_t(I_t)
+    , I_yz(I_yz) {}
 
 void fem::Profile::info() {
     logging::info(true, "Profile: ", name);
@@ -18,4 +19,5 @@ void fem::Profile::info() {
     logging::info(true, "   I_y: ", I_y);
     logging::info(true, "   I_z: ", I_z);
     logging::info(true, "   I_t: ", I_t);
+    logging::info(true, "   I_yz: ", I_yz);
 }
