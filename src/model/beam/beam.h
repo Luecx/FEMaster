@@ -312,7 +312,7 @@ struct BeamElement : StructuralElement {
         for (Index i = 0; i < N; ++i) {
             Vec6 q_i;
             for (Index d = 0; d < 6; ++d) {
-                q_i(d) = q_local(i * 6 + d) * ((i == 1 && N==2) ? -1:1);
+                q_i(d) = q_local(i * 6 + d) * ((i == 1 && N==2) ? 1:-1);
             }
             result[i] = q_i;
         }
