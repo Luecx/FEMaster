@@ -54,23 +54,58 @@ void Model::add_coupling(const std::string &master_set, const std::string &slave
     }
 }
 
-void Model::add_tie(const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust) {
-    logging::error(_data->node_sets.has(slave_set), "Slave set ", slave_set, " is not a defined node set");
+void Model::add_tie(const std::string& master_set,
+                    const std::string& slave_set,
+                    Precision distance,
+                    bool adjust) {
+    // ---------------------------------------------------------------------
+    // Resolve slave: prefer node set, otherwise surface set, otherwise error
+    // ---------------------------------------------------------------------
+    NodeRegion::Ptr    slave_node_ptr    = nullptr;
+    SurfaceRegion::Ptr slave_surface_ptr = nullptr;
 
-    NodeRegion::Ptr slave_ptr = _data->node_sets.get(slave_set);
+    if (_data->node_sets.has(slave_set) && _data->node_sets.get(slave_set) &&
+        _data->node_sets.get(slave_set)->size() > 0) {
+        slave_node_ptr = _data->node_sets.get(slave_set);
+    } else if (_data->surface_sets.has(slave_set) && _data->surface_sets.get(slave_set) &&
+               _data->surface_sets.get(slave_set)->size() > 0) {
+        slave_surface_ptr = _data->surface_sets.get(slave_set);
+    } else {
+        logging::error(false,
+                       "Slave set ", slave_set,
+                       " is neither a defined non-empty node set nor a defined non-empty surface set");
+    }
 
-    const bool has_surfaces = _data->surface_sets.has(master_set) && _data->surface_sets.get(master_set) && _data->surface_sets.get(master_set)->size() > 0;
-    const bool has_lines    = _data->line_sets.has(master_set)    && _data->line_sets.get(master_set)    && _data->line_sets.get(master_set)->size()    > 0;
+    // ---------------------------------------------------------------------
+    // Resolve master: surfaces first, then lines (as before)
+    // ---------------------------------------------------------------------
+    const bool has_surfaces =
+        _data->surface_sets.has(master_set) && _data->surface_sets.get(master_set) &&
+        _data->surface_sets.get(master_set)->size() > 0;
+
+    const bool has_lines =
+        _data->line_sets.has(master_set) && _data->line_sets.get(master_set) &&
+        _data->line_sets.get(master_set)->size() > 0;
 
     if (has_surfaces) {
         SurfaceRegion::Ptr master_ptr = _data->surface_sets.get(master_set);
-        _data->ties.emplace_back(master_ptr, slave_ptr, distance, adjust);
+
+        if (slave_node_ptr) {
+            _data->ties.emplace_back(master_ptr, slave_node_ptr, distance, adjust);
+        } else {
+            _data->ties.emplace_back(master_ptr, slave_surface_ptr, distance, adjust);
+        }
         return;
     }
 
     if (has_lines) {
         LineRegion::Ptr master_line_ptr = _data->line_sets.get(master_set);
-        _data->ties.emplace_back(master_line_ptr, slave_ptr, distance, adjust);
+
+        if (slave_node_ptr) {
+            _data->ties.emplace_back(master_line_ptr, slave_node_ptr, distance, adjust);
+        } else {
+            _data->ties.emplace_back(master_line_ptr, slave_surface_ptr, distance, adjust);
+        }
         return;
     }
 

@@ -12,12 +12,12 @@ namespace fem::input_decks::commands {
 inline void register_tie(fem::dsl::Registry& registry, model::Model& model) {
     registry.command("TIE", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
-        command.doc("Bind a slave node set to a master surface set (tie constraint).");
+        command.doc("Bind a slave set (node or surface set) to a master surface/line set (tie constraint).");
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
-                .key("MASTER")  .required(    ).doc("Master surface set")
-                .key("SLAVE")   .required(    ).doc("Slave node set")
+                .key("MASTER")  .required(    ).doc("Master surface set or line set")
+                .key("SLAVE")   .required(    ).doc("Slave node set or slave surface set")
                 .key("ADJUST")  .optional("NO").doc("Determines projection of slave to master").allowed({"NO", "YES"})
                 .key("DISTANCE").required(    ).doc("Search distance")
         );
@@ -35,4 +35,3 @@ inline void register_tie(fem::dsl::Registry& registry, model::Model& model) {
 }
 
 } // namespace fem::input_decks::commands
-

@@ -5,6 +5,10 @@
  * The implementation projects slave nodes onto candidate master geometries and
  * assembles the corresponding compatibility equations.
  *
+ * Slave sets can be provided as:
+ *  - node sets (direct node IDs)
+ *  - surface sets (nodes are extracted from the referenced surfaces)
+ *
  * @see src/constraints/tie.h
  * @see src/constraints/equation.h
  * @author Finn Eggers
@@ -16,6 +20,7 @@
 #include "../model/model_data.h"
 
 #include <limits>
+#include <unordered_set>
 #include <vector>
 
 namespace fem {
@@ -27,7 +32,19 @@ Tie::Tie(model::SurfaceRegion::Ptr master,
          bool do_adjust)
     : master_surfaces(std::move(master))
     , master_lines(nullptr)
-    , slave_set(std::move(slave))
+    , slave_nodes(std::move(slave))
+    , slave_surfaces(nullptr)
+    , distance(max_distance)
+    , adjust(do_adjust) {}
+
+Tie::Tie(model::SurfaceRegion::Ptr master,
+         model::SurfaceRegion::Ptr slave,
+         Precision max_distance,
+         bool do_adjust)
+    : master_surfaces(std::move(master))
+    , master_lines(nullptr)
+    , slave_nodes(nullptr)
+    , slave_surfaces(std::move(slave))
     , distance(max_distance)
     , adjust(do_adjust) {}
 
@@ -37,9 +54,61 @@ Tie::Tie(model::LineRegion::Ptr master,
          bool do_adjust)
     : master_surfaces(nullptr)
     , master_lines(std::move(master))
-    , slave_set(std::move(slave))
+    , slave_nodes(std::move(slave))
+    , slave_surfaces(nullptr)
     , distance(max_distance)
     , adjust(do_adjust) {}
+
+Tie::Tie(model::LineRegion::Ptr master,
+         model::SurfaceRegion::Ptr slave,
+         Precision max_distance,
+         bool do_adjust)
+    : master_surfaces(nullptr)
+    , master_lines(std::move(master))
+    , slave_nodes(nullptr)
+    , slave_surfaces(std::move(slave))
+    , distance(max_distance)
+    , adjust(do_adjust) {}
+
+static std::vector<ID> collect_slave_nodes(const model::NodeRegion::Ptr& slave_nodes,
+                                           const model::SurfaceRegion::Ptr& slave_surfaces,
+                                           model::ModelData& model_data) {
+    std::vector<ID> out;
+
+    if (slave_nodes) {
+        out.reserve(static_cast<std::size_t>(slave_nodes->size()));
+        for (ID id : *slave_nodes) {
+            out.push_back(id);
+        }
+        return out;
+    }
+
+    // Surface-slave: extract nodes from each surface, unique them.
+    std::unordered_set<ID> unique;
+    auto& surfaces = model_data.surfaces;
+
+    for (ID s_id : *slave_surfaces) {
+        if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
+            continue;
+        }
+
+        auto s_ptr = surfaces[static_cast<std::size_t>(s_id)];
+        if (s_ptr == nullptr) {
+            continue;
+        }
+
+        for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
+            unique.insert(s_ptr->nodes()[local_id]);
+        }
+    }
+
+    out.reserve(unique.size());
+    for (ID nid : unique) {
+        out.push_back(nid);
+    }
+
+    return out;
+}
 
 /**
  * @copydoc Tie::get_equations
@@ -51,7 +120,10 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
 
     Equations equations;
 
-    for (ID id : *slave_set) {
+    // Build the actual list of slave node IDs (direct node-set or extracted from slave surface-set).
+    std::vector<ID> slave_node_ids = collect_slave_nodes(slave_nodes, slave_surfaces, model_data);
+
+    for (ID id : slave_node_ids) {
         // ---------------------------------------------------------------------
         // Slave node position
         // ---------------------------------------------------------------------
@@ -69,7 +141,6 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
 
         if (master_surfaces) {
             for (ID s_id : *master_surfaces) {
-                // Be defensive with indices if surfaces is a vector-like container
                 if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
                     continue;
                 }
@@ -79,8 +150,8 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
                     continue;
                 }
 
-                const Vec2 local  = s_ptr->global_to_local(node_pos, node_coords, true);
-                const Vec3 mapped = s_ptr->local_to_global(local, node_coords);
+                const Vec2 local     = s_ptr->global_to_local(node_pos, node_coords, true);
+                const Vec3 mapped    = s_ptr->local_to_global(local, node_coords);
                 const Precision dist = (node_pos - mapped).norm();
 
                 if (dist > distance) {
@@ -104,9 +175,9 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
                     continue;
                 }
 
-                const Precision r   = l_ptr->global_to_local(node_pos, node_coords, true);
-                const Vec3      mapped = l_ptr->local_to_global(r, node_coords);
-                const Precision dist   = (node_pos - mapped).norm();
+                const Precision r     = l_ptr->global_to_local(node_pos, node_coords, true);
+                const Vec3 mapped     = l_ptr->local_to_global(r, node_coords);
+                const Precision dist  = (node_pos - mapped).norm();
 
                 if (dist > distance) {
                     continue;
@@ -156,7 +227,6 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         if (master_surfaces) {
             auto s_ptr = surfaces[static_cast<std::size_t>(best_id)];
 
-            // Require DOF present on all master surface nodes
             for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
                 const ID master_node_id = s_ptr->nodes()[local_id];
                 for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
@@ -170,7 +240,6 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         } else {
             auto l_ptr = lines[static_cast<std::size_t>(best_id)];
 
-            // Require DOF present on all master line nodes
             for (ID local_id = 0; local_id < static_cast<ID>(l_ptr->n_nodes); ++local_id) {
                 const ID master_node_id = l_ptr->nodes()[local_id];
                 for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
@@ -206,14 +275,14 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
                 auto s_ptr = surfaces[static_cast<std::size_t>(best_id)];
                 for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
                     const ID master_node_id = s_ptr->nodes()[local_id];
-                    const Precision w = nodal_contributions(local_id);
+                    const Precision w        = nodal_contributions(local_id);
                     entries.emplace_back(EquationEntry{master_node_id, dof_id, -w});
                 }
             } else {
                 auto l_ptr = lines[static_cast<std::size_t>(best_id)];
                 for (ID local_id = 0; local_id < static_cast<ID>(l_ptr->n_nodes); ++local_id) {
                     const ID master_node_id = l_ptr->nodes()[local_id];
-                    const Precision w = nodal_contributions(local_id);
+                    const Precision w        = nodal_contributions(local_id);
                     entries.emplace_back(EquationEntry{master_node_id, dof_id, -w});
                 }
             }
