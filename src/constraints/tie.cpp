@@ -22,6 +22,7 @@
 #include <limits>
 #include <unordered_set>
 #include <vector>
+#include "bvh.h"
 
 namespace fem {
 namespace constraint {
@@ -120,8 +121,38 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
 
     Equations equations;
 
+	// build the bvh for fast access to elements to not query all elements for every slave node
+	BvhAabb bvh(distance);
+	if (master_surfaces) {
+        for (ID s_id : *master_surfaces) {
+			if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
+                continue;
+            }
+            auto s_ptr = surfaces[static_cast<std::size_t>(s_id)];
+            if (s_ptr == nullptr) {
+                continue;
+            }
+			bvh.add_element(s_id, node_coords, s_ptr->nodes(), s_ptr->n_nodes);
+        }
+    } else if (master_lines) {
+        for (ID l_id : *master_lines) {
+            if (static_cast<std::size_t>(l_id) >= lines.size()) {
+                continue;
+            }
+            auto l_ptr = lines[static_cast<std::size_t>(l_id)];
+            if (l_ptr == nullptr) {
+                continue;
+            }
+			bvh.add_element(l_id, node_coords, l_ptr->nodes(), l_ptr->n_nodes);
+		}
+	}
+	bvh.finalize();
+
     // Build the actual list of slave node IDs (direct node-set or extracted from slave surface-set).
     std::vector<ID> slave_node_ids = collect_slave_nodes(slave_nodes, slave_surfaces, model_data);
+
+	std::vector<ID> candidates;
+	candidates.reserve(64);
 
     for (ID id : slave_node_ids) {
         // ---------------------------------------------------------------------
@@ -139,8 +170,10 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         ID        best_id   = -1;
         Vec2      best_local; // surfaces: (r,s); lines: (r,0)
 
+        const auto& cand_ids = bvh.query_point(node_pos, &candidates);
+
         if (master_surfaces) {
-            for (ID s_id : *master_surfaces) {
+            for (ID s_id : cand_ids) {
                 if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
                     continue;
                 }
@@ -165,7 +198,7 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
                 }
             }
         } else if (master_lines) {
-            for (ID l_id : *master_lines) {
+            for (ID l_id : cand_ids) {
                 if (static_cast<std::size_t>(l_id) >= lines.size()) {
                     continue;
                 }
