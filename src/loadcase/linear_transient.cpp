@@ -135,12 +135,13 @@ void Transient::run() {
 
     // (8) Newmark options + IC (zeros in reduced space unless user-specified elsewhere)
     solver::NewmarkOpts optsNm;
-    optsNm.beta   = beta;
-    optsNm.gamma  = gamma;
-    optsNm.dt     = dt;
-    optsNm.t_end  = t_end;
-    optsNm.device = device;
-    optsNm.method = method;
+    optsNm.beta    = beta;
+    optsNm.gamma   = gamma;
+    optsNm.dt      = dt;
+    optsNm.t_start = t_start;
+    optsNm.t_end   = t_end;
+    optsNm.device  = device;
+    optsNm.method  = method;
 
     DynamicVector q0    = DynamicVector::Zero(A.rows());
     DynamicVector qdot0 = DynamicVector::Zero(A.rows());
@@ -150,7 +151,7 @@ void Transient::run() {
     auto result = solver::newmark_linear(Mr, Cr, A, ic, optsNm, reduced_force);
 
     // (10) Write results with cadence
-    const int n_steps = static_cast<int>(std::ceil(t_end / dt));
+    const int n_steps = static_cast<int>(std::ceil(std::max(0.0, t_end - t_start) / dt));
     int write_stride = std::max(1, write_every_steps);
     if (write_every_time > 0.0) {
         write_stride = std::max(1, static_cast<int>(std::round(write_every_time / dt)));
@@ -162,7 +163,7 @@ void Transient::run() {
         const auto& qk = result.u[static_cast<size_t>(k)];
         auto u_full = CT->recover_u(qk);
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
-        writer->write_eigen_matrix(U_mat, "TRANSIENT_U_T" + std::to_string(k));
+        writer->write_eigen_matrix(U_mat, "DISPLACEMENT_" + std::to_string(k));
         // writer->write_eigen_matrix(result.v[k], "TRANSIENT_V_T"+std::to_string(k));
         // writer->write_eigen_matrix(result.a[k], "TRANSIENT_A_T"+std::to_string(k));
     }

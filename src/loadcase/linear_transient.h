@@ -39,10 +39,11 @@ struct Transient : public LoadCase {
     std::vector<std::string> loads;   ///< load collectors (time-independent)
 
     // Integrator parameters (fixed step)
-    double dt    = 1e-3;
-    double t_end = 1.0;
-    double beta  = 0.25;  ///< Newmark β
-    double gamma = 0.5;   ///< Newmark γ
+    double dt      = 1e-3;
+    double t_start = 0.0;
+    double t_end   = 1.0;
+    double beta    = 0.25;  ///< Newmark β
+    double gamma   = 0.5;   ///< Newmark γ
 
     // Damping (analysis-specific)
     std::optional<damping::Rayleigh> rayleigh;
@@ -56,7 +57,7 @@ struct Transient : public LoadCase {
     solver::SolverMethod method = solver::DIRECT;
 
     // Setters (fluent)
-    Transient& set_time(double dt_, double t_end_) { dt = dt_; t_end = t_end_; return *this; }
+    Transient& set_time(double dt_, double t_start_, double t_end_) { dt = dt_; t_end = t_end_; t_start = t_start_; return *this; }
     Transient& set_newmark(double beta_, double gamma_) { beta = beta_; gamma = gamma_; return *this; }
     Transient& set_damping(const damping::Rayleigh& r) { rayleigh = r; return *this; }
     Transient& clear_damping() { rayleigh.reset(); return *this; }

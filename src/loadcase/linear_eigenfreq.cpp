@@ -184,15 +184,18 @@ static void write_results(const std::vector<EigenMode>& modes,
 
     DynamicVector eigenvalues(modes.size());
     DynamicVector eigenfreqs (modes.size());
+    DynamicVector freqs      (modes.size());
 
     for (size_t i = 0; i < modes.size(); ++i) {
         eigenvalues(i) = modes[i].lambda;
-        eigenfreqs (i) = modes[i].freq;
+        eigenfreqs (i) = modes[i].freq * 2 * M_PI;
+        freqs      (i) = modes[i].freq;
         writer->write_eigen_matrix(modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1));
         writer->write_eigen_matrix(modes[i].participation, "PARTICIPATION_" + std::to_string(i + 1));
     }
     writer->write_eigen_matrix(DynamicMatrix(eigenvalues), "EIGENVALUES");
     writer->write_eigen_matrix(DynamicMatrix(eigenfreqs ), "EIGENFREQUENCIES");
+    writer->write_eigen_matrix(DynamicMatrix(freqs      ), "FREQUENCIES");
 }
 
 /**

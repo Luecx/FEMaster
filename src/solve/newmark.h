@@ -45,11 +45,12 @@ struct NewmarkOpts {
     TimeIntegrator scheme = TimeIntegrator::NewmarkBeta;
 
     // Average-acceleration (β=1/4, γ=1/2): unconditionally stable, no algorithmic damping.
-    double beta  = 0.25;
-    double gamma = 0.5;
+    double beta    = 0.25;
+    double gamma   = 0.5;
 
-    double dt    = 1e-3;  ///< Fixed time step (seconds)
-    double t_end = 1.0;   ///< End time (seconds)
+    double dt      = 1e-3;  ///< Fixed time step (seconds)
+    double t_start = 0.0;   ///< Start time (seconds)
+    double t_end   = 1.0;   ///< End time (seconds)
 
     // Solver stack control (GPU/INDIRECT => CPU/DIRECT fallback in this implementation)
     SolverDevice device = SolverDevice::CPU;
@@ -83,7 +84,7 @@ struct NewmarkResult {
  * @param ic   Initial conditions (a0 computed if empty).
  * @param opts Newmark options (β, γ, dt, t_end, device/method).
  * @param f_of_t Force callback f(t).
- * @return Time history (t, u, v, a) sampled at each step including t=0.
+ * @return Time history (t, u, v, a) sampled at each step including t=t_start.
  *
  * @note Re-factorizes the effective matrix only once. If you later support variable Δt/parameters,
  *       you must re-build and re-factorize A accordingly.

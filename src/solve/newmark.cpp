@@ -154,7 +154,7 @@ newmark_linear(const SparseMatrix& M,
 {
     // Basic checks via logging::error (no throws)
     logging::error(opts.dt > 0.0, "Newmark: dt must be positive.");
-    logging::error(opts.t_end >= 0.0, "Newmark: t_end must be non-negative.");
+    logging::error(opts.t_end >= opts.t_start, "Newmark: t_end must be >= t_start.");
     logging::error(ic.u0.size() != 0 && ic.v0.size() != 0, "Newmark: u0 and v0 must be provided.");
     logging::error(ic.u0.size() == ic.v0.size(), "Newmark: u0 and v0 size mismatch.");
 
@@ -162,9 +162,11 @@ newmark_linear(const SparseMatrix& M,
     (void)opts.device;
     (void)opts.method;
 
-    const double beta  = opts.beta;
-    const double gamma = opts.gamma;
-    const double dt    = opts.dt;
+    const double beta   = opts.beta;
+    const double gamma  = opts.gamma;
+    const double dt     = opts.dt;
+    const double t_start = opts.t_start;
+    const double t_end   = opts.t_end;
 
     // Banner + matrix stats
     const auto N   = static_cast<long long>(M.rows());
@@ -176,8 +178,9 @@ newmark_linear(const SparseMatrix& M,
     logging::info(true, "nnz(M) : ", static_cast<long long>(M.nonZeros()));
     logging::info(true, "nnz(C) : ", static_cast<long long>(C.nonZeros()));
     logging::info(true, "nnz(K) : ", static_cast<long long>(K.nonZeros()));
-    logging::info(true, "dt     : ", std::scientific, std::setprecision(6), dt);
-    logging::info(true, "t_end  : ", std::scientific, std::setprecision(6), opts.t_end);
+    logging::info(true, "dt      : ", std::scientific, std::setprecision(6), dt);
+    logging::info(true, "t_start : ", std::scientific, std::setprecision(6), t_start);
+    logging::info(true, "t_end   : ", std::scientific, std::setprecision(6), t_end);
     logging::info(true, "β, γ   : ", std::fixed, std::setprecision(4), beta, ", ", gamma);
     logging::down();
 
@@ -217,13 +220,15 @@ newmark_linear(const SparseMatrix& M,
         logging::info(true, "Using user-supplied initial acceleration.");
         a = ic.a0;
     } else {
-        logging::info(true, "Computing initial acceleration from equilibrium at t = 0 ...");
-        const DynamicVector f0 = f_of_t(0.0);
+        logging::info(true, "Computing initial acceleration from equilibrium at t = ",
+                             std::scientific, std::setprecision(6), t_start, " ...");
+        const DynamicVector f0 = f_of_t(t_start);
         a = compute_initial_accel(M, C, K, u, v, f0);
     }
 
     // Time stepping
-    const int n_steps = static_cast<int>(std::ceil(opts.t_end / dt));
+    const double Tspan = std::max(0.0, t_end - t_start);
+    const int n_steps = static_cast<int>(std::ceil(Tspan / dt));
     const int print_stride = std::max(1, n_steps / 20); // ~20 prints total
 
     NewmarkResult out;
@@ -233,7 +238,7 @@ newmark_linear(const SparseMatrix& M,
     out.a.reserve(n_steps + 1);
 
     // Store initial state
-    out.t.push_back(0.0);
+    out.t.push_back(t_start);
     out.u.push_back(u);
     out.v.push_back(v);
     out.a.push_back(a);
@@ -252,7 +257,7 @@ newmark_linear(const SparseMatrix& M,
     tLoop.start();
 
     for (int k = 0; k < n_steps; ++k) {
-        const double tnp1 = (k + 1) * dt;
+        const double tnp1 = t_start + (k + 1) * dt;
 
         // r_{n+1} = f_{n+1} + M(...) + C(...)
         rhs = f_of_t(tnp1);
