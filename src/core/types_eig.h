@@ -69,18 +69,7 @@ using IndexMatrix   = Eigen::Matrix<ID, Eigen::Dynamic, Eigen::Dynamic, Eigen::R
 using BooleanVector = Eigen::Matrix<bool, Eigen::Dynamic, 1>;
 using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>;
 
-using NodeData      = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using ElementData   = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using IPData        = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-
-template<std::size_t Cols>
-using NodeDataM = Eigen::Matrix<Precision, Eigen::Dynamic, Cols, Eigen::RowMajor>;
-
-template<std::size_t Cols>
-using ElementDataM = Eigen::Matrix<Precision, Eigen::Dynamic, Cols, Eigen::RowMajor>;
-
-template<std::size_t Cols>
-using IPDataM = Eigen::Matrix<Precision, Eigen::Dynamic, Cols, Eigen::RowMajor>;
+using RowMatrix     = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 using Dofs = Eigen::Matrix<bool, 1, 6>;
 using ElDofs = Eigen::Matrix<bool, 1, 6>;

@@ -3,6 +3,7 @@
 #include "writer.h"
 #include "../core/core.h"
 #include "../core/logging.h"
+#include "../data/field.h"
 
 #include <iomanip> // std::setw
 
@@ -83,6 +84,49 @@ void Writer::write_eigen_matrix(const DynamicMatrix& matrix,
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
             file_path << std::setw(16) << matrix(i, j);
+        }
+        file_path << '\n';
+    }
+
+    file_path << "END FIELD\n";
+}
+
+void Writer::write_field(const model::Field& field,
+                         const std::string& field_name,
+                         int index_cols) {
+    if (!file_path.is_open()) {
+        logging::error(false, "Cannot write field '", field_name,
+                       "': file is not open.");
+    }
+
+    const int rows = static_cast<int>(field.rows);
+    const int cols = static_cast<int>(field.components);
+
+    logging::error(index_cols >= 0 && index_cols <= cols,
+                   "Invalid index_cols for field ", field_name,
+                   ": ", index_cols, " (cols=", cols, ")");
+
+    if (index_cols == 0) {
+        file_path << "FIELD, NAME=" << field_name
+                  << ", COLS=" << cols
+                  << ", ROWS=" << rows << "\n";
+    } else {
+        const int value_cols = cols - index_cols;
+        logging::error(value_cols > 0,
+                       "Field ", field_name,
+                       " must have at least one value column (index_cols=",
+                       index_cols, ", cols=", cols, ")");
+
+        file_path << "FIELD, NAME=" << field_name
+                  << ", INDEX_COLS=" << index_cols
+                  << ", VALUE_COLS=" << value_cols
+                  << ", ROWS=" << rows << "\n";
+    }
+
+    file_path.setf(std::ios::scientific, std::ios::floatfield);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            file_path << std::setw(16) << field(i, j);
         }
         file_path << '\n';
     }

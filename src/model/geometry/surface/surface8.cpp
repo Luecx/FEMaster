@@ -131,17 +131,24 @@ Vec2 Surface8::closest_point_on_boundary(const Vec3& global, const StaticMatrix<
     Line3A line3({2, 3, 6});  // Line from node 3 to node 4
     Line3A line4({3, 0, 7});  // Line from node 4 to node 1
 
+    Field node_field("SURFACE8_BOUNDARY", FieldDomain::NODE, 8, 3);
+    for (Index i = 0; i < 8; ++i) {
+        for (Index j = 0; j < 3; ++j) {
+            node_field(i, j) = node_coords(i, j);
+        }
+    }
+
     // Compute projections onto the four boundary lines
-    Precision line1_p = line1.global_to_local(global, node_coords);
-    Precision line2_p = line2.global_to_local(global, node_coords);
-    Precision line3_p = line3.global_to_local(global, node_coords);
-    Precision line4_p = line4.global_to_local(global, node_coords);
+    Precision line1_p = line1.global_to_local(global, node_field);
+    Precision line2_p = line2.global_to_local(global, node_field);
+    Precision line3_p = line3.global_to_local(global, node_field);
+    Precision line4_p = line4.global_to_local(global, node_field);
 
     // Convert local line parameters to global points
-    Vec3 p1 = line1.local_to_global(line1_p, node_coords);
-    Vec3 p2 = line2.local_to_global(line2_p, node_coords);
-    Vec3 p3 = line3.local_to_global(line3_p, node_coords);
-    Vec3 p4 = line4.local_to_global(line4_p, node_coords);
+    Vec3 p1 = line1.local_to_global(line1_p, node_field);
+    Vec3 p2 = line2.local_to_global(line2_p, node_field);
+    Vec3 p3 = line3.local_to_global(line3_p, node_field);
+    Vec3 p4 = line4.local_to_global(line4_p, node_field);
 
     // Calculate squared distances
     Precision d1 = (p1 - global).squaredNorm();

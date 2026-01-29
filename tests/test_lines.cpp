@@ -152,13 +152,12 @@ TYPED_TEST(LineTest, ShapeFunctionSecondDerivativesAreCorrect) {
 TYPED_TEST(LineTest, ClosestPointIsFoundCorrectly) {
     Index N = this->line.node_ids.size();
 
-    NodeData node_coords_system;
-    node_coords_system.resize(5, 3);
-    node_coords_system << 0.0, 0.0, 0.0,  // Node 0
-                        1.0, 1.0, 0.0,  // Node 1
-                        2.0, 0.0, 2.0,  // Node 2
-                        2.5, 0.5, 0.0,  // Node 3
-                        4.0, 0.0, 0.0;  // Node 4
+    model::Field node_coords_system{"NODE_COORDS", model::FieldDomain::NODE, 5, 3};
+    node_coords_system(0, 0) = 0.0; node_coords_system(0, 1) = 0.0; node_coords_system(0, 2) = 0.0;
+    node_coords_system(1, 0) = 1.0; node_coords_system(1, 1) = 1.0; node_coords_system(1, 2) = 0.0;
+    node_coords_system(2, 0) = 2.0; node_coords_system(2, 1) = 0.0; node_coords_system(2, 2) = 2.0;
+    node_coords_system(3, 0) = 2.5; node_coords_system(3, 1) = 0.5; node_coords_system(3, 2) = 0.0;
+    node_coords_system(4, 0) = 4.0; node_coords_system(4, 1) = 0.0; node_coords_system(4, 2) = 0.0;
 
 
     for(int n = 0; n < 100; n++) {

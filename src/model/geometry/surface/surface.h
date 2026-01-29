@@ -29,6 +29,7 @@
 
 #include "../../../core/core.h"
 #include "../../../math/quadrature.h"
+#include "../../../data/field.h"
 
 #include <Eigen/Dense>
 #include <functional>
@@ -59,17 +60,17 @@ struct SurfaceInterface {
      */
     virtual ~SurfaceInterface()                                                               = default;
 
-    virtual Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const = 0;
-    virtual Vec2 global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const = 0;
-    virtual Vec3 normal(const NodeData& node_coords_system, const Vec2& local) const                              = 0;
+    virtual Vec3 local_to_global(const Vec2& local, const Field& node_coords_system) const = 0;
+    virtual Vec2 global_to_local(const Vec3& global, const Field& node_coords_system, bool clip = false) const = 0;
+    virtual Vec3 normal(const Field& node_coords_system, const Vec2& local) const                              = 0;
     virtual bool in_bounds(const Vec2& local) const                                                               = 0;
-    virtual Precision     area(const NodeData& node_coords_system) const                                          = 0;
+    virtual Precision     area(const Field& node_coords_system) const                                             = 0;
     virtual DynamicVector shape_function(const Vec2& local) const                                                 = 0;
-    virtual DynamicVector shape_function_integral(const NodeData& node_coords_system) const                       = 0;
+    virtual DynamicVector shape_function_integral(const Field& node_coords_system) const                          = 0;
     virtual ID*           nodes()                                                                                 = 0;
 
-    virtual void          apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load)                     = 0;
-    virtual void          apply_pload(NodeData& node_coords, NodeData& node_loads, Precision load)                = 0;
+    virtual void          apply_dload(const Field& node_coords, Field& node_loads, Vec3 load)                  = 0;
+    virtual void          apply_pload(const Field& node_coords, Field& node_loads, Precision load)             = 0;
 
     ID*                   begin() {
         return nodes();
@@ -202,7 +203,7 @@ struct Surface : public SurfaceInterface {
      *          by evaluating the shape functions at (r, s) and summing the contributions
      *          from each node's global coordinates.
      */
-    Vec3 local_to_global(const Vec2& local, const NodeData& node_coords_system) const override {
+    Vec3 local_to_global(const Vec2& local, const Field& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
         Vec3 res                = Vec3::Zero();
         for (Index i = 0; i < N; i++) {
@@ -226,7 +227,7 @@ struct Surface : public SurfaceInterface {
      *          initial guesses are used to ensure convergence to the global minimum distance. If the solution is out of
      * bounds and clip is true, the function will check the boundaries using the corresponding line elements.
      */
-    Vec2 global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip = false) const override {
+    Vec2 global_to_local(const Vec3& p, const Field& node_coords_system, bool clip = false) const override {
         constexpr int       max_iter = 32;
         constexpr Precision eps      = 1e-12;
 
@@ -347,7 +348,7 @@ struct Surface : public SurfaceInterface {
      * @param local Local coordinate in the parametric space of the surface element.
      * @return Vec3 Normal vector at the local coordinate.
      */
-    Vec3 normal(const NodeData& node_coords_system, const Vec2& local) const override {
+    Vec3 normal(const Field& node_coords_system, const Vec2& local) const override {
         // Compute the shape function derivatives at the given local coordinates
         auto shape_deriv        = shape_derivative(local(0), local(1));
         auto node_coords_global = this->node_coords_global(node_coords_system);
@@ -375,7 +376,7 @@ struct Surface : public SurfaceInterface {
      *          domain of the surface element, with the Jacobian determinant to map to the global space.
      *          This can be useful for calculating distributed load contributions or surface mass properties.
      */
-    DynamicVector shape_function_integral(const NodeData& node_coords_system) const override {
+    DynamicVector shape_function_integral(const Field& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
 
         // Define the integrand for computing the integral of each shape function over the global surface
@@ -417,7 +418,7 @@ struct Surface : public SurfaceInterface {
      *          by integrating the magnitude of the cross product of the tangent vectors
      *          at each integration point.
      */
-    Precision area(const NodeData& node_coords_system) const override {
+    Precision area(const Field& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
 
         // Define the integrand for computing surface area
@@ -454,12 +455,11 @@ struct Surface : public SurfaceInterface {
      * @param node_coords_system
      * @return StaticMatrix<N, 3> which holds the global coordinates of the nodes.
      */
-    StaticMatrix<N, 3> node_coords_global(const NodeData& node_coords_system) const {
+    StaticMatrix<N, 3> node_coords_global(const Field& node_coords_system) const {
         StaticMatrix<N, 3> res {};
         for (Index i = 0; i < N; i++) {
-            for (Index j = 0; j < 3; j++) {
-                res(i, j) = node_coords_system(nodeIds[i], j);
-            }
+            const Index row = static_cast<Index>(nodeIds[i]);
+            res.row(i) = node_coords_system.row_vec3(row).transpose();
         }
         return res;
     }
@@ -496,7 +496,7 @@ struct Surface : public SurfaceInterface {
      * @param node_loads Node loads in the global system.
      * @param load Vector of the distributed load to be applied.
      */
-    void apply_dload(NodeData& node_coords, NodeData& node_loads, Vec3 load) override {
+    void apply_dload(const Field& node_coords, Field& node_loads, Vec3 load) override {
         auto nodal_contributions = shape_function_integral(node_coords);
 
         // go through the node ids
@@ -515,7 +515,7 @@ struct Surface : public SurfaceInterface {
      * @param node_loads Node loads in the global system.
      * @param load Pressure load to be applied.
      */
-    void apply_pload(NodeData& node_coords, NodeData& node_loads, Precision load) override {
+    void apply_pload(const Field& node_coords, Field& node_loads, Precision load) override {
         auto node_coords_global = this->node_coords_global(node_coords);
 
         // Define the integrand for computing the integral of each shape function over the global surface

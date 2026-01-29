@@ -22,6 +22,8 @@
 #include "../core/printable.h"
 #include <string>
 
+namespace fem { namespace model { struct Field; } }
+
 namespace fem {
 namespace constraint {
 
@@ -124,7 +126,7 @@ class Coupling : public fem::Printable {
      * @note Use this also when you conceptually "apply a load to a reference
      *       point" but want the structure to carry it through a patch of nodes.
      */
-    void apply_loads(model::ModelData& model_data, NodeData& load_matrix);
+    void apply_loads(model::ModelData& model_data, model::Field& load_matrix);
 
     /**
      * @brief Computes the necessary DOFs for the master node based on the coupling.

@@ -1,13 +1,13 @@
 /**
  * @file assemble_bc.cpp
- * @brief Implementation of functions for handling and assembling constraints into NodeData,
+ * @brief Implementation of functions for handling and assembling constraints into node fields,
  * with options for handling duplicate entries, either summing values or enforcing
  * consistency for constraints.
  *
  * This function implements the logic for handling duplicate entries based on the
  * provided options (ADD or SET). If inconsistencies are found, it throws an error.
  *
- * The function assumes that NodeData is defined as Eigen::Matrix<Precision, Eigen::Dynamic, 6>.
+ * The function assumes that the node field has 6 components (Ux,Uy,Uz,Rx,Ry,Rz).
  *
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
@@ -20,14 +20,14 @@
 
 namespace fem { namespace mattools {
 
-void assemble_bc(NodeData& target_bc, const NodeData& source_bc, DuplicateHandling handling) {
-    if (target_bc.rows() != source_bc.rows() || target_bc.cols() != source_bc.cols()) {
+void assemble_bc(model::Field& target_bc, const model::Field& source_bc, DuplicateHandling handling) {
+    if (target_bc.rows != source_bc.rows || target_bc.components != source_bc.components) {
         throw std::invalid_argument("BCMatrices must have the same dimensions for assembly.");
     }
 
-    // Iterate through each entry of the NodeData
-    for (int i = 0; i < target_bc.rows(); ++i) {
-        for (int j = 0; j < target_bc.cols(); ++j) {
+    // Iterate through each entry of the node field
+    for (int i = 0; i < target_bc.rows; ++i) {
+        for (int j = 0; j < target_bc.components; ++j) {
             const auto& source_val = source_bc(i, j);
             auto& target_val = target_bc(i, j);
 

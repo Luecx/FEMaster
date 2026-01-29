@@ -14,7 +14,7 @@
 
 #include "load_collector.h"
 
-#include "../data/node_data_dict.h"
+#include "../data/field.h"
 
 namespace fem {
 namespace bc {
@@ -28,7 +28,7 @@ LoadCollector::LoadCollector(const std::string& name)
 /**
  * @copydoc LoadCollector::apply
  */
-void LoadCollector::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
+void LoadCollector::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     for (const auto& load : this->_data) {
         if (!load) {
             continue;
@@ -98,7 +98,7 @@ void LoadCollector::add_vload(model::ElementRegion::Ptr region,
 /**
  * @copydoc LoadCollector::add_tload
  */
-void LoadCollector::add_tload(model::NodeField::Ptr temp_field, Precision ref_temp) {
+void LoadCollector::add_tload(model::Field::Ptr temp_field, Precision ref_temp) {
     auto tload = std::make_shared<TLoad>();
     tload->temp_field = std::move(temp_field);
     tload->ref_temp = ref_temp;

@@ -71,9 +71,10 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
     return res;
 }
 
-ElementData Model::build_integration_point_numeration() {
+Field Model::build_integration_point_numeration() {
     // +1 row to store the total number of integration points
-    ElementData ip_numeration{this->_data->max_elems + 1, 1};
+    Field ip_numeration{"IP_ENUM", FieldDomain::ELEMENT,
+                        static_cast<Index>(this->_data->max_elems + 1), 1};
 
     ID next_id = 0;
     for (auto &e : _data->elements) {
@@ -86,15 +87,15 @@ ElementData Model::build_integration_point_numeration() {
     }
 
     // last entry = total number of IPs
-    ip_numeration(this->_data->max_elems, 0) = next_id;
+    ip_numeration(static_cast<Index>(this->_data->max_elems), 0) = next_id;
 
     return ip_numeration;
 }
 
 
-NodeData Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
-    NodeData load_matrix{this->_data->max_nodes, 6};
-    load_matrix.setZero();
+Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
+    Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, static_cast<Index>(this->_data->max_nodes), 6};
+    load_matrix.set_zero();
 
     for (auto &key: load_sets) {
         auto data = this->_data->load_cols.get(key);
@@ -191,11 +192,17 @@ constraint::Equations Model::build_constraints(SystemDofIds& system_dof_ids,
     return collect_constraints(system_dof_ids, supp_sets).flatten();
 }
 
-SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData stiffness_scalar) {
+SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, const Field* stiffness_scalar) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
         if (auto sel = el->as<StructuralElement>()) {
             MapMatrix stiff = sel->stiffness(storage);
-            stiff *= (stiffness_scalar.rows() > 0) ? stiffness_scalar(sel->elem_id, 0) : 1.0;
+            if (stiffness_scalar) {
+                logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
+                               "stiffness scale field must use ELEMENT domain");
+                logging::error(stiffness_scalar->components == 1,
+                               "stiffness scale field must have 1 component");
+                stiff *= (*stiffness_scalar)(static_cast<Index>(sel->elem_id), 0);
+            }
             return stiff;
         } else {
             MapMatrix mat{storage, 0, 0};
@@ -207,19 +214,25 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, ElementData st
 }
 
 SparseMatrix Model::build_geom_stiffness_matrix(SystemDofIds &indices,
-                                                const IPData& ip_stress,
-                                                ElementData stiffness_scalar)
+                                                const Field& ip_stress,
+                                                const Field* stiffness_scalar)
 {
-    ElementData ip_enum = build_integration_point_numeration();
+    Field ip_enum = build_integration_point_numeration();
 
     auto lambda = [&](const ElementPtr &e, Precision* storage) -> MapMatrix {
         if (auto sel = e->as<StructuralElement>()) {
             const ID eid = sel->elem_id;
             // start index of this element’s IPs
-            const ID ip_start = ip_enum(eid, 0);
+            const ID ip_start = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
 
-            MapMatrix Kg = sel->stiffness_geom(storage, const_cast<IPData&>(ip_stress), ip_start);
-            Kg *= (stiffness_scalar.rows() > 0) ? stiffness_scalar(eid, 0) : 1.0;
+            MapMatrix Kg = sel->stiffness_geom(storage, ip_stress, ip_start);
+            if (stiffness_scalar) {
+                logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
+                               "stiffness scale field must use ELEMENT domain");
+                logging::error(stiffness_scalar->components == 1,
+                               "stiffness scale field must have 1 component");
+                Kg *= (*stiffness_scalar)(static_cast<Index>(eid), 0);
+            }
             return Kg;
         } else {
             MapMatrix mat{storage, 0, 0};

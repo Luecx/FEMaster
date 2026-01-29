@@ -13,7 +13,7 @@
 
 #include "support.h"
 
-#include "../data/node_data_dict.h"
+#include "../data/field.h"
 #include "../model/element/element.h"
 #include "../model/model_data.h"
 
@@ -76,7 +76,8 @@ void Support::apply(model::ModelData& model_data, constraint::Equations& equatio
  * @copydoc Support::apply_to_node
  */
 void Support::apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id) {
-    Vec6 position_vec = model_data.get(model::POSITION).row(node_id);
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    Vec6 position_vec = model_data.positions->row_vec6(static_cast<Index>(node_id));
     Vec3 position = position_vec.head<3>();
 
     for (int i = 0; i < 6; ++i) {

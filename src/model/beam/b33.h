@@ -103,9 +103,9 @@ struct B33 : BeamElement<2> {
         return T.transpose() * M * T;
     }
 
-    void compute_stress_strain(IPData& ip_stress,
-                               IPData& ip_strain,
-                               NodeData& displacement,
+    void compute_stress_strain(Field& ip_stress,
+                               Field& ip_strain,
+                               Field& displacement,
                                int ip_offset) override {
         (void)ip_strain;
 
@@ -115,7 +115,7 @@ struct B33 : BeamElement<2> {
 
         StaticMatrix<12, 1> u_global;
         for (int i = 0; i < 2; ++i) {
-            Vec6 ug = displacement.row(this->nodes()[i]);
+            Vec6 ug = displacement.row_vec6(static_cast<Index>(this->nodes()[i]));
             for (int d = 0; d < 6; ++d) {
                 u_global(6 * i + d) = ug(d);
             }
@@ -127,19 +127,20 @@ struct B33 : BeamElement<2> {
         Precision eps = (u_local(6) - u_local(0)) / L;
         Precision N = E * A * eps;
 
-        ip_stress(ip_offset, 0) = N;
-        for (int j = 1; j < ip_stress.cols(); ++j) {
-            ip_stress(ip_offset, j) = 0.0;
+        const Index row = static_cast<Index>(ip_offset);
+        ip_stress(row, 0) = N;
+        for (int j = 1; j < ip_stress.components; ++j) {
+            ip_stress(row, j) = 0.0;
         }
     }
 
-    StaticMatrix<12, 12> stiffness_geom_impl(IPData& ip_stress, int offset) override {
+    StaticMatrix<12, 12> stiffness_geom_impl(const Field& ip_stress, int offset) override {
         StaticMatrix<12, 12> T = transformation();
         const Precision L = length();
         const Precision A = get_profile()->A;
 
         // actually contains the normal force (see above)
-        Precision N = ip_stress(offset, 0);
+        Precision N = ip_stress(static_cast<Index>(offset), 0);
 
         // If no axial force, no geometric stiffness
         if (std::abs(N) <= std::numeric_limits<Precision>::epsilon()) {

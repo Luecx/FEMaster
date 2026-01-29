@@ -8,6 +8,9 @@
 #include <iostream>
 
 namespace fem {
+namespace model {
+struct Field;
+}
 namespace reader {
 
 // Import DynamicMatrix from the outer fem namespace
@@ -61,6 +64,15 @@ class Writer {
     void write_eigen_matrix(const DynamicMatrix& matrix,
                             const std::string& field_name,
                             int index_cols = 0);
+
+    /**
+     * @brief Write a model::Field as a FIELD block.
+     *
+     * Mirrors write_eigen_matrix but reads values directly from the field.
+     */
+    void write_field(const model::Field& field,
+                     const std::string& field_name,
+                     int index_cols = 0);
 };
 
 } // namespace reader

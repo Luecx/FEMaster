@@ -42,12 +42,13 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
 /**
  * @copydoc CLoad::apply
  */
-void CLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
-    auto& node_positions = model_data.get(model::POSITION);
+void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& node_positions = *model_data.positions;
     const Precision scale = amplitude ? amplitude->evaluate(time) : 1.0;
 
     for (auto& node_id : *region) {
-        const Vec3 position = node_positions.row(node_id).head<3>();
+        const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
 
         auto [force_local, force_active] = sanitize_vector(values.head<3>());
         auto [moment_local, moment_active] = sanitize_vector(values.tail<3>());
@@ -91,8 +92,9 @@ void CLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
 /**
  * @copydoc DLoad::apply
  */
-void DLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
-    auto& node_positions = model_data.get(model::POSITION);
+void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& node_positions = *model_data.positions;
     auto [local_values, has_values] = sanitize_vector(values);
     if (!has_values) {
         return;
@@ -116,7 +118,7 @@ void DLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
         int local_idx = 0;
         for (auto node_it = surface->begin(); node_it != surface->end(); ++node_it, ++local_idx) {
             const ID node_id = *node_it;
-            const Vec3 position = node_positions.row(node_id).head<3>();
+            const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
             const Vec3 local_point = orientation->to_local(position);
             const auto axes = orientation->get_axes(local_point);
             const Vec3 global_values = axes * local_values;
@@ -131,8 +133,9 @@ void DLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
 /**
  * @copydoc PLoad::apply
  */
-void PLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
-    auto& node_positions = model_data.get(model::POSITION);
+void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& node_positions = *model_data.positions;
     const Precision scale = amplitude ? amplitude->evaluate(time) : 1.0;
     const Precision scaled_pressure = pressure * scale;
     for (auto& surf_id : *region) {
@@ -143,8 +146,9 @@ void PLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
 /**
  * @copydoc VLoad::apply
  */
-void VLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
-    auto& node_positions = model_data.get(model::POSITION);
+void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& node_positions = *model_data.positions;
     auto [local_values, has_values] = sanitize_vector(values);
     if (!has_values) {
         return;
@@ -169,7 +173,7 @@ void VLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
             Vec3 centroid = Vec3::Zero();
             int node_count = 0;
             for (ID node_id : *structural) {
-                centroid += node_positions.row(node_id).head<3>();
+                centroid += node_positions.row_vec3(static_cast<Index>(node_id));
                 ++node_count;
             }
             if (node_count > 0) {
@@ -187,8 +191,13 @@ void VLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
 /**
  * @copydoc TLoad::apply
  */
-void TLoad::apply(model::ModelData& model_data, NodeData& bc, Precision time) {
+void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     (void)time;
+    logging::error(temp_field != nullptr, "Temperature field not set on TLOAD");
+    logging::error(temp_field->domain == model::FieldDomain::NODE,
+                   "Temperature field ", temp_field->name, " must be a node field");
+    logging::error(temp_field->components == 1,
+                   "Temperature field ", temp_field->name, " must have 1 component");
     for (auto& element_ptr : model_data.elements) {
         if (auto structural = element_ptr->as<model::StructuralElement>()) {
             structural->apply_tload(bc, *temp_field, ref_temp);

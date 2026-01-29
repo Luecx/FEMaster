@@ -17,7 +17,7 @@ namespace fem::model {
 
 
 template<Index N>
-Strains SolidElement<N>::strain(NodeData& displacement, std::vector<Vec3>& rst) {
+Strains SolidElement<N>::strain(Field& displacement, std::vector<Vec3>& rst) {
     auto global_node_coords = this->node_coords_global();
     auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
@@ -26,7 +26,7 @@ Strains SolidElement<N>::strain(NodeData& displacement, std::vector<Vec3>& rst) 
 }
 
 template<Index N>
-Stresses SolidElement<N>::stress(NodeData& displacement, std::vector<Vec3>& rst) {
+Stresses SolidElement<N>::stress(Field& displacement, std::vector<Vec3>& rst) {
     return {};
 }
 
@@ -36,7 +36,7 @@ Stresses SolidElement<N>::stress(NodeData& displacement, std::vector<Vec3>& rst)
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) {
+SolidElement<N>::compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) {
     auto local_node_coords = this->node_coords_local();
     auto global_node_coords = this->node_coords_global();
 
@@ -48,7 +48,7 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
         Precision s = local_node_coords(n, 1);
         Precision t = local_node_coords(n, 2);
         Precision det;
-        auto node_id = node_ids[n];
+        const Index node_id = static_cast<Index>(node_ids[n]);
 
         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det, false);
 
@@ -85,12 +85,13 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
                 stress(node_id, j) += stresses(j);
             }
         } else {
-            IPData ip_xyz   {this->n_integration_points(), 3};
-            IPData ip_stress{this->n_integration_points(), 6};
-            IPData ip_strain{this->n_integration_points(), 6};
+            const Index n_ip = static_cast<Index>(this->n_integration_points());
+            RowMatrix ip_xyz(n_ip, 3);
             ip_xyz.setZero();
-            ip_stress.setZero();
-            ip_strain.setZero();
+            Field ip_stress{"IP_STRESS_LOCAL", FieldDomain::IP, n_ip, 6};
+            Field ip_strain{"IP_STRAIN_LOCAL", FieldDomain::IP, n_ip, 6};
+            ip_stress.set_zero();
+            ip_strain.set_zero();
 
             // fill ip_xyz
             auto scheme = this->integration_scheme();
@@ -117,16 +118,20 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
 
             compute_stress_strain(ip_stress, ip_strain, displacement, 0);
 
+            RowMatrix ip_stress_mat =
+                Eigen::Map<const RowMatrix>(ip_stress.data(), ip_stress.rows, ip_stress.components);
+            RowMatrix ip_strain_mat =
+                Eigen::Map<const RowMatrix>(ip_strain.data(), ip_strain.rows, ip_strain.components);
             auto res1 =
                 fem::math::interpolate::interpolate(ip_xyz,
-                                                    ip_stress,
+                                                    ip_stress_mat,
                                                     global_node_coords.row(n),
                                                     nullptr,
                                                     0.7,
                                                     fem::math::interpolate::InterpolationFunction::CONSTANT);
             auto res2 =
                 fem::math::interpolate::interpolate(ip_xyz,
-                                                    ip_strain,
+                                                    ip_strain_mat,
                                                     global_node_coords.row(n),
                                                     nullptr,
                                                     0.7,
@@ -149,7 +154,7 @@ SolidElement<N>::compute_stress_strain_nodal(NodeData& displacement, NodeData& s
 }
 
 template<Index N>
-void SolidElement<N>::compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) {
+void SolidElement<N>::compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) {
     auto global_node_coords = this->node_coords_global();
     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
@@ -165,8 +170,9 @@ void SolidElement<N>::compute_stress_strain(IPData& ip_stress, IPData& ip_strain
         auto strains  = B * local_displacement;
         auto stresses = E * strains;
         for (Dim j = 0; j < n_strain; j++) {
-            ip_stress(ip_offset + n, j) = stresses(j);
-            ip_strain(ip_offset + n, j) = strains(j);
+            const Index row = static_cast<Index>(ip_offset) + n;
+            ip_stress(row, j) = stresses(j);
+            ip_strain(row, j) = strains(j);
         }
     }
 }
@@ -177,7 +183,7 @@ void SolidElement<N>::compute_stress_strain(IPData& ip_stress, IPData& ip_strain
 // //-----------------------------------------------------------------------------
 // template<Index N>
 // void
-// SolidElement<N>::compute_stress_strain(NodeData& displacement, NodeData& stress, NodeData& strain, NodeData& xyz) {
+// SolidElement<N>::compute_stress_strain(Field& displacement, Field& stress, Field& strain, Field& xyz) {
 //     auto global_node_coords = this->node_coords_global();
 //
 //     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
@@ -224,7 +230,7 @@ void SolidElement<N>::compute_stress_strain(IPData& ip_stress, IPData& ip_strain
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::compute_compliance(NodeData& displacement, ElementData& result) {
+SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[D * N * D * N];
     auto K = stiffness(buffer);
 
@@ -236,7 +242,7 @@ SolidElement<N>::compute_compliance(NodeData& displacement, ElementData& result)
 }
 
 template<Index N>
-void SolidElement<N>::compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) {
+void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, Field& result) {
     // the equation for the compliance is:
     // C = u^T * K * u
     // C = u^T * (B^T * E * B) * u
@@ -255,9 +261,13 @@ void SolidElement<N>::compute_compliance_angle_derivative(NodeData& displacement
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
     // check for angles
-    if (!this->_model_data->elem_data.has(TOPO_ANGLES)) return;
+    if (!this->_model_data || !this->_model_data->material_orientation) return;
 
-    Vec3 angles = this->_model_data->elem_data.get(TOPO_ANGLES).row(this->elem_id);
+    auto angles_field = this->_model_data->material_orientation;
+    logging::error(angles_field->components == 3,
+                   "Field '", angles_field->name, "': material orientation requires 3 components");
+    const Index row = static_cast<Index>(this->elem_id);
+    Vec3 angles = angles_field->row_vec3(row);
     auto R = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3(0,0,0));
     auto dR_d1 = cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
     auto dR_d2 = cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));

@@ -59,6 +59,7 @@
 #include "../solve/eigen.h"
 
 #include <limits>
+#include <cmath>
 
 using fem::constraint::ConstraintTransformer;
 
@@ -74,12 +75,16 @@ namespace fem { namespace loadcase {
  * - orientation: per-element orientation angles (3 per element, initialized to 0).
  */
 LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
-    : LinearStatic(id, writer, model),
-      density(model->_data->max_elems, 1),
-      orientation(model->_data->max_elems, 3)
-{
-    density.setOnes();
-    orientation.setZero();
+    : LinearStatic(id, writer, model) {
+    auto& data = *model->_data;
+
+    density = data.create_field("DENSITY", model::FieldDomain::ELEMENT,
+                                static_cast<Index>(data.max_elems), 1, false);
+    density->setOnes();
+
+    orientation = data.create_field("ORIENTATION", model::FieldDomain::ELEMENT,
+                                    static_cast<Index>(data.max_elems), 3, false);
+    orientation->set_zero();
 }
 
 /**
@@ -106,11 +111,18 @@ void LinearStaticTopo::run() {
 
     // Inject topology parameters into the model's element data store so the
     // stiffness builder can read them during assembly.
-    const ElementData stiffness_scalar = density.array().pow(exponent);
-    model->_data->create_data(model::ElementDataEntries::TOPO_STIFFNESS, 1);
-    model->_data->create_data(model::ElementDataEntries::TOPO_ANGLES   , 3);
-    model->_data->get(model::ElementDataEntries::TOPO_STIFFNESS) = stiffness_scalar;
-    model->_data->get(model::ElementDataEntries::TOPO_ANGLES)    = orientation;
+    logging::error(density != nullptr, "LinearStaticTopo: density field not initialized");
+    logging::error(orientation != nullptr, "LinearStaticTopo: orientation field not initialized");
+    auto stiffness_field = model->_data->create_field("ELEMENT_STIFFNESS_SCALE", model::FieldDomain::ELEMENT, 1, true);
+    auto orientation_field = model->_data->create_field("MATERIAL_ORIENTATION", model::FieldDomain::ELEMENT, 3, true);
+    for (Index r = 0; r < static_cast<Index>(model->_data->max_elems); ++r) {
+        (*stiffness_field)(r, 0) = std::pow((*density)(r, 0), exponent);
+        for (Index c = 0; c < 3; ++c) {
+            (*orientation_field)(r, c) = (*orientation)(r, c);
+        }
+    }
+    model->_data->element_stiffness_scale = stiffness_field;
+    model->_data->material_orientation = orientation_field;
 
     // (1) Unconstrained DOF indexing (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
@@ -139,7 +151,7 @@ void LinearStaticTopo::run() {
 
     // (4) Active stiffness K with topology scaling/orientation
     auto K = Timer::measure(
-        [&]() { return this->model->build_stiffness_matrix(active_dof_idx_mat, stiffness_scalar); },
+        [&]() { return this->model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K(rho^p, theta)"
     );
 
@@ -230,8 +242,7 @@ void LinearStaticTopo::run() {
     );
 
     // (9) Post-processing: nodal stress/strain from displacements
-    NodeData stress, strain;
-    std::tie(stress, strain) = Timer::measure(
+    auto [stress, strain] = Timer::measure(
         [&]() { return model->compute_stress_strain(global_disp_mat); },
         "Interpolating stress and strain at nodes"
     );
@@ -242,11 +253,20 @@ void LinearStaticTopo::run() {
     //  - dens_grad     : derivative of compliance w.r.t. density (basic SIMP)
     //  - volumes       : element volumes
     //  - angle_grad    : derivative of compliance w.r.t. orientation angles
-    ElementData compliance_raw = model->compute_compliance(global_disp_mat);
-    ElementData compliance_adj = compliance_raw.array() * density.array().pow(exponent);
-    ElementData dens_grad      = - exponent * compliance_raw.array() * density.array().pow(exponent - 1);
-    ElementData volumes        = model->compute_volumes();
-    ElementData angle_grad     = model->compute_compliance_angle_derivative(global_disp_mat);
+    auto compliance_raw = model->compute_compliance(global_disp_mat);
+    model::Field compliance_adj{"COMPLIANCE_ADJ", model::FieldDomain::ELEMENT,
+                                static_cast<Index>(model->_data->max_elems), 1};
+    model::Field dens_grad{"DENS_GRAD", model::FieldDomain::ELEMENT,
+                           static_cast<Index>(model->_data->max_elems), 1};
+    for (Index r = 0; r < static_cast<Index>(model->_data->max_elems); ++r) {
+        const Precision rho = (*density)(r, 0);
+        const Precision rho_p = std::pow(rho, exponent);
+        const Precision rho_p_minus = std::pow(rho, exponent - 1);
+        compliance_adj(r, 0) = compliance_raw(r, 0) * rho_p;
+        dens_grad(r, 0) = -exponent * compliance_raw(r, 0) * rho_p_minus;
+    }
+    auto volumes        = model->compute_volumes();
+    auto angle_grad     = model->compute_compliance_angle_derivative(global_disp_mat);
 
     // (11) Write results
     // Mask reactions to supports only (NaN elsewhere)
@@ -263,10 +283,12 @@ void LinearStaticTopo::run() {
             }
         }
     }
-    NodeData reaction_masked = NodeData::Constant(global_force_mat.rows(), global_force_mat.cols(),
-                                                  std::numeric_limits<Precision>::quiet_NaN());
-    for (int i = 0; i < reaction_masked.rows(); ++i) {
-        for (int j = 0; j < reaction_masked.cols(); ++j) {
+    model::Field reaction_masked{"REACTION_FORCES", model::FieldDomain::NODE,
+                                 global_force_mat.rows,
+                                 global_force_mat.components};
+    reaction_masked.fill_nan();
+    for (int i = 0; i < reaction_masked.rows; ++i) {
+        for (int j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
                 reaction_masked(i, j) = global_force_mat(i, j);
             }
@@ -274,22 +296,30 @@ void LinearStaticTopo::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_eigen_matrix(global_disp_mat , "DISPLACEMENT");
-    writer->write_eigen_matrix(strain          , "STRAIN");
-    writer->write_eigen_matrix(stress          , "STRESS");
-    writer->write_eigen_matrix(global_load_mat , "EXTERNAL_FORCES");
-    writer->write_eigen_matrix(reaction_masked , "REACTION_FORCES");
-    writer->write_eigen_matrix(compliance_raw  , "COMPLIANCE_RAW");
-    writer->write_eigen_matrix(compliance_adj  , "COMPLIANCE_ADJ");
-    writer->write_eigen_matrix(dens_grad       , "DENS_GRAD");
-    writer->write_eigen_matrix(volumes         , "VOLUME");
-    writer->write_eigen_matrix(density         , "DENSITY");
-    writer->write_eigen_matrix(angle_grad      , "ORIENTATION_GRAD");
-    writer->write_eigen_matrix(orientation     , "ORIENTATION");
+    writer->write_field(global_disp_mat, "DISPLACEMENT");
+    writer->write_field(strain, "STRAIN");
+    writer->write_field(stress, "STRESS");
+    writer->write_field(global_load_mat, "EXTERNAL_FORCES");
+    writer->write_field(reaction_masked, "REACTION_FORCES");
+    writer->write_field(compliance_raw, "COMPLIANCE_RAW");
+    writer->write_field(compliance_adj, "COMPLIANCE_ADJ");
+    writer->write_field(dens_grad, "DENS_GRAD");
+    writer->write_field(volumes, "VOLUME");
+    writer->write_field(*density, "DENSITY");
+    writer->write_field(angle_grad, "ORIENTATION_GRAD");
+    writer->write_field(*orientation, "ORIENTATION");
 
     // (12) Cleanup element scratch data from the model store
-    model->_data->remove(model::ElementDataEntries::TOPO_STIFFNESS);
-    model->_data->remove(model::ElementDataEntries::TOPO_ANGLES);
+    if (model->_data->element_stiffness_scale &&
+        model->_data->element_stiffness_scale->name == "ELEMENT_STIFFNESS_SCALE") {
+        model->_data->fields.erase("ELEMENT_STIFFNESS_SCALE");
+        model->_data->element_stiffness_scale = nullptr;
+    }
+    if (model->_data->material_orientation &&
+        model->_data->material_orientation->name == "MATERIAL_ORIENTATION") {
+        model->_data->fields.erase("MATERIAL_ORIENTATION");
+        model->_data->material_orientation = nullptr;
+    }
 
     // (13) Diagnostics (optional): projected residual checks
     CT->post_check_static(K, f, u);

@@ -52,13 +52,20 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
     logging::error(material()->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
 
     Precision scaling = 1;
-    if (this->_model_data->elem_data.has(TOPO_STIFFNESS)) {
-        scaling = this->_model_data->elem_data.get(TOPO_STIFFNESS)(this->elem_id);
+    if (this->_model_data && this->_model_data->element_stiffness_scale) {
+        auto scale_field = this->_model_data->element_stiffness_scale;
+        logging::error(scale_field->components == 1,
+                       "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+        scaling = (*scale_field)(static_cast<Index>(this->elem_id));
     }
 
-    if (this->_model_data->elem_data.has(TOPO_ANGLES)) {
-        Vec3                   angles       = this->_model_data->elem_data.get(TOPO_ANGLES).row(this->elem_id);
-        cos::RectangularSystem rot          = cos::RectangularSystem::euler(angles(0), angles(1), angles(2));
+    if (this->_model_data && this->_model_data->material_orientation) {
+        auto angles_field = this->_model_data->material_orientation;
+        logging::error(angles_field->components == 3,
+                       "Field '", angles_field->name, "': material orientation requires 3 components");
+        const Index row = static_cast<Index>(this->elem_id);
+        Vec3 angles = angles_field->row_vec3(row);
+        cos::RectangularSystem rot = cos::RectangularSystem::euler(angles(0), angles(1), angles(2));
 
         Vec3                   point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
         Vec3                   point_local  = rot.to_local(point_global);
@@ -133,17 +140,17 @@ SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Pr
 template<Index N>
 template<Dim K>
 StaticMatrix<N, K>
-SolidElement<N>::nodal_data(const NodeData& full_data, Index offset, Index stride) {
+SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) {
     StaticMatrix<N, K> res {};
     runtime_assert(
-        full_data.cols() >= offset + stride * (K - 1) + 1,
+        full_data.components >= offset + stride * (K - 1) + 1,
         "cannot extract this many elements from the data"
     );
 
     for (Dim m = 0; m < N; m++) {
         for (Dim j = 0; j < K; j++) {
             Index n = j * stride + offset;
-            res(m, j) = full_data(node_ids[m], n);
+            res(m, j) = full_data(static_cast<Index>(node_ids[m]), n);
         }
     }
     
@@ -178,7 +185,7 @@ SolidElement<N>::stiffness(Precision* buffer) {
 
 template<Index N>
 MapMatrix
-SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) {
+SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) {
     StaticMatrix<N, D> node_coords = this->node_coords_global();
 
     Index ip_counter = 0;
@@ -190,7 +197,8 @@ SolidElement<N>::stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_sta
     {
 
         // ---- Stress at IP (Voigt = [xx, yy, zz, yz, zx, xy]) ----
-        auto v = ip_stress.row(ip_start_idx + ip_counter++);
+        const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
+        const Vec6 v = ip_stress.row_vec6(ip_row);
         Eigen::Matrix<Precision,3,3> sigma;
         sigma << v(0), v(5), v(4),
             v(5), v(1), v(3),

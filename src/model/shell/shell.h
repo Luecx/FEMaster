@@ -53,7 +53,7 @@ struct ShellElement : StructuralElement {
     virtual SurfacePtr surface(ID surface_id) override = 0;
     virtual Precision  volume() override = 0;
     virtual MapMatrix  stiffness(Precision* buffer) override = 0;
-    virtual MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override = 0;
+    virtual MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override = 0;
 
     virtual MapMatrix  mass(Precision* buffer) override = 0;
 
@@ -61,12 +61,13 @@ struct ShellElement : StructuralElement {
 
     //
     StaticMatrix<N, 3> node_coords_global() {
-        auto node_coords_system = this->_model_data->get(POSITION);
+        logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
+        logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+        const auto& positions = *this->_model_data->positions;
         StaticMatrix<N, 3> res {};
         for (Index i = 0; i < N; i++) {
-            for (Index j = 0; j < 3; j++) {
-                res(i, j) = node_coords_system(this->node_ids[i], j);
-            }
+            const Index row = static_cast<Index>(this->node_ids[i]);
+            res.row(i) = positions.row_vec3(row).transpose();
         }
         return res;
     }
@@ -89,19 +90,21 @@ struct ShellElement : StructuralElement {
     }
 
     // not implemented
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
         (void) displacement;
         (void) stress;
         (void) strain;
     };
-    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override {
         (void) ip_stress;
         (void) ip_strain;
         (void) displacement;
         (void) ip_offset;
     };
-    void apply_vload(NodeData& node_loads, Vec3 load) override {
-        auto& node_positions = this->_model_data->get(POSITION);
+    void apply_vload(Field& node_loads, Vec3 load) override {
+        logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
+        logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+        const auto& node_positions = *this->_model_data->positions;
         auto surf = this->surface(1);
         if (!surf) return;
         auto contrib = surf->shape_function_integral(node_positions);
@@ -114,7 +117,7 @@ struct ShellElement : StructuralElement {
             node_loads(n_id, 2) += w * load(2);
         }
     };
-    void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {
+    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
         (void) node_loads;
         (void) node_temp;
         (void) ref_temp;
@@ -130,24 +133,24 @@ struct ShellElement : StructuralElement {
      * @return StaticMatrix<N, K> The extracted nodal data for the element.
      */
     template<Dim K>
-    StaticMatrix<N, K> nodal_data(const NodeData& full_data, Index offset = 0, Index stride = 1) {
+    StaticMatrix<N, K> nodal_data(const Field& full_data, Index offset = 0, Index stride = 1) {
         StaticMatrix<N, K> res {};
         runtime_assert(
-            full_data.cols() >= offset + stride * (K - 1) + 1,
+            full_data.components >= offset + stride * (K - 1) + 1,
             "cannot extract this many elements from the data"
         );
 
         for (Dim m = 0; m < N; m++) {
             for (Dim j = 0; j < K; j++) {
                 Index n = j * stride + offset;
-                res(m, j) = full_data(node_ids[m], n);
+                res(m, j) = full_data(static_cast<Index>(node_ids[m]), n);
             }
         }
 
         return res;
     }
 
-    void compute_compliance(NodeData& displacement, ElementData& result) override {
+    void compute_compliance(Field& displacement, Field& result) override {
         // Elementsteifigkeit (global gedreht) holen
         Precision buffer[6 * N * 6 * N];
         MapMatrix Ke = stiffness(buffer); // 6N × 6N
@@ -165,24 +168,18 @@ struct ShellElement : StructuralElement {
         result(this->elem_id, 0) = Ce;
     }
 
-    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override {
+    void compute_compliance_angle_derivative(Field& displacement, Field& result) override {
         (void) displacement;
         (void) result;
     };
-    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override {
         return {};
     };
-    Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+    Strains  strain(Field& displacement, std::vector<Vec3>& rst) override {
         return {};
     };
 
     protected:
-    Precision topo_stiffness_scale() const {
-        if (this->_model_data && this->_model_data->elem_data.has(TOPO_STIFFNESS)) {
-            return this->_model_data->elem_data.get(TOPO_STIFFNESS)(this->elem_id);
-        }
-        return Precision(1);
-    }
 };
 }
 

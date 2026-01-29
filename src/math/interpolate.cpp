@@ -108,7 +108,7 @@ Precision evaluate(const DynamicVector& coefficients, const Vec3& position) {
  * @brief Computes predicted values for all nodes using the fitted coefficients.
  */
 template<InterpolationFunction F>
-DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const NodeData& xyz) {
+DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const RowMatrix& xyz) {
     DynamicMatrix predicted(xyz.rows(), coefficients.cols());
     for (Index column = 0; column < coefficients.cols(); ++column) {
         for (Index row = 0; row < xyz.rows(); ++row) {
@@ -121,7 +121,7 @@ DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const 
 /**
  * @brief Computes column-wise coefficients of determination (R²).
  */
-DynamicVector compute_r2(const DynamicMatrix& predicted, const NodeData& values) {
+DynamicVector compute_r2(const DynamicMatrix& predicted, const RowMatrix& values) {
     DynamicVector r2(values.cols());
     for (Index column = 0; column < values.cols(); ++column) {
         const Precision mean = values.col(column).mean();
@@ -138,11 +138,11 @@ DynamicVector compute_r2(const DynamicMatrix& predicted, const NodeData& values)
  * @brief Template implementation of the polynomial interpolation routine.
  */
 template<InterpolationFunction F>
-DynamicMatrix interpolate(const NodeData& xyz,
-                          const NodeData& values,
+DynamicMatrix interpolate(const RowMatrix& xyz,
+                          const RowMatrix& values,
                           const Vec3& center,
                           DynamicVector* r2_values) {
-    NodeData adjusted_xyz = xyz;
+    RowMatrix adjusted_xyz = xyz;
     for (Index row = 0; row < adjusted_xyz.rows(); ++row) {
         adjusted_xyz.row(row) -= center.transpose();
     }
@@ -224,7 +224,7 @@ DynamicMatrix interpolate(const NodeData& xyz,
 }
 
 #define INSTANTIATE(FUNC) \
-    template DynamicMatrix interpolate<FUNC>(const NodeData&, const NodeData&, const Vec3&, DynamicVector*);
+    template DynamicMatrix interpolate<FUNC>(const RowMatrix&, const RowMatrix&, const Vec3&, DynamicVector*);
 
 INSTANTIATE(CONSTANT)
 INSTANTIATE(LINEAR)
@@ -235,8 +235,8 @@ INSTANTIATE(CUBIC)
 
 #undef INSTANTIATE
 
-DynamicMatrix interpolate(const NodeData& xyz,
-                          const NodeData& values,
+DynamicMatrix interpolate(const RowMatrix& xyz,
+                          const RowMatrix& values,
                           const Vec3& center,
                           DynamicVector* r2_values,
                           float accuracy_factor,
@@ -280,8 +280,8 @@ float Interpolator::get_accuracy() const {
     return m_accuracy;
 }
 
-DynamicMatrix Interpolator::operator()(const NodeData& xyz,
-                                       const NodeData& values,
+DynamicMatrix Interpolator::operator()(const RowMatrix& xyz,
+                                       const RowMatrix& values,
                                        const Vec3& center,
                                        DynamicVector* r2_values) {
     return interpolate(xyz, values, center, r2_values, m_accuracy, m_method);
@@ -290,4 +290,3 @@ DynamicMatrix Interpolator::operator()(const NodeData& xyz,
 } // namespace interpolate
 } // namespace math
 } // namespace fem
-

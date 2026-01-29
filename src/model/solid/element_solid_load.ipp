@@ -19,7 +19,7 @@ namespace fem::model {
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::apply_vload(NodeData& node_loads, Vec3 load) {
+SolidElement<N>::apply_vload(Field& node_loads, Vec3 load) {
     StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
 
     std::function<StaticMatrix<N, 1>(Precision, Precision, Precision)> func =
@@ -45,10 +45,18 @@ SolidElement<N>::apply_vload(NodeData& node_loads, Vec3 load) {
 //-----------------------------------------------------------------------------
 template<Index N>
 void
-SolidElement<N>::apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) {
+SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
 
     StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
-    StaticMatrix<N, 1> node_temp_glob   = this->nodal_data<1>(node_temp);
+    logging::error(node_temp.domain == FieldDomain::NODE,
+                   "Temperature field '", node_temp.name, "' must be a node field");
+    logging::error(node_temp.components == 1,
+                   "Temperature field '", node_temp.name, "' must have 1 component");
+    StaticMatrix<N, 1> node_temp_glob {};
+    for (Index i = 0; i < N; ++i) {
+        const Index row = static_cast<Index>(node_ids[i]);
+        node_temp_glob(i) = node_temp(row, 0);
+    }
 
     // adjust the temperature field to the reference temperature if its nan or inf
     for (Index i = 0; i < (Index)node_temp_glob.size(); i++) {

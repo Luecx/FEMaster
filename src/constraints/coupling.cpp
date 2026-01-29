@@ -65,7 +65,8 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
         return equations;
     }
 
-    auto& node_coords = model_data.get(model::NodeDataEntries::POSITION);
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& node_coords = *model_data.positions;
 
     std::vector<ID> ids{};
     if (slave_nodes != nullptr) {
@@ -109,9 +110,11 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
                     Dim r1_dof = (Dim) ((i + 1) % 3 + 3);
                     Dim r2_dof = (Dim) ((i + 2) % 3 + 3);
 
-                    Precision dz            = node_coords(slave_node, 2) - node_coords(master_node, 2);
-                    Precision dy            = node_coords(slave_node, 1) - node_coords(master_node, 1);
-                    Precision dx            = node_coords(slave_node, 0) - node_coords(master_node, 0);
+                    const Index slave_idx = static_cast<Index>(slave_node);
+                    const Index master_idx = static_cast<Index>(master_node);
+                    Precision dz            = node_coords(slave_idx, 2) - node_coords(master_idx, 2);
+                    Precision dy            = node_coords(slave_idx, 1) - node_coords(master_idx, 1);
+                    Precision dx            = node_coords(slave_idx, 0) - node_coords(master_idx, 0);
 
                     Precision dr1, dr2;
                     if (i == 0) {
@@ -140,7 +143,7 @@ Equations Coupling::get_equations(SystemDofIds& system_nodal_dofs, model::ModelD
 }
 
 
-void Coupling::apply_loads(model::ModelData& model_data, NodeData& load_matrix) {
+void Coupling::apply_loads(model::ModelData& model_data, model::Field& load_matrix) {
     // Only act for distributing/structural coupling
     if (type != CouplingType::STRUCTURAL) {
         return;
@@ -176,10 +179,10 @@ void Coupling::apply_loads(model::ModelData& model_data, NodeData& load_matrix) 
     if (b.cwiseAbs().maxCoeff() == Precision(0)) return;
 
     // Coordinates
-    auto& X = model_data.get(model::NodeDataEntries::POSITION);
-    const Precision x0 = X(master_node, 0);
-    const Precision y0 = X(master_node, 1);
-    const Precision z0 = X(master_node, 2);
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    const auto& X = *model_data.positions;
+    const Index master_idx = static_cast<Index>(master_node);
+    const Vec3 master_pos = X.row_vec3(master_idx);
 
     // Build A (6 x 3n): [ I I ... ; [r1]x [r2]x ... ], and (optional) weights
     Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic> A(6, 3 * (Eigen::Index)n);
@@ -199,9 +202,11 @@ void Coupling::apply_loads(model::ModelData& model_data, NodeData& load_matrix) 
 
     for (std::size_t k = 0; k < n; ++k) {
         const ID i = ids[k];
-        const Precision rx = X(i, 0) - x0;
-        const Precision ry = X(i, 1) - y0;
-        const Precision rz = X(i, 2) - z0;
+        const Index row = static_cast<Index>(i);
+        const Vec3 r = X.row_vec3(row) - master_pos;
+        const Precision rx = r(0);
+        const Precision ry = r(1);
+        const Precision rz = r(2);
 
         // Top block: ... I3 ...
         A.block<3,3>(0, 3 * (Eigen::Index)k).setIdentity();

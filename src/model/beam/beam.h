@@ -73,9 +73,7 @@ struct BeamElement : StructuralElement {
     }
 
     Vec3 coordinate(Index index) {
-        auto node_id = node_ids[index];
-        auto row = this->_model_data->node_data.get(POSITION).row(node_id);
-        return Vec3(row(0), row(1), row(2));
+        return this->node_position(node_ids[index]);
     }
 
     ID orientation_node() const { return orientation_node_id_; }
@@ -94,8 +92,7 @@ struct BeamElement : StructuralElement {
 
         Vec3 n1_vec = Vec3::Zero();
         if (element_has_node) {
-            auto row = this->_model_data->node_data.get(POSITION).row(orientation_node_id_);
-            n1_vec = Vec3(row(0), row(1), row(2));
+            n1_vec = this->node_position(orientation_node_id_);
         } else {
             n1_vec = section->n1;
         }
@@ -168,7 +165,7 @@ struct BeamElement : StructuralElement {
     Mat3 rotation_matrix() { return principal_rotation_matrix(); }
 
     virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
-    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(IPData& ip_stress, int offset) = 0;
+    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(const Field& ip_stress, int offset) = 0;
     virtual StaticMatrix<N * 6, N * 6> mass_impl() = 0;
 
     StaticMatrix<N * 6, N * 6> transformation() {
@@ -210,7 +207,7 @@ struct BeamElement : StructuralElement {
         return result;
     }
 
-    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
         MapMatrix result(buffer, N * 6, N * 6);
         result = stiffness_geom_impl(ip_stress, ip_start_idx);
         return result;
@@ -222,20 +219,20 @@ struct BeamElement : StructuralElement {
         return result;
     }
 
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
         (void)displacement;
         (void)stress;
         (void)strain;
     }
 
-    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override {
         (void)ip_stress;
         (void)ip_strain;
         (void)displacement;
         (void)ip_offset;
     }
 
-    void apply_vload(NodeData& node_loads, Vec3 load) override {
+    void apply_vload(Field& node_loads, Vec3 load) override {
         const Precision L = length();
         const Precision A = get_profile()->A;
         if (L <= Precision(0) || A <= Precision(0)) return;
@@ -248,18 +245,18 @@ struct BeamElement : StructuralElement {
         }
     }
 
-    void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override {
+    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
         (void)node_loads;
         (void)node_temp;
         (void)ref_temp;
     }
 
-    void compute_compliance(NodeData& displacement, ElementData& result) override {
+    void compute_compliance(Field& displacement, Field& result) override {
         (void)displacement;
         (void)result;
     }
 
-    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override {
+    void compute_compliance_angle_derivative(Field& displacement, Field& result) override {
         (void)displacement;
         (void)result;
     }
@@ -273,18 +270,18 @@ struct BeamElement : StructuralElement {
         (void)surface_id;
         return nullptr;
     }
-    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override {
         (void)displacement;
         (void)rst;
         return {};
     }
-    Strains strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+    Strains strain(Field& displacement, std::vector<Vec3>& rst) override {
         (void)displacement;
         (void)rst;
         return {};
     }
 
-    std::vector<Vec6> section_forces(NodeData& displacement) override {
+    std::vector<Vec6> section_forces(Field& displacement) override {
         std::vector<Vec6> result;
         result.resize(N);
 
@@ -292,7 +289,7 @@ struct BeamElement : StructuralElement {
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index i = 0; i < N; ++i) {
             const ID nid = node_ids[i];
-            auto row = displacement.row(nid); // [ux, uy, uz, rx, ry, rz]
+            const Vec6 row = displacement.row_vec6(static_cast<Index>(nid)); // [ux, uy, uz, rx, ry, rz]
             for (Index d = 0; d < 6; ++d) {
                 u_global(i * 6 + d) = row(d);
             }
@@ -325,4 +322,3 @@ struct BeamElement : StructuralElement {
 
 } // namespace model
 } // namespace fem
-

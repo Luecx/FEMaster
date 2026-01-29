@@ -49,9 +49,7 @@ struct TrussElement : StructuralElement {
 
     // --- Geometry ---
     Vec3 coordinate(Index index) {
-        auto node_id = node_ids[index];
-        auto row = this->_model_data->node_data.get(POSITION).row(node_id);
-        return Vec3(row(0), row(1), row(2));
+        return this->node_position(node_ids[index]);
     }
 
     Precision length() {
@@ -108,7 +106,7 @@ struct TrussElement : StructuralElement {
     }
 
     // --- Interface overrides ---
-    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
         throw std::runtime_error("Not implemented yet");
     }
 
@@ -143,7 +141,7 @@ struct TrussElement : StructuralElement {
     }
 
     // --- Stress/Strain ---
-    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override {
+    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override {
         throw std::runtime_error("Not implemented yet");
         // Vec3 u0 = displacement.row(node_ids[0]);
         // Vec3 u1 = displacement.row(node_ids[1]);
@@ -161,7 +159,7 @@ struct TrussElement : StructuralElement {
         // return result;
     }
 
-    Strains strain(NodeData& displacement, std::vector<Vec3>& rst) override {
+    Strains strain(Field& displacement, std::vector<Vec3>& rst) override {
         throw std::runtime_error("Not implemented yet");
 
         // Vec3 u0 = displacement.row(node_ids[0]);
@@ -179,21 +177,21 @@ struct TrussElement : StructuralElement {
         // return result;
     }
 
-    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override {
+    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override {
         (void) ip_stress;
         (void) ip_strain;
         (void) displacement;
         (void) ip_offset;
     }
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override {
+    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
         (void) displacement;
         (void) stress;
         (void) strain;
     }
-    void apply_vload(NodeData&, Vec3) override {}
-    void apply_tload(NodeData&, NodeData&, Precision) override {}
-    void compute_compliance(NodeData&, ElementData&) override {}
-    void compute_compliance_angle_derivative(NodeData&, ElementData&) override {}
+    void apply_vload(Field&, Vec3) override {}
+    void apply_tload(Field&, const Field&, Precision) override {}
+    void compute_compliance(Field&, Field&) override {}
+    void compute_compliance_angle_derivative(Field&, Field&) override {}
 };
 
 using T3 = TrussElement<2>;

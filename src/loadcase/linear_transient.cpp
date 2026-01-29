@@ -163,7 +163,7 @@ void Transient::run() {
         const auto& qk = result.u[static_cast<size_t>(k)];
         auto u_full = CT->recover_u(qk);
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
-        writer->write_eigen_matrix(U_mat, "DISPLACEMENT_" + std::to_string(k));
+        writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k));
         // writer->write_eigen_matrix(result.v[k], "TRANSIENT_V_T"+std::to_string(k));
         // writer->write_eigen_matrix(result.a[k], "TRANSIENT_A_T"+std::to_string(k));
     }

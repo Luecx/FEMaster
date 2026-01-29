@@ -149,9 +149,7 @@ void LinearStatic::run() {
         [&]() { return model->compute_section_forces(global_disp_mat); },
         "computing beam section forces");
 
-    NodeData stress;
-    NodeData strain;
-    std::tie(stress, strain) = Timer::measure(
+    auto [stress, strain] = Timer::measure(
         [&]() { return model->compute_stress_strain(global_disp_mat); },
         "interpolating stress and strain at nodes");
 
@@ -178,10 +176,12 @@ void LinearStatic::run() {
         }
     }
 
-    NodeData reaction_masked = NodeData::Constant(global_force_mat.rows(), global_force_mat.cols(),
-                                                  std::numeric_limits<Precision>::quiet_NaN());
-    for (int i = 0; i < reaction_masked.rows(); ++i) {
-        for (int j = 0; j < reaction_masked.cols(); ++j) {
+    model::Field reaction_masked{"REACTION_FORCES", model::FieldDomain::NODE,
+                                 global_force_mat.rows,
+                                 global_force_mat.components};
+    reaction_masked.fill_nan();
+    for (int i = 0; i < reaction_masked.rows; ++i) {
+        for (int j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
                 reaction_masked(i, j) = global_force_mat(i, j);
             }
@@ -189,11 +189,11 @@ void LinearStatic::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_eigen_matrix(global_disp_mat , "DISPLACEMENT");
-    writer->write_eigen_matrix(strain          , "STRAIN");
-    writer->write_eigen_matrix(stress          , "STRESS");
-    writer->write_eigen_matrix(global_load_mat , "EXTERNAL_FORCES");
-    writer->write_eigen_matrix(reaction_masked , "REACTION_FORCES");
+    writer->write_field(global_disp_mat, "DISPLACEMENT");
+    writer->write_field(strain, "STRAIN");
+    writer->write_field(stress, "STRESS");
+    writer->write_field(global_load_mat, "EXTERNAL_FORCES");
+    writer->write_field(reaction_masked, "REACTION_FORCES");
     writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);
 
     transformer->post_check_static(K, f, u);

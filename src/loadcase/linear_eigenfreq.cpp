@@ -122,6 +122,16 @@ static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx
     return U;
 }
 
+static DynamicMatrix field_to_dynamic(const model::Field& field) {
+    DynamicMatrix out(field.rows, field.components);
+    for (Index i = 0; i < field.rows; ++i) {
+        for (Index j = 0; j < field.components; ++j) {
+            out(i, j) = field(i, j);
+        }
+    }
+    return out;
+}
+
 /**
  * @brief Compute a power-of-ten scaling exponent so that reported participations
  *        are O(1). If all participations are zero, returns 0.
@@ -330,7 +340,8 @@ void LinearEigenfrequency::run() {
                       /*tol_reduced_rel   */std::numeric_limits<Precision>::infinity(),
                       /*tol_full_rel      */std::numeric_limits<Precision>::infinity());
         // Node x 6 layout for writer
-        m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+        auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+        m.mode_mat = field_to_dynamic(mode_field);
         // Participations p_i = e_i^T (M u) using axis columns as e_i
         DynamicVector Mu = M * u_mode;
         for (int i = 0; i < 6; ++i) m.participation(i) = axes_full.col(i).dot(Mu);

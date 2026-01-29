@@ -25,17 +25,17 @@
 #include "../cos/coordinate_system.h"
 #include "../core/types_eig.h"
 #include "../data/dict.h"
-#include "../data/elem_data_dict.h"
-#include "../data/ip_data_dict.h"
-#include "../data/node_data_dict.h"
+#include "../data/field.h"
 #include "../data/region.h"
 #include "../data/sets.h"
 #include "../section/profile.h"
 #include "../section/section.h"
 
-#include <memory>
-#include <vector>
 #include <array>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace fem {
 namespace model {
@@ -49,6 +49,7 @@ struct ModelData {
     ID max_nodes;
     ID max_elems;
     ID max_surfaces;
+    ID max_integration_points = 0;
 
     // Geometric entities -------------------------------------------------------
     std::vector<ElementPtr> elements;
@@ -59,13 +60,13 @@ struct ModelData {
     std::vector<Section::Ptr> sections;
     Dict<Profile> profiles;
 
-    // Core data tables ---------------------------------------------------------
-    NodeDataDict node_data;
-    ElemDataDict elem_data;
+    // Generic fields -----------------------------------------------------------
+    std::unordered_map<std::string, Field::Ptr> fields;
 
-    // Field dictionaries -------------------------------------------------------
-    NodeFieldDict node_fields;
-    ElemFieldDict elem_fields;
+    // Cached semantic fields ---------------------------------------------------
+    Field::Ptr positions = nullptr;
+    Field::Ptr element_stiffness_scale = nullptr;
+    Field::Ptr material_orientation = nullptr;
 
     // Region registries --------------------------------------------------------
     Sets<NodeRegion> node_sets{SET_NODE_ALL};
@@ -91,47 +92,28 @@ struct ModelData {
     /**
      * @brief Constructs the data repository with preallocated containers.
      */
-    ModelData(ID max_nodes, ID max_elems, ID max_surfaces)
+    ModelData(ID max_nodes, ID max_elems, ID max_surfaces, ID max_integration_points = 0)
         : max_nodes(max_nodes),
           max_elems(max_elems),
           max_surfaces(max_surfaces),
-          node_data(max_nodes),
-          elem_data(max_elems) {
+          max_integration_points(max_integration_points) {
         elements.resize(max_elems);
         surfaces.resize(max_surfaces);
     }
 
-    // Data management ---------------------------------------------------------
+    // Field management --------------------------------------------------------
 
-    /// Creates nodal data storage for the specified entry.
-    void create_data(NodeDataEntries key, int entries) {
-        node_data.create(key, entries);
-    }
+    /// Returns the row count associated with a field domain.
+    Index field_rows(FieldDomain domain) const;
 
-    /// Creates element data storage for the specified entry.
-    void create_data(ElementDataEntries key, int entries) {
-        elem_data.create(key, entries);
-    }
+    /// Checks whether a named field exists.
+    bool has_field(const std::string& name) const;
 
-    /// Returns mutable access to the nodal data block referenced by `key`.
-    NodeData& get(NodeDataEntries key) {
-        return node_data.get(key);
-    }
+    /// Returns the field with the given name or nullptr if missing.
+    Field::Ptr get_field(const std::string& name) const;
 
-    /// Returns mutable access to the element data block referenced by `key`.
-    ElementData& get(ElementDataEntries key) {
-        return elem_data.get(key);
-    }
-
-    /// Removes nodal data for the given entry.
-    void remove(NodeDataEntries key) {
-        node_data.remove(key);
-    }
-
-    /// Removes element data for the given entry.
-    void remove(ElementDataEntries key) {
-        elem_data.remove(key);
-    }
+    /// Creates a field or returns the existing one after validation.
+    Field::Ptr create_field(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true, bool reg = true);
 };
 
 } // namespace model

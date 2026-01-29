@@ -109,15 +109,22 @@ Vec2 Surface3::closest_point_on_boundary(const StaticVector<3>& global, const St
     Line2B line2({1, 2});
     Line2B line3({2, 0});
 
+    Field node_field("SURFACE3_BOUNDARY", FieldDomain::NODE, 3, 3);
+    for (Index i = 0; i < 3; ++i) {
+        for (Index j = 0; j < 3; ++j) {
+            node_field(i, j) = node_coords(i, j);
+        }
+    }
+
     // Compute projections onto the three boundary lines
-    Precision line1_p = line1.global_to_local(global, node_coords);
-    Precision line2_p = line2.global_to_local(global, node_coords);
-    Precision line3_p = line3.global_to_local(global, node_coords);
+    Precision line1_p = line1.global_to_local(global, node_field);
+    Precision line2_p = line2.global_to_local(global, node_field);
+    Precision line3_p = line3.global_to_local(global, node_field);
 
     // Convert local line parameters to global points
-    StaticVector<3> p1 = line1.local_to_global(line1_p, node_coords);
-    StaticVector<3> p2 = line2.local_to_global(line2_p, node_coords);
-    StaticVector<3> p3 = line3.local_to_global(line3_p, node_coords);
+    StaticVector<3> p1 = line1.local_to_global(line1_p, node_field);
+    StaticVector<3> p2 = line2.local_to_global(line2_p, node_field);
+    StaticVector<3> p3 = line3.local_to_global(line3_p, node_field);
 
     // Calculate squared distances
     Precision d1 = (p1 - global).squaredNorm();

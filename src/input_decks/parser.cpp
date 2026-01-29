@@ -18,6 +18,7 @@
 
 // Command registration helpers
 #include "commands/register_node.inl"
+#include "commands/register_field.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_elset.inl"
 #include "commands/register_surface.inl"
@@ -32,7 +33,6 @@
 #include "commands/register_tload.inl"
 #include "commands/register_vload.inl"
 #include "commands/register_support.inl"
-#include "commands/register_temperature.inl"
 #include "commands/register_amplitude.inl"
 #include "commands/register_orientation.inl"
 #include "commands/register_connector.inl"
@@ -292,6 +292,7 @@ void Parser::register_commands() {
 
     // Base model/sections/materials
     commands::register_node(reg, mdl);
+    commands::register_field(reg, mdl);
     commands::register_nset(reg, mdl);
     commands::register_elset(reg, mdl);
     commands::register_surface(reg, mdl);
@@ -308,7 +309,6 @@ void Parser::register_commands() {
     commands::register_tload(reg, mdl);
     commands::register_vload(reg, mdl);
     commands::register_support(reg, mdl);
-    commands::register_temperature(reg, mdl);
     commands::register_amplitude(reg, mdl);
 
     // Orientations & connectors/constraints

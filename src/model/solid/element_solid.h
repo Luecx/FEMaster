@@ -104,7 +104,15 @@ public:
      * @return StaticMatrix<N, D> The global coordinates of the nodes.
      */
     virtual StaticMatrix<N, D> node_coords_global() {
-        return this->nodal_data<D>(this->_model_data->node_data.get(NodeDataEntries::POSITION));
+        logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
+        logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+        StaticMatrix<N, D> res {};
+        const auto& positions = *this->_model_data->positions;
+        for (Index i = 0; i < N; ++i) {
+            const Index row = static_cast<Index>(this->node_ids[i]);
+            res.row(i) = positions.row_vec3(row).transpose();
+        }
+        return res;
     }
 
     /**
@@ -163,7 +171,7 @@ public:
      * @return StaticMatrix<N, K> The extracted nodal data for the element.
      */
     template<Dim K>
-    StaticMatrix<N, K> nodal_data(const NodeData& full_data, Index offset = 0, Index stride = 1);
+    StaticMatrix<N, K> nodal_data(const Field& full_data, Index offset = 0, Index stride = 1);
 
     //-------------------------------------------------------------------------
     // Element Interface Overrides
@@ -191,7 +199,7 @@ public:
      * @param ip_start_idx
      * @return
      */
-    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override;
+    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
 
     /**
      * @brief Computes the mass matrix for the element.
@@ -253,12 +261,12 @@ public:
      * @param node_loads The nodal loads that will be updated by the applied load.
      * @param load The external load vector.
      */
-    void apply_vload(NodeData& node_loads, Vec3 load) override;
+    void apply_vload(Field& node_loads, Vec3 load) override;
 
     /**
      * @brief Applies a thermal load to the element.
      */
-    void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) override;
+    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
     /**
      * @brief Computes the nodal stress and strain for the element.
@@ -268,7 +276,7 @@ public:
      * @param stress The computed nodal stress.
      * @param strain The computed nodal strain.
      */
-    void compute_stress_strain_nodal(NodeData& displacement, NodeData& stress, NodeData& strain) override;
+    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override;
 
     /**
      * Computes the stress at a given point in the element.
@@ -276,8 +284,8 @@ public:
      * @param xyz
      * @return
      */
-    Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) override;
-    Strains  strain(NodeData& displacement, std::vector<Vec3>& rst) override;
+    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override;
+    Strains  strain(Field& displacement, std::vector<Vec3>& rst) override;
 
     /**
      * Computes the stress and strain at the integration points of the elements
@@ -286,7 +294,7 @@ public:
      * @param displacement
      * @param ip_offset
      */
-    void compute_stress_strain(IPData& ip_stress, IPData& ip_strain, NodeData& displacement, int ip_offset) override;
+    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override;
 
     /**
      * @brief Computes the compliance (strain energy) for the element.
@@ -295,15 +303,15 @@ public:
      * @param displacement The nodal displacement data.
      * @param result The computed compliance value.
      */
-    void compute_compliance(NodeData& displacement, ElementData& result) override;
+    void compute_compliance(Field& displacement, Field& result) override;
 
     /**
-     * @brief Computes the derivative of the compliance w.r.t the three angles defined as TOPO_ANGLES.
+     * @brief Computes the derivative of the compliance w.r.t the three angles defined as material_orientation.
      * If its not defined, the derivative is zero.
      * @param displacement
      * @param result
      */
-    void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) override;
+    void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
 
     //-------------------------------------------------------------------------
     // Testing Functions

@@ -115,7 +115,8 @@ static std::vector<ID> collect_slave_nodes(const model::NodeRegion::Ptr& slave_n
  * @copydoc Tie::get_equations
  */
 Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
-    auto& node_coords = model_data.get(model::NodeDataEntries::POSITION);
+    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    auto& node_coords = *model_data.positions;
     auto& surfaces    = model_data.surfaces;
     auto& lines       = model_data.lines;
 
@@ -158,10 +159,8 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         // ---------------------------------------------------------------------
         // Slave node position
         // ---------------------------------------------------------------------
-        Vec3 node_pos;
-        node_pos(0) = node_coords(id, 0);
-        node_pos(1) = node_coords(id, 1);
-        node_pos(2) = node_coords(id, 2);
+        const Index node_idx = static_cast<Index>(id);
+        Vec3 node_pos = node_coords.row_vec3(node_idx);
 
         // ---------------------------------------------------------------------
         // Find closest master geometry (surface or line)
@@ -241,9 +240,9 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         }
 
         if (adjust) {
-            node_coords(id, 0) = mapped_pos(0);
-            node_coords(id, 1) = mapped_pos(1);
-            node_coords(id, 2) = mapped_pos(2);
+            node_coords(node_idx, 0) = mapped_pos(0);
+            node_coords(node_idx, 1) = mapped_pos(1);
+            node_coords(node_idx, 2) = mapped_pos(2);
         }
 
         // ---------------------------------------------------------------------

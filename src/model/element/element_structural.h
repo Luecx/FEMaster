@@ -30,28 +30,27 @@ struct StructuralElement : ElementInterface {
 
     virtual Precision volume() = 0;
     virtual MapMatrix stiffness(Precision* buffer) = 0;
-    virtual MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) = 0;
+    virtual MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) = 0;
     virtual MapMatrix mass(Precision* buffer) = 0;
 
-    virtual Stresses stress(NodeData& displacement, std::vector<Vec3>& rst) = 0;
-    virtual Strains strain(NodeData& displacement, std::vector<Vec3>& rst) = 0;
-    virtual std::vector<Vec6> section_forces(NodeData& displacement) {return std::vector<Vec6>();};
+    virtual Stresses stress(Field& displacement, std::vector<Vec3>& rst) = 0;
+    virtual Strains strain(Field& displacement, std::vector<Vec3>& rst) = 0;
+    virtual std::vector<Vec6> section_forces(Field& displacement) {return std::vector<Vec6>();};
 
-    virtual void compute_stress_strain(IPData& ip_stress,
-                                       IPData& ip_strain,
-                                       NodeData& displacement,
+    virtual void compute_stress_strain(Field& ip_stress,
+                                       Field& ip_strain,
+                                       Field& displacement,
                                        int ip_offset) = 0;
 
-    virtual void compute_stress_strain_nodal(NodeData& displacement,
-                                             NodeData& stress,
-                                             NodeData& strain) = 0;
+    virtual void compute_stress_strain_nodal(Field& displacement,
+                                             Field& stress,
+                                             Field& strain) = 0;
 
-    virtual void apply_vload(NodeData& node_loads, Vec3 load) = 0;
-    virtual void apply_tload(NodeData& node_loads, NodeData& node_temp, Precision ref_temp) = 0;
-    virtual void compute_compliance(NodeData& displacement, ElementData& result) = 0;
-    virtual void compute_compliance_angle_derivative(NodeData& displacement, ElementData& result) = 0;
+    virtual void apply_vload(Field& node_loads, Vec3 load) = 0;
+    virtual void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) = 0;
+    virtual void compute_compliance(Field& displacement, Field& result) = 0;
+    virtual void compute_compliance_angle_derivative(Field& displacement, Field& result) = 0;
 };
 
 } // namespace model
 } // namespace fem
-

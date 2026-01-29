@@ -5,7 +5,6 @@
 #include "../constraints/coupling.h"
 #include "../cos/coordinate_system.h"
 #include "geometry/surface/surface.h"
-#include "../data/node_data_dict.h"
 #include "./model_data.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
@@ -23,12 +22,11 @@ struct Model {
     Dim element_dims = 0;
 
     // constructor which defines max elements and max nodes
-    Model(ID max_nodes, ID max_elems, ID max_surfaces) :
-        _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces)){
-
-        // initialize the node data
-        _data->node_data.create(POSITION, 6);
-        _data->node_data.get(POSITION).setZero();
+    Model(ID max_nodes, ID max_elems, ID max_surfaces, ID max_integration_points = 0) :
+        _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces, max_integration_points)){
+        auto positions = _data->create_field("POSITION", FieldDomain::NODE, 6, false);
+        positions->set_zero();
+        _data->positions = positions;
     }
 
     // adding nodes and elements
@@ -85,27 +83,27 @@ struct Model {
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();
-    ElementData   build_integration_point_numeration();
+    Field         build_integration_point_numeration();
 
     // building loads for every node including non existing ones
-    NodeData              build_load_matrix(std::vector<std::string> load_sets = {}, Precision time = 0);
+    Field                 build_load_matrix(std::vector<std::string> load_sets = {}, Precision time = 0);
     constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids, const std::vector<std::string>& supp_sets = {});
     constraint::Equations build_constraints(SystemDofIds& system_dof_ids, std::vector<std::string> supp_sets = {});
 
     // matrices
-    SparseMatrix  build_stiffness_matrix     (SystemDofIds& indices, ElementData stiffness_scalar = ElementData(0,0));
+    SparseMatrix  build_stiffness_matrix     (SystemDofIds& indices, const Field* stiffness_scalar = nullptr);
     SparseMatrix  build_geom_stiffness_matrix(SystemDofIds& indices,
-                                              const IPData& ip_stress,
-                                              ElementData stiffness_scalar = ElementData(0,0));
+                                              const Field& ip_stress,
+                                              const Field* stiffness_scalar = nullptr);
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
 
 
-    std::tuple<IPData, IPData>     compute_ip_stress_strain(NodeData& displacement);
-    std::tuple<NodeData, NodeData> compute_stress_strain(NodeData& displacement);
-    ElementData                    compute_compliance   (NodeData& displacement);
-    ElementData                    compute_compliance_angle_derivative(NodeData& displacement);
-    ElementData                    compute_volumes      ();
-    DynamicMatrix                  compute_section_forces(NodeData& displacement);
+    std::tuple<Field, Field>       compute_ip_stress_strain(Field& displacement);
+    std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
+    Field                          compute_compliance   (Field& displacement);
+    Field                          compute_compliance_angle_derivative(Field& displacement);
+    Field                          compute_volumes      ();
+    DynamicMatrix                  compute_section_forces(Field& displacement);
 };
 
 #include "model.ipp"

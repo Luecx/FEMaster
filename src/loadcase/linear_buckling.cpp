@@ -99,6 +99,16 @@ static inline double estimate_lambda_rayleigh(const SparseMatrix& A,
     return num / den;
 }
 
+static DynamicMatrix field_to_dynamic(const model::Field& field) {
+    DynamicMatrix out(field.rows, field.components);
+    for (Index i = 0; i < field.rows; ++i) {
+        for (Index j = 0; j < field.components; ++j) {
+            out(i, j) = field(i, j);
+        }
+    }
+    return out;
+}
+
 /**
  * @brief Pretty-print a short table of buckling factors and settings.
  */
@@ -245,17 +255,15 @@ void LinearBuckling::run() {
 
     // (8) Integration-point stresses from preload -> K_g assembly
     //     Most model APIs expect node-wise displacements (node x 6) for IP recovery.
-    IPData ip_stress, ip_strain_unused;
-    {
-        auto U_mat = Timer::measure(
-            [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_pre); },
-            "expanding u to node x DOF for IP stress"
-        );
-        std::tie(ip_stress, ip_strain_unused) = Timer::measure(
-            [&]() { return model->compute_ip_stress_strain(U_mat); },
-            "computing IP stress/strain for Kg"
-        );
-    }
+    auto U_mat = Timer::measure(
+        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_pre); },
+        "expanding u to node x DOF for IP stress"
+    );
+    auto ip_pair = Timer::measure(
+        [&]() { return model->compute_ip_stress_strain(U_mat); },
+        "computing IP stress/strain for Kg"
+    );
+    const auto& ip_stress = std::get<0>(ip_pair);
 
     auto Kg = Timer::measure(
         [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
@@ -313,7 +321,8 @@ void LinearBuckling::run() {
         // Reduced -> full vector with constraints
         DynamicVector u_mode = CT->recover_u(m.q_mode);
         // Full -> node x DOF
-        m.mode_mat = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+        auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
+        m.mode_mat = field_to_dynamic(mode_field);
     }
 
     // Summary

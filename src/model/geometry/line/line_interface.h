@@ -19,6 +19,7 @@
 
 #include "../../../math/quadrature.h"
 #include "../../../core/types_eig.h"
+#include "../../../data/field.h"
 
 namespace fem {
 namespace model {
@@ -45,8 +46,8 @@ struct LineInterface {
 
     virtual DynamicVector shape_function(Precision r) const = 0;
 
-    virtual Vec3      local_to_global(Precision local, const NodeData& node_coords_system) const = 0;
-    virtual Precision global_to_local(const Vec3& global, const NodeData& node_coords_system, bool clip = false) const = 0;
+    virtual Vec3      local_to_global(Precision local, const Field& node_coords_system) const = 0;
+    virtual Precision global_to_local(const Vec3& global, const Field& node_coords_system, bool clip = false) const = 0;
 
     virtual const ID* nodes() const = 0;
     virtual ID*       nodes() = 0;
@@ -133,12 +134,11 @@ struct Line : LineInterface{
      *          in the provided node coordinate system. It returns an N x 3 matrix where each row corresponds
      *          to a node and columns represent the x, y, and z coordinates.
      */
-    virtual StaticMatrix<N, 3> node_coords_global(const NodeData& node_coords_system) const {
+    virtual StaticMatrix<N, 3> node_coords_global(const Field& node_coords_system) const {
         StaticMatrix<N, 3> res {};
         for (Index i = 0; i < N; i++) {
-            for(Index j = 0; j < 3; j++) {
-                res(i, j) = node_coords_system(node_ids[i], j);
-            }
+            const Index row = static_cast<Index>(node_ids[i]);
+            res.row(i) = node_coords_system.row_vec3(row).transpose();
         }
         return res;
     }
@@ -153,7 +153,7 @@ struct Line : LineInterface{
      *          parametric domain using a quadrature rule. The length is computed by integrating the norm
      *          of the derivative of the position vector with respect to the local coordinate r.
      */
-    Precision length(const NodeData& node_coords_system) const {
+    Precision length(const Field& node_coords_system) const {
         using namespace fem::quadrature;
 
         // Select the appropriate domain
@@ -188,12 +188,11 @@ struct Line : LineInterface{
      *          minimizes the distance between the point 'p' and the position vector of the line element. Multiple
      *          initial guesses are used to ensure convergence to the global minimum distance.
      */
-    Precision global_to_local(const Vec3& p, const NodeData& node_coords_system, bool clip=true) const override {
+    Precision global_to_local(const Vec3& p, const Field& node_coords_system, bool clip=true) const override {
         constexpr int max_iter = 32;
         constexpr Precision eps = 1e-12;
         std::vector<Precision> initial_guesses;
 
-        // Determine initial guesses based on N
         if (N == 3) {
             initial_guesses = { min_r(), max_r() };
         } else if (N > 3) {
@@ -202,23 +201,19 @@ struct Line : LineInterface{
             initial_guesses = { (min_r() + max_r()) / Precision(2.0) };
         }
 
-        // Retrieve global coordinates of nodes
         auto node_coords_global = this->node_coords_global(node_coords_system);
 
         Precision best_r = min_r();
         Precision min_distance_squared = std::numeric_limits<Precision>::max();
 
         for (auto initial_r : initial_guesses) {
-
             Precision r = initial_r;
 
             for (Index iter = 0; iter < max_iter; iter++) {
-                // Compute shape functions and derivatives at current r
                 StaticMatrix<N, 1> N_vals  = _shape_function(r);
                 StaticMatrix<N, 1> dN_dr   = shape_derivative(r);
                 StaticMatrix<N, 1> d2N_dr2 = shape_second_derivative(r);
 
-                // Compute position x(r) and its derivatives dx/dr and d²x/dr²
                 Vec3 x_r = Vec3::Zero();
                 Vec3 dx_dr = Vec3::Zero();
                 Vec3 d2x_dr2 = Vec3::Zero();
@@ -229,40 +224,29 @@ struct Line : LineInterface{
                     d2x_dr2 += d2N_dr2(i) * node_coords_global.row(i);
                 }
 
-                // Compute the difference vector
                 Vec3 diff = x_r - p;
 
-                // Compute the derivative of the squared distance
                 Precision dD_dr = diff.dot(dx_dr);
-
-                // Compute the second derivative of the squared distance
                 Precision d2D_dr2 = (dx_dr.dot(dx_dr) + diff.dot(d2x_dr2));
 
                 if (std::abs(d2D_dr2) < 1e-14) break;
 
-                // Newton-Raphson update
                 Precision delta_r = -dD_dr / d2D_dr2;
-
-                // Update r
                 r += delta_r;
 
                 if (clip) {
-                    // Ensure r stays within bounds
                     if (r < min_r()) r = min_r();
                     if (r > max_r()) r = max_r();
                 }
 
-                // Check convergence
                 if (std::abs(delta_r) < eps) {
                     break;
                 }
             }
 
-            // Compute the squared distance for this r
             Vec3 x_r = this->local_to_global(r, node_coords_system);
             Precision distance_squared = (x_r - p).squaredNorm();
 
-            // Update the best r if this is the minimum distance so far and within bounds
             if (distance_squared < min_distance_squared) {
                 min_distance_squared = distance_squared;
                 best_r = r;
@@ -282,7 +266,7 @@ struct Line : LineInterface{
      * @details This function computes the global position vector at a given local coordinate 'r' by evaluating
      *          the shape functions at 'r' and summing the contributions from each node.
      */
-    Vec3 local_to_global(Precision r, const NodeData& node_coords_system) const override {
+    Vec3 local_to_global(Precision r, const Field& node_coords_system) const override {
         auto node_coords_global = this->node_coords_global(node_coords_system);
         Vec3 res = Vec3::Zero();
         StaticMatrix<N, 1> N_vals = _shape_function(r);
@@ -317,4 +301,3 @@ struct Line : LineInterface{
 };
 } // namespace model
 } // namespace fem
-

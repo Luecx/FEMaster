@@ -54,7 +54,7 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      * @param model_data FEM model data that provides geometry and topology.
      * @param bc Boundary-condition storage receiving all load contributions.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, Precision time);
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time);
 
     /**
      * @brief Adds a concentrated nodal load to the collector.
@@ -108,7 +108,7 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      * @param temp_field Temperature field that drives the thermal load.
      * @param ref_temp Reference temperature used as the unloaded state.
      */
-    void add_tload(model::NodeField::Ptr temp_field, Precision ref_temp);
+    void add_tload(model::Field::Ptr temp_field, Precision ref_temp);
 
     /// Read-only access to stored loads
     const std::vector<Load::Ptr>& entries() const { return this->_data; }

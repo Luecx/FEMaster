@@ -10,21 +10,21 @@
 namespace fem { namespace model{
 
 
-std::tuple<IPData, IPData>
-Model::compute_ip_stress_strain(NodeData& displacement) {
+std::tuple<Field, Field>
+Model::compute_ip_stress_strain(Field& displacement) {
     // 1) Build IP enumeration with sentinel total in the last row
     const auto ip_enum = this->build_integration_point_numeration();
-    logging::error(ip_enum.rows() == _data->max_elems + 1,
+    logging::error(ip_enum.rows == static_cast<Index>(_data->max_elems + 1),
                    "ip_numeration must have max_elems+1 rows (with total at the end).");
 
-    const ID total_ips = static_cast<ID>(ip_enum(_data->max_elems, 0));
+    const ID total_ips = static_cast<ID>(ip_enum(static_cast<Index>(_data->max_elems), 0));
     logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
 
     // 2) Allocate IP-level containers (Voigt: 6 components)
-    IPData ip_stress(total_ips, 6);
-    IPData ip_strain(total_ips, 6);
-    ip_stress.setZero();
-    ip_strain.setZero();
+    Field ip_stress{"IP_STRESS", FieldDomain::IP, static_cast<Index>(total_ips), 6};
+    Field ip_strain{"IP_STRAIN", FieldDomain::IP, static_cast<Index>(total_ips), 6};
+    ip_stress.set_zero();
+    ip_strain.set_zero();
 
     // 3) Dispatch to each structural element
     for (auto el : _data->elements) {
@@ -34,7 +34,7 @@ Model::compute_ip_stress_strain(NodeData& displacement) {
             logging::error(eid >= 0 && eid < _data->max_elems,
                            "Element id out of range in compute_ip_stress_strain: ", eid);
 
-            const ID ip_offset = static_cast<ID>(ip_enum(eid, 0));
+            const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
             logging::error(ip_offset >= 0 && ip_offset <= total_ips,
                            "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
 
@@ -43,8 +43,8 @@ Model::compute_ip_stress_strain(NodeData& displacement) {
     }
 
     // 4) Basic sanity checks (optional but helpful)
-    for (Index i = 0; i < ip_stress.rows(); ++i) {
-        for (Index j = 0; j < ip_stress.cols(); ++j) {
+    for (Index i = 0; i < ip_stress.rows; ++i) {
+        for (Index j = 0; j < ip_stress.components; ++j) {
             const bool badS = std::isnan(ip_stress(i, j)) || std::isinf(ip_stress(i, j));
             const bool badE = std::isnan(ip_strain(i, j)) || std::isinf(ip_strain(i, j));
             logging::error(!badS, "IP ", i, " has invalid stress at col ", j);
@@ -55,12 +55,12 @@ Model::compute_ip_stress_strain(NodeData& displacement) {
     return {ip_stress, ip_strain};
 }
 
-std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displacement){
+std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement){
 
-    NodeData stress{_data->max_nodes, 6};
-    NodeData strain{_data->max_nodes, 6};
-    stress.setZero();
-    strain.setZero();
+    Field stress{"STRESS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
+    Field strain{"STRAIN", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
+    stress.set_zero();
+    strain.set_zero();
     IndexVector count{_data->max_nodes};
     count.setZero();
 
@@ -98,9 +98,9 @@ std::tuple<NodeData, NodeData> Model::compute_stress_strain(NodeData& displaceme
     return {stress, strain};
 }
 
-ElementData Model::compute_compliance(NodeData& displacement){
-    ElementData compliance{_data->max_elems, 1};
-    compliance.setZero();
+Field Model::compute_compliance(Field& displacement){
+    Field compliance{"COMPLIANCE", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
+    compliance.set_zero();
 
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
         auto& el = _data->elements[idx];
@@ -113,9 +113,9 @@ ElementData Model::compute_compliance(NodeData& displacement){
     return compliance;
 }
 
-ElementData Model::compute_compliance_angle_derivative(NodeData& displacement){
-    ElementData results{_data->max_elems, 3};
-    results.setZero();
+Field Model::compute_compliance_angle_derivative(Field& displacement){
+    Field results{"ORIENTATION_GRAD", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 3};
+    results.set_zero();
 
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
         auto& el = _data->elements[idx];
@@ -127,9 +127,9 @@ ElementData Model::compute_compliance_angle_derivative(NodeData& displacement){
     return results;
 }
 
-ElementData Model::compute_volumes() {
-    ElementData volumes{_data->max_elems, 1};
-    volumes.setZero();
+Field Model::compute_volumes() {
+    Field volumes{"VOLUME", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
+    volumes.set_zero();
 
     for (size_t idx = 0; idx < _data->elements.size(); idx++) {
         auto& el = _data->elements[idx];
@@ -141,7 +141,7 @@ ElementData Model::compute_volumes() {
     return volumes;
 }
 DynamicMatrix
-Model::compute_section_forces(NodeData& displacement) {
+Model::compute_section_forces(Field& displacement) {
 
     using Entry = std::tuple<ID, Index, Vec6>;
     std::vector<Entry> entries;

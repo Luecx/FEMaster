@@ -40,8 +40,8 @@ enum InterpolationFunction {
  * @return Interpolated values stored as a single-row matrix.
  */
 template<InterpolationFunction F>
-DynamicMatrix interpolate(const NodeData& xyz,
-                          const NodeData& values,
+DynamicMatrix interpolate(const RowMatrix& xyz,
+                          const RowMatrix& values,
                           const Vec3& center,
                           DynamicVector* r2_values = nullptr);
 
@@ -57,8 +57,8 @@ DynamicMatrix interpolate(const NodeData& xyz,
  * @param max_accuracy Hard upper limit on the interpolation order.
  * @return Interpolated values stored as a single-row matrix.
  */
-DynamicMatrix interpolate(const NodeData& xyz,
-                          const NodeData& values,
+DynamicMatrix interpolate(const RowMatrix& xyz,
+                          const RowMatrix& values,
                           const Vec3& center,
                           DynamicVector* r2_values = nullptr,
                           float accuracy_factor = 1.0F,
@@ -89,8 +89,8 @@ public:
     /**
      * @brief Executes the interpolation using the stored configuration.
      */
-    DynamicMatrix operator()(const NodeData& xyz,
-                             const NodeData& values,
+    DynamicMatrix operator()(const RowMatrix& xyz,
+                             const RowMatrix& values,
                              const Vec3& center,
                              DynamicVector* r2_values = nullptr);
 
@@ -102,4 +102,3 @@ private:
 } // namespace interpolate
 } // namespace math
 } // namespace fem
-

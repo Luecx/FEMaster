@@ -1,10 +1,10 @@
 /**
  * @file reduce_mat_to_vec.cpp
- * @brief Implements functions to reduce a SystemDofIds matrix and NodeData into
+ * @brief Implements functions to reduce a SystemDofIds matrix and a node field into
  * a DynamicVector and to expand it back.
  *
  * The reduction ignores inactive DOFs marked by -1 in the SystemDofIds, while
- * the expansion fills the NodeData based on the active DOFs and the given reduced
+ * the expansion fills the node field based on the active DOFs and the given reduced
  * DynamicVector.
  *
  * @date Created on 28.08.2024
@@ -16,7 +16,7 @@
 
 namespace fem { namespace mattools {
 
-DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const NodeData& bc_matrix) {
+DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const model::Field& bc_matrix) {
     std::vector<Precision> active_dofs;
 
     // Iterate through all rows and columns of the SystemDofIds matrix
@@ -38,8 +38,11 @@ DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const NodeData& bc_
     return reduced_vector;
 }
 
-NodeData expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector& reduced_vector) {
-    NodeData expanded_matrix = NodeData::Zero(dof_ids.rows(), dof_ids.cols());
+model::Field expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector& reduced_vector) {
+    model::Field expanded_matrix{"EXPANDED_VECTOR", model::FieldDomain::NODE,
+                                 static_cast<Index>(dof_ids.rows()),
+                                 static_cast<Index>(dof_ids.cols())};
+    expanded_matrix.set_zero();
     int reduced_index = 0;
 
     // Iterate through all rows and columns of the SystemDofIds matrix

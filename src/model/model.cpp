@@ -261,13 +261,11 @@ void Model::add_amplitude_sample(const std::string& name, Precision time, Precis
 }
 
 void Model::add_tload(std::string& temp_field, Precision ref_temp) {
-    if (!_data->node_fields.has(TEMPERATURE)) {
-        _data->node_fields.activate(TEMPERATURE);
-    }
-    auto temp_fields = _data->node_fields.get(TEMPERATURE);
-
-    logging::error(temp_fields->has(temp_field), "Temperature field ", temp_field, " does not exist");
-    _data->load_cols.get()->add_tload(temp_fields->get(temp_field), ref_temp);
+    auto field = _data->get_field(temp_field);
+    logging::error(field != nullptr, "Temperature field ", temp_field, " does not exist");
+    logging::error(field->domain == FieldDomain::NODE, "Temperature field ", temp_field, " must be a node field");
+    logging::error(field->components == 1, "Temperature field ", temp_field, " must have 1 component");
+    _data->load_cols.get()->add_tload(field, ref_temp);
 
     // // TODO
     // logging::error(_fields_temperature.has(temp_field), "Temperature field ", temp_field, " does not exist");
@@ -305,18 +303,8 @@ void Model::add_support(const ID id, const StaticVector<6> constraint, const std
 }
 
 void Model::set_field_temperature(const std::string& name, ID id, Precision value) {
-    if (!_data->node_fields.has(TEMPERATURE)) {
-        _data->node_fields.activate(TEMPERATURE);
-    }
-
-    auto temp_fields = _data->node_fields.get(TEMPERATURE);
-    if (temp_fields->has(name)) {
-        temp_fields->get(name)->operator()(id) = value;
-    } else {
-        temp_fields->activate(name, _data->max_nodes, 1);
-        temp_fields->get(name)->fill(std::numeric_limits<Precision>::quiet_NaN());
-        temp_fields->get(name)->operator()(id) = value;
-    }
+    auto temp_field = _data->create_field(name, FieldDomain::NODE, 1, true);
+    (*temp_field)(static_cast<Index>(id)) = value;
 }
 
 void Model::solid_section(const std::string& set, const std::string& material) {

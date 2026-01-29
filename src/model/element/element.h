@@ -44,6 +44,15 @@ struct ElementInterface {
         return _section->material;
     }
 
+    /// Returns the global position of a node from the positions field.
+    Vec3 node_position(ID node_id) const {
+        logging::error(_model_data != nullptr, "no model data assigned to element ", elem_id);
+        logging::error(_model_data->positions != nullptr, "positions field not set in model data");
+        const auto& positions = *_model_data->positions;
+        const Index row = static_cast<Index>(node_id);
+        return positions.row_vec3(row);
+    }
+
     virtual ElDofs dofs() = 0;
     virtual Dim dimensions() = 0;
     virtual Dim n_nodes() = 0;

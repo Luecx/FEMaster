@@ -19,7 +19,7 @@
 #include "../core/types_eig.h"
 #include "amplitude.h"
 #include "../cos/coordinate_system.h"
-#include "../data/node_data_dict.h"
+#include "../data/field.h"
 #include "../data/region.h"
 #include "bc.h"
 #include "../core/printable.h"
@@ -28,7 +28,6 @@
 namespace fem {
 namespace model {
 class ModelData;
-class NodeField;
 }
 }
 
@@ -60,7 +59,7 @@ struct Load : public BoundaryCondition, public fem::Printable {
      * @param model_data Model data that provides geometry and topology.
      * @param bc Boundary-condition storage where load contributions are added.
      */
-    virtual void apply(model::ModelData& model_data, NodeData& bc, Precision time) = 0;
+    virtual void apply(model::ModelData& model_data, model::Field& bc, Precision time) = 0;
 
     /// One-line description of the load (type, target, parameters)
     std::string str() const override = 0;
@@ -97,7 +96,7 @@ struct CLoad : public Load {
      * @param model_data Provides access to nodal topology (unused).
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
     std::string str() const override;
 };
 
@@ -132,7 +131,7 @@ struct DLoad : public Load {
      * @param model_data Provides surface connectivity and geometry.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
     std::string str() const override;
 };
 
@@ -165,7 +164,7 @@ struct PLoad : public Load {
      * @param model_data Provides surface connectivity and geometry.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
     std::string str() const override;
 };
 
@@ -199,7 +198,7 @@ struct VLoad : public Load {
      * @param model_data Provides access to the element container.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
     std::string str() const override;
 };
 
@@ -213,7 +212,7 @@ struct VLoad : public Load {
 struct TLoad : public Load {
     using Ptr = std::shared_ptr<TLoad>; ///< Shared pointer alias for thermal loads.
 
-    SPtr<model::NodeField> temp_field = nullptr; ///< Temperature field reference.
+    SPtr<model::Field> temp_field = nullptr; ///< Temperature field reference.
     Precision ref_temp{NAN};                    ///< Reference temperature for zero load.
 
     /**
@@ -232,7 +231,7 @@ struct TLoad : public Load {
      * @param model_data Provides access to the element container.
      * @param bc Node-based boundary-condition storage.
      */
-    void apply(model::ModelData& model_data, NodeData& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
     std::string str() const override;
 };
 

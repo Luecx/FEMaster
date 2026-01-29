@@ -209,9 +209,15 @@ struct DefaultShellElement : public ShellElement<N> {
         auto mat_bend  = this->get_elasticity()->get_bend(this->get_section()->thickness);
         auto mat_shear = this->get_elasticity()->get_shear(this->get_section()->thickness);
 
-		auto topo_scale = this->topo_stiffness_scale();
-		mat_bend *= topo_scale;
-		mat_shear *= topo_scale;
+        Precision topo_scale = Precision(1);
+        if (this->_model_data && this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
+        mat_bend *= topo_scale;
+        mat_shear *= topo_scale;
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_bend =
             [this, &mat_bend, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
@@ -279,7 +285,13 @@ struct DefaultShellElement : public ShellElement<N> {
     StaticMatrix<6 * N, 6 * N> stiffness_membrane(LocalCoords& xy_coords) {
         auto mat_membrane = this->get_elasticity()->get_memb();
 
-		auto topo_scale   = this->topo_stiffness_scale();
+        Precision topo_scale = Precision(1);
+        if (this->_model_data && this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
 		mat_membrane *= topo_scale;
 
         std::function<StaticMatrix<2 * N, 2 * N>(Precision, Precision, Precision)> func_membrane =
@@ -332,7 +344,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return mapped;
     }
 
-    MapMatrix stiffness_geom(Precision* buffer, IPData& ip_stress, int ip_start_idx) override {
+    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
         // 1) lokale Lamina-Achsen & xy-Koordinaten (wie bei Steifigkeit/Masse)
         auto axes      = get_xyz_axes();
         auto xy_coords = get_xy_coords(axes);
@@ -353,7 +365,8 @@ struct DefaultShellElement : public ShellElement<N> {
 
             // --- Membran-Resultierende am IP (aus ip_stress) ---
             // ip_stress: [xx, yy, zz, yz, zx, xy] (wie bei Solids)
-            const auto      v = ip_stress.row(ip_start_idx + ip_counter++);
+            const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
+            const Vec6 v = ip_stress.row_vec6(ip_row);
 
             const Precision h = this->get_section()->thickness;
             // Falls ip_stress bereits Resultierende enthält, setze scale=1
@@ -489,8 +502,10 @@ struct DefaultShellElement : public ShellElement<N> {
     	// Dicke aus der Section
     	const Precision h = this->get_section()->thickness;
 
-    	// Globale Knotentabelle (POSITION) aus dem Modell
-    	const NodeData& node_coords_system = this->_model_data->get(POSITION);
+        // Globale Knotentabelle (POSITION) aus dem Modell
+        logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
+        logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+        const auto& node_coords_system = *this->_model_data->positions;
 
     	// Flächeninhalt über die Surface-Geometrie (macht 3D-Jacobian×cross-Produkt)
     	const Precision A = geometry.area(node_coords_system);
@@ -500,7 +515,7 @@ struct DefaultShellElement : public ShellElement<N> {
 	}
 
 
-    virtual Stress stress(NodeData& displacement, Vec3& xyz) {
+    virtual Stress stress(Field& displacement, Vec3& xyz) {
         Precision r = xyz(0);
         Precision s = xyz(1);
         Precision t = xyz(2);
@@ -519,7 +534,7 @@ struct DefaultShellElement : public ShellElement<N> {
         for (int i = 0; i < N; i++) {
             ID   node_id             = this->nodes()[i];
 
-            Vec6 displacement_glob   = Vec6 {displacement.row(node_id)};
+            Vec6 displacement_glob   = displacement.row_vec6(static_cast<Index>(node_id));
             Vec3 disp_xyz            = displacement_glob.head(3);
             Vec3 disp_rot            = displacement_glob.tail(3);
 
@@ -543,7 +558,13 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat2 mat_shear    = this->get_elasticity()->get_shear(this->get_section()->thickness);
 
 		// scale material matrices by topo stiffness
-		auto topo_scale   = this->topo_stiffness_scale();
+        Precision topo_scale = Precision(1);
+        if (this->_model_data && this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
 		mat_membrane *= topo_scale;
 		mat_bend     *= topo_scale;
 		mat_shear    *= topo_scale;
@@ -584,9 +605,9 @@ struct DefaultShellElement : public ShellElement<N> {
         return Stress {res};
     }
 
-    void compute_stress_strain_nodal(NodeData& displacement,
-                                     NodeData& stress,
-                                     NodeData& strain) override {
+    void compute_stress_strain_nodal(Field& displacement,
+                                     Field& stress,
+                                     Field& strain) override {
         (void) strain; // still unused for now
 
         // --- Precompute axes and transformation ---
@@ -595,7 +616,13 @@ struct DefaultShellElement : public ShellElement<N> {
 
         // --- Precompute thickness + material matrices ---
         Precision h        = this->get_section()->thickness;
-        auto      topo_scale = this->topo_stiffness_scale();
+        Precision topo_scale = Precision(1);
+        if (this->_model_data && this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
 
         Mat3 mat_membrane = this->get_elasticity()->get_memb();
         Mat3 mat_bend     = this->get_elasticity()->get_bend(h);
@@ -621,7 +648,7 @@ struct DefaultShellElement : public ShellElement<N> {
         for (int a = 0; a < N; ++a) {
             ID   node_id           = this->nodes()[a];
 
-            Vec6 displacement_glob = Vec6{ displacement.row(node_id) };
+            Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
             Vec3 disp_xyz          = displacement_glob.head(3);
             Vec3 disp_rot          = displacement_glob.tail(3);
 
@@ -706,15 +733,18 @@ struct DefaultShellElement : public ShellElement<N> {
             // transform to global once with axes_T
             Stress stress_nodal_global = stress_nodal_local.transform(axes_T);
 
-            stress.row(node_id) += stress_nodal_global;
+            const Index node_idx = static_cast<Index>(node_id);
+            for (int j = 0; j < 6; ++j) {
+                stress(node_idx, j) += stress_nodal_global(j);
+            }
         }
     }
 
 
     // in DefaultShellElement<...>
-    void compute_stress_strain(IPData& ip_stress,
-                               IPData& /*ip_strain*/,
-                               NodeData& displacement,
+    void compute_stress_strain(Field& ip_stress,
+                               Field& /*ip_strain*/,
+                               Field& displacement,
                                int       ip_offset) override {
         Mat3            axes      = get_xyz_axes();
         auto            xy_coords = get_xy_coords(axes);
@@ -728,7 +758,7 @@ struct DefaultShellElement : public ShellElement<N> {
         u_mem.setZero();
         for (Index i = 0; i < N; ++i) {
             ID   node_id     = this->nodes()[i];
-            Vec6 u_glob      = Vec6 {displacement.row(node_id)};    // (ux,uy,uz,rx,ry,rz)
+            Vec6 u_glob      = displacement.row_vec6(static_cast<Index>(node_id));    // (ux,uy,uz,rx,ry,rz)
             Vec3 t_glob      = u_glob.head<3>();
             Vec3 t_loc       = axes * t_glob;
             u_mem(2 * i)     = t_loc(0);    // ux
@@ -754,7 +784,7 @@ struct DefaultShellElement : public ShellElement<N> {
             const Precision nyy = sigma(1) * h;
             const Precision nxy = sigma(2) * h;
 
-            const Index     row = ip_offset + ip;
+            const Index     row = static_cast<Index>(ip_offset) + ip;
             ip_stress(row, 0)   = nxx;    // xx
             ip_stress(row, 1)   = nyy;    // yy
             ip_stress(row, 2)   = 0.0;    // zz
