@@ -53,7 +53,6 @@
 #include "../constraints/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
 
 namespace fem { namespace loadcase {
@@ -73,7 +72,7 @@ using fem::constraint::ConstraintTransformer;
 struct BucklingMode {
     Precision     lambda;       // buckling factor (eigenvalue)
     DynamicVector q_mode;       // reduced coordinates (in q-space)
-    DynamicMatrix mode_mat;     // expanded (node x DOF) layout for writing
+    model::Field  mode_mat;     // expanded (node x DOF) layout for writing
 
     BucklingMode(Precision lam, DynamicVector q) : lambda(lam), q_mode(std::move(q)) {}
 };
@@ -97,16 +96,6 @@ static inline double estimate_lambda_rayleigh(const SparseMatrix& A,
     const double den = q.dot(-Bq);
     if (std::abs(den) < 1e-20) return 0.0;
     return num / den;
-}
-
-static DynamicMatrix field_to_dynamic(const model::Field& field) {
-    DynamicMatrix out(field.rows, field.components);
-    for (Index i = 0; i < field.rows; ++i) {
-        for (Index j = 0; j < field.components; ++j) {
-            out(i, j) = field(i, j);
-        }
-    }
-    return out;
 }
 
 /**
@@ -322,7 +311,7 @@ void LinearBuckling::run() {
         DynamicVector u_mode = CT->recover_u(m.q_mode);
         // Full -> node x DOF
         auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
-        m.mode_mat = field_to_dynamic(mode_field);
+        m.mode_mat      = mode_field;
     }
 
     // Summary
@@ -334,8 +323,8 @@ void LinearBuckling::run() {
         DynamicVector lambdas(modes.size());
         for (size_t i = 0; i < modes.size(); ++i) {
             lambdas(i) = modes[i].lambda;
-            writer->write_eigen_matrix(modes[i].mode_mat,
-                                         "BUCKLING_MODE_" + std::to_string(i + 1));
+            writer->write_field(modes[i].mode_mat,
+                                "BUCKLING_MODE_" + std::to_string(i + 1));
         }
         writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
     }

@@ -69,5 +69,17 @@ Field::Ptr ModelData::create_field(const std::string& name, FieldDomain domain, 
     return field;
 }
 
+Field ModelData::create_field_(const std::string& name, FieldDomain domain, Index components, bool fill_nan) {
+    logging::error(!name.empty(), "Field name cannot be empty");
+
+    const Index rows = field_rows(domain);
+    auto field = Field(name, domain, rows, components);
+    if (fill_nan) {
+        field.fill_nan();
+    }
+    return field;
+}
+
+
 } // namespace model
 } // namespace fem

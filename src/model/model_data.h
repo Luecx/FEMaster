@@ -113,7 +113,8 @@ struct ModelData {
     Field::Ptr get_field(const std::string& name) const;
 
     /// Creates a field or returns the existing one after validation.
-    Field::Ptr create_field(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true, bool reg = true);
+    Field::Ptr create_field (const std::string& name, FieldDomain domain, Index components, bool fill_nan = true, bool reg = true);
+    Field      create_field_(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true);
 };
 
 } // namespace model

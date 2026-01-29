@@ -18,7 +18,6 @@
 #include "../constraints/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
-#include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../reader/write_mtx.h"
 #include "../solve/eigen.h"
@@ -189,11 +188,11 @@ void LinearStatic::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_field(global_disp_mat, "DISPLACEMENT");
-    writer->write_field(strain, "STRAIN");
-    writer->write_field(stress, "STRESS");
-    writer->write_field(global_load_mat, "EXTERNAL_FORCES");
-    writer->write_field(reaction_masked, "REACTION_FORCES");
+    writer->write_field(global_disp_mat			, "DISPLACEMENT");
+    writer->write_field(strain                  , "STRAIN");
+    writer->write_field(stress                  , "STRESS");
+    writer->write_field(global_load_mat         , "EXTERNAL_FORCES");
+    writer->write_field(reaction_masked         , "REACTION_FORCES");
     writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);
 
     transformer->post_check_static(K, f, u);

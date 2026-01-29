@@ -88,13 +88,17 @@ private:
 struct Field {
     using Ptr = std::shared_ptr<Field>;
 
-    const std::string name;
-    const FieldDomain domain;
+    std::string name;
+    FieldDomain domain;
 
-    const Index rows;
-    const Index components;
+    Index rows;
+    Index components;
 
     FieldMatrix values;
+
+    // Default-constructible so types embedding Field can declare members
+    // and assign later (e.g., mode containers). Creates an empty 0x0 field.
+    Field() : name(), domain(FieldDomain::NODE), rows(0), components(0), values() {}
 
     Field(std::string p_name, FieldDomain p_domain, Index p_rows, Index p_components)
         : name(std::move(p_name)),

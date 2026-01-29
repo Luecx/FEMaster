@@ -62,7 +62,6 @@
 #include "../constraints/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
 
 using fem::constraint::ConstraintTransformer;
@@ -86,7 +85,7 @@ struct EigenMode {
     Precision     lambda;        // eigenvalue (omega^2)
     Precision     freq;          // f = sqrt(lambda) / (2 * pi)
     DynamicVector q_mode;        // reduced coordinates (q-space)
-    DynamicMatrix mode_mat;      // expanded node x 6 for writer
+    model::Field  mode_mat;      // expanded node x 6 for writer
     Vec6          participation; // simple modal participation (x,y,z,rx,ry,rz)
 
     explicit EigenMode(Precision lam, DynamicVector q)
@@ -120,16 +119,6 @@ static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx
         }
     }
     return U;
-}
-
-static DynamicMatrix field_to_dynamic(const model::Field& field) {
-    DynamicMatrix out(field.rows, field.components);
-    for (Index i = 0; i < field.rows; ++i) {
-        for (Index j = 0; j < field.components; ++j) {
-            out(i, j) = field(i, j);
-        }
-    }
-    return out;
 }
 
 /**
@@ -200,7 +189,7 @@ static void write_results(const std::vector<EigenMode>& modes,
         eigenvalues(i) = modes[i].lambda;
         eigenfreqs (i) = modes[i].freq * 2 * M_PI;
         freqs      (i) = modes[i].freq;
-        writer->write_eigen_matrix(modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1));
+        writer->write_field       (modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1));
         writer->write_eigen_matrix(modes[i].participation, "PARTICIPATION_" + std::to_string(i + 1));
     }
     writer->write_eigen_matrix(DynamicMatrix(eigenvalues), "EIGENVALUES");
@@ -341,7 +330,7 @@ void LinearEigenfrequency::run() {
                       /*tol_full_rel      */std::numeric_limits<Precision>::infinity());
         // Node x 6 layout for writer
         auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
-        m.mode_mat = field_to_dynamic(mode_field);
+        m.mode_mat = mode_field;
         // Participations p_i = e_i^T (M u) using axis columns as e_i
         DynamicVector Mu = M * u_mode;
         for (int i = 0; i < 6; ++i) m.participation(i) = axes_full.col(i).dot(Mu);

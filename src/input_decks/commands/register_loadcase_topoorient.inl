@@ -36,13 +36,8 @@ inline void register_loadcase_topoorient(fem::dsl::Registry& registry, Parser& p
             lc->orientation = field;
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(0).max(0))
-                .pattern(fem::dsl::Pattern::make())
-                .bind([]() {})
-            )
-        );
+        // Keyword-only command: no data segment needed
+        command.variant(fem::dsl::Variant::make());
     });
 }
 

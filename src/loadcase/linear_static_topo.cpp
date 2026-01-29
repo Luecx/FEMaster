@@ -53,7 +53,6 @@
 #include "../constraints/equation.h"
 #include "../core/logging.h"
 #include "../mattools/assemble.tpp"
-#include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_vec_to_vec.h"
 #include "../solve/eigen.h"
@@ -77,14 +76,6 @@ namespace fem { namespace loadcase {
 LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
     : LinearStatic(id, writer, model) {
     auto& data = *model->_data;
-
-    density = data.create_field("DENSITY", model::FieldDomain::ELEMENT,
-                                static_cast<Index>(data.max_elems), 1, false);
-    density->setOnes();
-
-    orientation = data.create_field("ORIENTATION", model::FieldDomain::ELEMENT,
-                                    static_cast<Index>(data.max_elems), 3, false);
-    orientation->set_zero();
 }
 
 /**
@@ -111,18 +102,12 @@ void LinearStaticTopo::run() {
 
     // Inject topology parameters into the model's element data store so the
     // stiffness builder can read them during assembly.
-    logging::error(density != nullptr, "LinearStaticTopo: density field not initialized");
-    logging::error(orientation != nullptr, "LinearStaticTopo: orientation field not initialized");
-    auto stiffness_field = model->_data->create_field("ELEMENT_STIFFNESS_SCALE", model::FieldDomain::ELEMENT, 1, true);
-    auto orientation_field = model->_data->create_field("MATERIAL_ORIENTATION", model::FieldDomain::ELEMENT, 3, true);
-    for (Index r = 0; r < static_cast<Index>(model->_data->max_elems); ++r) {
-        (*stiffness_field)(r, 0) = std::pow((*density)(r, 0), exponent);
-        for (Index c = 0; c < 3; ++c) {
-            (*orientation_field)(r, c) = (*orientation)(r, c);
-        }
-    }
-    model->_data->element_stiffness_scale = stiffness_field;
-    model->_data->material_orientation = orientation_field;
+    logging::error(density      != nullptr, "LinearStaticTopo: density field not initialized");
+    logging::error(orientation  != nullptr, "LinearStaticTopo: orientation field not initialized");
+
+    // assign the model stiffness and
+    model->_data->element_stiffness_scale = density;
+    model->_data->material_orientation    = orientation;
 
     // (1) Unconstrained DOF indexing (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
@@ -159,11 +144,7 @@ void LinearStaticTopo::run() {
     auto CT = Timer::measure(
         [&]() {
             ConstraintTransformer::BuildOptions copt;
-            // Recommended: scale columns of C for robust QR (rank detection).
             copt.set.scale_columns = true;
-            // Optional tolerances (keep defaults unless your constraints are ill-conditioned):
-            // copt.builder.rank_tol_rel = 1e-12;
-            // copt.builder.feas_tol_rel = 1e-10;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,   // maps (node,dof) -> global index or -1
@@ -175,18 +156,16 @@ void LinearStaticTopo::run() {
     );
 
     // Diagnostics for the constraint transformer
-    logging::info(true, "");
-    logging::info(true, "Constraint summary");
+    logging::info(true           , "");
+    logging::info(true           , "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", CT->report().m);
-    logging::info(true, "n (cols of C)     : ", CT->report().n);
-    logging::info(true, "rank(C)           : ", CT->rank());
-    logging::info(true, "masters (n-r)     : ", CT->n_master());
-    logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
-    logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");
-    if (!CT->feasible()) {
-        logging::info(true, "residual ||C u - d|| : ", CT->report().residual_norm);
-    }
+    logging::info(true           , "m (rows of C)        : ", CT->report().m);
+    logging::info(true           , "n (cols of C)        : ", CT->report().n);
+    logging::info(true           , "rank(C)              : ", CT->rank());
+    logging::info(true           , "masters (n-r)        : ", CT->n_master());
+    logging::info(true           , "homogeneous          : ", CT->homogeneous() ? "true" : "false");
+    logging::info(true           , "feasible             : ", CT->feasible() ? "true" : "false");
+    logging::info(!CT->feasible(), "residual ||C u - d|| : ", CT->report().residual_norm);
     logging::down();
 
     // (6) Reduced system A q = b  with  A = T^T K T,  b = T^T (f - K u_p)
@@ -254,16 +233,15 @@ void LinearStaticTopo::run() {
     //  - volumes       : element volumes
     //  - angle_grad    : derivative of compliance w.r.t. orientation angles
     auto compliance_raw = model->compute_compliance(global_disp_mat);
-    model::Field compliance_adj{"COMPLIANCE_ADJ", model::FieldDomain::ELEMENT,
-                                static_cast<Index>(model->_data->max_elems), 1};
-    model::Field dens_grad{"DENS_GRAD", model::FieldDomain::ELEMENT,
-                           static_cast<Index>(model->_data->max_elems), 1};
+    model::Field compliance_adj = model->_data->create_field_("COMPLIANCE_ADJ", model::FieldDomain::ELEMENT, 1, false);
+    model::Field density_grad   = model->_data->create_field_("DENS_GRAD"     , model::FieldDomain::ELEMENT, 1, false);
+
     for (Index r = 0; r < static_cast<Index>(model->_data->max_elems); ++r) {
-        const Precision rho = (*density)(r, 0);
-        const Precision rho_p = std::pow(rho, exponent);
+        const Precision rho         = (*density)(r, 0);
+        const Precision rho_p       = std::pow(rho, exponent);
         const Precision rho_p_minus = std::pow(rho, exponent - 1);
         compliance_adj(r, 0) = compliance_raw(r, 0) * rho_p;
-        dens_grad(r, 0) = -exponent * compliance_raw(r, 0) * rho_p_minus;
+        density_grad  (r, 0) = -exponent * compliance_raw(r, 0) * rho_p_minus;
     }
     auto volumes        = model->compute_volumes();
     auto angle_grad     = model->compute_compliance_angle_derivative(global_disp_mat);
@@ -296,33 +274,24 @@ void LinearStaticTopo::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_field(global_disp_mat, "DISPLACEMENT");
-    writer->write_field(strain, "STRAIN");
-    writer->write_field(stress, "STRESS");
-    writer->write_field(global_load_mat, "EXTERNAL_FORCES");
-    writer->write_field(reaction_masked, "REACTION_FORCES");
-    writer->write_field(compliance_raw, "COMPLIANCE_RAW");
-    writer->write_field(compliance_adj, "COMPLIANCE_ADJ");
-    writer->write_field(dens_grad, "DENS_GRAD");
-    writer->write_field(volumes, "VOLUME");
-    writer->write_field(*density, "DENSITY");
-    writer->write_field(angle_grad, "ORIENTATION_GRAD");
-    writer->write_field(*orientation, "ORIENTATION");
-
-    // (12) Cleanup element scratch data from the model store
-    if (model->_data->element_stiffness_scale &&
-        model->_data->element_stiffness_scale->name == "ELEMENT_STIFFNESS_SCALE") {
-        model->_data->fields.erase("ELEMENT_STIFFNESS_SCALE");
-        model->_data->element_stiffness_scale = nullptr;
-    }
-    if (model->_data->material_orientation &&
-        model->_data->material_orientation->name == "MATERIAL_ORIENTATION") {
-        model->_data->fields.erase("MATERIAL_ORIENTATION");
-        model->_data->material_orientation = nullptr;
-    }
+    writer->write_field(global_disp_mat , "DISPLACEMENT");
+    writer->write_field(strain          , "STRAIN");
+    writer->write_field(stress          , "STRESS");
+    writer->write_field(global_load_mat , "EXTERNAL_FORCES");
+    writer->write_field(reaction_masked , "REACTION_FORCES");
+    writer->write_field(compliance_raw  , "COMPLIANCE_RAW");
+    writer->write_field(compliance_adj  , "COMPLIANCE_ADJ");
+    writer->write_field(density_grad    , "DENS_GRAD");
+    writer->write_field(volumes         , "VOLUME");
+    writer->write_field(*density        , "DENSITY");
+    writer->write_field(angle_grad      , "ORIENTATION_GRAD");
+    writer->write_field(*orientation    , "ORIENTATION");
 
     // (13) Diagnostics (optional): projected residual checks
     CT->post_check_static(K, f, u);
+
+    model->_data->element_stiffness_scale = nullptr;
+    model->_data->material_orientation    = nullptr;
 }
 
 }} // namespace fem::loadcase

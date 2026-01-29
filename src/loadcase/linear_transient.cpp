@@ -13,7 +13,6 @@
 #include "../constraints/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_mat_to_mat.h"
 #include "../mattools/reduce_vec_to_vec.h"
 
 #include <cmath>
