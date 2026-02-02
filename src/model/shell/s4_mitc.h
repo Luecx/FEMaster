@@ -2,78 +2,101 @@
 #define S4_MITC_H
 
 #include "shell_simple.h"
-
 #include "../geometry/surface/surface4.h"
+
 namespace fem::model {
-struct MITC4 : DefaultShellElement<4, Surface4,
-                      quadrature::Domain::DOMAIN_ISO_QUAD,
-                      quadrature::Order::ORDER_CUBIC> // dein 2x2 ist damit ok
+
+struct MITC4
+    : DefaultShellElement<4, Surface4,
+                          quadrature::Domain::DOMAIN_ISO_QUAD,
+                          quadrature::Order::ORDER_CUBIC>
 {
     using Base = DefaultShellElement<4, Surface4,
                                      quadrature::Domain::DOMAIN_ISO_QUAD,
                                      quadrature::Order::ORDER_CUBIC>;
 
-    MITC4(ID id, std::array<ID,4> nodes) : Base(id, nodes) {}
+    using LocalCoords     = typename Base::LocalCoords;
+    using ShapeFunction   = typename Base::ShapeFunction;
+    using ShapeDerivative = typename Base::ShapeDerivative;
+    using Jacobian        = typename Base::Jacobian;
+
+    MITC4(ID id, std::array<ID, 4> nodes)
+        : Base(id, nodes) {}
 
     std::string type_name() const override { return "MITC4"; }
 
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
         return std::make_shared<Surface4>(
             surface_id == 1
-                ? std::array<ID,4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
-                : std::array<ID,4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
+                ? std::array<ID, 4>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3]}
+                : std::array<ID, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]}
+        );
     }
 
-    // Nur diese Methode ist MITC-spezifisch:
+    // MITC4: shear strains are "tied" at edge midpoints and interpolated into (r,s)
     StaticMatrix<2, 12>
     strain_disp_shear_at(Precision r, Precision s, const LocalCoords& xy) override
     {
-        // Tying-Points:
-        struct RS { Precision r, s; };
-        const RS tp_xz[2] = { {0.0, -1.0}, {0.0, +1.0} };
-        const RS tp_yz[2] = { {-1.0, 0.0}, {+1.0, 0.0} };
-
-        auto Bs_at = [&](Precision rr, Precision ss, bool xz)->StaticMatrix<1,12> {
+        // Helper: build 1x12 row for a shear strain component at (rr,ss)
+        // In YOUR convention (see DefaultShellElement::strain_disp_shear):
+        //   gamma_xz = dw/dx + theta_y   (-> uses ry with + sign)
+        //   gamma_yz = dw/dy - theta_x   (-> uses rx with - sign)
+        auto Bs_at = [&](Precision rr, Precision ss, bool xz) -> StaticMatrix<1, 12> {
             ShapeDerivative dH_rs = this->shape_derivative(rr, ss);
-            Jacobian        J    = this->jacobian(dH_rs, const_cast<LocalCoords&>(xy));
-            Mat2 invJ = J.inverse();
-            auto dH_xy = (dH_rs * invJ).transpose();  // (2×N)
-            auto H     = this->shape_function(rr, ss);
+            Jacobian        J     = this->jacobian(dH_rs, const_cast<LocalCoords&>(xy));
+            Mat2            invJ  = J.inverse();
 
-            StaticMatrix<1,12> row; row.setZero();
+            // dN/dx, dN/dy in local element xy plane
+            auto dH_xy = (dH_rs * invJ).transpose();   // (2 x 4): row0=dN/dx, row1=dN/dy
+            auto H     = this->shape_function(rr, ss); // (4)
+
+            StaticMatrix<1, 12> row;
+            row.setZero();
+
             for (int i = 0; i < 4; ++i) {
-                const Index c_w  = 3*i + 0;
-                const Index c_rx = 3*i + 1;
-                const Index c_ry = 3*i + 2;
+                const Index c_w  = 3 * i + 0;
+                const Index c_rx = 3 * i + 1;
+                const Index c_ry = 3 * i + 2;
+
                 if (xz) {
-                    row(0, c_w ) += dH_xy(0, i); // dw/dx
-                    row(0, c_rx) += H(i);        // + rx
+                    // gamma_xz = dw/dx + theta_y
+                    row(0, c_w ) += dH_xy(0, i);
+                    row(0, c_ry) += H(i);
                 } else {
-                    row(0, c_w ) += dH_xy(1, i); // dw/dy
-                    row(0, c_ry) += H(i);        // + ry
+                    // gamma_yz = dw/dy - theta_x
+                    row(0, c_w ) += dH_xy(1, i);
+                    row(0, c_rx) += -H(i);
                 }
             }
             return row;
         };
 
-        // Gewichte von Tying-Points -> (r,s)
-        const Precision a_m = 0.5 * (1.0 - s); // s=-1
-        const Precision a_p = 0.5 * (1.0 + s); // s=+1
-        const Precision b_m = 0.5 * (1.0 - r); // r=-1
-        const Precision b_p = 0.5 * (1.0 + r); // r=+1
+        // Tying points (edge midpoints) in (r,s) space:
+        //   gamma_xz tied on s = +/-1 at r = 0
+        //   gamma_yz tied on r = +/-1 at s = 0
+        const Precision a_m = Precision(0.5) * (Precision(1.0) - s); // weight for s=-1
+        const Precision a_p = Precision(0.5) * (Precision(1.0) + s); // weight for s=+1
 
-        StaticMatrix<1,12> row_xz = a_m * Bs_at(0.0, -1.0, /*xz=*/true)
-                                  + a_p * Bs_at(0.0, +1.0, /*xz=*/true);
+        const Precision b_m = Precision(0.5) * (Precision(1.0) - r); // weight for r=-1
+        const Precision b_p = Precision(0.5) * (Precision(1.0) + r); // weight for r=+1
 
-        StaticMatrix<1,12> row_yz = b_m * Bs_at(-1.0, 0.0, /*xz=*/false)
-                                  + b_p * Bs_at(+1.0, 0.0, /*xz=*/false);
+        // Interpolate tied shear strains to (r,s)
+        StaticMatrix<1, 12> row_xz =
+            a_m * Bs_at(Precision(0.0), Precision(-1.0), /*xz=*/true) +
+            a_p * Bs_at(Precision(0.0), Precision(+1.0), /*xz=*/true);
 
-        StaticMatrix<2,12> Bs; Bs.setZero();
+        StaticMatrix<1, 12> row_yz =
+            b_m * Bs_at(Precision(-1.0), Precision(0.0), /*xz=*/false) +
+            b_p * Bs_at(Precision(+1.0), Precision(0.0), /*xz=*/false);
+
+        StaticMatrix<2, 12> Bs;
+        Bs.setZero();
         Bs.row(0) = row_xz;
         Bs.row(1) = row_yz;
         return Bs;
     }
 };
-}
 
-#endif //S4_MITC_H
+} // namespace fem::model
+
+#endif // S4_MITC_H
