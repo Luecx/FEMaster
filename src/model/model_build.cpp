@@ -210,6 +210,12 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, const Field* s
         }
     };
     auto res = mattools::assemble_matrix(_data->elements, indices, lambda);
+    // Add feature-based stiffness contributions (diagonal triplets etc.)
+    if (!_data->features.empty()) {
+        TripletList trips;
+        for (const auto& f : _data->features) if (f) f->assemble_stiffness(indices, trips);
+        if (!trips.empty()) res.insertFromTriplets(trips.begin(), trips.end());
+    }
     return res;
 }
 
@@ -255,6 +261,12 @@ SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
         }
     };
     auto res = mattools::assemble_matrix(_data->elements, indices, lambda);
+    // Add feature-based mass contributions
+    if (!_data->features.empty()) {
+        TripletList trips;
+        for (const auto& f : _data->features) if (f) f->assemble_mass(indices, trips);
+        if (!trips.empty()) res.insertFromTriplets(trips.begin(), trips.end());
+    }
     return res;
 }
 

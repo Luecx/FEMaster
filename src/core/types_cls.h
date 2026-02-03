@@ -58,7 +58,6 @@ struct LinearBuckling;
 
 struct Section;
 struct Profile;
-struct PointMassSection;
 struct SolidSection;
 struct BeamSection;
 struct ShellSection;

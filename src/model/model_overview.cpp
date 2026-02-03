@@ -10,7 +10,6 @@
 #include "../core/logging.h"
 #include "element/element.h"
 #include "beam/b33.h"
-#include "pointelem/point.h"
 #include "truss/truss.h"
 #include "shell/s3.h"
 #include "shell/s4.h"
@@ -28,7 +27,6 @@
 #include "../section/section_beam.h"
 #include "../section/section_solid.h"
 #include "../section/section_shell.h"
-#include "../section/section_point_mass.h"
 
 namespace fem { namespace model {
 

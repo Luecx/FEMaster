@@ -30,6 +30,7 @@
 #include "../data/sets.h"
 #include "../section/profile.h"
 #include "../section/section.h"
+#include "../feature/feature.h"
 
 #include <array>
 #include <memory>
@@ -59,6 +60,9 @@ struct ModelData {
     // Sections and profiles ----------------------------------------------------
     std::vector<Section::Ptr> sections;
     Dict<Profile> profiles;
+
+    // Non-element features ----------------------------------------------------
+    std::vector<feature::Feature::Ptr> features;
 
     // Generic fields -----------------------------------------------------------
     std::unordered_map<std::string, Field::Ptr> fields;

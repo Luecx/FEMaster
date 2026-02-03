@@ -4,7 +4,7 @@
 #include "../section/section_beam.h"
 #include "../section/section_solid.h"
 #include "../section/section_shell.h"
-#include "../section/section_point_mass.h"
+#include "../feature/point_mass.h"
 
 #include "../bc/load_collector.h"
 #include "../bc/support_collector.h"
@@ -339,15 +339,19 @@ void Model::shell_section(const std::string& set, const std::string& material, P
     this->_data->sections.push_back(sec);
 }
 
-void Model::point_mass_section(const std::string& set, Precision mass, Vec3 rotary_inertia, Vec3 spring, Vec3 rotary_spring) {
-    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
-    PointMassSection::Ptr sec = std::make_shared<PointMassSection>();
-    sec->mass = mass;
-    sec->rotary_inertia = rotary_inertia;
-    sec->spring_constants = spring;
-    sec->rotary_spring_constants = rotary_spring;
-    sec->region = _data->elem_sets.get(set);
-    this->_data->sections.push_back(sec);
+void Model::add_point_mass_feature(const std::string& nset,
+                                   Precision mass,
+                                   Vec3 rotary_inertia,
+                                   Vec3 spring,
+                                   Vec3 rotary_spring) {
+    logging::error(_data->node_sets.has(nset), "Node set ", nset, " is not a defined node set");
+    auto feat = std::make_shared<feature::PointMass>();
+    feat->region = _data->node_sets.get(nset);
+    feat->mass = mass;
+    feat->rotary_inertia = rotary_inertia;
+    feat->spring_constants = spring;
+    feat->rotary_spring_constants = rotary_spring;
+    this->_data->features.push_back(std::move(feat));
 }
 
 std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {

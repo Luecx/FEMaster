@@ -42,7 +42,7 @@
 #include "commands/register_solid_section.inl"
 #include "commands/register_beam_section.inl"
 #include "commands/register_shell_section.inl"
-#include "commands/register_point_mass_section.inl"
+#include "commands/register_point_mass.inl"
 #include "commands/register_element.inl"
 #include "commands/register_overview.inl"
 #include "commands/register_loadcase_begin.inl"
@@ -322,7 +322,7 @@ void Parser::register_commands() {
     commands::register_solid_section(reg, mdl);
     commands::register_beam_section(reg, mdl);
     commands::register_shell_section(reg, mdl);
-    commands::register_point_mass_section(reg, mdl);
+    commands::register_point_mass(reg, mdl);
     commands::register_element(reg, mdl);
     commands::register_overview(reg, mdl);
 

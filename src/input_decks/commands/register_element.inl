@@ -11,7 +11,6 @@
 
 #include "../../model/beam/b33.h"
 #include "../../model/model.h"
-#include "../../model/pointelem/point.h"
 #include "../../model/shell/s3.h"
 #include "../../model/shell/s4.h"
 #include "../../model/shell/s4_mitc.h"
@@ -54,7 +53,7 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
                     .doc("Element topology/type")
                     .allowed({
                         "C3D4", "C3D5", "C3D6", "C3D8", "C3D10", "C3D15", "C3D20", "C3D20R",
-                        "B33", "T3", "P", "S3", "S4", "MITC4", "S6", "S8"
+                        "B33", "T3", "S3", "S4", "MITC4", "S6", "S8"
                     })
         );
 
@@ -87,7 +86,6 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
         FEM_ADD_ELEMENT_VARIANT("C3D20", fem::model::C3D20, 20, "C3D20 connectivity (20 nodes)");
         FEM_ADD_ELEMENT_VARIANT("C3D20R", fem::model::C3D20R, 20, "C3D20R connectivity (20 nodes)");
         FEM_ADD_ELEMENT_VARIANT("T3", fem::model::T3, 2, "T3 connectivity (2 nodes)");
-        FEM_ADD_ELEMENT_VARIANT("P", fem::model::Point, 1, "Point element node");
         FEM_ADD_ELEMENT_VARIANT("S3", fem::model::S3, 3, "S3 connectivity (3 nodes)");
         FEM_ADD_ELEMENT_VARIANT("S4", fem::model::S4, 4, "S4 connectivity (4 nodes)");
         FEM_ADD_ELEMENT_VARIANT("MITC4", fem::model::MITC4, 4, "MITC4 connectivity (4 nodes)");
