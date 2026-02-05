@@ -11,6 +11,7 @@
 #pragma once
 
 #include "element.h"
+#include <functional>
 
 #include "../../material/stress.h"
 #include "../../material/strain.h"
@@ -45,6 +46,13 @@ struct StructuralElement : ElementInterface {
     virtual void compute_stress_strain_nodal(Field& displacement,
                                              Field& stress,
                                              Field& strain) = 0;
+
+    // Integrate a vector field f(x) over the element volume and scatter to nodes.
+    // If scale_by_density is true, multiply f(x) by the material density (per element).
+    using VecField = std::function<Vec3(const Vec3&)>;
+    virtual void integrate_vec_field(Field& node_loads,
+                                     bool scale_by_density,
+                                     const VecField& field) = 0;
 
     virtual void apply_vload(Field& node_loads, Vec3 load) = 0;
     virtual void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) = 0;

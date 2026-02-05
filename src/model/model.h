@@ -59,6 +59,13 @@ struct Model {
     void add_vload      (ID id, Vec3 load, const std::string& orientation = "", const std::string& amplitude = "");
     void add_tload      (std::string& temp_field, Precision ref_temp);
 
+    // inertia load (rigid-body field): target element set only
+    void add_inertialload(const std::string& elset,
+                          Vec3 center,
+                          Vec3 center_acceleration,
+                          Vec3 angular_velocity,
+                          Vec3 angular_acceleration);
+
     void define_amplitude(const std::string& name, bc::Interpolation interpolation);
     void add_amplitude_sample(const std::string& name, Precision time, Precision value);
 

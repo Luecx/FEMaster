@@ -258,5 +258,41 @@ std::string TLoad::str() const {
     return os.str();
 }
 
+/**
+ * @copydoc InertialLoad::apply
+ */
+void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+    (void)time;
+    logging::error(region != nullptr, "InertialLoad: region not set");
+
+    for (auto& el_id : *region) {
+        auto& el_ptr = model_data.elements[el_id];
+        if (!el_ptr) continue;
+        auto structural = el_ptr->as<model::StructuralElement>();
+        if (!structural) continue;
+
+        // a(x) = a0 + alpha x r + omega x (omega x r), r = x - center
+        // f(x) = -rho * a(x), density handled by integrate_vec_field(scale_by_density=true)
+        auto f = [c=center, a0=center_acc, w=omega, al=alpha](const Vec3& x) -> Vec3 {
+            const Vec3 r = x - c;
+            const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
+            return -(a0 + a_rot);
+        };
+
+        structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+    }
+}
+
+std::string InertialLoad::str() const {
+    std::ostringstream os;
+    os << "INERTIAL: target=ELSET " << (region ? region->name : std::string("?"))
+       << " (" << (region ? (int)region->size() : 0) << ")"
+       << ", center=[" << center(0) << ", " << center(1) << ", " << center(2) << "]"
+       << ", a0=[" << center_acc(0) << ", " << center_acc(1) << ", " << center_acc(2) << "]"
+       << ", omega=[" << omega(0) << ", " << omega(1) << ", " << omega(2) << "]"
+       << ", alpha=[" << alpha(0) << ", " << alpha(1) << ", " << alpha(2) << "]";
+    return os.str();
+}
+
 } // namespace bc
 } // namespace fem

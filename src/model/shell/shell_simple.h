@@ -123,6 +123,54 @@ struct DefaultShellElement : public ShellElement<N> {
         return jacobian;
     }
 
+    // Integrate a vector field across the shell mid-surface (times thickness)
+    void integrate_vec_field(Field& node_loads,
+                             bool scale_by_density,
+                             const typename ShellElement<N>::VecField& field) override {
+        // Local planar frame and projected nodal XY coordinates
+        Mat3 axes = this->get_xyz_axes();
+        auto xy_coords = this->get_xy_coords(axes);
+        const auto& scheme = this->integration_scheme();
+        const Precision t = this->get_section()->thickness;
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = this->get_material();
+            logging::error(mat && mat->has_density(),
+                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+
+        // For global x at IP, use true global node positions
+        auto node_coords_glob = this->node_coords_global();
+
+        for (Index ip = 0; ip < scheme.count(); ++ip) {
+            const auto p = scheme.get_point(ip);
+            const Precision r = p.r;
+            const Precision s = p.s;
+            const Precision w = p.w;
+
+            ShapeFunction   H   = this->shape_function(r, s); // (N)
+            ShapeDerivative dH  = this->shape_derivative(r, s);
+            Jacobian        Jrs = this->jacobian(dH, xy_coords); // 2x2
+            const Precision detJ = std::abs(Jrs.determinant());
+
+            // Global evaluation point on mid-surface
+            Vec3 x_ip = Vec3::Zero();
+            for (Index i = 0; i < N; ++i) x_ip += H(i) * node_coords_glob.row(i);
+
+            Vec3 f_ip = field(x_ip) * (rho * t * w * detJ);
+
+            for (Index i = 0; i < N; ++i) {
+                const ID n_id = this->node_ids[i];
+                const Precision a = H(i);
+                node_loads(n_id, 0) += a * f_ip(0);
+                node_loads(n_id, 1) += a * f_ip(1);
+                node_loads(n_id, 2) += a * f_ip(2);
+            }
+        }
+    }
+
     StaticMatrix<3, N * 3> strain_disp_bending(ShapeDerivative& shape_der, Jacobian& jacobian) {
         Mat2                   inv = jacobian.inverse();
         auto                   dH  = (shape_der * inv).transpose();

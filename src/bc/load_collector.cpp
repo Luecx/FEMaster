@@ -105,5 +105,19 @@ void LoadCollector::add_tload(model::Field::Ptr temp_field, Precision ref_temp) 
     this->add(tload);
 }
 
+void LoadCollector::add_inertialload(model::ElementRegion::Ptr region,
+                                     Vec3 center,
+                                     Vec3 center_acc,
+                                     Vec3 omega,
+                                     Vec3 alpha) {
+    auto il = std::make_shared<InertialLoad>();
+    il->region      = std::move(region);
+    il->center      = center;
+    il->center_acc  = center_acc;
+    il->omega       = omega;
+    il->alpha       = alpha;
+    this->add(il);
+}
+
 } // namespace bc
 } // namespace fem

@@ -192,6 +192,34 @@ struct TrussElement : StructuralElement {
     void apply_tload(Field&, const Field&, Precision) override {}
     void compute_compliance(Field&, Field&) override {}
     void compute_compliance_angle_derivative(Field&, Field&) override {}
+
+    // Integrate vector field via 1-point midpoint rule and equal nodal distribution
+    void integrate_vec_field(Field& node_loads,
+                             bool scale_by_density,
+                             const VecField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return;
+
+        // Midpoint
+        Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "TrussElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+
+        const Vec3 F = field(x_mid) * (rho * A * L);
+        for (Index i = 0; i < N; ++i) {
+            const ID n_id = node_ids[i];
+            node_loads(n_id, 0) += F(0) * Precision(0.5);
+            node_loads(n_id, 1) += F(1) * Precision(0.5);
+            node_loads(n_id, 2) += F(2) * Precision(0.5);
+        }
+    }
 };
 
 using T3 = TrussElement<2>;

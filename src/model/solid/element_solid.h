@@ -4,6 +4,7 @@
 #include "../element/element_structural.h"
 #include "../../math/interpolate.h"
 #include "../geometry/surface/surface.h"
+#include <functional>
 
 namespace fem::model {
 
@@ -262,6 +263,17 @@ public:
      * @param load The external load vector.
      */
     void apply_vload(Field& node_loads, Vec3 load) override;
+
+    /**
+     * @brief Integrates a vector field f(x) over the element volume and scatters equivalent nodal loads.
+     *
+     * @param node_loads Reference to the global node load field (NODE x 6).
+     * @param scale_by_density If true, multiply f(x) by the element material density.
+     * @param field A callable f(x) with x in global coordinates returning a Vec3 body force density.
+     */
+    void integrate_vec_field(Field& node_loads,
+                             bool scale_by_density,
+                             const VecField& field) override;
 
     /**
      * @brief Applies a thermal load to the element.

@@ -22,6 +22,7 @@
 #include "../solve/newmark.h"     // NewmarkOpts, newmark_linear
 #include "../damping/rayleigh.h"   // Rayleigh
 #include "../core/types_eig.h"
+#include "../data/field.h"         // model::Field
 
 #include <vector>
 #include <string>
@@ -55,6 +56,10 @@ struct Transient : public LoadCase {
     // Solver selection
     solver::SolverDevice device = solver::CPU;
     solver::SolverMethod method = solver::DIRECT;
+
+    // Initial conditions (optional)
+    // Pointer to a node FIELD providing initial velocity (6 components: ux,uy,uz,rx,ry,rz).
+    model::Field::Ptr initial_velocity = nullptr;
 
     // Setters (fluent)
     Transient& set_time(double dt_, double t_start_, double t_end_) { dt = dt_; t_end = t_end_; t_start = t_start_; return *this; }

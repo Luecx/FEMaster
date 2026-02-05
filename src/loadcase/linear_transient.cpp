@@ -132,7 +132,7 @@ void Transient::run() {
         return CT_ptr->assemble_b(K, f_active);
     };
 
-    // (8) Newmark options + IC (zeros in reduced space unless user-specified elsewhere)
+    // (8) Newmark options + IC (zeros in reduced space unless user provided an initial velocity field)
     solver::NewmarkOpts optsNm;
     optsNm.beta    = beta;
     optsNm.gamma   = gamma;
@@ -144,6 +144,16 @@ void Transient::run() {
 
     DynamicVector q0    = DynamicVector::Zero(A.rows());
     DynamicVector qdot0 = DynamicVector::Zero(A.rows());
+
+    // Optional: initial velocity from node FIELD (must have exactly 6 components)
+    if (initial_velocity) {
+        logging::error(initial_velocity->domain == fem::model::FieldDomain::NODE, "Initial velocity field must be a node field");
+        logging::error(initial_velocity->components == 6, "Initial velocity field must have exactly 6 components");
+
+        auto v_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, *initial_velocity);
+        // Map to reduced initial velocity qdot0 = T^T v_active
+        qdot0 = CT->map().apply_Tt(v_active);
+    }
     solver::NewmarkIC ic{q0, qdot0, DynamicVector()}; // a0 computed internally
 
     // (9) Solve reduced transient problem
@@ -159,12 +169,24 @@ void Transient::run() {
     writer->add_loadcase(id);
     for (int k = 0; k <= n_steps; ++k) {
         if (k % write_stride != 0 && k != n_steps) continue; // always write last
-        const auto& qk = result.u[static_cast<size_t>(k)];
+        const auto& qk  = result.u[static_cast<size_t>(k)];
+        const auto& qvk = result.v[static_cast<size_t>(k)];
+        const auto& qak = result.a[static_cast<size_t>(k)];
+
+        // Displacement: u = T q + u_p
         auto u_full = CT->recover_u(qk);
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
         writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k));
-        // writer->write_eigen_matrix(result.v[k], "TRANSIENT_V_T"+std::to_string(k));
-        // writer->write_eigen_matrix(result.a[k], "TRANSIENT_A_T"+std::to_string(k));
+
+        // Velocity: v = T qdot (no u_p)
+        auto v_full = CT->map().T() * qvk;
+        auto V_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
+        writer->write_field(V_mat, "VELOCITY_" + std::to_string(k));
+
+        // Acceleration: a = T qddot (no u_p)
+        auto a_full = CT->map().T() * qak;
+        auto A_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
+        writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k));
     }
 
     logging::info(true, "Transient analysis completed.");

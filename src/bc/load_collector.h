@@ -110,6 +110,21 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      */
     void add_tload(model::Field::Ptr temp_field, Precision ref_temp);
 
+    /**
+     * @brief Adds an inertial load (rigid-body acceleration field) to the collector.
+     *
+     * @param region Element region receiving the equivalent inertia forces.
+     * @param center Center point about which angular terms are defined.
+     * @param center_acc Linear acceleration of the center.
+     * @param omega Angular velocity vector.
+     * @param alpha Angular acceleration vector.
+     */
+    void add_inertialload(model::ElementRegion::Ptr region,
+                          Vec3 center,
+                          Vec3 center_acc,
+                          Vec3 omega,
+                          Vec3 alpha);
+
     /// Read-only access to stored loads
     const std::vector<Load::Ptr>& entries() const { return this->_data; }
 };

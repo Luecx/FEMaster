@@ -317,6 +317,38 @@ struct BeamElement : StructuralElement {
         return result;
     }
 
+    // Integrate vector field via simple 1-point mid-span sampling and equal distribution
+    void integrate_vec_field(Field& node_loads,
+                             bool scale_by_density,
+                             const VecField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return;
+
+        // Midpoint in global coords (average of end nodes for robustness)
+        Vec3 x_mid = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
+        x_mid /= static_cast<Precision>(N);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+
+        // Total equivalent force = ∫ f dV ≈ f(x_mid) * A * L * rho
+        const Vec3 F = field(x_mid) * (rho * A * L);
+        const Precision share = Precision(1) / static_cast<Precision>(N);
+        for (Index i = 0; i < N; ++i) {
+            const ID n_id = node_ids[i];
+            node_loads(n_id, 0) += share * F(0);
+            node_loads(n_id, 1) += share * F(1);
+            node_loads(n_id, 2) += share * F(2);
+        }
+    }
+
 
 };
 

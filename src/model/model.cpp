@@ -249,6 +249,20 @@ void Model::add_vload(const ID id, Vec3 load, const std::string& orientation, co
     _data->load_cols.get()->add_vload(region_ptr, load, orientation_ptr, amplitude_ptr);
 }
 
+void Model::add_inertialload(const std::string& elset,
+                             Vec3 center,
+                             Vec3 center_acceleration,
+                             Vec3 angular_velocity,
+                             Vec3 angular_acceleration) {
+    logging::error(_data->elem_sets.has(elset), "Element set ", elset, " does not exist");
+    auto region_ptr = _data->elem_sets.get(elset);
+    _data->load_cols.get()->add_inertialload(region_ptr,
+                                             center,
+                                             center_acceleration,
+                                             angular_velocity,
+                                             angular_acceleration);
+}
+
 void Model::define_amplitude(const std::string& name, bc::Interpolation interpolation) {
     auto amplitude = _data->amplitudes.activate(name);
     amplitude->set_interpolation(interpolation);

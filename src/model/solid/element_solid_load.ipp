@@ -105,4 +105,53 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
 }
 
 
+//-----------------------------------------------------------------------------
+// integrate_vec_field
+//-----------------------------------------------------------------------------
+template<Index N>
+void
+SolidElement<N>::integrate_vec_field(Field& node_loads,
+                                     bool scale_by_density,
+                                     const VecField& field)
+{
+    // Node coordinates
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+
+    // Optional density scaling
+    Precision rho = 1.0;
+    if (scale_by_density) {
+        auto mat = this->material();
+        logging::error(mat != nullptr && mat->has_density(),
+                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+        rho = mat->get_density();
+    }
+
+    const auto& scheme = this->integration_scheme();
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto pt = scheme.get_point(ip);
+        const Precision r = pt.r;
+        const Precision s = pt.s;
+        const Precision t = pt.t;
+        const Precision w = pt.w;
+
+        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
+        const Precision detJ = J.determinant();
+
+        Vec3 x_ip = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
+
+        Vec3 f_ip = field(x_ip) * (rho * w * detJ);
+
+        for (Index i = 0; i < N; ++i) {
+            const ID n_id = this->node_ids[i];
+            const Precision a = Nvals(i);
+            node_loads(n_id, 0) += a * f_ip(0);
+            node_loads(n_id, 1) += a * f_ip(1);
+            node_loads(n_id, 2) += a * f_ip(2);
+        }
+    }
+}
+
+
 }  // namespace fem::model

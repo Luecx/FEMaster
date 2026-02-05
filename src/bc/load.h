@@ -235,5 +235,29 @@ struct TLoad : public Load {
     std::string str() const override;
 };
 
+/**
+ * @struct InertialLoad
+ * @brief Rigid-body inertial load defined by a center point, linear acceleration at the center,
+ *        and angular velocity/acceleration about that center (no Coriolis term).
+ *
+ * The equivalent nodal forces are computed by integrating f(x) = -rho * a(x) over the element
+ * volume (or mid-surface for shells), where a(x) = a0 + alpha x r + omega x (omega x r) and r = x - c.
+ */
+struct InertialLoad : public Load {
+    using Ptr = std::shared_ptr<InertialLoad>;
+
+    Vec3 center{0,0,0};
+    Vec3 center_acc{0,0,0};
+    Vec3 omega{0,0,0};
+    Vec3 alpha{0,0,0};
+    SPtr<model::ElementRegion> region = nullptr; ///< Target element region.
+
+    InertialLoad() = default;
+    ~InertialLoad() override = default;
+
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+    std::string str() const override;
+};
+
 } // namespace bc
 } // namespace fem

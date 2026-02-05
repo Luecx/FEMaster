@@ -32,6 +32,7 @@
 #include "commands/register_pload.inl"
 #include "commands/register_tload.inl"
 #include "commands/register_vload.inl"
+#include "commands/register_inertialload.inl"
 #include "commands/register_support.inl"
 #include "commands/register_amplitude.inl"
 #include "commands/register_orientation.inl"
@@ -63,6 +64,7 @@
 #include "commands/register_loadcase_write_every.inl"
 #include "commands/register_loadcase_damping.inl"
 #include "commands/register_loadcase_newmark.inl"
+#include "commands/register_loadcase_initialvelocity.inl"
 
 namespace fem::input_decks {
 
@@ -308,6 +310,7 @@ void Parser::register_commands() {
     commands::register_pload(reg, mdl);
     commands::register_tload(reg, mdl);
     commands::register_vload(reg, mdl);
+    commands::register_inertialload(reg, mdl);
     commands::register_support(reg, mdl);
     commands::register_amplitude(reg, mdl);
 
@@ -345,6 +348,7 @@ void Parser::register_commands() {
     commands::register_loadcase_write_every(reg, *this);
     commands::register_loadcase_damping(reg, *this);
     commands::register_loadcase_newmark(reg, *this);
+    commands::register_loadcase_initialvelocity(reg, *this);
 
     m_commands_registered = true;
 }
