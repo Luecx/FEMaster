@@ -173,6 +173,17 @@ constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof
         ++tie_idx;
     }
 
+    Index rbm_idx = 0;
+    for (auto& r : this->_data->rbms) {
+        auto eqs = r.get_equations(system_dof_ids, *_data);
+        for (auto& eq : eqs) {
+            eq.source = constraint::EquationSourceKind::Rbm;
+            eq.source_index = rbm_idx;
+            groups.rbms.push_back(std::move(eq));
+        }
+        ++rbm_idx;
+    }
+
     if (!this->_data->equations.empty()) {
         Index manual_idx = 0;
         for (auto eq : this->_data->equations) {

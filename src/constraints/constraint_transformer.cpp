@@ -15,6 +15,8 @@
 
 #include "../core/logging.h"
 
+#include <Eigen/SparseQR>
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -208,6 +210,74 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
         print_block(item);
     }
     logging::down();
+}
+
+} // namespace constraint
+} // namespace fem
+
+namespace fem {
+namespace constraint {
+
+DynamicVector ConstraintTransformer::lagrange_multipliers(const SparseMatrix& K,
+                                                          const DynamicVector& f,
+                                                          const DynamicVector& q) const {
+    // Compute residual g = f - K u so that C^T λ ≈ g
+    const DynamicVector u = recover_u(q);
+    const DynamicVector g = f - (K * u);
+
+    // Solve least-squares for A x ≈ b with A = C^T (size n x m), b = g (size n)
+    // This yields a minimum-norm λ when the system is overdetermined.
+    const SparseMatrix Ct = set_.C.transpose();
+    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
+    qr.setPivotThreshold(0.0);
+    qr.compute(Ct);
+    logging::error(qr.info() == Eigen::Success, "[ConstraintTransformer] QR(C^T) factorization failed");
+
+    DynamicVector lambda = qr.solve(g);
+    logging::error(lambda.size() == set_.C.rows(), "[ConstraintTransformer] Unexpected lambda size");
+    return lambda;
+}
+
+DynamicVector ConstraintTransformer::constraint_forces(const DynamicVector& lambda) const {
+    logging::error(lambda.size() == set_.C.rows(), "[ConstraintTransformer] lambda size mismatch");
+    return set_.C.transpose() * lambda;
+}
+
+DynamicVector ConstraintTransformer::support_reactions(const SparseMatrix& K,
+                                                       const DynamicVector& f,
+                                                       const DynamicVector& q) const {
+    if (set_.C.rows() == 0 || set_.equations.empty()) {
+        return DynamicVector::Zero(set_.n);
+    }
+
+    // Compute λ from equilibrium
+    const DynamicVector lambda = lagrange_multipliers(K, f, q);
+
+    // Accumulate g_supp = C_supp^T λ_supp using row-wise traversal so we can
+    // filter by the originating source (supports only).
+    DynamicVector g = DynamicVector::Zero(set_.n);
+
+    // For mapping rows -> original equation (with source kind)
+    logging::error(static_cast<Index>(set_.kept_row_ids.size()) == set_.C.rows(),
+                   "[ConstraintTransformer] kept_row_ids size mismatch");
+
+    for (int col = 0; col < set_.C.outerSize(); ++col) {
+        // iterate C(row=i, col)
+        for (SparseMatrix::InnerIterator it(set_.C, col); it; ++it) {
+            const int i = it.row(); // equation row index after filtering
+            const Index eq_idx = set_.kept_row_ids[static_cast<std::size_t>(i)];
+            const auto& eq = set_.equations[static_cast<std::size_t>(eq_idx)];
+            if (eq.source == EquationSourceKind::Support) {
+                // Contribution to DOF 'col' from support row 'i'
+                g[col] += it.value() * lambda[i];
+            }
+        }
+    }
+
+    // Match previous sign convention: prior code wrote r = K u - f as
+    // REACTION_FORCES on supports. From equilibrium K u - f + C^T λ = 0 ->
+    // K u - f = - C^T λ. Therefore return -g so values coincide.
+    return -g;
 }
 
 } // namespace constraint

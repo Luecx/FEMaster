@@ -154,4 +154,119 @@ SolidElement<N>::integrate_vec_field(Field& node_loads,
 }
 
 
+//-----------------------------------------------------------------------------
+// integrate_scalar_field / integrate_vector_field / integrate_tensor_field
+//-----------------------------------------------------------------------------
+template<Index N>
+Precision
+SolidElement<N>::integrate_scalar_field(bool scale_by_density,
+                                        const ScalarField& field)
+{
+    // Node coordinates
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+
+    // Optional density scaling
+    Precision rho = 1.0;
+    if (scale_by_density) {
+        auto mat = this->material();
+        logging::error(mat != nullptr && mat->has_density(),
+                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+        rho = mat->get_density();
+    }
+
+    Precision result = Precision(0);
+    const auto& scheme = this->integration_scheme();
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto pt = scheme.get_point(ip);
+        const Precision r = pt.r;
+        const Precision s = pt.s;
+        const Precision t = pt.t;
+        const Precision w = pt.w;
+
+        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
+        const Precision detJ = J.determinant();
+
+        Vec3 x_ip = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
+
+        result += field(x_ip) * (rho * w * detJ);
+    }
+    return result;
+}
+
+template<Index N>
+Vec3
+SolidElement<N>::integrate_vector_field(bool scale_by_density,
+                                        const VecField& field)
+{
+    // Node coordinates
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+
+    Precision rho = 1.0;
+    if (scale_by_density) {
+        auto mat = this->material();
+        logging::error(mat != nullptr && mat->has_density(),
+                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+        rho = mat->get_density();
+    }
+
+    Vec3 result = Vec3::Zero();
+    const auto& scheme = this->integration_scheme();
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto pt = scheme.get_point(ip);
+        const Precision r = pt.r;
+        const Precision s = pt.s;
+        const Precision t = pt.t;
+        const Precision w = pt.w;
+
+        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
+        const Precision detJ = J.determinant();
+
+        Vec3 x_ip = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
+
+        result += field(x_ip) * (rho * w * detJ);
+    }
+    return result;
+}
+
+template<Index N>
+Mat3
+SolidElement<N>::integrate_tensor_field(bool scale_by_density,
+                                        const TenField& field)
+{
+    // Node coordinates
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+
+    Precision rho = 1.0;
+    if (scale_by_density) {
+        auto mat = this->material();
+        logging::error(mat != nullptr && mat->has_density(),
+                       "SolidElement: material density is required when scale_by_density=true for element ", this->elem_id);
+        rho = mat->get_density();
+    }
+
+    Mat3 result = Mat3::Zero();
+    const auto& scheme = this->integration_scheme();
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto pt = scheme.get_point(ip);
+        const Precision r = pt.r;
+        const Precision s = pt.s;
+        const Precision t = pt.t;
+        const Precision w = pt.w;
+
+        StaticMatrix<N, 1> Nvals = this->shape_function(r, s, t);
+        const StaticMatrix<D, D> J = this->jacobian(node_coords_glob, r, s, t);
+        const Precision detJ = J.determinant();
+
+        Vec3 x_ip = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_ip += Nvals(i) * node_coords_glob.row(i);
+
+        result += field(x_ip) * (rho * w * detJ);
+    }
+    return result;
+}
+
 }  // namespace fem::model

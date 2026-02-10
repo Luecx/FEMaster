@@ -25,6 +25,7 @@ void ConstraintGroups::report() const {
         {"Connectors", connectors},
         {"Couplings", couplings},
         {"Ties", ties},
+        {"RBMs", rbms},
         {"Other", others},
     };
 
@@ -45,4 +46,3 @@ void ConstraintGroups::report() const {
 
 } // namespace constraint
 } // namespace fem
-

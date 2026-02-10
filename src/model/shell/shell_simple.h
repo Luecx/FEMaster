@@ -171,6 +171,115 @@ struct DefaultShellElement : public ShellElement<N> {
         }
     }
 
+    // Scalar, vector, and tensor integrations over shell area*thickness
+    Precision integrate_scalar_field(bool scale_by_density,
+                                     const typename ShellElement<N>::ScalarField& field) override {
+        Mat3 axes = this->get_xyz_axes();
+        auto xy_coords = this->get_xy_coords(axes);
+        const auto& scheme = this->integration_scheme();
+        const Precision t = this->get_section()->thickness;
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = this->get_material();
+            logging::error(mat && mat->has_density(),
+                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+
+        auto node_coords_glob = this->node_coords_global();
+        Precision result = Precision(0);
+        for (Index ip = 0; ip < scheme.count(); ++ip) {
+            const auto p = scheme.get_point(ip);
+            const Precision r = p.r;
+            const Precision s = p.s;
+            const Precision w = p.w;
+
+            ShapeFunction   H   = this->shape_function(r, s);
+            ShapeDerivative dH  = this->shape_derivative(r, s);
+            Jacobian        Jrs = this->jacobian(dH, xy_coords);
+            const Precision detJ = std::abs(Jrs.determinant());
+
+            Vec3 x_ip = Vec3::Zero();
+            for (Index i = 0; i < N; ++i) x_ip += H(i) * node_coords_glob.row(i);
+
+            result += field(x_ip) * (rho * t * w * detJ);
+        }
+        return result;
+    }
+
+    Vec3 integrate_vector_field(bool scale_by_density,
+                                const typename ShellElement<N>::VecField& field) override {
+        Mat3 axes = this->get_xyz_axes();
+        auto xy_coords = this->get_xy_coords(axes);
+        const auto& scheme = this->integration_scheme();
+        const Precision t = this->get_section()->thickness;
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = this->get_material();
+            logging::error(mat && mat->has_density(),
+                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+
+        auto node_coords_glob = this->node_coords_global();
+        Vec3 result = Vec3::Zero();
+        for (Index ip = 0; ip < scheme.count(); ++ip) {
+            const auto p = scheme.get_point(ip);
+            const Precision r = p.r;
+            const Precision s = p.s;
+            const Precision w = p.w;
+
+            ShapeFunction   H   = this->shape_function(r, s);
+            ShapeDerivative dH  = this->shape_derivative(r, s);
+            Jacobian        Jrs = this->jacobian(dH, xy_coords);
+            const Precision detJ = std::abs(Jrs.determinant());
+
+            Vec3 x_ip = Vec3::Zero();
+            for (Index i = 0; i < N; ++i) x_ip += H(i) * node_coords_glob.row(i);
+
+            result += field(x_ip) * (rho * t * w * detJ);
+        }
+        return result;
+    }
+
+    Mat3 integrate_tensor_field(bool scale_by_density,
+                                const typename ShellElement<N>::TenField& field) override {
+        Mat3 axes = this->get_xyz_axes();
+        auto xy_coords = this->get_xy_coords(axes);
+        const auto& scheme = this->integration_scheme();
+        const Precision t = this->get_section()->thickness;
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = this->get_material();
+            logging::error(mat && mat->has_density(),
+                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+
+        auto node_coords_glob = this->node_coords_global();
+        Mat3 result = Mat3::Zero();
+        for (Index ip = 0; ip < scheme.count(); ++ip) {
+            const auto p = scheme.get_point(ip);
+            const Precision r = p.r;
+            const Precision s = p.s;
+            const Precision w = p.w;
+
+            ShapeFunction   H   = this->shape_function(r, s);
+            ShapeDerivative dH  = this->shape_derivative(r, s);
+            Jacobian        Jrs = this->jacobian(dH, xy_coords);
+            const Precision detJ = std::abs(Jrs.determinant());
+
+            Vec3 x_ip = Vec3::Zero();
+            for (Index i = 0; i < N; ++i) x_ip += H(i) * node_coords_glob.row(i);
+
+            result += field(x_ip) * (rho * t * w * detJ);
+        }
+        return result;
+    }
+
     StaticMatrix<3, N * 3> strain_disp_bending(ShapeDerivative& shape_der, Jacobian& jacobian) {
         Mat2                   inv = jacobian.inverse();
         auto                   dH  = (shape_der * inv).transpose();

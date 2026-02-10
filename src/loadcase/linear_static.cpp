@@ -4,7 +4,10 @@
  *
  * The algorithm assembles the constrained system, reduces it via the null-space
  * map, solves for the reduced coordinates, and expands the solution and
- * reactions back to global DOFs.
+ * reactions back to global DOFs. Support reactions are recovered from
+ * constraint multipliers (g_supp = C_supp^T λ_supp), ensuring nonzero values
+ * even for supported DOFs without element stiffness (e.g. reference points
+ * constrained via couplings).
  *
  * @see src/loadcase/linear_static.h
  * @see src/constraints/constraint_transformer.h
@@ -21,18 +24,29 @@
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../reader/write_mtx.h"
 #include "../solve/eigen.h"
+#include "../model/model.h"
+#include "../model/element/element_structural.h"
+
+#include "tools/inertia_relief.h"
+#include "tools/rebalance_loads.h"
 
 #include <utility>
 #include <limits>
+#include <algorithm>
+#include <iomanip>
 
 namespace fem {
 namespace loadcase {
 
 using constraint::ConstraintTransformer;
 
+namespace {
+
 /**
  * @copydoc LinearStatic::LinearStatic
  */
+} // anonymous namespace
+
 LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
@@ -53,17 +67,42 @@ void LinearStatic::run() {
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    // Collect grouped constraints so we can both flatten for solver and later
-    // identify which DOFs were constrained by supports for reaction masking.
-    auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
-        "building constraints");
-    report_constraint_groups(groups);
-    auto equations = groups.flatten();
-
+    // Build initial global load matrix (without inertia relief)
     auto global_load_mat = Timer::measure(
         [&]() { return model->build_load_matrix(loads); },
         "constructing load matrix (node x 6)");
+
+    // ---------------------------------------------------------------------
+    // Inertia relief: requires no supports in this load case
+    // ---------------------------------------------------------------------
+    if (inertia_relief) {
+        rebalance_loads = true;
+        logging::error(supps.empty(),
+                       "InertiaRelief: cannot be used with *SUPPORT in this load case. "
+                       "Remove all referenced support collectors.");
+
+        Timer::measure(
+            [&]() {
+                fem::apply_inertia_relief(*model->_data, global_load_mat);
+
+                // Add temporary RBM constraint (all nodes). Removed later after equations are built.
+                model->add_rbm(std::string("NALL"));
+            },
+            "InertiaRelief: adjusting external load matrix and adding RBM");
+    }
+
+    if (rebalance_loads) {
+        Timer::measure([&]() {fem::rebalance_loads(*model->_data, global_load_mat);},
+            "rebalancing of loads");
+    }
+
+    // Build constraint groups (include RBM if inertia relief is enabled)
+    auto groups = Timer::measure(
+        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
+        "building constraints");
+
+    report_constraint_groups(groups);
+    auto equations = groups.flatten();
 
     auto K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
@@ -99,6 +138,14 @@ void LinearStatic::run() {
     }
     logging::down();
 
+    // Remove temporary RBM again (equations already built)
+    if (inertia_relief) {
+        logging::error(model->_data != nullptr, "InertiaRelief: model data not initialized");
+        logging::error(!model->_data->rbms.empty(),
+                       "InertiaRelief: expected a temporary RBM to be present, but rbms is empty");
+        model->_data->rbms.pop_back();
+    }
+
     auto A = Timer::measure(
         [&]() { return transformer->assemble_A(K); },
         "assembling reduced stiffness A = T^T K T");
@@ -132,17 +179,22 @@ void LinearStatic::run() {
         [&]() { return transformer->recover_u(q); },
         "recovering full displacement vector u");
 
-    auto r = Timer::measure(
+    auto r_internal = Timer::measure(
         [&]() { return transformer->reactions(K, f, q); },
-        "computing reactions r = K u - f");
+        "computing internal nodal forces r_int = K u - f");
+
+    // Support reactions via constraint multipliers: g_supp = C_supp^T lambda_supp
+    auto r_support = Timer::measure(
+        [&]() { return transformer->support_reactions(K, f, q); },
+        "computing support reactions via multipliers (C_supp^T lambda)");
 
     auto global_disp_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
         "expanding displacement vector to matrix form");
 
-    auto global_force_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r); },
-        "expanding reactions to matrix form");
+    auto global_react_mat = Timer::measure(
+        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
+        "expanding support reactions to matrix form");
 
     auto section_force_mat = Timer::measure(
         [&]() { return model->compute_section_forces(global_disp_mat); },
@@ -176,19 +228,19 @@ void LinearStatic::run() {
     }
 
     model::Field reaction_masked{"REACTION_FORCES", model::FieldDomain::NODE,
-                                 global_force_mat.rows,
-                                 global_force_mat.components};
+                                 global_react_mat.rows,
+                                 global_react_mat.components};
     reaction_masked.fill_nan();
     for (int i = 0; i < reaction_masked.rows; ++i) {
         for (int j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
-                reaction_masked(i, j) = global_force_mat(i, j);
+                reaction_masked(i, j) = global_react_mat(i, j);
             }
         }
     }
 
     writer->add_loadcase(id);
-    writer->write_field(global_disp_mat			, "DISPLACEMENT");
+    writer->write_field(global_disp_mat         , "DISPLACEMENT");
     writer->write_field(strain                  , "STRAIN");
     writer->write_field(stress                  , "STRESS");
     writer->write_field(global_load_mat         , "EXTERNAL_FORCES");

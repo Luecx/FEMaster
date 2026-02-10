@@ -220,6 +220,55 @@ struct TrussElement : StructuralElement {
             node_loads(n_id, 2) += F(2) * Precision(0.5);
         }
     }
+
+    // --- Generic integrations (midpoint over volume A*L) ---
+    Precision integrate_scalar_field(bool scale_by_density,
+                                     const ScalarField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
+        Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "TrussElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
+
+    Vec3 integrate_vector_field(bool scale_by_density,
+                                const VecField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
+        Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "TrussElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
+
+    Mat3 integrate_tensor_field(bool scale_by_density,
+                                const TenField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
+        Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "TrussElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
 };
 
 using T3 = TrussElement<2>;

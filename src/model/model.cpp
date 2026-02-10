@@ -112,6 +112,13 @@ void Model::add_tie(const std::string& master_set,
     logging::error(false, "Master set ", master_set, " contains neither surfaces nor lines");
 }
 
+void Model::add_rbm(const std::string& set, Index max_points) {
+    logging::error(_data->node_sets.has(set), "RBM: node set ", set, " not found");
+    logging::error(_data->node_sets.get(set) && _data->node_sets.get(set)->size() > 0,
+                   "RBM: node set ", set, " is empty");
+    _data->rbms.emplace_back(_data->node_sets.get(set), max_points);
+}
+
 
 void Model::add_cload(const std::string& nset, Vec6 load, const std::string& orientation, const std::string& amplitude){
     logging::error(_data->node_sets.has(nset), "Node set ", nset, " does not exist");

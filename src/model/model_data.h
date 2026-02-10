@@ -21,6 +21,7 @@
 #include "../constraints/coupling.h"
 #include "../constraints/equation.h"
 #include "../constraints/tie.h"
+#include "../constraints/rbm.h"
 #include "../material/material.h"
 #include "../cos/coordinate_system.h"
 #include "../core/types_eig.h"
@@ -87,6 +88,7 @@ struct ModelData {
     std::vector<constraint::Connector> connectors{};
     std::vector<constraint::Coupling> couplings{};
     std::vector<constraint::Tie> ties{};
+    std::vector<constraint::Rbm> rbms{};
     std::vector<constraint::Equation> equations{};
 
     // Load and support collectors ---------------------------------------------

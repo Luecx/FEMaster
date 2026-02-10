@@ -24,7 +24,8 @@
  *  (4) Assemble active stiffness K(rho, p, theta) using current density/orientation.
  *  (5) Build ConstraintTransformer -> u = u_p + T q (wrapped for timing).
  *  (6) Reduce and solve: A = T^T K T, b = T^T (f - K u_p); solve A q = b.
- *  (7) Recover u and reactions r = K u - f; expand to node x 6.
+ *  (7) Recover u and support reactions via multipliers (g_supp = C_supp^T λ_supp);
+ *      expand to node x 6.
  *  (8) Post-processing: nodal stress/strain.
  *  (9) Topology metrics: compliance and sensitivities (density/orientation), volume.
  * (10) Write results.
@@ -200,14 +201,14 @@ void LinearStaticTopo::run() {
         "solving reduced system A q = b"
     );
 
-    // (7) Recover full displacement u and reactions r = K u - f
+    // (7) Recover full displacement u and support reactions from multipliers
     auto u = Timer::measure(
         [&]() { return CT->recover_u(q); },
         "recovering full displacement vector u"
     );
-    auto r = Timer::measure(
-        [&]() { return CT->reactions(K, f, q); },
-        "computing reactions r = K u - f"
+    auto r_support = Timer::measure(
+        [&]() { return CT->support_reactions(K, f, q); },
+        "computing support reactions via multipliers (C_supp^T lambda)"
     );
 
     // (8) Expand vectors to node x 6 matrices for writer output
@@ -215,9 +216,9 @@ void LinearStaticTopo::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u); },
         "expanding displacement vector to matrix form"
     );
-    auto global_force_mat = Timer::measure(
-        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r); },
-        "expanding reactions to matrix form"
+    auto global_react_mat = Timer::measure(
+        [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
+        "expanding support reactions to matrix form"
     );
 
     // (9) Post-processing: nodal stress/strain from displacements
@@ -262,13 +263,13 @@ void LinearStaticTopo::run() {
         }
     }
     model::Field reaction_masked{"REACTION_FORCES", model::FieldDomain::NODE,
-                                 global_force_mat.rows,
-                                 global_force_mat.components};
+                                 global_react_mat.rows,
+                                 global_react_mat.components};
     reaction_masked.fill_nan();
     for (int i = 0; i < reaction_masked.rows; ++i) {
         for (int j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
-                reaction_masked(i, j) = global_force_mat(i, j);
+                reaction_masked(i, j) = global_react_mat(i, j);
             }
         }
     }

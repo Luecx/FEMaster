@@ -33,6 +33,9 @@ struct LinearStatic : public LoadCase {
     solver::SolverMethod method = solver::DIRECT; ///< Solver method selection.
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
 
+
+    bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
+	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).
     /**
      * @brief Constructs the linear static load case.
      *

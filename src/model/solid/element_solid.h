@@ -275,6 +275,14 @@ public:
                              bool scale_by_density,
                              const VecField& field) override;
 
+    // Generic volume integrations (return accumulated values)
+    Precision integrate_scalar_field(bool scale_by_density,
+                                     const ScalarField& field) override;
+    Vec3      integrate_vector_field(bool scale_by_density,
+                                     const VecField& field) override;
+    Mat3      integrate_tensor_field(bool scale_by_density,
+                                     const TenField& field) override;
+
     /**
      * @brief Applies a thermal load to the element.
      */

@@ -47,9 +47,22 @@ struct StructuralElement : ElementInterface {
                                              Field& stress,
                                              Field& strain) = 0;
 
+    // Field functors for volume/surface integrations (aliased to central types)
+    using ScalarField = ::fem::ScalarField;
+    using VecField    = ::fem::VecField;
+    using TenField    = ::fem::TenField;
+
+    // Integrate fields over the element measure (volume for solids/beams/trusses, area*thickness for shells)
+    // Optionally scale by material density (per element).
+    virtual Precision integrate_scalar_field(bool scale_by_density,
+                                             const ScalarField& field) = 0;
+    virtual Vec3      integrate_vector_field(bool scale_by_density,
+                                             const VecField& field) = 0;
+    virtual Mat3      integrate_tensor_field(bool scale_by_density,
+                                             const TenField& field) = 0;
+
     // Integrate a vector field f(x) over the element volume and scatter to nodes.
     // If scale_by_density is true, multiply f(x) by the material density (per element).
-    using VecField = std::function<Vec3(const Vec3&)>;
     virtual void integrate_vec_field(Field& node_loads,
                                      bool scale_by_density,
                                      const VecField& field) = 0;

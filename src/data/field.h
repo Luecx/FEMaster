@@ -151,6 +151,105 @@ struct Field {
         return Vec6(values(r, 0), values(r, 1), values(r, 2),
                     values(r, 3), values(r, 4), values(r, 5));
     }
+
+    // ---- in-place operators (no new field creation) ----
+    // Scalar compound operations
+    Field& operator+=(Precision s) {
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) += s;
+            }
+        }
+        return *this;
+    }
+
+    Field& operator-=(Precision s) {
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) -= s;
+            }
+        }
+        return *this;
+    }
+
+    Field& operator*=(Precision s) {
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) *= s;
+            }
+        }
+        return *this;
+    }
+
+    Field& operator/=(Precision s) {
+        logging::error(s != Precision(0), "Field '", name, "': division by zero in scalar '/=' operation");
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) /= s;
+            }
+        }
+        return *this;
+    }
+
+    // Element-wise compound operations with another Field
+    Field& operator+=(const Field& other) {
+        logging::error(domain == other.domain,
+                       "Field '", name, "': domain mismatch in '+=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
+        logging::error(rows == other.rows && components == other.components,
+                       "Field '", name, "': size mismatch in '+=' (", rows, "x", components,
+                       " vs ", other.rows, "x", other.components, ")");
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) += other(r, c);
+            }
+        }
+        return *this;
+    }
+
+    Field& operator-=(const Field& other) {
+        logging::error(domain == other.domain,
+                       "Field '", name, "': domain mismatch in '-=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
+        logging::error(rows == other.rows && components == other.components,
+                       "Field '", name, "': size mismatch in '-=' (", rows, "x", components,
+                       " vs ", other.rows, "x", other.components, ")");
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) -= other(r, c);
+            }
+        }
+        return *this;
+    }
+
+    Field& operator*=(const Field& other) {
+        logging::error(domain == other.domain,
+                       "Field '", name, "': domain mismatch in '*=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
+        logging::error(rows == other.rows && components == other.components,
+                       "Field '", name, "': size mismatch in '*=' (", rows, "x", components,
+                       " vs ", other.rows, "x", other.components, ")");
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                values(r, c) *= other(r, c);
+            }
+        }
+        return *this;
+    }
+
+    Field& operator/=(const Field& other) {
+        logging::error(domain == other.domain,
+                       "Field '", name, "': domain mismatch in '/=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
+        logging::error(rows == other.rows && components == other.components,
+                       "Field '", name, "': size mismatch in '/=' (", rows, "x", components,
+                       " vs ", other.rows, "x", other.components, ")");
+        for (Index r = 0; r < rows; ++r) {
+            for (Index c = 0; c < components; ++c) {
+                const Precision denom = other(r, c);
+                logging::error(denom != Precision(0),
+                               "Field '", name, "': division by zero at (", r, ",", c, ") in field '/=' with '", other.name, "'");
+                values(r, c) /= denom;
+            }
+        }
+        return *this;
+    }
 };
 
 } // namespace model

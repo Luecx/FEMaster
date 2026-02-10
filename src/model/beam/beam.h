@@ -349,6 +349,67 @@ struct BeamElement : StructuralElement {
         }
     }
 
+    // Generic integrations (1-point over volume A*L)
+    Precision integrate_scalar_field(bool scale_by_density,
+                                     const ScalarField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
+
+        // Midpoint in global coords (average of nodes)
+        Vec3 x_mid = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
+        x_mid /= static_cast<Precision>(N);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
+
+    Vec3 integrate_vector_field(bool scale_by_density,
+                                const VecField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
+
+        Vec3 x_mid = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
+        x_mid /= static_cast<Precision>(N);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
+
+    Mat3 integrate_tensor_field(bool scale_by_density,
+                                const TenField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->A;
+        if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
+
+        Vec3 x_mid = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
+        x_mid /= static_cast<Precision>(N);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
 
 };
 

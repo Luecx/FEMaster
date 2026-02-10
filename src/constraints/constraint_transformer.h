@@ -104,6 +104,49 @@ public:
     }
 
     /**
+     * @brief Estimates Lagrange multipliers for the active constraints.
+     *
+     * Given a converged static state (u = T q + u_p), this computes a
+     * least-squares solution of C^T λ ≈ f - K u, which corresponds to
+     * enforcing global equilibrium K u - f + C^T λ = 0 in the presence of
+     * eliminated constraints. The returned vector λ has one entry per
+     * assembled constraint row (i.e. matches set().m and set().kept_row_ids).
+     *
+     * @param K Full-space stiffness matrix.
+     * @param f Full-space external load vector.
+     * @param q Reduced coordinates (solution in master space).
+     * @return DynamicVector Lagrange multipliers λ (size = set().m).
+     */
+    DynamicVector lagrange_multipliers(const SparseMatrix& K,
+                                       const DynamicVector& f,
+                                       const DynamicVector& q) const;
+
+    /**
+     * @brief Builds full-space constraint forces g = C^T λ.
+     *
+     * @param lambda Lagrange multipliers (size = set().m).
+     * @return DynamicVector Full-space constraint force vector.
+     */
+    DynamicVector constraint_forces(const DynamicVector& lambda) const;
+
+    /**
+     * @brief Computes support-only reaction forces from constraint multipliers.
+     *
+     * Constructs g_supp = C_supp^T λ_supp by accumulating only rows of C that
+     * originated from supports. This yields non-zero entries exclusively on DOFs
+     * where supports act, even if those DOFs have no element stiffness.
+     *
+     * @param K Full-space stiffness matrix.
+     * @param f Full-space load vector.
+     * @param q Reduced coordinates.
+     * @return DynamicVector Full-space vector with reactions due to supports only
+     *         (sign matches prior convention r = K u - f on supported DOFs).
+     */
+    DynamicVector support_reactions(const SparseMatrix& K,
+                                    const DynamicVector& f,
+                                    const DynamicVector& q) const;
+
+    /**
      * @brief Performs diagnostic checks on a static equilibrium solution.
      *
      * @param K Full-space stiffness matrix.

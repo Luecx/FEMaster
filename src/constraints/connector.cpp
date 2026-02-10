@@ -108,9 +108,9 @@ Dofs Connector::dofs() const {
             continue;
         }
 
-        const Vec3 local_dir = (i < 3) ? Vec3::Unit(i) : Vec3::Unit(i - 3);
+        const int block       = (i < 3) ? 0 : 1;
+        const Vec3 local_dir  = (i < 3) ? Vec3::Unit(i) : Vec3::Unit(i - 3);
         const Vec3 global_dir = coordinate_system_->to_global(local_dir);
-        const int block = (i < 3) ? 0 : 1;
 
         for (int j = 0; j < 3; ++j) {
             if (std::abs(global_dir(j)) > kEps) {

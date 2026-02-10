@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <functional>
 
 #ifdef USE_MKL
 #define EIGEN_USE_MKL_ALL
@@ -75,5 +76,10 @@ using Dofs = Eigen::Matrix<bool, 1, 6>;
 using ElDofs = Eigen::Matrix<bool, 1, 6>;
 using SystemDofs = Eigen::Matrix<bool, Eigen::Dynamic, 6, Eigen::RowMajor>;
 using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6, Eigen::RowMajor>;
+
+// Field functors for volume/surface integrations (central definitions)
+using ScalarField = std::function<Precision(const Vec3&)>;
+using VecField    = std::function<Vec3(const Vec3&)>;
+using TenField    = std::function<Mat3(const Vec3&)>;
 
 } // namespace fem
