@@ -57,6 +57,8 @@
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_vec_to_vec.h"
 #include "../solve/eigen.h"
+#include "tools/inertia_relief.h"
+#include "tools/rebalance_loads.h"
 
 #include <limits>
 #include <cmath>
@@ -104,7 +106,6 @@ void LinearStaticTopo::run() {
     // Inject topology parameters into the model's element data store so the
     // stiffness builder can read them during assembly.
     logging::error(density      != nullptr, "LinearStaticTopo: density field not initialized");
-    logging::error(orientation  != nullptr, "LinearStaticTopo: orientation field not initialized");
 
     // assign the model stiffness and
     model->_data->element_stiffness_scale = density;
@@ -116,7 +117,38 @@ void LinearStaticTopo::run() {
         "generating active_dof_idx_mat index matrix"
     );
 
-    // (2) Constraint equations from supports/ties/couplings
+    // (2) Global loads (node x 6)
+    auto global_load_mat = Timer::measure(
+        [&]() { return this->model->build_load_matrix(loads); },
+        "constructing load matrix (node x 6)"
+    );
+
+    // (2a) Inertia relief (optional) and temporary RBM
+    if (inertia_relief) {
+        logging::error(supps.empty(),
+                       "InertiaRelief: cannot be used with *SUPPORT in this load case. "
+                       "Remove all referenced support collectors.");
+
+        Timer::measure(
+            [&]() {
+                fem::apply_inertia_relief(*model->_data, global_load_mat);
+                // Add temporary RBM constraint (all nodes). Removed later after equations are built.
+                model->add_rbm(std::string("NALL"));
+            },
+            "InertiaRelief: adjusting external load matrix and adding RBM");
+    }
+
+    // (2b) Optional: rebalance loads (independent of inertia relief)
+    if (rebalance_loads) {
+        logging::error(supps.empty(),
+                       "Rebalancing Loads: cannot be used with *SUPPORT in this load case. "
+                       "Remove all referenced support collectors.");
+
+        Timer::measure([&]() { fem::rebalance_loads(*model->_data, global_load_mat); },
+                       "rebalancing of loads");
+    }
+
+    // (3) Constraint equations from supports/ties/couplings
     // Keep grouped constraints to later mask reactions to support-constrained DOFs
     auto groups = Timer::measure(
         [&]() { return this->model->collect_constraints(active_dof_idx_mat, supps); },
@@ -125,20 +157,16 @@ void LinearStaticTopo::run() {
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
-    // (3) Global loads (node x 6) and reduction to active RHS vector f
-    auto global_load_mat = Timer::measure(
-        [&]() { return this->model->build_load_matrix(loads); },
-        "constructing load matrix (node x 6)"
-    );
-    auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing load matrix -> active RHS vector f"
-    );
-
     // (4) Active stiffness K with topology scaling/orientation
     auto K = Timer::measure(
         [&]() { return this->model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K(rho^p, theta)"
+    );
+
+    // (4a) Reduce loads to active RHS vector f
+    auto f = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        "reducing load matrix -> active RHS vector f"
     );
 
     // (5) Build constraint transformer (Set -> Builder -> Map), wrapped for timing
@@ -168,6 +196,14 @@ void LinearStaticTopo::run() {
     logging::info(true           , "feasible             : ", CT->feasible() ? "true" : "false");
     logging::info(!CT->feasible(), "residual ||C u - d|| : ", CT->report().residual_norm);
     logging::down();
+
+    // Remove temporary RBM again (equations already built)
+    if (inertia_relief) {
+        logging::error(model->_data != nullptr, "InertiaRelief: model data not initialized");
+        logging::error(!model->_data->rbms.empty(),
+                       "InertiaRelief: expected a temporary RBM to be present, but rbms is empty");
+        model->_data->rbms.pop_back();
+    }
 
     // (6) Reduced system A q = b  with  A = T^T K T,  b = T^T (f - K u_p)
     // Note: Explicit assembly is suitable for direct solvers.
@@ -245,7 +281,11 @@ void LinearStaticTopo::run() {
         density_grad  (r, 0) = -exponent * compliance_raw(r, 0) * rho_p_minus;
     }
     auto volumes        = model->compute_volumes();
-    auto angle_grad     = model->compute_compliance_angle_derivative(global_disp_mat);
+    const bool has_orientation = (orientation != nullptr);
+    model::Field angle_grad;
+    if (has_orientation) {
+        angle_grad = model->compute_compliance_angle_derivative(global_disp_mat);
+    }
 
     // (11) Write results
     // Mask reactions to supports only (NaN elsewhere)
@@ -285,8 +325,10 @@ void LinearStaticTopo::run() {
     writer->write_field(density_grad    , "DENS_GRAD");
     writer->write_field(volumes         , "VOLUME");
     writer->write_field(*density        , "DENSITY");
-    writer->write_field(angle_grad      , "ORIENTATION_GRAD");
-    writer->write_field(*orientation    , "ORIENTATION");
+    if (has_orientation) {
+        writer->write_field(angle_grad  , "ORIENTATION_GRAD");
+        writer->write_field(*orientation, "ORIENTATION");
+    }
 
     // (13) Diagnostics (optional): projected residual checks
     CT->post_check_static(K, f, u);

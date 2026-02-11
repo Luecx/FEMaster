@@ -66,6 +66,7 @@
 #include "commands/register_loadcase_newmark.inl"
 #include "commands/register_loadcase_initialvelocity.inl"
 #include "commands/register_loadcase_inertiarelief.inl"
+#include "commands/register_loadcase_rebalance.inl"
 
 namespace fem::input_decks {
 
@@ -351,6 +352,7 @@ void Parser::register_commands() {
     commands::register_loadcase_newmark(reg, *this);
     commands::register_loadcase_initialvelocity(reg, *this);
     commands::register_loadcase_inertiarelief(reg, *this);
+    commands::register_loadcase_rebalance(reg, *this);
 
     m_commands_registered = true;
 }

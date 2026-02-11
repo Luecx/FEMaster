@@ -76,7 +76,6 @@ void LinearStatic::run() {
     // Inertia relief: requires no supports in this load case
     // ---------------------------------------------------------------------
     if (inertia_relief) {
-        rebalance_loads = true;
         logging::error(supps.empty(),
                        "InertiaRelief: cannot be used with *SUPPORT in this load case. "
                        "Remove all referenced support collectors.");
@@ -92,6 +91,10 @@ void LinearStatic::run() {
     }
 
     if (rebalance_loads) {
+        logging::error(supps.empty(),
+                       "Rebalancing Loads: cannot be used with *SUPPORT in this load case. "
+                       "Remove all referenced support collectors.");
+
         Timer::measure([&]() {fem::rebalance_loads(*model->_data, global_load_mat);},
             "rebalancing of loads");
     }
