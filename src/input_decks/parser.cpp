@@ -33,6 +33,7 @@
 #include "commands/register_tload.inl"
 #include "commands/register_vload.inl"
 #include "commands/register_inertialload.inl"
+#include "commands/register_rbm.inl"
 #include "commands/register_support.inl"
 #include "commands/register_amplitude.inl"
 #include "commands/register_orientation.inl"
@@ -313,6 +314,7 @@ void Parser::register_commands() {
     commands::register_tload(reg, mdl);
     commands::register_vload(reg, mdl);
     commands::register_inertialload(reg, mdl);
+    commands::register_rbm(reg, mdl);
     commands::register_support(reg, mdl);
     commands::register_amplitude(reg, mdl);
 

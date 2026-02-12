@@ -6,10 +6,10 @@
 #include "rbm.h"
 
 #include "../core/logging.h"
+#include "../core/types_eig.h"
 #include "../model/model_data.h"
 
 #include <algorithm>
-#include <limits>
 
 namespace fem {
 namespace constraint {
@@ -17,12 +17,14 @@ namespace constraint {
 namespace {
 
 // Collect unique node ids from the configured region(s)
-static std::vector<ID> collect_nodes(const Rbm& rbm, model::ModelData& /*model_data*/) {
+static std::vector<ID> collect_nodes(const Rbm& rbm) {
     std::vector<ID> ids;
     ids.reserve(256);
 
     if (rbm.node_region) {
-        for (ID id : *rbm.node_region) ids.push_back(id);
+        for (ID id : *rbm.node_region) {
+            ids.push_back(id);
+        }
     }
 
     // unique and sorted
@@ -31,128 +33,105 @@ static std::vector<ID> collect_nodes(const Rbm& rbm, model::ModelData& /*model_d
     return ids;
 }
 
-// Farthest-point sampling on node coordinates
-static std::vector<ID> farthest_point_sample(const std::vector<ID>& ids,
-                                             const model::Field& X,
-                                             std::size_t k) {
-    std::vector<ID> out;
-    out.reserve(std::min(k, ids.size()));
-    if (ids.empty() || k == 0) return out;
-
-    // Compute centroid
+// Compute centroid of a node-id list
+static Vec3 compute_centroid(const std::vector<ID>& ids, const model::Field& X) {
     Vec3 c = Vec3::Zero();
-    for (ID id : ids) c += X.row_vec3(static_cast<Index>(id));
-    c /= Precision(std::max<std::size_t>(1, ids.size()));
+    if (ids.empty()) return c;
 
-    // Pick first: farthest from centroid
-    auto argmax_from_c = [&]() -> std::size_t {
-        Precision best = -std::numeric_limits<Precision>::infinity();
-        std::size_t idx = 0;
-        for (std::size_t i = 0; i < ids.size(); ++i) {
-            const Vec3 p = X.row_vec3(static_cast<Index>(ids[i]));
-            const Precision d2 = (p - c).squaredNorm();
-            if (d2 > best) { best = d2; idx = i; }
-        }
-        return idx;
-    }();
-
-    out.push_back(ids[argmax_from_c]);
-
-    // Running min distance to selected set
-    std::vector<Precision> dmin(ids.size(), std::numeric_limits<Precision>::infinity());
-    auto update_dmin = [&](ID sel) {
-        const Vec3 ps = X.row_vec3(static_cast<Index>(sel));
-        for (std::size_t i = 0; i < ids.size(); ++i) {
-            const Vec3 pi = X.row_vec3(static_cast<Index>(ids[i]));
-            const Precision d2 = (pi - ps).squaredNorm();
-            dmin[i] = std::min(dmin[i], d2);
-        }
-    };
-    update_dmin(out.back());
-
-    while (out.size() < std::min(k, ids.size())) {
-        // pick idx with largest dmin
-        Precision best = -std::numeric_limits<Precision>::infinity();
-        std::size_t j = 0;
-        for (std::size_t i = 0; i < ids.size(); ++i) {
-            if (dmin[i] > best) { best = dmin[i]; j = i; }
-        }
-        const ID pick = ids[j];
-        // Avoid duplicates
-        if (std::find(out.begin(), out.end(), pick) == out.end()) {
-            out.push_back(pick);
-            update_dmin(pick);
-        } else {
-            // advance to next distinct candidate
-            dmin[j] = -std::numeric_limits<Precision>::infinity();
-        }
-        if (out.size() == ids.size()) break;
+    for (ID id : ids) {
+        c += X.row_vec3(static_cast<Index>(id));
     }
-    return out;
+    c /= Precision(std::max<std::size_t>(1, ids.size()));
+    return c;
+}
+
+static bool has_any_translation_dof(const SystemDofIds& dofs, ID node_id) {
+    return dofs(node_id, 0) >= 0 || dofs(node_id, 1) >= 0 || dofs(node_id, 2) >= 0;
+}
+
+static bool add_if_available(Equation& equation,
+                             const SystemDofIds& dofs,
+                             ID node_id,
+                             Dim dof,
+                             Precision coeff) {
+    if (dofs(node_id, dof) < 0) {
+        return false;
+    }
+    equation.entries.push_back(EquationEntry{node_id, dof, coeff});
+    return true;
 }
 
 } // namespace
 
-Equations Rbm::get_equations(SystemDofIds& /*system_nodal_dofs*/, model::ModelData& model_data) const {
+Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const {
     Equations eqs;
 
-    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    logging::error(model_data.positions != nullptr, "RBM: positions field not set in model data");
     const auto& X = *model_data.positions;
 
-    // Collect candidate nodes
-    std::vector<ID> ids = collect_nodes(*this, model_data);
+    // Collect candidate nodes from region
+    std::vector<ID> ids = collect_nodes(*this);
     if (ids.empty()) return eqs;
 
-    // Decide sampling budget (at least 3 points to define rotations)
-    const std::size_t K = static_cast<std::size_t>(
-        std::max<Index>(3, (max_points > 0 ? max_points : 16)));
-
-    std::vector<ID> use = ids;
-    if (ids.size() > K) {
-        use = farthest_point_sample(ids, X, K);
+    // Keep only nodes that contribute at least one translational DOF.
+    std::vector<ID> use;
+    use.reserve(ids.size());
+    for (ID id : ids) {
+        if (has_any_translation_dof(system_nodal_dofs, id)) {
+            use.push_back(id);
+        }
     }
+    if (use.empty()) return eqs;
 
-    // Centroid x0 of selected nodes
-    Vec3 x0 = Vec3::Zero();
-    for (ID i : use) x0 += X.row_vec3(static_cast<Index>(i));
-    x0 /= Precision(std::max<std::size_t>(1, use.size()));
+    // Use centroid of all participating nodes as rotation center.
+    const Vec3 x0 = compute_centroid(use, X);
 
-    // Helper to add entry
-    auto add_entry = [](Equation& e, ID nid, Dim dof, Precision c) {
-        e.entries.push_back(EquationEntry{nid, dof, c});
-    };
+    // Optional normalization keeps coefficients comparable for large sets.
+    const Precision w = Precision(1) / Precision(std::max<std::size_t>(1, use.size()));
 
-    // 3 translation equations: sum u = 0
+    // 3 translation equations: sum u = 0 (scaled)
     Equation ex, ey, ez;
-    for (ID i : use) {
-        add_entry(ex, i, 0, Precision(1));
-        add_entry(ey, i, 1, Precision(1));
-        add_entry(ez, i, 2, Precision(1));
-    }
-    eqs.emplace_back(std::move(ex));
-    eqs.emplace_back(std::move(ey));
-    eqs.emplace_back(std::move(ez));
+    ex.entries.reserve(use.size());
+    ey.entries.reserve(use.size());
+    ez.entries.reserve(use.size());
 
-    // 3 rotation equations: sum r x u = 0
-    Equation erx, ery, erz; // components of sum (r x u)
+    for (ID i : use) {
+        add_if_available(ex, system_nodal_dofs, i, 0, w);
+        add_if_available(ey, system_nodal_dofs, i, 1, w);
+        add_if_available(ez, system_nodal_dofs, i, 2, w);
+    }
+
+    if (!ex.entries.empty()) eqs.emplace_back(std::move(ex));
+    if (!ey.entries.empty()) eqs.emplace_back(std::move(ey));
+    if (!ez.entries.empty()) eqs.emplace_back(std::move(ez));
+
+    // 3 rotation equations: sum (r x u) = 0, with r measured about x0.
+    Equation erx, ery, erz;
+    erx.entries.reserve(2 * use.size());
+    ery.entries.reserve(2 * use.size());
+    erz.entries.reserve(2 * use.size());
+
     for (ID i : use) {
         const Vec3 xi = X.row_vec3(static_cast<Index>(i));
         const Vec3 r  = xi - x0;
         const Precision rx = r(0), ry = r(1), rz = r(2);
 
         // (r x u)_x =  ry * u_z - rz * u_y
-        add_entry(erx, i, 2,  ry);
-        add_entry(erx, i, 1, -rz);
+        add_if_available(erx, system_nodal_dofs, i, 2,  w * ry);
+        add_if_available(erx, system_nodal_dofs, i, 1, -w * rz);
+
         // (r x u)_y =  rz * u_x - rx * u_z
-        add_entry(ery, i, 0,  rz);
-        add_entry(ery, i, 2, -rx);
+        add_if_available(ery, system_nodal_dofs, i, 0,  w * rz);
+        add_if_available(ery, system_nodal_dofs, i, 2, -w * rx);
+
         // (r x u)_z =  rx * u_y - ry * u_x
-        add_entry(erz, i, 1,  rx);
-        add_entry(erz, i, 0, -ry);
+        add_if_available(erz, system_nodal_dofs, i, 1,  w * rx);
+        add_if_available(erz, system_nodal_dofs, i, 0, -w * ry);
     }
-    eqs.emplace_back(std::move(erx));
-    eqs.emplace_back(std::move(ery));
-    eqs.emplace_back(std::move(erz));
+
+    if (!erx.entries.empty()) eqs.emplace_back(std::move(erx));
+    if (!ery.entries.empty()) eqs.emplace_back(std::move(ery));
+    if (!erz.entries.empty()) eqs.emplace_back(std::move(erz));
 
     return eqs;
 }

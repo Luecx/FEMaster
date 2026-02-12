@@ -46,8 +46,8 @@ struct Model {
     void add_connector(const std::string& set1      , const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
     void add_coupling (const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type, bool is_surface);
     void add_tie      (const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
-    // rbm constraints (no DSL): pick nodes far apart and remove rigid-body motion
-    void add_rbm      (const std::string& set, Index max_points = 16);
+    // rbm constraints: remove rigid-body motion on a node set
+    void add_rbm      (const std::string& set);
 
     // -------------------- STRUCTURAL --------------------
     // load management
