@@ -84,8 +84,8 @@ void LinearStatic::run() {
             [&]() {
                 fem::apply_inertia_relief(*model->_data, global_load_mat);
 
-                // Add temporary RBM constraint (all nodes). Removed later after equations are built.
-                model->add_rbm(std::string("NALL"));
+                // Add temporary RBM constraint (all elements). Removed later after equations are built.
+                model->add_rbm(std::string("EALL"));
             },
             "InertiaRelief: adjusting external load matrix and adding RBM");
     }

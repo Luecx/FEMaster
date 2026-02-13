@@ -8,6 +8,7 @@
 #include "../core/logging.h"
 #include "../core/types_eig.h"
 #include "../model/model_data.h"
+#include "../model/element/element_structural.h"
 
 #include <algorithm>
 
@@ -16,14 +17,25 @@ namespace constraint {
 
 namespace {
 
-// Collect unique node ids from the configured region(s)
-static std::vector<ID> collect_nodes(const Rbm& rbm) {
+// Collect unique node ids from all elements in the configured element set.
+static std::vector<ID> collect_nodes(const Rbm& rbm, model::ModelData& model_data) {
     std::vector<ID> ids;
     ids.reserve(256);
 
-    if (rbm.node_region) {
-        for (ID id : *rbm.node_region) {
-            ids.push_back(id);
+    if (rbm.element_region) {
+        for (ID elem_id : *rbm.element_region) {
+            if (elem_id < 0 || static_cast<std::size_t>(elem_id) >= model_data.elements.size()) {
+                continue;
+            }
+
+            auto& eptr = model_data.elements[static_cast<std::size_t>(elem_id)];
+            if (!eptr) {
+                continue;
+            }
+
+            for (ID node_id : *eptr) {
+                ids.push_back(node_id);
+            }
         }
     }
 
@@ -33,16 +45,35 @@ static std::vector<ID> collect_nodes(const Rbm& rbm) {
     return ids;
 }
 
-// Compute centroid of a node-id list
-static Vec3 compute_centroid(const std::vector<ID>& ids, const model::Field& X) {
-    Vec3 c = Vec3::Zero();
-    if (ids.empty()) return c;
+// Compute center of gravity of all structural elements in the configured set.
+static Vec3 compute_center_of_gravity(const Rbm& rbm, model::ModelData& model_data) {
+    Precision m = Precision(0);
+    Vec3 c_num  = Vec3::Zero();
 
-    for (ID id : ids) {
-        c += X.row_vec3(static_cast<Index>(id));
+    if (rbm.element_region) {
+        for (ID elem_id : *rbm.element_region) {
+            if (elem_id < 0 || static_cast<std::size_t>(elem_id) >= model_data.elements.size()) {
+                continue;
+            }
+
+            auto& eptr = model_data.elements[static_cast<std::size_t>(elem_id)];
+            if (!eptr) {
+                continue;
+            }
+
+            auto* se = eptr->as<model::StructuralElement>();
+            if (!se) {
+                continue;
+            }
+
+            m += se->integrate_scalar_field(true, [](const Vec3&) { return Precision(1); });
+            c_num += se->integrate_vector_field(true, [](const Vec3& x) { return x; });
+        }
     }
-    c /= Precision(std::max<std::size_t>(1, ids.size()));
-    return c;
+
+    logging::error(m > Precision(0),
+                   "RBM: selected element set has zero integrated mass; center of gravity cannot be computed");
+    return c_num / m;
 }
 
 static bool has_any_translation_dof(const SystemDofIds& dofs, ID node_id) {
@@ -69,8 +100,8 @@ Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
     logging::error(model_data.positions != nullptr, "RBM: positions field not set in model data");
     const auto& X = *model_data.positions;
 
-    // Collect candidate nodes from region
-    std::vector<ID> ids = collect_nodes(*this);
+    // Collect candidate nodes from all elements in the region.
+    std::vector<ID> ids = collect_nodes(*this, model_data);
     if (ids.empty()) return eqs;
 
     // Keep only nodes that contribute at least one translational DOF.
@@ -83,8 +114,8 @@ Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
     }
     if (use.empty()) return eqs;
 
-    // Use centroid of all participating nodes as rotation center.
-    const Vec3 x0 = compute_centroid(use, X);
+    // Use center of gravity of the selected element set as rotation center.
+    const Vec3 x0 = compute_center_of_gravity(*this, model_data);
 
     // Optional normalization keeps coefficients comparable for large sets.
     const Precision w = Precision(1) / Precision(std::max<std::size_t>(1, use.size()));

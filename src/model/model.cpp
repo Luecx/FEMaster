@@ -113,10 +113,10 @@ void Model::add_tie(const std::string& master_set,
 }
 
 void Model::add_rbm(const std::string& set) {
-    logging::error(_data->node_sets.has(set), "RBM: node set ", set, " not found");
-    logging::error(_data->node_sets.get(set) && _data->node_sets.get(set)->size() > 0,
-                   "RBM: node set ", set, " is empty");
-    _data->rbms.emplace_back(_data->node_sets.get(set));
+    logging::error(_data->elem_sets.has(set), "RBM: element set ", set, " not found");
+    logging::error(_data->elem_sets.get(set) && _data->elem_sets.get(set)->size() > 0,
+                   "RBM: element set ", set, " is empty");
+    _data->rbms.emplace_back(_data->elem_sets.get(set));
 }
 
 

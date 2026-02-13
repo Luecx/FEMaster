@@ -17,24 +17,25 @@ namespace constraint {
 
 /**
  * @class Rbm
- * @brief Builds six equations to eliminate rigid-body modes for a region.
+ * @brief Builds six equations to eliminate rigid-body modes for an element region.
  *
- * Accepts a node-region and internally uses all nodes of that region.
+ * Accepts an element-region and internally uses all nodes of the referenced
+ * elements.
  * Terms are emitted only for translational DOFs that are available in the
  * global DOF map. The equations are
  *   sum u = 0  (3 eqs)
  *   sum ( (x_i - x0) x u_i ) = 0  (3 eqs)
- * where x0 is the centroid of the participating nodes.
+ * where x0 is the center of gravity of the participating structural elements.
  */
 class Rbm {
 public:
-    // Target node region
-    model::NodeRegion::Ptr node_region = nullptr;
+    // Target element region
+    model::ElementRegion::Ptr element_region = nullptr;
 
 public:
     Rbm() = default;
-    explicit Rbm(model::NodeRegion::Ptr region)
-        : node_region(std::move(region)) {}
+    explicit Rbm(model::ElementRegion::Ptr region)
+        : element_region(std::move(region)) {}
 
     /**
      * @brief Generates 6 equations that remove rigid-body motion for the region.
