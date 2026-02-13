@@ -115,9 +115,13 @@ void LinearStatic::run() {
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
         "reducing load matrix -> active RHS vector f");
 
+    logging::error(!(constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT),
+                   "LAGRANGE constraint method requires DIRECT solver for linear static analysis");
+
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::BuildOptions options;
+            options.method = constraint_method;
             options.set.scale_columns = true;
             return std::make_unique<ConstraintTransformer>(
                 equations,
@@ -133,6 +137,7 @@ void LinearStatic::run() {
     logging::info(true, "m (rows of C)     : ", transformer->report().m);
     logging::info(true, "n (cols of C)     : ", transformer->report().n);
     logging::info(true, "rank(C)           : ", transformer->rank());
+    logging::info(true, "method            : ", transformer->method_name());
     logging::info(true, "masters (n-r)     : ", transformer->n_master());
     logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");

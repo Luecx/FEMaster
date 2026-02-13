@@ -14,6 +14,7 @@
 #pragma once
 
 #include "loadcase.h"
+#include "../constraints/constraint_transformer.h"
 #include "../solve/solver.h"
 
 #include <string>
@@ -31,6 +32,8 @@ struct LinearStatic : public LoadCase {
     std::vector<std::string> loads; ///< Load identifiers applied to the model.
     solver::SolverDevice device = solver::CPU; ///< Solver device selection.
     solver::SolverMethod method = solver::DIRECT; ///< Solver method selection.
+    constraint::ConstraintTransformer::Method constraint_method =
+        constraint::ConstraintTransformer::Method::NullSpace; ///< Constraint backend selection.
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
 
 

@@ -178,13 +178,13 @@ void Transient::run() {
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
         writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k));
 
-        // Velocity: v = T qdot (no u_p)
-        auto v_full = CT->map().T() * qvk;
+        // Velocity recovery uses the active constraint backend mapping.
+        auto v_full = CT->recover_v(qvk);
         auto V_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
         writer->write_field(V_mat, "VELOCITY_" + std::to_string(k));
 
-        // Acceleration: a = T qddot (no u_p)
-        auto a_full = CT->map().T() * qak;
+        // Acceleration recovery uses the active constraint backend mapping.
+        auto a_full = CT->recover_a(qak);
         auto A_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
         writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k));
     }

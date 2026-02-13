@@ -169,10 +169,14 @@ void LinearStaticTopo::run() {
         "reducing load matrix -> active RHS vector f"
     );
 
+    logging::error(!(constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT),
+                   "LAGRANGE constraint method requires DIRECT solver for linear static analysis");
+
     // (5) Build constraint transformer (Set -> Builder -> Map), wrapped for timing
     auto CT = Timer::measure(
         [&]() {
             ConstraintTransformer::BuildOptions copt;
+            copt.method = constraint_method;
             copt.set.scale_columns = true;
             return std::make_unique<ConstraintTransformer>(
                 equations,
@@ -191,6 +195,7 @@ void LinearStaticTopo::run() {
     logging::info(true           , "m (rows of C)        : ", CT->report().m);
     logging::info(true           , "n (cols of C)        : ", CT->report().n);
     logging::info(true           , "rank(C)              : ", CT->rank());
+    logging::info(true           , "method               : ", CT->method_name());
     logging::info(true           , "masters (n-r)        : ", CT->n_master());
     logging::info(true           , "homogeneous          : ", CT->homogeneous() ? "true" : "false");
     logging::info(true           , "feasible             : ", CT->feasible() ? "true" : "false");

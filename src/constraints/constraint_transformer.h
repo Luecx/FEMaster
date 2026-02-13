@@ -30,13 +30,35 @@ namespace constraint {
 class ConstraintTransformer {
 public:
     /**
+     * @enum Method
+     * @brief Constraint handling backend used by this transformer.
+     */
+    enum class Method {
+        NullSpace, ///< Affine null-space projection: u = u_p + T q.
+        Lagrange   ///< Saddle-point system with Lagrange multipliers.
+    };
+
+    /**
      * @struct BuildOptions
      * @brief Aggregates options for constraint set assembly and map building.
      */
     struct BuildOptions {
+        Method method = Method::NullSpace;   ///< Backend used by the transformer.
         ConstraintSet::Options set;           ///< Options forwarded to `ConstraintSet`.
         ConstraintBuilder::Options builder;   ///< Options forwarded to the builder.
+        Precision lagrange_regularization_rel = 0; ///< Relative LM regularization factor (0 disables regularization).
     };
+
+    /**
+     * @brief Constructs the transformer and prepares the constraint map.
+     *
+     * @param eqs Constraint equations to assemble.
+     * @param dofs DOF numbering map providing global IDs.
+     * @param n_dofs Total number of DOFs.
+     */
+    ConstraintTransformer(const Equations& eqs,
+                          const SystemDofIds& dofs,
+                          Index n_dofs);
 
     /**
      * @brief Constructs the transformer and prepares the constraint map.
@@ -49,7 +71,7 @@ public:
     ConstraintTransformer(const Equations& eqs,
                           const SystemDofIds& dofs,
                           Index n_dofs,
-                          const BuildOptions& opt = {});
+                          const BuildOptions& opt);
 
     /// Provides read-only access to the assembled constraint map.
     const ConstraintMap& map() const { return map_; }
@@ -59,6 +81,14 @@ public:
 
     /// Provides read-only access to the builder report.
     const ConstraintBuilder::Report& report() const { return report_; }
+
+    /// Returns the active backend.
+    Method method() const { return method_; }
+
+    /// Returns a human-readable backend label.
+    const char* method_name() const {
+        return (method_ == Method::NullSpace) ? "NULLSPACE" : "LAGRANGE";
+    }
 
     /// Indicates whether the constraint system is homogeneous (`d = 0`).
     bool homogeneous() const { return report_.homogeneous; }
@@ -73,35 +103,37 @@ public:
     Index n_master() const { return map_.n_master(); }
 
     /// Assembles the reduced stiffness matrix `A = T^T K T`.
-    SparseMatrix assemble_A(const SparseMatrix& K) const { return map_.assemble_A(K); }
+    SparseMatrix assemble_A(const SparseMatrix& K) const;
 
     /// Assembles the reduced geometric matrix `B = T^T K_g T`.
-    SparseMatrix assemble_B(const SparseMatrix& Kg) const { return map_.assemble_B(Kg); }
+    SparseMatrix assemble_B(const SparseMatrix& Kg) const;
 
     /// Assembles the reduced right-hand side `b = T^T (f - K u_p)`.
-    DynamicVector assemble_b(const SparseMatrix& K, const DynamicVector& f) const {
-        return map_.assemble_b(K, f);
-    }
+    DynamicVector assemble_b(const SparseMatrix& K, const DynamicVector& f) const;
 
     /// Constructs a matrix-free operator for `A = T^T K T`.
-    ConstraintMap::OpA opA(const SparseMatrix& K) const { return ConstraintMap::OpA(map_, K); }
+    ConstraintMap::OpA opA(const SparseMatrix& K) const;
 
     /// Constructs a matrix-free operator for `B = T^T K_g T`.
-    ConstraintMap::OpB opB(const SparseMatrix& Kg) const { return ConstraintMap::OpB(map_, Kg); }
+    ConstraintMap::OpB opB(const SparseMatrix& Kg) const;
 
     /// Applies the transformation `u = T q + u_p`.
-    void apply_T(const DynamicVector& q, DynamicVector& u) const { map_.apply_T(q, u); }
+    void apply_T(const DynamicVector& q, DynamicVector& u) const;
 
     /// Applies the adjoint transformation `z = T^T y`.
-    void apply_Tt(const DynamicVector& y, DynamicVector& z) const { map_.apply_Tt(y, z); }
+    void apply_Tt(const DynamicVector& y, DynamicVector& z) const;
 
     /// Recovers the full solution from reduced coordinates.
-    DynamicVector recover_u(const DynamicVector& q) const { return map_.recover_u(q); }
+    DynamicVector recover_u(const DynamicVector& q) const;
+
+    /// Recovers full-space velocity from reduced coordinates.
+    DynamicVector recover_v(const DynamicVector& qdot) const;
+
+    /// Recovers full-space acceleration from reduced coordinates.
+    DynamicVector recover_a(const DynamicVector& qddot) const;
 
     /// Computes reaction forces in the constrained DOFs.
-    DynamicVector reactions(const SparseMatrix& K, const DynamicVector& f, const DynamicVector& q) const {
-        return map_.reactions(K, f, q);
-    }
+    DynamicVector reactions(const SparseMatrix& K, const DynamicVector& f, const DynamicVector& q) const;
 
     /**
      * @brief Estimates Lagrange multipliers for the active constraints.
@@ -164,6 +196,19 @@ public:
                            Precision tol_full_rel = std::numeric_limits<Precision>::infinity()) const;
 
 private:
+    void initialize_identity_map(Index n);
+    ConstraintBuilder::Report build_lagrange_report() const;
+    DynamicVector extract_u_from_solution(const DynamicVector& x) const;
+    DynamicVector extract_lambda_from_solution(const DynamicVector& x) const;
+    DynamicVector solve_multipliers_from_u(const SparseMatrix& K,
+                                           const DynamicVector& f,
+                                           const DynamicVector& u) const;
+    DynamicVector accumulate_support_constraint_forces(const DynamicVector& lambda) const;
+    Precision lagrange_regularization_abs(const SparseMatrix& K) const;
+
+    Method method_ = Method::NullSpace; ///< Active constraint backend.
+    Precision lagrange_regularization_rel_ = 0; ///< Relative LM regularization (0 disables regularization).
+    DynamicVector lagrange_regularization_row_scale_; ///< Per-row scaling for LM regularization (squared row norm of C).
     ConstraintSet set_;               ///< Assembled constraint equations.
     ConstraintMap map_;               ///< Null-space representation.
     ConstraintBuilder::Report report_;///< Diagnostics from the builder.
