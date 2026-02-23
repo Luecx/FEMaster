@@ -16,14 +16,19 @@
 #include <cmath>
 #include <sstream>
 #include <utility>
-#include "../model/model_data.h"
+
 #include "../model/element/element.h"
 #include "../model/element/element_structural.h"
+#include "../model/model_data.h"
 
 namespace fem {
 namespace bc {
 
 namespace {
+
+// ----------------------------------------------------------------------------
+// Small utilities
+// ----------------------------------------------------------------------------
 
 std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
     bool active = false;
@@ -37,7 +42,27 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
     return {vec, active};
 }
 
+inline Precision eval_scale(const Amplitude::Ptr& amp, Precision time) {
+    return amp ? amp->evaluate(time) : Precision(1);
+}
+
+static std::string vec3_to_string(const Vec3& v) {
+    std::ostringstream os;
+    os << v[0] << ", " << v[1] << ", " << v[2];
+    return os.str();
+}
+
+static std::string vec6_to_string(const Vec6& v) {
+    std::ostringstream os;
+    os << v[0] << ", " << v[1] << ", " << v[2] << ", " << v[3] << ", " << v[4] << ", " << v[5];
+    return os.str();
+}
+
 } // namespace
+
+// ============================================================================
+// APPLY IMPLEMENTATIONS
+// ============================================================================
 
 /**
  * @copydoc CLoad::apply
@@ -45,17 +70,19 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
 void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     const auto& node_positions = *model_data.positions;
-    const Precision scale = amplitude ? amplitude->evaluate(time) : 1.0;
+
+    const Precision scale = eval_scale(amplitude, time);
 
     for (auto& node_id : *region) {
         const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
 
-        auto [force_local, force_active] = sanitize_vector(values.head<3>());
+        auto [force_local, force_active]   = sanitize_vector(values.head<3>());
         auto [moment_local, moment_active] = sanitize_vector(values.tail<3>());
 
         force_local *= scale;
         moment_local *= scale;
 
+        // No orientation: interpret values as global components.
         if (!orientation) {
             if (force_active) {
                 for (int i = 0; i < 3; ++i) {
@@ -70,6 +97,7 @@ void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
             continue;
         }
 
+        // With orientation: interpret values as local components.
         const Vec3 local_point = orientation->to_local(position);
         const auto axes = orientation->get_axes(local_point);
 
@@ -95,12 +123,13 @@ void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
 void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     const auto& node_positions = *model_data.positions;
+
     auto [local_values, has_values] = sanitize_vector(values);
     if (!has_values) {
         return;
     }
 
-    const Precision scale = amplitude ? amplitude->evaluate(time) : 1.0;
+    const Precision scale = eval_scale(amplitude, time);
     local_values *= scale;
 
     for (auto& surf_id : *region) {
@@ -109,15 +138,18 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
             continue;
         }
 
+        // No orientation: interpret values as global components.
         if (!orientation) {
             surface->apply_dload(node_positions, bc, local_values);
             continue;
         }
 
+        // With orientation: rotate values at each node position.
         const auto contributions = surface->shape_function_integral(node_positions);
         int local_idx = 0;
         for (auto node_it = surface->begin(); node_it != surface->end(); ++node_it, ++local_idx) {
             const ID node_id = *node_it;
+
             const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
             const Vec3 local_point = orientation->to_local(position);
             const auto axes = orientation->get_axes(local_point);
@@ -136,8 +168,10 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
 void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     const auto& node_positions = *model_data.positions;
-    const Precision scale = amplitude ? amplitude->evaluate(time) : 1.0;
+
+    const Precision scale = eval_scale(amplitude, time);
     const Precision scaled_pressure = pressure * scale;
+
     for (auto& surf_id : *region) {
         model_data.surfaces[surf_id]->apply_pload(node_positions, bc, scaled_pressure);
     }
@@ -145,16 +179,19 @@ void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
 
 /**
  * @copydoc VLoad::apply
+ *
+ * NOTE: Uses StructuralElement::integrate_vec_field(...) (like InertialLoad),
+ *       and uses scale_by_density=true.
  */
 void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
-    const auto& node_positions = *model_data.positions;
+
     auto [local_values, has_values] = sanitize_vector(values);
     if (!has_values) {
         return;
     }
 
-    const Precision scale = amplitude ? amplitude->evaluate(time) : 1.0;
+    const Precision scale = eval_scale(amplitude, time);
     local_values *= scale;
 
     for (auto& el_id : *region) {
@@ -168,23 +205,25 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
             continue;
         }
 
-        Vec3 load_to_apply = local_values;
-        if (orientation) {
-            Vec3 centroid = Vec3::Zero();
-            int node_count = 0;
-            for (ID node_id : *structural) {
-                centroid += node_positions.row_vec3(static_cast<Index>(node_id));
-                ++node_count;
-            }
-            if (node_count > 0) {
-                centroid /= static_cast<Precision>(node_count);
-            }
-            const Vec3 local_point = orientation->to_local(centroid);
-            const auto axes = orientation->get_axes(local_point);
-            load_to_apply = axes * local_values;
-        }
+        // Body force field f(x):
+        // - Without orientation: treat given values as global components (constant field).
+        // - With orientation: treat given values as local components, rotate per integration point x.
+        if (!orientation) {
+            const Vec3 f0 = local_values;
+            auto f = [f0](const Vec3& /*x*/) -> Vec3 { return f0; };
+            structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+        } else {
+            const Vec3 f_local = local_values;
+            auto* ori = orientation.get();
 
-        structural->apply_vload(bc, load_to_apply);
+            auto f = [ori, f_local](const Vec3& x) -> Vec3 {
+                const Vec3 local_point = ori->to_local(x);
+                const auto axes = ori->get_axes(local_point);
+                return axes * f_local;
+            };
+
+            structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+        }
     }
 }
 
@@ -193,11 +232,13 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
  */
 void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     (void)time;
+
     logging::error(temp_field != nullptr, "Temperature field not set on TLOAD");
     logging::error(temp_field->domain == model::FieldDomain::NODE,
                    "Temperature field ", temp_field->name, " must be a node field");
     logging::error(temp_field->components == 1,
                    "Temperature field ", temp_field->name, " must have 1 component");
+
     for (auto& element_ptr : model_data.elements) {
         if (auto structural = element_ptr->as<model::StructuralElement>()) {
             structural->apply_tload(bc, *temp_field, ref_temp);
@@ -205,12 +246,35 @@ void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
     }
 }
 
-static std::string vec3_to_string(const Vec3& v) {
-    std::ostringstream os; os << v[0] << ", " << v[1] << ", " << v[2]; return os.str();
+/**
+ * @copydoc InertialLoad::apply
+ */
+void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+    (void)time;
+    logging::error(region != nullptr, "InertialLoad: region not set");
+
+    for (auto& el_id : *region) {
+        auto& el_ptr = model_data.elements[el_id];
+        if (!el_ptr) continue;
+
+        auto structural = el_ptr->as<model::StructuralElement>();
+        if (!structural) continue;
+
+        // a(x) = a0 + alpha x r + omega x (omega x r), r = x - center
+        // f(x) = -rho * a(x), density handled by integrate_vec_field(scale_by_density=true)
+        auto f = [c=center, a0=center_acc, w=omega, al=alpha](const Vec3& x) -> Vec3 {
+            const Vec3 r = x - c;
+            const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
+            return -(a0 + a_rot);
+        };
+
+        structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+    }
 }
-static std::string vec6_to_string(const Vec6& v) {
-    std::ostringstream os; os << v[0] << ", " << v[1] << ", " << v[2] << ", " << v[3] << ", " << v[4] << ", " << v[5]; return os.str();
-}
+
+// ============================================================================
+// STRING REPRESENTATIONS
+// ============================================================================
 
 std::string CLoad::str() const {
     std::ostringstream os;
@@ -256,31 +320,6 @@ std::string TLoad::str() const {
     os << "TLOAD: field=" << (temp_field ? temp_field->name : std::string("?"))
        << ", ref_temp=" << ref_temp;
     return os.str();
-}
-
-/**
- * @copydoc InertialLoad::apply
- */
-void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
-    (void)time;
-    logging::error(region != nullptr, "InertialLoad: region not set");
-
-    for (auto& el_id : *region) {
-        auto& el_ptr = model_data.elements[el_id];
-        if (!el_ptr) continue;
-        auto structural = el_ptr->as<model::StructuralElement>();
-        if (!structural) continue;
-
-        // a(x) = a0 + alpha x r + omega x (omega x r), r = x - center
-        // f(x) = -rho * a(x), density handled by integrate_vec_field(scale_by_density=true)
-        auto f = [c=center, a0=center_acc, w=omega, al=alpha](const Vec3& x) -> Vec3 {
-            const Vec3 r = x - c;
-            const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
-            return -(a0 + a_rot);
-        };
-
-        structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
-    }
 }
 
 std::string InertialLoad::str() const {
