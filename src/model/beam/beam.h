@@ -135,7 +135,7 @@ struct BeamElement : StructuralElement {
 
         const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
         if (std::abs(Iyz) <= scale * Precision(1e-14)) return Precision(0);
-        return - Precision(0.5) * std::atan2(Precision(2) * Iyz, Iy - Iz);
+        return Precision(0.5) * std::atan2(Precision(2) * Iyz, Iy - Iz);
     }
 
     // Rotation aligning y/z to principal bending axes
