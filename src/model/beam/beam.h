@@ -72,9 +72,7 @@ struct BeamElement : StructuralElement {
         return section->material->elasticity()->template as<material::IsotropicElasticity>();
     }
 
-    Vec3 coordinate(Index index) {
-        return this->node_position(node_ids[index]);
-    }
+    Vec3 coordinate(Index index) { return this->node_position(node_ids[index]); }
 
     ID orientation_node() const { return orientation_node_id_; }
 
@@ -164,6 +162,61 @@ struct BeamElement : StructuralElement {
     // Backward-compatible alias used by internal computations
     Mat3 rotation_matrix() { return principal_rotation_matrix(); }
 
+    // --- Kinematic rigid-offset (local y/z offsets) -------------------------
+
+    /**
+     * @brief Builds the 6x6 kinematic rigid-offset matrix B for a point shift d=(0,dy,dz) in local coordinates.
+     *
+     * For u = [ux,uy,uz, rx,ry,rz]^T:
+     *   u_A = B(dy,dz) * u_R  with  u_A = u_R + theta x d
+     */
+    static StaticMatrix<6, 6> rigid_offset_6(Precision dy, Precision dz) {
+        StaticMatrix<6, 6> B = StaticMatrix<6, 6>::Identity();
+
+        // u += theta x d, with d=(0,dy,dz)
+        // [ux] +=  ry*dz - rz*dy
+        // [uy] += -rx*dz
+        // [uz] +=  rx*dy
+        B(0, 4) =  dz;
+        B(0, 5) = -dy;
+
+        B(1, 3) = -dz;
+        B(2, 3) =  dy;
+
+        return B;
+    }
+
+    /**
+     * @brief Builds the Nx6 by Nx6 block-diagonal rigid-offset matrix for all element nodes.
+     */
+    static StaticMatrix<N * 6, N * 6> rigid_offset_N(Precision dy, Precision dz) {
+        StaticMatrix<N * 6, N * 6> B = StaticMatrix<N * 6, N * 6>::Identity();
+        const StaticMatrix<6, 6> Bi = rigid_offset_6(dy, dz);
+        for (Index a = 0; a < N; ++a) {
+            B.template block<6, 6>(a * 6, a * 6) = Bi;
+        }
+        return B;
+    }
+
+    /**
+     * @brief Rotate a (y,z) offset expressed in the base section frame into the principal frame used by rotation_matrix().
+     *
+     * This uses the same angle phi as the principal axis rotation:
+     *   y_p =  c*y + s*z
+     *   z_p = -s*y + c*z
+     */
+    static void rotate_yz_to_principal(Precision phi, Precision& y, Precision& z) {
+        if (phi == Precision(0)) return;
+        const Precision c = std::cos(phi);
+        const Precision s = std::sin(phi);
+        const Precision y_p =  c * y + s * z;
+        const Precision z_p = -s * y + c * z;
+        y = y_p;
+        z = z_p;
+    }
+
+    // --- FEM interface ------------------------------------------------------
+
     virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
     virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(const Field& ip_stress, int offset) = 0;
     virtual StaticMatrix<N * 6, N * 6> mass_impl() = 0;
@@ -176,7 +229,7 @@ struct BeamElement : StructuralElement {
         for (Index i = 0; i < N; i++) {
             for (Dim j = 0; j < 3; j++) {
                 for (Dim k = 0; k < 3; k++) {
-                    T(i * 6 + j, i * 6 + k) = R(j, k);
+                    T(i * 6 + j,     i * 6 + k)     = R(j, k);
                     T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
                 }
             }
@@ -193,7 +246,7 @@ struct BeamElement : StructuralElement {
         for (Index i = 0; i < N; i++) {
             for (Dim j = 0; j < 3; j++) {
                 for (Dim k = 0; k < 3; k++) {
-                    T(i * 6 + j, i * 6 + k) = R(j, k);
+                    T(i * 6 + j,     i * 6 + k)     = R(j, k);
                     T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
                 }
             }
@@ -285,7 +338,6 @@ struct BeamElement : StructuralElement {
         std::vector<Vec6> result;
         result.resize(N);
 
-        // 1) globale Verschiebungen einsammeln: u_global (N*6 x 1)
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index i = 0; i < N; ++i) {
             const ID nid = node_ids[i];
@@ -295,21 +347,17 @@ struct BeamElement : StructuralElement {
             }
         }
 
-        // 2) globale Steifigkeit und Transformation holen
-        const auto K_global = stiffness_impl(); // K_global = T^T * K_local * T (T uses principal frame)
-        const auto T        = transformation_base(); // For output, use original (non-rotated) local frame
+        // global stiffness and local frame for output
+        const auto K_global = stiffness_impl();
+        const auto T_out    = transformation_base(); // output in base section frame
 
-        // 3) globale Knotenkräfte
-        const auto f_global = K_global * u_global; // N*6 x 1
+        const auto f_global = K_global * u_global;
+        const auto q_local  = T_out * f_global; // nodal resultants in base local frame, about the element DOF reference line
 
-        // 4) lokale Schnittgrößen (N, Vy, Vz, T, My, Mz) im Balkensystem
-        const auto q_local = T * f_global; // N*6 x 1, in original local frame
-
-        // 5) in N Vec6-Blöcke zuschneiden
         for (Index i = 0; i < N; ++i) {
             Vec6 q_i;
             for (Index d = 0; d < 6; ++d) {
-                q_i(d) = q_local(i * 6 + d) * ((i == 1 && N==2) ? 1:-1);
+                q_i(d) = q_local(i * 6 + d) * ((i == 1 && N == 2) ? 1 : -1);
             }
             result[i] = q_i;
         }
@@ -325,7 +373,6 @@ struct BeamElement : StructuralElement {
         const Precision A = get_profile()->A;
         if (L <= Precision(0) || A <= Precision(0)) return;
 
-        // Midpoint in global coords (average of end nodes for robustness)
         Vec3 x_mid = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
         x_mid /= static_cast<Precision>(N);
@@ -338,7 +385,6 @@ struct BeamElement : StructuralElement {
             rho = mat->get_density();
         }
 
-        // Total equivalent force = ∫ f dV ≈ f(x_mid) * A * L * rho
         const Vec3 F = field(x_mid) * (rho * A * L);
         const Precision share = Precision(1) / static_cast<Precision>(N);
         for (Index i = 0; i < N; ++i) {
@@ -349,14 +395,12 @@ struct BeamElement : StructuralElement {
         }
     }
 
-    // Generic integrations (1-point over volume A*L)
     Precision integrate_scalar_field(bool scale_by_density,
                                      const ScalarField& field) override {
         const Precision L = length();
         const Precision A = get_profile()->A;
         if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
 
-        // Midpoint in global coords (average of nodes)
         Vec3 x_mid = Vec3::Zero();
         for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
         x_mid /= static_cast<Precision>(N);
@@ -410,7 +454,6 @@ struct BeamElement : StructuralElement {
         }
         return field(x_mid) * (rho * A * L);
     }
-
 };
 
 } // namespace model
