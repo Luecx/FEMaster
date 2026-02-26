@@ -25,8 +25,14 @@ struct B33 : BeamElement<2> {
     std::string type_name() const override { return "B33"; }
 
     StaticMatrix<12, 12> stiffness_impl() override {
-        StaticMatrix<12, 12> T = transformation();
-        StaticMatrix<12, 12> K = StaticMatrix<12, 12>::Zero();
+        // This T maps global DOFs -> local DOFs in the PRINCIPAL frame (see BeamElement::transformation()).
+        const StaticMatrix<12, 12> Trot = transformation();
+
+        // ------------------------------------------------------------------
+        // 1) Build classical Euler-Bernoulli K_loc referenced to SP-axis
+        //    (i.e. the standard uncoupled beam stiffness).
+        // ------------------------------------------------------------------
+        StaticMatrix<12, 12> K_sp = StaticMatrix<12, 12>::Zero();
 
         Precision E = get_elasticity()->youngs;
         Precision G = get_elasticity()->shear;
@@ -37,10 +43,11 @@ struct B33 : BeamElement<2> {
         Precision It = get_profile()->I_t;
         Precision L = length();
 
-        // Rotate to principal bending axes if product inertia present
+        // rotate inertias to principal axes (and we will rotate offsets with the same phi)
+        Precision phi = Precision(0);
         const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
         if (std::abs(Iyz) > scale * Precision(1e-14)) {
-            const Precision phi = principal_angle();
+            phi = principal_angle();
             const Precision cph = std::cos(phi);
             const Precision sph = std::sin(phi);
             const Precision c2 = cph * cph;
@@ -50,15 +57,16 @@ struct B33 : BeamElement<2> {
             const Precision Iz_p = Iy * s2 + Iz * c2 + 2 * Iyz * sc;
             Iy = Iy_p;
             Iz = Iz_p;
+            // (Iyz becomes ~0 in this basis)
         }
 
-        Precision a = E * A / L;
-        Precision b = G * It / L;
-        Precision c = E * Iz / (L * L * L);
-        Precision d = E * Iy / (L * L * L);
-        Precision M = L * L;
+        const Precision a = E * A / L;
+        const Precision b = G * It / L;
+        const Precision c = E * Iz / (L * L * L);
+        const Precision d = E * Iy / (L * L * L);
+        const Precision M = L * L;
 
-        K <<
+        K_sp <<
             a,         0,         0,        0,         0,         0,       -a,         0,         0,        0,         0,         0,
             0,    12 * c,         0,        0,         0, 6 * c * L,        0,   -12 * c,         0,        0,         0, 6 * c * L,
             0,         0,    12 * d,        0,-6 * d * L,         0,        0,         0,   -12 * d,        0,-6 * d * L,         0,
@@ -72,20 +80,71 @@ struct B33 : BeamElement<2> {
             0,         0,-6 * d * L,        0, 2 * d * M,         0,        0,         0, 6 * d * L,        0, 4 * d * M,         0,
             0, 6 * c * L,         0,        0,         0, 2 * c * M,        0,-6 * c * L,         0,        0,         0, 4 * c * M;
 
-        return T.transpose() * K * T;
+        // ------------------------------------------------------------------
+        // 2) Offsets provided relative to SMP:
+        //    ey, ez   := COG - SMP = SP - SMP
+        //    ref_y,z  := REF - SMP
+        //
+        //    We must express these in the same LOCAL frame as K_sp:
+        //    since Trot uses principal axes, rotate offsets by phi.
+        // ------------------------------------------------------------------
+        Profile* pr = get_profile();
+
+        // REQUIRED profile members (rename if needed):
+        //   pr->e_y, pr->e_z     : (SP - SMP)
+        //   pr->ref_y, pr->ref_z : (REF - SMP)
+        Precision ey = pr->e_y;
+        Precision ez = pr->e_z;
+        Precision refy = pr->ref_y;
+        Precision refz = pr->ref_z;
+
+        // rotate offsets from base yz to principal yz if needed
+        BeamElement<2>::rotate_yz_to_principal(phi, ey,   ez);
+        BeamElement<2>::rotate_yz_to_principal(phi, refy, refz);
+
+        // ------------------------------------------------------------------
+        // 3) Stage 1: SP <- SMP via kinematics
+        //
+        //    u_SP = B(SP - SMP) * u_SMP
+        //    K_SMP = B^T * K_SP * B
+        // ------------------------------------------------------------------
+        const StaticMatrix<12, 12> B_smp_to_sp = BeamElement<2>::rigid_offset_N(ey, ez);
+        const StaticMatrix<12, 12> K_smp = B_smp_to_sp.transpose() * K_sp * B_smp_to_sp;
+
+        // ------------------------------------------------------------------
+        // 4) Stage 2: SMP <- REF via kinematics
+        //
+        //    ref_y,z = REF - SMP  =>  SMP - REF = -(REF - SMP) = (-refy, -refz)
+        //
+        //    u_SMP = B(SMP - REF) * u_REF
+        //    K_REF = B^T * K_SMP * B
+        // ------------------------------------------------------------------
+        const StaticMatrix<12, 12> B_ref_to_smp = BeamElement<2>::rigid_offset_N(-refy, -refz);
+        const StaticMatrix<12, 12> K_ref = B_ref_to_smp.transpose() * K_smp * B_ref_to_smp;
+
+        // ------------------------------------------------------------------
+        // 5) Rotate local(ref, principal) -> global
+        // ------------------------------------------------------------------
+        return Trot.transpose() * K_ref * Trot;
     }
 
     StaticMatrix<12, 12> mass_impl() override {
-        StaticMatrix<12, 12> T = transformation();
-        StaticMatrix<12, 12> M = StaticMatrix<12, 12>::Zero();
+        // DOF rotation: global -> local (principal frame)
+        const StaticMatrix<12, 12> Trot = transformation();
 
-        Precision A = get_profile()->A;
-        Precision L = length();
+        // ------------------------------------------------------------------
+        // 1) Build your current consistent mass matrix M_sp (as-is).
+        //    (Interpreted as referenced to SP-axis, consistent with classic theory.)
+        // ------------------------------------------------------------------
+        StaticMatrix<12, 12> M_sp = StaticMatrix<12, 12>::Zero();
+
+        Precision A   = get_profile()->A;
+        Precision L   = length();
         Precision rho = get_material()->get_density();
-        Precision Ip = get_profile()->I_y + get_profile()->I_z;
+        Precision Ip  = get_profile()->I_y + get_profile()->I_z; // polar about SP if I_y, I_z about SP
         Precision IpA = Ip / A;
 
-        M <<
+        M_sp <<
             140,        0,         0,         0,         0,         0,        70,         0,         0,         0,          0,          0,
               0,      156,         0,         0,         0,    22 * L,         0,        54,         0,         0,          0,    -13 * L,
               0,        0,       156,         0,   -22 * L,         0,         0,         0,        54,         0,     13 * L,          0,
@@ -99,9 +158,51 @@ struct B33 : BeamElement<2> {
               0,        0,    13 * L,         0,-3 * L * L,         0,         0,         0,    22 * L,         0,  4 * L * L,          0,
               0,  -13 * L,         0,         0,         0,-3 * L * L,         0,   -22 * L,         0,         0,          0,  4 * L * L;
 
-        M *= rho * L * A / 420;
-        return T.transpose() * M * T;
-    }
+        M_sp *= rho * L * A / 420;
+
+        // ------------------------------------------------------------------
+        // 2) Compute the same principal-axis rotation angle used by transformation(),
+        //    and rotate offsets into the principal yz-frame.
+        // ------------------------------------------------------------------
+        Precision phi = Precision(0);
+        {
+            const Precision Iy  = get_profile()->I_y;
+            const Precision Iz  = get_profile()->I_z;
+            const Precision Iyz = get_profile()->I_yz;
+            const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
+            if (std::abs(Iyz) > scale * Precision(1e-14)) {
+                phi = principal_angle();
+            }
+        }
+
+        Profile* pr = get_profile();
+
+        // Offsets provided relative to SMP:
+        //   ey, ez   := COG - SMP = SP - SMP
+        //   ref_y,z  := REF - SMP
+        Precision ey   = pr->e_y;
+        Precision ez   = pr->e_z;
+        Precision refy = pr->ref_y;
+        Precision refz = pr->ref_z;
+
+        BeamElement<2>::rotate_yz_to_principal(phi, ey,   ez);
+        BeamElement<2>::rotate_yz_to_principal(phi, refy, refz);
+
+        // ------------------------------------------------------------------
+        // 3) Apply the exact same two-stage kinematic mapping:
+        //    SP <- SMP  and  SMP <- REF
+        // ------------------------------------------------------------------
+        const StaticMatrix<12, 12> B_smp_to_sp  = BeamElement<2>::rigid_offset_N(ey, ez);
+        const StaticMatrix<12, 12> M_smp        = B_smp_to_sp.transpose() * M_sp * B_smp_to_sp;
+
+        const StaticMatrix<12, 12> B_ref_to_smp = BeamElement<2>::rigid_offset_N(-refy, -refz); // SMP-REF
+        const StaticMatrix<12, 12> M_ref        = B_ref_to_smp.transpose() * M_smp * B_ref_to_smp;
+
+        // ------------------------------------------------------------------
+        // 4) Rotate to global
+        // ------------------------------------------------------------------
+        return Trot.transpose() * M_ref * Trot;
+	}
 
     void compute_stress_strain(Field& ip_stress,
                                Field& ip_strain,
@@ -121,6 +222,7 @@ struct B33 : BeamElement<2> {
             }
         }
 
+        // u_local is in principal local frame at REF line (because stiffness_impl maps DOFs at REF line)
         StaticMatrix<12, 12> T = transformation();
         StaticMatrix<12, 1> u_local = T * u_global;
 
@@ -137,12 +239,9 @@ struct B33 : BeamElement<2> {
     StaticMatrix<12, 12> stiffness_geom_impl(const Field& ip_stress, int offset) override {
         StaticMatrix<12, 12> T = transformation();
         const Precision L = length();
-        const Precision A = get_profile()->A;
 
-        // actually contains the normal force (see above)
         Precision N = ip_stress(static_cast<Index>(offset), 0);
 
-        // If no axial force, no geometric stiffness
         if (std::abs(N) <= std::numeric_limits<Precision>::epsilon()) {
             return StaticMatrix<12, 12>::Zero();
         }
@@ -165,22 +264,17 @@ struct B33 : BeamElement<2> {
             - 3.0 * L, -1.0 * L2,   3.0 * L,  4.0 * L2;
         Kg42 *= f;
 
-
         StaticMatrix<12, 12> Kg_local = StaticMatrix<12, 12>::Zero();
 
-        // DOF maps: [u_z, th_y] plane (“y-bending”)
-        const int map_y[4] = {2, 4, 8, 10};
-        // DOF maps: [u_y, th_z] plane (“z-bending”)
-        const int map_z[4] = {1, 5, 7, 11};
+        const int map_y[4] = {2, 4, 8, 10};  // [u_z, th_y]
+        const int map_z[4] = {1, 5, 7, 11};  // [u_y, th_z]
 
-        // Helper to scatter a 4×4 into the 12×12
         auto scatter = [&](const Eigen::Matrix<Precision,4,4>& B, const int map[4]) {
             for (int r = 0; r < 4; ++r)
                 for (int c = 0; c < 4; ++c)
                     Kg_local(map[r], map[c]) += B(r, c);
         };
 
-        // --- Place y-plane as-is (its (u,θ) sign already matches your K: +) ---
         scatter(Kg42, map_y);
         scatter(Kg41, map_z);
 
@@ -188,6 +282,7 @@ struct B33 : BeamElement<2> {
     }
 
     LinePtr line(ID line_id) override {
+        (void)line_id;
         return std::make_shared<Line2A>(this->node_ids);
     }
 };
