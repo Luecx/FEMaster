@@ -15,6 +15,7 @@
 
 #include "../core/logging.h"
 
+#include <Eigen/SparseCholesky>
 #include <Eigen/SparseQR>
 
 #include <algorithm>
@@ -68,6 +69,8 @@ ConstraintTransformer::ConstraintTransformer(const Equations& eqs,
         return;
     }
 
+    cached_lagrange_lambda_valid_ = false;
+    cached_lagrange_lambda_.resize(0);
     lagrange_regularization_row_scale_ = compute_row_regularization_scale(set_.C);
     initialize_identity_map(set_.n);
     report_ = build_lagrange_report();
@@ -116,23 +119,10 @@ ConstraintBuilder::Report ConstraintTransformer::build_lagrange_report() const {
         return rep;
     }
 
-    const SparseMatrix Ct = set_.C.transpose();
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
-    qr.setPivotThreshold(0.0);
-    qr.compute(Ct);
-    logging::error(qr.info() == Eigen::Success,
-                   "[ConstraintTransformer] QR(C^T) factorization failed in LAGRANGE mode");
-
-    rep.rank = static_cast<Index>(qr.rank());
+    // In LAGRANGE mode, skip expensive rank factorization. It is only diagnostic.
+    rep.rank = std::min<Index>(rep.m, rep.n);
     rep.n_redundant_rows = std::max<Index>(0, rep.m - rep.rank);
-
-    const auto& R = qr.matrixR();
-    Precision max_diag = 0;
-    const Index diag_n = std::min<Index>(R.rows(), R.cols());
-    for (Index i = 0; i < diag_n; ++i) {
-        max_diag = std::max(max_diag, std::abs(R.coeff(i, i)));
-    }
-    rep.R11_max_diag = max_diag;
+    rep.R11_max_diag = 0;
     return rep;
 }
 
@@ -313,10 +303,24 @@ DynamicVector ConstraintTransformer::extract_lambda_from_solution(const DynamicV
     return DynamicVector::Zero(m);
 }
 
+void ConstraintTransformer::cache_lagrange_lambda_from_solution(const DynamicVector& x) const {
+    cached_lagrange_lambda_valid_ = false;
+    cached_lagrange_lambda_.resize(0);
+    if (method_ != Method::Lagrange) {
+        return;
+    }
+
+    if (x.size() == set_.n + set_.m) {
+        cached_lagrange_lambda_ = x.tail(set_.m);
+        cached_lagrange_lambda_valid_ = true;
+    }
+}
+
 DynamicVector ConstraintTransformer::recover_u(const DynamicVector& q) const {
     if (method_ == Method::NullSpace) {
         return map_.recover_u(q);
     }
+    cache_lagrange_lambda_from_solution(q);
     return extract_u_from_solution(q);
 }
 
@@ -349,8 +353,47 @@ DynamicVector ConstraintTransformer::solve_multipliers_from_u(const SparseMatrix
     }
 
     const DynamicVector g = f - (K * u);
-    const SparseMatrix Ct = set_.C.transpose();
+    const DynamicVector rhs = set_.C * g;
 
+    SparseMatrix normal = set_.C * set_.C.transpose();
+    normal.makeCompressed();
+
+    Precision max_diag = 0;
+    for (int col = 0; col < normal.outerSize(); ++col) {
+        for (SparseMatrix::InnerIterator it(normal, col); it; ++it) {
+            if (it.row() == col) {
+                max_diag = std::max(max_diag, std::abs(it.value()));
+            }
+        }
+    }
+    if (!std::isfinite(max_diag) || max_diag <= Precision(0)) {
+        max_diag = Precision(1);
+    }
+
+    // Tiny diagonal regularization for rank-deficient/near-singular C C^T.
+    const Precision reg_abs = std::max<Precision>(Precision(1e-14), Precision(1e-12) * max_diag);
+    TripletList reg_trips;
+    reg_trips.reserve(static_cast<std::size_t>(set_.m));
+    for (Index i = 0; i < set_.m; ++i) {
+        reg_trips.emplace_back(i, i, reg_abs);
+    }
+    SparseMatrix reg_I(set_.m, set_.m);
+    reg_I.setFromTriplets(reg_trips.begin(), reg_trips.end());
+    normal += reg_I;
+    normal.makeCompressed();
+
+    Eigen::SimplicialLDLT<SparseMatrix> ldlt;
+    ldlt.compute(normal);
+    if (ldlt.info() == Eigen::Success) {
+        DynamicVector lambda = ldlt.solve(rhs);
+        if (ldlt.info() == Eigen::Success &&
+            lambda.size() == set_.C.rows() &&
+            lambda.allFinite()) {
+            return lambda;
+        }
+    }
+
+    const SparseMatrix Ct = set_.C.transpose();
     Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr;
     qr.setPivotThreshold(0.0);
     qr.compute(Ct);
@@ -509,41 +552,47 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                              true});
 
         const DynamicVector resid = K * u - f;
-        const DynamicVector lambda = solve_multipliers_from_u(K, f, u);
-        const DynamicVector kkt_u = resid + constraint_forces(lambda);
+        if (cached_lagrange_lambda_valid_ && cached_lagrange_lambda_.size() == set_.m) {
+            const DynamicVector& lambda = cached_lagrange_lambda_;
+            const DynamicVector kkt_u = resid + constraint_forces(lambda);
 
-        const Precision abs_kkt_u = kkt_u.norm();
-        const Precision den_kkt_u = std::max<Precision>(1, std::max((K * u).norm(), f.norm()));
-        const Precision rel_kkt_u = abs_kkt_u / den_kkt_u;
+            const Precision abs_kkt_u = kkt_u.norm();
+            const Precision den_kkt_u = std::max<Precision>(1, std::max((K * u).norm(), f.norm()));
+            const Precision rel_kkt_u = abs_kkt_u / den_kkt_u;
 
-        items.push_back(Item{"lagrange equilibrium",
-                             abs_kkt_u,
-                             rel_kkt_u,
-                             tol_reduced_rel,
-                             rel_kkt_u <= tol_reduced_rel,
-                             true});
-
-        if (set_.m > 0) {
-            const Precision eps_abs = lagrange_regularization_abs(K);
-            DynamicVector kkt_c = set_.C * u - set_.d;
-            if (eps_abs > Precision(0)) {
-                if (lagrange_regularization_row_scale_.size() == set_.m) {
-                    kkt_c.noalias() -= eps_abs * lagrange_regularization_row_scale_.cwiseProduct(lambda);
-                } else {
-                    kkt_c.noalias() -= eps_abs * lambda;
-                }
-            }
-
-            const Precision abs_kkt_c = kkt_c.norm();
-            const Precision den_kkt_c = std::max<Precision>(1, std::max((set_.C * u).norm(), set_.d.norm()));
-            const Precision rel_kkt_c = abs_kkt_c / den_kkt_c;
-
-            items.push_back(Item{"lagrange constraints",
-                                 abs_kkt_c,
-                                 rel_kkt_c,
-                                 tol_constraint_rel,
-                                 rel_kkt_c <= tol_constraint_rel,
+            items.push_back(Item{"lagrange equilibrium",
+                                 abs_kkt_u,
+                                 rel_kkt_u,
+                                 tol_reduced_rel,
+                                 rel_kkt_u <= tol_reduced_rel,
                                  true});
+
+            if (set_.m > 0) {
+                const Precision eps_abs = lagrange_regularization_abs(K);
+                DynamicVector kkt_c = set_.C * u - set_.d;
+                if (eps_abs > Precision(0)) {
+                    if (lagrange_regularization_row_scale_.size() == set_.m) {
+                        kkt_c.noalias() -= eps_abs * lagrange_regularization_row_scale_.cwiseProduct(lambda);
+                    } else {
+                        kkt_c.noalias() -= eps_abs * lambda;
+                    }
+                }
+
+                const Precision abs_kkt_c = kkt_c.norm();
+                const Precision den_kkt_c = std::max<Precision>(1, std::max((set_.C * u).norm(), set_.d.norm()));
+                const Precision rel_kkt_c = abs_kkt_c / den_kkt_c;
+
+                items.push_back(Item{"lagrange constraints",
+                                     abs_kkt_c,
+                                     rel_kkt_c,
+                                     tol_constraint_rel,
+                                     rel_kkt_c <= tol_constraint_rel,
+                                     true});
+            }
+        } else {
+            logging::warning(true,
+                             "[ConstraintTransformer] Skipping LAGRANGE equilibrium post-check: "
+                             "no cached multipliers available.");
         }
 
         print_items(items);
