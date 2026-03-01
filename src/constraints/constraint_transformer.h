@@ -46,7 +46,7 @@ public:
         Method method = Method::NullSpace;   ///< Backend used by the transformer.
         ConstraintSet::Options set;           ///< Options forwarded to `ConstraintSet`.
         ConstraintBuilder::Options builder;   ///< Options forwarded to the builder.
-        Precision lagrange_regularization_rel = 1e-6; ///< Relative LM regularization factor (0 disables regularization).
+        Precision lagrange_regularization_rel = 1e-10; ///< Relative LM regularization factor (0 disables regularization).
     };
 
     /**
@@ -204,12 +204,14 @@ private:
     DynamicVector solve_multipliers_from_u(const SparseMatrix& K,
                                            const DynamicVector& f,
                                            const DynamicVector& u) const;
-    DynamicVector accumulate_support_constraint_forces(const DynamicVector& lambda) const;
+    DynamicVector accumulate_support_constraint_forces(const DynamicVector& lambda,
+                                                       bool use_scaled_rows) const;
+    DynamicVector scale_lagrange_rows(const DynamicVector& v) const;
     Precision lagrange_regularization_abs(const SparseMatrix& K) const;
 
     Method method_ = Method::NullSpace; ///< Active constraint backend.
     Precision lagrange_regularization_rel_ = 0; ///< Relative LM regularization (0 disables regularization).
-    DynamicVector lagrange_regularization_row_scale_; ///< Per-row scaling for LM regularization (squared row norm of C).
+    DynamicVector lagrange_row_l2_scale_; ///< Per-row L2 normalization scale for Lagrange constraints.
     mutable bool cached_lagrange_lambda_valid_ = false; ///< True if `cached_lagrange_lambda_` matches the most recent LAGRANGE solution.
     mutable DynamicVector cached_lagrange_lambda_; ///< Cached λ extracted from solved LAGRANGE state (size m).
     ConstraintSet set_;               ///< Assembled constraint equations.
