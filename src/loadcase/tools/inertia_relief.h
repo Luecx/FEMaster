@@ -9,7 +9,9 @@
 
 namespace fem {
 
-void apply_inertia_relief(model::ModelData& model_data, model::Field& global_load_mat);
+void apply_inertia_relief(model::ModelData& model_data,
+                          model::Field& global_load_mat,
+                          bool consider_point_masses = true);
 
 }
 

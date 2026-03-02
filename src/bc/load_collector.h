@@ -118,12 +118,14 @@ struct LoadCollector : model::Collection<Load::Ptr> {
      * @param center_acc Linear acceleration of the center.
      * @param omega Angular velocity vector.
      * @param alpha Angular acceleration vector.
+     * @param consider_point_masses If true, include all POINTMASS features in this inertial load.
      */
     void add_inertialload(model::ElementRegion::Ptr region,
                           Vec3 center,
                           Vec3 center_acc,
                           Vec3 omega,
-                          Vec3 alpha);
+                          Vec3 alpha,
+                          bool consider_point_masses = false);
 
     /// Read-only access to stored loads
     const std::vector<Load::Ptr>& entries() const { return this->_data; }

@@ -242,6 +242,9 @@ struct TLoad : public Load {
  *
  * The equivalent nodal forces are computed by integrating f(x) = -rho * a(x) over the element
  * volume (or mid-surface for shells), where a(x) = a0 + alpha x r + omega x (omega x r) and r = x - c.
+ *
+ * Optionally, point-mass features can be included as additional nodal inertial
+ * forces/moments using `consider_point_masses`.
  */
 struct InertialLoad : public Load {
     using Ptr = std::shared_ptr<InertialLoad>;
@@ -251,6 +254,7 @@ struct InertialLoad : public Load {
     Vec3 omega{0,0,0};
     Vec3 alpha{0,0,0};
     SPtr<model::ElementRegion> region = nullptr; ///< Target element region.
+    bool consider_point_masses = false;          ///< Include point-mass features in inertial force assembly.
 
     InertialLoad() = default;
     ~InertialLoad() override = default;

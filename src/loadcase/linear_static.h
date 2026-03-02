@@ -38,6 +38,7 @@ struct LinearStatic : public LoadCase {
 
 
     bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
+    bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
 	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).
     /**
      * @brief Constructs the linear static load case.

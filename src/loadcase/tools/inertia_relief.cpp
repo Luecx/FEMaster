@@ -7,16 +7,113 @@
 #include "../../core/logging.h"
 #include "../../model/model_data.h"
 #include "../../model/element/element_structural.h"
+#include "../../feature/point_mass.h"
 #include "../../bc/load.h"
 
 #include <Eigen/Cholesky>
+#include <cmath>
 #include <iomanip>
 #include <utility>
 #include <algorithm>
 
 namespace fem {
 
-void apply_inertia_relief(model::ModelData& model_data, model::Field& global_load_mat) {
+namespace {
+
+void accumulate_structural_mass_and_center(const model::ModelData& data,
+                                           Precision& mass_sum,
+                                           Vec3& first_moment) {
+    for (const auto& eptr : data.elements) {
+        if (!eptr) {
+            continue;
+        }
+        auto* se = eptr->as<model::StructuralElement>();
+        if (!se) {
+            continue;
+        }
+
+        mass_sum     += se->integrate_scalar_field(true, [](const Vec3&) { return Precision(1); });
+        first_moment += se->integrate_vector_field(true, [](const Vec3& x) { return x; });
+    }
+}
+
+void accumulate_point_mass_mass_and_center(const model::ModelData& data,
+                                           const model::Field& positions,
+                                           Precision& mass_sum,
+                                           Vec3& first_moment) {
+    for (const auto& feature_ptr : data.features) {
+        const auto* pm = dynamic_cast<const feature::PointMass*>(feature_ptr.get());
+        if (!pm || !pm->region) {
+            continue;
+        }
+
+        if (pm->mass == Precision(0)) {
+            continue;
+        }
+
+        for (const ID node_id : *pm->region) {
+            logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+                           "InertiaRelief (point masses): node id ", node_id,
+                           " out of bounds for positions field with ", positions.rows, " rows");
+
+            const Vec3 x = positions.row_vec3(static_cast<Index>(node_id));
+            mass_sum += pm->mass;
+            first_moment += pm->mass * x;
+        }
+    }
+}
+
+void accumulate_structural_inertia(const model::ModelData& data,
+                                   const Vec3& center_of_gravity,
+                                   Mat3& inertia_tensor) {
+    for (const auto& eptr : data.elements) {
+        if (!eptr) {
+            continue;
+        }
+        auto* se = eptr->as<model::StructuralElement>();
+        if (!se) {
+            continue;
+        }
+
+        inertia_tensor += se->integrate_tensor_field(true, [center_of_gravity](const Vec3& x) {
+            const Vec3 r = x - center_of_gravity;
+            const Precision r2 = r.squaredNorm();
+            return r2 * Mat3::Identity() - (r * r.transpose());
+        });
+    }
+}
+
+void accumulate_point_mass_inertia(const model::ModelData& data,
+                                   const model::Field& positions,
+                                   const Vec3& center_of_gravity,
+                                   Mat3& inertia_tensor) {
+    for (const auto& feature_ptr : data.features) {
+        const auto* pm = dynamic_cast<const feature::PointMass*>(feature_ptr.get());
+        if (!pm || !pm->region) {
+            continue;
+        }
+
+        for (const ID node_id : *pm->region) {
+            logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+                           "InertiaRelief (point masses): node id ", node_id,
+                           " out of bounds for positions field with ", positions.rows, " rows");
+
+            const Vec3 x = positions.row_vec3(static_cast<Index>(node_id));
+            const Vec3 r = x - center_of_gravity;
+            const Precision r2 = r.squaredNorm();
+            inertia_tensor += pm->mass * (r2 * Mat3::Identity() - (r * r.transpose()));
+
+            // Additional rotary inertia directly attached to node rotational DOFs.
+            inertia_tensor.diagonal() += pm->rotary_inertia;
+        }
+    }
+}
+
+} // namespace
+
+void apply_inertia_relief(model::ModelData& model_data,
+                          model::Field& global_load_mat,
+                          bool consider_point_masses) {
     constexpr Precision kIreg   = static_cast<Precision>(1e-12);
     constexpr Precision kRelTol = static_cast<Precision>(1e-8);
     constexpr Precision kAbsTol = static_cast<Precision>(1e-10);
@@ -65,17 +162,9 @@ void apply_inertia_relief(model::ModelData& model_data, model::Field& global_loa
     Precision m = Precision(0);
     Vec3 c_num  = Vec3::Zero();
 
-    for (auto& eptr : data.elements) {
-        if (!eptr) {
-            continue;
-        }
-        auto* se = eptr->as<model::StructuralElement>();
-        if (!se) {
-            continue;
-        }
-
-        m     += se->integrate_scalar_field(true, [](const Vec3&) { return Precision(1); });
-        c_num += se->integrate_vector_field(true, [](const Vec3& x) { return x; });
+    accumulate_structural_mass_and_center(data, m, c_num);
+    if (consider_point_masses) {
+        accumulate_point_mass_mass_and_center(data, pos, m, c_num);
     }
 
     logging::error(m > Precision(0), "InertiaRelief: total mass is zero -> cannot apply inertia relief");
@@ -91,22 +180,9 @@ void apply_inertia_relief(model::ModelData& model_data, model::Field& global_loa
     // ---------------------------------------------------------------------
     Mat3 I = Mat3::Zero();
 
-    for (auto& eptr : data.elements) {
-        if (!eptr) {
-            continue;
-        }
-        auto* se = eptr->as<model::StructuralElement>();
-        if (!se) {
-            continue;
-        }
-
-        I += se->integrate_tensor_field(true, [c](const Vec3& x) {
-            const Vec3       r = x - c;
-            const Precision r2 = r.squaredNorm();
-            const Mat3 integrand =
-                r2 * Mat3::Identity() - (r * r.transpose());
-            return integrand;
-        });
+    accumulate_structural_inertia(data, c, I);
+    if (consider_point_masses) {
+        accumulate_point_mass_inertia(data, pos, c, I);
     }
 
     // ---------------------------------------------------------------------
@@ -178,6 +254,7 @@ void apply_inertia_relief(model::ModelData& model_data, model::Field& global_loa
     ir.alpha      = alpha;
     ir.omega      = Vec3::Zero();
     ir.region     = model_data.elem_sets.all();
+    ir.consider_point_masses = consider_point_masses;
 
     ir.apply(data, inertial_mat, Precision(0));
 

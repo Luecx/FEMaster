@@ -131,7 +131,9 @@ void LinearStaticTopo::run() {
 
         Timer::measure(
             [&]() {
-                fem::apply_inertia_relief(*model->_data, global_load_mat);
+                fem::apply_inertia_relief(*model->_data,
+                                          global_load_mat,
+                                          inertia_relief_consider_point_masses);
                 // Add temporary RBM constraint (all elements). Removed later after equations are built.
                 model->add_rbm(std::string("EALL"));
             },

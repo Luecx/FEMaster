@@ -260,14 +260,16 @@ void Model::add_inertialload(const std::string& elset,
                              Vec3 center,
                              Vec3 center_acceleration,
                              Vec3 angular_velocity,
-                             Vec3 angular_acceleration) {
+                             Vec3 angular_acceleration,
+                             bool consider_point_masses) {
     logging::error(_data->elem_sets.has(elset), "Element set ", elset, " does not exist");
     auto region_ptr = _data->elem_sets.get(elset);
     _data->load_cols.get()->add_inertialload(region_ptr,
                                              center,
                                              center_acceleration,
                                              angular_velocity,
-                                             angular_acceleration);
+                                             angular_acceleration,
+                                             consider_point_masses);
 }
 
 void Model::define_amplitude(const std::string& name, bc::Interpolation interpolation) {

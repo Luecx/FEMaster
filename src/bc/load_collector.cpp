@@ -109,13 +109,15 @@ void LoadCollector::add_inertialload(model::ElementRegion::Ptr region,
                                      Vec3 center,
                                      Vec3 center_acc,
                                      Vec3 omega,
-                                     Vec3 alpha) {
+                                     Vec3 alpha,
+                                     bool consider_point_masses) {
     auto il = std::make_shared<InertialLoad>();
     il->region      = std::move(region);
     il->center      = center;
     il->center_acc  = center_acc;
     il->omega       = omega;
     il->alpha       = alpha;
+    il->consider_point_masses = consider_point_masses;
     this->add(il);
 }
 
