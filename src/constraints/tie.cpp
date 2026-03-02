@@ -308,14 +308,16 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
                 for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
                     const ID master_node_id = s_ptr->nodes()[local_id];
                     const Precision w        = nodal_contributions(local_id);
-                    entries.emplace_back(EquationEntry{master_node_id, dof_id, -w});
+                    if (std::abs(w) > 1e-12)
+                        entries.emplace_back(EquationEntry{master_node_id, dof_id, -w});
                 }
             } else {
                 auto l_ptr = lines[static_cast<std::size_t>(best_id)];
                 for (ID local_id = 0; local_id < static_cast<ID>(l_ptr->n_nodes); ++local_id) {
                     const ID master_node_id = l_ptr->nodes()[local_id];
                     const Precision w        = nodal_contributions(local_id);
-                    entries.emplace_back(EquationEntry{master_node_id, dof_id, -w});
+                    if (std::abs(w) > 1e-12)
+                        entries.emplace_back(EquationEntry{master_node_id, dof_id, -w});
                 }
             }
 
