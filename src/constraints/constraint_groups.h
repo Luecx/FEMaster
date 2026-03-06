@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "equation.h"
+#include "types/equation.h"
 #include "../core/types_num.h"
 
 #include <vector>

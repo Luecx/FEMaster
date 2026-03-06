@@ -20,7 +20,7 @@
 #include <memory>
 #include <string>
 
-#include "../../constraints/coupling.h"
+#include "../../constraints/types/coupling.h"
 #include "../../core/logging.h"
 #include "../../core/types_eig.h"
 #include "../../dsl/condition.h"

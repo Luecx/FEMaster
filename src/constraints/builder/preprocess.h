@@ -6,7 +6,7 @@
  * constraint system, and compacts the remaining rows and columns.
  *
  * @see src/constraints/builder/preprocess.cpp
- * @see src/constraints/constraint_set.h
+ * @see src/constraints/transformer/constraint_set.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -14,7 +14,7 @@
 #pragma once
 
 #include "../../core/types_eig.h"
-#include "../constraint_set.h"
+#include "../transformer/constraint_set.h"
 
 #include <vector>
 

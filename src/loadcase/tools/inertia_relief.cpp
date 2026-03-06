@@ -8,7 +8,7 @@
 #include "../../model/model_data.h"
 #include "../../model/element/element_structural.h"
 #include "../../feature/point_mass.h"
-#include "../../bc/load.h"
+#include "../../bc/load_inertial.h"
 
 #include <Eigen/Cholesky>
 #include <cmath>

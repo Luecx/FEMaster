@@ -48,10 +48,10 @@
 
 #include "linear_static_topo.h"
 
-#include "../constraints/constraint_map.h"
-#include "../constraints/constraint_set.h"
-#include "../constraints/constraint_transformer.h"
-#include "../constraints/equation.h"
+#include "../constraints/transformer/constraint_map.h"
+#include "../constraints/transformer/constraint_set.h"
+#include "../constraints/transformer/constraint_transformer.h"
+#include "../constraints/types/equation.h"
 #include "../core/logging.h"
 #include "../mattools/assemble.tpp"
 #include "../mattools/reduce_mat_to_vec.h"

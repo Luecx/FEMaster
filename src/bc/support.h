@@ -6,14 +6,14 @@
  * constraint equations that are later assembled into the solver system.
  *
  * @see src/bc/support.cpp
- * @see src/constraints/equation.h
+ * @see src/constraints/types/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
 
 #pragma once
 
-#include "../constraints/equation.h"
+#include "../constraints/types/equation.h"
 #include "../core/core.h"
 #include "../core/printable.h"
 #include "../cos/coordinate_system.h"

@@ -6,7 +6,7 @@
  * representation along with diagnostic information.
  *
  * @see src/constraints/builder/builder.cpp
- * @see src/constraints/constraint_map.h
+ * @see src/constraints/transformer/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -14,7 +14,7 @@
 #pragma once
 
 #include "../../core/types_eig.h"
-#include "../constraint_set.h"
+#include "../transformer/constraint_set.h"
 
 #include <string>
 #include <utility>

@@ -58,8 +58,8 @@
 #include "../core/logging.h"
 #include "../solve/eigen.h"
 
-#include "../constraints/constraint_transformer.h"
-#include "../constraints/equation.h"
+#include "../constraints/transformer/constraint_transformer.h"
+#include "../constraints/types/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_vec_to_vec.h"

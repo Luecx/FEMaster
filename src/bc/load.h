@@ -1,13 +1,17 @@
 /**
  * @file load.h
- * @brief Declares the hierarchy of load boundary conditions.
+ * @brief Declares the abstract base interface for load boundary conditions.
  *
- * The BC module defines several concrete load types that can be attached to
- * node, surface, or element regions. Each load derives from `BoundaryCondition`
- * and implements the `apply` function to assemble its contribution into the
- * global boundary condition data structures.
+ * Concrete load types are declared in dedicated headers:
+ * - `load_c.h`
+ * - `load_d.h`
+ * - `load_p.h`
+ * - `load_v.h`
+ * - `load_t.h`
+ * - `load_inertial.h`
  *
- * @see src/bc/load.cpp
+ * This file only contains the polymorphic `Load` base class.
+ *
  * @see src/bc/load_collector.h
  * @author Finn Eggers
  * @date 06.03.2025
@@ -65,203 +69,13 @@ struct Load : public BoundaryCondition, public fem::Printable {
     std::string str() const override = 0;
 };
 
-/**
- * @struct CLoad
- * @brief Concentrated nodal load.
- *
- * Applies up to six generalized force/moment components to each node in the
- * associated node region. When an orientation coordinate system is provided,
- * the components are interpreted in the local basis and rotated into the
- * global frame prior to assembly.
- */
-struct CLoad : public Load {
-    using Ptr = std::shared_ptr<CLoad>; ///< Shared pointer alias for concentrated loads.
-
-    Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN}; ///< Generalized load vector (Fx,Fy,Fz,Mx,My,Mz).
-    SPtr<model::NodeRegion> region = nullptr;   ///< Target node region.
-
-    /**
-     * @brief Default constructor.
-     */
-    CLoad() = default;
-
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
-    ~CLoad() override = default;
-
-    /**
-     * @brief Applies the load to all nodes inside `region`.
-     *
-     * @param model_data Provides access to nodal topology (unused).
-     * @param bc Node-based boundary-condition storage.
-     */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
-    std::string str() const override;
-};
-
-/**
- * @struct DLoad
- * @brief Distributed surface load with vector traction.
- *
- * Applies translational forces to the nodes of each surface patch referenced by
- * the associated region. If an orientation system is supplied, the traction
- * components are defined in that local frame and mapped to global coordinates
- * for every surface node.
- */
-struct DLoad : public Load {
-    using Ptr = std::shared_ptr<DLoad>; ///< Shared pointer alias for distributed loads.
-
-    Vec3 values{NAN, NAN, NAN};                  ///< Surface traction components.
-    SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
-
-    /**
-     * @brief Default constructor.
-     */
-    DLoad() = default;
-
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
-    ~DLoad() override = default;
-
-    /**
-     * @brief Applies the distributed traction to all surfaces inside `region`.
-     *
-     * @param model_data Provides surface connectivity and geometry.
-     * @param bc Node-based boundary-condition storage.
-     */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
-    std::string str() const override;
-};
-
-/**
- * @struct PLoad
- * @brief Uniform surface pressure load.
- *
- * Distributes a scalar pressure to the nodes of each surface in the associated
- * region.
- */
-struct PLoad : public Load {
-    using Ptr = std::shared_ptr<PLoad>; ///< Shared pointer alias for pressure loads.
-
-    Precision pressure{NAN};                  ///< Magnitude of the applied pressure.
-    SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
-
-    /**
-     * @brief Default constructor.
-     */
-    PLoad() = default;
-
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
-    ~PLoad() override = default;
-
-    /**
-     * @brief Applies the pressure to all surfaces inside `region`.
-     *
-     * @param model_data Provides surface connectivity and geometry.
-     * @param bc Node-based boundary-condition storage.
-     */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
-    std::string str() const override;
-};
-
-/**
- * @struct VLoad
- * @brief Volumetric load applied to structural elements.
- *
- * Applies a body-force vector to each structural element in the associated
- * element region. For oriented loads the vector is taken in local coordinates
- * and rotated at the element centroid before being scattered to the nodes.
- */
-struct VLoad : public Load {
-    using Ptr = std::shared_ptr<VLoad>; ///< Shared pointer alias for volumetric loads.
-
-    Vec3 values{NAN, NAN, NAN};                   ///< Body-force components.
-    SPtr<model::ElementRegion> region = nullptr;  ///< Target element region.
-
-    /**
-     * @brief Default constructor.
-     */
-    VLoad() = default;
-
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
-    ~VLoad() override = default;
-
-    /**
-     * @brief Applies the body forces to all elements inside `region`.
-     *
-     * @param model_data Provides access to the element container.
-     * @param bc Node-based boundary-condition storage.
-     */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
-    std::string str() const override;
-};
-
-/**
- * @struct TLoad
- * @brief Thermal load derived from a temperature field.
- *
- * Generates equivalent nodal forces by feeding a temperature field to each
- * structural element.
- */
-struct TLoad : public Load {
-    using Ptr = std::shared_ptr<TLoad>; ///< Shared pointer alias for thermal loads.
-
-    SPtr<model::Field> temp_field = nullptr; ///< Temperature field reference.
-    Precision ref_temp{NAN};                    ///< Reference temperature for zero load.
-
-    /**
-     * @brief Default constructor.
-     */
-    TLoad() = default;
-
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
-    ~TLoad() override = default;
-
-    /**
-     * @brief Applies the thermal load to all structural elements in the model.
-     *
-     * @param model_data Provides access to the element container.
-     * @param bc Node-based boundary-condition storage.
-     */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
-    std::string str() const override;
-};
-
-/**
- * @struct InertialLoad
- * @brief Rigid-body inertial load defined by a center point, linear acceleration at the center,
- *        and angular velocity/acceleration about that center (no Coriolis term).
- *
- * The equivalent nodal forces are computed by integrating f(x) = -rho * a(x) over the element
- * volume (or mid-surface for shells), where a(x) = a0 + alpha x r + omega x (omega x r) and r = x - c.
- *
- * Optionally, point-mass features can be included as additional nodal inertial
- * forces/moments using `consider_point_masses`.
- */
-struct InertialLoad : public Load {
-    using Ptr = std::shared_ptr<InertialLoad>;
-
-    Vec3 center{0,0,0};
-    Vec3 center_acc{0,0,0};
-    Vec3 omega{0,0,0};
-    Vec3 alpha{0,0,0};
-    SPtr<model::ElementRegion> region = nullptr; ///< Target element region.
-    bool consider_point_masses = false;          ///< Include point-mass features in inertial force assembly.
-
-    InertialLoad() = default;
-    ~InertialLoad() override = default;
-
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
-    std::string str() const override;
-};
-
 } // namespace bc
 } // namespace fem
+
+// Convenience umbrella includes for concrete load types.
+#include "load_c.h"
+#include "load_d.h"
+#include "load_p.h"
+#include "load_v.h"
+#include "load_t.h"
+#include "load_inertial.h"

@@ -7,7 +7,7 @@
 
 #include "constraint_groups.h"
 
-#include "constraint_report.h"
+#include "transformer/constraint_report.h"
 #include "../core/logging.h"
 
 namespace fem {

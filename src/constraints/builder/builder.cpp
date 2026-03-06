@@ -6,7 +6,7 @@
  * detection, and assembly of the null-space transformation matrices.
  *
  * @see src/constraints/builder/builder.h
- * @see src/constraints/constraint_map.h
+ * @see src/constraints/transformer/constraint_map.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -15,7 +15,7 @@
 
 #include "../../core/logging.h"
 #include "../../core/timer.h"
-#include "../constraint_map.h"
+#include "../transformer/constraint_map.h"
 #include "assemble_TX.h"
 #include "build_x.h"
 #include "detect_rank.h"

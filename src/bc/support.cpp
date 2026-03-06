@@ -6,7 +6,7 @@
  * that later enforce prescribed displacements or rotations in the solver.
  *
  * @see src/bc/support.h
- * @see src/constraints/equation.h
+ * @see src/constraints/types/equation.h
  * @author Finn Eggers
  * @date 06.03.2025
  */

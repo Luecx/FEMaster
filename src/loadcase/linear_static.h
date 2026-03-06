@@ -14,7 +14,7 @@
 #pragma once
 
 #include "loadcase.h"
-#include "../constraints/constraint_transformer.h"
+#include "../constraints/transformer/constraint_transformer.h"
 #include "../solve/solver.h"
 
 #include <string>

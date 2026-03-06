@@ -1,7 +1,7 @@
-#include "../src/constraints/constraint_set.h"
-#include "../src/constraints/constraint_map.h"
+#include "../src/constraints/transformer/constraint_set.h"
+#include "../src/constraints/transformer/constraint_map.h"
 #include "../src/constraints/builder/builder.h"
-#include "../src/constraints/connector.h"
+#include "../src/constraints/types/connector.h"
 #include "../src/model/model.h"
 #include "../src/cos/rectangular_system.h"
 

@@ -9,7 +9,7 @@
 
 #include <string>
 
-#include "../../constraints/connector.h"
+#include "../../constraints/types/connector.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../model/model.h"

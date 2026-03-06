@@ -10,7 +10,7 @@
  * constrained via couplings).
  *
  * @see src/loadcase/linear_static.h
- * @see src/constraints/constraint_transformer.h
+ * @see src/constraints/transformer/constraint_transformer.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -18,7 +18,7 @@
 #include "linear_static.h"
 
 #include "../constraints/builder/builder.h"
-#include "../constraints/constraint_transformer.h"
+#include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"

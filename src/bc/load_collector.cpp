@@ -7,12 +7,24 @@
  * load-case execution.
  *
  * @see src/bc/load_collector.h
- * @see src/bc/load.cpp
+ * @see src/bc/load_c.cpp
+ * @see src/bc/load_d.cpp
+ * @see src/bc/load_p.cpp
+ * @see src/bc/load_v.cpp
+ * @see src/bc/load_t.cpp
+ * @see src/bc/load_inertial.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
 
 #include "load_collector.h"
+
+#include "load_c.h"
+#include "load_d.h"
+#include "load_inertial.h"
+#include "load_p.h"
+#include "load_t.h"
+#include "load_v.h"
 
 #include "../data/field.h"
 

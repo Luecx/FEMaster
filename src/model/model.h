@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../bc/amplitude.h"
-#include "../constraints/connector.h"
-#include "../constraints/coupling.h"
+#include "../constraints/types/connector.h"
+#include "../constraints/types/coupling.h"
 #include "../cos/coordinate_system.h"
 #include "geometry/surface/surface.h"
 #include "./model_data.h"
