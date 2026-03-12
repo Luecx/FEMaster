@@ -16,12 +16,20 @@ constructor/queries.
 namespace fem {
 namespace quadrature {
 
-std::map<SchemeKey, Scheme> quadrature_scheme_map{};
+SchemeRegistry& quadrature_scheme_registry() {
+    static SchemeRegistry registry{};
+    return registry;
+}
+
+void register_scheme(Domain domain, Order order, std::vector<Point> points) {
+    quadrature_scheme_registry()[{domain, order}] = Scheme(domain, order, std::move(points));
+}
 
 Quadrature::Quadrature(Domain d, Order o)
     : domain(d), order(o) {
-    auto it = quadrature_scheme_map.find({domain, order});
-    if (it == quadrature_scheme_map.end()) {
+    auto& registry = quadrature_scheme_registry();
+    auto it = registry.find({domain, order});
+    if (it == registry.end()) {
         throw std::runtime_error("Quadrature scheme not found.");
     }
     scheme = it->second;
@@ -37,4 +45,3 @@ Index Quadrature::count() const {
 
 } // namespace quadrature
 } // namespace fem
-

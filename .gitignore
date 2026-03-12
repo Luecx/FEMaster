@@ -10,6 +10,10 @@ topo/solver
 topo/runs
 
 projects/
+libs/
+tests_decks/
+cmake-build-debug/
+cmake-build-release/
 
 *.pyc
 *.exe
@@ -19,7 +23,5 @@ projects/
 *.aux
 *.log
 *.vtk
-
-cmake-build-debug/
 
 .DS_Store

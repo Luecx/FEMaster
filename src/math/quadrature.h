@@ -23,6 +23,7 @@
 #include <ostream>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fem {
@@ -129,8 +130,14 @@ std::vector<Point> create_vector_from_array(const Point (&arr)[N]) {
     return std::vector<Point>(arr, arr + N);
 }
 
-/// Global lookup table populated by the registration macros.
-extern std::map<SchemeKey, Scheme> quadrature_scheme_map;
+/// Registry type used to store all known quadrature schemes.
+using SchemeRegistry = std::map<SchemeKey, Scheme>;
+
+/// Returns the process-wide quadrature registry, initializing it on first use.
+SchemeRegistry& quadrature_scheme_registry();
+
+/// Inserts or replaces a scheme in the registry.
+void register_scheme(Domain domain, Order order, std::vector<Point> points);
 
 /**
  * @brief Helper that executes a callable at static initialisation time.
@@ -144,15 +151,19 @@ struct Executor {
 /// Registers a scheme by directly passing the point list to the constructor.
 #define REGISTER_SCHEME_IN_PLACE(domain_, order_, ...) \
     static ::fem::quadrature::Executor executor_##domain_##order_([]() { \
-        ::fem::quadrature::quadrature_scheme_map[{domain_, order_}] = \
-        ::fem::quadrature::Scheme(domain_, order_, std::vector<::fem::quadrature::Point>{__VA_ARGS__}); \
+        ::fem::quadrature::register_scheme( \
+            domain_, \
+            order_, \
+            std::vector<::fem::quadrature::Point>{__VA_ARGS__}); \
     })
 
 /// Registers a scheme by forwarding an existing array through `create_vector_from_array`.
 #define REGISTER_SCHEME(domain_, order_, points_) \
     static ::fem::quadrature::Executor executor_##domain_##order_([]() { \
-        ::fem::quadrature::quadrature_scheme_map[{domain_, order_}] = \
-        ::fem::quadrature::Scheme(domain_, order_, ::fem::quadrature::create_vector_from_array(points_)); \
+        ::fem::quadrature::register_scheme( \
+            domain_, \
+            order_, \
+            ::fem::quadrature::create_vector_from_array(points_)); \
     })
 
 /**
@@ -207,4 +218,3 @@ public:
 
 } // namespace quadrature
 } // namespace fem
-
