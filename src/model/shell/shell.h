@@ -6,7 +6,7 @@
 #define SHELL_H
 
 #include "../../material/stress.h"
-#include "../../material/isotropic_elasticity.h"
+#include "../../material/elasticity.h"
 #include "../../core/core.h"
 #include "../element/element_structural.h"
 #include "../../section/section_shell.h"
@@ -38,15 +38,12 @@ struct ShellElement : StructuralElement {
         }
         return section->material;
     }
-    material::IsotropicElasticity* get_elasticity() {
+    material::Elasticity* get_elasticity() {
         auto mat_ptr = get_material();
         if (!mat_ptr->has_elasticity()) {
             logging::error(false, "Material has no elasticity assigned");
         }
-        if (!mat_ptr->elasticity()->template as<material::IsotropicElasticity>()) {
-            logging::error(false, "Material is not isotropic for element ", this->elem_id);
-        }
-        return mat_ptr->elasticity()->template as<material::IsotropicElasticity>();
+        return mat_ptr->elasticity().get();
     }
 
     // left out for childs

@@ -6,6 +6,7 @@
 #include "../../core/types_num.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
+#include "../../material/generalised_isotropic_elasticity.h"
 #include "../../material/isotropic_elasticity.h"
 #include "../../material/orthotropic_elasticity.h"
 
@@ -20,8 +21,10 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
             fem::dsl::KeywordSpec::make()
                 .key("TYPE")
                     .required()
-                    .doc("Elasticity formulation (ISO/ORTHO)")
-                    .allowed({"ISO", "ISOTROPIC", "ORTHO", "ORTHOTROPIC"})
+                    .doc("Elasticity formulation (ISO/GENERALISED ISOTROPIC/ORTHO)")
+                    .allowed({"ISO", "ISOTROPIC",
+                              "GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO",
+                              "ORTHO", "ORTHOTROPIC"})
         );
 
         command.variant(fem::dsl::Variant::make()
@@ -40,6 +43,28 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
                         throw std::runtime_error("ELASTIC requires an active material context");
                     }
                     material->set_elasticity<fem::material::IsotropicElasticity>(E, nu);
+                })
+            )
+        );
+
+        command.variant(fem::dsl::Variant::make()
+            .when(fem::dsl::Condition::key_equals("TYPE", {"GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO"}))
+            .segment(fem::dsl::Segment::make()
+                .range(fem::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::dsl::Pattern::make()
+                    .one<fem::Precision>().name("E").desc("Young's modulus")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                    .one<fem::Precision>().name("NU").desc("Poisson ratio")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                    .one<fem::Precision>().name("G").desc("Independent shear modulus")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                )
+                .bind([&model](fem::Precision E, fem::Precision nu, fem::Precision G) {
+                    auto material = model._data->materials.get();
+                    if (!material) {
+                        throw std::runtime_error("ELASTIC requires an active material context");
+                    }
+                    material->set_elasticity<fem::material::GeneralisedIsotropicElasticity>(E, nu, G);
                 })
             )
         );
