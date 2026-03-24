@@ -68,6 +68,8 @@ using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
 
+constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
+
 /**
  * @struct EigenMode
  * @brief Small container that holds one modal eigenpair in reduced space
@@ -90,7 +92,7 @@ struct EigenMode {
 
     explicit EigenMode(Precision lam, DynamicVector q)
         : lambda(lam),
-          freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * M_PI)),
+          freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * pi)),
           q_mode(std::move(q)) {}
 };
 
@@ -187,7 +189,7 @@ static void write_results(const std::vector<EigenMode>& modes,
 
     for (size_t i = 0; i < modes.size(); ++i) {
         eigenvalues(i) = modes[i].lambda;
-        eigenfreqs (i) = modes[i].freq * 2 * M_PI;
+        eigenfreqs (i) = modes[i].freq * 2 * pi;
         freqs      (i) = modes[i].freq;
         writer->write_field       (modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1));
         writer->write_eigen_matrix(modes[i].participation, "PARTICIPATION_" + std::to_string(i + 1));
