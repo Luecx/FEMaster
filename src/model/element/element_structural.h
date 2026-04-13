@@ -37,6 +37,7 @@ struct StructuralElement : ElementInterface {
     virtual Stresses stress(Field& displacement, std::vector<Vec3>& rst) = 0;
     virtual Strains strain(Field& displacement, std::vector<Vec3>& rst) = 0;
     virtual std::vector<Vec6> section_forces(Field& displacement) {return std::vector<Vec6>();};
+    virtual std::vector<Precision> shear_flow(Field& displacement) {return std::vector<Precision>();};
 
     virtual void compute_stress_strain(Field& ip_stress,
                                        Field& ip_strain,

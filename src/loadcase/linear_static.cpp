@@ -210,6 +210,10 @@ void LinearStatic::run() {
         [&]() { return model->compute_section_forces(global_disp_mat); },
         "computing beam section forces");
 
+    auto shear_flow_mat = Timer::measure(
+        [&]() { return model->compute_shear_flow(global_disp_mat); },
+        "computing shear-flow output");
+
     auto [stress, strain] = Timer::measure(
         [&]() { return model->compute_stress_strain(global_disp_mat); },
         "interpolating stress and strain at nodes");
@@ -256,6 +260,9 @@ void LinearStatic::run() {
     writer->write_field(global_load_mat         , "EXTERNAL_FORCES");
     writer->write_field(reaction_masked         , "REACTION_FORCES");
     writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);
+    if (shear_flow_mat.rows() > 0) {
+        writer->write_eigen_matrix(shear_flow_mat, "SHEAR_FLOW", 2);
+    }
 
     transformer->post_check_static(K, f, u);
 }

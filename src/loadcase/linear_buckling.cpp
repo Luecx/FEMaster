@@ -86,16 +86,58 @@ struct BucklingMode {
  * solution (expressed in reduced coordinates). This is not essential, but can
  * improve robustness of the eigensolver in buckling problems.
  */
-static inline double estimate_lambda_rayleigh(const SparseMatrix& A,
-                                              const SparseMatrix& B,
-                                              const DynamicVector& q) {
-    if (q.size() == 0) return 0.0;
+static bool estimate_lambda_rayleigh(const SparseMatrix& A,
+                                     const SparseMatrix& B,
+                                     const DynamicVector& q,
+                                     double& lambda_out) {
+    lambda_out = 0.0;
+
+    if (q.size() == 0) return false;
+
     DynamicVector Aq = A * q;
-    DynamicVector Bq = B * q;          // we use -B later
+    DynamicVector Bq = B * q;
+
     const double num = q.dot(Aq);
     const double den = q.dot(-Bq);
-    if (std::abs(den) < 1e-20) return 0.0;
-    return num / den;
+
+    logging::info(true, "Rayleigh num = ", std::scientific, std::setprecision(12), num);
+    logging::info(true, "Rayleigh den = ", std::scientific, std::setprecision(12), den);
+    logging::info(true, "||q_pre||    = ", std::scientific, std::setprecision(12), q.norm());
+    logging::info(true, "||B q_pre||  = ", std::scientific, std::setprecision(12), Bq.norm());
+
+    const double den_tol = 1e-14 * std::max(1.0, std::abs(num));
+    if (!std::isfinite(num) || !std::isfinite(den) || std::abs(den) <= den_tol)
+        return false;
+
+    lambda_out = num / den;
+    return std::isfinite(lambda_out) && lambda_out > 0.0;
+}
+
+static double estimate_lambda_diag_ratio(const SparseMatrix& A,
+                                         const SparseMatrix& B) {
+    std::vector<double> vals;
+    vals.reserve(A.rows());
+
+    for (int i = 0; i < A.rows(); ++i) {
+        const double aii = A.coeff(i, i);
+        const double mii = -B.coeff(i, i);
+
+        if (!std::isfinite(aii) || !std::isfinite(mii)) continue;
+        if (std::abs(aii) < 1e-20) continue;
+        if (mii <= 1e-20) continue;
+
+        const double lam = aii / mii;
+        if (std::isfinite(lam) && lam > 0.0)
+            vals.push_back(lam);
+    }
+
+    if (vals.empty()) return std::numeric_limits<double>::quiet_NaN();
+
+    std::sort(vals.begin(), vals.end());
+
+    // Robust gegen Ausreißer:
+    const size_t idx = vals.size() / 4;   // eher konservativ kleiner als Median
+    return vals[idx];
 }
 
 /**
@@ -267,18 +309,48 @@ void LinearBuckling::run() {
 
     if (std::abs(this->sigma) > 1e-24) {
         logging::info(true, "");
-        logging::info(true, "User-provided shift sigma = ", std::scientific, std::setprecision(4), this->sigma);
+        logging::info(true, "User-provided shift sigma = ",
+                      std::scientific, std::setprecision(4), this->sigma);
     } else {
-        // Optional: estimate an initial shift sigma from the preload (Rayleigh in reduced space).
-        // We scale down by 1e6 to avoid aggressive shifts on very stiff systems; clamp to a small positive value.
-        this->sigma = Timer::measure(
-            [&]() { return estimate_lambda_rayleigh(A, B, q_pre) / 1e6; },
-            "estimating initial shift sigma (Rayleigh)"
+        double lambda_est_raw = 0.0;
+        bool rayleigh_ok = false;
+
+        logging::info(true, "");
+        logging::info(true, "Estimating initial shift sigma");
+
+        rayleigh_ok = Timer::measure(
+            [&]() { return estimate_lambda_rayleigh(A, B, q_pre, lambda_est_raw); },
+            "estimating initial raw lambda (Rayleigh)"
         );
-        if (std::abs(this->sigma) < 1e-12) this->sigma = 1e-12; // avoid zero
-        if (this->sigma <= 0) this->sigma = -this->sigma;       // ensure positive
-        if (!std::isfinite(this->sigma)) this->sigma = 1e-6;    // fallback
-        logging::info(true, "Using generated sigma = ", std::scientific, std::setprecision(4), this->sigma);
+
+        if (rayleigh_ok) {
+            logging::info(true, "Raw Rayleigh estimate = ",
+                          std::scientific, std::setprecision(6), lambda_est_raw);
+        } else {
+            logging::info(true, "Rayleigh estimate failed or degenerate; falling back to diagonal ratio.");
+
+            lambda_est_raw = Timer::measure(
+                [&]() { return estimate_lambda_diag_ratio(A, B); },
+                "estimating initial raw lambda (diag ratio)"
+            );
+
+            logging::info(true, "Raw diagonal-ratio estimate = ",
+                          std::scientific, std::setprecision(6), lambda_est_raw);
+        }
+
+        if (std::isfinite(lambda_est_raw) && lambda_est_raw > 0.0) {
+            this->sigma = lambda_est_raw / 1e6;
+        } else {
+            this->sigma = 1e-12;
+            logging::info(true, "Raw estimate invalid; using fallback sigma = ",
+                          std::scientific, std::setprecision(6), this->sigma);
+        }
+
+        if (!std::isfinite(this->sigma) || this->sigma <= 0.0)
+            this->sigma = 1e-12;
+
+        logging::info(true, "Using generated sigma = ",
+                      std::scientific, std::setprecision(6), this->sigma);
     }
 
 

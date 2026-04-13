@@ -270,6 +270,11 @@ void LinearStaticTopo::run() {
         "Interpolating stress and strain at nodes"
     );
 
+    auto shear_flow_mat = Timer::measure(
+        [&]() { return model->compute_shear_flow(global_disp_mat); },
+        "computing shear-flow output"
+    );
+
     // (10) Topology metrics
     //  - compliance_raw: element-wise u^T K_e u contributions (as provided by the model)
     //  - compliance_adj: SIMP-adjusted compliance (rho^p scaling applied)
@@ -332,6 +337,9 @@ void LinearStaticTopo::run() {
     writer->write_field(density_grad    , "DENS_GRAD");
     writer->write_field(volumes         , "VOLUME");
     writer->write_field(*density        , "DENSITY");
+    if (shear_flow_mat.rows() > 0) {
+        writer->write_eigen_matrix(shear_flow_mat, "SHEAR_FLOW", 2);
+    }
     if (has_orientation) {
         writer->write_field(angle_grad  , "ORIENTATION_GRAD");
         writer->write_field(*orientation, "ORIENTATION");

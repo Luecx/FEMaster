@@ -4,6 +4,7 @@
 #include "../section/section_beam.h"
 #include "../section/section_solid.h"
 #include "../section/section_shell.h"
+#include "../section/section_truss.h"
 #include "../feature/point_mass.h"
 
 #include "../bc/load_collector.h"
@@ -349,6 +350,16 @@ void Model::beam_section(const std::string& set, const std::string& material,  c
     sec->region   = _data->elem_sets.get(set);
     sec->profile  = _data->profiles.get(profile);
     sec->n1       = orientation;
+    this->_data->sections.push_back(sec);
+}
+
+void Model::truss_section(const std::string& set, const std::string& material, Precision area) {
+    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
+    logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
+    TrussSection::Ptr sec = std::make_shared<TrussSection>();
+    sec->material = _data->materials.get(material);
+    sec->region   = _data->elem_sets.get(set);
+    sec->A        = area;
     this->_data->sections.push_back(sec);
 }
 

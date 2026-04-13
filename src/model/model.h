@@ -82,6 +82,7 @@ struct Model {
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material);
     void beam_section (const std::string& set, const std::string& material, const std::string& profile, Vec3 orientation);
+    void truss_section(const std::string& set, const std::string& material, Precision area);
     void shell_section(const std::string& set, const std::string& material, Precision thickness);
 
     // features
@@ -120,6 +121,7 @@ struct Model {
     Field                          compute_compliance_angle_derivative(Field& displacement);
     Field                          compute_volumes      ();
     DynamicMatrix                  compute_section_forces(Field& displacement);
+    DynamicMatrix                  compute_shear_flow(Field& displacement);
 };
 
 #include "model.ipp"

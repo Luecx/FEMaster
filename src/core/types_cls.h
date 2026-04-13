@@ -60,6 +60,7 @@ struct Section;
 struct Profile;
 struct SolidSection;
 struct BeamSection;
+struct TrussSection;
 struct ShellSection;
 
 template<class T> using SPtr = std::shared_ptr<T>;

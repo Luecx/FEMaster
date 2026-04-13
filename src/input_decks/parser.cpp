@@ -43,6 +43,7 @@
 #include "commands/register_profile.inl"
 #include "commands/register_solid_section.inl"
 #include "commands/register_beam_section.inl"
+#include "commands/register_truss_section.inl"
 #include "commands/register_shell_section.inl"
 #include "commands/register_point_mass.inl"
 #include "commands/register_element.inl"
@@ -215,7 +216,7 @@ std::size_t Parser::required_nodes_for_type(const std::string& type) {
     if (type == "B33") return 2;
     if (type == "T3") return 2;
     if (type == "S3") return 3;
-    if (type == "S4" || type == "MITC4") return 4;
+    if (type == "S4" || type == "MITC4" || type == "QSPT") return 4;
     if (type == "S6") return 6;
     if (type == "S8") return 8;
     if (type == "P")  return 1;
@@ -329,6 +330,7 @@ void Parser::register_commands() {
     commands::register_profile(reg, mdl);
     commands::register_solid_section(reg, mdl);
     commands::register_beam_section(reg, mdl);
+    commands::register_truss_section(reg, mdl);
     commands::register_shell_section(reg, mdl);
     commands::register_point_mass(reg, mdl);
     commands::register_element(reg, mdl);

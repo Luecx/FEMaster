@@ -192,6 +192,44 @@ Model::compute_section_forces(Field& displacement) {
     return mat;
 }
 
+DynamicMatrix
+Model::compute_shear_flow(Field& displacement) {
+    using Entry = std::tuple<ID, Index, Precision>;
+    std::vector<Entry> entries;
+    entries.reserve(_data->elements.size() * 4);
+
+    for (auto el : _data->elements) {
+        if (!el) continue;
+
+        if (auto sel = el->as<StructuralElement>()) {
+            auto per_entry_values = sel->shear_flow(displacement);
+            if (per_entry_values.empty())
+                continue;
+
+            const ID eid = sel->elem_id;
+            for (Index local_id = 0; local_id < static_cast<Index>(per_entry_values.size()); ++local_id) {
+                entries.emplace_back(eid, local_id, per_entry_values[static_cast<std::size_t>(local_id)]);
+            }
+        }
+    }
+
+    DynamicMatrix mat(static_cast<Index>(entries.size()), 3);
+    mat.setZero();
+
+    for (Index i = 0; i < static_cast<Index>(entries.size()); ++i) {
+        ID        eid;
+        Index     local_id;
+        Precision value;
+        std::tie(eid, local_id, value) = entries[static_cast<std::size_t>(i)];
+
+        mat(i, 0) = static_cast<Precision>(eid);
+        mat(i, 1) = static_cast<Precision>(local_id);
+        mat(i, 2) = value;
+    }
+
+    return mat;
+}
+
 
 
 } }
