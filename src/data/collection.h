@@ -32,9 +32,9 @@ namespace model {
  */
 template<typename T>
 class Collection : public Namable {
-public:
-    using value_type = T;                      ///< Value stored in the collection.
-    using Ptr = std::shared_ptr<Collection<T>>; ///< Shared pointer alias for derived collections.
+    public:
+    using value_type = T;                                 ///< Value stored in the collection.
+    using Ptr        = std::shared_ptr<Collection<T>>;    ///< Shared pointer alias for derived collections.
 
     /**
      * @brief Constructs a collection with the supplied name and policies.
@@ -43,7 +43,10 @@ public:
      * (either arithmetic or pointer types).
      */
     Collection(std::string p_name, bool p_duplicates = false, bool p_sorted = true)
-        : Namable(std::move(p_name)), _sorted(false), _duplicates(false) {
+        : Namable(std::move(p_name))
+        , _sorted(false)
+        , _duplicates(false) {
+
         sorted(p_sorted);
         duplicates(p_duplicates);
     }
@@ -89,7 +92,9 @@ public:
     }
 
     /// Assigns a parent collection that mirrors insertions.
-    void set_parent(Ptr p_parent) { _parent = std::move(p_parent); }
+    void set_parent(Ptr p_parent) {
+        _parent = std::move(p_parent);
+    }
 
     /**
      * @brief Inserts a single item respecting the configured policies.
@@ -128,49 +133,77 @@ public:
     }
 
     /// Iterator access to support range-based loops.
-    auto begin() { return _data.begin(); }
-    auto end() { return _data.end(); }
-    auto begin() const { return _data.cbegin(); }
-    auto end() const { return _data.cend(); }
+    auto begin() {
+        return _data.begin();
+    }
+    auto end() {
+        return _data.end();
+    }
+    auto begin() const {
+        return _data.cbegin();
+    }
+    auto end() const {
+        return _data.cend();
+    }
 
     /// Returns the internal storage for read-only access.
-    const std::vector<T>& data() const { return _data; }
+    const std::vector<T>& data() const {
+        return _data;
+    }
 
     /// Returns the first element. Undefined when the collection is empty.
-    const T& first() const { return _data.front(); }
+    const T& first() const {
+        return _data.front();
+    }
 
     /// Returns the last element. Undefined when the collection is empty.
-    const T& last() const { return _data.back(); }
+    const T& last() const {
+        return _data.back();
+    }
 
     /// Returns the current number of stored items.
-    [[nodiscard]] size_t size() const { return _data.size(); }
+    [[nodiscard]] size_t size() const {
+        return _data.size();
+    }
 
     /// Mutable indexed access.
-    T& at(size_t index) { return _data[index]; }
+    T& at(size_t index) {
+        return _data[index];
+    }
 
     /// Const indexed access.
-    T at(size_t index) const { return _data[index]; }
+    T at(size_t index) const {
+        return _data[index];
+    }
 
     /// Const subscript operator forwarding to `at`.
-    T operator[](size_t index) const { return _data[index]; }
+    T operator[](size_t index) const {
+        return _data[index];
+    }
 
     /// Mutable subscript operator forwarding to `at`.
-    T& operator[](size_t index) { return _data[index]; }
+    T& operator[](size_t index) {
+        return _data[index];
+    }
 
     /// Const call operator mirroring subscript semantics.
-    T operator()(size_t index) const { return _data[index]; }
+    T operator()(size_t index) const {
+        return _data[index];
+    }
 
     /// Mutable call operator mirroring subscript semantics.
-    T& operator()(size_t index) { return _data[index]; }
+    T& operator()(size_t index) {
+        return _data[index];
+    }
 
-protected:
-    std::vector<T> _data; ///< Backing container storing the items.
-    Ptr _parent = nullptr; ///< Optional parent that mirrors insertions.
+    protected:
+    std::vector<T> _data;                ///< Backing container storing the items.
+    Ptr            _parent = nullptr;    ///< Optional parent that mirrors insertions.
 
-    bool _sorted;     ///< Indicates whether the collection maintains sorted order.
-    bool _duplicates; ///< Indicates whether duplicates are allowed.
+    bool           _sorted;        ///< Indicates whether the collection maintains sorted order.
+    bool           _duplicates;    ///< Indicates whether duplicates are allowed.
 
-private:
+    private:
     /// Inserts an item into the sorted storage while respecting duplicates.
     void add_sorted(const T& item) {
         auto it = std::lower_bound(_data.begin(), _data.end(), item);
@@ -180,7 +213,9 @@ private:
     }
 
     /// Appends an item without sorting.
-    void add_unsorted(const T& item) { _data.push_back(item); }
+    void add_unsorted(const T& item) {
+        _data.push_back(item);
+    }
 
     /// Inserts items into a sorted collection.
     void add_sorted(const Collection<T>& items) {
@@ -209,6 +244,5 @@ private:
     static constexpr bool is_sortable = std::is_arithmetic_v<T> || std::is_pointer_v<T>;
 };
 
-} // namespace model
-} // namespace fem
-
+}    // namespace model
+}    // namespace fem

@@ -107,8 +107,17 @@ void LinearStaticTopo::run() {
     // stiffness builder can read them during assembly.
     logging::error(density      != nullptr, "LinearStaticTopo: density field not initialized");
 
+    // copy the density to the stiffness field
+    model::Field::Ptr stiffness = std::make_shared<model::Field>(
+        "TOPO_DENSITY_STIFFNESS", model::FieldDomain::ELEMENT, 1, false);
+
+    for (int i = 0; i < stiffness->rows; i++) {
+        if (!std::isnan((*density)(i)) && std::isfinite((*density)(i)))
+            (*stiffness)(i) = std::pow((*density)(i), this->exponent);
+    }
+
     // assign the model stiffness and
-    model->_data->element_stiffness_scale = density;
+    model->_data->element_stiffness_scale = stiffness;
     model->_data->material_orientation    = orientation;
 
     // (1) Unconstrained DOF indexing (node x 6 -> active dof id or -1)
@@ -276,21 +285,16 @@ void LinearStaticTopo::run() {
     );
 
     // (10) Topology metrics
-    //  - compliance_raw: element-wise u^T K_e u contributions (as provided by the model)
-    //  - compliance_adj: SIMP-adjusted compliance (rho^p scaling applied)
+    //  - compliance    : element-wise u^T K_e u contributions (as provided by the model)
     //  - dens_grad     : derivative of compliance w.r.t. density (basic SIMP)
     //  - volumes       : element volumes
     //  - angle_grad    : derivative of compliance w.r.t. orientation angles
     auto compliance_raw = model->compute_compliance(global_disp_mat);
-    model::Field compliance_adj = model->_data->create_field_("COMPLIANCE_ADJ", model::FieldDomain::ELEMENT, 1, false);
     model::Field density_grad   = model->_data->create_field_("DENS_GRAD"     , model::FieldDomain::ELEMENT, 1, false);
 
     for (Index r = 0; r < static_cast<Index>(model->_data->max_elems); ++r) {
         const Precision rho         = (*density)(r, 0);
-        const Precision rho_p       = std::pow(rho, exponent);
-        const Precision rho_p_minus = std::pow(rho, exponent - 1);
-        compliance_adj(r, 0) = compliance_raw(r, 0) * rho_p;
-        density_grad  (r, 0) = -exponent * compliance_raw(r, 0) * rho_p_minus;
+        density_grad  (r, 0)        = -exponent * compliance_raw(r, 0) / rho;
     }
     auto volumes        = model->compute_volumes();
     const bool has_orientation = (orientation != nullptr);
@@ -332,8 +336,7 @@ void LinearStaticTopo::run() {
     writer->write_field(stress          , "STRESS");
     writer->write_field(global_load_mat , "EXTERNAL_FORCES");
     writer->write_field(reaction_masked , "REACTION_FORCES");
-    writer->write_field(compliance_raw  , "COMPLIANCE_RAW");
-    writer->write_field(compliance_adj  , "COMPLIANCE_ADJ");
+    writer->write_field(compliance_raw  , "COMPLIANCE");
     writer->write_field(density_grad    , "DENS_GRAD");
     writer->write_field(volumes         , "VOLUME");
     writer->write_field(*density        , "DENSITY");

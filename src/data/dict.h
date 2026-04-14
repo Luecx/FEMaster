@@ -35,8 +35,8 @@ namespace model {
  */
 template<typename T, typename Key = std::string>
 struct Dict {
-    using Ptr = std::shared_ptr<Dict<T, Key>>; ///< Shared pointer alias used by callers.
-    using TPtr = std::shared_ptr<T>;           ///< Shared pointer alias for stored values.
+    using Ptr  = std::shared_ptr<Dict<T, Key>>;    ///< Shared pointer alias used by callers.
+    using TPtr = std::shared_ptr<T>;               ///< Shared pointer alias for stored values.
 
     /// Backing container, selected depending on the key type.
     std::conditional_t<std::is_same_v<Key, std::string>, std::unordered_map<Key, TPtr>, std::vector<TPtr>> _data;
@@ -44,7 +44,7 @@ struct Dict {
     static_assert(!std::is_same_v<Key, std::string> || std::is_base_of_v<Namable, T>,
                   "Key must be a string if T is namable");
 
-    TPtr _cur = nullptr; ///< Tracks the most recently accessed entry.
+    TPtr _cur = nullptr;    ///< Tracks the most recently accessed entry.
 
     /**
      * @brief Checks whether an entry exists for `key`.
@@ -68,10 +68,14 @@ struct Dict {
     }
 
     /// Returns whether the dictionary currently holds any entry.
-    bool has_any() { return _cur != nullptr; }
+    bool has_any() {
+        return _cur != nullptr;
+    }
 
     /// Returns the last activated/created entry.
-    TPtr get() { return _cur; }
+    TPtr get() {
+        return _cur;
+    }
 
     /**
      * @brief Retrieves the entry associated with `key`.
@@ -146,11 +150,19 @@ struct Dict {
     }
 
     /// Provides iterator support for range-based loops.
-    auto begin() { return _data.begin(); }
-    auto end() { return _data.end(); }
-    auto begin() const { return _data.cbegin(); }
-    auto end() const { return _data.cend(); }
+    auto begin() {
+        return _data.begin();
+    }
+    auto end() {
+        return _data.end();
+    }
+    auto begin() const {
+        return _data.cbegin();
+    }
+    auto end() const {
+        return _data.cend();
+    }
 };
 
-} // namespace model
-} // namespace fem
+}    // namespace model
+}    // namespace fem

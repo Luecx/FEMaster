@@ -187,6 +187,23 @@ struct TrussElement : StructuralElement {
         (void) stress;
         (void) strain;
     }
+    std::vector<Vec6> section_forces(Field& displacement) override {
+        std::vector<Vec6> result(N, Vec6::Zero());
+
+        const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
+        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+
+        const Precision L = length();
+        logging::error(L > Precision(0), "TrussElement: zero length in section_forces for element ", this->elem_id);
+
+        const Vec3 t = direction();
+        const Precision axial_strain = (u1 - u0).dot(t) / L;
+        const Precision axial_force = get_elasticity()->youngs * get_section()->A * axial_strain;
+
+        result[0](0) = axial_force;
+        result[1](0) = axial_force;
+        return result;
+    }
     void apply_vload(Field&, Vec3) override {}
     void apply_tload(Field&, const Field&, Precision) override {}
     void compute_compliance(Field&, Field&) override {}
