@@ -109,7 +109,7 @@ void LinearStaticTopo::run() {
 
     // copy the density to the stiffness field
     model::Field::Ptr stiffness = std::make_shared<model::Field>(
-        "TOPO_DENSITY_STIFFNESS", model::FieldDomain::ELEMENT, 1, false);
+        "TOPO_DENSITY_STIFFNESS", model::FieldDomain::ELEMENT, density->rows, 1);
 
     for (int i = 0; i < stiffness->rows; i++) {
         if (!std::isnan((*density)(i)) && std::isfinite((*density)(i)))
