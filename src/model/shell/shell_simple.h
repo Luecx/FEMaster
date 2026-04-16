@@ -763,16 +763,15 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     void compute_stress_strain_nodal(Field& displacement,
-                                     Field& stress,
-                                     Field& strain) override {
-        (void) strain; // still unused for now
-
+                                 Field& stress,
+                                 Field& strain) override {
         // --- Precompute axes and transformation ---
         Mat3 axes   = get_xyz_axes();
         Mat3 axes_T = axes.transpose(); // local -> global
 
         // --- Precompute thickness + material matrices ---
-        Precision h        = this->get_section()->thickness;
+        Precision h = this->get_section()->thickness;
+
         Precision topo_scale = Precision(1);
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
             auto scale_field = this->_model_data->element_stiffness_scale;
@@ -803,7 +802,7 @@ struct DefaultShellElement : public ShellElement<N> {
         disp_shear.setZero();
 
         for (int a = 0; a < N; ++a) {
-            ID   node_id           = this->nodes()[a];
+            ID node_id = this->nodes()[a];
 
             Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
             Vec3 disp_xyz          = displacement_glob.head(3);
@@ -820,7 +819,7 @@ struct DefaultShellElement : public ShellElement<N> {
             disp_bending(3 * a + 1) = disp_rot(0);
             disp_bending(3 * a + 2) = disp_rot(1);
 
-            // your current MITC-like shear uses same dofs as bending
+            // current MITC-like shear uses same dofs as bending
             disp_shear(3 * a    ) = disp_xyz(2);
             disp_shear(3 * a + 1) = disp_rot(0);
             disp_shear(3 * a + 2) = disp_rot(1);
@@ -830,7 +829,7 @@ struct DefaultShellElement : public ShellElement<N> {
         StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
         LocalCoords        xy_coords = get_xy_coords(axes);
 
-        // --- Loop over nodes and evaluate stress at top/bottom ---
+        // --- Loop over nodes and evaluate stress/strain at top/bottom ---
         for (int i = 0; i < N; ++i) {
             ID node_id = this->nodes()[i];
 
@@ -846,57 +845,80 @@ struct DefaultShellElement : public ShellElement<N> {
             auto B_bending  = this->strain_disp_bending(shape_der, jac);
             auto B_shear    = this->strain_disp_shear(shape_func, shape_der, jac);
 
-            // mid-surface membrane + shear stress: independent of t
-            Vec6 res_mid = Vec6::Zero();
+            // --- Kinematic quantities in local coordinates ---
+            Vec3 eps_membrane = B_membrane * disp_membrane; // [eps_xx, eps_yy, gamma_xy]
+            Vec3 kappa        = B_bending  * disp_bending;  // [kappa_x, kappa_y, kappa_xy]
+            Vec2 gamma_shear  = B_shear    * disp_shear;    // [gamma_xz, gamma_yz]
 
-            Vec3 stress_membrane = mat_membrane * (B_membrane * disp_membrane);
-            res_mid(0) += stress_membrane(0);
-            res_mid(1) += stress_membrane(1);
-            res_mid(5) += stress_membrane(2);
+            // --- Mid-surface stress (local) ---
+            Vec6 stress_mid_local = Vec6::Zero();
 
-            Vec2 stress_shear = mat_shear * (B_shear * disp_shear);
-            res_mid(3) += stress_shear(0);
-            res_mid(4) += stress_shear(1);
+            Vec3 stress_membrane = mat_membrane * eps_membrane;
+            stress_mid_local(0) += stress_membrane(0);
+            stress_mid_local(1) += stress_membrane(1);
+            stress_mid_local(5) += stress_membrane(2);
 
-            // bending contribution: changes sign with t
-            Vec6 res_bend_top = Vec6::Zero();
-            Vec6 res_bend_bot = Vec6::Zero();
+            Vec2 stress_shear = mat_shear * gamma_shear;
+            stress_mid_local(3) += stress_shear(0);
+            stress_mid_local(4) += stress_shear(1);
 
-            Vec3 kappa      = B_bending * disp_bending; // curvature vector
-            Vec3 sigma_bend = mat_bend * kappa;         // bending stress factor
+            // --- Mid-surface strain (local) ---
+            Vec6 strain_mid_local = Vec6::Zero();
+            strain_mid_local(0) = eps_membrane(0);
+            strain_mid_local(1) = eps_membrane(1);
+            strain_mid_local(3) = gamma_shear(0);
+            strain_mid_local(4) = gamma_shear(1);
+            strain_mid_local(5) = eps_membrane(2);
 
-            Precision t_top = +1.0;
-            Precision t_bot = -1.0;
-            Precision z_top = t_top * h * 0.5;
-            Precision z_bot = t_bot * h * 0.5;
+            // --- Bending contribution for top and bottom ---
+            Vec3 sigma_bend = mat_bend * kappa; // bending stress factor
 
-            // add bending part
-            res_bend_top(0) += z_top * sigma_bend(0);
-            res_bend_top(1) += z_top * sigma_bend(1);
-            res_bend_top(5) += z_top * sigma_bend(2);
+            Precision z_top = +0.5 * h;
+            Precision z_bot = -0.5 * h;
 
-            res_bend_bot(0) += z_bot * sigma_bend(0);
-            res_bend_bot(1) += z_bot * sigma_bend(1);
-            res_bend_bot(5) += z_bot * sigma_bend(2);
+            Vec6 stress_top_local = stress_mid_local;
+            Vec6 stress_bot_local = stress_mid_local;
 
-            Stress stress_top_local{ res_mid + res_bend_top };
-            Stress stress_bot_local{ res_mid + res_bend_bot };
+            stress_top_local(0) += z_top * sigma_bend(0);
+            stress_top_local(1) += z_top * sigma_bend(1);
+            stress_top_local(5) += z_top * sigma_bend(2);
 
-            // pick the one with larger norm (still in local coords)
-            Stress stress_nodal_local = (stress_top_local.norm() > stress_bot_local.norm())
-                                        ? stress_top_local
-                                        : stress_bot_local;
+            stress_bot_local(0) += z_bot * sigma_bend(0);
+            stress_bot_local(1) += z_bot * sigma_bend(1);
+            stress_bot_local(5) += z_bot * sigma_bend(2);
 
-            // transform to global once with axes_T
-            Stress stress_nodal_global = stress_nodal_local.transform(axes_T);
+            // --- Total strain on top and bottom ---
+            Vec6 strain_top_local = strain_mid_local;
+            Vec6 strain_bot_local = strain_mid_local;
+
+            strain_top_local(0) += z_top * kappa(0);
+            strain_top_local(1) += z_top * kappa(1);
+            strain_top_local(5) += z_top * kappa(2);
+
+            strain_bot_local(0) += z_bot * kappa(0);
+            strain_bot_local(1) += z_bot * kappa(1);
+            strain_bot_local(5) += z_bot * kappa(2);
+
+            // choose side based on stress norm
+            Stress stress_top_obj{stress_top_local};
+            Stress stress_bot_obj{stress_bot_local};
+
+            bool use_top = stress_top_obj.norm() > stress_bot_obj.norm();
+
+            Vec6 stress_nodal_local = use_top ? stress_top_local : stress_bot_local;
+            Vec6 strain_nodal_local = use_top ? strain_top_local : strain_bot_local;
+
+            // stress: transform to global
+            Stress stress_nodal_global = Stress{stress_nodal_local}.transform(axes_T);
+            Strain strain_nodal_global = Strain{strain_nodal_local}.transform(axes_T);
 
             const Index node_idx = static_cast<Index>(node_id);
             for (int j = 0; j < 6; ++j) {
                 stress(node_idx, j) += stress_nodal_global(j);
+                strain(node_idx, j) += strain_nodal_local(j);
             }
         }
     }
-
 
     // in DefaultShellElement<...>
     void compute_stress_strain(Field& ip_stress,
