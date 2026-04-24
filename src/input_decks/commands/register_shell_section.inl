@@ -18,17 +18,20 @@ inline void register_shell_section(fem::dsl::Registry& registry, model::Model& m
         // Persistent per-command state
         auto material = std::make_shared<std::string>();
         auto elset    = std::make_shared<std::string>();
+        auto orientation = std::make_shared<std::string>();
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("MATERIAL").alternative("MAT").required().doc("Material name")
                 .key("ELSET").required().doc("Target element set")
+                .key("ORIENTATION").optional().doc("Optional coordinate system for shell n1/n2 material/resultant axes")
         );
 
         // Capture shared_ptrs BY VALUE so they're valid later
-        command.on_enter([material, elset](const fem::dsl::Keys& keys) {
+        command.on_enter([material, elset, orientation](const fem::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
+            *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
         });
 
         command.variant(fem::dsl::Variant::make()
@@ -38,8 +41,8 @@ inline void register_shell_section(fem::dsl::Registry& registry, model::Model& m
                     .one<fem::Precision>().name("THICKNESS").desc("Shell thickness")
                         .on_missing(fem::Precision{1}).on_empty(fem::Precision{1})
                 )
-                .bind([&model, material, elset](fem::Precision thickness) {
-                    model.shell_section(*elset, *material, thickness);
+                .bind([&model, material, elset, orientation](fem::Precision thickness) {
+                    model.shell_section(*elset, *material, thickness, *orientation);
                 })
             )
         );

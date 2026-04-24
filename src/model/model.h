@@ -83,7 +83,7 @@ struct Model {
     void solid_section(const std::string& set, const std::string& material);
     void beam_section (const std::string& set, const std::string& material, const std::string& profile, Vec3 orientation);
     void truss_section(const std::string& set, const std::string& material, Precision area);
-    void shell_section(const std::string& set, const std::string& material, Precision thickness);
+    void shell_section(const std::string& set, const std::string& material, Precision thickness, const std::string& orientation = "");
 
     // features
     void add_point_mass_feature(const std::string& nset,
@@ -117,6 +117,8 @@ struct Model {
 
     std::tuple<Field, Field>       compute_ip_stress_strain(Field& displacement);
     std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
+    std::tuple<Field, Field>       compute_shell_stress_surfaces(Field& displacement);
+    Field                          compute_shell_resultants(Field& displacement);
     Field                          compute_compliance   (Field& displacement);
     Field                          compute_compliance_angle_derivative(Field& displacement);
     Field                          compute_volumes      ();

@@ -76,6 +76,7 @@ class Elements:
             C2D8,
             S3,
             S4,
+            QSPT,
             S6,
             S8,
             C3D4,
@@ -94,6 +95,7 @@ class Elements:
             "C2D8": C2D8,
             "S3": S3,
             "S4": S4,
+            "QSPT": QSPT,
             "S6": S6,
             "S8": S8,
             "C3D4": C3D4,
@@ -121,6 +123,7 @@ class Elements:
             "C3D8",
             "S3",
             "S4",
+            "QSPT",
             "S6",
             "S8",
         }

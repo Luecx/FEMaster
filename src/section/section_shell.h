@@ -12,6 +12,7 @@
 
 #include "section.h"
 #include "../core/types_eig.h"
+#include "../cos/coordinate_system.h"
 
 namespace fem {
 
@@ -25,6 +26,7 @@ struct ShellSection : Section {
    using Ptr = std::shared_ptr<ShellSection>;
 
    Precision thickness = 1.0; ///< Thickness of the shell section.
+   cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional section/material orientation.
 
    /**
     * @brief Outputs information about the shell section.

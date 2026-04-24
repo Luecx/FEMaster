@@ -62,10 +62,10 @@ struct OrthotropicElasticity : Elasticity {
     /// Returns the full 3D stiffness matrix for orthotropic material.
     StaticMatrix<6, 6> get_3d() override;
 
-    /// Throws because shear stiffness is not yet implemented for orthotropic shells.
+    /// Returns transverse shear stiffness for shell elements.
     StaticMatrix<2, 2> get_shear(Precision thickness) override;
 
-    /// Throws because bending stiffness is not yet implemented for orthotropic shells.
+    /// Returns bending stiffness for shell elements.
     StaticMatrix<3, 3> get_bend(Precision thickness) override;
 };
 

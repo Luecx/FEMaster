@@ -1,6 +1,7 @@
 # convenience exports
 from .element import Element
 from .s4 import S4
+from .qspt import QSPT
 from .s8 import S8
 from .s3 import S3
 from .s6 import S6

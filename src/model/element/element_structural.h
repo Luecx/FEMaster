@@ -48,6 +48,24 @@ struct StructuralElement : ElementInterface {
                                              Field& stress,
                                              Field& strain) = 0;
 
+    virtual bool supports_shell_stress_surfaces() const { return false; }
+
+    virtual void compute_shell_stress_surfaces_nodal(Field& displacement,
+                                                     Field& stress_top,
+                                                     Field& stress_bot) {
+        (void) displacement;
+        (void) stress_top;
+        (void) stress_bot;
+    }
+
+    virtual bool supports_shell_resultants() const { return false; }
+
+    virtual void compute_shell_resultants_nodal(Field& displacement,
+                                                Field& resultants) {
+        (void) displacement;
+        (void) resultants;
+    }
+
     // Field functors for volume/surface integrations (aliased to central types)
     using ScalarField = ::fem::ScalarField;
     using VecField    = ::fem::VecField;

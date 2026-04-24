@@ -218,6 +218,14 @@ void LinearStatic::run() {
         [&]() { return model->compute_stress_strain(global_disp_mat); },
         "interpolating stress and strain at nodes");
 
+    auto [stress_top, stress_bot] = Timer::measure(
+        [&]() { return model->compute_shell_stress_surfaces(global_disp_mat); },
+        "interpolating shell top/bottom stress at nodes");
+
+    auto shell_resultants = Timer::measure(
+        [&]() { return model->compute_shell_resultants(global_disp_mat); },
+        "interpolating shell resultants at nodes");
+
     if (!stiffness_file.empty()) {
         write_mtx(stiffness_file + "_K.mtx", K);
         write_mtx(stiffness_file + "_A.mtx", A);
@@ -257,6 +265,9 @@ void LinearStatic::run() {
     writer->write_field(global_disp_mat         , "DISPLACEMENT");
     writer->write_field(strain                  , "STRAIN");
     writer->write_field(stress                  , "STRESS");
+    writer->write_field(stress_top              , "STRESS_TOP");
+    writer->write_field(stress_bot              , "STRESS_BOT");
+    writer->write_field(shell_resultants        , "SHELL_RESULTANTS");
     writer->write_field(global_load_mat         , "EXTERNAL_FORCES");
     writer->write_field(reaction_masked         , "REACTION_FORCES");
     writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);

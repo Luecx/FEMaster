@@ -2,8 +2,7 @@
  * @file orthotropic_elasticity.cpp
  * @brief Implements the orthotropic elasticity model.
  *
- * Provides stiffness matrices for orthotropic materials and notes unimplemented
- * shell-specific behaviour.
+ * Provides stiffness matrices for orthotropic materials.
  *
  * @see src/material/orthotropic_elasticity.h
  * @see src/material/elasticity.h
@@ -76,15 +75,18 @@ StaticMatrix<6, 6> OrthotropicElasticity::get_3d() {
 /**
  * @copydoc OrthotropicElasticity::get_shear
  */
-StaticMatrix<2, 2> OrthotropicElasticity::get_shear(Precision) {
-    throw std::runtime_error("Shear stiffness is not implemented for orthotropic materials.");
+StaticMatrix<2, 2> OrthotropicElasticity::get_shear(Precision thickness) {
+    const Precision k = Precision(5) / Precision(6);
+    return StaticMatrix<2, 2>({
+        {Gzx, 0},
+        {0, Gyz}}) * (thickness * k);
 }
 
 /**
  * @copydoc OrthotropicElasticity::get_bend
  */
-StaticMatrix<3, 3> OrthotropicElasticity::get_bend(Precision) {
-    throw std::runtime_error("Bending stiffness is not implemented for orthotropic materials.");
+StaticMatrix<3, 3> OrthotropicElasticity::get_bend(Precision thickness) {
+    return get_2d() * (thickness * thickness * thickness / Precision(12));
 }
 
 } // namespace material

@@ -363,13 +363,17 @@ void Model::truss_section(const std::string& set, const std::string& material, P
     this->_data->sections.push_back(sec);
 }
 
-void Model::shell_section(const std::string& set, const std::string& material, Precision thickness) {
+void Model::shell_section(const std::string& set, const std::string& material, Precision thickness, const std::string& orientation) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+    }
     ShellSection::Ptr sec = std::make_shared<ShellSection>();
     sec->material = _data->materials.get(material);
     sec->region = _data->elem_sets.get(set);
     sec->thickness = thickness;
+    sec->orientation = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
     this->_data->sections.push_back(sec);
 }
 

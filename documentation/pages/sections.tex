@@ -7,6 +7,7 @@ Sections in FEMaster are used to define the material properties, geometry, and o
 \begin{itemize}
 \item \textbf{Solid Section (*SOLID SECTION)}
 \item \textbf{Point Mass Section (*POINT MASS SECTION)}
+\item \textbf{Truss Section (*TRUSS SECTION)}
 \item \textbf{Shell Section (*SHELL SECTION)}
 \item \textbf{Beam Section (*BEAM SECTION)}
 \end{itemize}
@@ -46,6 +47,21 @@ Point mass sections define mass and inertia properties for point elements. These
 \item \textbf{Inertia (optional)}: The rotational inertia components in the x, y, and z directions. Defaults to .
 \item \textbf{Spring (optional)}: Translational spring stiffness in the x, y, and z directions. Defaults to .
 \item \textbf{Rotary Spring (optional)}: Rotational spring stiffness in the x, y, and z directions. Defaults to .
+\end{itemize}
+
+\section{Truss Section \texttt{(*TRUSS SECTION)}}
+Truss sections define the material properties and cross-sectional area for truss elements such as T3.
+
+\subsection{Syntax}
+\begin{codeBlock}
+*TRUSS SECTION, ELSET=, MAT=
+<area>
+\end{codeBlock}
+
+\begin{itemize}
+\item \textbf{ELSET}: The name of the element set to which the truss section is applied. This is a required parameter.
+\item \textbf{MAT} or \textbf{MATERIAL}: The name of the material to be used for the elements in the set. This is a required parameter.
+\item \textbf{area}: The truss cross-sectional area. This is a required parameter.
 \end{itemize}
 
 \section{Shell Section \texttt{(*SHELL SECTION)}}

@@ -98,6 +98,90 @@ std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement){
     return {stress, strain};
 }
 
+std::tuple<Field, Field> Model::compute_shell_stress_surfaces(Field& displacement) {
+
+    Field stress_top{"STRESS_TOP", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
+    Field stress_bot{"STRESS_BOT", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
+    stress_top.set_zero();
+    stress_bot.set_zero();
+
+    IndexVector count{_data->max_nodes};
+    count.setZero();
+
+    for (auto el: _data->elements) {
+        if (el == nullptr) continue;
+        if (auto sel = el->as<StructuralElement>()) {
+            if (!sel->supports_shell_stress_surfaces()) continue;
+
+            sel->compute_shell_stress_surfaces_nodal(displacement, stress_top, stress_bot);
+            for (int i = 0; i < sel->n_nodes(); i++) {
+                ID id = sel->nodes()[i];
+                count(id)++;
+            }
+        }
+    }
+
+    for (int i = 0; i < _data->max_nodes; i++) {
+        if (count[i] != 0) {
+            for (int j = 0; j < 6; j++) {
+                stress_top(i, j) /= count[i];
+                stress_bot(i, j) /= count[i];
+            }
+        }
+    }
+
+    for (int i = 0; i < _data->max_nodes; i++) {
+        for (int j = 0; j < 6; j++) {
+            const bool inv_top = std::isnan(stress_top(i, j)) || std::isinf(stress_top(i, j));
+            const bool inv_bot = std::isnan(stress_bot(i, j)) || std::isinf(stress_bot(i, j));
+            logging::error(!inv_top, "Node ", i, " has nan or inf top shell stress. Node Usage=", count(i));
+            logging::error(!inv_bot, "Node ", i, " has nan or inf bottom shell stress. Node Usage=", count(i));
+        }
+    }
+
+    return {stress_top, stress_bot};
+}
+
+Field Model::compute_shell_resultants(Field& displacement) {
+
+    Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 8};
+    resultants.set_zero();
+
+    IndexVector count{_data->max_nodes};
+    count.setZero();
+
+    for (auto el: _data->elements) {
+        if (el == nullptr) continue;
+        if (auto sel = el->as<StructuralElement>()) {
+            if (!sel->supports_shell_resultants()) continue;
+
+            sel->compute_shell_resultants_nodal(displacement, resultants);
+            for (int i = 0; i < sel->n_nodes(); i++) {
+                ID id = sel->nodes()[i];
+                count(id)++;
+            }
+        }
+    }
+
+    for (int i = 0; i < _data->max_nodes; i++) {
+        if (count[i] != 0) {
+            for (int j = 0; j < resultants.components; j++) {
+                resultants(i, j) /= count[i];
+            }
+        }
+    }
+
+    for (int i = 0; i < _data->max_nodes; i++) {
+        for (int j = 0; j < resultants.components; j++) {
+            const bool invalid = std::isnan(resultants(i, j)) || std::isinf(resultants(i, j));
+            logging::error(!invalid, "Node ", i, " has nan or inf shell resultant at col ", j,
+                           ". Node Usage=", count(i));
+        }
+    }
+
+    return resultants;
+}
+
 Field Model::compute_compliance(Field& displacement){
     Field compliance{"COMPLIANCE", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
     compliance.set_zero();

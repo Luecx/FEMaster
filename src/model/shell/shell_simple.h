@@ -95,6 +95,97 @@ struct DefaultShellElement : public ShellElement<N> {
         return xy_coords;
     }
 
+    Vec3 global_point(Precision r, Precision s) {
+        ShapeFunction H = this->shape_function(r, s);
+        NodeCoords node_coords = this->node_coords_global();
+        Vec3 point = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) {
+            point += H(i) * node_coords.row(i).transpose();
+        }
+        return point;
+    }
+
+    Mat3 element_basis_global(Mat3& axes) {
+        Mat3 basis;
+        basis.col(0) = axes.row(0).transpose();
+        basis.col(1) = axes.row(1).transpose();
+        basis.col(2) = axes.row(2).transpose();
+        return basis;
+    }
+
+    Mat3 section_basis_global(Precision r, Precision s, Mat3& axes) {
+        auto section = this->get_section();
+        if (!section->orientation) {
+            return element_basis_global(axes);
+        }
+
+        const Vec3 point_global = global_point(r, s);
+        const Vec3 point_local = section->orientation->to_local(point_global);
+        const Mat3 orientation_axes = section->orientation->get_axes(point_local);
+
+        const Vec3 normal = axes.row(2).transpose().normalized();
+        Vec3 n1 = orientation_axes.col(0);
+        n1 -= normal * n1.dot(normal);
+        if (n1.squaredNorm() < Precision(1e-24)) {
+            n1 = orientation_axes.col(1);
+            n1 -= normal * n1.dot(normal);
+        }
+        if (n1.squaredNorm() < Precision(1e-24)) {
+            n1 = axes.row(0).transpose();
+        }
+        n1.normalize();
+
+        Vec3 n2 = normal.cross(n1).normalized();
+
+        Mat3 basis;
+        basis.col(0) = n1;
+        basis.col(1) = n2;
+        basis.col(2) = normal;
+        return basis;
+    }
+
+    Mat2 section_to_element_2d(Precision r, Precision s, Mat3& axes) {
+        const Mat3 section_basis = section_basis_global(r, s, axes);
+        const Vec3 ex = axes.row(0).transpose();
+        const Vec3 ey = axes.row(1).transpose();
+
+        Mat2 A;
+        A(0, 0) = ex.dot(section_basis.col(0));
+        A(1, 0) = ey.dot(section_basis.col(0));
+        A(0, 1) = ex.dot(section_basis.col(1));
+        A(1, 1) = ey.dot(section_basis.col(1));
+        return A;
+    }
+
+    StaticMatrix<3, 3> plane_strain_transform(const Mat2& section_to_element) {
+        const Precision a1 = section_to_element(0, 0);
+        const Precision a2 = section_to_element(1, 0);
+        const Precision b1 = section_to_element(0, 1);
+        const Precision b2 = section_to_element(1, 1);
+
+        StaticMatrix<3, 3> T;
+        T << a1 * a1,       a2 * a2,       a1 * a2,
+             b1 * b1,       b2 * b2,       b1 * b2,
+             2 * a1 * b1,   2 * a2 * b2,   a1 * b2 + a2 * b1;
+        return T;
+    }
+
+    Mat2 shear_strain_transform(const Mat2& section_to_element) {
+        return section_to_element.transpose();
+    }
+
+    StaticMatrix<3, 3> transform_plane_stiffness_to_element(const StaticMatrix<3, 3>& section_stiffness,
+                                                            const Mat2& section_to_element) {
+        const auto T = plane_strain_transform(section_to_element);
+        return T.transpose() * section_stiffness * T;
+    }
+
+    Mat2 transform_shear_stiffness_to_element(const Mat2& section_stiffness,
+                                              const Mat2& section_to_element) {
+        const auto T = shear_strain_transform(section_to_element);
+        return T.transpose() * section_stiffness * T;
+    }
+
     ShapeFunction shape_function(Precision r, Precision s) {
         return geometry.shape_function(r, s);
     }
@@ -363,8 +454,9 @@ struct DefaultShellElement : public ShellElement<N> {
 
     StaticMatrix<6 * N, 6 * N> stiffness_bending(LocalCoords& xy_coords) {
 
-        auto mat_bend  = this->get_elasticity()->get_bend(this->get_section()->thickness);
-        auto mat_shear = this->get_elasticity()->get_shear(this->get_section()->thickness);
+        auto mat_bend_section  = this->get_elasticity()->get_bend(this->get_section()->thickness);
+        auto mat_shear_section = this->get_elasticity()->get_shear(this->get_section()->thickness);
+        Mat3 axes = get_xyz_axes();
 
         Precision topo_scale = Precision(1);
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
@@ -373,28 +465,30 @@ struct DefaultShellElement : public ShellElement<N> {
                            "Field '", scale_field->name, "': element stiffness scale requires 1 component");
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
-        mat_bend *= topo_scale;
-        mat_shear *= topo_scale;
+        mat_bend_section *= topo_scale;
+        mat_shear_section *= topo_scale;
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_bend =
-            [this, &mat_bend, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
+            [this, &mat_bend_section, &xy_coords, &axes](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
             ShapeDerivative shape_der = this->shape_derivative(r, s);
             Jacobian        jac       = this->jacobian(shape_der, xy_coords);
             Precision       jac_det   = jac.determinant();
             auto            B         = this->strain_disp_bending(shape_der, jac);
-            auto            E         = mat_bend;
+            const Mat2      A         = this->section_to_element_2d(r, s, axes);
+            auto            E         = this->transform_plane_stiffness_to_element(mat_bend_section, A);
             return B.transpose() * (E * B) * jac_det;
         };
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
-            [this, &mat_shear, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
+            [this, &mat_shear_section, &xy_coords, &axes](Precision r, Precision s, Precision t) -> StaticMatrix<3 * N, 3 * N> {
             Precision jac_det;                                             // nur fürs Interface hier nicht mehr nötig
             auto      Bs = this->strain_disp_shear_at(r, s, xy_coords);    // <-- NEU
             // wir brauchen dennoch det(J) fürs dA:
             ShapeDerivative dH   = this->shape_derivative(r, s);
             Jacobian        J    = this->jacobian(dH, xy_coords);
             Precision       detJ = J.determinant();
-            auto            E    = mat_shear;
+            const Mat2      A    = this->section_to_element_2d(r, s, axes);
+            auto            E    = this->transform_shear_stiffness_to_element(mat_shear_section, A);
             return Bs.transpose() * (E * Bs) * detJ;
         };
 
@@ -440,7 +534,8 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     StaticMatrix<6 * N, 6 * N> stiffness_membrane(LocalCoords& xy_coords) {
-        auto mat_membrane = this->get_elasticity()->get_memb();
+        auto mat_membrane_section = this->get_elasticity()->get_memb();
+        Mat3 axes = get_xyz_axes();
 
         Precision topo_scale = Precision(1);
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
@@ -449,15 +544,16 @@ struct DefaultShellElement : public ShellElement<N> {
                            "Field '", scale_field->name, "': element stiffness scale requires 1 component");
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
-		mat_membrane *= topo_scale;
+		mat_membrane_section *= topo_scale;
 
         std::function<StaticMatrix<2 * N, 2 * N>(Precision, Precision, Precision)> func_membrane =
-            [this, &mat_membrane, &xy_coords](Precision r, Precision s, Precision t) -> StaticMatrix<2 * N, 2 * N> {
+            [this, &mat_membrane_section, &xy_coords, &axes](Precision r, Precision s, Precision t) -> StaticMatrix<2 * N, 2 * N> {
             ShapeDerivative shape_der = this->shape_derivative(r, s);
             Jacobian        jac       = this->jacobian(shape_der, xy_coords);
             Precision       jac_det   = jac.determinant();
             auto            B         = this->strain_disp_membrane(shape_der, jac);
-            auto            E         = mat_membrane;
+            const Mat2      A         = this->section_to_element_2d(r, s, axes);
+            auto            E         = this->transform_plane_stiffness_to_element(mat_membrane_section, A);
             return B.transpose() * (E * B) * jac_det;
         };
 
@@ -763,8 +859,8 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     void compute_stress_strain_nodal(Field& displacement,
-                                 Field& stress,
-                                 Field& strain) override {
+                                     Field& stress,
+                                     Field& strain) override {
         // --- Precompute axes and transformation ---
         Mat3 axes   = get_xyz_axes();
         Mat3 axes_T = axes.transpose(); // local -> global
@@ -920,6 +1016,220 @@ struct DefaultShellElement : public ShellElement<N> {
         }
     }
 
+    bool supports_shell_stress_surfaces() const override { return true; }
+
+    void compute_shell_stress_surfaces_nodal(Field& displacement,
+                                             Field& stress_top,
+                                             Field& stress_bot) override {
+        Mat3 axes   = get_xyz_axes();
+        Mat3 axes_T = axes.transpose();
+        Precision h = this->get_section()->thickness;
+
+        Precision topo_scale = Precision(1);
+        if (this->_model_data && this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
+
+        Mat3 mat_membrane = this->get_elasticity()->get_memb();
+        Mat3 mat_bend     = this->get_elasticity()->get_bend(h);
+        Mat2 mat_shear    = this->get_elasticity()->get_shear(h);
+
+        mat_membrane *= topo_scale;
+        mat_bend     *= topo_scale;
+        mat_shear    *= topo_scale;
+
+        mat_bend  *= 12.0 / (h * h * h);
+        mat_shear /= h;
+
+        StaticVector<2 * N> disp_membrane;
+        StaticVector<3 * N> disp_bending;
+        StaticVector<3 * N> disp_shear;
+
+        disp_membrane.setZero();
+        disp_bending.setZero();
+        disp_shear.setZero();
+
+        for (int a = 0; a < N; ++a) {
+            ID node_id = this->nodes()[a];
+
+            Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
+            Vec3 disp_xyz          = displacement_glob.head(3);
+            Vec3 disp_rot          = displacement_glob.tail(3);
+
+            disp_xyz = axes * disp_xyz;
+            disp_rot = axes * disp_rot;
+
+            disp_membrane(2 * a    ) = disp_xyz(0);
+            disp_membrane(2 * a + 1) = disp_xyz(1);
+
+            disp_bending(3 * a    ) = disp_xyz(2);
+            disp_bending(3 * a + 1) = disp_rot(0);
+            disp_bending(3 * a + 2) = disp_rot(1);
+
+            disp_shear(3 * a    ) = disp_xyz(2);
+            disp_shear(3 * a + 1) = disp_rot(0);
+            disp_shear(3 * a + 2) = disp_rot(1);
+        }
+
+        StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
+        LocalCoords        xy_coords = get_xy_coords(axes);
+
+        for (int i = 0; i < N; ++i) {
+            ID node_id = this->nodes()[i];
+
+            Precision r = coords(i, 0);
+            Precision s = coords(i, 1);
+
+            ShapeFunction   shape_func = this->shape_function(r, s);
+            ShapeDerivative shape_der  = this->shape_derivative(r, s);
+            Jacobian        jac        = this->jacobian(shape_der, xy_coords);
+
+            auto B_membrane = this->strain_disp_membrane(shape_der, jac);
+            auto B_bending  = this->strain_disp_bending(shape_der, jac);
+            auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
+
+            const Mat2 A = this->section_to_element_2d(r, s, axes);
+            const auto T_plane = this->plane_strain_transform(A);
+            const auto T_shear = this->shear_strain_transform(A);
+
+            Vec3 eps_membrane = T_plane * (B_membrane * disp_membrane);
+            Vec3 kappa        = T_plane * (B_bending  * disp_bending);
+            Vec2 gamma_shear  = T_shear * (B_shear    * disp_shear);
+
+            Vec6 stress_mid_local = Vec6::Zero();
+
+            Vec3 stress_membrane = mat_membrane * eps_membrane;
+            stress_mid_local(0) += stress_membrane(0);
+            stress_mid_local(1) += stress_membrane(1);
+            stress_mid_local(5) += stress_membrane(2);
+
+            Vec2 stress_shear = mat_shear * gamma_shear;
+            stress_mid_local(3) += stress_shear(0);
+            stress_mid_local(4) += stress_shear(1);
+
+            Vec3 sigma_bend = mat_bend * kappa;
+            Precision z_top = +0.5 * h;
+            Precision z_bot = -0.5 * h;
+
+            Vec6 stress_top_local = stress_mid_local;
+            Vec6 stress_bot_local = stress_mid_local;
+
+            stress_top_local(0) += z_top * sigma_bend(0);
+            stress_top_local(1) += z_top * sigma_bend(1);
+            stress_top_local(5) += z_top * sigma_bend(2);
+
+            stress_bot_local(0) += z_bot * sigma_bend(0);
+            stress_bot_local(1) += z_bot * sigma_bend(1);
+            stress_bot_local(5) += z_bot * sigma_bend(2);
+
+            const Mat3 section_basis = this->section_basis_global(r, s, axes);
+            Stress stress_top_global = Stress{stress_top_local}.transform(section_basis);
+            Stress stress_bot_global = Stress{stress_bot_local}.transform(section_basis);
+
+            const Index node_idx = static_cast<Index>(node_id);
+            for (int j = 0; j < 6; ++j) {
+                stress_top(node_idx, j) += stress_top_global(j);
+                stress_bot(node_idx, j) += stress_bot_global(j);
+            }
+        }
+    }
+
+    bool supports_shell_resultants() const override { return true; }
+
+    void compute_shell_resultants_nodal(Field& displacement,
+                                        Field& resultants) override {
+        Mat3 axes = get_xyz_axes();
+        Precision h = this->get_section()->thickness;
+
+        Precision topo_scale = Precision(1);
+        if (this->_model_data && this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
+
+        Mat3 mat_membrane = this->get_elasticity()->get_memb();
+        Mat3 mat_bend     = this->get_elasticity()->get_bend(h);
+        Mat2 mat_shear    = this->get_elasticity()->get_shear(h);
+
+        mat_membrane *= topo_scale;
+        mat_bend     *= topo_scale;
+        mat_shear    *= topo_scale;
+
+        StaticVector<2 * N> disp_membrane;
+        StaticVector<3 * N> disp_bending;
+        StaticVector<3 * N> disp_shear;
+
+        disp_membrane.setZero();
+        disp_bending.setZero();
+        disp_shear.setZero();
+
+        for (int a = 0; a < N; ++a) {
+            ID node_id = this->nodes()[a];
+
+            Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
+            Vec3 disp_xyz          = displacement_glob.head(3);
+            Vec3 disp_rot          = displacement_glob.tail(3);
+
+            disp_xyz = axes * disp_xyz;
+            disp_rot = axes * disp_rot;
+
+            disp_membrane(2 * a    ) = disp_xyz(0);
+            disp_membrane(2 * a + 1) = disp_xyz(1);
+
+            disp_bending(3 * a    ) = disp_xyz(2);
+            disp_bending(3 * a + 1) = disp_rot(0);
+            disp_bending(3 * a + 2) = disp_rot(1);
+
+            disp_shear(3 * a    ) = disp_xyz(2);
+            disp_shear(3 * a + 1) = disp_rot(0);
+            disp_shear(3 * a + 2) = disp_rot(1);
+        }
+
+        StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
+        LocalCoords        xy_coords = get_xy_coords(axes);
+
+        for (int i = 0; i < N; ++i) {
+            ID node_id = this->nodes()[i];
+
+            Precision r = coords(i, 0);
+            Precision s = coords(i, 1);
+
+            ShapeFunction   shape_func = this->shape_function(r, s);
+            ShapeDerivative shape_der  = this->shape_derivative(r, s);
+            Jacobian        jac        = this->jacobian(shape_der, xy_coords);
+
+            auto B_membrane = this->strain_disp_membrane(shape_der, jac);
+            auto B_bending  = this->strain_disp_bending(shape_der, jac);
+            auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
+
+            const Mat2 A = this->section_to_element_2d(r, s, axes);
+            const auto T_plane = this->plane_strain_transform(A);
+            const auto T_shear = this->shear_strain_transform(A);
+
+            Vec3 eps_membrane = T_plane * (B_membrane * disp_membrane);
+            Vec3 kappa        = T_plane * (B_bending  * disp_bending);
+            Vec2 gamma_shear  = T_shear * (B_shear    * disp_shear);
+
+            Vec3 membrane_force = h * (mat_membrane * eps_membrane);
+            Vec3 bending_moment = mat_bend * kappa;
+            Vec2 shear_force    = mat_shear * gamma_shear;
+
+            const Index node_idx = static_cast<Index>(node_id);
+            resultants(node_idx, 0) += membrane_force(0);
+            resultants(node_idx, 1) += membrane_force(1);
+            resultants(node_idx, 2) += membrane_force(2);
+            resultants(node_idx, 3) += bending_moment(0);
+            resultants(node_idx, 4) += bending_moment(1);
+            resultants(node_idx, 5) += bending_moment(2);
+            resultants(node_idx, 6) += shear_force(0);
+            resultants(node_idx, 7) += shear_force(1);
+        }
+    }
     // in DefaultShellElement<...>
     void compute_stress_strain(Field& ip_stress,
                                Field& /*ip_strain*/,
