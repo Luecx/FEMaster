@@ -798,8 +798,6 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Precision h = this->get_section()->thickness;
         auto abd = this->get_section()->get_abd();
-        Mat3 mat_membrane = abd.template block<3, 3>(0, 0) / h;
-        Mat3 mat_bend     = abd.template block<3, 3>(3, 3);
         Mat2 mat_shear    = this->get_section()->get_shear();
 
 		// scale material matrices by topo stiffness
@@ -810,8 +808,7 @@ struct DefaultShellElement : public ShellElement<N> {
                            "Field '", scale_field->name, "': element stiffness scale requires 1 component");
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
-		mat_membrane *= topo_scale;
-		mat_bend     *= topo_scale;
+		abd          *= topo_scale;
 		mat_shear    *= topo_scale;
 
         // membrane stress
@@ -825,24 +822,26 @@ struct DefaultShellElement : public ShellElement<N> {
         auto B_bending  = this->strain_disp_bending(shape_der, jac);
         auto B_shear    = this->strain_disp_shear(shape_func, shape_der, jac);
 
-        // membrane stress, s_x, s_y, s_xy
-        Vec3 stress_membrane = mat_membrane * B_membrane * disp_membrane;
-        res(0) += stress_membrane(0);
-        res(1) += stress_membrane(1);
-        res(5) += stress_membrane(2);
+        const Mat2 A = this->section_to_element_2d(r, s, axes);
+        const auto T_plane = this->plane_strain_transform(A);
+        const auto T_shear = this->shear_strain_transform(A);
 
-        // bending stress,
-        // mat bend is scaled by h^3 / 12, we need to get rid of that
-        mat_bend *= 12 / std::pow(h, 3);
-        Precision t_pos          = t * h / 2;
-        Vec3      stress_bending = t_pos * mat_bend * B_bending * disp_bending;
-        res(0) += stress_bending(0);
-        res(1) += stress_bending(1);
-        res(5) += stress_bending(2);
+        Vec3 eps_membrane = T_plane * (B_membrane * disp_membrane);
+        Vec3 kappa        = T_plane * (B_bending  * disp_bending);
+        Vec6 generalized_strain;
+        generalized_strain << eps_membrane, kappa;
+        Vec6 generalized_resultant = abd * generalized_strain;
+
+        const Precision z = t * h / 2;
+        const Vec3 membrane_force = generalized_resultant.template segment<3>(0);
+        const Vec3 bending_moment = generalized_resultant.template segment<3>(3);
+        const Vec3 stress_plane = membrane_force / h + z * (Precision(12) / (h * h * h)) * bending_moment;
+        res(0) += stress_plane(0);
+        res(1) += stress_plane(1);
+        res(5) += stress_plane(2);
 
         // shear stress
-        mat_shear /= this->get_section()->thickness;
-        Vec2 stress_shear = mat_shear * B_shear * disp_shear;
+        Vec2 stress_shear = (mat_shear / h) * (T_shear * (B_shear * disp_shear));
         res(3) += stress_shear(0);
         res(4) += stress_shear(1);
 
@@ -868,17 +867,10 @@ struct DefaultShellElement : public ShellElement<N> {
         }
 
         auto abd = this->get_section()->get_abd();
-        Mat3 mat_membrane = abd.template block<3, 3>(0, 0) / h;
-        Mat3 mat_bend     = abd.template block<3, 3>(3, 3);
         Mat2 mat_shear    = this->get_section()->get_shear();
 
-        mat_membrane *= topo_scale;
-        mat_bend     *= topo_scale;
-        mat_shear    *= topo_scale;
-
-        // remove h^3/12 from bending, divide shear by thickness once
-        mat_bend  *= 12.0 / (h * h * h);
-        mat_shear /= h;
+        abd *= topo_scale;
+        mat_shear *= topo_scale;
 
         // --- Build displacement vectors ONCE (global -> local) ---
         StaticVector<2 * N> disp_membrane;
@@ -933,47 +925,49 @@ struct DefaultShellElement : public ShellElement<N> {
             auto B_bending  = this->strain_disp_bending(shape_der, jac);
             auto B_shear    = this->strain_disp_shear(shape_func, shape_der, jac);
 
-            // --- Kinematic quantities in local coordinates ---
-            Vec3 eps_membrane = B_membrane * disp_membrane; // [eps_xx, eps_yy, gamma_xy]
-            Vec3 kappa        = B_bending  * disp_bending;  // [kappa_x, kappa_y, kappa_xy]
-            Vec2 gamma_shear  = B_shear    * disp_shear;    // [gamma_xz, gamma_yz]
+            const Mat2 A = this->section_to_element_2d(r, s, axes);
+            const auto T_plane = this->plane_strain_transform(A);
+            const auto T_shear = this->shear_strain_transform(A);
 
-            // --- Mid-surface stress (local) ---
-            Vec6 stress_mid_local = Vec6::Zero();
+            Vec3 eps_membrane = T_plane * (B_membrane * disp_membrane);
+            Vec3 kappa        = T_plane * (B_bending  * disp_bending);
+            Vec2 gamma_shear  = T_shear * (B_shear    * disp_shear);
 
-            Vec3 stress_membrane = mat_membrane * eps_membrane;
-            stress_mid_local(0) += stress_membrane(0);
-            stress_mid_local(1) += stress_membrane(1);
-            stress_mid_local(5) += stress_membrane(2);
+            Vec6 generalized_strain;
+            generalized_strain << eps_membrane, kappa;
+            Vec6 generalized_resultant = abd * generalized_strain;
+            Vec3 membrane_force = generalized_resultant.template segment<3>(0);
+            Vec3 bending_moment = generalized_resultant.template segment<3>(3);
 
-            Vec2 stress_shear = mat_shear * gamma_shear;
-            stress_mid_local(3) += stress_shear(0);
-            stress_mid_local(4) += stress_shear(1);
+            Vec2 stress_shear = (mat_shear / h) * gamma_shear;
 
-            // --- Mid-surface strain (local) ---
+            Precision z_top = +0.5 * h;
+            Precision z_bot = -0.5 * h;
+
+            Vec6 stress_top_local = Vec6::Zero();
+            Vec6 stress_bot_local = Vec6::Zero();
+            Vec3 stress_top_plane = membrane_force / h + z_top * (Precision(12) / (h * h * h)) * bending_moment;
+            Vec3 stress_bot_plane = membrane_force / h + z_bot * (Precision(12) / (h * h * h)) * bending_moment;
+
+            stress_top_local(0) = stress_top_plane(0);
+            stress_top_local(1) = stress_top_plane(1);
+            stress_top_local(3) = stress_shear(0);
+            stress_top_local(4) = stress_shear(1);
+            stress_top_local(5) = stress_top_plane(2);
+
+            stress_bot_local(0) = stress_bot_plane(0);
+            stress_bot_local(1) = stress_bot_plane(1);
+            stress_bot_local(3) = stress_shear(0);
+            stress_bot_local(4) = stress_shear(1);
+            stress_bot_local(5) = stress_bot_plane(2);
+
+            // --- Total strain on top and bottom ---
             Vec6 strain_mid_local = Vec6::Zero();
             strain_mid_local(0) = eps_membrane(0);
             strain_mid_local(1) = eps_membrane(1);
             strain_mid_local(3) = gamma_shear(0);
             strain_mid_local(4) = gamma_shear(1);
             strain_mid_local(5) = eps_membrane(2);
-
-            // --- Bending contribution for top and bottom ---
-            Vec3 sigma_bend = mat_bend * kappa; // bending stress factor
-
-            Precision z_top = +0.5 * h;
-            Precision z_bot = -0.5 * h;
-
-            Vec6 stress_top_local = stress_mid_local;
-            Vec6 stress_bot_local = stress_mid_local;
-
-            stress_top_local(0) += z_top * sigma_bend(0);
-            stress_top_local(1) += z_top * sigma_bend(1);
-            stress_top_local(5) += z_top * sigma_bend(2);
-
-            stress_bot_local(0) += z_bot * sigma_bend(0);
-            stress_bot_local(1) += z_bot * sigma_bend(1);
-            stress_bot_local(5) += z_bot * sigma_bend(2);
 
             // --- Total strain on top and bottom ---
             Vec6 strain_top_local = strain_mid_local;
@@ -1026,16 +1020,10 @@ struct DefaultShellElement : public ShellElement<N> {
         }
 
         auto abd = this->get_section()->get_abd();
-        Mat3 mat_membrane = abd.template block<3, 3>(0, 0) / h;
-        Mat3 mat_bend     = abd.template block<3, 3>(3, 3);
         Mat2 mat_shear    = this->get_section()->get_shear();
 
-        mat_membrane *= topo_scale;
-        mat_bend     *= topo_scale;
-        mat_shear    *= topo_scale;
-
-        mat_bend  *= 12.0 / (h * h * h);
-        mat_shear /= h;
+        abd *= topo_scale;
+        mat_shear *= topo_scale;
 
         StaticVector<2 * N> disp_membrane;
         StaticVector<3 * N> disp_bending;
@@ -1092,31 +1080,32 @@ struct DefaultShellElement : public ShellElement<N> {
             Vec3 kappa        = T_plane * (B_bending  * disp_bending);
             Vec2 gamma_shear  = T_shear * (B_shear    * disp_shear);
 
-            Vec6 stress_mid_local = Vec6::Zero();
+            Vec6 generalized_strain;
+            generalized_strain << eps_membrane, kappa;
+            Vec6 generalized_resultant = abd * generalized_strain;
+            Vec3 membrane_force = generalized_resultant.template segment<3>(0);
+            Vec3 bending_moment = generalized_resultant.template segment<3>(3);
+            Vec2 stress_shear = (mat_shear / h) * gamma_shear;
 
-            Vec3 stress_membrane = mat_membrane * eps_membrane;
-            stress_mid_local(0) += stress_membrane(0);
-            stress_mid_local(1) += stress_membrane(1);
-            stress_mid_local(5) += stress_membrane(2);
-
-            Vec2 stress_shear = mat_shear * gamma_shear;
-            stress_mid_local(3) += stress_shear(0);
-            stress_mid_local(4) += stress_shear(1);
-
-            Vec3 sigma_bend = mat_bend * kappa;
             Precision z_top = +0.5 * h;
             Precision z_bot = -0.5 * h;
 
-            Vec6 stress_top_local = stress_mid_local;
-            Vec6 stress_bot_local = stress_mid_local;
+            Vec6 stress_top_local = Vec6::Zero();
+            Vec6 stress_bot_local = Vec6::Zero();
+            Vec3 stress_top_plane = membrane_force / h + z_top * (Precision(12) / (h * h * h)) * bending_moment;
+            Vec3 stress_bot_plane = membrane_force / h + z_bot * (Precision(12) / (h * h * h)) * bending_moment;
 
-            stress_top_local(0) += z_top * sigma_bend(0);
-            stress_top_local(1) += z_top * sigma_bend(1);
-            stress_top_local(5) += z_top * sigma_bend(2);
+            stress_top_local(0) = stress_top_plane(0);
+            stress_top_local(1) = stress_top_plane(1);
+            stress_top_local(3) = stress_shear(0);
+            stress_top_local(4) = stress_shear(1);
+            stress_top_local(5) = stress_top_plane(2);
 
-            stress_bot_local(0) += z_bot * sigma_bend(0);
-            stress_bot_local(1) += z_bot * sigma_bend(1);
-            stress_bot_local(5) += z_bot * sigma_bend(2);
+            stress_bot_local(0) = stress_bot_plane(0);
+            stress_bot_local(1) = stress_bot_plane(1);
+            stress_bot_local(3) = stress_shear(0);
+            stress_bot_local(4) = stress_shear(1);
+            stress_bot_local(5) = stress_bot_plane(2);
 
             const Mat3 section_basis = this->section_basis_global(r, s, axes);
             Stress stress_top_global = Stress{stress_top_local}.transform(section_basis);
