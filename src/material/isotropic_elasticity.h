@@ -2,8 +2,7 @@
  * @file isotropic_elasticity.h
  * @brief Declares the isotropic elasticity model.
  *
- * Computes stiffness matrices for isotropic materials in 2D/3D as well as shear
- * and bending contributions for shell formulations.
+ * Computes stiffness matrices for isotropic materials in 2D/3D.
  *
  * @see src/material/isotropic_elasticity.cpp
  * @see src/material/elasticity.h
@@ -41,11 +40,6 @@ struct IsotropicElasticity : Elasticity {
     /// Returns the full 3D stiffness matrix.
     StaticMatrix<6, 6> get_3d() override;
 
-    /// Returns the shear stiffness matrix for shell elements.
-    StaticMatrix<2, 2> get_shear(Precision thickness) override;
-
-    /// Returns the bending stiffness matrix for shell elements.
-    StaticMatrix<3, 3> get_bend(Precision thickness) override;
 };
 
 } // namespace material

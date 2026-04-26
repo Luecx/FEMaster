@@ -50,27 +50,5 @@ StaticMatrix<6, 6> IsotropicElasticity::get_3d() {
                {0, 0, 0, 0, 0, mu / 2}}) * scalar;
 }
 
-/**
- * @copydoc IsotropicElasticity::get_shear
- */
-StaticMatrix<2, 2> IsotropicElasticity::get_shear(Precision thickness) {
-    Precision k = Precision(5) / Precision(6);
-    Precision scalar = youngs * thickness * k / (2 * (1 + poisson));
-    return StaticMatrix<2, 2>({
-        {1, 0},
-        {0, 1}}) * scalar;
-}
-
-/**
- * @copydoc IsotropicElasticity::get_bend
- */
-StaticMatrix<3, 3> IsotropicElasticity::get_bend(Precision thickness) {
-    Precision scalar = youngs * thickness * thickness * thickness / (12 * (1 - poisson * poisson));
-    return StaticMatrix<3, 3>({
-        {1, poisson, 0},
-        {poisson, 1, 0},
-        {0, 0, (1 - poisson) / 2}}) * scalar;
-}
-
 } // namespace material
 } // namespace fem

@@ -28,6 +28,9 @@ struct ShellSection : Section {
    Precision thickness = 1.0; ///< Thickness of the shell section.
    cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional section/material orientation.
 
+   virtual StaticMatrix<6, 6> get_abd();
+   virtual StaticMatrix<2, 2> get_shear();
+
    /**
     * @brief Outputs information about the shell section.
     */

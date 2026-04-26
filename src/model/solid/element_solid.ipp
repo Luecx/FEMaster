@@ -11,7 +11,74 @@
 
 #pragma once
 
+#include "../../cos/rectangular_system.h"
+#include "../../section/section_solid.h"
+
 namespace fem::model {
+
+template<Index N>
+SolidSection* SolidElement<N>::get_section() {
+    logging::error(this->_section != nullptr, "Section not set for element ", this->elem_id);
+    auto section = this->_section->template as<SolidSection>();
+    logging::error(section != nullptr, "Section is not a solid section for element ", this->elem_id);
+    return section;
+}
+
+template<Index N>
+bool SolidElement<N>::has_material_orientation() const {
+    const bool has_section_orientation =
+        this->_section && this->_section->template as<SolidSection>() &&
+        this->_section->template as<SolidSection>()->orientation;
+    const bool has_topo_orientation = this->_model_data && this->_model_data->material_orientation;
+    return has_section_orientation || has_topo_orientation;
+}
+
+template<Index N>
+Mat3 SolidElement<N>::section_orientation_basis(Precision r, Precision s, Precision t) {
+    auto section = get_section();
+    if (!section->orientation) {
+        return Mat3::Identity();
+    }
+
+    const Vec3 point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
+    const Vec3 point_local  = section->orientation->to_local(point_global);
+    return section->orientation->get_axes(point_local);
+}
+
+template<Index N>
+Mat3 SolidElement<N>::material_orientation_basis(Precision r, Precision s, Precision t) {
+    Mat3 basis = section_orientation_basis(r, s, t);
+
+    if (this->_model_data && this->_model_data->material_orientation) {
+        auto angles_field = this->_model_data->material_orientation;
+        logging::error(angles_field->components == 3,
+                       "Field '", angles_field->name, "': material orientation requires 3 components");
+        const Index row = static_cast<Index>(this->elem_id);
+        const Vec3 angles = angles_field->row_vec3(row);
+        const Mat3 topo_basis = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3::Zero());
+        basis = basis * topo_basis;
+    }
+
+    return basis;
+}
+
+template<Index N>
+void SolidElement<N>::material_stress_strain(Precision r,
+                                             Precision s,
+                                             Precision t,
+                                             const StaticVector<n_strain>& global_strain,
+                                             StaticVector<n_strain>& out_stress,
+                                             StaticVector<n_strain>& out_strain) {
+    if (!has_material_orientation()) {
+        out_strain = global_strain;
+        out_stress = material_matrix(r, s, t) * out_strain;
+        return;
+    }
+
+    const Mat3 basis = material_orientation_basis(r, s, t);
+    out_strain = material()->elasticity()->transformation(basis) * global_strain;
+    out_stress = material()->elasticity()->template get<D>() * out_strain;
+}
 
 //-----------------------------------------------------------------------------
 // strain_displacement
@@ -59,18 +126,8 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
         scaling = (*scale_field)(static_cast<Index>(this->elem_id));
     }
 
-    if (this->_model_data && this->_model_data->material_orientation) {
-        auto angles_field = this->_model_data->material_orientation;
-        logging::error(angles_field->components == 3,
-                       "Field '", angles_field->name, "': material orientation requires 3 components");
-        const Index row = static_cast<Index>(this->elem_id);
-        Vec3 angles = angles_field->row_vec3(row);
-        cos::RectangularSystem rot = cos::RectangularSystem::euler(angles(0), angles(1), angles(2));
-
-        Vec3                   point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
-        Vec3                   point_local  = rot.to_local(point_global);
-
-        auto result = this->material()->elasticity()->template get_transformed<D>(rot.get_axes(point_local));
+    if (has_material_orientation()) {
+        auto result = this->material()->elasticity()->template get_transformed<D>(material_orientation_basis(r, s, t));
         return scaling * result;
     } else {
         return scaling * this->material()->elasticity()->template get<D>();

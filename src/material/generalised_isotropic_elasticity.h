@@ -41,11 +41,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
     /// Returns a 3D stiffness matrix using Lamé-like normal terms and explicit shear modulus.
     StaticMatrix<6, 6> get_3d() override;
 
-    /// Returns the transverse shear stiffness matrix for shell elements.
-    StaticMatrix<2, 2> get_shear(Precision thickness) override;
-
-    /// Returns the shell bending stiffness matrix with explicit in-plane shear term.
-    StaticMatrix<3, 3> get_bend(Precision thickness) override;
 };
 
 } // namespace material

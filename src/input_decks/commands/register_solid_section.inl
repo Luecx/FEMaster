@@ -1,5 +1,6 @@
 // register_solid_section.inl — DSL registration for *SOLIDSECTION
 
+#include <memory>
 #include <string>
 
 #include "../../dsl/condition.h"
@@ -13,6 +14,10 @@ inline void register_solid_section(fem::dsl::Registry& registry, model::Model& m
         command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
         command.doc("Assign a material to a solid element set.");
 
+        auto material = std::make_shared<std::string>();
+        auto elset = std::make_shared<std::string>();
+        auto orientation = std::make_shared<std::string>();
+
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("MATERIAL")
@@ -22,12 +27,16 @@ inline void register_solid_section(fem::dsl::Registry& registry, model::Model& m
                 .key("ELSET")
                     .required()
                     .doc("Target element set")
+                .key("ORIENTATION")
+                    .optional()
+                    .doc("Optional coordinate system for solid material axes")
         );
 
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
-            const std::string& material = keys.raw("MATERIAL");
-            const std::string& elset    = keys.raw("ELSET");
-            model.solid_section(elset, material);
+        command.on_enter([&model, material, elset, orientation](const fem::dsl::Keys& keys) {
+            *material = keys.raw("MATERIAL");
+            *elset = keys.raw("ELSET");
+            *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
+            model.solid_section(*elset, *material, *orientation);
         });
 
         command.variant(fem::dsl::Variant::make());

@@ -1,18 +1,27 @@
-#include "section_solid.h"
+#include "section_shell_abd.h"
+
 #include <sstream>
 
 namespace fem {
 
-void SolidSection::info() {
-    logging::info(true, "SolidSection:");
-    logging::info(true, "   Material: ", (material ? material->name : "-"));
+StaticMatrix<6, 6> ABDShellSection::get_abd() {
+    return abd;
+}
+
+StaticMatrix<2, 2> ABDShellSection::get_shear() {
+    return shear;
+}
+
+void ABDShellSection::info() {
+    logging::info(true, "ABDShellSection:");
     logging::info(true, "   Region  : ", (region ? region->name : "-"));
+    logging::info(true, "   Thickness: ", thickness);
     logging::info(true, "   Orientation: ", (orientation ? orientation->name : "-"));
 }
 
-std::string SolidSection::str() const {
+std::string ABDShellSection::str() const {
     std::ostringstream os;
-    os << "SolidSection: material=" << (material ? material->name : std::string("-"))
+    os << "ABDShellSection: t=" << thickness
        << ", orientation=" << (orientation ? orientation->name : std::string("-"))
        << ", region=" << (region ? region->name : std::string("-"))
        << " (" << (region ? static_cast<int>(region->size()) : 0) << ")";

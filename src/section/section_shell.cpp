@@ -3,6 +3,16 @@
 
 namespace fem {
 
+StaticMatrix<6, 6> ShellSection::get_abd() {
+    logging::error(material && material->has_elasticity(), "ShellSection requires a material with elasticity");
+    return material->elasticity()->get_abd(thickness);
+}
+
+StaticMatrix<2, 2> ShellSection::get_shear() {
+    logging::error(material && material->has_elasticity(), "ShellSection requires a material with elasticity");
+    return material->elasticity()->get_shear(thickness);
+}
+
 void ShellSection::info() {
     logging::info(true, "ShellSection:");
     logging::info(true, "   Material: ", (material ? material->name : "-"));

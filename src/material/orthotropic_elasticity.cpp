@@ -72,22 +72,5 @@ StaticMatrix<6, 6> OrthotropicElasticity::get_3d() {
     return compliance.inverse();
 }
 
-/**
- * @copydoc OrthotropicElasticity::get_shear
- */
-StaticMatrix<2, 2> OrthotropicElasticity::get_shear(Precision thickness) {
-    const Precision k = Precision(5) / Precision(6);
-    return StaticMatrix<2, 2>({
-        {Gzx, 0},
-        {0, Gyz}}) * (thickness * k);
-}
-
-/**
- * @copydoc OrthotropicElasticity::get_bend
- */
-StaticMatrix<3, 3> OrthotropicElasticity::get_bend(Precision thickness) {
-    return get_2d() * (thickness * thickness * thickness / Precision(12));
-}
-
 } // namespace material
 } // namespace fem

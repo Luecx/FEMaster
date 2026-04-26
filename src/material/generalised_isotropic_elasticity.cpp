@@ -41,19 +41,5 @@ StaticMatrix<6, 6> GeneralisedIsotropicElasticity::get_3d() {
         {0, 0, 0, 0, 0, shear}});
 }
 
-StaticMatrix<2, 2> GeneralisedIsotropicElasticity::get_shear(Precision thickness) {
-    const Precision k = Precision(5) / Precision(6);
-    return StaticMatrix<2, 2>::Identity() * (shear * thickness * k);
-}
-
-StaticMatrix<3, 3> GeneralisedIsotropicElasticity::get_bend(Precision thickness) {
-    const Precision scalar = thickness * thickness * thickness / 12;
-    const Precision normal = youngs / (1 - poisson * poisson);
-    return StaticMatrix<3, 3>({
-        {normal, normal * poisson, 0},
-        {normal * poisson, normal, 0},
-        {0, 0, shear}}) * scalar;
-}
-
 } // namespace material
 } // namespace fem

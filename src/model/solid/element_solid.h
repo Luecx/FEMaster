@@ -58,6 +58,17 @@ public:
      */
     StaticMatrix<n_strain, n_strain> material_matrix(Precision r, Precision s, Precision t);
 
+    SolidSection* get_section();
+    bool has_material_orientation() const;
+    Mat3 section_orientation_basis(Precision r, Precision s, Precision t);
+    Mat3 material_orientation_basis(Precision r, Precision s, Precision t);
+    void material_stress_strain(Precision r,
+                                Precision s,
+                                Precision t,
+                                const StaticVector<n_strain>& global_strain,
+                                StaticVector<n_strain>& out_stress,
+                                StaticVector<n_strain>& out_strain);
+
     /**
      * @brief Computes the shape functions at the given local coordinates.
      *

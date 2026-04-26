@@ -33,14 +33,29 @@ struct Elasticity {
     /// Returns the full 3D stiffness matrix.
     virtual StaticMatrix<6, 6> get_3d() = 0;
 
-    /// Returns the shear stiffness matrix for shell elements.
-    virtual StaticMatrix<2, 2> get_shear(Precision thickness) = 0;
+    /// Returns the shell ABD stiffness matrix for the given section thickness.
+    virtual StaticMatrix<6, 6> get_abd(Precision thickness) {
+        const Mat3 q = get_2d();
+        StaticMatrix<6, 6> abd = StaticMatrix<6, 6>::Zero();
+        abd.template block<3, 3>(0, 0) = q * thickness;
+        abd.template block<3, 3>(3, 3) = q * (thickness * thickness * thickness / Precision(12));
+        return abd;
+    }
 
-    /// Returns the bending stiffness matrix for shell elements.
-    virtual StaticMatrix<3, 3> get_bend(Precision thickness) = 0;
+    /// Returns the transverse shear stiffness matrix for the given section thickness.
+    virtual StaticMatrix<2, 2> get_shear(Precision thickness) {
+        const StaticMatrix<6, 6> c = get_3d();
+        StaticMatrix<2, 2> shear;
+        shear << c(4, 4), c(4, 3),
+                 c(3, 4), c(3, 3);
 
-    /// Returns the membrane stiffness matrix (defaults to `get_2d`).
-    virtual StaticMatrix<3, 3> get_memb() { return get_2d(); }
+        const Precision k = Precision(5) / Precision(6);
+        return shear * (thickness * k);
+    }
+
+    virtual StaticMatrix<2, 2> get_transverse_shear(Precision thickness) {
+        return get_shear(thickness);
+    }
 
     /**
      * @brief Retrieves the stiffness matrix for the specified dimension.

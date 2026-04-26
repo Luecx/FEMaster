@@ -12,6 +12,7 @@
 #pragma once
 
 #include "section.h"
+#include "../cos/coordinate_system.h"
 
 namespace fem {
 
@@ -23,6 +24,8 @@ namespace fem {
 */
 struct SolidSection : Section {
    using Ptr = std::shared_ptr<SolidSection>;
+
+   cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional material orientation.
 
    /**
     * @brief Outputs information about the solid section.

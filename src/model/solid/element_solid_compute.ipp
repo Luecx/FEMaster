@@ -61,10 +61,10 @@ SolidElement<N>::compute_stress_strain_nodal(Field& displacement, Field& stress,
                                "\nCoordinates: ", global_node_coords);
 
         if (det > 0) {
-            StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
-
-            auto strains = B * local_displacement;
-            auto stresses = E * strains;
+            auto global_strains = B * local_displacement;
+            StaticVector<n_strain> strains;
+            StaticVector<n_strain> stresses;
+            material_stress_strain(r, s, t, global_strains, stresses, strains);
 
             // if any nan
             if (stresses.hasNaN()) {
@@ -166,9 +166,10 @@ void SolidElement<N>::compute_stress_strain(Field& ip_stress, Field& ip_strain, 
         Precision det;
         StaticMatrix<N, 1> shape_func       = this->shape_function(r, s, t);
         StaticMatrix<n_strain, D * N> B     = this->strain_displacements(global_node_coords, r, s, t, det);
-        StaticMatrix<n_strain, n_strain> E  = material_matrix(r, s, t);
-        auto strains  = B * local_displacement;
-        auto stresses = E * strains;
+        auto global_strains = B * local_displacement;
+        StaticVector<n_strain> strains;
+        StaticVector<n_strain> stresses;
+        material_stress_strain(r, s, t, global_strains, stresses, strains);
         for (Dim j = 0; j < n_strain; j++) {
             const Index row = static_cast<Index>(ip_offset) + n;
             ip_stress(row, j) = stresses(j);
@@ -268,10 +269,10 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
                    "Field '", angles_field->name, "': material orientation requires 3 components");
     const Index row = static_cast<Index>(this->elem_id);
     Vec3 angles = angles_field->row_vec3(row);
-    auto R = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3(0,0,0));
-    auto dR_d1 = cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
-    auto dR_d2 = cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));
-    auto dR_d3 = cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2));
+    auto R_topo = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3(0,0,0));
+    auto dR_topo_d1 = cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
+    auto dR_topo_d2 = cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));
+    auto dR_topo_d3 = cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2));
 
     Vec3 derivative = Vec3::Zero();
 
@@ -289,7 +290,13 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         // compute the strain vector
         StaticVector<n_strain> strain = B * local_displacement;
 
-        // derivative of the rotated material matrix (R^T E R) w.r.t each angle
+        const Mat3 R_section = section_orientation_basis(r, s, t);
+        const Mat3 R = R_section * R_topo;
+        const Mat3 dR_d1 = R_section * dR_topo_d1;
+        const Mat3 dR_d2 = R_section * dR_topo_d2;
+        const Mat3 dR_d3 = R_section * dR_topo_d3;
+
+        // derivative of the rotated material matrix with section orientation fixed
         auto dCd1 = this->material()->elasticity()->template get_transformed_derivative<3>(R, dR_d1);
         auto dCd2 = this->material()->elasticity()->template get_transformed_derivative<3>(R, dR_d2);
         auto dCd3 = this->material()->elasticity()->template get_transformed_derivative<3>(R, dR_d3);
