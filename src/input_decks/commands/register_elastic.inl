@@ -6,6 +6,7 @@
 #include "../../core/types_num.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
+#include "../../material/abd_elasticity.h"
 #include "../../material/generalised_isotropic_elasticity.h"
 #include "../../material/isotropic_elasticity.h"
 #include "../../material/orthotropic_elasticity.h"
@@ -21,10 +22,11 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
             fem::dsl::KeywordSpec::make()
                 .key("TYPE")
                     .required()
-                    .doc("Elasticity formulation (ISO/GENERALISED ISOTROPIC/ORTHO)")
+                    .doc("Elasticity formulation (ISO/GENERALISED ISOTROPIC/ORTHO/ABD)")
                     .allowed({"ISO", "ISOTROPIC",
                               "GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO",
-                              "ORTHO", "ORTHOTROPIC"})
+                              "ORTHO", "ORTHOTROPIC",
+                              "ABD"})
         );
 
         command.variant(fem::dsl::Variant::make()
@@ -108,6 +110,38 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
                     }
                     material->set_elasticity<fem::material::OrthotropicElasticity>(
                         E1, E2, E3, G23, G13, G12, nu23, nu13, nu12);
+                })
+            )
+        );
+
+        command.variant(fem::dsl::Variant::make()
+            .when(fem::dsl::Condition::key_equals("TYPE", {"ABD"}))
+            .segment(fem::dsl::Segment::make()
+                .range(fem::dsl::LineRange{}.min(1).max(8))
+                .pattern(fem::dsl::Pattern::make()
+                    .allow_multiline()
+                    .fixed<fem::Precision, 40>().name("DATA").desc("ABD row-major (36 values), then shear row-major (4 values)")
+                )
+                .bind([&model](const std::array<fem::Precision, 40>& vals) {
+                    auto material = model._data->materials.get();
+                    if (!material) {
+                        throw std::runtime_error("ELASTIC requires an active material context");
+                    }
+
+                    StaticMatrix<6, 6> abd;
+                    StaticMatrix<2, 2> shear;
+                    for (Index i = 0; i < 6; ++i) {
+                        for (Index j = 0; j < 6; ++j) {
+                            abd(i, j) = vals[6 * i + j];
+                        }
+                    }
+                    for (Index i = 0; i < 2; ++i) {
+                        for (Index j = 0; j < 2; ++j) {
+                            shear(i, j) = vals[36 + 2 * i + j];
+                        }
+                    }
+
+                    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
                 })
             )
         );

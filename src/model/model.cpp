@@ -4,7 +4,6 @@
 #include "../section/section_beam.h"
 #include "../section/section_solid.h"
 #include "../section/section_shell.h"
-#include "../section/section_shell_abd.h"
 #include "../section/section_truss.h"
 #include "../feature/point_mass.h"
 
@@ -379,25 +378,6 @@ void Model::shell_section(const std::string& set, const std::string& material, P
     sec->region = _data->elem_sets.get(set);
     sec->thickness = thickness;
     sec->orientation = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
-    this->_data->sections.push_back(sec);
-}
-
-void Model::abd_shell_section(const std::string& set,
-                              Precision thickness,
-                              const StaticMatrix<6, 6>& abd,
-                              const StaticMatrix<2, 2>& shear,
-                              const std::string& orientation) {
-    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
-    if (!orientation.empty()) {
-        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
-    }
-
-    ABDShellSection::Ptr sec = std::make_shared<ABDShellSection>();
-    sec->region = _data->elem_sets.get(set);
-    sec->thickness = thickness;
-    sec->orientation = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
-    sec->abd = abd;
-    sec->shear = shear;
     this->_data->sections.push_back(sec);
 }
 

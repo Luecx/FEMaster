@@ -45,7 +45,6 @@
 #include "commands/register_beam_section.inl"
 #include "commands/register_truss_section.inl"
 #include "commands/register_shell_section.inl"
-#include "commands/register_abd_shell_section.inl"
 #include "commands/register_point_mass.inl"
 #include "commands/register_element.inl"
 #include "commands/register_overview.inl"
@@ -333,7 +332,6 @@ void Parser::register_commands() {
     commands::register_beam_section(reg, mdl);
     commands::register_truss_section(reg, mdl);
     commands::register_shell_section(reg, mdl);
-    commands::register_abd_shell_section(reg, mdl);
     commands::register_point_mass(reg, mdl);
     commands::register_element(reg, mdl);
     commands::register_overview(reg, mdl);

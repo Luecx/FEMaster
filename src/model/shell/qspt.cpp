@@ -109,9 +109,7 @@ QSPT::GeometryData QSPT::geometry_data() {
 }
 
 Precision QSPT::effective_density() {
-    auto mat = this->get_material();
-    if (!mat || !mat->has_density()) return Precision(0);
-    return mat->get_density();
+    return this->get_density(false);
 }
 
 Precision QSPT::effective_shear_modulus() {

@@ -45,6 +45,14 @@ struct ShellElement : StructuralElement {
         }
         return mat_ptr->elasticity().get();
     }
+    Precision get_density(bool required = false) {
+        ShellSection* section = get_section();
+        if (required) {
+            logging::error(section->has_density(),
+                           "ShellElement: density is required for element ", this->elem_id);
+        }
+        return section->get_density();
+    }
 
     // left out for childs
     virtual SurfacePtr surface(ID surface_id) override = 0;

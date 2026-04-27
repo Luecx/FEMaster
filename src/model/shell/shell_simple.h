@@ -235,10 +235,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Precision rho = 1.0;
         if (scale_by_density) {
-            auto mat = this->get_material();
-            logging::error(mat && mat->has_density(),
-                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
+            rho = this->get_density(true);
         }
 
         // For global x at IP, use true global node positions
@@ -281,10 +278,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Precision rho = 1.0;
         if (scale_by_density) {
-            auto mat = this->get_material();
-            logging::error(mat && mat->has_density(),
-                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
+            rho = this->get_density(true);
         }
 
         auto node_coords_glob = this->node_coords_global();
@@ -317,10 +311,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Precision rho = 1.0;
         if (scale_by_density) {
-            auto mat = this->get_material();
-            logging::error(mat && mat->has_density(),
-                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
+            rho = this->get_density(true);
         }
 
         auto node_coords_glob = this->node_coords_global();
@@ -353,10 +344,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Precision rho = 1.0;
         if (scale_by_density) {
-            auto mat = this->get_material();
-            logging::error(mat && mat->has_density(),
-                           "ShellElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
+            rho = this->get_density(true);
         }
 
         auto node_coords_glob = this->node_coords_global();
@@ -682,7 +670,12 @@ struct DefaultShellElement : public ShellElement<N> {
         auto xy_coords = get_xy_coords(axes);
 
         // Material-/Sektionsdaten
-        const Precision rho = this->get_material()->get_density();
+        const Precision rho = this->get_density(false);
+        if (rho <= Precision(0)) {
+            MapMatrix mapped(buffer, 6 * N, 6 * N);
+            mapped.setZero();
+            return mapped;
+        }
         const Precision h   = this->get_section()->thickness;
         const Precision mt  = rho * h;                     // Translationsmasse pro Fläche
         const Precision mr  = rho * (h * h * h / 12.0);    // Rotations-„Masse“ (Flächenträgheit)

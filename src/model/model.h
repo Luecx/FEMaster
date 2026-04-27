@@ -84,11 +84,6 @@ struct Model {
     void beam_section (const std::string& set, const std::string& material, const std::string& profile, Vec3 orientation);
     void truss_section(const std::string& set, const std::string& material, Precision area);
     void shell_section(const std::string& set, const std::string& material, Precision thickness, const std::string& orientation = "");
-    void abd_shell_section(const std::string& set,
-                           Precision thickness,
-                           const StaticMatrix<6, 6>& abd,
-                           const StaticMatrix<2, 2>& shear,
-                           const std::string& orientation = "");
 
     // features
     void add_point_mass_feature(const std::string& nset,

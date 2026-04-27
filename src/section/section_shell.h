@@ -30,6 +30,8 @@ struct ShellSection : Section {
 
    virtual StaticMatrix<6, 6> get_abd();
    virtual StaticMatrix<2, 2> get_shear();
+   bool has_density() const;
+   Precision get_density() const;
 
    /**
     * @brief Outputs information about the shell section.
