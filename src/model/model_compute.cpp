@@ -8,8 +8,6 @@
 #include "shell/s8.h"
 
 namespace fem { namespace model{
-
-
 std::tuple<Field, Field>
 Model::compute_ip_stress_strain(Field& displacement) {
     // 1) Build IP enumeration with sentinel total in the last row
@@ -55,8 +53,7 @@ Model::compute_ip_stress_strain(Field& displacement) {
     return {ip_stress, ip_strain};
 }
 
-std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement){
-
+std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement) {
     Field stress{"STRESS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
     Field strain{"STRAIN", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
     stress.set_zero();
@@ -64,12 +61,11 @@ std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement){
     IndexVector count{_data->max_nodes};
     count.setZero();
 
-    for(auto el: _data->elements){
+    for(auto el: _data->elements) {
         if(el == nullptr) continue;
         if(auto sel = el->as<StructuralElement>()) {
-
             sel->compute_stress_strain_nodal(displacement, stress, strain);
-            for(int i = 0; i < sel->n_nodes(); i++){
+            for(int i = 0; i < sel->n_nodes(); i++) {
                 ID id = sel->nodes()[i];
                 count(id) ++;
             }
@@ -86,8 +82,8 @@ std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement){
     }
 
     // check for any nan or inf and then display the node id
-    for(int i = 0; i < _data->max_nodes; i++){
-        for(int j = 0; j < 6; j++){
+    for(int i = 0; i < _data->max_nodes; i++) {
+        for(int j = 0; j < 6; j++) {
             bool inv_stress = std::isnan(stress(i, j)) || std::isinf(stress(i, j));
             bool inv_strain = std::isnan(strain(i, j)) || std::isinf(strain(i, j));
             logging::error(!inv_strain, "Node ", i, " has nan or inf strain. Node Usage=", count(i));
@@ -99,7 +95,6 @@ std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement){
 }
 
 std::tuple<Field, Field> Model::compute_shell_stress_surfaces(Field& displacement) {
-
     Field stress_top{"STRESS_TOP", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
     Field stress_bot{"STRESS_BOT", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
     stress_top.set_zero();
@@ -143,7 +138,6 @@ std::tuple<Field, Field> Model::compute_shell_stress_surfaces(Field& displacemen
 }
 
 Field Model::compute_shell_resultants(Field& displacement) {
-
     Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 8};
     resultants.set_zero();
 
@@ -182,7 +176,7 @@ Field Model::compute_shell_resultants(Field& displacement) {
     return resultants;
 }
 
-Field Model::compute_compliance(Field& displacement){
+Field Model::compute_compliance(Field& displacement) {
     Field compliance{"COMPLIANCE", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
     compliance.set_zero();
 
@@ -191,13 +185,12 @@ Field Model::compute_compliance(Field& displacement){
         if (el == nullptr) continue;
         if(auto sel = el->as<StructuralElement>())
             sel->compute_compliance(displacement, compliance);
-
     }
 
     return compliance;
 }
 
-Field Model::compute_compliance_angle_derivative(Field& displacement){
+Field Model::compute_compliance_angle_derivative(Field& displacement) {
     Field results{"ORIENTATION_GRAD", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 3};
     results.set_zero();
 
@@ -226,7 +219,6 @@ Field Model::compute_volumes() {
 }
 DynamicMatrix
 Model::compute_section_forces(Field& displacement) {
-
     using Entry = std::tuple<ID, Index, Vec6>;
     std::vector<Entry> entries;
     entries.reserve(_data->elements.size() * 2); // heuristic: mostly 2-node beams
@@ -236,7 +228,6 @@ Model::compute_section_forces(Field& displacement) {
         if (!el) continue;
 
         if (auto sel = el->as<StructuralElement>()) {
-
             auto per_node_forces = sel->section_forces(displacement);
 
             // non-beam elements return empty vector{}; skip them
@@ -313,7 +304,5 @@ Model::compute_shear_flow(Field& displacement) {
 
     return mat;
 }
-
-
 
 } }

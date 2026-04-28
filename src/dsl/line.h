@@ -30,7 +30,6 @@
 
 namespace fem {
 namespace dsl {
-
 /**
  * @brief Line classification used by the tokenizer.
  */
@@ -90,10 +89,10 @@ public:
 
         // trim left
         _line.erase(_line.begin(), std::find_if(_line.begin(), _line.end(),
-                                                [](int ch){ return !std::isspace(ch); }));
+                                                [](int ch) { return !std::isspace(ch); }));
         // trim right
         _line.erase(std::find_if(_line.rbegin(), _line.rend(),
-                                 [](int ch){ return !std::isspace(ch); }).base(), _line.end());
+                                 [](int ch) { return !std::isspace(ch); }).base(), _line.end());
 
         // classify
         if (_line.rfind("//",0)==0 || (!_line.empty() && (_line[0]=='#' || _line[0]=='!')) || (_line.rfind("**",0)==0)) {
@@ -238,6 +237,5 @@ public:
         return os;
     }
 };
-
 } // namespace dsl
 } // namespace fem

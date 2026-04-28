@@ -18,7 +18,7 @@
  * Segment::make()
  *   .range(LineRange{}.min(1).max(1))
  *   .pattern(Pattern::make().fixed<int,4>().fixed<double,1>())
- *   .bind([](std::array<int,4> ids, double k){
+ *   .bind([](std::array<int,4> ids, double k) {
  *       // ...
  *   });
  * @endcode
@@ -50,7 +50,6 @@
 
 namespace fem {
 namespace dsl {
-
 /**
  * @class Segment
  * @brief Unit of parsing: consumes a bounded number of lines, parses tokens via a pattern,
@@ -130,6 +129,5 @@ private:
         return *this;
     }
 };
-
 } // namespace dsl
 } // namespace fem

@@ -67,7 +67,6 @@
 using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
-
 constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
 
 /**
@@ -318,7 +317,7 @@ void LinearEigenfrequency::run() {
     std::vector<EigenMode> modes; modes.reserve(eig_pairs.size());
     for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
     std::sort(modes.begin(), modes.end(),
-              [](const EigenMode& a, const EigenMode& b){ return a.lambda < b.lambda; });
+              [](const EigenMode& a, const EigenMode& b) { return a.lambda < b.lambda; });
 
     // (7) Expand mode shapes and compute simple participations
     //     For homogeneous constraints, u_p = 0 and u_mode = T * q_mode.
@@ -344,5 +343,4 @@ void LinearEigenfrequency::run() {
 
     logging::info(true, "Eigenfrequency analysis completed.");
 }
-
 }} // namespace fem::loadcase

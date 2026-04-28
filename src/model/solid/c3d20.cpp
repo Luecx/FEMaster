@@ -118,7 +118,6 @@ StaticMatrix<20, 1> C3D20::shape_function(Precision r, Precision s, Precision t)
 }
 
 StaticMatrix<20, 3> C3D20::shape_derivative(Precision r, Precision s, Precision t) {
-
     Precision g = r;
     Precision h = s;
     r = t;

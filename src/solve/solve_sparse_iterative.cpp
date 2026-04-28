@@ -7,7 +7,6 @@
 #include <Eigen/IterativeLinearSolvers>
 
 namespace fem::solver{
-
 #ifdef SUPPORT_GPU
 
 void solve_iter_gpu_precon(cuda::CudaCSR &mat) {
@@ -53,12 +52,10 @@ void solve_iter_gpu_precon(cuda::CudaCSR &mat) {
 
 DynamicVector solve_iter(SolverDevice device,
                          SparseMatrix& mat,
-                         DynamicVector& rhs){
-
+                         DynamicVector& rhs) {
     logging::error(mat.cols() == mat.rows(), "matrix must be square");
     logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
     logging::error(rhs.cols() == 1, "can only solve one equation at a time");
-
 
     const auto N   = mat.cols();
     const auto nnz = mat.nonZeros();
@@ -73,7 +70,7 @@ DynamicVector solve_iter(SolverDevice device,
     logging::up();
 
 #ifdef SUPPORT_GPU
-    if(device == GPU){
+    if(device == GPU) {
         logging::up();
         cuda::manager.create_cuda();
 
@@ -130,7 +127,6 @@ DynamicVector solve_iter(SolverDevice device,
         cuda::CudaVector vec_p {int(N)};
         cuda::CudaVector vec_ap{int(N)};
         cuda::CudaVector vec_i {int(N)};
-
 
         CudaPrecision val_rz;
         CudaPrecision val_pap;
@@ -231,7 +227,7 @@ DynamicVector solve_iter(SolverDevice device,
         logging::info(true, "Starting iterations");
         CudaPrecision r_norm;
         int k;
-        for(k = 1; k < N; k++){
+        for(k = 1; k < N; k++) {
             // compute A * p
             cusparseSpMV(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descr_A, vec_p, &zero,
                          vec_ap, CUDA_P_TYPE, CUSPARSE_SPMV_CSR_ALG1, buffer_ap);
@@ -249,11 +245,11 @@ DynamicVector solve_iter(SolverDevice device,
             // synchronize right here and only once.
             CUBLAS_NRM(cuda::manager.handle_cublas, N, vec_r, 1, &r_norm);
 
-            if(k % 1000 == 0){
+            if(k % 1000 == 0) {
                 logging::info("Iteration ", k, " r_norm: ", r_norm);
             }
 
-            if(r_norm < 1e-8){
+            if(r_norm < 1e-8) {
                 break;
             }
 
@@ -292,7 +288,6 @@ DynamicVector solve_iter(SolverDevice device,
         vec_x.download(sol.data());
         logging::down();
         return sol;
-
     } else{
 #endif
 

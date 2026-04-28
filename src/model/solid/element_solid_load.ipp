@@ -46,7 +46,6 @@ SolidElement<N>::apply_vload(Field& node_loads, Vec3 load) {
 template<Index N>
 void
 SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-
     StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
     logging::error(node_temp.domain == FieldDomain::NODE,
                    "Temperature field '", node_temp.name, "' must be a node field");

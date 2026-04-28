@@ -46,7 +46,6 @@ class Collection : public Namable {
         : Namable(std::move(p_name))
         , _sorted(false)
         , _duplicates(false) {
-
         sorted(p_sorted);
         duplicates(p_duplicates);
     }

@@ -12,10 +12,9 @@
 #endif
 
 namespace fem::solver{
-
 DynamicVector solve_direct(SolverDevice device,
                           SparseMatrix& mat,
-                          DynamicVector& rhs){
+                          DynamicVector& rhs) {
     logging::error(mat.rows() == mat.cols(), "matrix must be square");
     logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
     logging::error(rhs.cols() == 1, "can only solve one equation at a time");
@@ -144,5 +143,4 @@ DynamicVector solve_direct(SolverDevice device,
     return sol;
     //...
 }
-
 }

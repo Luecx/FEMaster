@@ -1,8 +1,8 @@
 /**
  * @file LinearStaticTopo.h
- * @brief LinearStaticTopo.h defines a load case that extends linear static 
- * analysis to include topology optimization parameters such as element density 
- * and penalization exponent. This class runs the analysis considering 
+ * @brief LinearStaticTopo.h defines a load case that extends linear static
+ * analysis to include topology optimization parameters such as element density
+ * and penalization exponent. This class runs the analysis considering
  * these optimization effects.
  *
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
@@ -33,7 +33,7 @@ struct LinearStaticTopo : public LinearStatic {
     // Constructor
     //-------------------------------------------------------------------------
     /**
-     * @brief Constructs a LinearStaticTopo load case with a given ID, writer, 
+     * @brief Constructs a LinearStaticTopo load case with a given ID, writer,
      * and model.
      *
      * @param id The unique ID of the load case.
@@ -55,7 +55,7 @@ public:
     // Run Analysis
     //-------------------------------------------------------------------------
     /**
-     * @brief Executes the linear static analysis with topology optimization 
+     * @brief Executes the linear static analysis with topology optimization
      * considerations. This function overrides the base run() method.
      */
     void run() override;

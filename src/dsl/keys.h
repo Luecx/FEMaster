@@ -44,7 +44,6 @@
 
 namespace fem {
 namespace dsl {
-
 /**
  * @struct Keys
  * @brief Wrapper around a case-sensitive key/value dictionary for keyword attributes.
@@ -139,7 +138,7 @@ struct Keys {
             // Uppercase copy for case-insensitive matching
             std::string v = it->second;
             std::transform(v.begin(), v.end(), v.begin(),
-                           [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
+                           [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
             // True/false token sets
             auto is_true_token = [&]{
@@ -250,6 +249,5 @@ struct Keys {
         }
     }
 };
-
 } // namespace dsl
 } // namespace fem

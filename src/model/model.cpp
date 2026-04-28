@@ -118,7 +118,7 @@ void Model::add_rbm(const std::string& set) {
     _data->rbms.emplace_back(_data->elem_sets.get(set));
 }
 
-void Model::add_cload(const std::string& nset, Vec6 load, const std::string& orientation, const std::string& amplitude){
+void Model::add_cload(const std::string& nset, Vec6 load, const std::string& orientation, const std::string& amplitude) {
     logging::error(_data->node_sets.has(nset), "Node set ", nset, " does not exist");
     auto region_ptr = _data->node_sets.get(nset);
 
@@ -414,7 +414,7 @@ std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
 
     logging::info(true, "Profiles");
     logging::up();
-    for(const auto &profile : model._data->profiles){
+    for(const auto &profile : model._data->profiles) {
         profile.second->info();
     }
     logging::down();

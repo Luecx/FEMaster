@@ -1,11 +1,11 @@
 /**
  * @file C3D4.h
  * @brief C3D4.h defines a 4-node tetrahedral element (C3D4) for solid
- * mechanics within a finite element model (FEM). This element computes 
- * shape functions, their derivatives, and uses a suitable quadrature scheme 
+ * mechanics within a finite element model (FEM). This element computes
+ * shape functions, their derivatives, and uses a suitable quadrature scheme
  * for integration.
  *
- * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de> 
+ * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
  * @date Created on 27.08.2024
  *
@@ -20,9 +20,9 @@ namespace fem { namespace model {
 
 /**
  * C3D4 class
- * This class defines a 4-node tetrahedral solid element used in finite 
- * element analysis. It provides methods to compute shape functions, their 
- * derivatives, and handle integration with a linear tetrahedral quadrature 
+ * This class defines a 4-node tetrahedral solid element used in finite
+ * element analysis. It provides methods to compute shape functions, their
+ * derivatives, and handle integration with a linear tetrahedral quadrature
  * scheme.
  */
 struct C3D4 : public SolidElement<4> {
@@ -63,7 +63,7 @@ struct C3D4 : public SolidElement<4> {
      * @param r The local coordinate in the r-direction.
      * @param s The local coordinate in the s-direction.
      * @param t The local coordinate in the t-direction.
-     * @return StaticMatrix<4, 3> The derivatives of the shape functions with 
+     * @return StaticMatrix<4, 3> The derivatives of the shape functions with
      * respect to (r, s, t).
      */
     StaticMatrix<4, 3> shape_derivative(Precision r, Precision s, Precision t) override;

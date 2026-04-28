@@ -16,15 +16,15 @@
  *
  * Typical usage:
  * @code
- * reg.command("ELASTIC", [](Command& c){
+ * reg.command("ELASTIC", [](Command& c) {
  *     c.allow_if( parent_is("MATERIAL") );
- *     c.on_enter([](const Keys& k){ ... }); // before segments
- *     c.on_exit([](const Keys& k){ ... });  // after scope exits
+ *     c.on_enter([](const Keys& k) { ... }); // before segments
+ *     c.on_exit([](const Keys& k) { ... });  // after scope exits
  *     c.variant( Variant::make()
  *         .segment( Segment::make()
  *             .range(LineRange{}.min(1).max(1))
  *             .pattern(Pattern::make().fixed<double,1>().fixed<double,1>())
- *             .bind([](double E, double nu){ ... })
+ *             .bind([](double E, double nu) { ... })
  *         )
  *     );
  * });
@@ -56,7 +56,6 @@
 
 namespace fem {
 namespace dsl {
-
 /**
  * @class Command
  * @brief Top-level specification for a registered DSL keyword.
@@ -177,6 +176,5 @@ struct Command {
         return *this;
     }
 };
-
 } // namespace dsl
 } // namespace fem

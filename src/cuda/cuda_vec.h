@@ -7,7 +7,6 @@
 
 #ifdef SUPPORT_GPU
 namespace fem::cuda {
-
 struct CudaVector : CudaArray<CudaPrecision> {
     cusparseDnVecDescr_t descr;
 
@@ -20,7 +19,7 @@ struct CudaVector : CudaArray<CudaPrecision> {
         runtime_check_cuda(cusparseDestroyDnVec(descr));
     }
 
-    operator cusparseDnVecDescr_t(){
+    operator cusparseDnVecDescr_t() {
         return descr;
     }
 };

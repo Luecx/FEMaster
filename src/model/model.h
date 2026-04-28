@@ -12,9 +12,7 @@
 #include "element/element_structural.h"
 
 namespace fem {
-
 namespace model{
-
 struct Model {
     ModelDataPtr _data;
 
@@ -23,7 +21,7 @@ struct Model {
 
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces, ID max_integration_points = 0) :
-        _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces, max_integration_points)){
+        _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces, max_integration_points)) {
         auto positions = _data->create_field("POSITION", FieldDomain::NODE, 6, false);
         positions->set_zero();
         _data->positions = positions;
@@ -113,7 +111,6 @@ struct Model {
                                               const Field& ip_stress,
                                               const Field* stiffness_scalar = nullptr);
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
-
 
     std::tuple<Field, Field>       compute_ip_stress_strain(Field& displacement);
     std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
