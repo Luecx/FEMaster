@@ -1,0 +1,172 @@
+\chapter{Material Models}
+\label{chap:materials}
+
+Material definitions provide density, thermal expansion, and elastic constitutive behaviour. Sections reference materials by name; elements receive their actual stiffness and mass only after their section has been assigned. A material can therefore be defined once and reused by several shell, solid, beam, or truss sections.
+
+\section{Material context: \cmd{MATERIAL}}
+
+\begin{syntax}
+*MATERIAL, NAME=<material>
+  *ELASTIC, TYPE=<model>
+  ...
+  *DENSITY
+  ...
+  *THERMALEXPANSION
+  ...
+\end{syntax}
+
+\cmd{MATERIAL} activates or creates a named material entry. The material name is supplied through \key{MATERIAL} or the alias \key{NAME}. Subcommands such as \cmd{ELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to the currently active material.
+
+\section{Density: \cmd{DENSITY}}
+
+\begin{syntax}
+*DENSITY
+<rho>
+\end{syntax}
+
+\cmd{DENSITY} sets the mass density \(\rho\). Density is used when FEMaster builds mass matrices, lumped masses from continuum or structural elements, inertia loads, inertia relief mass properties, and dynamic equations. In a consistent unit system, \(\rho\) must match the length, force, and time units used in the deck. For example, if length is in meters and force in Newtons, density is normally given in kg/m\(^3\).
+
+For a continuum element, the mass contribution is based on
+\[
+M_e = \int_{\Omega_e} \rho N^T N \, d\Omega
+\]
+or on the corresponding lumped form used by the selected analysis. For shells and beams, the section thickness or section area converts density into mass per area or mass per length.
+
+\section{Thermal expansion: \cmd{THERMALEXPANSION}}
+
+\begin{syntax}
+*THERMALEXPANSION
+<alpha>
+\end{syntax}
+
+\cmd{THERMALEXPANSION} sets the scalar thermal expansion coefficient \(\alpha\). Thermal loads use this coefficient together with the temperature difference \(T-T_0\). For isotropic expansion, the thermal strain vector is
+\[
+\varepsilon_\mathrm{th}
+=
+\alpha (T-T_0)
+\begin{bmatrix}
+1 & 1 & 1 & 0 & 0 & 0
+\end{bmatrix}^T .
+\]
+If a material has no thermal expansion coefficient, a thermal load can still be present in the deck, but it has no meaningful elastic thermal strain contribution for that material.
+
+\section{Isotropic elasticity}
+
+\begin{syntax}
+*ELASTIC, TYPE=ISOTROPIC
+<E>, <nu>
+\end{syntax}
+
+Accepted type values are \val{ISO} and \val{ISOTROPIC}. The data line contains Young's modulus \(E\) and Poisson's ratio \(\nu\). The shear modulus is not entered independently; it is derived as
+\[
+G = \frac{E}{2(1+\nu)} .
+\]
+
+For three-dimensional stress states, FEMaster uses the isotropic stiffness matrix
+\[
+D =
+\frac{E}{(1+\nu)(1-2\nu)}
+\begin{bmatrix}
+1-\nu & \nu & \nu & 0 & 0 & 0\\
+\nu & 1-\nu & \nu & 0 & 0 & 0\\
+\nu & \nu & 1-\nu & 0 & 0 & 0\\
+0 & 0 & 0 & (1-2\nu)/2 & 0 & 0\\
+0 & 0 & 0 & 0 & (1-2\nu)/2 & 0\\
+0 & 0 & 0 & 0 & 0 & (1-2\nu)/2
+\end{bmatrix}.
+\]
+For two-dimensional plane-stress-style element formulations, the in-plane matrix is
+\[
+D_{2D} =
+\frac{E}{1-\nu^2}
+\begin{bmatrix}
+1 & \nu & 0\\
+\nu & 1 & 0\\
+0 & 0 & (1-\nu)/2
+\end{bmatrix}.
+\]
+
+\section{Generalised isotropic elasticity}
+
+\begin{syntax}
+*ELASTIC, TYPE=GENISO
+<E>, <nu>, <G>
+\end{syntax}
+
+Accepted type values are \val{GENERALISEDISOTROPIC}, \val{GENERALISED_ISOTROPIC}, and \val{GENISO}. This model keeps the normal isotropic stiffness terms from \(E\) and \(\nu\), but uses the supplied \(G\) as an independent shear stiffness. In 3D, the normal block is identical to the isotropic material, while the shear diagonal entries are
+\[
+D_{44}=D_{55}=D_{66}=G .
+\]
+In the 2D matrix, the shear entry is also set directly:
+\[
+D_{2D,33}=G .
+\]
+
+This material is intentionally not a physically general isotropic law when \(G \ne E/(2(1+\nu))\). It breaks the isotropic relationship between Young's modulus, Poisson's ratio, and shear modulus. That can be useful deliberately, especially for shell studies where the user wants to tune, reduce, or effectively ignore shear stiffness while keeping isotropic membrane and bending terms. It should not be used as a physical isotropic material unless the supplied \(G\) satisfies the isotropic relation.
+
+\section{Orthotropic elasticity}
+
+\begin{syntax}
+*ELASTIC, TYPE=ORTHOTROPIC
+<E1>, <E2>, <E3>, <G23>, <G13>, <G12>, <nu23>, <nu13>, <nu12>
+\end{syntax}
+
+Accepted type values are \val{ORTHO} and \val{ORTHOTROPIC}. Orthotropic elasticity defines three material axes with separate Young's moduli \(E_1,E_2,E_3\), shear moduli \(G_{23},G_{13},G_{12}\), and Poisson ratios. It is appropriate for laminates, wood-like materials, unidirectional composites, and any material whose stiffness depends on direction.
+
+The 3D compliance matrix is assembled as
+\[
+S =
+\begin{bmatrix}
+1/E_1 & -\nu_{21}/E_2 & -\nu_{31}/E_3 & 0 & 0 & 0\\
+-\nu_{12}/E_1 & 1/E_2 & -\nu_{32}/E_3 & 0 & 0 & 0\\
+-\nu_{13}/E_1 & -\nu_{23}/E_2 & 1/E_3 & 0 & 0 & 0\\
+0 & 0 & 0 & 1/G_{23} & 0 & 0\\
+0 & 0 & 0 & 0 & 1/G_{13} & 0\\
+0 & 0 & 0 & 0 & 0 & 1/G_{12}
+\end{bmatrix},
+\qquad
+D = S^{-1}.
+\]
+Reciprocal Poisson ratios are derived from modulus ratios. In particular, FEMaster derives
+\[
+\nu_{31} = \nu_{13}\frac{E_3}{E_1}.
+\]
+The input column is named \key{NU13}, but the material construction uses the reciprocal value needed by the compliance matrix. Orthotropic data should be checked carefully because inconsistent modulus and Poisson-ratio combinations can produce a non-positive or ill-conditioned stiffness matrix.
+
+\section{ABD elasticity}
+
+\begin{syntax}
+*ELASTIC, TYPE=ABD
+<abd11>, <abd12>, ..., <abd66>,
+<s11>, <s12>, <s21>, <s22>
+\end{syntax}
+
+\cmd{ELASTIC, TYPE=ABD} reads 40 values. The first 36 values are a \(6\times6\) ABD matrix in row-major order. The last 4 values are a \(2\times2\) transverse shear matrix in row-major order. The values may be distributed over up to eight input lines.
+
+The ABD matrix is a shell or laminate stiffness representation:
+\[
+\begin{bmatrix}
+N\\
+M
+\end{bmatrix}
+=
+\begin{bmatrix}
+A & B\\
+B & D
+\end{bmatrix}
+\begin{bmatrix}
+\varepsilon_0\\
+\kappa
+\end{bmatrix}.
+\]
+\(A\) is membrane stiffness, \(B\) is membrane-bending coupling, and \(D\) is bending stiffness. This model is appropriate when the section stiffness has already been homogenized outside FEMaster or when a laminate should be represented directly by engineering stiffness resultants rather than by individual plies.
+
+\begin{exampledeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000000000.0, 0.3
+*DENSITY
+7850.0
+*THERMALEXPANSION
+1.2e-5
+\end{exampledeck}

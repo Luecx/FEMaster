@@ -1,0 +1,63 @@
+\chapter{Examples}
+
+\section{Linear static}
+
+See Section~\ref{sec:loadcase-linear-static} for the governing equation and a minimal static loadcase.
+
+\section{Eigenfrequency}
+
+\begin{exampledeck}
+*LOADCASE, TYPE=EIGENFREQ
+  *SUPPORTS
+  FIX
+  *NUMEIGENVALUES
+  12
+\end{exampledeck}
+
+\section{Linear buckling}
+
+\begin{exampledeck}
+*LOADCASE, TYPE=LINEARBUCKLING
+  *SUPPORTS
+  FIX
+  *LOADS
+  PRELOAD
+  *NUMEIGENVALUES
+  6
+  *SIGMA
+  0.0
+  *REQUESTSTGEOM, FILE=buckling_geom
+\end{exampledeck}
+
+\section{Transient load with amplitude}
+
+\begin{exampledeck}
+*AMPLITUDE, NAME=RAMP, TYPE=LINEAR
+0.0, 0.0
+1.0, 1.0
+
+*CLOAD, LOAD_COLLECTOR=F_RAMP, AMPLITUDE=RAMP
+TIP, 0, 0, -1000, 0, 0, 0
+
+*LOADCASE, TYPE=LINEARTRANSIENT
+  *SUPPORTS
+  FIX
+  *LOADS
+  F_RAMP
+  *TIME
+  0.0, 1.0, 0.01
+  *NEWMARK
+  0.25, 0.5
+  *WRITEEVERY, TYPE=STEPS
+  10
+\end{exampledeck}
+
+\section{Point mass}
+
+\begin{exampledeck}
+*NSET, NAME=MASS_NODE
+100
+
+*POINTMASS, NSET=MASS_NODE
+5.0, 0.02, 0.02, 0.04, 0, 0, 0, 0, 0, 0
+\end{exampledeck}

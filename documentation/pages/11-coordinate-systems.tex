@@ -1,0 +1,84 @@
+\chapter{Coordinate Systems and Orientations}
+\label{chap:coordinate-systems}
+
+\cmd{ORIENTATION} defines named local coordinate systems. These names can be referenced by sections, loads, supports, and connectors. The purpose is always the same: values that are convenient or physically meaningful in a local basis are transformed into the global basis used by the assembled finite-element equations.
+
+Let the local basis vectors be the columns of a rotation matrix
+\[
+R =
+\begin{bmatrix}
+e_1 & e_2 & e_3
+\end{bmatrix}.
+\]
+A local vector \(v_\ell\) is transformed to global coordinates by
+\[
+v_g = R v_\ell .
+\]
+For displacements, forces, rotations, and moments, the same directional transformation is used for the three-component translational block and the three-component rotational block.
+
+\section{Rectangular systems}
+
+\begin{syntax}
+*ORIENTATION, NAME=<name>, TYPE=RECTANGULAR
+<x1>, <x2>, <x3>, <y1>, <y2>, <y3>, <z1>, <z2>, <z3>
+\end{syntax}
+
+\val{RECTANGULAR} describes a Cartesian local basis. The command accepts three practical input forms:
+\begin{itemize}
+  \item 9 values: three direction vectors are supplied.
+  \item 6 values: two direction vectors are supplied and the third is completed.
+  \item 3 values: one primary direction is supplied and the remaining directions are completed.
+\end{itemize}
+
+The safest input is two or three non-collinear vectors. FEMaster normalizes and completes the basis, but it cannot infer a robust local frame from ambiguous geometry. If two supplied vectors are almost parallel, the cross product becomes small and the resulting local axes may be unstable. In formula form, a typical completion from two vectors \(a\) and \(b\) is
+\[
+e_1 = \frac{a}{\lVert a\rVert},\qquad
+e_3 = \frac{e_1 \times b}{\lVert e_1 \times b\rVert},\qquad
+e_2 = e_3 \times e_1 .
+\]
+The exact input variant decides which vector is treated as primary, but the modelling implication is the same: provide directions that define a clear right-handed frame.
+
+\section{Cylindrical systems}
+
+\begin{syntax}
+*ORIENTATION, NAME=<name>, TYPE=CYLINDRICAL
+<origin-x>, <origin-y>, <origin-z>,
+<axis-x>, <axis-y>, <axis-z>,
+<reference-x>, <reference-y>, <reference-z>
+\end{syntax}
+
+\val{CYLINDRICAL} defines a coordinate system from an origin, an axis direction, and a reference direction. The axial unit vector is
+\[
+e_z = \frac{a}{\lVert a\rVert}.
+\]
+At a point \(x\), the radial direction is obtained by projecting \(x-o\) onto the plane normal to \(e_z\):
+\[
+r = (x-o) - ((x-o)\cdot e_z)e_z,\qquad
+e_r = \frac{r}{\lVert r\rVert}.
+\]
+The tangential direction follows from
+\[
+e_\theta = e_z \times e_r .
+\]
+Near the cylindrical axis, the radial direction is not well defined. The reference vector is used to establish a stable angular reference, but users should still avoid applying cylindrical local directions exactly on the axis unless the intended direction is unambiguous.
+
+\section{Where orientations are used}
+
+\begin{longtable}{@{}p{0.25\linewidth}p{0.65\linewidth}@{}}
+\toprule
+\textbf{Command} & \textbf{Use of the orientation} \\
+\midrule
+\endhead
+\cmd{SUPPORT} & Prescribed support components are interpreted in the local basis before they become constraint equations. \\
+\cmd{CLOAD} & Nodal force and moment components are entered locally and transformed to global generalized forces. \\
+\cmd{DLOAD} & Surface traction components are interpreted in the local basis. \\
+\cmd{VLOAD} & Body-force components are interpreted in the local basis. \\
+\cmd{SOLIDSECTION} & Optional material axes for solid elements. \\
+\cmd{SHELLSECTION} & Optional shell material/resultant axes. \\
+\cmd{CONNECTOR} & Local connector axes define which relative translations or rotations are constrained. \\
+\bottomrule
+\end{longtable}
+
+\begin{warningbox}[Near-collinear directions]
+Coordinate systems, beam sections, couplings, and connectors are sensitive to near-collinear direction definitions. A nearly zero cross product creates poorly defined axes and can produce unintuitive constraints or stiffness directions. Prefer clear, normalized, geometrically separated reference directions.
+\end{warningbox}

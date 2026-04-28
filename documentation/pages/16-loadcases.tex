@@ -1,0 +1,255 @@
+\chapter{Loadcases}
+\label{chap:loadcases}
+
+A loadcase defines which analysis is executed on the previously defined model. The model describes what exists: nodes, elements, surfaces, sets, materials, sections, features, loads, supports, constraints, and fields. The loadcase describes which equation is assembled, which collectors are active, how constraints are handled, which solver is used, and which analysis-specific parameters are applied.
+
+\section{General syntax}
+
+\begin{syntax}
+*LOADCASE, TYPE=<type>, NAME=<optional-name>
+  <loadcase commands>
+\end{syntax}
+
+\key{TYPE} is required. \key{NAME} is optional and is used for readability in the input deck and result output. Loadcases are executed in input order. Result blocks are written in the same order.
+
+\section{Common equation structure}
+
+Linear loadcases use global matrices assembled from element contributions. The most common operators are stiffness \(K\), mass \(M\), damping \(C\), and geometric stiffness \(K_G\). Active load collectors produce a right-hand side \(f\). Active supports and constraints produce equations
+\[
+C_c u = d .
+\]
+The selected constraint method then either reduces the problem with \(u=u_p+Tq\) or augments it with Lagrange multipliers. The loadcase formulas below are written in their physical full-space form first; the actual solved system may be the reduced or augmented form described in Chapter~\ref{chap:analysis-controls}.
+
+\section{Linear Static}
+\label{sec:loadcase-linear-static}
+
+\val{LINEARSTATIC} solves small-displacement linear static equilibrium. It is the standard analysis for displacements, reactions, strains, stresses, and static load paths.
+
+\subsection{Governing equation}
+
+The physical equation is
+\[
+K u = f .
+\]
+After Nullspace constraint reduction, FEMaster solves
+\[
+T^T K T q = T^T(f-Ku_p),
+\qquad
+u=u_p+Tq .
+\]
+With Lagrange constraints, the static system is
+\[
+\begin{bmatrix}
+K & C_c^T\\
+C_c & 0
+\end{bmatrix}
+\begin{bmatrix}
+u\\
+\lambda
+\end{bmatrix}
+=
+\begin{bmatrix}
+f\\
+d
+\end{bmatrix}
+\]
+up to possible numerical regularization.
+
+\subsection{Typical DSL}
+
+\begin{exampledeck}
+*LOADCASE, TYPE=LINEARSTATIC, NAME=static-load
+  *SUPPORTS
+  FIXED
+  *LOADS
+  FORCE
+  *SOLVER, DEVICE=CPU, METHOD=DIRECT
+  *CONSTRAINTMETHOD, TYPE=NULLSPACE
+\end{exampledeck}
+
+Common commands are \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, and \cmd{CONSTRAINTMETHOD}. Optional controls include \cmd{INERTIARELIEF}, \cmd{REBALANCELOADS}, \cmd{REQUESTSTIFFNESS}, and \cmd{CONSTRAINTSUMMARY}.
+
+\section{Linear Static Topology}
+\label{sec:loadcase-linear-static-topo}
+
+\val{LINEARSTATICTOPO} solves a static problem whose element stiffness can be modified by topology fields. It is useful for topology studies, density-based parameter sweeps, and orientation-dependent stiffness experiments.
+
+\subsection{Governing equation}
+
+The equation is
+\[
+K(\rho,\theta)u=f .
+\]
+\(\rho\) is an element density-like field and \(\theta\) is an element orientation-like field. The density field is typically used through a penalized stiffness contribution
+\[
+K_e^\mathrm{eff} = \rho_e^p K_e ,
+\]
+where \(p\) is supplied by \cmd{TOPOEXPONENT}. Low densities reduce stiffness contribution; high densities approach the full element stiffness. The orientation field is used by element/material formulations that evaluate local orientation data.
+
+\subsection{Typical DSL}
+
+\begin{syntax}
+*LOADCASE, TYPE=LINEARSTATICTOPO, NAME=<name>
+  *TOPODENSITY
+  <element-field>
+  *TOPOORIENT
+  <element-field>
+  *TOPOEXPONENT
+  <p>
+\end{syntax}
+
+\cmd{TOPODENSITY} requires an element field with one component. \cmd{TOPOORIENT} requires an element field with three components. The static controls from \val{LINEARSTATIC} are used in the same way.
+
+The compliance, density sensitivity, and orientation sensitivity derivations are collected in Appendix~\ref{chap:appendix-derivations}.
+
+\section{Eigenfrequency}
+\label{sec:loadcase-eigenfrequency}
+
+\val{EIGENFREQ} computes natural frequencies and mode shapes of the linearized model. Loads are not used because the free-vibration problem is defined by stiffness, mass, and boundary conditions.
+
+\subsection{Governing equation}
+
+The full-space eigenproblem is
+\[
+K\phi_i = \omega_i^2 M\phi_i .
+\]
+\(\phi_i\) is the mode shape and \(\omega_i\) is the circular frequency. The frequency in Hertz is
+\[
+f_i = \frac{\omega_i}{2\pi}.
+\]
+With Nullspace constraints, the reduced problem is
+\[
+T^TKT\psi_i = \omega_i^2 T^TMT\psi_i,
+\qquad
+\phi_i=T\psi_i .
+\]
+
+\subsection{Typical DSL}
+
+\begin{syntax}
+*LOADCASE, TYPE=EIGENFREQ, NAME=<name>
+  *SUPPORTS
+  <support-collector>
+  *NUMEIGENVALUES
+  <count>
+\end{syntax}
+
+A free-free model can contain rigid-body modes with zero or near-zero frequency. A supported model computes modes relative to the active supports and constraints.
+
+\section{Linear Buckling}
+\label{sec:loadcase-linear-buckling}
+
+\val{LINEARBUCKLING} computes ideal linear buckling factors and buckling modes around a preloaded reference state. It first solves a static preload problem, then assembles geometric stiffness from the resulting stresses, and finally solves a generalized eigenvalue problem.
+
+\subsection{Governing equations}
+
+The preload solve is
+\[
+K u_0 = f_\mathrm{pre}.
+\]
+With constraints, FEMaster solves the reduced preload equation
+\[
+A q_\mathrm{pre}=b,\qquad A=T^TKT,\qquad b=T^T(f_\mathrm{pre}-Ku_p).
+\]
+From the preload stresses, FEMaster builds the geometric stiffness \(K_G\) and reduces it to
+\[
+B=T^T K_G T .
+\]
+The buckling eigenproblem is solved as
+\[
+A\phi_i=\lambda_i(-B)\phi_i .
+\]
+\(\lambda_i\) is the buckling factor. For the preload pattern \(f_\mathrm{pre}\), the ideal linear critical load for mode \(i\) is
+\[
+f_{\mathrm{crit},i} = \lambda_i f_\mathrm{pre}.
+\]
+
+\subsection{Sigma}
+
+\cmd{SIGMA} controls the buckling eigenvalue shift. It should be set carefully because it guides the part of the spectrum returned by the eigensolver. If \cmd{SIGMA} is zero, FEMaster estimates a shift automatically from the preload displacement with the Rayleigh quotient
+\[
+\lambda_\mathrm{raw}
+=
+\frac{q_\mathrm{pre}^T A q_\mathrm{pre}}
+       {q_\mathrm{pre}^T(-B)q_\mathrm{pre}} .
+\]
+When this estimate is valid and positive, the generated shift is \(\lambda_\mathrm{raw}/10^6\). Otherwise a diagonal-ratio fallback is used; if that also fails, \(10^{-12}\) is used.
+
+\subsection{Typical DSL}
+
+\begin{syntax}
+*LOADCASE, TYPE=LINEARBUCKLING, NAME=<name>
+  *SUPPORTS
+  <support-collector>
+  *LOADS
+  <preload-collector>
+  *NUMEIGENVALUES
+  <count>
+  *SIGMA
+  <shift>
+\end{syntax}
+
+\cmd{LOADS} defines the preload. \cmd{REQUESTSTIFFNESS} and \cmd{REQUESTSTGEOM} can be used to write elastic and geometric stiffness matrices for diagnostics.
+
+\section{Linear Transient}
+\label{sec:loadcase-linear-transient}
+
+\val{LINEARTRANSIENT} solves the linear dynamic response over time with implicit Newmark integration. The structure remains linear; contact, plasticity, and large deformation effects are not included in this loadcase.
+
+\subsection{Governing equation}
+
+The physical equation is
+\[
+M\ddot u(t)+C\dot u(t)+Ku(t)=f(t).
+\]
+With Nullspace constraints, this becomes
+\[
+M_r\ddot q(t)+C_r\dot q(t)+K_rq(t)=r(t),
+\]
+with
+\[
+M_r=T^TMT,\qquad C_r=T^TCT,\qquad K_r=T^TKT .
+\]
+Loads with amplitudes are assembled as
+\[
+f(t)=\sum_j a_j(t)f_j .
+\]
+For Rayleigh damping,
+\[
+C=\alpha M+\beta K .
+\]
+
+\subsection{Typical DSL}
+
+\begin{syntax}
+*LOADCASE, TYPE=LINEARTRANSIENT, NAME=<name>
+  *SUPPORTS
+  <support-collector>
+  *LOADS
+  <load-collector>
+  *TIME
+  <t_start>, <t_end>, <dt>
+  *NEWMARK
+  <beta>, <gamma>
+  *DAMPING, TYPE=RAYLEIGH
+  <alpha>, <beta>
+  *WRITEEVERY, TYPE=STEPS
+  <n>
+\end{syntax}
+
+The transient-specific keywords \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, and \cmd{INITIALVELOCITY} are described in Chapter~\ref{chap:analysis-controls}.
+
+\section{Typical command overview}
+
+\begin{longtable}{@{}p{0.24\linewidth}p{0.66\linewidth}@{}}
+\toprule
+\textbf{Loadcase} & \textbf{Typical commands} \\
+\midrule
+\endhead
+\val{LINEARSTATIC} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, optional \cmd{INERTIARELIEF}, \cmd{REBALANCELOADS}, \cmd{REQUESTSTIFFNESS}, \cmd{CONSTRAINTSUMMARY}. \\
+\val{LINEARSTATICTOPO} & Linear-static commands plus \cmd{TOPODENSITY}, \cmd{TOPOORIENT}, \cmd{TOPOEXPONENT}. \\
+\val{EIGENFREQ} & \cmd{SUPPORTS}, \cmd{CONSTRAINTMETHOD}, \cmd{NUMEIGENVALUES}. \\
+\val{LINEARBUCKLING} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{CONSTRAINTMETHOD}, \cmd{NUMEIGENVALUES}, optional \cmd{SIGMA}, \cmd{REQUESTSTIFFNESS}, \cmd{REQUESTSTGEOM}. \\
+\val{LINEARTRANSIENT} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, \cmd{INITIALVELOCITY}. \\
+\bottomrule
+\end{longtable}

@@ -1,0 +1,18 @@
+\chapter{Features}
+
+Features are additional model objects that are not defined through element connectivity. They add concentrated properties or auxiliary behaviour to the model.
+
+\section{Point Mass}
+
+\begin{syntax}
+*POINTMASS, NSET=<node-set>
+<m>, <Ixx>, <Iyy>, <Izz>, <Kx>, <Ky>, <Kz>, <Krx>, <Kry>, <Krz>
+\end{syntax}
+
+\cmd{POINTMASS} assigns concentrated mass, rotational inertia, and optional spring stiffness to the nodes of a node set. It is useful for equipment masses, simplified component masses, sensors, local inertias, or concentrated replacement springs.
+
+The data line contains four groups: scalar mass, three rotational inertias, three translational spring stiffnesses, and three rotational spring stiffnesses. Missing values are interpreted as zero.
+
+Point masses can contribute to mass and inertia. They are therefore important for eigenfrequency analysis, transient analysis, inertial loads, and inertia relief. In a purely static loadcase without inertia relief, mass does not automatically mean weight; gravity or acceleration must be introduced through loads.
+
+\cmd{INERTIALOAD} and \cmd{INERTIARELIEF} use the option \key{CONSIDER_POINT_MASSES} to decide whether point-mass features are included in the mass and inertia balance.

@@ -1,0 +1,46 @@
+\chapter{Result Format}
+
+FEMaster writes text-based \file{.res} files. The file is organized into loadcases and fields. Each loadcase starts with a loadcase header followed by any number of field blocks.
+
+\section{Loadcase blocks}
+
+\begin{syntax}
+LOADCASE <id> <name-or-type>
+\end{syntax}
+
+The loadcase ID follows execution order. The following field blocks belong to that loadcase until the next loadcase header appears.
+
+\section{Dense fields}
+
+\begin{syntax}
+FIELD <name> ROWS=<rows> COLS=<cols>
+<v11> <v12> ...
+\end{syntax}
+
+\key{ROWS} gives the number of rows. \key{COLS} gives the number of values per row. For nodal fields, a row typically corresponds to a node-position row. For element fields, a row corresponds to an element-position row.
+
+\section{Indexed fields}
+
+\begin{syntax}
+FIELD <name> ROWS=<rows> INDEX_COLS=<i> VALUE_COLS=<v>
+<index...> <value...>
+\end{syntax}
+
+Some result quantities are not simple node or element fields. Indexed fields use index columns to identify element, integration point, section point, or local result location, followed by value columns.
+
+\section{Common field names}
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Loadcase} & \textbf{Typical fields} \\
+\midrule
+\endhead
+Linear Static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{EXTERNAL_FORCES}, \val{REACTION_FORCES}, shell and section fields. \\
+Linear Static Topology & Static fields plus \val{COMPLIANCE}, \val{DENS_GRAD}, \val{VOLUME}, \val{DENSITY}, and optional orientation fields. \\
+Eigenfrequency & \val{MODE_SHAPE_i}, \val{PARTICIPATION_i}, \val{EIGENVALUES}, \val{EIGENFREQUENCIES}, \val{FREQUENCIES}. \\
+Linear Buckling & \val{BUCKLING_MODE_i}, \val{BUCKLING_FACTORS}. \\
+Linear Transient & \val{DISPLACEMENT_k}, \val{VELOCITY_k}, \val{ACCELERATION_k} for written time steps. \\
+\bottomrule
+\end{longtable}
+
+A six-component nodal motion field uses \dofvec. A six-component stress or strain field uses the engineering order \(x,y,z,yz,zx,xy\). These conventions must not be confused.

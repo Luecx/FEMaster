@@ -1,0 +1,267 @@
+\chapter{Elements}
+\label{chap:elements}
+
+Elements connect nodes and define the interpolation used over a line, surface, or volume region. An element alone does not define the complete physical model. A usable analysis also needs sections and materials for all element sets that contribute stiffness, mass, stress recovery, loads, or topology quantities.
+
+\begin{syntax}
+*ELEMENT, TYPE=<type>, ELSET=<optional-set>
+<element-id>, <node-1>, <node-2>, ...
+\end{syntax}
+
+\key{TYPE} is required. \key{ELSET} is optional and defaults to \val{EALL}. Element IDs should be non-negative and unique for the same reason as node IDs: they are used as references by element sets, sections, loads, result fields, and diagnostics.
+
+\section{Registered element types}
+
+\begin{longtable}{@{}p{0.16\linewidth}p{0.12\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Type} & \textbf{Nodes} & \textbf{Family} \\
+\midrule
+\endhead
+\val{C3D4} & 4 & Linear tetrahedral solid. \\
+\val{C3D5} & 5 & Pyramid input mapped to a degenerated hexahedral solid. \\
+\val{C3D6} & 6 & Linear wedge solid. \\
+\val{C3D8} & 8 & Linear hexahedral solid. \\
+\val{C3D10} & 10 & Quadratic tetrahedral solid. \\
+\val{C3D15} & 15 & Quadratic wedge solid. \\
+\val{C3D20} & 20 & Quadratic hexahedral solid with full higher-order integration. \\
+\val{C3D20R} & 20 & Quadratic hexahedral solid with reduced stiffness integration and higher-order mass integration. \\
+\val{T3} & 2 & Two-node truss element. \\
+\val{B33} & 2 or 3 & Two-node 3D beam element with optional orientation node. \\
+\val{S3} & 3 & Three-node triangular shell. \\
+\val{S4} & 4 & Four-node quadrilateral shell. \\
+\val{MITC4} & 4 & Four-node quadrilateral shell with MITC-style tied shear interpolation. \\
+\val{S6} & 6 & Six-node quadratic triangular shell. \\
+\val{S8} & 8 & Eight-node quadratic quadrilateral shell. \\
+\val{QSPT} & 4 & Specialized four-node quadrilateral shear-panel type. \\
+\bottomrule
+\end{longtable}
+
+\section{Solid element family}
+
+Solid elements describe three-dimensional continua. They use translational nodal degrees of freedom and require \cmd{SOLIDSECTION}. The section assigns material and optional material orientation. Solids are the correct choice when the stress state is genuinely three-dimensional, when thickness assumptions are not acceptable, or when local load introduction, joints, or geometric details need volume resolution.
+
+The main tradeoff is cost. A solid model usually needs more elements through thickness and more degrees of freedom than a shell or beam model. Low-order solid elements are robust and easy to mesh but may be too stiff in bending-dominated states. Higher-order solids improve curved geometry and strain representation but are more sensitive to element distortion and increase cost per element.
+
+\section{\val{C3D4}: 4-node tetrahedral solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D4, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>
+\end{syntax}
+
+\val{C3D4} is a linear tetrahedral solid. It is the simplest volume element and is useful for complex geometry because tetrahedral meshes can fill almost any shape automatically. The element uses a tetrahedral reference domain and linear integration.
+
+The primary advantage is meshing robustness. If the geometry is complicated, has many small details, or comes from an external mesher, \val{C3D4} can often produce a valid mesh where structured hexahedral meshing would be difficult. It is also useful for quick checks and for regions where only rough stiffness representation is needed.
+
+The main disadvantage is accuracy per degree of freedom. Linear tetrahedra are typically stiff in bending-dominated problems and can require many elements to reach acceptable accuracy. They also give constant strain over the element, so stress gradients are represented only through mesh refinement. For high-quality stress results, \val{C3D10} is usually a better tetrahedral choice.
+
+\section{\val{C3D5}: 5-node pyramid input}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D5, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <apex>
+\end{syntax}
+
+\val{C3D5} accepts a five-node pyramid-style connectivity. FEMaster maps this input to a degenerated eight-node hexahedral topology by repeating the apex node in the upper hexahedral positions. It is therefore best understood as an import and transition convenience rather than as a separate high-quality pyramid formulation.
+
+The advantage is compatibility with mixed meshes that contain pyramid transition elements between hexahedral and tetrahedral regions. It allows such meshes to be read without manually remeshing every transition.
+
+The disadvantage is that degeneration can reduce element quality and may lead to less predictable stiffness and stress behaviour than a native well-shaped element. Use it deliberately, especially in regions with high stress gradients or bending. If pyramids dominate the structural response, validate the model against a known solution or consider remeshing.
+
+\section{\val{C3D6}: 6-node wedge solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D6, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>
+\end{syntax}
+
+\val{C3D6} is a linear wedge or prism solid. It has triangular faces at both ends and quadrilateral side faces. FEMaster uses wedge integration over an isoparametric wedge domain.
+
+Wedges are useful for swept meshes, boundary-layer-like regions, and transition regions where triangular topology is natural in one plane but the model is extruded through thickness or along a path. Compared with tetrahedra, wedges can align better with layered geometry and can represent through-thickness stacks more cleanly.
+
+The disadvantage is that linear wedges still have low-order displacement interpolation. They can be too stiff for bending if only a small number of elements is used through thickness. They also require reasonable prism quality; collapsed or highly skewed wedge elements can produce poor Jacobians and unreliable stresses.
+
+\section{\val{C3D8}: 8-node hexahedral solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D8, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>
+\end{syntax}
+
+\val{C3D8} is a linear hexahedral solid. FEMaster uses a hexahedral reference domain with quadratic-order integration for stiffness. Hexahedra are often the preferred low-order solid element when a good structured or swept mesh is available.
+
+The main advantage is efficiency and accuracy for regular volume meshes. A well-shaped \val{C3D8} mesh can represent many structural states more efficiently than a comparable linear tetrahedral mesh. Hexahedra are especially attractive for blocks, plates modelled with solids, extrusions, and regions where element directions should align with material or stress directions.
+
+The main disadvantage is meshing difficulty. Poorly shaped hexahedra, warped elements, and strongly distorted Jacobians can degrade accuracy. Linear hexahedra can also be too stiff in bending if the mesh is coarse through thickness. For curved geometry or strong gradients, \val{C3D20} or \val{C3D20R} may be more accurate.
+
+\section{\val{C3D10}: 10-node quadratic tetrahedral solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D10, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>, <n9>, <n10>
+\end{syntax}
+
+\val{C3D10} is a quadratic tetrahedral solid. It adds midside nodes to the linear tetrahedral topology and uses quadratic tetrahedral integration for stiffness. The mass integration uses a higher-order tetrahedral rule.
+
+This is usually the better tetrahedral element for stress analysis and curved geometry. The quadratic interpolation captures bending and stress gradients much more effectively than \val{C3D4}. It is useful when automatic tetrahedral meshing is needed but linear tetrahedra are too stiff or too inaccurate.
+
+The disadvantages are larger element matrices, more nodes, and greater sensitivity to midside-node placement. Very distorted quadratic tetrahedra can behave poorly. They are also more expensive than \val{C3D4}, so coarse exploratory models may still use linear tetrahedra first.
+
+\section{\val{C3D15}: 15-node quadratic wedge solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D15, ELSET=<set>
+<id>, <n1>, ..., <n15>
+\end{syntax}
+
+\val{C3D15} is a quadratic wedge. It is the higher-order counterpart to \val{C3D6} and uses super-quadratic wedge integration. Its faces are quadratic triangles and quadratic quadrilaterals, which makes it suitable for swept meshes with curved boundaries or higher-order through-thickness interpolation.
+
+The advantage is improved accuracy over linear wedges, especially in bending, curved geometry, and stress-gradient regions. It can be a strong choice for extruded triangular meshes where a hexahedral mesh is not available but a purely tetrahedral mesh is not desired.
+
+The disadvantage is cost and sensitivity to geometry quality. Midside nodes must represent the intended curved or straight edges consistently. Poorly placed midside nodes can produce curved elements with bad Jacobians.
+
+\section{\val{C3D20}: 20-node quadratic hexahedral solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D20, ELSET=<set>
+<id>, <n1>, ..., <n20>
+\end{syntax}
+
+\val{C3D20} is a quadratic hexahedral solid. It uses a hexahedral reference domain with quartic-order integration for stiffness. It is intended for high-quality hexahedral meshes where accuracy per element is more important than minimal element cost.
+
+The main advantage is high accuracy for smooth displacement and stress fields. Curved geometry and bending-dominated states are represented better than with \val{C3D8}. For well-shaped meshes, \val{C3D20} can deliver accurate stresses with fewer elements than a low-order mesh.
+
+The main disadvantages are memory, compute cost, and mesh-quality sensitivity. A 20-node element has many more degrees of freedom than an 8-node element, and full higher-order integration increases cost. It is not a cure for poor mesh quality; distorted quadratic hexahedra can be worse than simpler well-shaped elements.
+
+\section{\val{C3D20R}: 20-node quadratic hexahedral solid with reduced integration}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D20R, ELSET=<set>
+<id>, <n1>, ..., <n20>
+\end{syntax}
+
+\val{C3D20R} uses the same quadratic hexahedral interpolation as \val{C3D20}, but uses reduced stiffness integration. In FEMaster the stiffness integration uses a lower hexahedral quadrature order than \val{C3D20}, while mass integration still uses a higher-order rule.
+
+The advantage is lower stiffness-assembly cost and often better behaviour in bending or nearly incompressible situations where fully integrated elements may become overly stiff. Reduced integration is a common way to reduce locking tendencies and improve efficiency.
+
+The disadvantage is that reduced integration can introduce spurious zero-energy or hourglass-like modes if the formulation and mesh do not control them sufficiently. It should be used with engineering judgement. Check displacement shapes, reactions, and stress fields, especially for coarse meshes or highly distorted elements.
+
+\section{Shell element family}
+
+Shell elements describe thin-walled structures with translational and rotational degrees of freedom. They require \cmd{SHELLSECTION}. The section supplies material, thickness, optional orientation, and shear stiffness data. Shells are efficient when one dimension is much smaller than the other two and through-thickness stress details are not the primary modelling target.
+
+The shell implementation uses local element axes, membrane strain, bending curvature, transverse shear strain, and section stiffness. It supports shell stress surfaces and shell resultants for the standard shell elements. Shells are efficient but depend strongly on element quality, normal direction, and appropriate thickness modelling.
+
+\section{\val{S3}: 3-node triangular shell}
+
+\begin{syntax}
+*ELEMENT, TYPE=S3, ELSET=<set>
+<id>, <n1>, <n2>, <n3>
+\end{syntax}
+
+\val{S3} is a triangular shell element using the triangular reference domain with cubic-order integration. It is useful for meshing complex shell surfaces where quadrilateral elements are hard to generate.
+
+The advantage is geometric flexibility. Triangles can fill arbitrary surfaces and transition regions easily. \val{S3} is useful for imported shell meshes and for local geometric details.
+
+The disadvantage is that triangular shell meshes can be less accurate and stiffer than good quadrilateral shell meshes for bending-dominated problems. Stress and curvature representation may require significant refinement. Use triangles where necessary, but prefer high-quality quadrilateral shells in regular regions.
+
+\section{\val{S4}: 4-node quadrilateral shell}
+
+\begin{syntax}
+*ELEMENT, TYPE=S4, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>
+\end{syntax}
+
+\val{S4} is a four-node quadrilateral shell using a quadrilateral reference domain with cubic-order integration. It is the standard shell choice for many thin-walled structures when a regular quadrilateral mesh is available.
+
+The advantage is efficiency and a natural fit for plates, panels, skins, webs, and other structured shell regions. With good aspect ratio and limited warping, \val{S4} is a practical default for many shell models.
+
+The disadvantage is sensitivity to shear locking, distortion, and warping in some bending-dominated cases. If transverse shear behaviour looks too stiff or the mesh is coarse, \val{MITC4} may be preferable.
+
+\section{\val{MITC4}: 4-node quadrilateral shell with tied shear}
+
+\begin{syntax}
+*ELEMENT, TYPE=MITC4, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>
+\end{syntax}
+
+\val{MITC4} has the same four-node quadrilateral topology as \val{S4}, but modifies the transverse shear interpolation. FEMaster ties shear strains at edge midpoints and interpolates them back into the element. Conceptually, this is used to reduce shear locking in thin-shell bending.
+
+The advantage is improved bending behaviour for thin shells compared with a straightforward low-order shear interpolation. It is often the safer four-node quadrilateral shell when the structure is thin, bending-dominated, or when shear locking is suspected.
+
+The disadvantage is that it is still a low-order quadrilateral. It does not remove the need for good mesh quality. Strong warping, poor aspect ratios, or irregular meshes can still reduce accuracy. For smooth geometry with higher-order meshing, \val{S8} can be more accurate.
+
+\section{\val{S6}: 6-node quadratic triangular shell}
+
+\begin{syntax}
+*ELEMENT, TYPE=S6, ELSET=<set>
+<id>, <n1>, ..., <n6>
+\end{syntax}
+
+\val{S6} is a quadratic triangular shell using cubic-order triangular integration. It adds midside nodes to the triangular shell topology.
+
+The advantage is improved representation of curved shell geometry and smoother displacement/strain fields compared with \val{S3}. It is useful when triangular shell meshing is required but low-order triangles are too stiff or too coarse for stress recovery.
+
+The disadvantage is higher cost and stronger dependence on midside-node quality. It can still be less efficient than a good quadrilateral shell mesh in regular areas.
+
+\section{\val{S8}: 8-node quadratic quadrilateral shell}
+
+\begin{syntax}
+*ELEMENT, TYPE=S8, ELSET=<set>
+<id>, <n1>, ..., <n8>
+\end{syntax}
+
+\val{S8} is a quadratic quadrilateral shell using quintic-order quadrilateral integration. It is the high-order quadrilateral shell option.
+
+The advantage is high accuracy for smooth shell fields, curved boundaries, and bending-dominated behaviour. It can reduce the number of elements needed to represent smooth curvature and stress gradients compared with \val{S4}.
+
+The disadvantage is cost and mesh requirements. Midside-node placement matters, and distorted higher-order quadrilaterals can produce unreliable results. It should be used where the mesh quality justifies the higher-order interpolation.
+
+\section{\val{QSPT}: quadrilateral shear-panel type}
+
+\begin{syntax}
+*ELEMENT, TYPE=QSPT, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>
+\end{syntax}
+
+\val{QSPT} is a specialized four-node quadrilateral panel-type element. It uses translational degrees of freedom only and focuses on shear-panel behaviour, shear flow, effective shear modulus, and related result extraction. It is not a general replacement for \val{S4} or \val{MITC4}.
+
+The advantage is that it can model panel-like shear transfer with a compact formulation and can provide shear-flow-oriented outputs. This can be useful for aircraft-style panels, webs, or simplified thin structures where shear flow is the main quantity of interest.
+
+The disadvantage is limited generality. It does not carry the same full shell kinematics as the standard shell elements and should not be used when bending, drilling rotations, or general shell resultants are the modelling focus. Use it only when the intended panel formulation matches the engineering idealization.
+
+\section{Beam and truss element family}
+
+Line elements are efficient for slender structures. They reduce a three-dimensional member to a line with section properties. This is very efficient, but it also means that local 3D effects at joints, load introductions, holes, and connection details are not resolved unless additional modelling detail is added.
+
+\section{\val{B33}: 2-node 3D beam}
+
+\begin{syntax}
+*ELEMENT, TYPE=B33, ELSET=<set>
+<id>, <n1>, <n2>, <orientation-node>
+\end{syntax}
+
+\val{B33} is a two-node 3D beam. The third connectivity entry is optional and defines an orientation node for the local beam axis system. The beam uses six degrees of freedom per node and a beam section with a profile. The stiffness includes axial, bending, and torsional terms, profile inertias, product inertia handling through principal-axis rotation, and section offsets.
+
+The advantage is efficiency for slender members. A frame, stiffener, spar cap, rod-like reinforcement, or beam idealization can be represented with very few degrees of freedom compared with a solid mesh. The element also supports local section forces, which are often more useful for beam design than raw 3D stresses.
+
+The disadvantage is the beam assumption itself. Cross-section deformation, local stress concentrations, joint flexibility, and detailed load introduction are not resolved. The local axis definition must be robust: the orientation direction must not be parallel to the beam axis. If the member is short, thick, highly tapered, or has complex local connection behaviour, a shell or solid model may be more appropriate.
+
+\section{\val{T3}: 2-node truss}
+
+\begin{syntax}
+*ELEMENT, TYPE=T3, ELSET=<set>
+<id>, <n1>, <n2>
+\end{syntax}
+
+\val{T3} is a two-node truss element. It uses translational degrees of freedom only and carries axial force along its line direction. It requires \cmd{TRUSSSECTION}, which supplies material and cross-sectional area.
+
+The advantage is simplicity and efficiency. Trusses are appropriate for pin-jointed bars, rods, links, and idealized members that should carry only axial tension or compression. They are also useful for quick stiffness studies and simplified support structures.
+
+The disadvantage is that a truss has no bending stiffness, no torsional stiffness, and no rotational degrees of freedom. It cannot represent frame action or moment transfer. Stress and strain recovery is intentionally limited; section-force output is generally the more useful result.
+
+\section{Choosing an element}
+
+Use solids when the stress state is three-dimensional or when local geometry matters. Use shells for thin-walled structures where thickness can be represented by a section. Use beams for slender members where section forces are the natural design quantities. Use trusses only when axial force is the intended physical behaviour.
+
+For solids, prefer hexahedra when a good mesh is available. Use tetrahedra for complex geometry, preferably \val{C3D10} for serious stress work. Use reduced-integration elements such as \val{C3D20R} deliberately and check for spurious modes. For shells, prefer quadrilaterals in regular regions and triangles where topology requires them. For thin bending-dominated quadrilateral shells, \val{MITC4} is often a better low-order choice than \val{S4}.

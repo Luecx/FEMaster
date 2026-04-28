@@ -1,0 +1,222 @@
+\chapter{Analysis and Solver Controls}
+\label{chap:analysis-controls}
+
+This chapter describes commands that are used inside loadcases to activate collectors, choose the linear solver, select the constraint backend, and configure analysis-specific numerical options. Constraint definitions themselves are described in Chapter~\ref{chap:constraints}; the commands here decide how those definitions are used in a particular analysis.
+
+\section{Activating support and load collectors}
+
+\begin{syntax}
+*SUPPORTS
+<support-collector-1>, <support-collector-2>, ...
+
+*LOADS
+<load-collector-1>, <load-collector-2>, ...
+\end{syntax}
+
+\cmd{SUPPORTS} activates named support collectors that were populated by \cmd{SUPPORT}. \cmd{LOADS} activates named load collectors that were populated by \cmd{CLOAD}, \cmd{DLOAD}, \cmd{PLOAD}, \cmd{VLOAD}, \cmd{TLOAD}, or \cmd{INERTIALOAD}. The loadcase does not activate every support or load in the model automatically. It assembles only the collectors listed in these commands.
+
+Mathematically, active support collectors contribute equations to the global constraint set \(C u=d\). Active load collectors contribute to the right-hand side vector \(f\). In a transient loadcase, time-dependent amplitudes are evaluated during time integration, so the active load vector is a function \(f(t)\).
+
+\section{Solver}
+
+\begin{syntax}
+*SOLVER, DEVICE=CPU|GPU, METHOD=DIRECT|INDIRECT
+\end{syntax}
+
+\key{DEVICE} selects the execution device. \val{CPU} is the standard path. \val{GPU} is intended for configurations where the corresponding solver routines and data structures are available. \key{METHOD} selects the strategy for linear systems.
+
+\val{DIRECT} solves a system by factorization. For a static reduced system
+\[
+A q = b ,
+\]
+the matrix \(A\) is factorized and the solution is obtained by triangular solves or an equivalent direct procedure. Direct solvers are robust and predictable for small and medium models. Their main limitation is memory growth, especially for large three-dimensional meshes.
+
+\val{INDIRECT} uses an iterative solution path. Instead of building a full direct factorization, an approximate solution is improved until the residual is sufficiently small. Iterative methods can be attractive for large systems because they avoid some of the memory cost of direct factorization. They are more sensitive to conditioning, scaling, constraint handling, and matrix definiteness. In FEMaster the indirect path should be used with \val{NULLSPACE} constraints, because the reduced system keeps the standard structural form. It is not intended for the saddle-point system produced by Lagrange multipliers.
+
+\section{Constraint method}
+
+\begin{syntax}
+*CONSTRAINTMETHOD, TYPE=NULLSPACE|LAGRANGE
+\end{syntax}
+
+The active supports and constraints define
+\[
+C u = d .
+\]
+\cmd{CONSTRAINTMETHOD} selects how this equation set is introduced into the analysis equations.
+
+\subsection{Nullspace method}
+
+\val{NULLSPACE} parameterizes all admissible displacements as
+\[
+u = u_p + T q .
+\]
+\(u_p\) is a particular displacement vector satisfying the inhomogeneous part of the constraints. \(T\) is a basis for the nullspace of \(C\), so
+\[
+C T = 0,\qquad C u_p = d .
+\]
+\(q\) contains only independent degrees of freedom. A static system
+\[
+K u = f
+\]
+is transformed into
+\[
+T^T K T q = T^T(f - K u_p).
+\]
+The matrix
+\[
+A = T^T K T
+\]
+is the reduced stiffness matrix. This approach removes constrained degrees of freedom from the solve and is well suited for direct and iterative solvers. It also avoids adding Lagrange multipliers to the unknown vector.
+
+For eigenvalue and transient problems the same projection is applied to the operators:
+\[
+K_r = T^T K T,\qquad M_r = T^T M T,\qquad C_r = T^T C T .
+\]
+Recovered displacements are mapped back with \(u=u_p+Tq\), while velocities and accelerations use the homogeneous part \(T\dot q\) and \(T\ddot q\).
+
+\subsection{Lagrange method}
+
+\val{LAGRANGE} keeps the original displacement vector and adds one multiplier per constraint equation. The static system becomes
+\[
+\begin{bmatrix}
+K & C^T \\
+C & -\epsilon I
+\end{bmatrix}
+\begin{bmatrix}
+u \\
+\lambda
+\end{bmatrix}
+=
+\begin{bmatrix}
+f \\
+d
+\end{bmatrix}.
+\]
+\(\lambda\) contains the Lagrange multipliers, which can be interpreted as generalized constraint reactions. \(\epsilon\) is a possible small regularization term when configured by the solver path; conceptually, the pure Lagrange system has \(\epsilon=0\).
+
+This formulation is direct and preserves the original displacement variables, but it creates a saddle-point problem. Such systems are indefinite and more demanding numerically. In FEMaster, \val{LAGRANGE} requires the direct linear solver for linear static analysis. Use \val{NULLSPACE} when an indirect solver is desired.
+
+\section{Inertia relief}
+
+\begin{syntax}
+*INERTIARELIEF, CONSIDER_POINT_MASSES=0|1
+\end{syntax}
+
+Inertia relief is used for static analysis of free or nearly free structures. A free body under an unbalanced external load has no static equilibrium in an inertial frame; it accelerates as a rigid body. Inertia relief computes an equivalent rigid-body acceleration and adds inertia loads that balance the external resultant force and moment. The remaining static solve describes elastic deformation relative to that accelerating rigid-body motion.
+
+This is not a substitute for missing real supports. If the physical model has bearings, bolts, fixtures, or symmetry conditions, they should be modelled as supports or constraints. Inertia relief is appropriate when the analysed body is intentionally free, for example an aircraft component under manoeuvre load or a structure in a load case where fixed ground supports would be artificial.
+
+\key{CONSIDER_POINT_MASSES} controls whether point-mass features are included in the mass properties used by inertia relief. If point masses represent relevant equipment or lumped mass, set this option to 1. If they are purely numerical or should not affect the inertial balance, leave them out.
+
+\section{Load rebalancing}
+
+\begin{syntax}
+*REBALANCELOADS
+\end{syntax}
+
+Load rebalancing modifies the external load balance so that the resultant force and moment vanish. It is a numerical balancing tool, not a physical rigid-body acceleration model. It is useful when a load is intended to be self-equilibrated but small residual resultants appear because of discretization, surface selection, rounding, or simplified load introduction.
+
+The distinction from inertia relief is important. Inertia relief says: the structure is free, the external load would accelerate it, and inertia loads should represent that acceleration. Load rebalancing says: the load should be balanced, and the residual imbalance should be corrected. For real free-body operating loads, inertia relief is usually the more physical interpretation. For small unintended imbalance in an otherwise self-equilibrated load, rebalancing is often the simpler diagnostic option.
+
+\section{Matrix and diagnostic requests}
+
+\begin{syntax}
+*REQUESTSTIFFNESS, FILE=<base-file>
+*REQUESTSTGEOM, FILE=<base-file>
+*CONSTRAINTSUMMARY
+\end{syntax}
+
+\cmd{REQUESTSTIFFNESS} requests stiffness matrix output for diagnostics or external comparison. \cmd{REQUESTSTGEOM} requests geometric stiffness output in buckling analysis. \cmd{CONSTRAINTSUMMARY} prints the internally generated constraint equations grouped by origin, such as supports, RBM equations, couplings, ties, and connectors.
+
+These commands should be treated as diagnostic output controls. They do not change the physical model. They are helpful when validating assemblies, comparing reduced matrices, debugging constraint generation, or checking why a loadcase is singular or over-constrained.
+
+\section{Eigenvalue parameters}
+
+\begin{syntax}
+*NUMEIGENVALUES
+<count>
+
+*SIGMA
+<shift>
+\end{syntax}
+
+\cmd{NUMEIGENVALUES} sets how many eigenpairs are requested for eigenfrequency or buckling analysis. The value must be positive.
+
+\cmd{SIGMA} is used in linear buckling. The reduced buckling problem is assembled as
+\[
+A \phi = \lambda (-B)\phi ,
+\]
+where
+\[
+A = T^T K T,\qquad B = T^T K_G T .
+\]
+The reported buckling factors are sorted ascending after the eigensolve. The shift \(\sigma\) guides the buckling eigenvalue search and is the smallest buckling factor region that should be targeted for output. It must be chosen carefully: a poor shift can make the eigensolver converge to an unintended part of the spectrum or miss the factors of engineering interest.
+
+If \cmd{SIGMA} is set to 0, FEMaster generates a shift automatically. It first tries a Rayleigh estimate from the pre-buckling displacement \(q_\mathrm{pre}\):
+\[
+\lambda_\mathrm{raw}
+=
+\frac{q_\mathrm{pre}^T A q_\mathrm{pre}}
+       {q_\mathrm{pre}^T (-B) q_\mathrm{pre}} .
+\]
+If that estimate is finite and positive, the generated shift is
+\[
+\sigma = \frac{\lambda_\mathrm{raw}}{10^6}.
+\]
+If the Rayleigh estimate is not usable, FEMaster falls back to a diagonal ratio estimate
+\[
+\lambda_i = \frac{A_{ii}}{(-B)_{ii}}
+\]
+for positive finite diagonal entries and uses a conservative lower quartile of those values. If no valid estimate exists, the fallback shift is \(10^{-12}\).
+
+\section{Transient-specific controls}
+
+\begin{syntax}
+*TIME
+<t_start>, <t_end>, <dt>
+\end{syntax}
+
+\cmd{TIME} defines the time interval and fixed time step for \val{LINEARTRANSIENT}. It accepts either three values \((t_\mathrm{start}, t_\mathrm{end}, \Delta t)\) or two values \((t_\mathrm{end}, \Delta t)\), in which case the start time is 0. The number of integration steps is based on the interval length and \(\Delta t\). A smaller time step gives better temporal resolution but increases the number of linear solves and result states.
+
+\begin{syntax}
+*NEWMARK
+<beta>, <gamma>
+\end{syntax}
+
+\cmd{NEWMARK} sets the Newmark integration parameters \(\beta_N\) and \(\gamma_N\). The transient equation is
+\[
+M\ddot u + C\dot u + K u = f(t).
+\]
+In reduced coordinates FEMaster solves the projected form
+\[
+M_r\ddot q + C_r\dot q + K_r q = r(t).
+\]
+The common values \(\beta_N=0.25\) and \(\gamma_N=0.5\) correspond to the average-acceleration method for linear systems. Other values should be chosen deliberately because they change numerical damping, stability, and accuracy.
+
+\begin{syntax}
+*DAMPING, TYPE=RAYLEIGH
+<alpha>, <beta>
+\end{syntax}
+
+\cmd{DAMPING} currently supports Rayleigh damping:
+\[
+C = \alpha M + \beta K .
+\]
+\(\alpha\) controls mass-proportional damping and has stronger influence at low frequencies. \(\beta\) controls stiffness-proportional damping and has stronger influence at high frequencies. In reduced form FEMaster builds
+\[
+C_r = \alpha M_r + \beta K_r .
+\]
+
+\begin{syntax}
+*WRITEEVERY, TYPE=STEPS|TIME
+<value>
+\end{syntax}
+
+\cmd{WRITEEVERY} controls transient result cadence. With \key{TYPE=STEPS}, the value is rounded to an integer and results are written every \(N\) steps. With \key{TYPE=TIME}, the value is a physical output interval; FEMaster converts it to a step stride by dividing by the analysis time step. The final time state is written even when it does not fall exactly on the stride.
+
+\begin{syntax}
+*INITIALVELOCITY, FIELD=<node-field>
+\end{syntax}
+
+\cmd{INITIALVELOCITY} references a node field with six components. The field is reduced into the active coordinate space and used as the initial velocity. If no initial velocity is specified, the initial reduced velocity is zero. Initial acceleration is computed internally from the initial state, the active matrices, and the load at the start time.

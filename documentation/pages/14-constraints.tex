@@ -1,0 +1,162 @@
+\chapter{Constraints}
+\label{chap:constraints}
+
+Constraints define kinematic equations between degrees of freedom. They are different from supports in modelling intent: a support prescribes motion of selected degrees of freedom, while a constraint relates several nodes, surfaces, or reference points to each other. FEMaster assembles supports and constraints into one algebraic equation set before the active loadcase is solved.
+
+Most constraint equations can be written as
+\[
+C u = d .
+\]
+\(u\) is the vector of active nodal degrees of freedom, \(C\) is the constraint matrix, and \(d\) is the right-hand side. Homogeneous constraints have \(d=0\). The constraint definitions in this chapter describe which equations are generated. The numerical handling of those equations, for example Nullspace reduction or Lagrange multipliers, is selected by \cmd{CONSTRAINTMETHOD} and described in Chapter~\ref{chap:analysis-controls}.
+
+\section{Rigid-body motion suppression: \cmd{RBM}}
+
+\begin{syntax}
+*RBM, ELSET=<elset>
+\end{syntax}
+
+\cmd{RBM} generates up to six homogeneous equations for the nodes used by the selected element set. \key{ELSET} also accepts the alias \key{SET}; if omitted, the default is \val{EALL}. The command is meant to suppress free rigid-body modes without fixing an arbitrary node. This is especially useful for stabilization, diagnostic models, and inertia-relief workflows.
+
+FEMaster first collects all nodes that belong to the selected structural elements. It computes the center of gravity \(x_0\) of the selected element region and uses the relative position
+\[
+r_i = x_i - x_0
+\]
+for every participating node \(i\). With \(n\) participating nodes and \(w=1/n\), the three translational equations are
+\[
+\sum_i w u_{ix}=0,\qquad
+\sum_i w u_{iy}=0,\qquad
+\sum_i w u_{iz}=0 .
+\]
+The three rotational equations suppress the average rigid rotation measured by the first moment of the displacement field:
+\[
+\sum_i w(r_i \times u_i)_x = 0,\qquad
+\sum_i w(r_i \times u_i)_y = 0,\qquad
+\sum_i w(r_i \times u_i)_z = 0 .
+\]
+Expanded component-wise, these are
+\[
+\sum_i w(r_{iy}u_{iz}-r_{iz}u_{iy})=0,
+\]
+\[
+\sum_i w(r_{iz}u_{ix}-r_{ix}u_{iz})=0,
+\]
+\[
+\sum_i w(r_{ix}u_{iy}-r_{iy}u_{ix})=0.
+\]
+Only active translational degrees of freedom are used. If a required component does not exist for a node, it is skipped for that equation.
+
+\section{Coupling: \cmd{COUPLING}}
+
+\begin{syntax}
+*COUPLING, MASTER=<master-nset>, TYPE=KINEMATIC|STRUCTURAL, SLAVE=<slave-nset>
+<Ux>, <Uy>, <Uz>, <Rx>, <Ry>, <Rz>
+\end{syntax}
+
+\begin{syntax}
+*COUPLING, MASTER=<master-nset>, TYPE=KINEMATIC|STRUCTURAL, SFSET=<surface-set>
+<Ux>, <Uy>, <Uz>, <Rx>, <Ry>, <Rz>
+\end{syntax}
+
+\cmd{COUPLING} connects one master node set to either a slave node set or a slave surface set. Exactly one of \key{SLAVE} and \key{SFSET} must be given. In practical models the master set should normally contain one reference node. Larger master sets can over-constrain the model because the generated equations are based on a single master node.
+
+The data line contains six flags for \dofvec. Values greater than zero activate the corresponding coupling component. \val{KINEMATIC} generates constraint equations. \val{STRUCTURAL} does not generate kinematic equations; it distributes generalized loads from the master node to slave nodes in a work-equivalent way.
+
+\subsection{Kinematic coupling equations}
+
+For a slave node \(s\), master node \(m\), and offset
+\[
+r = x_s - x_m ,
+\]
+the translational kinematic relation is the small-rotation rigid-body relation
+\[
+u_s = u_m + \theta_m \times r .
+\]
+FEMaster writes this component-wise as homogeneous equations. For example,
+\[
+u_{sx} - u_{mx} - r_z\theta_{my} + r_y\theta_{mz}=0,
+\]
+\[
+u_{sy} - u_{my} - r_x\theta_{mz} + r_z\theta_{mx}=0,
+\]
+\[
+u_{sz} - u_{mz} - r_y\theta_{mx} + r_x\theta_{my}=0.
+\]
+Rotational coupling is direct:
+\[
+\theta_{sx}-\theta_{mx}=0,\qquad
+\theta_{sy}-\theta_{my}=0,\qquad
+\theta_{sz}-\theta_{mz}=0.
+\]
+Only the components enabled by the six flags are generated, and only if the involved degrees of freedom exist.
+
+\subsection{Structural coupling load distribution}
+
+For \val{STRUCTURAL}, a generalized master load
+\[
+b =
+\begin{bmatrix}
+F_x & F_y & F_z & M_x & M_y & M_z
+\end{bmatrix}^T
+\]
+is distributed to slave translational forces. FEMaster builds the equilibrium operator
+\[
+A =
+\begin{bmatrix}
+I & I & \dots & I \\
+[r_1]_\times & [r_2]_\times & \dots & [r_n]_\times
+\end{bmatrix},
+\]
+where \([r_i]_\times f_i = r_i \times f_i\). The distributed force vector is computed in a least-norm, work-equivalent form from
+\[
+G \lambda = b,\qquad G = A A^T,\qquad f = A^T \lambda .
+\]
+The resulting slave forces reproduce the master resultant force and moment as closely as the slave geometry permits. The master load is then consumed because it has been represented by slave forces.
+
+\section{Tie: \cmd{TIE}}
+
+\begin{syntax}
+*TIE, MASTER=<master>, SLAVE=<slave>, ADJUST=NO|YES, DISTANCE=<search-distance>
+\end{syntax}
+
+\cmd{TIE} binds slave nodes to a master surface set or master line set. The slave region may be a node set or a surface set. For each slave node, FEMaster searches the closest master geometry within \key{DISTANCE}. If no candidate is found, no equation is generated for that slave node. If \key{ADJUST=YES}, the slave node coordinate is moved to the projected master position before the equations are assembled.
+
+Let \(s\) be a slave node projected onto a master surface or line at local coordinates \(\xi\). Let \(N_a(\xi)\) be the shape function of master node \(a\) at that projected point. For every active degree of freedom, the compatibility equation is
+\[
+u_s - \sum_a N_a(\xi) u_a = 0 .
+\]
+This ties the slave degree of freedom to the interpolated master motion. For surface masters the interpolation uses the surface shape functions; for line masters it uses the line shape functions. The same equation form is used for translational and rotational degrees of freedom when those degrees of freedom exist on both slave and all master nodes.
+
+\section{Connector: \cmd{CONNECTOR}}
+
+\begin{syntax}
+*CONNECTOR, TYPE=<type>, NSET1=<nset1>, NSET2=<nset2>, COORDINATESYSTEM=<orientation>
+\end{syntax}
+
+\cmd{CONNECTOR} creates idealized relative-motion constraints between two node sets in a named coordinate system. Supported types are \val{BEAM}, \val{HINGE}, \val{CYLINDRICAL}, \val{TRANSLATOR}, \val{JOIN}, and \val{JOINRX}. The connector type maps to a six-component mask that decides which local translations and rotations are constrained.
+
+For each constrained local component \(e_\alpha\), FEMaster transforms the local direction into the global system:
+\[
+g_\alpha = R e_\alpha .
+\]
+For a constrained translation, the generated equation is
+\[
+g_\alpha^T(u_1-u_2)=0 .
+\]
+For a constrained rotation, the equation is
+\[
+g_\alpha^T(\theta_1-\theta_2)=0 .
+\]
+The connector therefore constrains relative motion along selected local axes rather than simply tying global components. This is why the referenced coordinate system is part of the connector definition and should be chosen carefully.
+
+\section{Constraint summary}
+
+\begin{syntax}
+*LOADCASE, TYPE=LINEARSTATIC
+  *CONSTRAINTSUMMARY
+\end{syntax}
+
+\cmd{CONSTRAINTSUMMARY} requests a diagnostic listing of the internally generated constraint equations for the active loadcase. The output is grouped by constraint origin, for example supports, RBM equations, couplings, ties, and connectors. This is useful when a model is unexpectedly singular, over-constrained, or when a surface tie did not find as many slave projections as intended. It is a diagnostic report of generated equations, not a modelling command that changes the equations.
+
+\begin{warningbox}[Master sets]
+Many coupling and connector workflows are intended for one reference node in the master set. Larger master sets may over-constrain the model or produce a kinematic interpretation that is different from the intended reference-point behaviour.
+\end{warningbox}

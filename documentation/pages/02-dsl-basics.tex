@@ -1,0 +1,32 @@
+\chapter{DSL Basics}
+
+\section{Commands}
+
+A FEMaster deck consists of commands and data lines. A command starts with an asterisk, followed by the command name and optional comma-separated keywords.
+
+\begin{syntax}
+*COMMAND, KEY=value, FLAG
+data, data, data
+\end{syntax}
+
+Command names and keywords are normalized by the parser. Case is not significant, and spaces in command names are removed before lookup. A consistent uppercase style is still recommended for readability.
+
+\section{Scopes}
+
+Some commands open an active context. \cmd{MATERIAL} activates a material; subsequent material subcommands such as \cmd{ELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to it. \cmd{LOADCASE} activates an analysis context; commands such as \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, and \cmd{CONSTRAINTMETHOD} configure that loadcase.
+
+No explicit end command is required. A context ends when a following command no longer belongs to it or when the file ends.
+
+\section{Aliases, defaults, and flags}
+
+Many keywords have aliases. \key{NAME} and \key{NSET} can identify node sets; \key{MATERIAL} and \key{MAT} are equivalent in sections. Defaults reduce boilerplate: \cmd{NODE} defaults to \val{NALL}, \cmd{ELEMENT} defaults to \val{EALL}, and \cmd{SOLVER} defaults to \key{DEVICE=CPU} and \key{METHOD=DIRECT}.
+
+Flags are keywords without a required value. \key{GENERATE} is the most common example. Explicit false-like values such as \val{NO}, \val{OFF}, \val{FALSE}, or \val{0} are interpreted as inactive.
+
+\section{Component order}
+
+Mechanical nodal vectors use \dofvec. The first three values are translations. The last three values are rotations. Loads, supports, velocities, accelerations, displacements, and many internal reductions use this convention.
+
+\section{Targets}
+
+A target can often be a set name or a single numeric ID. If a matching set name exists, the set is used. Otherwise FEMaster attempts to interpret the token as one ID.

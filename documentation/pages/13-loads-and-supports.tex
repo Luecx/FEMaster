@@ -1,0 +1,111 @@
+\chapter{Loads, Supports, and Amplitudes}
+\label{chap:loads-supports}
+
+Loads and supports are not activated directly by their definition command. They are assigned to named collectors first. A support collector is a named list of support entries. A load collector is a named list of load entries. A loadcase later selects one or more of these collectors with \cmd{SUPPORTS} and \cmd{LOADS}.
+
+This collector model is important for reusable decks. For example, one support collector may contain all fixture supports, another may contain symmetry supports, and a third may contain temporary stabilization supports. A static loadcase can activate only the fixture collector, while a modal loadcase can activate fixture and symmetry collectors. Loads work the same way: each \cmd{CLOAD}, \cmd{DLOAD}, \cmd{PLOAD}, \cmd{VLOAD}, \cmd{TLOAD}, or \cmd{INERTIALOAD} entry declares which \key{LOAD_COLLECTOR} it belongs to; the loadcase decides which collectors are assembled.
+
+\section{Support collectors}
+
+\begin{syntax}
+*SUPPORT, SUPPORT_COLLECTOR=<name>, ORIENTATION=<orientation>
+<node-set-or-id>, <ux>, <uy>, <uz>, <rx>, <ry>, <rz>
+\end{syntax}
+
+\cmd{SUPPORT} adds one support entry to the collector named by \key{SUPPORT_COLLECTOR}. The collector is created implicitly when the first support uses its name. The data line targets either a node set or a single node id and then gives prescribed values for the six nodal components \dofvec. In most models the prescribed values are zero, but nonzero entries can be used for enforced displacement or rotation.
+
+If \key{ORIENTATION} is omitted, the six values are interpreted in the global coordinate system. If an orientation is given, the translational and rotational components are interpreted in that local coordinate system and transformed into the global system before the constraint equations are built. This is the usual way to describe supports normal to a cylindrical surface, sliding conditions in a skew system, or fixtures that are easier to express in local axes than in global axes.
+
+The support value is a kinematic prescription. In matrix form, a scalar support can be read as
+\[
+e_i^T u = \bar u_i ,
+\]
+where \(e_i\) selects the constrained degree of freedom and \(\bar u_i\) is the prescribed value from the support line. Multiple support entries in the same collector are assembled into one set of equations.
+
+\section{Concentrated loads}
+
+\begin{syntax}
+*CLOAD, LOAD_COLLECTOR=<name>, ORIENTATION=<orientation>, AMPLITUDE=<amp>
+<node-set-or-id>, <Fx>, <Fy>, <Fz>, <Mx>, <My>, <Mz>
+\end{syntax}
+
+\cmd{CLOAD} adds nodal forces and moments to the collector named by \key{LOAD_COLLECTOR}. The target may be a node set or a single node id. The six numeric values correspond to nodal generalized force components conjugate to \dofvec. Translational components are forces; rotational components are moments.
+
+If an orientation is specified, the force and moment components are interpreted in the local system and transformed to global components during assembly. If an amplitude is specified, the load entry is multiplied by the amplitude value in transient analyses:
+\[
+f_j(t) = a(t) f_j .
+\]
+In static analyses, the load is used as its defined value unless the loadcase explicitly evaluates time-dependent data.
+
+\section{Surface traction and pressure}
+
+\begin{syntax}
+*DLOAD, LOAD_COLLECTOR=<name>, ORIENTATION=<orientation>, AMPLITUDE=<amp>
+<surface-set-or-id>, <Fx>, <Fy>, <Fz>
+\end{syntax}
+
+\begin{syntax}
+*PLOAD, LOAD_COLLECTOR=<name>, AMPLITUDE=<amp>
+<surface-set-or-id>, <pressure>
+\end{syntax}
+
+\cmd{DLOAD} defines a vector traction on surfaces. Conceptually, the load contribution is
+\[
+f_e = \int_{\Gamma_e} N^T t \, d\Gamma ,
+\]
+where \(t\) is the traction vector and \(N\) contains the element shape functions on the loaded surface. \cmd{PLOAD} defines a scalar pressure. A pressure is converted into a traction using the surface normal, so the selected surface side and its normal direction determine the sign convention:
+\[
+t = p n .
+\]
+
+Use \cmd{DLOAD} when the traction direction is known as a vector. Use \cmd{PLOAD} when the load should follow the surface normal. Both commands add entries to a load collector and are activated only when that collector is referenced by a loadcase.
+
+\section{Volume loads}
+
+\begin{syntax}
+*VLOAD, LOAD_COLLECTOR=<name>, ORIENTATION=<orientation>, AMPLITUDE=<amp>
+<element-set-or-id>, <Fx>, <Fy>, <Fz>
+\end{syntax}
+
+\cmd{VLOAD} defines a body-force density over an element region. The assembled contribution follows
+\[
+f_e = \int_{\Omega_e} N^T b \, d\Omega ,
+\]
+where \(b\) is the supplied volume load vector. This is appropriate for load densities that are already expressed per unit volume. If a gravitational acceleration should be converted into force, the material density and the intended unit convention must be reflected in the supplied values or in the load formulation used for the model.
+
+\section{Thermal loads}
+
+\begin{syntax}
+*TLOAD, LOAD_COLLECTOR=<name>, TEMPERATUREFIELD=<field>, REFERENCETEMPERATURE=<T0>
+\end{syntax}
+
+\cmd{TLOAD} adds thermal strain loading to a load collector. The command references a nodal temperature field and a reference temperature. For a material with thermal expansion coefficient \(\alpha\), the thermal strain is based on
+\[
+\varepsilon_\mathrm{th} = \alpha (T - T_0)
+\begin{bmatrix}
+1 & 1 & 1 & 0 & 0 & 0
+\end{bmatrix}^T
+\]
+for isotropic expansion. The corresponding equivalent mechanical load is assembled from the element constitutive law and the thermal strain. Thermal loads therefore require both a temperature field and material definitions with thermal expansion data.
+
+\section{Inertial loads}
+
+\begin{syntax}
+*INERTIALOAD, LOAD_COLLECTOR=<name>, CONSIDER_POINT_MASSES=0|1
+<elset>, <cx>, <cy>, <cz>, <a0x>, <a0y>, <a0z>, <wx>, <wy>, <wz>, <alphax>, <alphay>, <alphaz>
+\end{syntax}
+
+\cmd{INERTIALOAD} creates equivalent nodal loads from a prescribed rigid-body acceleration field. The first vector \(c\) is the reference point. The second vector \(a_0\) is the translational acceleration of that point. The third vector \(\omega\) is angular velocity and the fourth vector \(\alpha\) is angular acceleration. At a material point \(x\), the rigid-body acceleration is
+\[
+a(x) = a_0 + \alpha \times (x-c) + \omega \times \left(\omega \times (x-c)\right).
+\]
+The equivalent inertial load is assembled over the selected element set. \key{CONSIDER_POINT_MASSES} controls whether point-mass features are included as additional concentrated inertia contributions.
+
+\section{Amplitudes}
+
+\begin{syntax}
+*AMPLITUDE, NAME=<name>, TYPE=LINEAR|STEP|NEAREST
+<time>, <value>
+\end{syntax}
+
+An amplitude is a scalar time function. Load entries that reference an amplitude are scaled by its value during transient analysis. \val{LINEAR} interpolates linearly between data points. \val{STEP} keeps the previous value until the next point is reached. \val{NEAREST} uses the value of the closest tabulated time. Amplitudes are useful when the spatial load pattern is fixed but the intensity changes over time.

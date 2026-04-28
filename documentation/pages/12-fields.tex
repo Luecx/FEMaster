@@ -1,0 +1,37 @@
+\chapter{Fields}
+
+\cmd{FIELD} defines generic tabular data. Fields may be defined at root level or inside a loadcase block, depending on their intended use.
+
+\begin{syntax}
+*FIELD, NAME=<name>, DOMAIN=NODE|ELEMENT|IP, COLS=<n>, FILL=ZERO|NAN
+<id>, <v1>, <v2>, ...
+\end{syntax}
+
+\key{COLS} is required and must be greater than zero. FEMaster limits fields to 64 components. \key{FILL} defaults to \val{ZERO}; \val{NAN} initializes unspecified values with NaN.
+
+\begin{longtable}{@{}p{0.18\linewidth}p{0.72\linewidth}@{}}
+\toprule
+\textbf{Domain} & \textbf{Meaning} \\
+\midrule
+\endhead
+\val{NODE} & One row per node ID. Used for temperature fields, initial velocities, or prescribed nodal data. \\
+\val{ELEMENT} & One row per element ID. Used for topology density and orientation fields. \\
+\val{IP} & Integration-point field. Used for data that is tied to element integration points. \\
+\bottomrule
+\end{longtable}
+
+Data lines may omit individual values; omitted values do not overwrite existing entries. The tokens \val{NAN}, \val{INF}, \val{+INF}, and \val{-INF} are accepted.
+
+\section{Typical references}
+
+\begin{longtable}{@{}p{0.25\linewidth}p{0.25\linewidth}p{0.4\linewidth}@{}}
+\toprule
+\textbf{Use} & \textbf{Domain/Cols} & \textbf{Referencing command} \\
+\midrule
+\endhead
+Temperature load & \val{NODE}, 1 & \cmd{TLOAD} with \key{TEMPERATUREFIELD}. \\
+Initial velocity & \val{NODE}, 6 & \cmd{INITIALVELOCITY}. \\
+Topology density & \val{ELEMENT}, 1 & \cmd{TOPODENSITY}. \\
+Topology orientation & \val{ELEMENT}, 3 & \cmd{TOPOORIENT}. \\
+\bottomrule
+\end{longtable}

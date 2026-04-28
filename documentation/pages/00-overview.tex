@@ -1,0 +1,40 @@
+\chapter{Overview}
+
+FEMaster is a finite-element solver for linear mechanical analyses. Models are described with an input-deck language in which commands start with an asterisk, command options are written as keywords, and numerical data follows on subsequent lines.
+
+The manual is organized as a user reference. Command tables summarize the available DSL commands; the later chapters explain how model entities are connected, how collectors are activated in loadcases, and how analysis controls affect the solved equations.
+
+\section{Model layers}
+
+A model starts with nodes. Nodes define global coordinates and provide the reference points for all other model entities. Elements connect nodes into line, surface, or volume discretizations. Surfaces describe element sides used by pressure loads, distributed loads, ties, and surface couplings. Sets group nodes, elements, or surfaces so that loads, supports, sections, and constraints can refer to meaningful names instead of long ID lists.
+
+Materials and sections give elements their physical meaning. An element by itself defines only topology and interpolation. A section assigns material, thickness, area, or profile data. Features such as point masses are additional model objects that contribute mass, inertia, or spring stiffness without being part of element connectivity.
+
+Loads and supports are stored in named collectors. A loadcase decides which collectors are active. This allows one model to contain several analyses without repeating geometry, materials, sections, or load definitions.
+
+\section{Supported analysis types}
+
+\begin{longtable}{@{}p{0.32\linewidth}p{0.58\linewidth}@{}}
+\toprule
+\textbf{Type} & \textbf{Purpose} \\
+\midrule
+\endhead
+\val{LINEARSTATIC} & Small-displacement static equilibrium with linear material behaviour. \\
+\val{LINEARSTATICTOPO} & Static analysis with element-wise topology fields such as density, orientation, and penalization exponent. \\
+\val{EIGENFREQ} & Natural-frequency analysis of the linear constrained system. \\
+\val{LINEARBUCKLING} & Linear buckling analysis from a static preload and the resulting geometric stiffness. \\
+\val{LINEARTRANSIENT} & Linear time integration with Newmark parameters, optional Rayleigh damping, and controlled result cadence. \\
+\bottomrule
+\end{longtable}
+
+\section{Degree-of-freedom convention}
+
+Mechanical nodal vectors use the component order
+\[
+\text{\dofvec}.
+\]
+The first three components are translations and the last three are rotations. Not every element uses all six components. Solid elements usually contribute only translational displacement degrees of freedom. Beams, shells, constraints, connectors, and some features may introduce rotations.
+
+\section{Targets}
+
+Many commands accept a target that can be either a set name or a single numeric ID. For example, \cmd{CLOAD} can target a node set or one node, \cmd{DLOAD} can target a surface set or one surface, and \cmd{VLOAD} can target an element set or one element. This makes small test decks compact while keeping large models readable through named sets.

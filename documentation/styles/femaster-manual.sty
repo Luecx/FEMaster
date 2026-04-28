@@ -1,0 +1,174 @@
+\NeedsTeXFormat{LaTeX2e}
+
+\RequirePackage[utf8]{inputenc}
+\RequirePackage[T1]{fontenc}
+\RequirePackage{lmodern}
+\RequirePackage[a4paper,left=24mm,right=24mm,top=28mm,bottom=30mm]{geometry}
+\RequirePackage{xcolor}
+\RequirePackage{hyperref}
+\RequirePackage{bookmark}
+\RequirePackage{enumitem}
+\RequirePackage{booktabs}
+\RequirePackage{tabularx}
+\RequirePackage{longtable}
+\RequirePackage{array}
+\RequirePackage{fancyhdr}
+\RequirePackage{titlesec}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{listings}
+\RequirePackage{amsmath}
+\RequirePackage{amssymb}
+\RequirePackage{graphicx}
+
+\definecolor{FMBlue}{HTML}{1F4E79}
+\definecolor{FMTeal}{HTML}{00796B}
+\definecolor{FMGreen}{HTML}{2E7D32}
+\definecolor{FMOrange}{HTML}{B45F06}
+\definecolor{FMRed}{HTML}{A61C1C}
+\definecolor{FMGray}{HTML}{F4F6F8}
+\definecolor{FMDark}{HTML}{263238}
+\definecolor{FMLightLine}{HTML}{D8DEE4}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=FMBlue,
+  urlcolor=FMTeal,
+  citecolor=FMBlue,
+  pdftitle={FEMaster Reference Manual},
+  pdfauthor={Finn Eggers}
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlist[itemize]{leftmargin=*,topsep=2pt,itemsep=2pt}
+\setlist[enumerate]{leftmargin=*,topsep=2pt,itemsep=2pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{FEMaster Reference Manual}
+\fancyhead[R]{\leftmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\chapter}
+  {\normalfont\huge\bfseries\color{FMDark}}
+  {\thechapter}{1em}{}
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{FMDark}}
+  {\thesection}{0.8em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{FMDark}}
+  {\thesubsection}{0.7em}{}
+
+\lstdefinestyle{femasterInput}{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  showstringspaces=false,
+  frame=none,
+  backgroundcolor=\color{FMGray},
+  keywordstyle=\bfseries\color{FMBlue},
+  commentstyle=\itshape\color{FMGreen}
+}
+
+\lstdefinestyle{femasterShell}{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  showstringspaces=false,
+  frame=none,
+  backgroundcolor=\color{FMGray}
+}
+
+\newtcblisting{inputdeck}[1][]{%
+  listing only,
+  listing options={style=femasterInput},
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMLightLine,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  left=6pt,right=6pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+\newtcblisting{shellcmd}[1][]{%
+  listing only,
+  listing options={style=femasterShell},
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMLightLine,
+  borderline west={2pt}{0pt}{FMTeal},
+  boxrule=0.4pt,
+  left=6pt,right=6pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+\newtcolorbox{notebox}[1][]{%
+  enhanced,
+  sharp corners,
+  colback=blue!3,
+  colframe=FMBlue,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  title=#1
+}
+
+\newtcolorbox{warningbox}[1][]{%
+  enhanced,
+  sharp corners,
+  colback=orange!5,
+  colframe=FMOrange,
+  borderline west={2pt}{0pt}{FMOrange},
+  boxrule=0.4pt,
+  title=#1
+}
+
+\newtcolorbox{sourcebox}[1][]{%
+  enhanced,
+  sharp corners,
+  colback=green!4,
+  colframe=FMGreen,
+  borderline west={2pt}{0pt}{FMGreen},
+  boxrule=0.4pt,
+  title=#1
+}
+
+\DeclareRobustCommand{\cmd}[1]{\texttt{*\detokenize{#1}}}
+\DeclareRobustCommand{\key}[1]{\texttt{\detokenize{#1}}}
+\DeclareRobustCommand{\val}[1]{\texttt{\detokenize{#1}}}
+\DeclareRobustCommand{\file}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\dofvec}{\texttt{Ux, Uy, Uz, Rx, Ry, Rz}}
+\DeclareRobustCommand{\src}[1]{\texttt{\detokenize{#1}}}
+
+\newtcblisting{syntax}{%
+  listing only,
+  listing options={style=femasterInput},
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMLightLine,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  left=6pt,right=6pt,top=5pt,bottom=5pt,
+  title=Syntax
+}
+
+\newtcblisting{exampledeck}{%
+  listing only,
+  listing options={style=femasterInput},
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMLightLine,
+  borderline west={2pt}{0pt}{FMGreen},
+  boxrule=0.4pt,
+  left=6pt,right=6pt,top=5pt,bottom=5pt,
+  title=Example
+}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}

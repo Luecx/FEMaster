@@ -1,0 +1,56 @@
+\chapter{Build and Command Line}
+
+FEMaster is built with CMake. A typical build produces an executable named \file{FEMaster} in the build output directory. The executable reads an input deck and writes a text result file. If no explicit output path is supplied, the result file uses the input base name with the extension \file{.res}.
+
+\section{Build}
+
+\begin{shellcmd}
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+\end{shellcmd}
+
+A release build is the normal choice for analysis work. A debug build is useful for small diagnostic models, assertions, and development checks, but it is usually too slow for larger finite-element models.
+
+\section{Running an input deck}
+
+\begin{shellcmd}
+FEMaster model.inp
+FEMaster model.inp --output model.res
+FEMaster model.inp --ncpus 8
+\end{shellcmd}
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Argument} & \textbf{Meaning} \\
+\midrule
+\endhead
+\file{input_file} & Path to the input deck. If no \file{.inp} suffix is supplied, it is added automatically. \\
+\key{--output FILE} & Explicit result file path. Without this option, a \file{.res} file is derived from the input name. \\
+\key{--ncpus N} & Number of threads allowed for parallel assembly and compute sections. \\
+\bottomrule
+\end{longtable}
+
+\section{DSL documentation mode}
+
+The executable can print DSL registration information for the installed version. This is useful when checking which commands, keywords, and variants a particular build accepts.
+
+\begin{shellcmd}
+FEMaster --doc-list
+FEMaster --doc-show CLOAD
+FEMaster --doc-variants ELASTIC
+\end{shellcmd}
+
+\begin{longtable}{@{}p{0.34\linewidth}p{0.56\linewidth}@{}}
+\toprule
+\textbf{Option} & \textbf{Meaning} \\
+\midrule
+\endhead
+\key{--doc-list} & Print the available DSL commands. \\
+\key{--doc-show CMD} & Show details for one command. \\
+\key{--doc-tokens CMD} & Show expected tokens for a command. \\
+\key{--doc-variants CMD} & Show accepted data-line variants. \\
+\key{--doc-search TEXT} & Search command names and descriptions. \\
+\key{--doc-where-token TOKEN} & Find commands that use a token. \\
+\key{--doc-all} & Print the full command overview. \\
+\bottomrule
+\end{longtable}

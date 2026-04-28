@@ -1,0 +1,268 @@
+\chapter{Mathematical Derivations}
+\label{chap:appendix-derivations}
+
+This appendix collects derivations that are useful for understanding the topology-related quantities written by FEMaster. The main reference chapters describe how to use the DSL commands. This appendix gives the mathematical background for compliance, density sensitivities, and orientation sensitivities.
+
+\section{Element stiffness}
+
+For a linear elastic finite element, the unmodified element stiffness is
+\[
+K_{e,0} = \int_{\Omega_e} B^T D B \, d\Omega .
+\]
+\(B\) is the strain-displacement matrix, \(D\) is the constitutive matrix, and \(\Omega_e\) is the physical element domain. With an isoparametric mapping from natural coordinates \(r=(\xi,\eta,\zeta)\), the integral is evaluated as
+\[
+K_{e,0}
+=
+\int_{\Omega'_e}
+B(r)^T D B(r)\,
+\lvert \det J(r)\rvert \, d\xi\,d\eta\,d\zeta .
+\]
+For numerical integration with quadrature points \(r_q\) and weights \(w_q\), this becomes
+\[
+K_{e,0}
+\approx
+\sum_{q=1}^{Q}
+w_q B(r_q)^T D B(r_q)\,
+\lvert \det J(r_q)\rvert .
+\]
+
+\section{Compliance}
+
+For a linear static analysis,
+\[
+K u = f .
+\]
+The external work measure commonly used for topology optimization is the compliance
+\[
+C = f^T u .
+\]
+Using the equilibrium equation \(f=Ku\), this can also be written as
+\[
+C = u^T K u .
+\]
+Because the global stiffness matrix is assembled from element stiffness matrices, compliance can be decomposed into element contributions:
+\[
+C = \sum_{e=1}^{n_e} u_e^T K_e u_e .
+\]
+This expression is the basis for element-wise topology sensitivities. \(u_e\) is the element displacement vector extracted from the global solution.
+
+\section{Density penalization}
+
+In a density-based topology formulation, an element density variable \(\rho_e\) scales the stiffness contribution. With a penalization exponent \(p\),
+\[
+K_e(\rho_e) = \rho_e^p K_{e,0}.
+\]
+The exponent \(p\) makes intermediate densities less efficient and therefore encourages designs closer to a solid-void distribution.
+
+The element compliance contribution is
+\[
+C_e(\rho_e) = u_e^T K_e(\rho_e) u_e
+=
+\rho_e^p u_e^T K_{e,0} u_e .
+\]
+If \(u_e\) is held fixed for the local sensitivity expression, the derivative is
+\[
+\frac{\partial C_e}{\partial \rho_e}
+=
+p\rho_e^{p-1} u_e^T K_{e,0} u_e .
+\]
+Depending on the optimization convention, the objective derivative may be reported with the opposite sign because minimizing compliance through the equilibrium equation often uses the adjoint result
+\[
+\frac{dC}{d\rho_e}
+=
+-u_e^T \frac{\partial K_e}{\partial \rho_e}u_e
+=
+-p\rho_e^{p-1}u_e^T K_{e,0}u_e .
+\]
+The sign convention should therefore be interpreted together with the optimizer interface and the field name written by the analysis.
+
+\section{Orientation-dependent stiffness}
+
+For orientation-based topology or material steering, the constitutive matrix is rotated before the element stiffness is evaluated. Let the material orientation be represented by three angles
+\[
+\alpha = (\alpha_1,\alpha_2,\alpha_3).
+\]
+The elementary rotation matrices are
+\[
+R_1 =
+\begin{bmatrix}
+1 & 0 & 0\\
+0 & \cos\alpha_1 & -\sin\alpha_1\\
+0 & \sin\alpha_1 & \cos\alpha_1
+\end{bmatrix},
+\]
+\[
+R_2 =
+\begin{bmatrix}
+\cos\alpha_2 & 0 & \sin\alpha_2\\
+0 & 1 & 0\\
+-\sin\alpha_2 & 0 & \cos\alpha_2
+\end{bmatrix},
+\qquad
+R_3 =
+\begin{bmatrix}
+\cos\alpha_3 & -\sin\alpha_3 & 0\\
+\sin\alpha_3 & \cos\alpha_3 & 0\\
+0 & 0 & 1
+\end{bmatrix}.
+\]
+For the convention used here, the combined rotation is
+\[
+R = R_1R_2R_3 .
+\]
+The multiplication order must be used consistently. Different conventions can describe the same physical orientation with different angle triples.
+
+\section{Voigt transformation}
+
+The strain vector uses engineering shear strains,
+\[
+\varepsilon =
+\begin{bmatrix}
+\varepsilon_{xx} &
+\varepsilon_{yy} &
+\varepsilon_{zz} &
+2\varepsilon_{yz} &
+2\varepsilon_{xz} &
+2\varepsilon_{xy}
+\end{bmatrix}^T ,
+\]
+and the stress vector is
+\[
+\sigma =
+\begin{bmatrix}
+\sigma_{xx} &
+\sigma_{yy} &
+\sigma_{zz} &
+\sigma_{yz} &
+\sigma_{xz} &
+\sigma_{xy}
+\end{bmatrix}^T .
+\]
+The strain transformation is written as
+\[
+\varepsilon_m = T(R)\varepsilon_g ,
+\]
+where \(T\) is the \(6\times6\) Voigt transformation matrix built from the entries of \(R\). The rotated constitutive matrix used in global strain coordinates is
+\[
+D_\mathrm{rot}=T^TDT .
+\]
+The orientation-dependent element stiffness is therefore
+\[
+K_e(\rho_e,\alpha_e)
+=
+\rho_e^p
+\int_{\Omega_e}
+B^T D_\mathrm{rot}(\alpha_e) B\,d\Omega .
+\]
+With quadrature,
+\[
+K_e(\rho_e,\alpha_e)
+\approx
+\rho_e^p
+\sum_{q=1}^{Q}
+w_q B(r_q)^T T(\alpha_e)^T D T(\alpha_e)B(r_q)
+\lvert \det J(r_q)\rvert .
+\]
+
+\section{Orientation sensitivity}
+
+For one element, the compliance contribution is
+\[
+C_e
+=
+\rho_e^p
+\sum_{q=1}^{Q}
+w_q
+\varepsilon_q^T
+T^TDT
+\varepsilon_q
+\lvert \det J_q\rvert ,
+\qquad
+\varepsilon_q = B(r_q)u_e .
+\]
+Only \(T\) depends on the orientation angles, so the derivative with respect to angle \(\alpha_j\) is
+\[
+\frac{\partial C_e}{\partial \alpha_j}
+=
+\rho_e^p
+\sum_{q=1}^{Q}
+w_q
+\varepsilon_q^T
+\left(
+\frac{\partial T^T}{\partial \alpha_j}DT
++
+T^TD\frac{\partial T}{\partial \alpha_j}
+\right)
+\varepsilon_q
+\lvert \det J_q\rvert .
+\]
+If \(D\) is symmetric, the scalar expression can also be evaluated as
+\[
+\frac{\partial C_e}{\partial \alpha_j}
+=
+2\rho_e^p
+\sum_{q=1}^{Q}
+w_q
+\varepsilon_q^T
+T^TD\frac{\partial T}{\partial \alpha_j}
+\varepsilon_q
+\lvert \det J_q\rvert ,
+\]
+provided the same transformation convention is used.
+
+\section{Rotation derivatives}
+
+The derivatives of the elementary rotation matrices are
+\[
+\frac{\partial R_1}{\partial \alpha_1}
+=
+\begin{bmatrix}
+0 & 0 & 0\\
+0 & -\sin\alpha_1 & -\cos\alpha_1\\
+0 & \cos\alpha_1 & -\sin\alpha_1
+\end{bmatrix},
+\]
+\[
+\frac{\partial R_2}{\partial \alpha_2}
+=
+\begin{bmatrix}
+-\sin\alpha_2 & 0 & \cos\alpha_2\\
+0 & 0 & 0\\
+-\cos\alpha_2 & 0 & -\sin\alpha_2
+\end{bmatrix},
+\]
+\[
+\frac{\partial R_3}{\partial \alpha_3}
+=
+\begin{bmatrix}
+-\sin\alpha_3 & -\cos\alpha_3 & 0\\
+\cos\alpha_3 & -\sin\alpha_3 & 0\\
+0 & 0 & 0
+\end{bmatrix}.
+\]
+For \(R=R_1R_2R_3\), the total rotation derivatives are
+\[
+\frac{\partial R}{\partial \alpha_1}
+=
+\frac{\partial R_1}{\partial \alpha_1}R_2R_3,
+\]
+\[
+\frac{\partial R}{\partial \alpha_2}
+=
+R_1\frac{\partial R_2}{\partial \alpha_2}R_3,
+\]
+\[
+\frac{\partial R}{\partial \alpha_3}
+=
+R_1R_2\frac{\partial R_3}{\partial \alpha_3}.
+\]
+The derivative \(\partial T/\partial\alpha_j\) is obtained by differentiating every entry of \(T(R)\) with the product rule. For example, an entry \(R_{a b}R_{c d}\) contributes
+\[
+\frac{\partial}{\partial\alpha_j}
+\left(R_{a b}R_{c d}\right)
+=
+\frac{\partial R_{a b}}{\partial\alpha_j}R_{c d}
++
+R_{a b}\frac{\partial R_{c d}}{\partial\alpha_j}.
+\]
+This product-rule structure is the key point of the orientation derivative: once \(R\), \(\partial R/\partial\alpha_j\), \(T\), and \(\partial T/\partial\alpha_j\) are known, the sensitivity follows directly from the quadrature expression above.

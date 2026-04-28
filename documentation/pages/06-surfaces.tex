@@ -1,0 +1,25 @@
+\chapter{Surfaces}
+
+Surfaces describe loadable or connectable element sides. They are used for pressure loads, distributed surface loads, tie constraints, and surface couplings. A surface is a selection of element sides; it is not a material or section property.
+
+\section{Surface from one element side}
+
+\begin{syntax}
+*SURFACE, NAME=<surface-set>
+<surface-id>, <element-id>, <side>
+\end{syntax}
+
+The side can be written as a number or as a token such as \val{S1} or \val{S2}. For shells, \val{SPOS} and \val{SNEG} select the positive or negative shell side.
+
+\section{Surface from an element set}
+
+\begin{syntax}
+*SURFACE, NAME=<surface-set>, TYPE=ELEMENT
+<element-set-or-id>, <side>
+\end{syntax}
+
+If the target is an element set, FEMaster creates surfaces for the selected side of all elements in the set. Otherwise the target is interpreted as a single element ID.
+
+\section{Orientation and sign}
+
+Surface loads depend on the chosen side and its normal direction. If pressure or traction direction is unexpected, check the selected side, element orientation, and shell side. For shells, positive and negative sides share the same geometric midsurface but have opposite normals.

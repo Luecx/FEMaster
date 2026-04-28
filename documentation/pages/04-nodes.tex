@@ -1,0 +1,28 @@
+\chapter{Nodes}
+
+Nodes are the geometric reference points of a FEMaster model. Each node has an ID and three global coordinates. Elements, loads, supports, constraints, and features refer to nodes either directly or through node sets.
+
+\begin{syntax}
+*NODE, NSET=<optional-set>
+<id>, <x>, <y>, <z>
+\end{syntax}
+
+\key{NSET} is optional. If omitted, nodes are added to \val{NALL}. Missing coordinate values are interpreted as zero, but production decks should normally write all three coordinates explicitly.
+
+A node may have up to six mechanical degrees of freedom, \dofvec. Which of these are active depends on the connected elements and model objects. Solid elements usually need only translations. Shells, beams, point-mass springs, connectors, and constraints may require rotations.
+
+\section{Node IDs}
+
+Node IDs must be non-negative integers. The ID \val{0} is valid and can be used like any other node ID. Negative node IDs are not valid user-facing node identifiers in input decks because node IDs are used directly as row indices in nodal fields, connectivity, loads, supports, and result output.
+
+FEMaster does not require a particular numbering strategy. Clear numbering is still useful for debugging, set construction, and result inspection. IDs should be unique and stable. If the same node ID is defined multiple times, the deck no longer gives a clear single coordinate for that node.
+
+\section{Coordinate meaning}
+
+Node coordinates are always global coordinates. Local coordinate systems do not change node positions; they only change how vector components are interpreted by commands such as \cmd{SUPPORT}, \cmd{CLOAD}, \cmd{DLOAD}, \cmd{VLOAD}, \cmd{SOLIDSECTION}, \cmd{SHELLSECTION}, and \cmd{CONNECTOR}. This distinction matters: geometry is global, while loads, supports, material axes, and connector directions may be local.
+
+\section{Active degrees of freedom}
+
+FEMaster builds the active degree-of-freedom set from the model objects that reference each node. A node connected only to solid elements normally contributes three translational degrees of freedom. A shell or beam node contributes translations and rotations. A connector, coupling, support, or point-mass spring can also make rotational degrees of freedom relevant.
+
+The presence of a node alone does not imply six active unknowns. The active set is determined when the model is assembled. This keeps purely solid models smaller while still allowing mixed solid-shell-beam models to share the same nodal component convention.

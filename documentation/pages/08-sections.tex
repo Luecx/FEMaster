@@ -1,0 +1,41 @@
+\chapter{Sections and Profiles}
+
+Sections connect element sets to material and cross-section information. Without a matching section, an element may exist geometrically but cannot contribute the intended physical stiffness, mass, or stress recovery.
+
+\section{Solid section}
+
+\begin{syntax}
+*SOLIDSECTION, ELSET=<elset>, MATERIAL=<material>, ORIENTATION=<orientation>
+\end{syntax}
+
+A solid section assigns a material to a volume element set. \key{ORIENTATION} is optional and is mainly relevant for anisotropic or orthotropic materials.
+
+\section{Shell section}
+
+\begin{syntax}
+*SHELLSECTION, ELSET=<elset>, MATERIAL=<material>, THICKNESS=<t>, ORIENTATION=<orientation>
+\end{syntax}
+
+A shell section assigns material and thickness. Thickness affects membrane, bending, transverse shear, mass, and stress/resultant recovery. For anisotropic or ABD materials, orientation is part of the physical definition.
+
+\section{Beam profiles and beam sections}
+
+\begin{syntax}
+*PROFILE, NAME=<name>
+<A>, <Iy>, <Iz>, <J>, <Iyz>, <y0>, <z0>, ...
+\end{syntax}
+
+\begin{syntax}
+*BEAMSECTION, ELSET=<elset>, MATERIAL=<material>, PROFILE=<profile>
+<nx>, <ny>, <nz>
+\end{syntax}
+
+A profile stores beam cross-section constants. A beam section assigns profile and material to an element set. The optional direction line defines a local section direction and must not be parallel to the beam axis.
+
+\section{Truss section}
+
+\begin{syntax}
+*TRUSSSECTION, ELSET=<elset>, MATERIAL=<material>, AREA=<A>
+\end{syntax}
+
+Truss elements use axial stiffness only. Bending, torsion, and rotational stiffness are not represented by truss elements.

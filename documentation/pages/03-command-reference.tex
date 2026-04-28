@@ -1,0 +1,94 @@
+\chapter{Command Reference}
+
+This chapter gives a compact overview of the DSL commands. The following chapters describe the commands in more detail.
+
+\section{Geometry and topology}
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Command} & \textbf{Purpose} \\
+\midrule
+\endhead
+\cmd{NODE} & Define nodes and coordinates. \\
+\cmd{ELEMENT} & Define elements by type and connectivity. \\
+\cmd{SURFACE} & Define element sides or element-set sides as surfaces. \\
+\cmd{NSET} & Define node sets. \\
+\cmd{ELSET} & Define element sets. \\
+\cmd{SFSET} & Define surface sets. \\
+\bottomrule
+\end{longtable}
+
+\section{Properties}
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Command} & \textbf{Purpose} \\
+\midrule
+\endhead
+\cmd{MATERIAL} & Create or activate a material. \\
+\cmd{ELASTIC} & Assign elastic material behaviour. \\
+\cmd{DENSITY} & Assign mass density. \\
+\cmd{THERMALEXPANSION} & Assign thermal expansion coefficient. \\
+\cmd{SOLIDSECTION} & Assign material and optional orientation to solid elements. \\
+\cmd{SHELLSECTION} & Assign material, thickness, and optional orientation to shell elements. \\
+\cmd{BEAMSECTION} & Assign material, profile, and local axis data to beam elements. \\
+\cmd{TRUSSSECTION} & Assign material and area to truss elements. \\
+\cmd{PROFILE} & Define beam profile constants. \\
+\bottomrule
+\end{longtable}
+
+\section{Features, fields, loads, and constraints}
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Command} & \textbf{Purpose} \\
+\midrule
+\endhead
+\cmd{POINTMASS} & Add concentrated mass, rotational inertia, and optional spring stiffness to node sets. \\
+\cmd{FIELD} & Define node, element, or integration-point data fields. \\
+\cmd{ORIENTATION} & Define a rectangular or cylindrical local coordinate system. \\
+\cmd{SUPPORT} & Add support entries to a support collector. \\
+\cmd{CLOAD} & Add concentrated nodal loads to a load collector. \\
+\cmd{DLOAD} & Add vector surface tractions to a load collector. \\
+\cmd{PLOAD} & Add pressure loads to a load collector. \\
+\cmd{VLOAD} & Add volume loads to a load collector. \\
+\cmd{TLOAD} & Add thermal loads from a temperature field. \\
+\cmd{INERTIALOAD} & Add rigid-body inertial loads. \\
+\cmd{AMPLITUDE} & Define a time function for transient load scaling. \\
+\cmd{COUPLING} & Define kinematic or structural couplings. \\
+\cmd{TIE} & Define tie constraints between slave nodes and master geometry. \\
+\cmd{CONNECTOR} & Define connector constraints between two node sets. \\
+\cmd{RBM} & Generate rigid-body-motion suppression equations. \\
+\bottomrule
+\end{longtable}
+
+\section{Loadcase controls}
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
+\toprule
+\textbf{Command} & \textbf{Purpose} \\
+\midrule
+\endhead
+\cmd{LOADCASE} & Start an analysis block. \\
+\cmd{SUPPORTS} & Activate support collectors. \\
+\cmd{LOADS} & Activate load collectors. \\
+\cmd{SOLVER} & Select device and linear solution method. \\
+\cmd{CONSTRAINTMETHOD} & Select Nullspace or Lagrange constraint handling. \\
+\cmd{INERTIARELIEF} & Enable inertia relief for free static models. \\
+\cmd{REBALANCELOADS} & Balance residual resultant force and moment. \\
+\cmd{REQUESTSTIFFNESS} & Request stiffness matrix output. \\
+\cmd{REQUESTSTGEOM} & Request geometric stiffness matrix output. \\
+\cmd{NUMEIGENVALUES} & Set the number of eigenpairs. \\
+\cmd{SIGMA} & Set the buckling eigenvalue shift. \\
+\cmd{TOPODENSITY} & Select the topology density field. \\
+\cmd{TOPOORIENT} & Select the topology orientation field. \\
+\cmd{TOPOEXPONENT} & Set the topology penalization exponent. \\
+\cmd{TIME} & Set transient time range and step size. \\
+\cmd{NEWMARK} & Set Newmark integration parameters. \\
+\cmd{DAMPING} & Set Rayleigh damping. \\
+\cmd{WRITEEVERY} & Set transient output cadence. \\
+\cmd{INITIALVELOCITY} & Set transient initial velocity from a field. \\
+\cmd{CONSTRAINTSUMMARY} & Request generated-constraint diagnostics. \\
+\cmd{OVERVIEW} & Print a model overview. \\
+\bottomrule
+\end{longtable}

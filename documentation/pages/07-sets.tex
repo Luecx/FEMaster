@@ -1,0 +1,34 @@
+\chapter{Sets}
+
+Sets are named collections of IDs. They are central to readable FEMaster decks because most higher-level commands can target sets instead of repeating individual IDs.
+
+\section{Node sets}
+
+\begin{syntax}
+*NSET, NAME=<name>, GENERATE
+<id-start>, <id-end>, <increment>
+\end{syntax}
+
+Without \key{GENERATE}, data lines are read as explicit node IDs. Node sets are used by supports, concentrated loads, couplings, connectors, point masses, and many diagnostic workflows.
+
+\section{Element sets}
+
+\begin{syntax}
+*ELSET, NAME=<name>, GENERATE
+<id-start>, <id-end>, <increment>
+\end{syntax}
+
+Element sets are used by sections, volume loads, inertial loads, RBM constraints, and topology fields. One element may belong to several sets.
+
+\section{Surface sets}
+
+\begin{syntax}
+*SFSET, NAME=<name>, GENERATE
+<id-start>, <id-end>, <increment>
+\end{syntax}
+
+Surface sets group surface IDs. They are typically used by \cmd{PLOAD}, \cmd{DLOAD}, \cmd{TIE}, and surface couplings.
+
+\section{Naming}
+
+Sets should be named by function, not only by geometry. Names such as \val{FIXED}, \val{LOAD_INTRODUCTION}, \val{BOLT_SURFACES}, or \val{SHELL_SKIN} remain understandable when mesh IDs change.
