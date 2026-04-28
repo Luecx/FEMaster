@@ -27,7 +27,6 @@ class ModelData;
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct Support
  * @brief Represents a kinematic boundary condition over model regions.
@@ -53,7 +52,9 @@ struct Support : public fem::Printable {
      * @param values Generalized displacement/rotation specification.
      * @param coordinate_system Optional local coordinate system.
      */
-    Support(NodeRegionPtr node_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
+    Support(NodeRegionPtr node_region,
+            const Vec6& values,
+            cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
     /**
      * @brief Creates a support acting on an element region.
@@ -62,7 +63,9 @@ struct Support : public fem::Printable {
      * @param values Generalized displacement/rotation specification.
      * @param coordinate_system Optional local coordinate system.
      */
-    Support(ElementRegionPtr element_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
+    Support(ElementRegionPtr element_region,
+            const Vec6& values,
+            cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
     /**
      * @brief Creates a support acting on a surface region.
@@ -71,7 +74,9 @@ struct Support : public fem::Printable {
      * @param values Generalized displacement/rotation specification.
      * @param coordinate_system Optional local coordinate system.
      */
-    Support(SurfaceRegionPtr surface_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
+    Support(SurfaceRegionPtr surface_region,
+            const Vec6& values,
+            cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
     /**
      * @brief Applies the support and generates constraint equations.
@@ -87,11 +92,11 @@ struct Support : public fem::Printable {
     std::string str() const override;
 
 private:
-    NodeRegionPtr node_region = nullptr;          ///< Targeted node region.
-    ElementRegionPtr element_region = nullptr;    ///< Targeted element region.
-    SurfaceRegionPtr surface_region = nullptr;    ///< Targeted surface region.
-    Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN};    ///< Constraint specification per DOF.
-    cos::CoordinateSystem::Ptr coordinate_system = nullptr; ///< Optional local coordinate frame.
+    NodeRegionPtr             node_region_        = nullptr;                         ///< Targeted node region.
+    ElementRegionPtr          element_region_     = nullptr;                         ///< Targeted element region.
+    SurfaceRegionPtr          surface_region_     = nullptr;                         ///< Targeted surface region.
+    Vec6                      values_             = {NAN, NAN, NAN, NAN, NAN, NAN}; ///< Constraint specification per DOF.
+    cos::CoordinateSystem::Ptr coordinate_system_ = nullptr;                         ///< Optional local coordinate frame.
 
     /**
      * @brief Applies the support to a single node and generates equations.
@@ -102,6 +107,5 @@ private:
      */
     void apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id);
 };
-
 } // namespace bc
 } // namespace fem

@@ -18,7 +18,6 @@
 
 namespace fem {
 namespace model {
-
 /**
  * @struct ElementInterface
  * @brief Minimal polymorphic interface for FEM elements.
@@ -40,8 +39,8 @@ struct ElementInterface {
     /// Returns the material referenced by the assigned section.
     material::MaterialPtr material() {
         logging::error(_section != nullptr, "no section assigned to element ", elem_id);
-        logging::error(_section->material != nullptr, "no material assigned to element ", elem_id);
-        return _section->material;
+        logging::error(_section->material_ != nullptr, "no material assigned to element ", elem_id);
+        return _section->material_;
     }
 
     /// Returns the global position of a node from the positions field.
@@ -75,6 +74,5 @@ struct ElementInterface {
         return dynamic_cast<T*>(this);
     }
 };
-
 } // namespace model
 } // namespace fem

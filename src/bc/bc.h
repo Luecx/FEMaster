@@ -17,7 +17,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct BoundaryCondition
  * @brief Serves as the abstract root for BC polymorphism.
@@ -29,6 +28,5 @@ namespace bc {
 struct BoundaryCondition {
     using Ptr = std::shared_ptr<BoundaryCondition>; ///< Shared pointer alias for BC ownership.
 };
-
 } // namespace bc
 } // namespace fem

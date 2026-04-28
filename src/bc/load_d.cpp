@@ -18,9 +18,17 @@
 
 namespace fem {
 namespace bc {
-
 namespace {
-
+/**
+ * @brief Converts a partially specified traction vector into usable values.
+ *
+ * `NaN` means an unset component in user input. The assembly routines expect a
+ * complete vector, so unset components are converted to zero while the returned
+ * flag records whether the load has any active component at all.
+ *
+ * @param vector Input vector that may contain `NaN` markers.
+ * @return std::pair<Vec3, bool> Sanitized vector and active-component flag.
+ */
 std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
     bool active = false;
     for (int i = 0; i < 3; ++i) {
@@ -32,17 +40,6 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
     }
     return {vec, active};
 }
-
-inline Precision eval_scale(const Amplitude::Ptr& amp, Precision time) {
-    return amp ? amp->evaluate(time) : Precision(1);
-}
-
-std::string vec3_to_string(const Vec3& v) {
-    std::ostringstream os;
-    os << v[0] << ", " << v[1] << ", " << v[2];
-    return os.str();
-}
-
 } // namespace
 
 /**
@@ -50,35 +47,39 @@ std::string vec3_to_string(const Vec3& v) {
  */
 void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    logging::error(region_ != nullptr, "DLoad: target surface region not set");
     const auto& node_positions = *model_data.positions;
 
-    auto [local_values, has_values] = sanitize_vector(values);
+    auto [local_values, has_values] = sanitize_vector(values_);
     if (!has_values) {
         return;
     }
 
-    const Precision scale = eval_scale(amplitude, time);
+    const Precision scale = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
     local_values *= scale;
 
-    for (auto& surf_id : *region) {
+    for (const ID surf_id : *region_) {
         auto surface = model_data.surfaces[surf_id];
         if (!surface) {
             continue;
         }
 
-        if (!orientation) {
+        if (!orientation_) {
             surface->apply_dload(node_positions, bc, local_values);
             continue;
         }
 
+        // For oriented tractions the local basis can vary over the surface.
+        // Therefore every nodal contribution is rotated at its own node
+        // position before it is added to the global RHS.
         const auto contributions = surface->shape_function_integral(node_positions);
-        int local_idx = 0;
+        int        local_idx     = 0;
         for (auto node_it = surface->begin(); node_it != surface->end(); ++node_it, ++local_idx) {
             const ID node_id = *node_it;
 
             const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
-            const Vec3 local_point = orientation->to_local(position);
-            const auto axes = orientation->get_axes(local_point);
+            const Vec3 local_point = orientation_->to_local(position);
+            const auto axes = orientation_->get_axes(local_point);
             const Vec3 global_values = axes * local_values;
 
             bc(node_id, 0) += contributions(local_idx) * global_values[0];
@@ -93,17 +94,27 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
  */
 std::string DLoad::str() const {
     std::ostringstream os;
-    os << "DLOAD: target=SFSET " << (region ? region->name : std::string("?"))
-       << " (" << (region ? static_cast<int>(region->size()) : 0) << ")"
-       << ", values=[" << vec3_to_string(values) << "]";
-    if (orientation) {
-        os << ", orientation=" << orientation->name;
+
+    os << "DLOAD: target=SFSET "
+       << (region_ ? region_->name : std::string("?"))
+       << " ("
+       << (region_ ? static_cast<int>(region_->size()) : 0)
+       << ")"
+       << ", values=["
+       << values_[0] << ", "
+       << values_[1] << ", "
+       << values_[2]
+       << "]";
+
+    if (orientation_) {
+        os << ", orientation=" << orientation_->name;
     }
-    if (amplitude) {
-        os << ", amplitude=" << amplitude->name;
+
+    if (amplitude_) {
+        os << ", amplitude=" << amplitude_->name;
     }
+
     return os.str();
 }
-
 } // namespace bc
 } // namespace fem

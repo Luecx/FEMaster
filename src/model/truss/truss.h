@@ -7,10 +7,8 @@
 #include "../../material/isotropic_elasticity.h"
 
 namespace fem::model {
-
 template<Index N>
 struct TrussElement : StructuralElement {
-
     static_assert(N == 2, "Only 2-node truss elements are supported.");
 
     std::array<ID, N> node_ids;
@@ -31,9 +29,9 @@ struct TrussElement : StructuralElement {
 
     material::MaterialPtr get_material() {
         auto section = get_section();
-        if (!section->material)
+        if (!section->material_)
             logging::error(false, "TrussElement: no material set for element ", elem_id);
-        return section->material;
+        return section->material_;
     }
 
     material::IsotropicElasticity* get_elasticity() {
@@ -57,13 +55,13 @@ struct TrussElement : StructuralElement {
     }
 
     Precision volume() override {
-        return get_section()->A * length();
+        return get_section()->area_ * length();
     }
 
     // --- Stiffness ---
     virtual StaticMatrix<N * 3, N * 3> stiffness_impl() {
         Precision E = get_elasticity()->youngs;
-        Precision A = get_section()->A;
+        Precision A = get_section()->area_;
         Precision L = length();
 
         StaticMatrix<2, 2> k_local;
@@ -87,7 +85,7 @@ struct TrussElement : StructuralElement {
         if (!mat->has_density()) return M;
 
         Precision rho = mat->get_density();
-        Precision A = get_section()->A;
+        Precision A = get_section()->area_;
         Precision L = length();
         Precision m = rho * A * L;
 
@@ -198,7 +196,7 @@ struct TrussElement : StructuralElement {
 
         const Vec3 t = direction();
         const Precision axial_strain = (u1 - u0).dot(t) / L;
-        const Precision axial_force = get_elasticity()->youngs * get_section()->A * axial_strain;
+        const Precision axial_force = get_elasticity()->youngs * get_section()->area_ * axial_strain;
 
         result[0](0) = axial_force;
         result[1](0) = axial_force;
@@ -214,7 +212,7 @@ struct TrussElement : StructuralElement {
                              bool scale_by_density,
                              const VecField& field) override {
         const Precision L = length();
-        const Precision A = get_section()->A;
+        const Precision A = get_section()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return;
 
         // Midpoint
@@ -241,7 +239,7 @@ struct TrussElement : StructuralElement {
     Precision integrate_scalar_field(bool scale_by_density,
                                      const ScalarField& field) override {
         const Precision L = length();
-        const Precision A = get_section()->A;
+        const Precision A = get_section()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
         Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
         Precision rho = 1.0;
@@ -257,7 +255,7 @@ struct TrussElement : StructuralElement {
     Vec3 integrate_vector_field(bool scale_by_density,
                                 const VecField& field) override {
         const Precision L = length();
-        const Precision A = get_section()->A;
+        const Precision A = get_section()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
         Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
         Precision rho = 1.0;
@@ -273,7 +271,7 @@ struct TrussElement : StructuralElement {
     Mat3 integrate_tensor_field(bool scale_by_density,
                                 const TenField& field) override {
         const Precision L = length();
-        const Precision A = get_section()->A;
+        const Precision A = get_section()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
         Vec3 x_mid = (coordinate(0) + coordinate(1)) * Precision(0.5);
         Precision rho = 1.0;
@@ -288,5 +286,4 @@ struct TrussElement : StructuralElement {
 };
 
 using T3 = TrussElement<2>;
-
 }  // namespace fem::model

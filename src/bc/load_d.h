@@ -16,7 +16,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct DLoad
  * @brief Distributed surface load with vector traction.
@@ -29,15 +28,34 @@ namespace bc {
 struct DLoad : public Load {
     using Ptr = std::shared_ptr<DLoad>; ///< Shared pointer alias for distributed loads.
 
-    Vec3 values{NAN, NAN, NAN};                  ///< Surface traction components.
-    SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
+    Vec3                       values_ = {NAN, NAN, NAN}; ///< Surface traction components.
+    SPtr<model::SurfaceRegion> region_ = nullptr;          ///< Target surface region.
 
+    /**
+     * @brief Default constructor for delayed field assignment by collectors.
+     */
     DLoad() = default;
+
+    /**
+     * @brief Defaulted virtual destructor.
+     */
     ~DLoad() override = default;
 
+    /**
+     * @brief Integrates the traction over every target surface.
+     *
+     * @param model_data Model data used for positions and surface lookup.
+     * @param bc Boundary-condition field receiving nodal forces.
+     * @param time Current analysis time for amplitude scaling.
+     */
     void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+
+    /**
+     * @brief Returns a compact description of the distributed load.
+     *
+     * @return std::string Target region, values, orientation and amplitude.
+     */
     std::string str() const override;
 };
-
 } // namespace bc
 } // namespace fem

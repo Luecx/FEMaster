@@ -16,7 +16,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct CLoad
  * @brief Concentrated nodal load.
@@ -29,15 +28,34 @@ namespace bc {
 struct CLoad : public Load {
     using Ptr = std::shared_ptr<CLoad>; ///< Shared pointer alias for concentrated loads.
 
-    Vec6 values{NAN, NAN, NAN, NAN, NAN, NAN}; ///< Generalized load vector (Fx,Fy,Fz,Mx,My,Mz).
-    SPtr<model::NodeRegion> region = nullptr;   ///< Target node region.
+    Vec6                    values_ = {NAN, NAN, NAN, NAN, NAN, NAN}; ///< Generalized load vector (Fx,Fy,Fz,Mx,My,Mz).
+    SPtr<model::NodeRegion> region_ = nullptr;                         ///< Target node region.
 
+    /**
+     * @brief Default constructor for delayed field assignment by collectors.
+     */
     CLoad() = default;
+
+    /**
+     * @brief Defaulted virtual destructor.
+     */
     ~CLoad() override = default;
 
+    /**
+     * @brief Scatters concentrated forces and moments to each target node.
+     *
+     * @param model_data Model data used for node positions and local orientation lookup.
+     * @param bc Boundary-condition field receiving force and moment components.
+     * @param time Current analysis time for amplitude scaling.
+     */
     void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+
+    /**
+     * @brief Returns a compact description of the concentrated load.
+     *
+     * @return std::string Target region, values, orientation and amplitude.
+     */
     std::string str() const override;
 };
-
 } // namespace bc
 } // namespace fem

@@ -16,7 +16,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct InertialLoad
  * @brief Rigid-body inertial load with translational and rotational terms.
@@ -26,21 +25,40 @@ namespace bc {
  * `a(x) = a0 + alpha x r + omega x (omega x r)` and `r = x - center`.
  */
 struct InertialLoad : public Load {
-    using Ptr = std::shared_ptr<InertialLoad>;
+    using Ptr = std::shared_ptr<InertialLoad>; ///< Shared pointer alias for inertial loads.
 
-    Vec3 center{0, 0, 0};
-    Vec3 center_acc{0, 0, 0};
-    Vec3 omega{0, 0, 0};
-    Vec3 alpha{0, 0, 0};
-    SPtr<model::ElementRegion> region = nullptr; ///< Target element region.
-    bool consider_point_masses = false;          ///< Include point-mass features in inertial force assembly.
+    Vec3                       center_                = {0, 0, 0}; ///< Reference point for rotational terms.
+    Vec3                       center_acc_            = {0, 0, 0}; ///< Translational acceleration at the reference point.
+    Vec3                       omega_                 = {0, 0, 0}; ///< Angular velocity vector.
+    Vec3                       alpha_                 = {0, 0, 0}; ///< Angular acceleration vector.
+    SPtr<model::ElementRegion> region_                = nullptr;   ///< Target element region.
+    bool                       consider_point_masses_ = false;     ///< Include point-mass features in inertial force assembly.
 
+    /**
+     * @brief Default constructor for delayed field assignment by collectors.
+     */
     InertialLoad() = default;
+
+    /**
+     * @brief Defaulted virtual destructor.
+     */
     ~InertialLoad() override = default;
 
+    /**
+     * @brief Integrates rigid-body inertia over target structural elements.
+     *
+     * @param model_data Model data used for elements, nodes and optional point masses.
+     * @param bc Boundary-condition field receiving equivalent nodal forces.
+     * @param time Current analysis time. Inertial loads currently ignore it.
+     */
     void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+
+    /**
+     * @brief Returns a compact description of the inertial load.
+     *
+     * @return std::string Target region and rigid-body acceleration parameters.
+     */
     std::string str() const override;
 };
-
 } // namespace bc
 } // namespace fem

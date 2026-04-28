@@ -16,26 +16,20 @@
 
 namespace fem {
 namespace bc {
-
-namespace {
-
-inline Precision eval_scale(const Amplitude::Ptr& amp, Precision time) {
-    return amp ? amp->evaluate(time) : Precision(1);
-}
-
-} // namespace
-
 /**
  * @copydoc PLoad::apply
  */
 void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    logging::error(region_ != nullptr, "PLoad: target surface region not set");
     const auto& node_positions = *model_data.positions;
 
-    const Precision scale = eval_scale(amplitude, time);
-    const Precision scaled_pressure = pressure * scale;
+    // Pressure is scalar, so amplitude scaling can be applied once before the
+    // geometry-specific surface integration distributes it to nodes.
+    const Precision scale           = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
+    const Precision scaled_pressure = pressure_ * scale;
 
-    for (auto& surf_id : *region) {
+    for (const ID surf_id : *region_) {
         model_data.surfaces[surf_id]->apply_pload(node_positions, bc, scaled_pressure);
     }
 }
@@ -45,14 +39,19 @@ void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
  */
 std::string PLoad::str() const {
     std::ostringstream os;
-    os << "PLOAD: target=SFSET " << (region ? region->name : std::string("?"))
-       << " (" << (region ? static_cast<int>(region->size()) : 0) << ")"
-       << ", p=" << pressure;
-    if (amplitude) {
-        os << ", amplitude=" << amplitude->name;
+
+    os << "PLOAD: target=SFSET "
+       << (region_ ? region_->name : std::string("?"))
+       << " ("
+       << (region_ ? static_cast<int>(region_->size()) : 0)
+       << ")"
+       << ", p=" << pressure_;
+
+    if (amplitude_) {
+        os << ", amplitude=" << amplitude_->name;
     }
+
     return os.str();
 }
-
 } // namespace bc
 } // namespace fem

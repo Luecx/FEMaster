@@ -19,14 +19,16 @@
 
 #pragma once
 
+#include "amplitude.h"
+#include "bc.h"
+
+#include "../core/printable.h"
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
-#include "amplitude.h"
 #include "../cos/coordinate_system.h"
 #include "../data/field.h"
 #include "../data/region.h"
-#include "bc.h"
-#include "../core/printable.h"
+
 #include <string>
 
 namespace fem {
@@ -37,7 +39,6 @@ class ModelData;
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct Load
  * @brief Base interface for load boundary conditions.
@@ -49,8 +50,8 @@ namespace bc {
 struct Load : public BoundaryCondition, public fem::Printable {
     using Ptr = std::shared_ptr<Load>; ///< Shared pointer alias for load storage.
 
-    cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional local orientation.
-    Amplitude::Ptr amplitude = nullptr;               ///< Optional time-dependent scaling.
+    cos::CoordinateSystem::Ptr orientation_ = nullptr; ///< Optional local orientation.
+    Amplitude::Ptr            amplitude_   = nullptr; ///< Optional time-dependent scaling.
 
     /**
      * @brief Virtual defaulted destructor to enable polymorphic deletion.
@@ -62,13 +63,17 @@ struct Load : public BoundaryCondition, public fem::Printable {
      *
      * @param model_data Model data that provides geometry and topology.
      * @param bc Boundary-condition storage where load contributions are added.
+     * @param time Current analysis time used for amplitude scaling.
      */
     virtual void apply(model::ModelData& model_data, model::Field& bc, Precision time) = 0;
 
-    /// One-line description of the load (type, target, parameters)
+    /**
+     * @brief Builds a compact one-line description of the load.
+     *
+     * @return std::string Load type, target and relevant parameters.
+     */
     std::string str() const override = 0;
 };
-
 } // namespace bc
 } // namespace fem
 

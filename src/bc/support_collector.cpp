@@ -17,7 +17,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @copydoc SupportCollector::SupportCollector
  */
@@ -38,23 +37,28 @@ constraint::Equations SupportCollector::get_equations(model::ModelData& model_da
 /**
  * @copydoc SupportCollector::add_supp(model::NodeRegion::Ptr,Vec6,cos::CoordinateSystem::Ptr)
  */
-void SupportCollector::add_supp(model::NodeRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system) {
+void SupportCollector::add_supp(model::NodeRegion::Ptr region,
+                                Vec6 values,
+                                cos::CoordinateSystem::Ptr coordinate_system) {
     this->_data.emplace_back(Support{std::move(region), values, std::move(coordinate_system)});
 }
 
 /**
  * @copydoc SupportCollector::add_supp(model::ElementRegion::Ptr,Vec6,cos::CoordinateSystem::Ptr)
  */
-void SupportCollector::add_supp(model::ElementRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system) {
+void SupportCollector::add_supp(model::ElementRegion::Ptr region,
+                                Vec6 values,
+                                cos::CoordinateSystem::Ptr coordinate_system) {
     this->_data.emplace_back(Support{std::move(region), values, std::move(coordinate_system)});
 }
 
 /**
  * @copydoc SupportCollector::add_supp(model::SurfaceRegion::Ptr,Vec6,cos::CoordinateSystem::Ptr)
  */
-void SupportCollector::add_supp(model::SurfaceRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system) {
+void SupportCollector::add_supp(model::SurfaceRegion::Ptr region,
+                                Vec6 values,
+                                cos::CoordinateSystem::Ptr coordinate_system) {
     this->_data.emplace_back(Support{std::move(region), values, std::move(coordinate_system)});
 }
-
 } // namespace bc
 } // namespace fem

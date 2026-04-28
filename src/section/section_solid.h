@@ -1,41 +1,38 @@
 /**
-* @file section_solid.h
-* @brief Defines the SolidSection class for solid FEM sections.
-*
-* A solid section associates a material and a region without additional
-* properties.
-*
-* @see section_solid.cpp
-* @date 21.11.2024
-*/
+ * @file section_solid.h
+ * @brief Declares solid section properties.
+ *
+ * @see src/section/section_solid.cpp
+ * @author Finn Eggers
+ * @date 28.04.2026
+ */
 
 #pragma once
 
 #include "section.h"
+
 #include "../cos/coordinate_system.h"
 
 namespace fem {
-
 /**
-* @class SolidSection
-* @brief Represents a solid FEM section.
-*
-* A solid section contains material and region information.
-*/
+ * @struct SolidSection
+ * @brief Section definition for solid elements.
+ */
 struct SolidSection : Section {
-   using Ptr = std::shared_ptr<SolidSection>;
+    using Ptr = std::shared_ptr<SolidSection>; ///< Shared pointer alias for solid sections.
 
-   cos::CoordinateSystem::Ptr orientation = nullptr; ///< Optional material orientation.
+    cos::CoordinateSystem::Ptr orientation_ = nullptr; ///< Optional material orientation.
 
-   /**
-    * @brief Outputs information about the solid section.
-    */
-   void info() override;
+    /**
+     * @brief Outputs solid section details through the logger.
+     */
+    void info() override;
 
-   /**
-    * @brief One-line section description.
-    */
-   std::string str() const override;
+    /**
+     * @brief Builds a compact one-line solid section summary.
+     *
+     * @return std::string Material, region and orientation.
+     */
+    std::string str() const override;
 };
-
 } // namespace fem

@@ -17,9 +17,7 @@
 #include <algorithm>
 
 namespace fem {
-
 namespace {
-
 void accumulate_structural_mass_and_center(const model::ModelData& data,
                                            Precision& mass_sum,
                                            Vec3& first_moment) {
@@ -43,22 +41,22 @@ void accumulate_point_mass_mass_and_center(const model::ModelData& data,
                                            Vec3& first_moment) {
     for (const auto& feature_ptr : data.features) {
         const auto* pm = dynamic_cast<const feature::PointMass*>(feature_ptr.get());
-        if (!pm || !pm->region) {
+        if (!pm || !pm->region_) {
             continue;
         }
 
-        if (pm->mass == Precision(0)) {
+        if (pm->mass_ == Precision(0)) {
             continue;
         }
 
-        for (const ID node_id : *pm->region) {
+        for (const ID node_id : *pm->region_) {
             logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
                            "InertiaRelief (point masses): node id ", node_id,
                            " out of bounds for positions field with ", positions.rows, " rows");
 
             const Vec3 x = positions.row_vec3(static_cast<Index>(node_id));
-            mass_sum += pm->mass;
-            first_moment += pm->mass * x;
+            mass_sum += pm->mass_;
+            first_moment += pm->mass_ * x;
         }
     }
 }
@@ -89,11 +87,11 @@ void accumulate_point_mass_inertia(const model::ModelData& data,
                                    Mat3& inertia_tensor) {
     for (const auto& feature_ptr : data.features) {
         const auto* pm = dynamic_cast<const feature::PointMass*>(feature_ptr.get());
-        if (!pm || !pm->region) {
+        if (!pm || !pm->region_) {
             continue;
         }
 
-        for (const ID node_id : *pm->region) {
+        for (const ID node_id : *pm->region_) {
             logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
                            "InertiaRelief (point masses): node id ", node_id,
                            " out of bounds for positions field with ", positions.rows, " rows");
@@ -101,14 +99,13 @@ void accumulate_point_mass_inertia(const model::ModelData& data,
             const Vec3 x = positions.row_vec3(static_cast<Index>(node_id));
             const Vec3 r = x - center_of_gravity;
             const Precision r2 = r.squaredNorm();
-            inertia_tensor += pm->mass * (r2 * Mat3::Identity() - (r * r.transpose()));
+            inertia_tensor += pm->mass_ * (r2 * Mat3::Identity() - (r * r.transpose()));
 
             // Additional rotary inertia directly attached to node rotational DOFs.
-            inertia_tensor.diagonal() += pm->rotary_inertia;
+            inertia_tensor.diagonal() += pm->rotary_inertia_;
         }
     }
 }
-
 } // namespace
 
 void apply_inertia_relief(model::ModelData& model_data,
@@ -249,12 +246,12 @@ void apply_inertia_relief(model::ModelData& model_data,
     inertial_mat.set_zero();
 
     fem::bc::InertialLoad ir;
-    ir.center     = c;
-    ir.center_acc = a0;
-    ir.alpha      = alpha;
-    ir.omega      = Vec3::Zero();
-    ir.region     = model_data.elem_sets.all();
-    ir.consider_point_masses = consider_point_masses;
+    ir.center_                = c;
+    ir.center_acc_            = a0;
+    ir.alpha_                 = alpha;
+    ir.omega_                 = Vec3::Zero();
+    ir.region_                = model_data.elem_sets.all();
+    ir.consider_point_masses_ = consider_point_masses;
 
     ir.apply(data, inertial_mat, Precision(0));
 
@@ -277,5 +274,4 @@ void apply_inertia_relief(model::ModelData& model_data,
                    Msum.template lpNorm<Eigen::Infinity>() <= tolM,
                    "InertiaRelief: residual balance too large (|F|=", Fsum.norm(), ", |M|=", Msum.norm(), ")");
 }
-
 } // namespace fem

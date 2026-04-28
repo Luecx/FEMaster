@@ -14,7 +14,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct TLoad
  * @brief Thermal load derived from a temperature field.
@@ -25,15 +24,34 @@ namespace bc {
 struct TLoad : public Load {
     using Ptr = std::shared_ptr<TLoad>; ///< Shared pointer alias for thermal loads.
 
-    SPtr<model::Field> temp_field = nullptr; ///< Temperature field reference.
-    Precision ref_temp{NAN};                 ///< Reference temperature for zero load.
+    SPtr<model::Field> temp_field_ = nullptr; ///< Temperature field reference.
+    Precision          ref_temp_   = NAN;     ///< Reference temperature for zero load.
 
+    /**
+     * @brief Default constructor for delayed field assignment by collectors.
+     */
     TLoad() = default;
+
+    /**
+     * @brief Defaulted virtual destructor.
+     */
     ~TLoad() override = default;
 
+    /**
+     * @brief Applies thermal expansion loads to all structural elements.
+     *
+     * @param model_data Model data that provides the structural elements.
+     * @param bc Boundary-condition field receiving equivalent nodal forces.
+     * @param time Current analysis time. Thermal loads currently ignore it.
+     */
     void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+
+    /**
+     * @brief Returns a compact description of the thermal load.
+     *
+     * @return std::string Temperature field name and reference temperature.
+     */
     std::string str() const override;
 };
-
 } // namespace bc
 } // namespace fem

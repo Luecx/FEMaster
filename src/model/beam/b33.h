@@ -17,7 +17,6 @@
 
 namespace fem {
 namespace model {
-
 struct B33 : BeamElement<2> {
     B33(ID elem_id, std::array<ID, 2> node_ids_in, ID orientation_node_id = static_cast<ID>(-1))
         : BeamElement(elem_id, node_ids_in, orientation_node_id) {}
@@ -36,11 +35,11 @@ struct B33 : BeamElement<2> {
 
         Precision E = get_elasticity()->youngs;
         Precision G = get_elasticity()->shear;
-        Precision A = get_profile()->A;
-        Precision Iy = get_profile()->I_y;
-        Precision Iz = get_profile()->I_z;
-        Precision Iyz = get_profile()->I_yz;
-        Precision It = get_profile()->I_t;
+        Precision A = get_profile()->area_;
+        Precision Iy = get_profile()->inertia_y_;
+        Precision Iz = get_profile()->inertia_z_;
+        Precision Iyz = get_profile()->product_inertia_yz_;
+        Precision It = get_profile()->torsion_inertia_;
         Precision L = length();
 
         // rotate inertias to principal axes (and we will rotate offsets with the same phi)
@@ -90,13 +89,12 @@ struct B33 : BeamElement<2> {
         // ------------------------------------------------------------------
         Profile* pr = get_profile();
 
-        // REQUIRED profile members (rename if needed):
-        //   pr->e_y, pr->e_z     : (SP - SMP)
-        //   pr->ref_y, pr->ref_z : (REF - SMP)
-        Precision ey = pr->e_y;
-        Precision ez = pr->e_z;
-        Precision refy = pr->ref_y;
-        Precision refz = pr->ref_z;
+        // Offsets are stored relative to SMP and are rotated into the same
+        // local basis as the principal section stiffness before assembly.
+        Precision ey   = pr->offset_y_;
+        Precision ez   = pr->offset_z_;
+        Precision refy = pr->reference_y_;
+        Precision refz = pr->reference_z_;
 
         // rotate offsets from base yz to principal yz if needed
         BeamElement<2>::rotate_yz_to_principal(phi, ey,   ez);
@@ -138,10 +136,10 @@ struct B33 : BeamElement<2> {
         // ------------------------------------------------------------------
         StaticMatrix<12, 12> M_sp = StaticMatrix<12, 12>::Zero();
 
-        Precision A   = get_profile()->A;
+        Precision A   = get_profile()->area_;
         Precision L   = length();
         Precision rho = get_material()->get_density();
-        Precision Ip  = get_profile()->I_y + get_profile()->I_z; // polar about SP if I_y, I_z about SP
+        Precision Ip  = get_profile()->inertia_y_ + get_profile()->inertia_z_; // polar about SP if I_y, I_z about SP
         Precision IpA = Ip / A;
 
         M_sp <<
@@ -166,9 +164,9 @@ struct B33 : BeamElement<2> {
         // ------------------------------------------------------------------
         Precision phi = Precision(0);
         {
-            const Precision Iy  = get_profile()->I_y;
-            const Precision Iz  = get_profile()->I_z;
-            const Precision Iyz = get_profile()->I_yz;
+            const Precision Iy  = get_profile()->inertia_y_;
+            const Precision Iz  = get_profile()->inertia_z_;
+            const Precision Iyz = get_profile()->product_inertia_yz_;
             const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
             if (std::abs(Iyz) > scale * Precision(1e-14)) {
                 phi = principal_angle();
@@ -180,10 +178,10 @@ struct B33 : BeamElement<2> {
         // Offsets provided relative to SMP:
         //   ey, ez   := COG - SMP = SP - SMP
         //   ref_y,z  := REF - SMP
-        Precision ey   = pr->e_y;
-        Precision ez   = pr->e_z;
-        Precision refy = pr->ref_y;
-        Precision refz = pr->ref_z;
+        Precision ey   = pr->offset_y_;
+        Precision ez   = pr->offset_z_;
+        Precision refy = pr->reference_y_;
+        Precision refz = pr->reference_z_;
 
         BeamElement<2>::rotate_yz_to_principal(phi, ey,   ez);
         BeamElement<2>::rotate_yz_to_principal(phi, refy, refz);
@@ -211,7 +209,7 @@ struct B33 : BeamElement<2> {
         (void)ip_strain;
 
         const Precision E = get_elasticity()->youngs;
-        const Precision A = get_profile()->A;
+        const Precision A = get_profile()->area_;
         const Precision L = length();
 
         StaticMatrix<12, 1> u_global;
@@ -286,6 +284,5 @@ struct B33 : BeamElement<2> {
         return std::make_shared<Line2A>(this->node_ids);
     }
 };
-
 } // namespace model
 } // namespace fem

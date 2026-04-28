@@ -25,7 +25,6 @@ class ModelData;
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct SupportCollector
  * @brief Stores supports and assembles their constraint equations.
@@ -86,6 +85,5 @@ struct SupportCollector : model::Collection<Support> {
      */
     void add_supp(model::SurfaceRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 };
-
 } // namespace bc
 } // namespace fem

@@ -28,9 +28,11 @@
 
 #include "../data/field.h"
 
+#include <memory>
+#include <utility>
+
 namespace fem {
 namespace bc {
-
 /**
  * @copydoc LoadCollector::LoadCollector
  */
@@ -57,10 +59,10 @@ void LoadCollector::add_cload(model::NodeRegion::Ptr region,
                               cos::CoordinateSystem::Ptr orientation,
                               Amplitude::Ptr amplitude) {
     auto cload = std::make_shared<CLoad>();
-    cload->region = std::move(region);
-    cload->values = values;
-    cload->orientation = std::move(orientation);
-    cload->amplitude = std::move(amplitude);
+    cload->region_      = std::move(region);
+    cload->values_      = values;
+    cload->orientation_ = std::move(orientation);
+    cload->amplitude_   = std::move(amplitude);
     this->add(cload);
 }
 
@@ -72,10 +74,10 @@ void LoadCollector::add_dload(model::SurfaceRegion::Ptr region,
                               cos::CoordinateSystem::Ptr orientation,
                               Amplitude::Ptr amplitude) {
     auto dload = std::make_shared<DLoad>();
-    dload->region = std::move(region);
-    dload->values = values;
-    dload->orientation = std::move(orientation);
-    dload->amplitude = std::move(amplitude);
+    dload->region_      = std::move(region);
+    dload->values_      = values;
+    dload->orientation_ = std::move(orientation);
+    dload->amplitude_   = std::move(amplitude);
     this->add(dload);
 }
 
@@ -86,9 +88,9 @@ void LoadCollector::add_pload(model::SurfaceRegion::Ptr region,
                               Precision pressure,
                               Amplitude::Ptr amplitude) {
     auto pload = std::make_shared<PLoad>();
-    pload->region = std::move(region);
-    pload->pressure = pressure;
-    pload->amplitude = std::move(amplitude);
+    pload->region_    = std::move(region);
+    pload->pressure_  = pressure;
+    pload->amplitude_ = std::move(amplitude);
     this->add(pload);
 }
 
@@ -100,10 +102,10 @@ void LoadCollector::add_vload(model::ElementRegion::Ptr region,
                               cos::CoordinateSystem::Ptr orientation,
                               Amplitude::Ptr amplitude) {
     auto vload = std::make_shared<VLoad>();
-    vload->region = std::move(region);
-    vload->values = values;
-    vload->orientation = std::move(orientation);
-    vload->amplitude = std::move(amplitude);
+    vload->region_      = std::move(region);
+    vload->values_      = values;
+    vload->orientation_ = std::move(orientation);
+    vload->amplitude_   = std::move(amplitude);
     this->add(vload);
 }
 
@@ -112,26 +114,28 @@ void LoadCollector::add_vload(model::ElementRegion::Ptr region,
  */
 void LoadCollector::add_tload(model::Field::Ptr temp_field, Precision ref_temp) {
     auto tload = std::make_shared<TLoad>();
-    tload->temp_field = std::move(temp_field);
-    tload->ref_temp = ref_temp;
+    tload->temp_field_ = std::move(temp_field);
+    tload->ref_temp_   = ref_temp;
     this->add(tload);
 }
 
+/**
+ * @copydoc LoadCollector::add_inertialload
+ */
 void LoadCollector::add_inertialload(model::ElementRegion::Ptr region,
                                      Vec3 center,
                                      Vec3 center_acc,
                                      Vec3 omega,
                                      Vec3 alpha,
                                      bool consider_point_masses) {
-    auto il = std::make_shared<InertialLoad>();
-    il->region      = std::move(region);
-    il->center      = center;
-    il->center_acc  = center_acc;
-    il->omega       = omega;
-    il->alpha       = alpha;
-    il->consider_point_masses = consider_point_masses;
-    this->add(il);
+    auto inertial_load = std::make_shared<InertialLoad>();
+    inertial_load->region_                = std::move(region);
+    inertial_load->center_                = center;
+    inertial_load->center_acc_            = center_acc;
+    inertial_load->omega_                 = omega;
+    inertial_load->alpha_                 = alpha;
+    inertial_load->consider_point_masses_ = consider_point_masses;
+    this->add(inertial_load);
 }
-
 } // namespace bc
 } // namespace fem

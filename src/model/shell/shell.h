@@ -21,7 +21,6 @@ struct ShellElement : StructuralElement {
     ShellElement(ID p_elem_id, std::array<ID, N> p_node_ids) : StructuralElement(p_elem_id), node_ids {p_node_ids} {}
     virtual ~ShellElement() override = default;
 
-
     ShellSection* get_section() {
         if (!this->_section) {
             logging::error(false, "Section not set for element ", this->elem_id);
@@ -33,10 +32,10 @@ struct ShellElement : StructuralElement {
     }
     material::MaterialPtr get_material() {
         ShellSection* section = get_section();
-        if (!section->material) {
+        if (!section->material_) {
             logging::error(false, "Material not set for element ", this->elem_id);
         }
-        return section->material;
+        return section->material_;
     }
     material::Elasticity* get_elasticity() {
         auto mat_ptr = get_material();
@@ -113,7 +112,7 @@ struct ShellElement : StructuralElement {
         auto surf = this->surface(1);
         if (!surf) return;
         auto contrib = surf->shape_function_integral(node_positions);
-        const Precision t = get_section()->thickness;
+        const Precision t = get_section()->thickness_;
         for (Index local_id = 0; local_id < N; ++local_id) {
             const ID n_id = node_ids[local_id];
             const Precision w = contrib(local_id) * t;
@@ -187,6 +186,5 @@ struct ShellElement : StructuralElement {
     protected:
 };
 }
-
 
 #endif //SHELL_H

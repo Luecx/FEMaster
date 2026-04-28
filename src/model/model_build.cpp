@@ -14,19 +14,16 @@
 #include <string>
 
 namespace fem {
-
 namespace model {
-
 void Model::assign_sections() {
     for (Section::Ptr ptr: this->_data->sections) {
-        for (ID elem_id: *ptr->region) {
+        for (ID elem_id: *ptr->region_) {
             if (this->_data->elements[elem_id] != nullptr) {
                 this->_data->elements[elem_id]->set_section(ptr);
             }
         }
     }
 }
-
 
 SystemDofIds Model::build_unconstrained_index_matrix() {
     // first build a boolean matrix of which dofs are present in the system
@@ -92,7 +89,6 @@ Field Model::build_integration_point_numeration() {
     return ip_numeration;
 }
 
-
 Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
     Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, static_cast<Index>(this->_data->max_nodes), 6};
     load_matrix.set_zero();
@@ -109,7 +105,6 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
 
     return load_matrix;
 }
-
 
 constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
                                                    const std::vector<std::string>& supp_sets) {
@@ -260,7 +255,6 @@ SparseMatrix Model::build_geom_stiffness_matrix(SystemDofIds &indices,
     return mattools::assemble_matrix(_data->elements, indices, lambda);
 }
 
-
 SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
         if (auto sel = el->as<StructuralElement>()) {
@@ -280,7 +274,5 @@ SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
     }
     return res;
 }
-
-
 }
 }

@@ -1,70 +1,68 @@
 /**
-* @file section.h
-* @brief Base class definition for different FEM section types.
-*
-* This file contains the abstract base class Section and its derived classes,
-* including SolidSection, BeamSection, ShellSection, and PointMassSection.
-* Each derived class represents a specific type of section with associated
-* properties and behavior.
-*
-* @see section.cpp
-* @see solid_section.h
-* @see beam_section.h
-* @see shell_section.h
-* @see point_mass_section.h
-*
-* @author Finn Eggers
-* @date 21.11.2024
-*/
+ * @file section.h
+ * @brief Declares the base interface for FEM section definitions.
+ *
+ * Sections bind element regions to material data and provide type-specific
+ * section properties for solids, shells, beams and trusses.
+ *
+ * @see src/section/section.cpp
+ * @see src/section/section_solid.h
+ * @see src/section/section_shell.h
+ * @see src/section/section_beam.h
+ * @see src/section/section_truss.h
+ * @author Finn Eggers
+ * @date 28.04.2026
+ */
 
 #pragma once
 
-#include "../material/material.h"
-#include "../data/region.h"
 #include "../core/printable.h"
+#include "../data/region.h"
+#include "../material/material.h"
+
 #include <memory>
 #include <string>
 
 namespace fem {
-
 /**
-* @class Section
-* @brief Abstract base class for FEM sections.
-*
-* The Section class provides a common interface and base implementation
-* for different section types in the FEM solver. Each derived class
-* specializes the section properties and behavior.
-*/
+ * @struct Section
+ * @brief Abstract base class for FEM sections.
+ *
+ * Every concrete section owns the material-region pairing used by elements and
+ * adds only the extra properties needed by that element family.
+ */
 struct Section : public fem::Printable {
-   using Ptr = std::shared_ptr<Section>;
+    using Ptr = std::shared_ptr<Section>; ///< Shared pointer alias for section ownership.
 
-   virtual ~Section() = default; ///< Default virtual destructor for polymorphism.
+    material::Material::Ptr  material_ = nullptr; ///< Material associated with the section.
+    model::ElementRegion::Ptr region_  = nullptr; ///< Element region associated with the section.
 
-   material::Material::Ptr material = nullptr; ///< Material associated with the section.
-   model::ElementRegion::Ptr region = nullptr; ///< Element region associated with the section.
+    /**
+     * @brief Defaulted virtual destructor for polymorphic deletion.
+     */
+    virtual ~Section() = default;
 
-   /**
-    * @brief Dynamic cast helper method.
-    *
-    * Casts this Section to a derived type.
-    *
-    * @tparam T Derived type to cast to.
-    * @return T* Pointer to the derived type or nullptr if the cast fails.
-    */
-   template<typename T>
-   T* as() {
-       return dynamic_cast<T*>(this);
-   }
+    /**
+     * @brief Casts this section to a concrete section type.
+     *
+     * @tparam T Concrete section type.
+     * @return T* Pointer to the concrete type, or nullptr on mismatch.
+     */
+    template<typename T>
+    T* as() {
+        return dynamic_cast<T*>(this);
+    }
 
-   /**
-    * @brief Outputs information about the section.
-    */
-   virtual void info() = 0;
+    /**
+     * @brief Outputs section details through the logger.
+     */
+    virtual void info() = 0;
 
-   /**
-    * @brief One-line string summary of the section.
-    */
-   virtual std::string str() const override = 0;
+    /**
+     * @brief Builds a compact one-line section summary.
+     *
+     * @return std::string Section type, material, region and properties.
+     */
+    std::string str() const override = 0;
 };
-
 } // namespace fem

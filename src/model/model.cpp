@@ -12,12 +12,10 @@
 
 namespace fem {
 namespace model {
-
 void Model::add_connector(const std::string& set1,
                           const std::string& set2,
                           const std::string& coordinate_system,
                           constraint::ConnectorType type) {
-
     logging::error(_data->node_sets.has(set1), "Node set ", set1, " does not exist");
     logging::error(_data->node_sets.has(set2), "Node set ", set2, " does not exist");
 
@@ -119,7 +117,6 @@ void Model::add_rbm(const std::string& set) {
                    "RBM: element set ", set, " is empty");
     _data->rbms.emplace_back(_data->elem_sets.get(set));
 }
-
 
 void Model::add_cload(const std::string& nset, Vec6 load, const std::string& orientation, const std::string& amplitude){
     logging::error(_data->node_sets.has(nset), "Node set ", nset, " does not exist");
@@ -339,9 +336,9 @@ void Model::solid_section(const std::string& set, const std::string& material, c
     }
 
     SolidSection::Ptr section = std::make_shared<SolidSection>();
-    section->material = _data->materials.get(material);
-    section->region   = _data->elem_sets.get(set);
-    section->orientation = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
+    section->material_    = _data->materials.get(material);
+    section->region_      = _data->elem_sets.get(set);
+    section->orientation_ = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
     this->_data->sections.push_back(section);
 }
 
@@ -350,10 +347,10 @@ void Model::beam_section(const std::string& set, const std::string& material,  c
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
     logging::error(_data->profiles.has(profile), "Profile ", profile, " is not a defined profile");
     BeamSection::Ptr sec = std::make_shared<BeamSection>();
-    sec->material = _data->materials.get(material);
-    sec->region   = _data->elem_sets.get(set);
-    sec->profile  = _data->profiles.get(profile);
-    sec->n1       = orientation;
+    sec->material_  = _data->materials.get(material);
+    sec->region_    = _data->elem_sets.get(set);
+    sec->profile_   = _data->profiles.get(profile);
+    sec->direction_ = orientation;
     this->_data->sections.push_back(sec);
 }
 
@@ -361,9 +358,9 @@ void Model::truss_section(const std::string& set, const std::string& material, P
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
     TrussSection::Ptr sec = std::make_shared<TrussSection>();
-    sec->material = _data->materials.get(material);
-    sec->region   = _data->elem_sets.get(set);
-    sec->A        = area;
+    sec->material_ = _data->materials.get(material);
+    sec->region_   = _data->elem_sets.get(set);
+    sec->area_     = area;
     this->_data->sections.push_back(sec);
 }
 
@@ -374,10 +371,10 @@ void Model::shell_section(const std::string& set, const std::string& material, P
         logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
     }
     ShellSection::Ptr sec = std::make_shared<ShellSection>();
-    sec->material = _data->materials.get(material);
-    sec->region = _data->elem_sets.get(set);
-    sec->thickness = thickness;
-    sec->orientation = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
+    sec->material_    = _data->materials.get(material);
+    sec->region_      = _data->elem_sets.get(set);
+    sec->thickness_   = thickness;
+    sec->orientation_ = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
     this->_data->sections.push_back(sec);
 }
 
@@ -388,11 +385,11 @@ void Model::add_point_mass_feature(const std::string& nset,
                                    Vec3 rotary_spring) {
     logging::error(_data->node_sets.has(nset), "Node set ", nset, " is not a defined node set");
     auto feat = std::make_shared<feature::PointMass>();
-    feat->region = _data->node_sets.get(nset);
-    feat->mass = mass;
-    feat->rotary_inertia = rotary_inertia;
-    feat->spring_constants = spring;
-    feat->rotary_spring_constants = rotary_spring;
+    feat->region_                  = _data->node_sets.get(nset);
+    feat->mass_                    = mass;
+    feat->rotary_inertia_          = rotary_inertia;
+    feat->spring_constants_        = spring;
+    feat->rotary_spring_constants_ = rotary_spring;
     this->_data->features.push_back(std::move(feat));
 }
 
@@ -445,6 +442,5 @@ std::ostream& operator<<(std::ostream& ostream, const model::Model& model) {
     // }
     // return ostream;
 }
-
 } // namespace model
 } // namespace fem

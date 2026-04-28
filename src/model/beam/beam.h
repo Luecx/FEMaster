@@ -21,7 +21,6 @@
 
 namespace fem {
 namespace model {
-
 /**
  * @struct BeamElement
  * @brief Provides shared functionality for beam formulations with `N` nodes.
@@ -48,28 +47,28 @@ struct BeamElement : StructuralElement {
         return this->_section->template as<BeamSection>();
     }
 
-    Profile* get_profile() { return get_section()->profile.get(); }
+    Profile* get_profile() { return get_section()->profile_.get(); }
 
     material::MaterialPtr get_material() {
         BeamSection* section = get_section();
-        if (!section->material) {
+        if (!section->material_) {
             logging::error(false, "Material not set for element ", this->elem_id);
         }
-        return section->material;
+        return section->material_;
     }
 
     material::IsotropicElasticity* get_elasticity() {
         BeamSection* section = get_section();
-        if (!section->material) {
+        if (!section->material_) {
             logging::error(false, "Material not set for element ", this->elem_id);
         }
-        if (!section->material->has_elasticity()) {
+        if (!section->material_->has_elasticity()) {
             logging::error(false, "Material has no elasticity assigned");
         }
-        if (!section->material->elasticity()->template as<material::IsotropicElasticity>()) {
+        if (!section->material_->elasticity()->template as<material::IsotropicElasticity>()) {
             logging::error(false, "Material is not isotropic for element ", this->elem_id);
         }
-        return section->material->elasticity()->template as<material::IsotropicElasticity>();
+        return section->material_->elasticity()->template as<material::IsotropicElasticity>();
     }
 
     Vec3 coordinate(Index index) { return this->node_position(node_ids[index]); }
@@ -81,7 +80,7 @@ struct BeamElement : StructuralElement {
     Vec3 orientation_direction() {
         constexpr Precision kOrientationEps = static_cast<Precision>(1e-12);
         BeamSection* section = get_section();
-        const bool section_has_direction = section && section->n1.norm() > kOrientationEps;
+        const bool section_has_direction = section && section->direction_.norm() > kOrientationEps;
         const bool element_has_node = has_orientation_node();
 
         logging::error(element_has_node || section_has_direction,
@@ -92,7 +91,7 @@ struct BeamElement : StructuralElement {
         if (element_has_node) {
             n1_vec = this->node_position(orientation_node_id_);
         } else {
-            n1_vec = section->n1;
+            n1_vec = section->direction_;
         }
 
         logging::error(n1_vec.norm() > kOrientationEps,
@@ -108,7 +107,7 @@ struct BeamElement : StructuralElement {
         return l;
     }
 
-    Precision volume() override { return get_profile()->A * length(); }
+    Precision volume() override { return get_profile()->area_ * length(); }
 
     // Base rotation (provided section frame; no principal rotation)
     Mat3 base_rotation_matrix() {
@@ -127,9 +126,9 @@ struct BeamElement : StructuralElement {
     // Compute principal rotation angle about local x from section inertias
     Precision principal_angle() {
         Profile* pr = get_profile();
-        const Precision Iy  = pr->I_y;
-        const Precision Iz  = pr->I_z;
-        const Precision Iyz = pr->I_yz;
+        const Precision Iy  = pr->inertia_y_;
+        const Precision Iz  = pr->inertia_z_;
+        const Precision Iyz = pr->product_inertia_yz_;
 
         const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
         if (std::abs(Iyz) <= scale * Precision(1e-14)) return Precision(0);
@@ -287,7 +286,7 @@ struct BeamElement : StructuralElement {
 
     void apply_vload(Field& node_loads, Vec3 load) override {
         const Precision L = length();
-        const Precision A = get_profile()->A;
+        const Precision A = get_profile()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return;
         const Vec3 F = load * (A * L / Precision(N));
         for (Index i = 0; i < N; ++i) {
@@ -370,7 +369,7 @@ struct BeamElement : StructuralElement {
                              bool scale_by_density,
                              const VecField& field) override {
         const Precision L = length();
-        const Precision A = get_profile()->A;
+        const Precision A = get_profile()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return;
 
         Vec3 x_mid = Vec3::Zero();
@@ -398,7 +397,7 @@ struct BeamElement : StructuralElement {
     Precision integrate_scalar_field(bool scale_by_density,
                                      const ScalarField& field) override {
         const Precision L = length();
-        const Precision A = get_profile()->A;
+        const Precision A = get_profile()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
 
         Vec3 x_mid = Vec3::Zero();
@@ -418,7 +417,7 @@ struct BeamElement : StructuralElement {
     Vec3 integrate_vector_field(bool scale_by_density,
                                 const VecField& field) override {
         const Precision L = length();
-        const Precision A = get_profile()->A;
+        const Precision A = get_profile()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
 
         Vec3 x_mid = Vec3::Zero();
@@ -438,7 +437,7 @@ struct BeamElement : StructuralElement {
     Mat3 integrate_tensor_field(bool scale_by_density,
                                 const TenField& field) override {
         const Precision L = length();
-        const Precision A = get_profile()->A;
+        const Precision A = get_profile()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
 
         Vec3 x_mid = Vec3::Zero();
@@ -455,6 +454,5 @@ struct BeamElement : StructuralElement {
         return field(x_mid) * (rho * A * L);
     }
 };
-
 } // namespace model
 } // namespace fem

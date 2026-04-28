@@ -16,7 +16,6 @@
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct PLoad
  * @brief Uniform surface pressure load.
@@ -27,15 +26,34 @@ namespace bc {
 struct PLoad : public Load {
     using Ptr = std::shared_ptr<PLoad>; ///< Shared pointer alias for pressure loads.
 
-    Precision pressure{NAN};               ///< Magnitude of the applied pressure.
-    SPtr<model::SurfaceRegion> region = nullptr; ///< Target surface region.
+    Precision                  pressure_ = NAN; ///< Magnitude of the applied pressure.
+    SPtr<model::SurfaceRegion> region_   = nullptr; ///< Target surface region.
 
+    /**
+     * @brief Default constructor for delayed field assignment by collectors.
+     */
     PLoad() = default;
+
+    /**
+     * @brief Defaulted virtual destructor.
+     */
     ~PLoad() override = default;
 
+    /**
+     * @brief Integrates pressure over every target surface.
+     *
+     * @param model_data Model data used for positions and surface lookup.
+     * @param bc Boundary-condition field receiving nodal forces.
+     * @param time Current analysis time for amplitude scaling.
+     */
     void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+
+    /**
+     * @brief Returns a compact description of the pressure load.
+     *
+     * @return std::string Target region, pressure and amplitude.
+     */
     std::string str() const override;
 };
-
 } // namespace bc
 } // namespace fem

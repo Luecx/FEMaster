@@ -18,9 +18,17 @@
 
 namespace fem {
 namespace bc {
-
 namespace {
-
+/**
+ * @brief Converts a partially specified 3-vector into an assemble-ready vector.
+ *
+ * A `NaN` component means "not specified" in the load input. Assembly code is
+ * simpler and safer when those entries are replaced by zero and the helper also
+ * reports whether at least one component was actually prescribed.
+ *
+ * @param vector Input vector that may contain `NaN` markers.
+ * @return std::pair<Vec3, bool> Sanitized vector and an active-component flag.
+ */
 std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
     bool active = false;
     for (int i = 0; i < 3; ++i) {
@@ -32,18 +40,6 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
     }
     return {vec, active};
 }
-
-inline Precision eval_scale(const Amplitude::Ptr& amp, Precision time) {
-    return amp ? amp->evaluate(time) : Precision(1);
-}
-
-std::string vec6_to_string(const Vec6& v) {
-    std::ostringstream os;
-    os << v[0] << ", " << v[1] << ", " << v[2] << ", "
-       << v[3] << ", " << v[4] << ", " << v[5];
-    return os.str();
-}
-
 } // namespace
 
 /**
@@ -51,20 +47,23 @@ std::string vec6_to_string(const Vec6& v) {
  */
 void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    logging::error(region_ != nullptr, "CLoad: target node region not set");
     const auto& node_positions = *model_data.positions;
 
-    const Precision scale = eval_scale(amplitude, time);
+    const Precision scale = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
 
-    for (auto& node_id : *region) {
+    for (const ID node_id : *region_) {
         const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
 
-        auto [force_local, force_active]   = sanitize_vector(values.head<3>());
-        auto [moment_local, moment_active] = sanitize_vector(values.tail<3>());
+        auto [force_local , force_active]  = sanitize_vector(values_.head<3>());
+        auto [moment_local, moment_active] = sanitize_vector(values_.tail<3>());
 
+        // The amplitude is applied after NaN sanitizing so unspecified
+        // components stay exactly zero for both force and moment parts.
         force_local *= scale;
         moment_local *= scale;
 
-        if (!orientation) {
+        if (!orientation_) {
             if (force_active) {
                 for (int i = 0; i < 3; ++i) {
                     bc(node_id, i) += force_local[i];
@@ -78,8 +77,11 @@ void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
             continue;
         }
 
-        const Vec3 local_point = orientation->to_local(position);
-        const auto axes = orientation->get_axes(local_point);
+        // Local loads are interpreted in the orientation basis at the current
+        // node position. Translational and rotational components use the same
+        // three axes, but are written to different RHS columns.
+        const Vec3 local_point = orientation_->to_local(position);
+        const auto axes        = orientation_->get_axes(local_point);
 
         if (force_active) {
             const Vec3 global_force = axes * force_local;
@@ -102,17 +104,30 @@ void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
  */
 std::string CLoad::str() const {
     std::ostringstream os;
-    os << "CLOAD: target=NSET " << (region ? region->name : std::string("?"))
-       << " (" << (region ? static_cast<int>(region->size()) : 0) << ")"
-       << ", values=[" << vec6_to_string(values) << "]";
-    if (orientation) {
-        os << ", orientation=" << orientation->name;
+
+    os << "CLOAD: target=NSET "
+       << (region_ ? region_->name : std::string("?"))
+       << " ("
+       << (region_ ? static_cast<int>(region_->size()) : 0)
+       << ")"
+       << ", values=["
+       << values_[0] << ", "
+       << values_[1] << ", "
+       << values_[2] << ", "
+       << values_[3] << ", "
+       << values_[4] << ", "
+       << values_[5]
+       << "]";
+
+    if (orientation_) {
+        os << ", orientation=" << orientation_->name;
     }
-    if (amplitude) {
-        os << ", amplitude=" << amplitude->name;
+
+    if (amplitude_) {
+        os << ", amplitude=" << amplitude_->name;
     }
+
     return os.str();
 }
-
 } // namespace bc
 } // namespace fem

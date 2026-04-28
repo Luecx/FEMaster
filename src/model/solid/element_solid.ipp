@@ -15,7 +15,6 @@
 #include "../../section/section_solid.h"
 
 namespace fem::model {
-
 template<Index N>
 SolidSection* SolidElement<N>::get_section() {
     logging::error(this->_section != nullptr, "Section not set for element ", this->elem_id);
@@ -28,7 +27,7 @@ template<Index N>
 bool SolidElement<N>::has_material_orientation() const {
     const bool has_section_orientation =
         this->_section && this->_section->template as<SolidSection>() &&
-        this->_section->template as<SolidSection>()->orientation;
+        this->_section->template as<SolidSection>()->orientation_;
     const bool has_topo_orientation = this->_model_data && this->_model_data->material_orientation;
     return has_section_orientation || has_topo_orientation;
 }
@@ -36,13 +35,13 @@ bool SolidElement<N>::has_material_orientation() const {
 template<Index N>
 Mat3 SolidElement<N>::section_orientation_basis(Precision r, Precision s, Precision t) {
     auto section = get_section();
-    if (!section->orientation) {
+    if (!section->orientation_) {
         return Mat3::Identity();
     }
 
     const Vec3 point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
-    const Vec3 point_local  = section->orientation->to_local(point_global);
-    return section->orientation->get_axes(point_local);
+    const Vec3 point_local  = section->orientation_->to_local(point_global);
+    return section->orientation_->get_axes(point_local);
 }
 
 template<Index N>
@@ -114,7 +113,6 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
 template<Index N>
 StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
     SolidElement<N>::material_matrix(Precision r, Precision s, Precision t) {
-
     logging::error(material() != nullptr, "no _material assigned to element ", elem_id);
     logging::error(material()->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
 
@@ -145,7 +143,6 @@ StaticVector<K> SolidElement<N>::interpolate(StaticMatrix<N, K> data, Precision 
     return res;
 }
 
-
 //-----------------------------------------------------------------------------
 // strain_displacements
 //-----------------------------------------------------------------------------
@@ -154,17 +151,17 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
 SolidElement<N>::strain_displacements(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t, Precision& det, bool check_det) {
     StaticMatrix<N, D> local_shape_der = shape_derivative(r, s, t);
     StaticMatrix<D, D> jac = jacobian(node_coords, r, s, t);
-    
+
     det = jac.determinant();
     StaticMatrix<D, D> inv = jac.inverse();
-    
+
     if (check_det) {
         logging::error(det > 0, "negative determinant encountered in element ", elem_id,
                        "\ndet        : ", det,
                        "\nCoordinates: ", node_coords,
                        "\nJacobi     : ", jac);
     }
-    
+
     StaticMatrix<N, D> global_shape_der = (inv * local_shape_der.transpose()).transpose();
     return strain_displacement(global_shape_der);
 }
@@ -177,7 +174,7 @@ StaticMatrix<SolidElement<N>::D, SolidElement<N>::D>
 SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t) {
     StaticMatrix<N, D> local_shape_derivative = shape_derivative(r, s, t);
     StaticMatrix<D, D> jacobian {};
-    
+
     for (Dim m = 0; m < D; m++) {
         for (Dim n = 0; n < D; n++) {
             Precision dxn_drm = 0;
@@ -187,7 +184,7 @@ SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Pr
             jacobian(m, n) = dxn_drm;
         }
     }
-    
+
     return jacobian;
 }
 
@@ -210,7 +207,7 @@ SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) 
             res(m, j) = full_data(static_cast<Index>(node_ids[m]), n);
         }
     }
-    
+
     return res;
 }
 
@@ -220,7 +217,6 @@ SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) 
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness(Precision* buffer) {
-
     StaticMatrix<N, D> node_coords = this->node_coords_global();
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
@@ -252,7 +248,6 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int i
         [this, &node_coords, &ip_stress, ip_start_idx, &ip_counter]
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
-
         // ---- Stress at IP (Voigt = [xx, yy, zz, yz, zx, xy]) ----
         const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
         const Vec6 v = ip_stress.row_vec6(ip_row);
@@ -290,7 +285,6 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int i
         }
 
         return Kg;
-
     };
 
     StaticMatrix<D * N, D * N> Kg = integration_scheme().integrate(func);
@@ -359,7 +353,4 @@ SolidElement<N>::volume() {
     Precision volume = integration_scheme().integrate(func);
     return volume;
 }
-
-
-
 }  // namespace fem::model

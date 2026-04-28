@@ -1,40 +1,48 @@
-//
-// Created by f_eggers on 22.11.2024.
-//
+/**
+ * @file profile.cpp
+ * @brief Implements beam profile storage and reporting.
+ *
+ * @see src/section/profile.h
+ * @author Finn Eggers
+ * @date 28.04.2026
+ */
 
 #include "profile.h"
+
 #include "../core/logging.h"
 
-fem::Profile::Profile(const std::string& name,
-                      Precision A,
-                      Precision I_y,
-                      Precision I_z,
-                      Precision I_t,
-                      Precision I_yz,
-                      Precision e_y,
-                      Precision e_z,
-                      Precision ref_y,
-                      Precision ref_z)
-    : Namable(name)
-    , A(A)
-    , I_y(I_y)
-    , I_z(I_z)
-    , I_t(I_t)
-    , I_yz(I_yz)
-    , e_y(e_y)
-    , e_z(e_z)
-    , ref_y(ref_y)
-    , ref_z(ref_z) {}
+namespace fem {
+Profile::Profile(const std::string& name,
+                 Precision area,
+                 Precision inertia_y,
+                 Precision inertia_z,
+                 Precision torsion_inertia,
+                 Precision product_inertia_yz,
+                 Precision offset_y,
+                 Precision offset_z,
+                 Precision reference_y,
+                 Precision reference_z)
+    : Namable(name),
+      area_(area),
+      inertia_y_(inertia_y),
+      inertia_z_(inertia_z),
+      torsion_inertia_(torsion_inertia),
+      product_inertia_yz_(product_inertia_yz),
+      offset_y_(offset_y),
+      offset_z_(offset_z),
+      reference_y_(reference_y),
+      reference_z_(reference_z) {}
 
-void fem::Profile::info() {
+void Profile::info() {
     logging::info(true, "Profile: ", name);
-    logging::info(true, "   A  : ", A);
-    logging::info(true, "   I_y: ", I_y);
-    logging::info(true, "   I_z: ", I_z);
-    logging::info(true, "   I_t: ", I_t);
-    logging::info(true, "   I_yz: ", I_yz);
-    logging::info(true, "   e_y: ", e_y);
-    logging::info(true, "   e_z: ", e_z);
-    logging::info(true, "   ref_y: ", ref_y);
-    logging::info(true, "   ref_z: ", ref_z);
+    logging::info(true, "   Area              : ", area_);
+    logging::info(true, "   Inertia y         : ", inertia_y_);
+    logging::info(true, "   Inertia z         : ", inertia_z_);
+    logging::info(true, "   Torsion inertia   : ", torsion_inertia_);
+    logging::info(true, "   Product inertia yz: ", product_inertia_yz_);
+    logging::info(true, "   Offset y          : ", offset_y_);
+    logging::info(true, "   Offset z          : ", offset_z_);
+    logging::info(true, "   Reference y       : ", reference_y_);
+    logging::info(true, "   Reference z       : ", reference_z_);
 }
+} // namespace fem

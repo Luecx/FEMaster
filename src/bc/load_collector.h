@@ -25,7 +25,6 @@ class ModelData;
 
 namespace fem {
 namespace bc {
-
 /**
  * @struct LoadCollector
  * @brief Container that manages and applies polymorphic loads.
@@ -130,6 +129,5 @@ struct LoadCollector : model::Collection<Load::Ptr> {
     /// Read-only access to stored loads
     const std::vector<Load::Ptr>& entries() const { return this->_data; }
 };
-
 } // namespace bc
 } // namespace fem

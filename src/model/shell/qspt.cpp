@@ -1,9 +1,7 @@
 #include "qspt.h"
 
 namespace fem::model {
-
 namespace {
-
 constexpr Precision kGeomTol = Precision(1e-12);
 
 inline Vec3 row_as_vec3(const QSPT::NodeCoords& coords, Index i) {
@@ -17,7 +15,6 @@ inline Precision leverage_to_edge(const Vec3& origin,
     const Vec3 r = midpoint - origin;
     return r.cross(edge).norm() / edge_length;
 }
-
 } // namespace
 
 QSPT::QSPT(ID p_elem_id, std::array<ID, 4> p_node_ids)
@@ -39,7 +36,7 @@ const quadrature::Quadrature& QSPT::integration_scheme() const {
 Precision QSPT::volume() {
     logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
     logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
-    return this->get_section()->thickness * geometry.area(*this->_model_data->positions);
+    return this->get_section()->thickness_ * geometry.area(*this->_model_data->positions);
 }
 
 QSPT::GeometryData QSPT::geometry_data() {
@@ -142,7 +139,7 @@ QSPT::ShearState QSPT::shear_state() {
         state.fn.template segment<3>(3 * i) = term;
     }
 
-    state.flexibility = data.area / (effective_shear_modulus() * this->get_section()->thickness);
+    state.flexibility = data.area / (effective_shear_modulus() * this->get_section()->thickness_);
     logging::error(state.flexibility > kGeomTol,
                    "QSPT flexibility became singular for element ", this->elem_id);
     return state;
@@ -160,7 +157,7 @@ QSPT::MassMatrix QSPT::mass_impl() {
         return M;
     }
 
-    const Precision thickness = this->get_section()->thickness;
+    const Precision thickness = this->get_section()->thickness_;
     const NodeCoords coords = this->node_coords_global();
 
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
@@ -257,7 +254,7 @@ std::vector<Precision> QSPT::shear_flow(Field& displacement) {
 Precision QSPT::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
     const NodeCoords coords = this->node_coords_global();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
-    const Precision thickness = this->get_section()->thickness;
+    const Precision thickness = this->get_section()->thickness_;
 
     Precision result = Precision(0);
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
@@ -279,7 +276,7 @@ Precision QSPT::integrate_scalar_field(bool scale_by_density, const ScalarField&
 Vec3 QSPT::integrate_vector_field(bool scale_by_density, const VecField& field) {
     const NodeCoords coords = this->node_coords_global();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
-    const Precision thickness = this->get_section()->thickness;
+    const Precision thickness = this->get_section()->thickness_;
 
     Vec3 result = Vec3::Zero();
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
@@ -301,7 +298,7 @@ Vec3 QSPT::integrate_vector_field(bool scale_by_density, const VecField& field) 
 Mat3 QSPT::integrate_tensor_field(bool scale_by_density, const TenField& field) {
     const NodeCoords coords = this->node_coords_global();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
-    const Precision thickness = this->get_section()->thickness;
+    const Precision thickness = this->get_section()->thickness_;
 
     Mat3 result = Mat3::Zero();
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
@@ -325,7 +322,7 @@ void QSPT::integrate_vec_field(Field& node_loads,
                                const VecField& field) {
     const NodeCoords coords = this->node_coords_global();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
-    const Precision thickness = this->get_section()->thickness;
+    const Precision thickness = this->get_section()->thickness_;
 
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
         const auto p = integration_scheme_.get_point(ip);
@@ -358,5 +355,4 @@ void QSPT::compute_compliance_angle_derivative(Field& displacement, Field& resul
     (void) displacement;
     (void) result;
 }
-
 } // namespace fem::model

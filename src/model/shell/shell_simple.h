@@ -19,7 +19,6 @@
 //
 
 namespace fem::model {
-
 template<Index N, typename SFType, quadrature::Domain INT_D, quadrature::Order INT_O>
 struct DefaultShellElement : public ShellElement<N> {
     SFType                 geometry;
@@ -115,13 +114,13 @@ struct DefaultShellElement : public ShellElement<N> {
 
     Mat3 section_basis_global(Precision r, Precision s, Mat3& axes) {
         auto section = this->get_section();
-        if (!section->orientation) {
+        if (!section->orientation_) {
             return element_basis_global(axes);
         }
 
         const Vec3 point_global = global_point(r, s);
-        const Vec3 point_local = section->orientation->to_local(point_global);
-        const Mat3 orientation_axes = section->orientation->get_axes(point_local);
+        const Vec3 point_local = section->orientation_->to_local(point_global);
+        const Mat3 orientation_axes = section->orientation_->get_axes(point_local);
 
         const Vec3 normal = axes.row(2).transpose().normalized();
         Vec3 n1 = orientation_axes.col(0);
@@ -231,7 +230,7 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 axes = this->get_xyz_axes();
         auto xy_coords = this->get_xy_coords(axes);
         const auto& scheme = this->integration_scheme();
-        const Precision t = this->get_section()->thickness;
+        const Precision t = this->get_section()->thickness_;
 
         Precision rho = 1.0;
         if (scale_by_density) {
@@ -274,7 +273,7 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 axes = this->get_xyz_axes();
         auto xy_coords = this->get_xy_coords(axes);
         const auto& scheme = this->integration_scheme();
-        const Precision t = this->get_section()->thickness;
+        const Precision t = this->get_section()->thickness_;
 
         Precision rho = 1.0;
         if (scale_by_density) {
@@ -307,7 +306,7 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 axes = this->get_xyz_axes();
         auto xy_coords = this->get_xy_coords(axes);
         const auto& scheme = this->integration_scheme();
-        const Precision t = this->get_section()->thickness;
+        const Precision t = this->get_section()->thickness_;
 
         Precision rho = 1.0;
         if (scale_by_density) {
@@ -340,7 +339,7 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 axes = this->get_xyz_axes();
         auto xy_coords = this->get_xy_coords(axes);
         const auto& scheme = this->integration_scheme();
-        const Precision t = this->get_section()->thickness;
+        const Precision t = this->get_section()->thickness_;
 
         Precision rho = 1.0;
         if (scale_by_density) {
@@ -450,7 +449,6 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     StaticMatrix<6 * N, 6 * N> stiffness_abd_shear(LocalCoords& xy_coords) {
-
         auto section = this->get_section();
         auto mat_abd_section   = section->get_abd();
         auto mat_shear_section = section->get_shear();
@@ -599,7 +597,7 @@ struct DefaultShellElement : public ShellElement<N> {
             const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
             const Vec6 v = ip_stress.row_vec6(ip_row);
 
-            const Precision h = this->get_section()->thickness;
+            const Precision h = this->get_section()->thickness_;
             // Falls ip_stress bereits Resultierende enthält, setze scale=1
             const Precision scale = 1.0;    // oder 1.0, je nachdem was du speicherst
             const Precision nxx   = scale * v(0);
@@ -676,7 +674,7 @@ struct DefaultShellElement : public ShellElement<N> {
             mapped.setZero();
             return mapped;
         }
-        const Precision h   = this->get_section()->thickness;
+        const Precision h   = this->get_section()->thickness_;
         const Precision mt  = rho * h;                     // Translationsmasse pro Fläche
         const Precision mr  = rho * (h * h * h / 12.0);    // Rotations-„Masse“ (Flächenträgheit)
 
@@ -734,22 +732,21 @@ struct DefaultShellElement : public ShellElement<N> {
         return mapped;
     }
 
-	Precision volume() override {
-    	// Dicke aus der Section
-    	const Precision h = this->get_section()->thickness;
+    Precision volume() override {
+        // Dicke aus der Section
+        const Precision h = this->get_section()->thickness_;
 
         // Globale Knotentabelle (POSITION) aus dem Modell
         logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
         logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
         const auto& node_coords_system = *this->_model_data->positions;
 
-    	// Flächeninhalt über die Surface-Geometrie (macht 3D-Jacobian×cross-Produkt)
-    	const Precision A = geometry.area(node_coords_system);
+        // Flächeninhalt über die Surface-Geometrie (macht 3D-Jacobian×cross-Produkt)
+        const Precision A = geometry.area(node_coords_system);
 
-    	// Volumen = Dicke * Fläche
-    	return h * A;
-	}
-
+        // Volumen = Dicke * Fläche
+        return h * A;
+    }
 
     virtual Stress stress(Field& displacement, Vec3& xyz) {
         Precision r = xyz(0);
@@ -789,7 +786,7 @@ struct DefaultShellElement : public ShellElement<N> {
             disp_shear(3 * i + 2)    = disp_rot(1);
         }
 
-        Precision h = this->get_section()->thickness;
+        Precision h = this->get_section()->thickness_;
         auto abd = this->get_section()->get_abd();
         Mat2 mat_shear    = this->get_section()->get_shear();
 
@@ -849,7 +846,7 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 axes_T = axes.transpose(); // local -> global
 
         // --- Precompute thickness + material matrices ---
-        Precision h = this->get_section()->thickness;
+        Precision h = this->get_section()->thickness_;
 
         Precision topo_scale = Precision(1);
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
@@ -1002,7 +999,7 @@ struct DefaultShellElement : public ShellElement<N> {
                                              Field& stress_bot) override {
         Mat3 axes   = get_xyz_axes();
         Mat3 axes_T = axes.transpose();
-        Precision h = this->get_section()->thickness;
+        Precision h = this->get_section()->thickness_;
 
         Precision topo_scale = Precision(1);
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
@@ -1117,7 +1114,7 @@ struct DefaultShellElement : public ShellElement<N> {
     void compute_shell_resultants_nodal(Field& displacement,
                                         Field& resultants) override {
         Mat3 axes = get_xyz_axes();
-        Precision h = this->get_section()->thickness;
+        Precision h = this->get_section()->thickness_;
 
         Precision topo_scale = Precision(1);
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
@@ -1213,7 +1210,7 @@ struct DefaultShellElement : public ShellElement<N> {
                                int       ip_offset) override {
         Mat3            axes      = get_xyz_axes();
         auto            xy_coords = get_xy_coords(axes);
-        const Precision h         = this->get_section()->thickness;
+        const Precision h         = this->get_section()->thickness_;
 
         // Membrane material (σx, σy, τxy)
         Mat3 Dm = this->get_section()->get_abd().template block<3, 3>(0, 0) / h;
@@ -1259,7 +1256,6 @@ struct DefaultShellElement : public ShellElement<N> {
         }
     }
 };
-
 }    // namespace fem::model
 
 #endif    // SHELL_SIMPLE_H

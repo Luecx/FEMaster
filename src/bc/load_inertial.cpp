@@ -18,9 +18,20 @@
 
 namespace fem {
 namespace bc {
-
 namespace {
-
+/**
+ * @brief Adds equivalent inertia forces for point-mass features.
+ *
+ * Structural elements handle their own distributed mass. Point masses are model
+ * features, so they are added separately when the load explicitly opts in.
+ *
+ * @param model_data Model data containing positions and point-mass features.
+ * @param bc Boundary-condition field receiving force and optional moment terms.
+ * @param center Reference point for rotational acceleration terms.
+ * @param center_acc Translational acceleration at the reference point.
+ * @param omega Angular velocity.
+ * @param alpha Angular acceleration.
+ */
 void apply_point_mass_inertial_contribution(model::ModelData& model_data,
                                             model::Field& bc,
                                             const Vec3& center,
@@ -33,11 +44,11 @@ void apply_point_mass_inertial_contribution(model::ModelData& model_data,
 
     for (const auto& feature_ptr : model_data.features) {
         const auto* pm = dynamic_cast<const feature::PointMass*>(feature_ptr.get());
-        if (!pm || !pm->region) {
+        if (!pm || !pm->region_) {
             continue;
         }
 
-        for (const ID node_id : *pm->region) {
+        for (const ID node_id : *pm->region_) {
             logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
                            "InertialLoad (point masses): node id ", node_id,
                            " out of bounds for positions field with ", positions.rows, " rows");
@@ -45,16 +56,21 @@ void apply_point_mass_inertial_contribution(model::ModelData& model_data,
             const Index node = static_cast<Index>(node_id);
             const Vec3 x = positions.row_vec3(node);
             const Vec3 r = x - center;
+
+            // Rigid-body acceleration at the node: translational component plus
+            // tangential and centripetal rotational components.
             const Vec3 a_rot = alpha.cross(r) + omega.cross(omega.cross(r));
 
-            const Vec3 dF = -pm->mass * (center_acc + a_rot);
+            const Vec3 dF = -pm->mass_ * (center_acc + a_rot);
             bc(node, 0) += dF(0);
             bc(node, 1) += dF(1);
             bc(node, 2) += dF(2);
 
             if (bc.components >= 6) {
-                const Vec3 Jalpha = pm->rotary_inertia.cwiseProduct(alpha);
-                const Vec3 Jomega = pm->rotary_inertia.cwiseProduct(omega);
+                // Point-mass rotary inertia is stored as diagonal principal
+                // values. The moment contribution is Euler's rigid-body term.
+                const Vec3 Jalpha = pm->rotary_inertia_.cwiseProduct(alpha);
+                const Vec3 Jomega = pm->rotary_inertia_.cwiseProduct(omega);
                 const Vec3 dM = -(Jalpha + omega.cross(Jomega));
                 bc(node, 3) += dM(0);
                 bc(node, 4) += dM(1);
@@ -63,7 +79,6 @@ void apply_point_mass_inertial_contribution(model::ModelData& model_data,
         }
     }
 }
-
 } // namespace
 
 /**
@@ -71,9 +86,9 @@ void apply_point_mass_inertial_contribution(model::ModelData& model_data,
  */
 void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     (void)time;
-    logging::error(region != nullptr, "InertialLoad: region not set");
+    logging::error(region_ != nullptr, "InertialLoad: region not set");
 
-    for (auto& el_id : *region) {
+    for (const ID el_id : *region_) {
         auto& el_ptr = model_data.elements[el_id];
         if (!el_ptr) {
             continue;
@@ -84,7 +99,10 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
             continue;
         }
 
-        auto f = [c = center, a0 = center_acc, w = omega, al = alpha](const Vec3& x) -> Vec3 {
+        // The element integrator multiplies this acceleration field by density
+        // and shape functions. The negative sign converts acceleration into the
+        // equivalent inertia force contribution.
+        auto f = [c = center_, a0 = center_acc_, w = omega_, al = alpha_](const Vec3& x) -> Vec3 {
             const Vec3 r = x - c;
             const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
             return -(a0 + a_rot);
@@ -92,8 +110,8 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
         structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
     }
 
-    if (consider_point_masses) {
-        apply_point_mass_inertial_contribution(model_data, bc, center, center_acc, omega, alpha);
+    if (consider_point_masses_) {
+        apply_point_mass_inertial_contribution(model_data, bc, center_, center_acc_, omega_, alpha_);
     }
 }
 
@@ -102,15 +120,18 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
  */
 std::string InertialLoad::str() const {
     std::ostringstream os;
-    os << "INERTIAL: target=ELSET " << (region ? region->name : std::string("?"))
-       << " (" << (region ? static_cast<int>(region->size()) : 0) << ")"
-       << ", center=[" << center(0) << ", " << center(1) << ", " << center(2) << "]"
-       << ", a0=[" << center_acc(0) << ", " << center_acc(1) << ", " << center_acc(2) << "]"
-       << ", omega=[" << omega(0) << ", " << omega(1) << ", " << omega(2) << "]"
-       << ", alpha=[" << alpha(0) << ", " << alpha(1) << ", " << alpha(2) << "]"
-       << ", consider_point_masses=" << (consider_point_masses ? "true" : "false");
+
+    os << "INERTIAL: target=ELSET "
+       << (region_ ? region_->name : std::string("?"))
+       << " (" << (region_ ? static_cast<int>(region_->size()) : 0) << ")"
+       << ", center=[" << center_      (0) << ", " << center_      (1) << ", " << center_      (2) << "]"
+       << ", a0=["     << center_acc_  (0) << ", " << center_acc_  (1) << ", " << center_acc_  (2) << "]"
+       << ", omega=["  << omega_       (0) << ", " << omega_       (1) << ", " << omega_       (2) << "]"
+       << ", alpha=["  << alpha_       (0) << ", " << alpha_       (1) << ", " << alpha_       (2) << "]"
+       << ", consider_point_masses="
+       << (consider_point_masses_ ? "true" : "false");
+
     return os.str();
 }
-
 } // namespace bc
 } // namespace fem
