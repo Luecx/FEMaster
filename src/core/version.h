@@ -22,14 +22,14 @@ namespace fem {
 *
 * This number increments when incompatible API changes are introduced.
 */
-#define VERSION_MAJOR 1
+#define VERSION_MAJOR 2
 
 /**
 * @brief The minor version number for the FEMaster solver.
 *
 * This number increments when backward-compatible functionality is added.
 */
-#define VERSION_MINOR 1
+#define VERSION_MINOR 0
 
 /**
 * @brief The patch version number for the FEMaster solver.

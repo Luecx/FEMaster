@@ -108,8 +108,9 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
                     if (!material) {
                         throw std::runtime_error("ELASTIC requires an active material context");
                     }
+                    const fem::Precision nu31 = nu13 * E3 / E1;
                     material->set_elasticity<fem::material::OrthotropicElasticity>(
-                        E1, E2, E3, G23, G13, G12, nu23, nu13, nu12);
+                        E1, E2, E3, G23, G13, G12, nu23, nu31, nu12);
                 })
             )
         );
