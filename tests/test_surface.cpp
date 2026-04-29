@@ -1,6 +1,7 @@
 #include "../src/model/geometry/surface/surface3.h"  // Include path relative to the src folder
 #include <Eigen/Dense>
 #include <gtest/gtest.h>
+#include <cstdlib>
 
 using namespace fem;
 
@@ -45,8 +46,11 @@ TEST_F(Surface3Test, ProjectionWithClipping) {
     EXPECT_NEAR(local_coords[1], 1.0, 1e-6);
 
     // pick 10 random points and make sure they are all in between 0 and 1
+    unsigned int seed = 12345;
     for (int i = 0; i < 10; i++) {
-            point << 4.0 * (rand() % 1000) / 1000.0, 1.0 * (rand() % 1000) / 1000.0, 1.0 * (rand() % 1000) / 1000.0;
+            point << 4.0 * (rand_r(&seed) % 1000) / 1000.0,
+                     1.0 * (rand_r(&seed) % 1000) / 1000.0,
+                     1.0 * (rand_r(&seed) % 1000) / 1000.0;
             local_coords = surface.global_to_local(point, node_coords, true);
             EXPECT_GE(local_coords[0], 0.0);
             EXPECT_GE(local_coords[1], 0.0);
@@ -58,8 +62,11 @@ TEST_F(Surface3Test, ProjectionWithClipping) {
 // Test for projection without clipping
 TEST_F(Surface3Test, ProjectionWithoutClipping) {
     // pick 10 random points, compute the ray from the first point to the point and check if its perpendicular to the surface
+    unsigned int seed = 23456;
     for (int i = 0; i < 10; i++) {
-        StaticVector<3> point {4.0 * (rand() % 1000) / 1000.0, 1.0 * (rand() % 1000) / 1000.0, 1.0 * (rand() % 1000) / 1000.0};
+        StaticVector<3> point {4.0 * (rand_r(&seed) % 1000) / 1000.0,
+                               1.0 * (rand_r(&seed) % 1000) / 1000.0,
+                               1.0 * (rand_r(&seed) % 1000) / 1000.0};
         auto            local_coords = surface.global_to_local(point, node_coords, false);
         auto            projected = surface.local_to_global(local_coords, node_coords);
         auto            diff = point - projected;

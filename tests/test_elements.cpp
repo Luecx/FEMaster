@@ -1,6 +1,8 @@
+#include "../src/material/abd_elasticity.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/qspt.h"
+#include "../src/model/shell/s4.h"
 #include "../src/model/truss/truss.h"
 
 #include <gtest/gtest.h>
@@ -79,6 +81,45 @@ TEST(Elements_QSPT, MassMatrixIsZeroWithoutDensity) {
     fem::Precision storage[12 * 12] {};
     fem::DynamicMatrix M = elem->mass(storage);
     EXPECT_NEAR(M.norm(), 0.0, 1e-12);
+}
+
+TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
+    fem::model::Model model(8, 4, 8);
+
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.set_node(2, 1.0, 1.0, 0.0);
+    model.set_node(3, 0.0, 1.0, 0.0);
+    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+
+    auto material = model._data->materials.activate("MAT");
+    material->set_density(10.0);
+
+    fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Identity();
+    fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
+    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
+
+    model.shell_section("EALL", "MAT", 0.1);
+    model.assign_sections();
+
+    auto* elem = model._data->elements[0]->as<fem::model::S4>();
+    ASSERT_NE(elem, nullptr);
+
+    fem::Precision k_storage[24 * 24] {};
+    fem::DynamicMatrix K = elem->stiffness(k_storage);
+    EXPECT_TRUE(K.isApprox(K.transpose(), 1e-12));
+
+    fem::Precision m_storage[24 * 24] {};
+    fem::DynamicMatrix M = elem->mass(m_storage);
+    EXPECT_TRUE(M.isApprox(M.transpose(), 1e-12));
+
+    fem::Precision ux_mass = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            ux_mass += M(6 * i, 6 * j);
+        }
+    }
+    EXPECT_NEAR(ux_mass, 1.0, 1e-12);
 }
 
 TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {

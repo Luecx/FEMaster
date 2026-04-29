@@ -5,6 +5,7 @@
 #include "../src/model/geometry/line/line3b.h"
 #include <Eigen/Dense>
 #include <gtest/gtest.h>
+#include <cstdlib>
 #include <random>
 
 using namespace fem;
@@ -160,9 +161,12 @@ TYPED_TEST(LineTest, ClosestPointIsFoundCorrectly) {
     node_coords_system(4, 0) = 4.0; node_coords_system(4, 1) = 0.0; node_coords_system(4, 2) = 0.0;
 
 
+    unsigned int seed = 12345;
     for(int n = 0; n < 100; n++) {
         // Define a point p in space (e.g., off the line)
-        Eigen::Matrix<Precision, 3, 1> p(rand() % 1000 / 1000.0, rand() % 1000 / 1000.0, rand() % 1000 / 1000.0);
+        Eigen::Matrix<Precision, 3, 1> p(rand_r(&seed) % 1000 / 1000.0,
+                                         rand_r(&seed) % 1000 / 1000.0,
+                                         rand_r(&seed) % 1000 / 1000.0);
 
 
         // Find the closest point on the line in local coordinates

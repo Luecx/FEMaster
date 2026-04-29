@@ -2,8 +2,7 @@
 #include "../src/model/geometry/surface/surface8.h"   // Include Surface8 for testing
 #include <Eigen/Dense>
 #include <gtest/gtest.h>
-#include <cstdlib>  // for rand()
-#include <ctime>    // for time()
+#include <cstdlib>
 
 using namespace fem;
 
@@ -79,11 +78,11 @@ TYPED_TEST_P(SurfaceTest, ProjectionWithoutClipping) {
 }
 
 TYPED_TEST_P(SurfaceTest, InBoundsSampling) {
-    srand(static_cast<unsigned int>(time(0)));  // Seed random generator
+    unsigned int seed = 12345;
 
     for (int i = 0; i < 10000; ++i) {
-        double r = -1.0 + 2.0 * (rand() % 1000) / 1000.0;
-        double s = -1.0 + 2.0 * (rand() % 1000) / 1000.0;
+        double r = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
+        double s = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
 
         bool in_bounds = this->surface.in_bounds({r, s});
         if (in_bounds) {
@@ -96,11 +95,11 @@ TYPED_TEST_P(SurfaceTest, InBoundsSampling) {
 }
 
 TYPED_TEST_P(SurfaceTest, ShapeFunctionEvaluation) {
-    srand(static_cast<unsigned int>(time(0)));
+    unsigned int seed = 23456;
 
     for (int i = 0; i < 100; ++i) {
-        double r = -1.0 + 2.0 * (rand() % 1000) / 1000.0;
-        double s = -1.0 + 2.0 * (rand() % 1000) / 1000.0;
+        double r = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
+        double s = -1.0 + 2.0 * (rand_r(&seed) % 1000) / 1000.0;
 
         if (this->surface.in_bounds({r, s})) {
             auto shape_values = this->surface.shape_function(r, s);
@@ -124,9 +123,10 @@ TYPED_TEST_P(SurfaceTest, LocalToGlobalTransformation) {
     EXPECT_NEAR(global_coords[2], 0.0, 1e-6);
 
     // sample 1000 random points and make sure the mapping is fine.
+    unsigned int seed = 34567;
     for (int i = 0; i < 1000; i++) {
-        double r = -2.0 + 4.0 * (rand() % 1000) / 1000.0;
-        double s = -2.0 + 4.0 * (rand() % 1000) / 1000.0;
+        double r = -2.0 + 4.0 * (rand_r(&seed) % 1000) / 1000.0;
+        double s = -2.0 + 4.0 * (rand_r(&seed) % 1000) / 1000.0;
 
         global_coords = this->surface.local_to_global({r,s}, this->node_coords);
         EXPECT_NEAR(global_coords[0], (r+1) * 2.0, 1e-6);
