@@ -53,6 +53,7 @@ struct LinearEigenfrequency : public LoadCase {
     // Solver selection
     solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
     solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT - always DIRECT.
+
 public:
     //-------------------------------------------------------------------------
     // Run Analysis
