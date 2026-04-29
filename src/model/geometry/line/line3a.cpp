@@ -28,5 +28,4 @@ StaticMatrix<3,1> Line3A::shape_second_derivative(Precision /*r*/) const {
     ddN(2) = -2.0;  // d^2N3/dr^2
     return ddN;
 }
-
 }  // namespace fem::model

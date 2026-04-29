@@ -93,6 +93,5 @@ struct Equation {
  * @brief Alias for a collection of constraint equations.
  */
 using Equations = std::vector<Equation>;
-
 } // namespace constraint
 } // namespace fem

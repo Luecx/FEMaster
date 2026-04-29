@@ -191,5 +191,4 @@ void Transient::run() {
 
     logging::info(true, "Transient analysis completed.");
 }
-
 }} // namespace fem::loadcase

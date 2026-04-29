@@ -54,6 +54,5 @@ protected:
      */
     void report_constraint_groups(const constraint::ConstraintGroups& groups) const;
 };
-
 } // namespace loadcase
 } // namespace fem

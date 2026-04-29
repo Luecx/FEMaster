@@ -55,6 +55,5 @@ void check_invariants(const ConstraintMap& map, const SparseMatrix& C) {
                        "[ConstraintBuilder] apply_Tt mismatch explicit T^T.");
     }
 }
-
 } // namespace constraint
 } // namespace fem

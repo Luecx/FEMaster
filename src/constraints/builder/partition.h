@@ -52,6 +52,5 @@ struct PartitionOutput {
  * @return PartitionOutput Partitioned indices and mappings.
  */
 PartitionOutput partition_and_map(const PartitionInput& input, const std::vector<char>& is_used);
-
 } // namespace constraint
 } // namespace fem

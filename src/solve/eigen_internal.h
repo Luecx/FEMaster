@@ -38,5 +38,4 @@ eigs_general_buckling(const SparseMatrix& A, const SparseMatrix& B, int k, const
 /** Generalized: A x = λ B x (Cayley) */
 std::vector<EigenValueVectorPair>
 eigs_general_cayley(const SparseMatrix& A, const SparseMatrix& B, int k, const EigenOpts& opts);
-
 } // namespace fem::solver::detail

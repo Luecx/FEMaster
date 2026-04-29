@@ -33,7 +33,6 @@ REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_CONSTANT, tri_constant);
 REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_LINEAR, tri_constant);
 REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_QUADRATIC, tri_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_TRI, ORDER_CUBIC, tri_cubic);
-
 } // namespace quadrature
 } // namespace fem
 

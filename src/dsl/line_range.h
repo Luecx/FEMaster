@@ -58,6 +58,5 @@ struct LineRange {
         return *this;
     }
 };
-
 } // namespace dsl
 } // namespace fem

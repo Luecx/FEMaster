@@ -104,6 +104,5 @@ public:
      */
     [[nodiscard]] ID node_2() const { return node_2_id_; }
 };
-
 } // namespace constraint
 } // namespace fem

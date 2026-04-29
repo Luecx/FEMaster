@@ -33,5 +33,4 @@ using CudaPrecision = double; ///< GPU precision type (double).
 #else
 using CudaPrecision = float;  ///< GPU precision type (float).
 #endif
-
 } // namespace fem

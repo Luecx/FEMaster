@@ -18,7 +18,6 @@ namespace fem {
  * This is a pure RHS correction limited to the rigid-body subspace (6 DOF).
  */
 void rebalance_loads(model::ModelData& model_data, model::Field& global_load_mat);
-
 } // namespace fem
 
 #endif // COMPILE_SH_RIGID_BODY_REBALANCING_H

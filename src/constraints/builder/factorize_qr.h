@@ -47,6 +47,5 @@ struct QRResult {
  * @param out Result container populated in-place.
  */
 void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& settings, QRResult& out);
-
 } // namespace constraint
 } // namespace fem

@@ -25,6 +25,5 @@ struct Startup {
 };
 
 extern Startup instance; ///< Global startup object that triggers automatic reporting.
-
 } // namespace startup
 } // namespace fem

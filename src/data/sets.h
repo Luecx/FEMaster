@@ -149,6 +149,5 @@ private:
         return collection;
     }
 };
-
 } // namespace model
 } // namespace fem

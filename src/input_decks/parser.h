@@ -98,6 +98,5 @@ template<class T>
 inline const T* Parser::active_loadcase_as() const {
     return dynamic_cast<const T*>(active_loadcase());
 }
-
 } // namespace input_decks
 } // namespace fem

@@ -14,6 +14,5 @@
 
 namespace fem {
 namespace constraint {
-
 } // namespace constraint
 } // namespace fem

@@ -258,5 +258,4 @@ void rebalance_loads(model::ModelData& model_data, model::Field& global_load_mat
                    M1.template lpNorm<Eigen::Infinity>() <= tolM_post,
                    "RigidBodyRebalancing: residual balance too large (|F|=", F1.norm(), ", |M|=", M1.norm(), ")");
 }
-
 } // namespace fem

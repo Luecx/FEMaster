@@ -37,6 +37,5 @@ private:
     Vec3 theta_axis_{};
     Vec3 z_axis_{};
 };
-
 } // namespace cos
 } // namespace fem

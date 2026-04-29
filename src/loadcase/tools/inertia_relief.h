@@ -12,7 +12,6 @@ namespace fem {
 void apply_inertia_relief(model::ModelData& model_data,
                           model::Field& global_load_mat,
                           bool consider_point_masses = true);
-
 }
 
 #endif    // COMPILE_SH_INERTIA_RELIEF_H

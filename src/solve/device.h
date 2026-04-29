@@ -32,5 +32,4 @@ enum SolverDevice {
     GPU, ///< Perform computations on the GPU using CUDA.
     CPU  ///< Perform computations on the CPU.
 };
-
 }  // namespace solver

@@ -49,7 +49,6 @@ protected:
     T* data = nullptr;
     std::size_t element_count = 0;
 };
-
 } // namespace cuda
 } // namespace fem
 

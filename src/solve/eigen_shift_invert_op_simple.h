@@ -98,5 +98,4 @@ private:
     // Ensure a valid factorization exists for the current _sigma.
     void _factorize_if_needed() const;
 };
-
 } // namespace fem::solver

@@ -121,6 +121,5 @@ Dofs Connector::dofs() const {
 
     return impacted;
 }
-
 } // namespace constraint
 } // namespace fem

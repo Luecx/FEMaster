@@ -23,7 +23,6 @@ struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI,
                 : std::array<ID, 6>{this->nodes()[0], this->nodes()[2], this->nodes()[1], this->nodes()[5],
                                     this->nodes()[4], this->nodes()[3]});
     }
-
 };
 }
 #endif //S6_H

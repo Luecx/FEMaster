@@ -49,6 +49,5 @@ struct Rayleigh {
         return C;
     }
 };
-
 } // namespace damping
 } // namespace fem

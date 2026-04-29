@@ -53,5 +53,4 @@ eigs_simple_shiftinvert(const SparseMatrix& A, int k, const EigenOpts& opts)
 
     return out;
 }
-
 } // namespace fem::solver::detail

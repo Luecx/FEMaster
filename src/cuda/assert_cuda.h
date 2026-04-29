@@ -33,7 +33,6 @@ void gpu_assert(cudaError_t code, const char* file, int line, bool abort = true)
 void gpu_assert(cusolverStatus_t code, const char* file, int line, bool abort = true);
 void gpu_assert(cusparseStatus_t code, const char* file, int line, bool abort = true);
 void gpu_assert(cublasStatus_t code, const char* file, int line, bool abort = true);
-
 } // namespace cuda
 } // namespace fem
 

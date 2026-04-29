@@ -53,5 +53,4 @@ DynamicVector reduce_vec_to_vec(const DynamicVector& a, const DynamicVector& b);
  * non-`NaN` values in `b` retained.
  */
 DynamicVector expand_vec_to_vec(const DynamicVector& reduced_vector, const DynamicVector& b);
-
 } } // namespace fem::mattools

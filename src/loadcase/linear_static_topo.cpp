@@ -354,5 +354,4 @@ void LinearStaticTopo::run() {
     model->_data->element_stiffness_scale = nullptr;
     model->_data->material_orientation    = nullptr;
 }
-
 }} // namespace fem::loadcase

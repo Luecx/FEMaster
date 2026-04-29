@@ -117,6 +117,5 @@ struct Elasticity {
 };
 
 using ElasticityPtr = std::shared_ptr<Elasticity>;
-
 } // namespace material
 } // namespace fem

@@ -55,5 +55,4 @@ void assemble_bc(model::Field& target_bc, const model::Field& source_bc, Duplica
         }
     }
 }
-
 } } // namespace fem::mattools

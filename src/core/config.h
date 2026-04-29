@@ -29,5 +29,4 @@ struct Config {
  * @brief Global configuration object accessible throughout the codebase.
  */
 extern Config global_config;
-
 } // namespace fem

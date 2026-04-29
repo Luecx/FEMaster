@@ -49,7 +49,6 @@ namespace fem { namespace mattools {
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements, const SystemDofIds &indices, Lambda&& lambda);
-
 } } // namespace fem::mattools
 
 #include "assemble.tpp"

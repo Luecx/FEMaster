@@ -146,6 +146,5 @@ class Coupling : public fem::Printable {
      */
     std::string str() const override;
 };
-
 }    // namespace constraint
 }    // namespace fem

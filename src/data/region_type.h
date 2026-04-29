@@ -23,6 +23,5 @@ enum RegionTypes : RegionType {
     SURFACE, ///< Collection of surface identifiers.
     LINE     ///< Collection of line identifiers (1D geometry).
 };
-
 } // namespace model
 } // namespace fem

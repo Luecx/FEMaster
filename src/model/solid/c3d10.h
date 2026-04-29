@@ -20,5 +20,4 @@ struct C3D10 : public SolidElement<10>{
 
     const quadrature::Quadrature& integration_scheme_mass() override;
 };
-
 } }

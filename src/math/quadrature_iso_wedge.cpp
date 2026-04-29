@@ -36,7 +36,6 @@ constexpr std::array<Point, 9> wedge_quadratic{{
 REGISTER_SCHEME(DOMAIN_ISO_WEDGE, ORDER_CONSTANT, wedge_linear);
 REGISTER_SCHEME(DOMAIN_ISO_WEDGE, ORDER_SUPER_LINEAR, wedge_linear);
 REGISTER_SCHEME(DOMAIN_ISO_WEDGE, ORDER_SUPER_QUADRATIC, wedge_quadratic);
-
 } // namespace quadrature
 } // namespace fem
 

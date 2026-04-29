@@ -40,6 +40,5 @@ StaticMatrix<6, 6> GeneralisedIsotropicElasticity::get_3d() {
         {0, 0, 0, 0, shear, 0},
         {0, 0, 0, 0, 0, shear}});
 }
-
 } // namespace material
 } // namespace fem

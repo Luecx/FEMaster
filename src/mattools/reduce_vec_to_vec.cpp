@@ -59,5 +59,4 @@ DynamicVector expand_vec_to_vec(const DynamicVector& reduced_vector, const Dynam
 
     return expanded_vector;
 }
-
 } } // namespace fem::mattools

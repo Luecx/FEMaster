@@ -82,5 +82,4 @@ private:
     Precision        effective_shear_modulus();
     StaticVector<12> displacement_vector(Field& displacement);
 };
-
 } // namespace fem::model

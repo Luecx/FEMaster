@@ -61,8 +61,6 @@ struct OrthotropicElasticity : Elasticity {
 
     /// Returns the full 3D stiffness matrix for orthotropic material.
     StaticMatrix<6, 6> get_3d() override;
-
 };
-
 } // namespace material
 } // namespace fem

@@ -40,7 +40,6 @@ constexpr Precision csqrt(Precision x) {
                ? csqrt_iter(x, x, 0)
                : std::numeric_limits<Precision>::quiet_NaN();
 }
-
 } // namespace math
 } // namespace fem
 

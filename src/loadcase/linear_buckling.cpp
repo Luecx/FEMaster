@@ -414,5 +414,4 @@ void LinearBuckling::run() {
     }
     logging::info(true, "Buckling analysis completed.");
 }
-
 }} // namespace fem::loadcase

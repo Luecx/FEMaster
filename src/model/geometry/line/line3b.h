@@ -14,5 +14,4 @@ struct Line3B : public Line<3, ZERO_TO_ONE> {
     StaticMatrix<3,1> shape_derivative(Precision r) const override;
     StaticMatrix<3,1> shape_second_derivative(Precision r) const override;
 };
-
 }  // namespace fem::model

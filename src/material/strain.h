@@ -44,5 +44,4 @@ struct Strain : Vec6 {
 };
 
 using Strains = std::vector<Strain>; ///< Collection alias for strain vectors.
-
 } // namespace fem

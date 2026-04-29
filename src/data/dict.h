@@ -163,6 +163,5 @@ struct Dict {
         return _data.cend();
     }
 };
-
 }    // namespace model
 }    // namespace fem

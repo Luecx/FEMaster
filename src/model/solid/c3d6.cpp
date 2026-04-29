@@ -102,6 +102,5 @@ StaticMatrix<6, 3> C3D6::node_coords_local() {
 
     return res;
 }
-
 }    // namespace model
 }    // namespace fem

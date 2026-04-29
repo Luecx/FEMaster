@@ -82,6 +82,5 @@ struct ConstraintBuilder {
      */
     static std::pair<class ConstraintMap, Report> build(const ConstraintSet& set, const Options& opt);
 };
-
 } // namespace constraint
 } // namespace fem

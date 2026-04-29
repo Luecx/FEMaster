@@ -91,5 +91,4 @@ struct C3D4 : public SolidElement<4> {
 
     SurfacePtr                    surface(ID surface_id) override;
 };
-
 } } // namespace fem::model

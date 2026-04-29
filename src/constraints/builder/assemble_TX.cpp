@@ -89,6 +89,5 @@ AssembleOutput assemble_T_and_X(const AssembleInput& in, const XCols& cols) {
 
     return out;
 }
-
 } // namespace constraint
 } // namespace fem

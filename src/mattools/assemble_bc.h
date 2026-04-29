@@ -43,5 +43,4 @@ enum class DuplicateHandling {
  * @throws std::runtime_error if duplicate non-NaN values are inconsistent when handling is set to SET.
  */
 void assemble_bc(model::Field& target_bc, const model::Field& source_bc, DuplicateHandling handling);
-
 } } // namespace fem::mattools

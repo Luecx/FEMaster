@@ -145,6 +145,5 @@ void RectangularSystem::compute_transformations() {
     local_to_global_.col(2) = z_axis_;
     global_to_local_ = local_to_global_.transpose();
 }
-
 } // namespace cos
 } // namespace fem

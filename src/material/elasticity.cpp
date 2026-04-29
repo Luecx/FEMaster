@@ -101,6 +101,5 @@ template StaticMatrix<6, 6> Elasticity::get<3>();
 template StaticMatrix<3, 3> Elasticity::get<2>();
 template StaticMatrix<6, 6> Elasticity::get_transformed<3>(StaticMatrix<3, 3>);
 template StaticMatrix<6, 6> Elasticity::get_transformed_derivative<3>(StaticMatrix<3, 3>, StaticMatrix<3, 3>);
-
 } // namespace material
 } // namespace fem

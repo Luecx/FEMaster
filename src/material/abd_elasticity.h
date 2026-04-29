@@ -26,6 +26,5 @@ struct ABDElasticity : Elasticity {
     StaticMatrix<6, 6> get_abd(Precision thickness) override;
     StaticMatrix<2, 2> get_shear(Precision thickness) override;
 };
-
 } // namespace material
 } // namespace fem

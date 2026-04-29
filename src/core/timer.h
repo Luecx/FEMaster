@@ -124,5 +124,4 @@ double Timer::measure_time(Func&& func) {
     timer.stop();
     return timer.elapsed();
 }
-
 } // namespace fem

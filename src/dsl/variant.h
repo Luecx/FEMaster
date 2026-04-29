@@ -171,6 +171,5 @@ struct Variant {
         return *this;
     }
 };
-
 } // namespace dsl
 } // namespace fem

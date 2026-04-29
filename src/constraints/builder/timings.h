@@ -28,6 +28,5 @@ namespace constraint {
  * @param rows Name/time pairs that describe each pipeline stage.
  */
 void print_constraint_builder_timing(const std::vector<std::pair<std::string, Time>>& rows);
-
 } // namespace constraint
 } // namespace fem

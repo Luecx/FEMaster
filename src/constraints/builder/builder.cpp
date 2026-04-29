@@ -215,6 +215,5 @@ std::pair<ConstraintMap, ConstraintBuilder::Report> ConstraintBuilder::build(con
 
     return {map, report};
 }
-
 } // namespace constraint
 } // namespace fem

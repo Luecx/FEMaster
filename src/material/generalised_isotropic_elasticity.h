@@ -40,8 +40,6 @@ struct GeneralisedIsotropicElasticity : Elasticity {
 
     /// Returns a 3D stiffness matrix using Lamé-like normal terms and explicit shear modulus.
     StaticMatrix<6, 6> get_3d() override;
-
 };
-
 } // namespace material
 } // namespace fem

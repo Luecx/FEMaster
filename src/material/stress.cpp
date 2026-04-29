@@ -38,5 +38,4 @@ Mat6 Stress::get_transformation_matrix(const cos::Basis& basis) {
 
     return T_sigma;
 }
-
 } // namespace fem

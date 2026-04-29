@@ -43,5 +43,4 @@ namespace fem { namespace mattools {
  * @return DynamicMatrix The resulting vector of the sum of all scaled rows.
  */
 DynamicVector extract_scaled_row_sum(const SparseMatrix& matrix, const DynamicMatrix& scale_vector);
-
 } } // namespace fem::mattools

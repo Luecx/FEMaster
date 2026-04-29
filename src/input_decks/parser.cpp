@@ -362,5 +362,4 @@ void Parser::register_commands() {
 
     m_commands_registered = true;
 }
-
 } // namespace fem::input_decks

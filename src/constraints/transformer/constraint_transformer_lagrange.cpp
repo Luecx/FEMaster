@@ -148,6 +148,5 @@ DynamicVector ConstraintTransformer::support_reactions(const SparseMatrix& K,
     const DynamicVector g = accumulate_support_constraint_forces(lambda, use_scaled_rows);
     return -g;
 }
-
 } // namespace constraint
 } // namespace fem

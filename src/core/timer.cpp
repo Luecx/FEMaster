@@ -22,5 +22,4 @@ void Timer::stop() {
 Time Timer::elapsed() const {
     return std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 }
-
 } // namespace fem

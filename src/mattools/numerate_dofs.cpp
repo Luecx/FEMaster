@@ -39,5 +39,4 @@ SystemDofIds numerate_dofs(const SystemDofs& systemDofs) {
 
     return dofIds;
 }
-
 } } // namespace fem::mattools

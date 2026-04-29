@@ -201,6 +201,5 @@ public:
     DynamicVector u_p_;///< Particular solution vector.
     SparseMatrix T_;   ///< Null-space basis.
 };
-
 } // namespace constraint
 } // namespace fem

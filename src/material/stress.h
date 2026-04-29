@@ -44,5 +44,4 @@ struct Stress : Vec6 {
 };
 
 using Stresses = std::vector<Stress>; ///< Collection alias for stress vectors.
-
 } // namespace fem

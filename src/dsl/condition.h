@@ -358,5 +358,4 @@ struct Condition {
         return c;
     }
 };
-
 }} // namespace fem::dsl

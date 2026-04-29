@@ -66,5 +66,4 @@ inline void ensure_compressed(const SparseMatrix& M_const) {
     auto& M = const_cast<SparseMatrix&>(M_const);
     if (!M.isCompressed()) M.makeCompressed();
 }
-
 } // namespace fem::solver::detail

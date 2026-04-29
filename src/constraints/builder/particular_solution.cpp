@@ -87,6 +87,5 @@ ParticularOutput compute_particular_and_project(const ParticularInput& input,
 
     return output;
 }
-
 } // namespace constraint
 } // namespace fem

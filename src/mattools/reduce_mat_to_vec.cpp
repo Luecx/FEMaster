@@ -58,5 +58,4 @@ model::Field expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector&
 
     return expanded_matrix;
 }
-
 } } // namespace fem::mattools

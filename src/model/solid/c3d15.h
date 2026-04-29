@@ -15,7 +15,5 @@ struct C3D15 : public SolidElement<15>{
     StaticMatrix<15, 1> shape_function(Precision r, Precision s, Precision t) override;
     StaticMatrix<15, 3> shape_derivative(Precision r, Precision s, Precision t) override;
     StaticMatrix<15, 3> node_coords_local() override;
-
 };
-
 } }

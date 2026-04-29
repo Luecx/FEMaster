@@ -277,6 +277,5 @@ void LinearStatic::run() {
 
     transformer->post_check_static(K, f, u);
 }
-
 } // namespace loadcase
 } // namespace fem

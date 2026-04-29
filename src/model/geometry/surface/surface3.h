@@ -104,5 +104,4 @@ struct Surface3 : public Surface<3> {
      */
     bool in_bounds(const Vec2& local) const override;
 };
-
 }    // namespace fem::model

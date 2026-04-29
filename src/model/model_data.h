@@ -122,6 +122,5 @@ struct ModelData {
     Field::Ptr create_field (const std::string& name, FieldDomain domain, Index components, bool fill_nan = true, bool reg = true);
     Field      create_field_(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true);
 };
-
 } // namespace model
 } // namespace fem

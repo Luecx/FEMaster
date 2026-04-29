@@ -91,6 +91,5 @@ private:
     Precision m_thermal_expansion = Precision(-1); ///< Thermal expansion coefficient.
     Precision m_density = Precision(-1); ///< Density value.
 };
-
 } // namespace material
 } // namespace fem

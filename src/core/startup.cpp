@@ -75,7 +75,6 @@ void print_banner() {
     std::cout << "*                                                                    *\n";
     std::cout << "**********************************************************************\n";
 }
-
 } // namespace
 
 Startup::Startup() {
@@ -83,6 +82,5 @@ Startup::Startup() {
 }
 
 Startup instance{};
-
 } // namespace startup
 } // namespace fem

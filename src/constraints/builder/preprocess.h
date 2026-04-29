@@ -60,6 +60,5 @@ struct PreprocessOutput {
  * @return PreprocessOutput Filtered matrices and metadata.
  */
 PreprocessOutput preprocess_constraints(const PreprocessInput& input);
-
 } // namespace constraint
 } // namespace fem

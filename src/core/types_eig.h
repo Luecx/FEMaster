@@ -81,5 +81,4 @@ using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6, Eigen::RowMajor>;
 using ScalarField = std::function<Precision(const Vec3&)>;
 using VecField    = std::function<Vec3(const Vec3&)>;
 using TenField    = std::function<Mat3(const Vec3&)>;
-
 } // namespace fem

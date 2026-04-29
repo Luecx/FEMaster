@@ -23,7 +23,6 @@ struct S8 : DefaultShellElement<8, Surface8, quadrature::Domain::DOMAIN_ISO_QUAD
                 : std::array<ID, 8>{this->nodes()[0], this->nodes()[3], this->nodes()[2], this->nodes()[1],
                                     this->nodes()[7], this->nodes()[6], this->nodes()[5], this->nodes()[4]});
     }
-
 };
 }
 #endif //S8_H

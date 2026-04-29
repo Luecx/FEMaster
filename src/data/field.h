@@ -251,6 +251,5 @@ struct Field {
         return *this;
     }
 };
-
 } // namespace model
 } // namespace fem

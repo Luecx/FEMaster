@@ -71,6 +71,5 @@ StaticMatrix<6, 6> OrthotropicElasticity::get_3d() {
 
     return compliance.inverse();
 }
-
 } // namespace material
 } // namespace fem

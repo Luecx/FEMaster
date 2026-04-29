@@ -66,7 +66,6 @@ REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUADRATIC, hex_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_CUBIC, hex_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUARTIC, hex_quartic);
 REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUINTIC, hex_quartic);
-
 } // namespace quadrature
 } // namespace fem
 

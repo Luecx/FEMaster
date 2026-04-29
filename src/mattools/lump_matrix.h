@@ -32,5 +32,4 @@ namespace fem { namespace mattools {
  * @return SparseMatrix The lumped mass matrix as a diagonal sparse matrix.
  */
 SparseMatrix lump_matrix(const SparseMatrix& matrix);
-
 } } // namespace fem::mattools

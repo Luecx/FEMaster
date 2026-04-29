@@ -96,5 +96,4 @@ newmark_linear(const SparseMatrix& M,
                const NewmarkIC& ic,
                const NewmarkOpts& opts,
                ForceFn f_of_t);
-
 } // namespace fem::solver

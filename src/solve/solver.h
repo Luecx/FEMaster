@@ -60,5 +60,4 @@ inline DynamicVector solve(SolverDevice device,
         return solve_iter(device, mat, rhs);
     }
 }
-
 }  // namespace solver

@@ -42,6 +42,5 @@ Point Quadrature::get_point(ID n) const {
 Index Quadrature::count() const {
     return static_cast<Index>(scheme.points.size());
 }
-
 } // namespace quadrature
 } // namespace fem

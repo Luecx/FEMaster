@@ -98,6 +98,5 @@ const quadrature::Quadrature& C3D8::integration_scheme() {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUADRATIC};
     return quad;
 }
-
 }    // namespace model
 }    // namespace fem

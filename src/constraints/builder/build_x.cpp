@@ -100,6 +100,5 @@ XCols build_X_cols_from_R(const SparseMatrix& R, int r) {
 
     return cols;
 }
-
 } // namespace constraint
 } // namespace fem

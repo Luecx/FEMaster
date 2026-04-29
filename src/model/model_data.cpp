@@ -79,7 +79,5 @@ Field ModelData::create_field_(const std::string& name, FieldDomain domain, Inde
     }
     return field;
 }
-
-
 } // namespace model
 } // namespace fem

@@ -39,8 +39,6 @@ struct IsotropicElasticity : Elasticity {
 
     /// Returns the full 3D stiffness matrix.
     StaticMatrix<6, 6> get_3d() override;
-
 };
-
 } // namespace material
 } // namespace fem

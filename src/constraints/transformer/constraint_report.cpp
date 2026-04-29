@@ -95,7 +95,6 @@ std::string make_tag(EquationSourceKind source, Index idx) {
     }
     return std::string(1, code) + std::to_string(idx);
 }
-
 } // namespace
 
 /**
@@ -164,6 +163,5 @@ std::vector<std::string> format_equations(const Equations& equations, const Equa
     }
     return lines;
 }
-
 } // namespace constraint
 } // namespace fem

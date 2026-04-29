@@ -180,5 +180,4 @@ Vec2 Surface6::closest_point_on_boundary(const Vec3& global, const StaticMatrix<
 bool Surface6::in_bounds(const Vec2& local) const {
     return local(0) >= 0 && local(1) >= 0 && local(0) + local(1) <= 1;
 }
-
 }  // namespace fem::model

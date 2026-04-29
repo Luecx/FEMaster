@@ -43,6 +43,5 @@ void ConstraintGroups::report() const {
     }
     logging::down();
 }
-
 } // namespace constraint
 } // namespace fem

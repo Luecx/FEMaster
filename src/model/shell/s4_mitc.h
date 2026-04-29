@@ -96,7 +96,6 @@ struct MITC4
         return Bs;
     }
 };
-
 } // namespace fem::model
 
 #endif // S4_MITC_H

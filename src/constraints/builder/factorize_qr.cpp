@@ -30,6 +30,5 @@ void factorize_sparse_qr(const SparseMatrix& C_use, const QRSettings& settings, 
     out.R = out.qr.matrixR();
     out.P = out.qr.colsPermutation();
 }
-
 } // namespace constraint
 } // namespace fem

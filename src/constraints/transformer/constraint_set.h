@@ -57,6 +57,5 @@ struct ConstraintSet {
      */
     void assemble(const SystemDofIds& dofs, Index n_dofs);
 };
-
 } // namespace constraint
 } // namespace fem

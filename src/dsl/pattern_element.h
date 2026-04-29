@@ -227,7 +227,6 @@ inline bool is_float_token(const std::string& s)
     // Accept integer-looking tokens too (e.g., "42") as valid floats.
     return any_digit_before_e || seen_dot;
 }
-
 } // namespace detail
 
 /**
@@ -717,6 +716,5 @@ struct Fixed : PatternElementBase
         }
     }
 };
-
 } // namespace dsl
 } // namespace fem

@@ -304,5 +304,4 @@ Model::compute_shear_flow(Field& displacement) {
 
     return mat;
 }
-
 } }

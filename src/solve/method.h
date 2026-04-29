@@ -29,5 +29,4 @@ enum SolverMethod {
     DIRECT,   ///< Use a direct solver (e.g., LU, QR decomposition).
     INDIRECT  ///< Use an iterative solver (e.g., Conjugate Gradient, GMRES, Lanczos).
 };
-
 }  // namespace solver

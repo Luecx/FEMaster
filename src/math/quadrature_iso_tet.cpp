@@ -58,7 +58,6 @@ REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUADRATIC, tet_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_CUBIC, tet_cubic);
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUARTIC, tet_quartic);
 REGISTER_SCHEME(DOMAIN_ISO_TET, ORDER_QUINTIC, tet_quartic);
-
 } // namespace quadrature
 } // namespace fem
 

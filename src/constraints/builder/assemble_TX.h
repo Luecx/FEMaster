@@ -51,6 +51,5 @@ struct AssembleOutput {
  * @return AssembleOutput Populated matrices.
  */
 AssembleOutput assemble_T_and_X(const AssembleInput& in, const XCols& cols);
-
 } // namespace constraint
 } // namespace fem

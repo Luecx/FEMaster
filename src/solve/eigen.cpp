@@ -76,5 +76,4 @@ eigs(SolverDevice device, const SparseMatrix& A, const SparseMatrix& B, int k, c
             return {};
     }
 }
-
 } // namespace fem::solver

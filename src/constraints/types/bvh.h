@@ -275,6 +275,5 @@ private:
 
     mutable std::vector<ID> scratch_;
 };
-
 } // namespace constraint
 } // namespace fem

@@ -76,5 +76,4 @@ struct LinearBuckling : public LoadCase {
     /// Execute the analysis.
     void run() override;
 };
-
 }} // namespace fem::loadcase

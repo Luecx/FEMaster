@@ -59,5 +59,4 @@ eigs_general_cayley(const SparseMatrix& A, const SparseMatrix& B, int k, const E
 
     return out;
 }
-
 } // namespace fem::solver::detail

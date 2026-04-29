@@ -69,6 +69,5 @@ void ConstraintSet::assemble(const SystemDofIds& dofs, Index n_dofs) {
                   " n=", n,
                   " nnz=", static_cast<Index>(C.nonZeros()));
 }
-
 } // namespace constraint
 } // namespace fem

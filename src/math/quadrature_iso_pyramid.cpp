@@ -68,7 +68,6 @@ REGISTER_SCHEME(DOMAIN_ISO_PYRAMID, ORDER_QUADRATIC, pyramid_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_PYRAMID, ORDER_CUBIC, pyramid_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_PYRAMID, ORDER_QUARTIC, pyramid_quartic);
 REGISTER_SCHEME(DOMAIN_ISO_PYRAMID, ORDER_QUINTIC, pyramid_quartic);
-
 } // namespace quadrature
 } // namespace fem
 

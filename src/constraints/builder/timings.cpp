@@ -32,6 +32,5 @@ void print_constraint_builder_timing(const std::vector<std::pair<std::string, Ti
                       " ", std::right, std::setw(8), duration);
     }
 }
-
 } // namespace constraint
 } // namespace fem

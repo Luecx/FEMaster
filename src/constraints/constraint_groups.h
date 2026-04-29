@@ -50,6 +50,5 @@ struct ConstraintGroups {
      */
     void report() const;
 };
-
 } // namespace constraint
 } // namespace fem

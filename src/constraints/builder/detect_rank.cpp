@@ -44,6 +44,5 @@ RankInfo detect_rank_from_R(const SparseMatrix& R, const RankSettings& settings)
 
     return info;
 }
-
 } // namespace constraint
 } // namespace fem

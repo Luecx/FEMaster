@@ -340,6 +340,5 @@ std::string Coupling::str() const {
     s << ", dofs=[" << dofs_to_string(coupled_dofs) << "]";
     return s.str();
 }
-
 }    // namespace constraint
 }    // namespace fem

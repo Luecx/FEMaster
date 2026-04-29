@@ -186,7 +186,6 @@ struct Invoker {
         std::apply(std::forward<F>(f), args);
     }
 };
-
 } // namespace detail
 } // namespace dsl
 } // namespace fem

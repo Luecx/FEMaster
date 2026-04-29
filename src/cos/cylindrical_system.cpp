@@ -54,6 +54,5 @@ Basis CylindricalSystem::get_axes(const Vec3& local_point) const {
     axes.col(2) = z_axis_;
     return axes;
 }
-
 } // namespace cos
 } // namespace fem

@@ -64,6 +64,5 @@ PartitionOutput partition_and_map(const PartitionInput& input, const std::vector
 
     return output;
 }
-
 } // namespace constraint
 } // namespace fem

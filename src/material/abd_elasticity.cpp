@@ -25,6 +25,5 @@ StaticMatrix<2, 2> ABDElasticity::get_shear(Precision thickness) {
     (void) thickness;
     return shear;
 }
-
 } // namespace material
 } // namespace fem

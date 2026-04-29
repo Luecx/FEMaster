@@ -21,7 +21,6 @@ namespace model {
  */
 Namable::Namable(std::string p_name)
     : name(std::move(p_name)) {}
-
 } // namespace model
 } // namespace fem
 

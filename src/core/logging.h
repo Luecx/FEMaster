@@ -73,7 +73,6 @@ void info(bool condition, Args... args);
  */
 template<typename... Args>
 void error(bool condition, Args... args);
-
 } // namespace logging
 } // namespace fem
 

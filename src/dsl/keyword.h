@@ -148,6 +148,5 @@ private:
         return entries_.at(last_key_);
     }
 };
-
 } // namespace dsl
 } // namespace fem

@@ -38,5 +38,4 @@ SparseMatrix lump_matrix(const SparseMatrix& matrix) {
 
     return lumped_matrix;
 }
-
 } } // namespace fem::mattools

@@ -146,5 +146,4 @@ Vec2 Surface3::closest_point_on_boundary(const StaticVector<3>& global, const St
 bool Surface3::in_bounds(const Vec2& local) const {
     return local(0) >= 0 && local(1) >= 0 && local(0) + local(1) <= 1;
 }
-
 }  // namespace fem::model

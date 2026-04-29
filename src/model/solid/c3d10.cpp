@@ -169,6 +169,5 @@ const quadrature::Quadrature& C3D10::integration_scheme_mass() {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUARTIC};
     return quad;
 }
-
 }    // namespace model
 }    // namespace fem

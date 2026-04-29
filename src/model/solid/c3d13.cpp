@@ -138,6 +138,5 @@ StaticMatrix<13, 3> C3D13::node_coords_local() {
 
     return res;
 }
-
 }    // namespace model
 }    // namespace fem

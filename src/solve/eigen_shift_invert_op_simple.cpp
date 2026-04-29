@@ -20,7 +20,6 @@ inline void ensure_compressed(const fem::SparseMatrix& M_const) {
     auto& M = const_cast<fem::SparseMatrix&>(M_const);
     if (!M.isCompressed()) M.makeCompressed();
 }
-
 } // unnamed namespace
 
 namespace fem::solver {
@@ -89,5 +88,4 @@ void ShiftInvertOpSimple::perform_op(const Scalar* x_in, Scalar* y_out) const
 
     std::memcpy(y_out, y.data(), sizeof(Scalar) * static_cast<size_t>(n));
 }
-
 } // namespace fem::solver

@@ -98,5 +98,4 @@ struct Surface8 : public Surface<8> {
      */
     bool in_bounds(const Vec2& local) const override;
 };
-
 }  // namespace fem::model

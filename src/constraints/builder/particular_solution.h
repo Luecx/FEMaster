@@ -61,6 +61,5 @@ ParticularOutput compute_particular_and_project(const ParticularInput& input,
                                                 const ConstraintMap& map,
                                                 Precision feas_tol_rel,
                                                 Precision d_norm);
-
 } // namespace constraint
 } // namespace fem

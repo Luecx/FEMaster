@@ -49,6 +49,5 @@ StaticMatrix<6, 6> IsotropicElasticity::get_3d() {
                {0, 0, 0, 0, mu / 2, 0},
                {0, 0, 0, 0, 0, mu / 2}}) * scalar;
 }
-
 } // namespace material
 } // namespace fem

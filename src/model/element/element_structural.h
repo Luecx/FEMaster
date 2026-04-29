@@ -91,6 +91,5 @@ struct StructuralElement : ElementInterface {
     virtual void compute_compliance(Field& displacement, Field& result) = 0;
     virtual void compute_compliance_angle_derivative(Field& displacement, Field& result) = 0;
 };
-
 } // namespace model
 } // namespace fem

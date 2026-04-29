@@ -190,6 +190,4 @@ TYPED_TEST(LineTest, ClosestPointIsFoundCorrectly) {
             EXPECT_GE(distance, min_distance) << "Found a closer point at r=" << r;
         }
     }
-
-
 }

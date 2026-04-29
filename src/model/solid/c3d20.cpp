@@ -285,6 +285,5 @@ StaticMatrix<20, 3> C3D20::node_coords_local() {
 
     return res;
 }
-
 }    // namespace model
 }    // namespace fem

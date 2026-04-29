@@ -60,5 +60,4 @@ eigs_general_buckling(const SparseMatrix& A, const SparseMatrix& B, int k, const
 
     return out;
 }
-
 } // namespace fem::solver::detail

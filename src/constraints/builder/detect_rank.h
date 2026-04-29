@@ -43,6 +43,5 @@ struct RankInfo {
  * @return RankInfo Detected rank and diagnostics.
  */
 RankInfo detect_rank_from_R(const SparseMatrix& R, const RankSettings& settings);
-
 } // namespace constraint
 } // namespace fem

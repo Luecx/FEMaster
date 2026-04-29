@@ -12,7 +12,6 @@
 
 namespace fem {
 namespace model {
-
 } // namespace model
 } // namespace fem
 

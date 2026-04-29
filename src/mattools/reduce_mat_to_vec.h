@@ -48,5 +48,4 @@ DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const model::Field&
  * @return Field The expanded node field containing the boundary conditions.
  */
 model::Field expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector& reduced_vector);
-
 } } // namespace fem::mattools

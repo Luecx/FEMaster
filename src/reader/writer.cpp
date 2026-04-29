@@ -133,6 +133,5 @@ void Writer::write_field(const model::Field& field,
 
     file_path << "END FIELD\n";
 }
-
 } // namespace reader
 } // namespace fem

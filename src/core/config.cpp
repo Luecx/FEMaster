@@ -15,5 +15,4 @@ namespace fem {
  * @brief Global configuration object used across the application.
  */
 Config global_config{};
-
 } // namespace fem

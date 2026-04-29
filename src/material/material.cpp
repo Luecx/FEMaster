@@ -50,6 +50,5 @@ void Material::info() const {
     logging::info(true, "   Thermal Expansion   : ", (has_thermal_expansion() ? std::to_string(m_thermal_expansion) : "NO"));
     logging::info(true, "   Density             : ", (has_density() ? std::to_string(m_density) : "NO"));
 }
-
 } // namespace material
 } // namespace fem

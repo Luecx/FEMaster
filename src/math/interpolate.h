@@ -98,7 +98,6 @@ private:
     InterpolationFunction m_method;
     float m_accuracy;
 };
-
 } // namespace interpolate
 } // namespace math
 } // namespace fem

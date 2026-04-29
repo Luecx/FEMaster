@@ -47,6 +47,5 @@ std::string format_equation(const Equation& equation, const EquationFormatOption
  * @return std::vector<std::string> Textual representations for all equations.
  */
 std::vector<std::string> format_equations(const Equations& equations, const EquationFormatOptions& opt = {});
-
 } // namespace constraint
 } // namespace fem

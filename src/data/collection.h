@@ -242,6 +242,5 @@ class Collection : public Namable {
     /// Trait indicating whether sorting operations are available for `T`.
     static constexpr bool is_sortable = std::is_arithmetic_v<T> || std::is_pointer_v<T>;
 };
-
 }    // namespace model
 }    // namespace fem

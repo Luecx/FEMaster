@@ -137,7 +137,6 @@ namespace {
         logging::info(true, "Initial acceleration: done in ", tM.elapsed(), " ms.");
         return a0;
     }
-
 } // namespace (anonymous)
 
 //------------------------------------------------------------------------------
@@ -303,5 +302,4 @@ newmark_linear(const SparseMatrix& M,
 
     return out;
 }
-
 } // namespace fem::solver

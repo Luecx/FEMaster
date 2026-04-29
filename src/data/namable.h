@@ -34,7 +34,6 @@ struct Namable {
      */
     explicit Namable(std::string p_name);
 };
-
 } // namespace model
 } // namespace fem
 

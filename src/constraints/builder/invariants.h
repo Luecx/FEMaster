@@ -26,6 +26,5 @@ namespace constraint {
  * @param C Original constraint matrix.
  */
 void check_invariants(const ConstraintMap& map, const SparseMatrix& C);
-
 } // namespace constraint
 } // namespace fem

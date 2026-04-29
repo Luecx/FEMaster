@@ -12,6 +12,5 @@ struct Printable {
     virtual ~Printable() = default;
     virtual std::string str() const = 0;
 };
-
 } // namespace fem
 

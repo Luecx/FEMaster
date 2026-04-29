@@ -137,6 +137,5 @@ SurfacePtr C3D4::surface(ID surface_id) {
         default: return nullptr;    // Invalid surface ID
     }
 }
-
 }  // namespace model
 }  // namespace fem

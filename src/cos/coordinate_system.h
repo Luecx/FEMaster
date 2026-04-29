@@ -58,6 +58,5 @@ struct CoordinateSystem : Namable {
      */
     virtual Basis get_axes(const Vec3& local_point) const = 0;
 };
-
 } // namespace cos
 } // namespace fem

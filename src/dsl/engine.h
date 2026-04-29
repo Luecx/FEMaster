@@ -415,7 +415,6 @@ private:
 
                     // COMMENT / EMPTY → ignore and keep pulling
                 }
-
             } else {
                 const std::size_t max_lines_per_record = seg._range.max_;
                 const std::size_t need_tokens          = seg._pattern.required_tokens();
@@ -517,6 +516,5 @@ private:
         }
     }
 };
-
 } // namespace dsl
 } // namespace fem

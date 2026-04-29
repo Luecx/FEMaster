@@ -30,7 +30,6 @@ fem::model::Model build_qspt_model(bool with_density) {
 
     return model;
 }
-
 } // namespace
 
 TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {

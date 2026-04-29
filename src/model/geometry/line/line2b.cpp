@@ -27,5 +27,4 @@ StaticMatrix<2,1> Line2B::shape_second_derivative(Precision /*r*/) const {
     // Second derivatives for a linear element are zero
     return StaticMatrix<2,1>::Zero();
 }
-
 }  // namespace fem::model

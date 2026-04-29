@@ -220,6 +220,5 @@ private:
     ConstraintMap map_;               ///< Null-space representation.
     ConstraintBuilder::Report report_;///< Diagnostics from the builder.
 };
-
 } // namespace constraint
 } // namespace fem

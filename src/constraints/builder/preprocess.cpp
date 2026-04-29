@@ -120,7 +120,6 @@ void compress_zero_columns_with_row_filter(const SparseMatrix& C,
     C_use.setFromTriplets(trips.begin(), trips.end());
     C_use.makeCompressed();
 }
-
 } // namespace
 
 /**
@@ -195,6 +194,5 @@ PreprocessOutput preprocess_constraints(const PreprocessInput& input) {
 
     return output;
 }
-
 } // namespace constraint
 } // namespace fem

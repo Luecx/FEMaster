@@ -47,5 +47,4 @@ DynamicVector extract_scaled_row_sum(const SparseMatrix& matrix, const DynamicMa
 
     return result;
 }
-
 } } // namespace fem::mattools

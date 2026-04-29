@@ -18,5 +18,4 @@ struct C3D8 : public SolidElement<8>{
 
     const quadrature::Quadrature& integration_scheme() override;
 };
-
 } }

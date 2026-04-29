@@ -116,6 +116,5 @@ public:
         return _line.type() == END_OF_FILE;
     }
 };
-
 } // namespace dsl
 } // namespace fem

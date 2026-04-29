@@ -29,21 +29,18 @@ using ModelDataPtr = std::shared_ptr<ModelData>;
 using ElementPtr   = std::shared_ptr<ElementInterface>;
 using SurfacePtr   = std::shared_ptr<SurfaceInterface>;
 using LinePtr      = std::shared_ptr<LineInterface>;
-
 } // namespace model
 
 namespace cos {
 
 struct CoordinateSystem;
 using CoordinateSystemPtr = std::shared_ptr<CoordinateSystem>;
-
 } // namespace cos
 
 namespace material {
 
 struct Material;
 using MaterialPtr = std::shared_ptr<Material>;
-
 } // namespace material
 
 namespace loadcase {
@@ -53,7 +50,6 @@ struct LinearStatic;
 struct LinearStaticTopo;
 struct LinearEigenfrequency;
 struct LinearBuckling;
-
 } // namespace loadcase
 
 struct Section;
@@ -66,5 +62,4 @@ struct ShellSection;
 template<class T> using SPtr = std::shared_ptr<T>;
 template<class T> using UPtr = std::unique_ptr<T>;
 template<class T> using WPtr = std::weak_ptr<T>;
-
 } // namespace fem

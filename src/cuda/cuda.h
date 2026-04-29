@@ -53,7 +53,6 @@ private:
 };
 
 extern Manager manager;
-
 } // namespace cuda
 } // namespace fem
 

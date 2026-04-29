@@ -131,7 +131,6 @@ DynamicVector compute_r2(const DynamicMatrix& predicted, const RowMatrix& values
     }
     return r2;
 }
-
 } // namespace
 
 /**
@@ -286,7 +285,6 @@ DynamicMatrix Interpolator::operator()(const RowMatrix& xyz,
                                        DynamicVector* r2_values) {
     return interpolate(xyz, values, center, r2_values, m_accuracy, m_method);
 }
-
 } // namespace interpolate
 } // namespace math
 } // namespace fem

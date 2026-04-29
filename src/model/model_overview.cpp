@@ -174,5 +174,4 @@ void print_model_overview(const Model& mdl) {
     }
     logging::down();
 }
-
 } } // namespace fem::model

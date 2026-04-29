@@ -27,9 +27,6 @@ struct S4 : DefaultShellElement<4, Surface4, quadrature::Domain::DOMAIN_ISO_QUAD
         return DefaultShellElement::strain_disp_shear(shape_func, shape_der, jacobian);
     }
 };
-
-
-
 }
 
 

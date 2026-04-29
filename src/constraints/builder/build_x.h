@@ -37,6 +37,5 @@ struct XCols {
  * @return XCols Sparse column representation of `X`.
  */
 XCols build_X_cols_from_R(const SparseMatrix& R, int r);
-
 } // namespace constraint
 } // namespace fem

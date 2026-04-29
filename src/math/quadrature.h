@@ -215,6 +215,5 @@ public:
     /// Returns the number of quadrature points in the scheme.
     Index count() const;
 };
-
 } // namespace quadrature
 } // namespace fem

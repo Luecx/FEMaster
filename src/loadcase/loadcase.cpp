@@ -35,6 +35,5 @@ void LoadCase::report_constraint_groups(const constraint::ConstraintGroups& grou
     }
     groups.report();
 }
-
 } // namespace loadcase
 } // namespace fem

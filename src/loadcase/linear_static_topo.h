@@ -59,6 +59,5 @@ public:
      */
     void run() override;
 };
-
 } // namespace loadcase
 } // namespace fem

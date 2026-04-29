@@ -91,7 +91,6 @@ static bool add_if_available(Equation& equation,
     equation.entries.push_back(EquationEntry{node_id, dof, coeff});
     return true;
 }
-
 } // namespace
 
 Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const {
@@ -166,6 +165,5 @@ Equations Rbm::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
 
     return eqs;
 }
-
 } // namespace constraint
 } // namespace fem

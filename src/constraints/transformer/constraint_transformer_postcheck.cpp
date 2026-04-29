@@ -234,6 +234,5 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
 
     print_items(items);
 }
-
 } // namespace constraint
 } // namespace fem

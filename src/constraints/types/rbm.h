@@ -44,6 +44,5 @@ public:
      */
     Equations get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) const;
 };
-
 } // namespace constraint
 } // namespace fem

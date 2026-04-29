@@ -157,6 +157,5 @@ DynamicVector ConstraintMap::reactions(const SparseMatrix& K,
     DynamicVector u = recover_u(q);
     return K * u - f;
 }
-
 } // namespace constraint
 } // namespace fem

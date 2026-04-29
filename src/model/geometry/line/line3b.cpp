@@ -33,5 +33,4 @@ StaticMatrix<3,1> Line3B::shape_second_derivative(Precision /*r*/) const {
 
     return ddN;
 }
-
 }  // namespace fem::model

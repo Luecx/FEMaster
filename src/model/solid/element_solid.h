@@ -354,8 +354,6 @@ public:
     template<class ElementType>
     static bool test_implementation(bool print=false);
 };
-
-
 }  // namespace fem::model
 
 

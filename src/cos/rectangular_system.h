@@ -59,6 +59,5 @@ private:
     Vec3 y_axis_{};
     Vec3 z_axis_{};
 };
-
 } // namespace cos
 } // namespace fem

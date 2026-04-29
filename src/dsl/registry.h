@@ -531,6 +531,5 @@ struct Registry {
         if (hits == 0) std::cout << "(no matches)\n";
     }
 };
-
 } // namespace dsl
 } // namespace fem

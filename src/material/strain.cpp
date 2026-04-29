@@ -38,5 +38,4 @@ Mat6 Strain::get_transformation_matrix(const cos::Basis& basis) {
 
     return T_eps;
 }
-
 } // namespace fem

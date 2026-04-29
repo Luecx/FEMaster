@@ -26,5 +26,4 @@ namespace fem { namespace mattools {
  * @return SystemDofIds The matrix of numerated DOF IDs.
  */
 SystemDofIds numerate_dofs(const SystemDofs& systemDofs);
-
 } } // namespace fem::mattools

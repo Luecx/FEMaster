@@ -100,5 +100,4 @@ eigs(SolverDevice device,
      const SparseMatrix& B,
      int k,
      const EigenOpts& opts);
-
 } // namespace fem::solver

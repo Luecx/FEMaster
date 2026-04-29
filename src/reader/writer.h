@@ -74,6 +74,5 @@ class Writer {
                      const std::string& field_name,
                      int index_cols = 0);
 };
-
 } // namespace reader
 } // namespace fem

@@ -327,6 +327,5 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
 
     return equations;
 }
-
 } // namespace constraint
 } // namespace fem

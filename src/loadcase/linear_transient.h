@@ -77,5 +77,4 @@ struct Transient : public LoadCase {
     // Run analysis
     void run() override;
 };
-
 }} // namespace fem::loadcase

@@ -55,7 +55,6 @@ Precision max_abs_diagonal_entry(const SparseMatrix& K) {
     }
     return k_scale;
 }
-
 } // namespace
 
 ConstraintTransformer::ConstraintTransformer(const Equations& eqs,
@@ -344,6 +343,5 @@ DynamicVector ConstraintTransformer::reactions(const SparseMatrix& K,
     DynamicVector u = recover_u(q);
     return K * u - f;
 }
-
 } // namespace constraint
 } // namespace fem

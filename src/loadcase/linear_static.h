@@ -54,6 +54,5 @@ struct LinearStatic : public LoadCase {
      */
     void run() override;
 };
-
 } // namespace loadcase
 } // namespace fem
