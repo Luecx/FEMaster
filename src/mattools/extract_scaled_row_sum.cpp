@@ -28,7 +28,6 @@ DynamicVector extract_scaled_row_sum(const SparseMatrix& matrix, const DynamicMa
     for (int i = 0; i < scale_vector.size(); ++i) {
         // Check if the current value in the scale_vector is not NaN
         if (!std::isnan(scale_vector(i))) {
-
             if (scale_vector(i) == 0) {
                 continue;
             }

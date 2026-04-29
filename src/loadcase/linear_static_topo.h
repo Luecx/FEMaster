@@ -49,7 +49,6 @@ struct LinearStaticTopo : public LinearStatic {
     Precision exponent = 1;  /**< Exponent used in SIMP-like penalization schemes. */
 
 public:
-
     //-------------------------------------------------------------------------
     // Run Analysis
     //-------------------------------------------------------------------------
