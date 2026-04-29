@@ -30,7 +30,6 @@ namespace loadcase {
  * implementing a run function for solving the eigenvalue problem.
  */
 struct LinearEigenfrequency : public LoadCase {
-
     //-------------------------------------------------------------------------
     // Constructor
     //-------------------------------------------------------------------------
@@ -64,7 +63,7 @@ public:
      * the base run() method and computes the natural frequencies and mode shapes
      * of the model under the specified boundary conditions.
      */
-    virtual void run() override;
+    void run() override;
 };
 
 } // namespace loadcase

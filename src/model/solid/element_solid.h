@@ -21,7 +21,6 @@ namespace fem::model {
  */
 template<Index N>
 struct SolidElement : public StructuralElement {
-
     //-------------------------------------------------------------------------
     // Member Variables
     //-------------------------------------------------------------------------
@@ -249,7 +248,7 @@ public:
      * @param surface_id The ID of the surface.
      * @return SurfacePtr A shared pointer to the surface.
      */
-    virtual SurfacePtr surface(ID surface_id) override = 0;
+    SurfacePtr surface(ID surface_id) override = 0;
 
     /**
      * @brief Returns the number of integration points in the quadrature scheme.

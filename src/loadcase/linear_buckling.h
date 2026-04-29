@@ -42,7 +42,6 @@
 namespace fem { namespace loadcase {
 
 struct LinearBuckling : public LoadCase {
-
     /**
      * @brief Construct a linear buckling load case.
      * @param id              Unique ID.
@@ -75,7 +74,7 @@ struct LinearBuckling : public LoadCase {
     solver::SolverMethod method = solver::DIRECT;
 
     /// Execute the analysis.
-    virtual void run() override;
+    void run() override;
 };
 
 }} // namespace fem::loadcase

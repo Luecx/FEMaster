@@ -30,7 +30,6 @@ namespace fem::model {
  *          using a higher-order quadrature scheme.
  */
 struct Surface8 : public Surface<8> {
-
     using Surface<8>::num_nodes;
     using Surface<8>::num_edges;
     using Surface<8>::num_nodes_per_edge;

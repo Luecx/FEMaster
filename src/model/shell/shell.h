@@ -19,7 +19,7 @@ struct ShellElement : StructuralElement {
     std::array<ID, N> node_ids;
 
     ShellElement(ID p_elem_id, std::array<ID, N> p_node_ids) : StructuralElement(p_elem_id), node_ids {p_node_ids} {}
-    virtual ~ShellElement() override = default;
+    ~ShellElement() override = default;
 
     ShellSection* get_section() {
         if (!this->_section) {
@@ -54,12 +54,12 @@ struct ShellElement : StructuralElement {
     }
 
     // left out for childs
-    virtual SurfacePtr surface(ID surface_id) override = 0;
-    virtual Precision  volume() override = 0;
-    virtual MapMatrix  stiffness(Precision* buffer) override = 0;
-    virtual MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override = 0;
+    SurfacePtr surface(ID surface_id) override = 0;
+    Precision  volume() override = 0;
+    MapMatrix  stiffness(Precision* buffer) override = 0;
+    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override = 0;
 
-    virtual MapMatrix  mass(Precision* buffer) override = 0;
+    MapMatrix  mass(Precision* buffer) override = 0;
 
     virtual const fem::quadrature::Quadrature& integration_scheme() const = 0;
 

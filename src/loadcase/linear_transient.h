@@ -75,7 +75,7 @@ struct Transient : public LoadCase {
     std::string damping_file;    ///< write "_C.mtx" (reduced)
 
     // Run analysis
-    virtual void run() override;
+    void run() override;
 };
 
 }} // namespace fem::loadcase

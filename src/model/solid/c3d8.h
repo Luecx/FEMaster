@@ -5,7 +5,6 @@
 namespace fem { namespace model {
 
 struct C3D8 : public SolidElement<8>{
-
     C3D8(ID pElemId, const std::array<ID, 8>& pNodeIds);
     std::string type_name() const override { return "C3D8"; }
 

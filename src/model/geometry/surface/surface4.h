@@ -35,7 +35,6 @@ namespace fem::model {
  *          boundary.
  */
 struct Surface4 : public Surface<4> {
-
     using Surface<4>::num_nodes;
     using Surface<4>::num_edges;
     using Surface<4>::num_nodes_per_edge;

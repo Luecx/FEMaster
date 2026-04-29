@@ -48,7 +48,6 @@ enum class CouplingType {
  * coupling type and the system's DOF configurations.
  */
 class Coupling : public fem::Printable {
-
     public:
     ID                        master_node;                 ///< Master node ID
     model::NodeRegion::Ptr    slave_nodes    = nullptr;    ///< List of slave node IDs

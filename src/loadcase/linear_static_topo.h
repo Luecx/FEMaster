@@ -28,7 +28,6 @@ namespace loadcase {
  * interpolation during topology optimization.
  */
 struct LinearStaticTopo : public LinearStatic {
-
     //-------------------------------------------------------------------------
     // Constructor
     //-------------------------------------------------------------------------

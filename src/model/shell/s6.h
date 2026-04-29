@@ -15,7 +15,7 @@ struct S6 : DefaultShellElement<6, Surface6, quadrature::Domain::DOMAIN_ISO_TRI,
 
     std::string type_name() const override { return "S6"; }
 
-    virtual std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
+    std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
         return std::make_shared<Surface6>(
             surface_id == 1
                 ? std::array<ID, 6>{this->nodes()[0], this->nodes()[1], this->nodes()[2], this->nodes()[3],
