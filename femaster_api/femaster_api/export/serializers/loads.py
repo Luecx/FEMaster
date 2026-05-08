@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from femaster_api.export.femaster_format import block, csv, keyword, target_token
+from femaster_api.export.context import ExportContext
+from femaster_api.export.femaster_format import block, csv, keyword, trim_missing
 from femaster_api.model.loads import (
     InertialLoad,
     LoadCollectorRepository,
@@ -15,14 +16,14 @@ from femaster_api.model.loads import (
 )
 
 
-def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository) -> str:
+def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository, context: ExportContext) -> str:
     blocks: list[str] = []
     for amplitude in loads.amplitudes():
         lines = [keyword("AMPLITUDE", NAME=amplitude.name, TYPE=amplitude.interpolation.value)]
         lines.extend(csv(point) for point in amplitude.points)
         blocks.append(block(lines))
 
-    for collector in load_collectors.all():
+    for collector in load_collectors:
         for entry in collector.loads:
             if isinstance(entry, NodalForce):
                 blocks.append(
@@ -34,7 +35,7 @@ def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository)
                                 ORIENTATION=_name(entry.orientation),
                                 AMPLITUDE=_name(entry.amplitude),
                             ),
-                            csv((target_token(entry.target), *entry.values)),
+                            csv((context.target_token(entry.target), *trim_missing(entry.values))),
                         ]
                     )
                 )
@@ -48,7 +49,7 @@ def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository)
                                 ORIENTATION=_name(entry.orientation),
                                 AMPLITUDE=_name(entry.amplitude),
                             ),
-                            csv((target_token(entry.target), *entry.values)),
+                            csv((context.target_token(entry.target), *entry.values)),
                         ]
                     )
                 )
@@ -57,7 +58,7 @@ def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository)
                     block(
                         [
                             keyword("PLOAD", LOAD_COLLECTOR=collector.name, AMPLITUDE=_name(entry.amplitude)),
-                            csv((target_token(entry.target), entry.pressure)),
+                            csv((context.target_token(entry.target), entry.pressure)),
                         ]
                     )
                 )
@@ -71,7 +72,7 @@ def write_loads(loads: LoadRepository, load_collectors: LoadCollectorRepository)
                                 ORIENTATION=_name(entry.orientation),
                                 AMPLITUDE=_name(entry.amplitude),
                             ),
-                            csv((target_token(entry.target), *entry.values)),
+                            csv((context.target_token(entry.target), *entry.values)),
                         ]
                     )
                 )

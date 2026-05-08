@@ -18,8 +18,9 @@ class MaterialRepository:
     def add(self, material: Material) -> Material:
         if not isinstance(material, Material):
             raise TypeError("material must be a Material")
-        self._items[require_name(material.name)] = material
-        return material
+        item = Material(require_name(material.name), material.elasticity, material.density, material.thermal_expansion)
+        self._items[item.name] = item
+        return item
 
     def get(self, name: str) -> Material:
         key = require_name(name)
@@ -35,6 +36,13 @@ class MaterialRepository:
         if isinstance(value, Material):
             return any(item is value for item in self._items.values())
         return require_name(value) in self._items
+
+    def __contains__(self, value: object) -> bool:
+        if isinstance(value, str):
+            return require_name(value) in self._items
+        if isinstance(value, Material):
+            return self.has(value)
+        return False
 
     def all(self) -> tuple[Material, ...]:
         return tuple(self._items[key] for key in sorted(self._items))

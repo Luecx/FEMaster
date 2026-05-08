@@ -1,6 +1,6 @@
 """Serializer functions for FEMaster deck blocks."""
 
-from .analysis import write_steps
+from .analysis import write_loadcases
 from .bcs import write_boundaries
 from .constraints import write_constraints
 from .elements import write_elements
@@ -26,6 +26,6 @@ __all__ = [
     "write_orientations",
     "write_sections",
     "write_sets",
-    "write_steps",
+    "write_loadcases",
     "write_surfaces",
 ]

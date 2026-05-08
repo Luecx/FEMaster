@@ -22,6 +22,9 @@ class SurfaceRepository:
     def all(self) -> tuple[SurfaceDefinition, ...]:
         return tuple(self._surfaces)
 
+    def __contains__(self, surface: object) -> bool:
+        return any(item is surface for item in self._surfaces)
+
     def sets(self) -> tuple[str, ...]:
         return tuple(sorted({surface.surface_set for surface in self._surfaces}))
 

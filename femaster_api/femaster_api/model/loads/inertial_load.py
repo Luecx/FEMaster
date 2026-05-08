@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from femaster_api.model.sets import EntitySet
+from femaster_api.model.sets import ElementSet
 
 Vector3 = tuple[float, float, float]
 
 
 @dataclass(frozen=True, slots=True)
 class InertialLoad:
-    target: EntitySet
+    """Inertial load applied to an element set."""
+
+    target: ElementSet
     center: Vector3
     center_acceleration: Vector3
     omega: Vector3

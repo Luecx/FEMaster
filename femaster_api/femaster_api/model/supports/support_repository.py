@@ -22,6 +22,9 @@ class SupportRepository:
     def all(self) -> tuple[Support, ...]:
         return tuple(self._supports)
 
+    def __contains__(self, support: object) -> bool:
+        return any(item is support for item in self._supports)
+
     def __getitem__(self, index: int | slice) -> Support | tuple[Support, ...]:
         if isinstance(index, slice):
             return tuple(self._supports[index])

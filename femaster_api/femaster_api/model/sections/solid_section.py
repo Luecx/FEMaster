@@ -6,12 +6,14 @@ from dataclasses import dataclass
 
 from femaster_api.model.materials import Material
 from femaster_api.model.orientations import Orientation
-from femaster_api.model.sets import EntitySet
+from femaster_api.model.sets import ElementSet
 
 
 @dataclass(frozen=True, slots=True)
 class SolidSection:
+    """Solid section assignment for an element set."""
+
     name: str
     material: Material
-    element_set: EntitySet
+    element_set: ElementSet
     orientation: Orientation | None = None

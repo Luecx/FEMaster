@@ -45,8 +45,17 @@ class SectionRepository:
     def __getitem__(self, name: str) -> Section:
         return self.get(name)
 
-    def has(self, name: str) -> bool:
-        return require_name(name) in self._sections
+    def has(self, value: str | Section) -> bool:
+        if isinstance(value, (SolidSection, ShellSection, BeamSection, TrussSection)):
+            return any(item is value for item in self._sections.values())
+        return require_name(value) in self._sections
+
+    def __contains__(self, value: object) -> bool:
+        if isinstance(value, str):
+            return require_name(value) in self._sections
+        if isinstance(value, (SolidSection, ShellSection, BeamSection, TrussSection)):
+            return self.has(value)
+        return False
 
     def profiles(self) -> tuple[Profile, ...]:
         return tuple(self._profiles[key] for key in sorted(self._profiles))

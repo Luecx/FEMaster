@@ -1,4 +1,4 @@
-"""Linear transient analysis step."""
+"""Linear transient loadcase definition."""
 
 from __future__ import annotations
 
@@ -16,7 +16,9 @@ from .time_control import TimeControl
 
 
 @dataclass(frozen=True, slots=True)
-class TransientStep:
+class LinearTransientLoadcase:
+    """Linear transient analysis loadcase."""
+
     name: str
     loads: tuple[LoadCollector, ...]
     time: TimeControl
@@ -28,3 +30,7 @@ class TransientStep:
     write_every_type: str | None = None
     write_every: float | None = None
     initial_velocity: Field | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "loads", tuple(self.loads))
+        object.__setattr__(self, "supports", tuple(self.supports))

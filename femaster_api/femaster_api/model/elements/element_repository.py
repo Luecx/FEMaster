@@ -1,8 +1,7 @@
-"""Repository for element objects."""
+"""Ordered repository for model elements."""
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Iterator
 
 from femaster_api.model.nodes import Node
@@ -12,12 +11,14 @@ from .element_topology import TOPOLOGY_NODE_COUNTS
 
 
 class ElementRepository:
-    """Repository for finite elements in model order."""
+    """Container of finite elements in model order."""
 
     def __init__(self) -> None:
         self._elements: list[Element] = []
 
     def add(self, element: Element) -> Element:
+        """Add an element and return the stored object."""
+
         if not isinstance(element, Element):
             raise TypeError("element must be an Element")
 
@@ -27,7 +28,7 @@ class ElementRepository:
             expected = " or ".join(str(count) for count in valid_counts)
             raise ValueError(f"{element.topology.value} expects {expected} nodes, got {len(connectivity)}")
 
-        item = replace(element, nodes=connectivity, id=len(self._elements))
+        item = Element(element.topology, connectivity)
         self._elements.append(item)
         return item
 
@@ -45,15 +46,15 @@ class ElementRepository:
     def has(self, element: Element) -> bool:
         return any(item is element for item in self._elements)
 
+    def __contains__(self, element: object) -> bool:
+        return isinstance(element, Element) and self.has(element)
+
     def all(self) -> tuple[Element, ...]:
         return tuple(self._elements)
 
-    def ids(self) -> tuple[int, ...]:
-        return tuple(element.id for element in self._elements)
-
     def by_type(self):
         grouped = {}
-        for element in self.all():
+        for element in self:
             grouped.setdefault(element.topology, []).append(element)
         return {key: tuple(value) for key, value in grouped.items()}
 

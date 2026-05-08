@@ -52,6 +52,9 @@ class LoadRepository:
     def all(self) -> tuple[LoadEntry, ...]:
         return tuple(self._loads)
 
+    def __contains__(self, entry: object) -> bool:
+        return any(item is entry for item in self._loads)
+
     def __getitem__(self, index: int | slice) -> LoadEntry | tuple[LoadEntry, ...]:
         if isinstance(index, slice):
             return tuple(self._loads[index])

@@ -38,6 +38,13 @@ class OrientationRepository:
             return any(item is value for item in self._items.values())
         return require_name(value) in self._items
 
+    def __contains__(self, value: object) -> bool:
+        if isinstance(value, str):
+            return require_name(value) in self._items
+        if isinstance(value, (RectangularOrientation, CylindricalOrientation)):
+            return self.has(value)
+        return False
+
     def all(self) -> tuple[Orientation, ...]:
         return tuple(self._items[key] for key in sorted(self._items))
 

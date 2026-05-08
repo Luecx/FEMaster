@@ -1,9 +1,15 @@
-"""ID extraction for object-backed sets."""
+"""Small helpers for object-backed sets."""
 
 from __future__ import annotations
 
 def unique_members(members: object) -> tuple[object, ...]:
-    by_id: dict[int, object] = {}
+    """Return unique members by object identity while preserving input order."""
+
+    seen: set[int] = set()
+    unique: list[object] = []
     for member in members:
-        by_id[id(member)] = member
-    return tuple(by_id[key] for key in sorted(by_id))
+        marker = id(member)
+        if marker not in seen:
+            seen.add(marker)
+            unique.append(member)
+    return tuple(unique)

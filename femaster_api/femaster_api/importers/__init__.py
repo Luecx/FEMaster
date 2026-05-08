@@ -1,5 +1,7 @@
-"""Deck importer API."""
+"""Deck importer package.
 
-from .femaster_reader import FEMasterReader
+The FEMaster deck reader is not part of the public API until it is
+implemented.
+"""
 
-__all__ = ["FEMasterReader"]
+__all__: list[str] = []

@@ -19,8 +19,9 @@ class SupportCollectorRepository:
     def add(self, collector: SupportCollector) -> SupportCollector:
         if not isinstance(collector, SupportCollector):
             raise TypeError("collector must be a SupportCollector")
-        self._collectors[collector.name] = collector
-        return collector
+        item = SupportCollector(require_name(collector.name), tuple(collector.supports))
+        self._collectors[item.name] = item
+        return item
 
     def get(self, name: str) -> SupportCollector:
         key = require_name(name)
@@ -36,6 +37,13 @@ class SupportCollectorRepository:
         if isinstance(value, SupportCollector):
             return any(item is value for item in self._collectors.values())
         return require_name(value) in self._collectors
+
+    def __contains__(self, value: object) -> bool:
+        if isinstance(value, str):
+            return require_name(value) in self._collectors
+        if isinstance(value, SupportCollector):
+            return self.has(value)
+        return False
 
     def all(self) -> tuple[SupportCollector, ...]:
         return tuple(self._collectors[key] for key in sorted(self._collectors))

@@ -40,6 +40,13 @@ class FieldRepository:
             return any(item is value for item in self._items.values())
         return require_name(value) in self._items
 
+    def __contains__(self, value: object) -> bool:
+        if isinstance(value, str):
+            return require_name(value) in self._items
+        if isinstance(value, Field):
+            return self.has(value)
+        return False
+
     def all(self) -> tuple[Field, ...]:
         return tuple(self._items[key] for key in sorted(self._items))
 
