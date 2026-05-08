@@ -12,8 +12,12 @@
 \begin{titlepage}
   \centering
   \vspace*{1.8cm}
-  \includegraphics[width=0.28\textwidth]{../documentation/logo/logo-eps-converted-to.pdf}\par
-  \vspace{1.2cm}
+  \IfFileExists{../documentation/logo/logo-eps-converted-to.pdf}{%
+    \includegraphics[width=0.28\textwidth]{../documentation/logo/logo-eps-converted-to.pdf}\par
+    \vspace{1.2cm}
+  }{%
+    \vspace{0.8cm}
+  }
   {\Huge\bfseries FEMaster User Manual\par}
   \vspace{0.4cm}
   {\large Finite Elements in Mechanical Analysis and Simulation for Technical Engineering Research\par}

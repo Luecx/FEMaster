@@ -1,34 +1,117 @@
 \chapter{Sets}
+\label{chap:sets}
 
-Sets are named collections of IDs. They are central to readable FEMaster decks because most higher-level commands can target sets instead of repeating individual IDs.
+Sets are named collections of model IDs. They are one of the most important readability tools in a FEMaster input deck because most higher-level commands should target named sets instead of repeating long lists of node, element, or surface IDs. A set gives a modelling meaning to otherwise anonymous mesh numbers.
 
-\section{Node sets}
+The mesh IDs themselves are usually not stable engineering concepts. They can change when a part is remeshed, when an external preprocessor exports a new deck, or when local refinement is added. A set name such as \val{FIXED_EDGE}, \val{WING_SKIN}, \val{LOAD_PATCH}, or \val{BOLT_SURFACES} is much more meaningful than a raw list of IDs. The name records why those entities are grouped, not only which numbers happened to exist in one version of the mesh.
+
+Sets are also useful because FEMaster commands often operate on groups. Supports, loads, sections, fields, surface interactions, couplings, and diagnostics all become easier to audit when their targets are named explicitly. A deck that assigns a shell section to \val{PANEL_TOP_SKIN} or a support to \val{ROOT_CLAMP_NODES} can be reviewed without constantly cross-checking individual IDs against the mesh.
+
+\section{\cmd{NSET}: node sets}
 
 \begin{syntax}
 *NSET, NAME=<name>, GENERATE
 <id-start>, <id-end>, <increment>
 \end{syntax}
 
-Without \key{GENERATE}, data lines are read as explicit node IDs. Node sets are used by supports, concentrated loads, couplings, connectors, point masses, and many diagnostic workflows.
+A node set groups node IDs. If \key{GENERATE} is present, FEMaster interprets the data line as a range with start ID, end ID, and increment. Without \key{GENERATE}, the following data lines are read as explicit node IDs. Generated sets are compact and convenient for regular ID ranges, while explicit sets are better for arbitrary selections imported from a preprocessor.
 
-\section{Element sets}
+Node sets are used wherever the model needs to refer to points in the discretization. Supports and concentrated loads commonly target node sets. Couplings, rigid-body-style constraints, connector definitions, point masses, diagnostic output, and result extraction workflows also use them. A good node set name should describe the physical or modelling role of the nodes, such as \val{FIXED_ROOT}, \val{LOAD_NODES}, \val{COUPLING_SLAVES}, or \val{MASS_POINTS}.
+
+Node sets should be chosen with the intended degree-of-freedom behaviour in mind. A set applied to solid-only nodes usually affects translational degrees of freedom. A set applied to shell or beam nodes may involve rotations as well. If a support or load appears to have no effect, verify that the targeted node set contains the expected nodes and that those nodes actually own the degrees of freedom referenced by the command.
+
+It is normal for one node to belong to several node sets. For example, a node can be part of a geometric set, a load-introduction set, and a diagnostic output set at the same time. This is not a problem by itself. The important question is whether the commands using those sets create consistent boundary conditions and loads. Overlapping sets become dangerous only when they accidentally apply contradictory constraints or duplicate loads.
+
+\begin{exampledeck}
+*NSET, NAME=FIXED_ROOT, GENERATE
+1, 41, 1
+\end{exampledeck}
+
+\begin{exampledeck}
+*NSET, NAME=LOAD_PATCH
+105, 106, 112, 113, 119, 120
+\end{exampledeck}
+
+\clearpage
+
+\section{\cmd{ELSET}: element sets}
 
 \begin{syntax}
 *ELSET, NAME=<name>, GENERATE
 <id-start>, <id-end>, <increment>
 \end{syntax}
 
-Element sets are used by sections, volume loads, inertial loads, RBM constraints, and topology fields. One element may belong to several sets.
+An element set groups element IDs. As with node sets, \key{GENERATE} creates a compact range, while explicit data lines list individual element IDs. Element sets are central to physical model definition because sections are assigned to element sets. Without meaningful element sets, material and section assignment becomes difficult to review.
 
-\section{Surface sets}
+Element sets are used by solid, shell, beam, and truss sections, volume loads, inertial loads, topology fields, RBM constraints, and many postprocessing or diagnostic workflows. They should normally reflect physical regions or modelling roles: \val{SOLID_CORE}, \val{SHELL_SKIN}, \val{SPAR_BEAMS}, \val{TRUSS_BRACES}, \val{TOPO_DOMAIN}, or \val{GRAVITY_ELEMENTS}. Names like these make it clear why the elements are grouped and which later commands are expected to reference them.
+
+One element may belong to several element sets. This is useful when the same elements need to be referenced for different reasons. A shell panel might belong to \val{PANEL_A}, \val{ALL_SHELLS}, and \val{AERO_LOAD_REGION}. A topology-design domain might also belong to a material section set. This kind of overlap is expected as long as the commands using the sets are compatible.
+
+The main risk with element sets is unintended multiple physical assignment. If the same element is assigned to two different sections that are both meant to define its physical stiffness, the deck becomes ambiguous from a modelling perspective. Even if the parser accepts the input order, the model is difficult to audit. Keep physical section sets clear and non-overlapping unless there is a deliberate reason and the command semantics support it.
+
+Generated element sets are convenient for simple meshes, but they can be fragile after remeshing. If element IDs change, a generated range may still exist but refer to the wrong region. For production decks, prefer sets exported from the preprocessor by named geometric selections when possible. The model should be organized around physical regions, not around accidental ID ranges.
+
+\begin{exampledeck}
+*ELSET, NAME=SOLID_CORE, GENERATE
+1, 2400, 1
+\end{exampledeck}
+
+\begin{exampledeck}
+*ELSET, NAME=SPAR_BEAMS
+5101, 5102, 5103, 5104
+\end{exampledeck}
+
+\clearpage
+
+\section{\cmd{SFSET}: surface sets}
 
 \begin{syntax}
 *SFSET, NAME=<name>, GENERATE
 <id-start>, <id-end>, <increment>
 \end{syntax}
 
-Surface sets group surface IDs. They are typically used by \cmd{PLOAD}, \cmd{DLOAD}, \cmd{TIE}, and surface couplings.
+A surface set groups surface IDs. Surface IDs are created by surface definitions and represent element faces, shell sides, or other surface-like model entities depending on the surrounding input. A surface set is therefore one level above the raw element topology: it names the boundary or interface region that later commands should use.
 
-\section{Naming}
+Surface sets are typically used by pressure loads, distributed loads, ties, contact-like workflows, and surface couplings. Commands such as \cmd{PLOAD}, \cmd{DLOAD}, \cmd{TIE}, and coupling definitions become much clearer when they target names like \val{PRESSURE_SIDE}, \val{MASTER_SURFACE}, \val{SLAVE_SURFACE}, \val{BOLT_CONTACT}, or \val{LOAD_INTRODUCTION_SURFACE}.
 
-Sets should be named by function, not only by geometry. Names such as \val{FIXED}, \val{LOAD_INTRODUCTION}, \val{BOLT_SURFACES}, or \val{SHELL_SKIN} remain understandable when mesh IDs change.
+The orientation of a surface matters. A surface is not only a collection of IDs; it also carries a geometric meaning through the underlying face orientation and normal direction. For pressure loads and interface constraints, the selected side of an element can change the physical interpretation. If a pressure has the wrong sign or a tie behaves unexpectedly, inspect both the surface set membership and the underlying surface orientation.
+
+Surface sets can overlap, but overlapping surfaces should be reviewed carefully. A surface might reasonably belong to both a broad diagnostic set and a specific load set. It is less reasonable for the same surface region to accidentally receive two unrelated pressure definitions or to act as both sides of an interface constraint. Use narrow, descriptive names for operational surface sets so that accidental reuse is easier to spot.
+
+As with element sets, generated surface ranges are compact but not inherently meaningful. They are useful for controlled meshes and hand-written examples. In larger workflows, named geometric selections exported from preprocessing are usually safer because they preserve the modelling intent when IDs change.
+
+\begin{exampledeck}
+*SFSET, NAME=PRESSURE_FACE, GENERATE
+1001, 1040, 1
+\end{exampledeck}
+
+\begin{exampledeck}
+*SFSET, NAME=TIE_SLAVE_SURFACE
+2201, 2204, 2210, 2212
+\end{exampledeck}
+
+\clearpage
+
+\section{Generated and explicit sets}
+
+The \key{GENERATE} option is a compact way to define regular ID ranges. It is well suited to small examples, controlled test decks, and meshes whose numbering scheme is intentionally structured. A generated set is easy to read when the range corresponds to a physical region, such as all nodes along a simple edge or all elements in a block.
+
+Explicit sets are more verbose, but they are often safer for arbitrary selections. If a preprocessor exports a named group of nodes, elements, or surfaces, the IDs may not form a simple range. In that case, an explicit list preserves exactly what was selected. Explicit sets are also useful for small hand-picked groups such as coupling reference nodes, load introduction nodes, or selected diagnostic elements.
+
+The main disadvantage of both forms is that they still depend on numeric IDs. If the mesh is regenerated, the set content must be regenerated or checked. A generated range is especially easy to misuse after remeshing because it may still look plausible. Treat set definitions as part of the mesh data, not as permanent engineering truth independent of the mesh.
+
+\section{Naming conventions}
+
+Set names should describe function and physical meaning rather than only geometry. A name like \val{NODES_1} or \val{SET_A} provides almost no review value. A name like \val{FIXED_ROOT_NODES}, \val{PRESSURE_UPPER_SKIN}, \val{BOLT_HOLE_SURFACES}, or \val{SPAR_CAP_ELEMENTS} tells the reader what the set is for and why later commands reference it.
+
+Names should also be specific enough to avoid accidental reuse. If a model has several load patches, \val{LOAD} is too broad. Use names such as \val{LOAD_PATCH_FRONT}, \val{LOAD_PATCH_REAR}, or \val{ACTUATOR_LOAD_NODES}. If a set is used only for output or diagnostics, include that in the name, for example \val{TIP_OUTPUT_NODES}. This prevents diagnostic sets from being mistaken for physical boundary-condition sets.
+
+Consistency matters more than any one naming scheme. Choose a convention that distinguishes node sets, element sets, and surface sets clearly. Some decks use suffixes such as \val{_NODES}, \val{_ELEMENTS}, and \val{_SURFACES}; others rely on command context. Suffixes are verbose but helpful in large models because they make accidental cross-use easier to see.
+
+\section{Checking set usage}
+
+Set definitions should be reviewed whenever the mesh or preprocessing workflow changes. The solver can only operate on the IDs it receives; it cannot know whether a set still represents the physical region its name implies. A remeshed model may preserve a set name while changing its membership, or it may preserve numeric ranges while changing their geometric meaning.
+
+Useful checks include verifying that every physical element region is covered by the intended section set, that every support and load set contains the expected nodes or surfaces, and that no operational set is empty. Empty sets are especially dangerous because they can make a command appear present in the deck while having no physical effect. Very small or unexpectedly large sets should also be treated as suspicious until confirmed.
+
+For complex decks, it is often helpful to keep broad organizational sets separate from operational sets. A broad set such as \val{ALL_SHELLS} can be useful for output or global checks, while a narrow set such as \val{ROOT_CLAMP_NODES} should be used for a specific support. This separation makes the input deck easier to audit and reduces the risk of applying a command to more of the model than intended.

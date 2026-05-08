@@ -1,41 +1,132 @@
 \chapter{Sections and Profiles}
+\label{chap:sections}
 
-Sections connect element sets to material and cross-section information. Without a matching section, an element may exist geometrically but cannot contribute the intended physical stiffness, mass, or stress recovery.
+Sections connect element sets to the physical data that the element topology alone does not contain. An element defines interpolation, degrees of freedom, and numerical integration; a section tells FEMaster which material, thickness, area, profile constants, or local orientation should be used for a particular element set. Without a matching section, elements may exist geometrically in the model, but they cannot contribute the intended stiffness, mass, stress recovery, or section-force output.
 
-\section{Solid section}
+The separation between elements and sections is deliberate. A mesh can be grouped into named element sets, and each set can then receive the section definition that matches its physical role. This allows the same element type to represent different parts, materials, thicknesses, or idealizations without changing the mesh connectivity. It also makes the input deck easier to audit: element commands describe topology, while section commands describe physical interpretation.
+
+Section definitions are normally applied to element sets through \key{ELSET}. The referenced set should contain only elements compatible with the section type. A solid section is meaningful for solid elements, a shell section for shell elements, a beam section for beam elements, and a truss section for truss elements. Mixing unrelated element families in the same section set is usually a modelling error even if the parser can read the command.
+
+\section{\cmd{SOLIDSECTION}: solid sections}
 
 \begin{syntax}
 *SOLIDSECTION, ELSET=<elset>, MATERIAL=<material>, ORIENTATION=<orientation>
 \end{syntax}
 
-A solid section assigns a material to a volume element set. \key{ORIENTATION} is optional and is mainly relevant for anisotropic or orthotropic materials.
+A solid section assigns material behaviour to a set of three-dimensional continuum elements. It is used with the solid element family, such as \val{C3D4}, \val{C3D8}, \val{C3D10}, \val{C3D20}, and related transition elements. The section does not define a thickness or area because those quantities are already represented by the volume mesh. The physical volume, element shape, and integration rules provide the geometric contribution; the section supplies the constitutive interpretation.
 
-\section{Shell section}
+\key{MATERIAL} is the central parameter. It references a material definition that provides elastic stiffness, density, or other material data used by the selected analysis type. The material assigned through the solid section affects stiffness assembly, mass assembly where density is available, stress recovery, and any loadcase that depends on material response.
+
+\key{ORIENTATION} is optional. For isotropic materials it often has no practical effect because the material response is direction-independent. For orthotropic, anisotropic, or otherwise direction-dependent material models, however, orientation is part of the physical model. It defines how the material axes are placed relative to the element or global coordinate system. A wrong orientation can produce a model that is numerically stable but physically incorrect, especially in composite-like solids, layered inserts, printed structures, or directional materials.
+
+Solid sections are usually simple, but they are easy to misuse in large models. The most common problem is an incomplete element-set assignment: some elements exist in the mesh but are not part of any solid section set, or are assigned to the wrong material. Another common issue is accidental reuse of a generic set name when different regions should receive different materials. For serious models, inspect the section coverage and verify that each solid region has exactly the intended material and orientation.
+
+\begin{exampledeck}
+*SOLIDSECTION, ELSET=BLOCK, MATERIAL=STEEL
+\end{exampledeck}
+
+\begin{exampledeck}
+*SOLIDSECTION, ELSET=ORTHO_CORE, MATERIAL=CORE_MAT, ORIENTATION=CORE_AXES
+\end{exampledeck}
+
+\clearpage
+
+\section{\cmd{SHELLSECTION}: shell sections}
 
 \begin{syntax}
 *SHELLSECTION, ELSET=<elset>, MATERIAL=<material>, THICKNESS=<t>, ORIENTATION=<orientation>
 \end{syntax}
 
-A shell section assigns material and thickness. Thickness affects membrane, bending, transverse shear, mass, and stress/resultant recovery. For anisotropic or ABD materials, orientation is part of the physical definition.
+A shell section assigns material and thickness data to a set of shell elements. Shell elements represent a thin structure through a two-dimensional surface mesh, so the section carries information that would otherwise be present in a full three-dimensional solid mesh. The most important of these quantities is \key{THICKNESS}. It affects membrane stiffness, bending stiffness, transverse shear behaviour, mass, stress recovery, and shell resultants.
 
-\section{Beam profiles and beam sections}
+Thickness is not just a display property. In a shell formulation, membrane stiffness generally scales with thickness, while bending stiffness is much more sensitive because it depends on the thickness cubed in classical plate behaviour. A small thickness error can therefore have a large effect on bending response. The thickness value must be expressed in the same length unit as the node coordinates and the rest of the model.
+
+\key{MATERIAL} references the material used by the shell section. For isotropic shells, the material and thickness together define the main stiffness behaviour. For orthotropic materials or ABD-type material descriptions, the shell orientation becomes part of the physical definition. It controls how material axes, laminate axes, or directional stiffness terms are aligned with the shell surface.
+
+\key{ORIENTATION} is optional but important whenever the material is direction-dependent. It should be chosen so that the local material direction follows the intended engineering direction, such as panel length, fibre direction, stiffener direction, or manufacturing direction. The shell element itself also has a local surface orientation through its connectivity and normal direction. If shell normals are inconsistent or the material orientation is wrong, section resultants and stresses can be difficult to interpret even when the solver produces a displacement field.
+
+Shell sections should be defined at the level of physical regions. If a panel has different thickness zones, each zone should normally receive its own element set and shell section. If a model uses offsets or more advanced section behaviour elsewhere in the input language, those settings should be kept consistent with the geometric idealization of the midsurface. A shell surface placed at a physical midplane behaves differently from a shell surface placed on an outer skin unless the section definition accounts for that modelling choice.
+
+\begin{exampledeck}
+*SHELLSECTION, ELSET=SKIN_TOP, MATERIAL=AL2024, THICKNESS=1.6
+\end{exampledeck}
+
+\begin{exampledeck}
+*SHELLSECTION, ELSET=PANEL_45, MATERIAL=ORTHO_LAMINA, THICKNESS=0.8, ORIENTATION=PANEL_AXES
+\end{exampledeck}
+
+\clearpage
+
+\section{Beam profiles}
 
 \begin{syntax}
 *PROFILE, NAME=<name>
 <A>, <Iy>, <Iz>, <J>, <Iyz>, <y0>, <z0>, ...
 \end{syntax}
 
+A beam profile stores the cross-section constants used by beam sections. Beam elements reduce a three-dimensional member to a line, so the shape of the cross-section must be represented by section properties rather than by mesh geometry. The profile is the place where those properties are collected and named.
+
+The most important values are the cross-sectional area \(A\), the bending inertias \(I_y\) and \(I_z\), the torsional constant \(J\), and the product inertia \(I_{yz}\). Area controls axial stiffness and mass contribution when density is available. The bending inertias control bending stiffness about the local section axes. The torsional constant controls twist stiffness. The product inertia is relevant when the chosen local axes are not principal axes of the section.
+
+The coordinates \(y_0\) and \(z_0\), where used, describe section reference offsets in the local beam-section coordinate system. Offsets matter when the beam line does not pass through the intended section reference point. They can change coupling between axial, bending, and torsional behaviour and are especially important for idealized stiffeners, eccentric reinforcements, and members attached to shell surfaces.
+
+The profile definition is intentionally independent from the beam element set. This allows a single profile to be reused by multiple beam sections, possibly with different materials or orientations. It also makes it possible to audit cross-section data separately from mesh topology. In larger decks, profile names should be descriptive enough to distinguish units and physical meaning; a profile named only \val{P1} is easy to confuse once several member types exist.
+
+Profile constants must be in the unit system of the model. If length is measured in millimetres, area is in square millimetres and second moments of area are in fourth powers of millimetres. Unit mistakes in beam profiles are common because the exponents differ between area, bending inertia, and torsion. A section can appear connected and stable while still being wrong by orders of magnitude.
+
+\begin{exampledeck}
+*PROFILE, NAME=RECT_20_40
+800.0, 106666.7, 26666.7, 90000.0, 0.0, 0.0, 0.0
+\end{exampledeck}
+
+\clearpage
+
+\section{\cmd{BEAMSECTION}: beam sections}
+
 \begin{syntax}
 *BEAMSECTION, ELSET=<elset>, MATERIAL=<material>, PROFILE=<profile>
 <nx>, <ny>, <nz>
 \end{syntax}
 
-A profile stores beam cross-section constants. A beam section assigns profile and material to an element set. The optional direction line defines a local section direction and must not be parallel to the beam axis.
+A beam section assigns a material and profile to a set of beam elements. The element connectivity defines the beam line, while the beam section defines how the line behaves as a physical member. The section references a \cmd{PROFILE} for cross-section constants and a material for constitutive behaviour. Together they define axial stiffness, bending stiffness, torsional stiffness, mass contribution where applicable, and section-force recovery.
 
-\section{Truss section}
+The direction line following the command defines a local section direction. It is used to construct the beam's local coordinate system and therefore determines which profile inertia acts about which physical direction. This direction must not be parallel to the beam axis. If it is nearly parallel, the local axis construction becomes ill-conditioned and the resulting section orientation may be unstable or unexpected.
+
+Beam orientation is a modelling decision, not a cosmetic detail. A rectangular or otherwise non-axisymmetric profile has different bending stiffness about its local section axes. Rotating the section by 90 degrees can produce a completely different structural response. For open, offset, or asymmetric profiles, the orientation also affects how section forces and moments should be interpreted.
+
+Beam sections are most reliable when the beam element set contains members with a consistent intended orientation. If a single set contains beams running in many directions, one shared orientation vector may not describe all members well. In that case, split the beams into separate sets or define orientations carefully so that the local axes match the engineering model. After building a beam model, inspect local axes and section forces before treating beam stresses as design quantities.
+
+\begin{exampledeck}
+*BEAMSECTION, ELSET=FRAME_LONGERONS, MATERIAL=AL2024, PROFILE=RECT_20_40
+0.0, 0.0, 1.0
+\end{exampledeck}
+
+\clearpage
+
+\section{\cmd{TRUSSSECTION}: truss sections}
 
 \begin{syntax}
 *TRUSSSECTION, ELSET=<elset>, MATERIAL=<material>, AREA=<A>
 \end{syntax}
 
-Truss elements use axial stiffness only. Bending, torsion, and rotational stiffness are not represented by truss elements.
+A truss section assigns material and cross-sectional area to truss elements. Truss elements carry axial force only, so the section is correspondingly simple. The material provides the axial constitutive response, and \key{AREA} scales axial stiffness, mass contribution where density is available, and stress recovery.
+
+The simplicity is useful, but it is also the main modelling constraint. A truss section does not define bending inertia, torsional stiffness, offsets, or rotational behaviour. If a physical member transfers moment, resists bending, or has important connection eccentricity, a truss section cannot represent that behaviour. In those cases a beam, shell, or solid idealization is more appropriate.
+
+Area must be chosen consistently with the model unit system and with the intended structural idealization. For a rod-like member, it may correspond to the actual cross-sectional area. For an idealized brace, link, or equivalent stiffness member, it may represent an effective area chosen to match axial stiffness. In either case, the interpretation should be clear because truss stresses are based directly on axial force divided by area.
+
+Truss sections should be assigned to element sets that are intended to behave as pin-jointed axial members. The surrounding support and connection model must provide stability. A collection of truss elements can easily form a mechanism if the geometry or constraints do not prevent rigid-body or hinge-like motion. When debugging truss models, check global stability, reaction balance, and axial force signs before focusing on local stresses.
+
+\begin{exampledeck}
+*TRUSSSECTION, ELSET=BRACES, MATERIAL=STEEL, AREA=25.0
+\end{exampledeck}
+
+\clearpage
+
+\section{Choosing and checking sections}
+
+A good section assignment should answer three questions: which elements receive the section, what physical data are assigned to them, and how local directions are interpreted. If any of these are unclear, the model is difficult to review and easy to misuse. Use meaningful element-set names, material names, profile names, and orientation names so the input deck remains readable after the mesh grows.
+
+For solid sections, check material coverage and orientation for directional materials. For shell sections, check thickness, normals, and material axes. For beam sections, check profile units and local section directions. For truss sections, check that the member is really intended to carry axial force only. These checks are often faster than solving the model and can catch the most expensive modelling mistakes before assembly begins.
+
+Sections should be reviewed whenever the mesh changes. A remeshed part may keep the same visual geometry but lose element-set membership, split a region into new sets, or change local element orientation. A section definition that was correct for an old mesh can silently become incomplete after preprocessing. Treat section coverage as part of model validation, not as a one-time setup step.
