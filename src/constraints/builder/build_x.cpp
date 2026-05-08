@@ -13,7 +13,9 @@
 
 #include "build_x.h"
 
-#include <omp.h>
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
 #include <unordered_map>
 #include <vector>
 
@@ -51,8 +53,9 @@ XCols build_X_cols_from_R(const SparseMatrix& R, int r) {
             }
         }
     }
-
+#ifdef _OPENMP
 #pragma omp parallel for if (nm_use > 2)
+#endif
     for (int j = 0; j < nm_use; ++j) {
         const int Rcol = r + j;
         std::unordered_map<int, Precision> bmap;
