@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from femaster_api.model.names import require_name
+from femaster_api.utils import normalize_name
 
 from .support import Support
 from .support_collector import SupportCollector
@@ -19,12 +19,11 @@ class SupportCollectorRepository:
     def add(self, collector: SupportCollector) -> SupportCollector:
         if not isinstance(collector, SupportCollector):
             raise TypeError("collector must be a SupportCollector")
-        item = SupportCollector(require_name(collector.name), tuple(collector.supports))
-        self._collectors[item.name] = item
-        return item
+        self._collectors[collector.name] = collector
+        return collector
 
     def get(self, name: str) -> SupportCollector:
-        key = require_name(name)
+        key = normalize_name(name)
         try:
             return self._collectors[key]
         except KeyError as exc:
@@ -36,14 +35,7 @@ class SupportCollectorRepository:
     def has(self, value: str | SupportCollector) -> bool:
         if isinstance(value, SupportCollector):
             return any(item is value for item in self._collectors.values())
-        return require_name(value) in self._collectors
-
-    def __contains__(self, value: object) -> bool:
-        if isinstance(value, str):
-            return require_name(value) in self._collectors
-        if isinstance(value, SupportCollector):
-            return self.has(value)
-        return False
+        return normalize_name(value) in self._collectors
 
     def all(self) -> tuple[SupportCollector, ...]:
         return tuple(self._collectors[key] for key in sorted(self._collectors))

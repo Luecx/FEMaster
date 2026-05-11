@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from femaster_api.model.names import require_name
+from femaster_api.utils import normalize_name
 
 from .field import Field
 
@@ -21,12 +21,12 @@ class FieldRepository:
         if field.cols <= 0:
             raise ValueError("field cols must be positive")
         if field.cols > 64:
-            raise ValueError("FEMaster fields are limited to 64 columns")
-        self._items[require_name(field.name)] = field
+            raise ValueError("fields are limited to 64 columns")
+        self._items[normalize_name(field.name)] = field
         return field
 
     def get(self, name: str) -> Field:
-        key = require_name(name)
+        key = normalize_name(name)
         try:
             return self._items[key]
         except KeyError as exc:
@@ -38,14 +38,7 @@ class FieldRepository:
     def has(self, value: str | Field) -> bool:
         if isinstance(value, Field):
             return any(item is value for item in self._items.values())
-        return require_name(value) in self._items
-
-    def __contains__(self, value: object) -> bool:
-        if isinstance(value, str):
-            return require_name(value) in self._items
-        if isinstance(value, Field):
-            return self.has(value)
-        return False
+        return normalize_name(value) in self._items
 
     def all(self) -> tuple[Field, ...]:
         return tuple(self._items[key] for key in sorted(self._items))

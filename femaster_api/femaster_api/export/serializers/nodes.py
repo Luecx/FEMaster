@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from femaster_api.export.context import ExportContext
 from femaster_api.export.femaster_format import block, csv, keyword
 from femaster_api.model.nodes import NodeRepository
 
 
-def write_nodes(nodes: NodeRepository, context: ExportContext) -> str:
+def write_nodes(nodes: NodeRepository) -> str:
     if len(nodes) == 0:
         return ""
     lines = [keyword("NODE")]
-    lines.extend(csv((context.node_id(node), node.x, node.y, node.z)) for node in nodes)
+    lines.extend(csv((node.id, node.x, node.y, node.z)) for node in nodes.all())
     return block(lines)

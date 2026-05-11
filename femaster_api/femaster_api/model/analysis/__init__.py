@@ -1,32 +1,31 @@
 """Analysis/loadcase model objects."""
 
 from .constraint_method import ConstraintMethod
-from .eigenfrequency_loadcase import EigenfrequencyLoadcase
-from .linear_buckling_loadcase import LinearBucklingLoadcase
-from .linear_static_loadcase import LinearStaticLoadcase
-from .linear_transient_loadcase import LinearTransientLoadcase
-from .loadcase_repository import Loadcase, LoadcaseRepository
+from .buckling_step import BucklingStep
+from .modal_step import ModalStep
 from .newmark_control import NewmarkControl
 from .rayleigh_damping import RayleighDamping
 from .solver_control import SolverControl
 from .solver_device import SolverDevice
 from .solver_method import SolverMethod
+from .static_step import StaticStep
+from .step_repository import StepRepository
+from .topology_static_step import TopologyStaticStep
+from .transient_step import TransientStep
 from .time_control import TimeControl
-from .topology_static_loadcase import TopologyStaticLoadcase
 
 __all__ = [
+    "BucklingStep",
     "ConstraintMethod",
-    "EigenfrequencyLoadcase",
-    "LinearBucklingLoadcase",
-    "LinearStaticLoadcase",
-    "LinearTransientLoadcase",
-    "Loadcase",
-    "LoadcaseRepository",
+    "ModalStep",
     "NewmarkControl",
     "RayleighDamping",
     "SolverControl",
     "SolverDevice",
     "SolverMethod",
+    "StaticStep",
+    "StepRepository",
+    "TopologyStaticStep",
+    "TransientStep",
     "TimeControl",
-    "TopologyStaticLoadcase",
 ]

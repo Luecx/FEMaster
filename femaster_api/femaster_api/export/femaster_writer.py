@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from femaster_api.export.context import ExportContext
 from femaster_api.export.femaster_format import join_blocks
 from femaster_api.export.serializers import (
     write_boundaries,
@@ -18,7 +17,7 @@ from femaster_api.export.serializers import (
     write_orientations,
     write_sections,
     write_sets,
-    write_loadcases,
+    write_steps,
     write_surfaces,
 )
 from femaster_api.model.model import Model
@@ -35,22 +34,21 @@ class FEMasterWriter:
         Path(path).write_text(self.render(), encoding="utf-8")
 
     def render(self) -> str:
-        context = ExportContext.from_model(self.model)
         blocks = [
             self._heading(),
-            write_nodes(self.model.nodes, context),
-            write_elements(self.model.elements, context),
-            write_sets(self.model.node_sets, self.model.element_sets, self.model.surface_sets, context),
-            write_surfaces(self.model.surfaces, context),
+            write_nodes(self.model.nodes),
+            write_elements(self.model.elements),
+            write_sets(self.model.sets),
+            write_surfaces(self.model.surfaces),
             write_orientations(self.model.orientations),
             write_materials(self.model.materials),
-            write_sections(self.model.sections),
-            write_fields(self.model.fields, context),
+            write_sections(self.model.profiles, self.model.sections),
+            write_fields(self.model.fields),
             write_features(self.model.features),
-            write_boundaries(self.model.support_collectors, context),
-            write_loads(self.model.loads, self.model.load_collectors, context),
+            write_boundaries(self.model.support_collectors),
+            write_loads(self.model.loads, self.model.load_collectors),
             write_constraints(self.model.constraints),
-            write_loadcases(self.model.loadcases),
+            write_steps(self.model.steps),
         ]
         return join_blocks(blocks)
 

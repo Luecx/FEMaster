@@ -1,24 +1,23 @@
-"""Ordered repository for model nodes."""
+"""Repository for node objects."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Iterator
 
 from .node import Node
 
 
 class NodeRepository:
-    """Container of nodes in model order."""
+    """Repository for nodes in model order."""
 
     def __init__(self) -> None:
         self._nodes: list[Node] = []
 
     def add(self, node: Node) -> Node:
-        """Add a node and return the stored object."""
-
         if not isinstance(node, Node):
             raise TypeError("node must be a Node")
-        item = Node(float(node.x), float(node.y), float(node.z))
+        item = replace(node, x=float(node.x), y=float(node.y), z=float(node.z), id=len(self._nodes))
         self._nodes.append(item)
         return item
 
@@ -36,8 +35,8 @@ class NodeRepository:
     def has(self, node: Node) -> bool:
         return any(item is node for item in self._nodes)
 
-    def __contains__(self, node: object) -> bool:
-        return isinstance(node, Node) and self.has(node)
+    def ids(self) -> tuple[int, ...]:
+        return tuple(node.id for node in self._nodes)
 
     def all(self) -> tuple[Node, ...]:
         return tuple(self._nodes)

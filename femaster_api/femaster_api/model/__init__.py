@@ -1,20 +1,19 @@
-"""Public model-layer objects for FEMaster models."""
+"""Model-layer public API."""
 
 from .analysis import (
+    BucklingStep,
     ConstraintMethod,
-    EigenfrequencyLoadcase,
-    LinearBucklingLoadcase,
-    LinearStaticLoadcase,
-    LinearTransientLoadcase,
-    Loadcase,
-    LoadcaseRepository,
+    ModalStep,
     NewmarkControl,
     RayleighDamping,
     SolverControl,
     SolverDevice,
     SolverMethod,
+    StaticStep,
+    StepRepository,
     TimeControl,
-    TopologyStaticLoadcase,
+    TopologyStaticStep,
+    TransientStep,
 )
 from .constraints import (
     ConnectorConstraint,
@@ -47,7 +46,7 @@ from .elements import (
     ElementTopology,
 )
 from .features import FeatureRepository, PointMass
-from .fields import Field, FieldDomain, FieldRepository, InputField
+from .fields import Field, FieldDomain, FieldRepository
 from .loads import (
     Amplitude,
     AmplitudeInterpolation,
@@ -72,20 +71,11 @@ from .materials import (
 from .model import Model
 from .nodes import Node, NodeRepository
 from .orientations import CylindricalOrientation, OrientationRepository, RectangularOrientation
-from .sections import BeamSection, Profile, Section, SectionRepository, ShellSection, SolidSection, TrussSection
-from .sets import (
-    ElementSet,
-    ElementSetRepository,
-    EntitySet,
-    EntityType,
-    NodeSet,
-    NodeSetRepository,
-    SetRepository,
-    SurfaceSet,
-    SurfaceSetRepository,
-)
+from .profiles import Profile, ProfileRepository
+from .sections import BeamSection, SectionRepository, ShellSection, SolidSection, TrussSection
+from .sets import ElementSet, EntitySet, EntityType, NodeSet, SetRepository, SurfaceSet
 from .supports import Support, SupportCollector, SupportCollectorRepository, SupportRepository
-from .surfaces import Surface, SurfaceDefinition, SurfaceRepository
+from .surfaces import SurfaceDefinition, SurfaceRepository
 
 __all__ = [
     "ABDElasticity",
@@ -93,6 +83,7 @@ __all__ = [
     "AmplitudeInterpolation",
     "B33",
     "BeamSection",
+    "BucklingStep",
     "C3D4",
     "C3D5",
     "C3D6",
@@ -108,11 +99,9 @@ __all__ = [
     "CouplingConstraint",
     "CouplingType",
     "CylindricalOrientation",
-    "EigenfrequencyLoadcase",
     "Element",
     "ElementRepository",
     "ElementSet",
-    "ElementSetRepository",
     "ElementTopology",
     "EntitySet",
     "EntityType",
@@ -122,31 +111,26 @@ __all__ = [
     "FieldRepository",
     "GeneralizedIsotropicElasticity",
     "InertialLoad",
-    "InputField",
     "IsotropicElasticity",
-    "LinearBucklingLoadcase",
-    "LinearStaticLoadcase",
-    "LinearTransientLoadcase",
     "LoadCollector",
     "LoadCollectorRepository",
     "LoadRepository",
-    "Loadcase",
-    "LoadcaseRepository",
     "MITC4",
     "Material",
     "MaterialRepository",
+    "ModalStep",
     "Model",
     "NewmarkControl",
     "NodalForce",
     "Node",
     "NodeRepository",
     "NodeSet",
-    "NodeSetRepository",
     "OrthotropicElasticity",
     "OrientationRepository",
     "PointMass",
     "PressureLoad",
     "Profile",
+    "ProfileRepository",
     "QSPT",
     "RBMConstraint",
     "RayleighDamping",
@@ -155,7 +139,6 @@ __all__ = [
     "S4",
     "S6",
     "S8",
-    "Section",
     "SectionRepository",
     "SetRepository",
     "ShellSection",
@@ -163,21 +146,22 @@ __all__ = [
     "SolverControl",
     "SolverDevice",
     "SolverMethod",
+    "StaticStep",
+    "StepRepository",
     "Support",
     "SupportCollector",
     "SupportCollectorRepository",
     "SupportRepository",
-    "Surface",
     "SurfaceDefinition",
     "SurfaceRepository",
     "SurfaceSet",
-    "SurfaceSetRepository",
     "SurfaceTraction",
     "T3",
     "ThermalLoad",
     "TieConstraint",
     "TimeControl",
-    "TopologyStaticLoadcase",
+    "TopologyStaticStep",
+    "TransientStep",
     "TrussSection",
     "VolumeLoad",
 ]

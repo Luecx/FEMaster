@@ -10,8 +10,6 @@ from .entity_type import EntityType
 
 @dataclass(frozen=True, slots=True)
 class SurfaceSet(EntitySet):
-    """Named group of surface definitions."""
-
     @property
     def entity_type(self) -> EntityType:
         return EntityType.SURFACE

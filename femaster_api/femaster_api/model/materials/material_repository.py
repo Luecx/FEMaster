@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from femaster_api.model.names import require_name
+from femaster_api.utils import normalize_name
 
 from .material import Material
 
@@ -18,12 +18,11 @@ class MaterialRepository:
     def add(self, material: Material) -> Material:
         if not isinstance(material, Material):
             raise TypeError("material must be a Material")
-        item = Material(require_name(material.name), material.elasticity, material.density, material.thermal_expansion)
-        self._items[item.name] = item
-        return item
+        self._items[normalize_name(material.name)] = material
+        return material
 
     def get(self, name: str) -> Material:
-        key = require_name(name)
+        key = normalize_name(name)
         try:
             return self._items[key]
         except KeyError as exc:
@@ -35,14 +34,7 @@ class MaterialRepository:
     def has(self, value: str | Material) -> bool:
         if isinstance(value, Material):
             return any(item is value for item in self._items.values())
-        return require_name(value) in self._items
-
-    def __contains__(self, value: object) -> bool:
-        if isinstance(value, str):
-            return require_name(value) in self._items
-        if isinstance(value, Material):
-            return self.has(value)
-        return False
+        return normalize_name(value) in self._items
 
     def all(self) -> tuple[Material, ...]:
         return tuple(self._items[key] for key in sorted(self._items))

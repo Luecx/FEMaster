@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from femaster_api.model.names import require_name
+from femaster_api.utils import normalize_name
 
 from .load_collector import LoadCollector, LoadEntry
 
@@ -18,12 +18,11 @@ class LoadCollectorRepository:
     def add(self, collector: LoadCollector) -> LoadCollector:
         if not isinstance(collector, LoadCollector):
             raise TypeError("collector must be a LoadCollector")
-        item = LoadCollector(require_name(collector.name), tuple(collector.loads))
-        self._collectors[item.name] = item
-        return item
+        self._collectors[collector.name] = collector
+        return collector
 
     def get(self, name: str) -> LoadCollector:
-        key = require_name(name)
+        key = normalize_name(name)
         try:
             return self._collectors[key]
         except KeyError as exc:
@@ -35,14 +34,7 @@ class LoadCollectorRepository:
     def has(self, value: str | LoadCollector) -> bool:
         if isinstance(value, LoadCollector):
             return any(item is value for item in self._collectors.values())
-        return require_name(value) in self._collectors
-
-    def __contains__(self, value: object) -> bool:
-        if isinstance(value, str):
-            return require_name(value) in self._collectors
-        if isinstance(value, LoadCollector):
-            return self.has(value)
-        return False
+        return normalize_name(value) in self._collectors
 
     def all(self) -> tuple[LoadCollector, ...]:
         return tuple(self._collectors[key] for key in sorted(self._collectors))

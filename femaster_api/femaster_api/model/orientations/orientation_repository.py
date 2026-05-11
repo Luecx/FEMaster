@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from femaster_api.model.names import require_name
+from femaster_api.utils import normalize_name
 
 from .cylindrical_orientation import CylindricalOrientation
 from .rectangular_orientation import RectangularOrientation
@@ -20,11 +20,11 @@ class OrientationRepository:
     def add(self, orientation: Orientation) -> Orientation:
         if not isinstance(orientation, (RectangularOrientation, CylindricalOrientation)):
             raise TypeError("orientation must be a RectangularOrientation or CylindricalOrientation")
-        self._items[require_name(orientation.name)] = orientation
+        self._items[normalize_name(orientation.name)] = orientation
         return orientation
 
     def get(self, name: str) -> Orientation:
-        key = require_name(name)
+        key = normalize_name(name)
         try:
             return self._items[key]
         except KeyError as exc:
@@ -36,14 +36,7 @@ class OrientationRepository:
     def has(self, value: str | Orientation) -> bool:
         if isinstance(value, (RectangularOrientation, CylindricalOrientation)):
             return any(item is value for item in self._items.values())
-        return require_name(value) in self._items
-
-    def __contains__(self, value: object) -> bool:
-        if isinstance(value, str):
-            return require_name(value) in self._items
-        if isinstance(value, (RectangularOrientation, CylindricalOrientation)):
-            return self.has(value)
-        return False
+        return normalize_name(value) in self._items
 
     def all(self) -> tuple[Orientation, ...]:
         return tuple(self._items[key] for key in sorted(self._items))

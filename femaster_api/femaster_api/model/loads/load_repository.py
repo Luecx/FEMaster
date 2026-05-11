@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from femaster_api.model.names import require_name
+from femaster_api.utils import normalize_name
 
 from .amplitude import Amplitude
 from .inertial_load import InertialLoad
@@ -34,7 +34,7 @@ class LoadRepository:
         if not isinstance(amplitude, Amplitude):
             raise TypeError("amplitude must be an Amplitude")
         item = Amplitude(
-            require_name(amplitude.name),
+            normalize_name(amplitude.name),
             tuple((float(time), float(value)) for time, value in amplitude.points),
             amplitude.interpolation,
         )
@@ -47,13 +47,10 @@ class LoadRepository:
     def has_amplitude(self, value: str | Amplitude) -> bool:
         if isinstance(value, Amplitude):
             return any(item is value for item in self._amplitudes.values())
-        return require_name(value) in self._amplitudes
+        return normalize_name(value) in self._amplitudes
 
     def all(self) -> tuple[LoadEntry, ...]:
         return tuple(self._loads)
-
-    def __contains__(self, entry: object) -> bool:
-        return any(item is entry for item in self._loads)
 
     def __getitem__(self, index: int | slice) -> LoadEntry | tuple[LoadEntry, ...]:
         if isinstance(index, slice):

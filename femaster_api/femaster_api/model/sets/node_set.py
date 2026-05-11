@@ -10,8 +10,6 @@ from .entity_type import EntityType
 
 @dataclass(frozen=True, slots=True)
 class NodeSet(EntitySet):
-    """Named group of nodes."""
-
     @property
     def entity_type(self) -> EntityType:
         return EntityType.NODE

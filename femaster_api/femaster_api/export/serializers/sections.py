@@ -1,14 +1,15 @@
-"""FEMaster serialization for sections and beam profiles."""
+"""FEMaster serialization for beam profiles and sections."""
 
 from __future__ import annotations
 
 from femaster_api.export.femaster_format import block, csv, keyword
+from femaster_api.model.profiles import ProfileRepository
 from femaster_api.model.sections import BeamSection, SectionRepository, ShellSection, SolidSection, TrussSection
 
 
-def write_sections(sections: SectionRepository) -> str:
+def write_sections(profiles: ProfileRepository, sections: SectionRepository) -> str:
     blocks: list[str] = []
-    for profile in sections.profiles():
+    for profile in profiles.all():
         blocks.append(
             block(
                 [

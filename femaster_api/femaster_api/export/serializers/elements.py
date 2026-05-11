@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from femaster_api.export.context import ExportContext
 from femaster_api.export.femaster_format import block, csv, keyword
 from femaster_api.model.elements import ElementRepository, ElementTopology
 
 
-def write_elements(elements: ElementRepository, context: ExportContext) -> str:
+def write_elements(elements: ElementRepository) -> str:
     if len(elements) == 0:
         return ""
 
     grouped: dict[ElementTopology, list[object]] = {}
-    for element in elements:
+    for element in elements.all():
         grouped.setdefault(element.topology, []).append(element)
 
     lines: list[str] = []
@@ -22,6 +21,5 @@ def write_elements(elements: ElementRepository, context: ExportContext) -> str:
         sample = group[0]
         lines.append(keyword("ELEMENT", TYPE=sample.femaster_type))
         for element in group:
-            node_ids = tuple(context.node_id(node) for node in element.nodes)
-            lines.append(csv((context.element_id(element), *node_ids)))
+            lines.append(csv((element.id, *element.node_ids)))
     return block(lines)

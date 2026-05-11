@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from femaster_api.model.sets import SurfaceSet
+from femaster_api.model.sets import EntitySet
 
 
 @dataclass(frozen=True, slots=True)
 class TieConstraint:
-    """Tie two surface sets together."""
-
-    master: SurfaceSet
-    slave: SurfaceSet
+    master: EntitySet
+    slave: EntitySet
     distance: float
     adjust: bool = False

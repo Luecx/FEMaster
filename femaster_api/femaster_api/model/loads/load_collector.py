@@ -16,13 +16,8 @@ LoadEntry = NodalForce | SurfaceTraction | PressureLoad | VolumeLoad | ThermalLo
 
 @dataclass(frozen=True, slots=True)
 class LoadCollector:
-    """Named list of loads that can be attached to loadcases."""
-
     name: str
     loads: tuple[LoadEntry, ...] = ()
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "loads", tuple(self.loads))
 
     def add(self, load: LoadEntry) -> "LoadCollector":
         return replace(self, loads=(*self.loads, load))

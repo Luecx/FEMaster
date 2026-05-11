@@ -1,18 +1,13 @@
-"""FEMaster backend execution and result-reading API."""
+"""Backend execution and result-reading API."""
 
-from .result_reader import FEMasterResult, Frame, LoadCaseResult, LoadcaseResult, Result, ResultField, ResultReader
-from .runner import FEMaster, FEMasterRunner, RunResult, find_femaster_executable
+from .femaster import FEMaster, ProcessResult
+from .result_reader import Frame, LoadCase, Result, ResultReader
 
 __all__ = [
     "FEMaster",
-    "FEMasterResult",
-    "FEMasterRunner",
     "Frame",
-    "LoadCaseResult",
-    "LoadcaseResult",
+    "LoadCase",
+    "ProcessResult",
     "Result",
-    "ResultField",
     "ResultReader",
-    "RunResult",
-    "find_femaster_executable",
 ]

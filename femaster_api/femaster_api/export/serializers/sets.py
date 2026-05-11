@@ -1,31 +1,18 @@
-"""FEMaster serialization for object-backed entity sets."""
+"""FEMaster serialization for entity sets."""
 
 from __future__ import annotations
 
-from femaster_api.export.context import ExportContext
 from femaster_api.export.femaster_format import block, csv, keyword
-from femaster_api.model.sets import (
-    ElementSetRepository,
-    EntitySet,
-    EntityType,
-    NodeSetRepository,
-    SurfaceSetRepository,
-)
+from femaster_api.model.sets import EntitySet, EntityType, SetRepository
 
 
-def write_sets(
-    node_sets: NodeSetRepository,
-    element_sets: ElementSetRepository,
-    surface_sets: SurfaceSetRepository,
-    context: ExportContext,
-) -> str:
-    items = (*tuple(node_sets), *tuple(element_sets), *tuple(surface_sets))
-    blocks = [_write_set(item, context) for item in items]
+def write_sets(sets: SetRepository) -> str:
+    blocks = [_write_set(item) for item in sets.all()]
     return "\n\n".join(block for block in blocks if block)
 
 
-def _write_set(item: EntitySet, context: ExportContext) -> str:
-    ids = _ids(item, context)
+def _write_set(item: EntitySet) -> str:
+    ids = _ids(item)
     if not ids:
         return ""
     command = {
@@ -34,7 +21,7 @@ def _write_set(item: EntitySet, context: ExportContext) -> str:
         EntityType.SURFACE: "SFSET",
     }[item.entity_type]
     key = command
-    if _is_regular_range(ids):
+    if item.generated and _is_regular_range(ids):
         step = ids[1] - ids[0] if len(ids) > 1 else 1
         return block([keyword(command, **{key: item.name, "GENERATE": True}), csv((ids[0], ids[-1], step))])
 
@@ -51,11 +38,5 @@ def _is_regular_range(ids: tuple[int, ...]) -> bool:
     return all((right - left) == step for left, right in zip(ids, ids[1:]))
 
 
-def _ids(item: EntitySet, context: ExportContext) -> tuple[int, ...]:
-    if item.entity_type == EntityType.NODE:
-        return tuple(context.node_id(member) for member in item.members)
-    if item.entity_type == EntityType.ELEMENT:
-        return tuple(context.element_id(member) for member in item.members)
-    if item.entity_type == EntityType.SURFACE:
-        return tuple(context.surface_id(member) for member in item.members)
-    raise TypeError(f"unsupported set type: {item.entity_type}")
+def _ids(item: EntitySet) -> tuple[int, ...]:
+    return tuple(member.id for member in item.members)

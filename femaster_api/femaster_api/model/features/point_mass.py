@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from femaster_api.model.sets import NodeSet
+from femaster_api.model.sets import EntitySet
 
 Vector3 = tuple[float, float, float]
 
 
 @dataclass(frozen=True, slots=True)
 class PointMass:
-    """Lumped mass and optional springs applied to a node set."""
-
-    node_set: NodeSet
+    node_set: EntitySet
     mass: float = 0.0
     inertia: Vector3 = (0.0, 0.0, 0.0)
     spring: Vector3 = (0.0, 0.0, 0.0)
