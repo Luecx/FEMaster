@@ -66,6 +66,8 @@ struct StructuralElement : ElementInterface {
         (void) resultants;
     }
 
+    virtual Mat3 orientation() { return Mat3::Zero(); }
+
     // Field functors for volume/surface integrations (aliased to central types)
     using ScalarField = ::fem::ScalarField;
     using VecField    = ::fem::VecField;

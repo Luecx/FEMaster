@@ -143,6 +143,14 @@ struct DefaultShellElement : public ShellElement<N> {
         return basis;
     }
 
+    Mat3 orientation() override {
+        Mat3 axes = this->get_xyz_axes();
+        const LocalCoords local_coords = this->geometry.node_coords_local();
+        const Precision r = local_coords.col(0).mean();
+        const Precision s = local_coords.col(1).mean();
+        return this->section_basis_global(r, s, axes).transpose();
+    }
+
     Mat2 section_to_element_2d(Precision r, Precision s, Mat3& axes) {
         const Mat3 section_basis = section_basis_global(r, s, axes);
         const Vec3 ex = axes.row(0).transpose();
@@ -578,7 +586,7 @@ struct DefaultShellElement : public ShellElement<N> {
         auto axes      = get_xyz_axes();
         auto xy_coords = get_xy_coords(axes);
 
-        // 2) Integrand: ∫ G^T Nmat G detJ dA, nur auf (w)-DOFs im [w,rx,ry]-Block
+        // 2) Integrand: int grad(delta u)^T N grad(u) dA for all local translations.
         Index                                                                      ip_counter = 0;
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_geo =
@@ -608,35 +616,44 @@ struct DefaultShellElement : public ShellElement<N> {
             Eigen::Matrix<Precision, 2, 2> Nmat;
             Nmat << nxx, nxy, nxy, nyy;
 
-            // --- G-Operator (2 × 3N) auf [w,rx,ry]-Blöcke:
-            // Zeile 0 mappt ∂w/∂x, Zeile 1 mappt ∂w/∂y; nur die w-Spalten (Index 3*i+0) sind belegt.
-            StaticMatrix<2, 3 * N> G;
-            G.setZero();
-            for (Index i = 0; i < N; ++i) {
-                const Index c_w = 3 * i + 0;
-                G(0, c_w)       = dH_xy(0, i);    // dw/dx
-                G(1, c_w)       = dH_xy(1, i);    // dw/dy
-            }
+            // Local translational block [u, v, w] per node. The same membrane
+            // stress resultant acts on the surface gradient of each displacement
+            // component independently. This captures both in-plane and normal
+            // shell buckling modes.
+            StaticMatrix<3 * N, 3 * N> Kloc;
+            Kloc.setZero();
+            for (Index a = 0; a < N; ++a) {
+                Eigen::Matrix<Precision, 2, 1> ga;
+                ga << dH_xy(0, a), dH_xy(1, a);
 
-            // --- Lokaler 3N×3N-Block (nur w–w koppelt) ---
-            StaticMatrix<3 * N, 3 * N> Kloc = G.transpose() * (Nmat * G) * detJ;
+                for (Index b = 0; b < N; ++b) {
+                    Eigen::Matrix<Precision, 2, 1> gb;
+                    gb << dH_xy(0, b), dH_xy(1, b);
+
+                    const Precision kab = (ga.transpose() * Nmat * gb)(0, 0) * detJ;
+                    for (Index c = 0; c < 3; ++c) {
+                        Kloc(3 * a + c, 3 * b + c) += kab;
+                    }
+                }
+            }
             return Kloc;
         };
 
-        // 3) Integrieren (nur der 3N×3N [w,rx,ry]-Teil)
-        StaticMatrix<3 * N, 3 * N> Kg_bend_local = this->integration_scheme().integrate(func_geo);
+        // 3) Integrieren (3N x 3N local translation block)
+        StaticMatrix<3 * N, 3 * N> Kg_trans_local = this->integration_scheme().integrate(func_geo);
+        Kg_trans_local = Precision(0.5) * (Kg_trans_local + Kg_trans_local.transpose());
 
-        // 4) In 6N-Abbildung (z, rx, ry) einsortieren – identisch zu deiner Biege/Schub-Assembly
+        // 4) In 6N-Abbildung (u, v, w) einsortieren.
         StaticMatrix<6 * N, 6 * N> Kg6;
         Kg6.setZero();
-        int dof_map[] {2, 3, 4};    // z, rx, ry
+        int dof_map[] {0, 1, 2};    // local u, v, w translations
         for (Index i = 0; i < 3 * N; ++i) {
             for (Index j = 0; j < 3 * N; ++j) {
                 const Index i_node = i / 3, i_ldof = i % 3;
                 const Index j_node = j / 3, j_ldof = j % 3;
                 const Index I = 6 * i_node + dof_map[i_ldof];
                 const Index J = 6 * j_node + dof_map[j_ldof];
-                Kg6(I, J)     = Kg_bend_local(i, j);
+                Kg6(I, J)     = Kg_trans_local(i, j);
             }
         }
 
