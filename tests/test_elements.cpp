@@ -1,4 +1,5 @@
 #include "../src/material/abd_elasticity.h"
+#include "../src/cos/rectangular_system.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/qspt.h"
@@ -119,6 +120,44 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
         }
     }
     EXPECT_NEAR(ux_mass, 1.0, 1e-12);
+}
+
+TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
+    fem::model::Model model(8, 4, 8);
+
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.set_node(2, 1.0, 1.0, 0.0);
+    model.set_node(3, 0.0, 1.0, 0.0);
+    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+
+    model.add_coordinate_system<fem::cos::RectangularSystem>(
+        "ORI",
+        fem::Vec3(1.0, 0.0, 0.0),
+        fem::Vec3(0.0, 0.0, -1.0)
+    );
+
+    auto material = model._data->materials.activate("MAT");
+    fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Identity();
+    fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
+    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
+
+    model.shell_section("EALL", "MAT", 1.0, "ORI");
+    model.assign_sections();
+
+    fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
+    displacement.set_zero();
+    displacement(1, 0) = 1.0;
+    displacement(2, 0) = 1.0;
+
+    auto resultants = model.compute_shell_resultants(displacement);
+    for (int node = 0; node < 4; ++node) {
+        EXPECT_NEAR(resultants(node, 0), 0.0, 1e-12);
+        EXPECT_NEAR(resultants(node, 1), 1.0, 1e-12);
+        for (int col = 2; col < 8; ++col) {
+            EXPECT_NEAR(resultants(node, col), 0.0, 1e-12);
+        }
+    }
 }
 
 TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {

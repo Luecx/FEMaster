@@ -116,7 +116,6 @@ struct Model {
     std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
     std::tuple<Field, Field>       compute_shell_stress_surfaces(Field& displacement);
     Field                          compute_shell_resultants(Field& displacement);
-    Field                          compute_element_orientations();
     Field                          compute_compliance   (Field& displacement);
     Field                          compute_compliance_angle_derivative(Field& displacement);
     Field                          compute_volumes      ();

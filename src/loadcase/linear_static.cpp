@@ -226,10 +226,6 @@ void LinearStatic::run() {
         [&]() { return model->compute_shell_resultants(global_disp_mat); },
         "interpolating shell resultants at nodes");
 
-    auto element_orientations = Timer::measure(
-        [&]() { return model->compute_element_orientations(); },
-        "computing element orientations");
-
     if (!stiffness_file.empty()) {
         write_mtx(stiffness_file + "_K.mtx", K);
         write_mtx(stiffness_file + "_A.mtx", A);
@@ -272,7 +268,6 @@ void LinearStatic::run() {
     writer->write_field(stress_top              , "STRESS_TOP");
     writer->write_field(stress_bot              , "STRESS_BOT");
     writer->write_field(shell_resultants        , "SHELL_RESULTANTS");
-    writer->write_field(element_orientations    , "ORIENTATION");
     writer->write_field(global_load_mat         , "EXTERNAL_FORCES");
     writer->write_field(reaction_masked         , "REACTION_FORCES");
     writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);

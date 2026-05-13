@@ -176,26 +176,6 @@ Field Model::compute_shell_resultants(Field& displacement) {
     return resultants;
 }
 
-Field Model::compute_element_orientations() {
-    Field orientations{"ORIENTATION", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 9};
-    orientations.set_zero();
-
-    for (auto el: _data->elements) {
-        if (el == nullptr) continue;
-        if (auto sel = el->as<StructuralElement>()) {
-            const Mat3 orientation = sel->orientation();
-            const Index row = static_cast<Index>(sel->elem_id);
-            for (Index i = 0; i < 3; ++i) {
-                for (Index j = 0; j < 3; ++j) {
-                    orientations(row, 3 * i + j) = orientation(i, j);
-                }
-            }
-        }
-    }
-
-    return orientations;
-}
-
 Field Model::compute_compliance(Field& displacement) {
     Field compliance{"COMPLIANCE", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
     compliance.set_zero();
