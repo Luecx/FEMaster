@@ -10,6 +10,33 @@
 namespace fem {
 namespace reader {
 
+namespace {
+
+const char* field_domain_to_string(model::FieldDomain domain) {
+    switch (domain) {
+        case model::FieldDomain::UNKNOWN:
+            return "UNKNOWN";
+        case model::FieldDomain::NODE:
+            return "NODE";
+        case model::FieldDomain::ELEMENT:
+            return "ELEMENT";
+        case model::FieldDomain::ELEMENT_NODAL:
+            return "ELEMENT_NODAL";
+        case model::FieldDomain::ELEMENT_IP:
+            return "ELEMENT_IP";
+    }
+    return "UNKNOWN";
+}
+
+model::FieldDomain result_matrix_domain(model::FieldDomain requested, int index_cols) {
+    if (requested != model::FieldDomain::UNKNOWN) {
+        return requested;
+    }
+    return index_cols > 0 ? model::FieldDomain::ELEMENT_NODAL : model::FieldDomain::UNKNOWN;
+}
+
+} // namespace
+
 Writer::Writer(const std::string& filename) {
     if (!filename.empty()) {
         this->open(filename);
@@ -48,7 +75,8 @@ void Writer::add_loadcase(int id) {
 
 void Writer::write_eigen_matrix(const DynamicMatrix& matrix,
                                 const std::string& field_name,
-                                int index_cols) {
+                                int index_cols,
+                                model::FieldDomain field_type) {
     if (!file_path.is_open()) {
         logging::error(false, "Cannot write field '", field_name,
                        "': file is not open.");
@@ -61,9 +89,12 @@ void Writer::write_eigen_matrix(const DynamicMatrix& matrix,
                    "Invalid index_cols for field ", field_name,
                    ": ", index_cols, " (cols=", cols, ")");
 
+    const auto domain = result_matrix_domain(field_type, index_cols);
+
     if (index_cols == 0) {
-        // Legacy behavior: no explicit index/value split
+        // Dense field: no explicit index/value split.
         file_path << "FIELD, NAME=" << field_name
+                  << ", TYPE=" << field_domain_to_string(domain)
                   << ", COLS=" << cols
                   << ", ROWS=" << rows << "\n";
     } else {
@@ -74,6 +105,7 @@ void Writer::write_eigen_matrix(const DynamicMatrix& matrix,
                        index_cols, ", cols=", cols, ")");
 
         file_path << "FIELD, NAME=" << field_name
+                  << ", TYPE=" << field_domain_to_string(domain)
                   << ", INDEX_COLS=" << index_cols
                   << ", VALUE_COLS=" << value_cols
                   << ", ROWS=" << rows << "\n";
@@ -108,6 +140,7 @@ void Writer::write_field(const model::Field& field,
 
     if (index_cols == 0) {
         file_path << "FIELD, NAME=" << field_name
+                  << ", TYPE=" << field_domain_to_string(field.domain)
                   << ", COLS=" << cols
                   << ", ROWS=" << rows << "\n";
     } else {
@@ -118,6 +151,7 @@ void Writer::write_field(const model::Field& field,
                        index_cols, ", cols=", cols, ")");
 
         file_path << "FIELD, NAME=" << field_name
+                  << ", TYPE=" << field_domain_to_string(field.domain)
                   << ", INDEX_COLS=" << index_cols
                   << ", VALUE_COLS=" << value_cols
                   << ", ROWS=" << rows << "\n";

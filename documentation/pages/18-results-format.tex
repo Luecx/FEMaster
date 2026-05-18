@@ -13,16 +13,16 @@ The loadcase ID follows execution order. The following field blocks belong to th
 \section{Dense fields}
 
 \begin{syntax}
-FIELD <name> ROWS=<rows> COLS=<cols>
+FIELD <name> TYPE=<type> ROWS=<rows> COLS=<cols>
 <v11> <v12> ...
 \end{syntax}
 
-\key{ROWS} gives the number of rows. \key{COLS} gives the number of values per row. For nodal fields, a row typically corresponds to a node-position row. For element fields, a row corresponds to an element-position row.
+\key{TYPE} is always written and is one of \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, or \val{UNKNOWN}. \key{ROWS} gives the number of rows. \key{COLS} gives the number of values per row. For nodal fields, a row typically corresponds to a node-position row. For element fields, a row corresponds to an element-position row.
 
 \section{Indexed fields}
 
 \begin{syntax}
-FIELD <name> ROWS=<rows> INDEX_COLS=<i> VALUE_COLS=<v>
+FIELD <name> TYPE=<type> ROWS=<rows> INDEX_COLS=<i> VALUE_COLS=<v>
 <index...> <value...>
 \end{syntax}
 

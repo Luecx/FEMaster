@@ -3,7 +3,7 @@
 \cmd{FIELD} defines generic tabular data. Fields may be defined at root level or inside a loadcase block, depending on their intended use.
 
 \begin{syntax}
-*FIELD, NAME=<name>, DOMAIN=NODE|ELEMENT|IP, COLS=<n>, FILL=ZERO|NAN
+*FIELD, NAME=<name>, TYPE=NODE|ELEMENT|ELEMENT_IP, COLS=<n>, FILL=ZERO|NAN
 <id>, <v1>, <v2>, ...
 \end{syntax}
 
@@ -16,7 +16,7 @@
 \endhead
 \val{NODE} & One row per node ID. Used for temperature fields, initial velocities, or prescribed nodal data. \\
 \val{ELEMENT} & One row per element ID. Used for topology density and orientation fields. \\
-\val{IP} & Integration-point field. Used for data that is tied to element integration points. \\
+\val{ELEMENT_IP} & Integration-point field. Used for data that is tied to element integration points. \\
 \bottomrule
 \end{longtable}
 

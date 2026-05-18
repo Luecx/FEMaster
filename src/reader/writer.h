@@ -2,15 +2,13 @@
 
 #include "../core/logging.h"
 #include "../core/core.h"
+#include "../data/field.h"
 
 #include <Eigen/Dense>
 #include <fstream>
 #include <iostream>
 
 namespace fem {
-namespace model {
-struct Field;
-}
 namespace reader {
 
 // Import DynamicMatrix from the outer fem namespace
@@ -54,21 +52,25 @@ class Writer {
      * @brief Write any Eigen matrix as a FIELD block.
      *
      * If index_cols == 0 (default), the legacy format is used:
-     *   FIELD, NAME=..., COLS=..., ROWS=...
+     *   FIELD, NAME=..., TYPE=..., COLS=..., ROWS=...
      *
      * If index_cols > 0, the new indexed format is used:
-     *   FIELD, NAME=..., INDEX_COLS=..., VALUE_COLS=..., ROWS=...
+     *   FIELD, NAME=..., TYPE=..., INDEX_COLS=..., VALUE_COLS=..., ROWS=...
      *
      * where VALUE_COLS = matrix.cols() - index_cols.
+     * If no field_type is provided, indexed matrices are written as
+     * ELEMENT_NODAL and dense matrices as UNKNOWN.
      */
     void write_eigen_matrix(const DynamicMatrix& matrix,
                             const std::string& field_name,
-                            int index_cols = 0);
+                            int index_cols = 0,
+                            model::FieldDomain field_type = model::FieldDomain::UNKNOWN);
 
     /**
      * @brief Write a model::Field as a FIELD block.
      *
      * Mirrors write_eigen_matrix but reads values directly from the field.
+     * The field type is taken from field.domain.
      */
     void write_field(const model::Field& field,
                      const std::string& field_name,

@@ -152,6 +152,8 @@ def _field_domain(keys: dict[str, str], index_cols: int) -> FieldDomain:
     raw = keys.get("TYPE") or keys.get("DOMAIN")
     if raw:
         normalized = raw.replace("_", "").upper()
+        if normalized == "IP":
+            return FieldDomain.ELEMENT_IP
         for domain in FieldDomain:
             if domain.value.replace("_", "").upper() == normalized or domain.name.replace("_", "").upper() == normalized:
                 return domain

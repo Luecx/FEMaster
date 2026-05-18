@@ -9,5 +9,5 @@ class FieldDomain(Enum):
     UNKNOWN = "UNKNOWN"
     NODE = "NODE"
     ELEMENT = "ELEMENT"
-    ELEMENT_NODAL = "ELEMENTNODAL"
-    IP = "IP"
+    ELEMENT_NODAL = "ELEMENT_NODAL"
+    ELEMENT_IP = "ELEMENT_IP"

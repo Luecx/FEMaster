@@ -11,7 +11,9 @@ namespace fem { namespace model{
 std::tuple<Field, Field>
 Model::compute_ip_stress_strain(Field& displacement) {
     // 1) Build IP enumeration with sentinel total in the last row
-    const auto ip_enum = this->build_integration_point_numeration();
+    logging::error(_data->element_ip_offsets != nullptr,
+                   "element IP offset field has not been initialized");
+    const auto& ip_enum = *_data->element_ip_offsets;
     logging::error(ip_enum.rows == static_cast<Index>(_data->max_elems + 1),
                    "ip_numeration must have max_elems+1 rows (with total at the end).");
 
@@ -19,8 +21,8 @@ Model::compute_ip_stress_strain(Field& displacement) {
     logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
 
     // 2) Allocate IP-level containers (Voigt: 6 components)
-    Field ip_stress{"IP_STRESS", FieldDomain::IP, static_cast<Index>(total_ips), 6};
-    Field ip_strain{"IP_STRAIN", FieldDomain::IP, static_cast<Index>(total_ips), 6};
+    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
+    Field ip_strain{"IP_STRAIN", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
     ip_stress.set_zero();
     ip_strain.set_zero();
 

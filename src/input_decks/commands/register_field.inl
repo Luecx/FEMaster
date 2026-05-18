@@ -22,8 +22,9 @@ constexpr std::size_t kMaxFieldCols = 64;
 inline model::FieldDomain parse_field_domain(const std::string& raw) {
     if (raw == "NODE") return model::FieldDomain::NODE;
     if (raw == "ELEMENT") return model::FieldDomain::ELEMENT;
-    if (raw == "IP") return model::FieldDomain::IP;
-    throw std::runtime_error("FIELD: unknown TYPE '" + raw + "' (expected NODE/ELEMENT/IP)");
+    if (raw == "ELEMENT_NODAL" || raw == "ELEMENTNODAL") return model::FieldDomain::ELEMENT_NODAL;
+    if (raw == "ELEMENT_IP" || raw == "ELEMENTIP" || raw == "IP") return model::FieldDomain::ELEMENT_IP;
+    throw std::runtime_error("FIELD: unknown TYPE '" + raw + "' (expected NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP)");
 }
 
 inline Precision parse_precision_or_throw(const std::string& token) {
@@ -54,12 +55,12 @@ inline void register_field(fem::dsl::Registry& registry, model::Model& model) {
             fem::dsl::Condition::parent_is("ROOT"),
             fem::dsl::Condition::parent_is("LOADCASE")
         }));
-        command.doc("Create or populate a generic field (NODE/ELEMENT/IP).");
+        command.doc("Create or populate a generic field (NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP).");
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("NAME").required().doc("Field name")
-                .key("TYPE").required().allowed({"NODE","ELEMENT","IP"}).doc("Field domain")
+                .key("TYPE").required().allowed({"NODE","ELEMENT","ELEMENT_NODAL","ELEMENT_IP","IP"}).doc("Field domain")
                 .key("COLS").required().doc("Number of components")
                 .key("FILL").optional("ZERO").allowed({"ZERO","NAN"}).doc("Initialization (ZERO default)")
         );
@@ -86,8 +87,15 @@ inline void register_field(fem::dsl::Registry& registry, model::Model& model) {
             const auto domain = detail::parse_field_domain(type);
             const bool fill_nan = (fill == "NAN");
 
-            if (domain == model::FieldDomain::IP && model._data->max_integration_points == 0) {
-                throw std::runtime_error("FIELD: TYPE=IP requires max_integration_points to be configured");
+            if (domain == model::FieldDomain::ELEMENT_NODAL &&
+                (!model._data->element_nodal_offsets ||
+                 (*model._data->element_nodal_offsets)(static_cast<Index>(model._data->max_elems)) <= 0)) {
+                throw std::runtime_error("FIELD: TYPE=ELEMENT_NODAL requires elements to be configured");
+            }
+            if (domain == model::FieldDomain::ELEMENT_IP &&
+                (!model._data->element_ip_offsets ||
+                 (*model._data->element_ip_offsets)(static_cast<Index>(model._data->max_elems)) <= 0)) {
+                throw std::runtime_error("FIELD: TYPE=ELEMENT_IP requires integration points to be configured");
             }
 
             ctx->field = model._data->create_field(name, domain, static_cast<Index>(cols), fill_nan);

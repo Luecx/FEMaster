@@ -85,7 +85,7 @@ def _add_fields(vtk, grid, fields: Iterable[Field], nodes, elements: tuple[Eleme
             _add_data_array(vtk, grid.GetPointData(), prefix + field.name, point_tuples, field.cols, used.point)
             _add_vector_derived(vtk, grid.GetPointData(), prefix, field, point_tuples, used.point)
             _add_mises_derived(vtk, grid.GetPointData(), prefix, field, point_tuples, used.point)
-        elif field.domain is FieldDomain.IP:
+        elif field.domain is FieldDomain.ELEMENT_IP:
             cell_tuples = _integration_point_cell_tuples(field, elements)
             _add_data_array(vtk, grid.GetCellData(), prefix + field.name + "_IP", cell_tuples, len(cell_tuples[0]), used.cell)
             averaged = _integration_point_cell_average(field, elements)

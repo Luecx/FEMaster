@@ -68,27 +68,6 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
     return res;
 }
 
-Field Model::build_integration_point_numeration() {
-    // +1 row to store the total number of integration points
-    Field ip_numeration{"IP_ENUM", FieldDomain::ELEMENT,
-                        static_cast<Index>(this->_data->max_elems + 1), 1};
-
-    ID next_id = 0;
-    for (auto &e : _data->elements) {
-        if (e != nullptr) {
-            if (auto el = e->as<StructuralElement>()) {
-                ip_numeration(e->elem_id, 0) = next_id;
-                next_id += el->n_integration_points();
-            }
-        }
-    }
-
-    // last entry = total number of IPs
-    ip_numeration(static_cast<Index>(this->_data->max_elems), 0) = next_id;
-
-    return ip_numeration;
-}
-
 Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
     Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, static_cast<Index>(this->_data->max_nodes), 6};
     load_matrix.set_zero();
@@ -229,7 +208,9 @@ SparseMatrix Model::build_geom_stiffness_matrix(SystemDofIds &indices,
                                                 const Field& ip_stress,
                                                 const Field* stiffness_scalar)
 {
-    Field ip_enum = build_integration_point_numeration();
+    logging::error(_data->element_ip_offsets != nullptr,
+                   "element IP offset field has not been initialized");
+    const Field& ip_enum = *_data->element_ip_offsets;
 
     auto lambda = [&](const ElementPtr &e, Precision* storage) -> MapMatrix {
         if (auto sel = e->as<StructuralElement>()) {

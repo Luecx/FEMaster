@@ -26,9 +26,11 @@ namespace fem {
 namespace model {
 
 enum class FieldDomain : std::uint8_t {
+    UNKNOWN,
     NODE,
     ELEMENT,
-    IP
+    ELEMENT_NODAL,
+    ELEMENT_IP
 };
 
 // ------------------------------------------------------------
@@ -98,7 +100,7 @@ struct Field {
 
     // Default-constructible so types embedding Field can declare members
     // and assign later (e.g., mode containers). Creates an empty 0x0 field.
-    Field() : name(), domain(FieldDomain::NODE), rows(0), components(0), values() {}
+    Field() : name(), domain(FieldDomain::UNKNOWN), rows(0), components(0), values() {}
 
     Field(std::string p_name, FieldDomain p_domain, Index p_rows, Index p_components)
         : name(std::move(p_name)),
@@ -130,7 +132,7 @@ struct Field {
     // ---- init helpers ----
     void fill_nan() { values.fill_nan(); }
     void set_zero() { values.set_zero(); }
-    void setOnes() { values.set_ones(); }
+    void set_ones() { values.set_ones(); }
 
     // ---- validity helpers ----
     [[nodiscard]] bool has_any_finite() const { return values.has_any_finite(); }

@@ -31,12 +31,15 @@ def test_result_reader_maps_loadcases_frames_and_element_nodal_fields() -> None:
         """
         LOADCASE 1 STATIC
         FRAME 2 converged
-        FIELD DISPLACEMENT ROWS=2 COLS=5 INDEX_COLS=2 VALUE_COLS=3
+        FIELD DISPLACEMENT TYPE=ELEMENT_NODAL ROWS=2 INDEX_COLS=2 VALUE_COLS=3
         1, 10, 0.1, 0.2, 0.3
         1, 11, 0.4, 0.5, 0.6
         END FIELD
-        FIELD ENERGY ROWS=1 COLS=1
+        FIELD ENERGY TYPE=ELEMENT ROWS=1 COLS=1
         42.0
+        END FIELD
+        FIELD IP_STRESS TYPE=ELEMENT_IP ROWS=1 COLS=6
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0
         END FIELD
         """
     )
@@ -44,8 +47,11 @@ def test_result_reader_maps_loadcases_frames_and_element_nodal_fields() -> None:
     frame = result.loadcase(1).frame(2)
     displacement = frame.field("DISPLACEMENT")
     energy = frame.field("ENERGY")
+    ip_stress = frame.field("IP_STRESS")
 
     assert displacement.domain is FieldDomain.ELEMENT_NODAL
     assert displacement.row((1, 10)) == (0.1, 0.2, 0.3)
-    assert energy.domain is FieldDomain.UNKNOWN
+    assert energy.domain is FieldDomain.ELEMENT
     assert energy.row(0) == (42.0,)
+    assert ip_stress.domain is FieldDomain.ELEMENT_IP
+    assert ip_stress.row(0) == (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)

@@ -88,8 +88,8 @@ SolidElement<N>::compute_stress_strain_nodal(Field& displacement, Field& stress,
             const Index n_ip = static_cast<Index>(this->n_integration_points());
             RowMatrix ip_xyz(n_ip, 3);
             ip_xyz.setZero();
-            Field ip_stress{"IP_STRESS_LOCAL", FieldDomain::IP, n_ip, 6};
-            Field ip_strain{"IP_STRAIN_LOCAL", FieldDomain::IP, n_ip, 6};
+            Field ip_stress{"IP_STRESS_LOCAL", FieldDomain::ELEMENT_IP, n_ip, 6};
+            Field ip_strain{"IP_STRAIN_LOCAL", FieldDomain::ELEMENT_IP, n_ip, 6};
             ip_stress.set_zero();
             ip_strain.set_zero();
 

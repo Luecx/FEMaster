@@ -24,6 +24,7 @@
 #include "../constraints/types/rbm.h"
 #include "../material/material.h"
 #include "../cos/coordinate_system.h"
+#include "../core/types_cls.h"
 #include "../core/types_eig.h"
 #include "../data/dict.h"
 #include "../data/field.h"
@@ -72,6 +73,8 @@ struct ModelData {
     Field::Ptr positions               = nullptr;
     Field::Ptr element_stiffness_scale = nullptr;
     Field::Ptr material_orientation    = nullptr;
+    Field::Ptr element_nodal_offsets   = nullptr;
+    Field::Ptr element_ip_offsets      = nullptr;
 
     // Region registries --------------------------------------------------------
     Sets<NodeRegion> node_sets{SET_NODE_ALL};
@@ -105,12 +108,23 @@ struct ModelData {
           max_integration_points(max_integration_points) {
         elements.resize(max_elems);
         surfaces.resize(max_surfaces);
+
+        element_nodal_offsets = std::make_shared<Field>(
+            "ELEMENT_NODAL_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
+        element_nodal_offsets->set_zero();
+
+        element_ip_offsets = std::make_shared<Field>(
+            "ELEMENT_IP_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
+        element_ip_offsets->set_zero();
     }
 
     // Field management --------------------------------------------------------
 
     /// Returns the row count associated with a field domain.
     Index field_rows(FieldDomain domain) const;
+
+    /// Updates flat element-nodal and element-IP prefix offsets after insertion.
+    void register_element_offsets(ElementInterface& element);
 
     /// Checks whether a named field exists.
     bool has_field(const std::string& name) const;

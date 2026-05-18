@@ -98,7 +98,6 @@ struct Model {
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();
-    Field         build_integration_point_numeration();
 
     // building loads for every node including non existing ones
     Field                 build_load_matrix(std::vector<std::string> load_sets = {}, Precision time = 0);

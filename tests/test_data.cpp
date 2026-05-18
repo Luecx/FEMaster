@@ -1,6 +1,8 @@
 #include "../src/data/dict.h"
 #include "../src/data/field.h"
 #include "../src/data/region.h"
+#include "../src/model/model.h"
+#include "../src/model/truss/truss.h"
 
 #include <cmath>
 #include <gtest/gtest.h>
@@ -26,7 +28,7 @@ TEST(Data_Field, InitAndAccess) {
     view(1, 2) = 4.25;
     EXPECT_DOUBLE_EQ(field(1, 2), 4.25);
 
-    field.setOnes();
+    field.set_ones();
     EXPECT_DOUBLE_EQ(field(0, 0), 1.0);
 }
 
@@ -46,4 +48,27 @@ TEST(Data_Dict, StringDictAndRegion) {
 
     dict.remove("A");
     EXPECT_FALSE(dict.has("A"));
+}
+
+TEST(Data_ModelData, ElementOffsetFieldsUpdateOutOfOrder) {
+    model::Model model(4, 3, 0);
+
+    model.set_element<model::T3>(2, 0, 1);
+    ASSERT_NE(model._data->element_nodal_offsets, nullptr);
+    ASSERT_NE(model._data->element_ip_offsets, nullptr);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(0), 0.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(1), 0.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(2), 0.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(3), 2.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_ip_offsets)(3), 1.0);
+
+    model.set_element<model::T3>(0, 2, 3);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(0), 0.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(2), 2.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_nodal_offsets)(3), 4.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_ip_offsets)(0), 0.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_ip_offsets)(1), 1.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_ip_offsets)(2), 1.0);
+    EXPECT_DOUBLE_EQ((*model._data->element_ip_offsets)(3), 2.0);
 }
