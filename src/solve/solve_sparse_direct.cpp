@@ -35,7 +35,8 @@ const char* cudss_status_name(cudssStatus_t status) {
 
 DynamicVector solve_direct(SolverDevice device,
                           SparseMatrix& mat,
-                          DynamicVector& rhs) {
+                          DynamicVector& rhs,
+                          DirectSolverMatrixType matrix_type) {
     logging::error(mat.rows() == mat.cols(), "matrix must be square");
     logging::error(rhs.rows() == mat.rows(), "missmatch of rhs and matrix");
     logging::error(rhs.cols() == 1, "can only solve one equation at a time");
@@ -51,7 +52,10 @@ DynamicVector solve_direct(SolverDevice device,
 #else
 #endif
     logging::info(true, "");
-    logging::info(true, "Solving system with N=", N, " nnz=", nnz, " using cholesky decomposition");
+    logging::info(true, "Solving system with N=", N, " nnz=", nnz,
+                  matrix_type == DirectSolverMatrixType::SPD
+                      ? " using cholesky decomposition"
+                      : " using general direct decomposition");
 
     logging::up();
 #ifdef SUPPORT_GPU
@@ -62,7 +66,9 @@ DynamicVector solve_direct(SolverDevice device,
         cuda::CudaCSR mat_gpu{mat};
 
 #ifdef USE_CUDSS
-        logging::info(true, "Using cuDSS direct solver");
+        logging::info(true, matrix_type == DirectSolverMatrixType::SPD
+                            ? "Using cuDSS direct solver (SPD)"
+                            : "Using cuDSS direct solver (general)");
 
         cuda::CudaArray<CudaPrecision> vec_rhs {static_cast<std::size_t>(rhs.size())};
         cuda::CudaArray<CudaPrecision> vec_sol {static_cast<std::size_t>(rhs.size())};
@@ -91,6 +97,10 @@ DynamicVector solve_direct(SolverDevice device,
         CudaPrecision* values = mat_gpu.val_ptr();
         CudaPrecision* rhs_values = vec_rhs;
         CudaPrecision* sol_values = vec_sol;
+        const cudssMatrixType_t cudss_matrix_type =
+            (matrix_type == DirectSolverMatrixType::SPD) ? CUDSS_MTYPE_SPD : CUDSS_MTYPE_GENERAL;
+        const cudssMatrixViewType_t cudss_matrix_view =
+            (matrix_type == DirectSolverMatrixType::SPD) ? CUDSS_MVIEW_UPPER : CUDSS_MVIEW_FULL;
 
         Timer t {};
         t.start();
@@ -108,8 +118,8 @@ DynamicVector solve_direct(SolverDevice device,
                                                  values,
                                                  CUDA_R_32I,
                                                  CUDA_P_TYPE,
-                                                 CUDSS_MTYPE_SPD,
-                                                 CUDSS_MVIEW_UPPER,
+                                                 cudss_matrix_type,
+                                                 cudss_matrix_view,
                                                  CUDSS_BASE_ZERO),
                             "cudssMatrixCreateCsr");
         runtime_check_cudss(cudssMatrixCreateDn(&cudss_rhs,
@@ -150,6 +160,10 @@ DynamicVector solve_direct(SolverDevice device,
         logging::info(true, "Elapsed time: " + std::to_string(t.elapsed()) + " ms");
         logging::info(true, "residual    : ", (rhs - mat * sol).norm() / (rhs.norm()));
 #else
+        logging::error(matrix_type == DirectSolverMatrixType::SPD,
+                       "GPU direct solve for non-SPD systems requires cuDSS; "
+                       "cuSolver sparse direct path only supports Cholesky/SPD here");
+
         cuda::CudaVector vec_rhs {int(rhs.size())};
         cuda::CudaVector vec_sol {int(rhs.size())};
         vec_rhs.upload(rhs.data());

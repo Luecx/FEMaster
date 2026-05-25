@@ -12,7 +12,19 @@ namespace fem::input_decks::commands {
 inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Parser& parser) {
     registry.command("CONSTRAINTMETHOD", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
-        command.doc("Select constraint backend for LINEARSTATIC/LINEARSTATICTOPO: NULLSPACE or LAGRANGE.");
+        command.doc(
+            "Select constraint backend for LINEARSTATIC/LINEARSTATICTOPO: NULLSPACE or LAGRANGE.\n"
+            "\n"
+            "Constraint | Backend   | DIRECT       | INDIRECT\n"
+            "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
+            "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
+            "NULLSPACE  | GPU       | Yes          | Yes\n"
+            "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
+            "LAGRANGE   | CPU MKL   | Yes          | No\n"
+            "LAGRANGE   | CPU Eigen | Limited      | No\n"
+            "LAGRANGE   | GPU       | No           | No\n"
+            "LAGRANGE   | GPU cuDSS | Yes          | No"
+        );
 
         command.keyword(
             fem::dsl::KeywordSpec::make()

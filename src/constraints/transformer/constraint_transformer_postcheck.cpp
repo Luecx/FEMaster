@@ -94,13 +94,6 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
         std::vector<Item> items;
         items.reserve(4);
 
-        items.push_back(Item{"constraints",
-                             abs_Cu_d,
-                             rel_Cu_d,
-                             tol_constraint_rel,
-                             rel_Cu_d <= tol_constraint_rel,
-                             true});
-
         const DynamicVector resid = K * u - f;
         if (cached_lagrange_lambda_valid_ && cached_lagrange_lambda_.size() == set_.m) {
             const DynamicVector& lambda = cached_lagrange_lambda_;
@@ -139,6 +132,12 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                                      true});
             }
         } else {
+            items.push_back(Item{"constraints",
+                                 abs_Cu_d,
+                                 rel_Cu_d,
+                                 tol_constraint_rel,
+                                 rel_Cu_d <= tol_constraint_rel,
+                                 true});
             logging::warning(true,
                              "[ConstraintTransformer] Skipping LAGRANGE equilibrium post-check: "
                              "no cached multipliers available.");

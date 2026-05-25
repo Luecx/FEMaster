@@ -13,6 +13,11 @@
 
 namespace fem::solver {
 
+enum class DirectSolverMatrixType {
+    SPD,
+    General
+};
+
 /**
  * @brief Solves a linear system using a direct solver on the specified device.
  *
@@ -23,7 +28,8 @@ namespace fem::solver {
  */
 DynamicVector solve_direct(SolverDevice device,
                            SparseMatrix& mat,
-                           DynamicVector& rhs);
+                           DynamicVector& rhs,
+                           DirectSolverMatrixType matrix_type = DirectSolverMatrixType::SPD);
 
 /**
  * @brief Solves a linear system using an iterative solver on the specified device.
@@ -53,9 +59,10 @@ DynamicVector solve_iter(SolverDevice device,
 inline DynamicVector solve(SolverDevice device,
                     SolverMethod method,
                     SparseMatrix& mat,
-                    DynamicVector& rhs) {
+                    DynamicVector& rhs,
+                    DirectSolverMatrixType direct_matrix_type = DirectSolverMatrixType::SPD) {
     if (method == DIRECT) {
-        return solve_direct(device, mat, rhs);
+        return solve_direct(device, mat, rhs, direct_matrix_type);
     } else {
         return solve_iter(device, mat, rhs);
     }

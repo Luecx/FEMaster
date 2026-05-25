@@ -180,8 +180,23 @@ void LinearStaticTopo::run() {
         "reducing load matrix -> active RHS vector f"
     );
 
-    logging::error(!(constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT),
-                   "LAGRANGE constraint method requires DIRECT solver for linear static analysis");
+    if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
+        logging::error(false,
+                       "Invalid solver/constraint combination\n"
+                       "Constraint | Backend   | DIRECT       | INDIRECT\n"
+                       "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
+                       "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
+                       "NULLSPACE  | GPU       | Yes          | Yes\n"
+                       "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
+                       "LAGRANGE   | CPU MKL   | Yes          | No\n"
+                       "LAGRANGE   | CPU Eigen | Limited      | No\n"
+                       "LAGRANGE   | GPU       | No           | No\n"
+                       "LAGRANGE   | GPU cuDSS | Yes          | No");
+    }
+    const auto direct_matrix_type =
+        constraint_method == ConstraintTransformer::Method::Lagrange
+            ? solver::DirectSolverMatrixType::General
+            : solver::DirectSolverMatrixType::SPD;
 
     // (5) Build constraint transformer (Set -> Builder -> Map), wrapped for timing
     auto CT = Timer::measure(
@@ -249,7 +264,7 @@ void LinearStaticTopo::run() {
     }
 
     auto q = Timer::measure(
-        [&]() { return solve(device, method, A, b); },
+        [&]() { return solve(device, method, A, b, direct_matrix_type); },
         "solving reduced system A q = b"
     );
 

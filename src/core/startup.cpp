@@ -65,6 +65,11 @@ void print_banner() {
 #else
     std::cout << "*           MKL Supported         : No                               *\n";
 #endif
+#ifdef USE_CUDSS
+    std::cout << "*           cuDSS Supported       : Yes                              *\n";
+#else
+    std::cout << "*           cuDSS Supported       : No                               *\n";
+#endif
     std::cout << "*                                                                    *\n";
     std::cout << "*           FEMaster Version      : " << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH <<
         "                            *\n";

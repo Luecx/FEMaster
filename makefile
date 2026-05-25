@@ -203,37 +203,39 @@ endif
 # Executables
 # ===============================================================
 EXE_CPU  := $(BINDIR)/$(PROJECT_NAME)
-EXE_GPU  := $(BINDIR)/$(PROJECT_NAME)_gpu
+EXE_GPU  := $(BINDIR)/$(PROJECT_NAME)
 EXE_TST  := $(BINDIR)/$(PROJECT_NAME)_test
 
 # ===============================================================
 # Targets
 # ===============================================================
-.PHONY: all cpu gpu tests clean info help pp-startup iwyu iwyu-apply iwyu-diff iwyu-file iwyu-clean compile_commands.json clean-exp-lib
+.PHONY: all cpu gpu cpu-link gpu-link tests clean info help pp-startup iwyu iwyu-apply iwyu-diff iwyu-file iwyu-clean compile_commands.json clean-exp-lib
 
 all: info cpu gpu tests
 
-cpu: info $(EXE_CPU)
+cpu: info cpu-link
 gpu: CXXFLAGS  += -DSUPPORT_GPU
 gpu: NVCCFLAGS += -DSUPPORT_GPU
 gpu: LDLIBS    += -lcusparse -lcublas
 ifeq ($(cudss),0)
 gpu: LDLIBS    += -lcusolver
 endif
-gpu: info $(EXE_GPU) clean-exp-lib
+gpu: info gpu-link clean-exp-lib
 
 tests: info $(EXE_TST)
 
 # ---------------------------------------------------------------
 # Link rules
 # ---------------------------------------------------------------
-$(EXE_CPU): $(GPP_OBJS) $(MAIN_OBJ_CPU)
+cpu-link: $(GPP_OBJS) $(MAIN_OBJ_CPU)
 	@mkdir -p $(@D)
-	$(CXX) $(CXXFLAGS_LINK) $(FEATURES) $^ $(LDFLAGS) $(LDLIBS) -o $@
+	@mkdir -p $(BINDIR)
+	$(CXX) $(CXXFLAGS_LINK) $(FEATURES) $^ $(LDFLAGS) $(LDLIBS) -o $(EXE_CPU)
 
-$(EXE_GPU): $(GPU_CPP_OBJS) $(CU_OBJS) $(MAIN_OBJ_GPU)
+gpu-link: $(GPU_CPP_OBJS) $(CU_OBJS) $(MAIN_OBJ_GPU)
 	@mkdir -p $(@D)
-	$(NVCC) $(NVCCFLAGS) $(FEATURES) $^ $(LDFLAGS) $(LDLIBS) -o $@
+	@mkdir -p $(BINDIR)
+	$(NVCC) $(NVCCFLAGS) $(FEATURES) $^ $(LDFLAGS) $(LDLIBS) -o $(EXE_GPU)
 
 $(EXE_TST): $(TST_OBJS)
 	@mkdir -p $(@D)
@@ -312,7 +314,7 @@ info:
 pp-startup:
 	@echo "Preprocessor flags visible in startup.cpp (selected):"
 	@$(CXX) $(CXXFLAGS) $(FEATURES) -dM -E $(SRCDIR)/core/startup.cpp | \
-	  grep -E 'DOUBLE_PRECISION|CUDA_DOUBLE|USE_MKL|_OPENMP' || true
+	  grep -E 'DOUBLE_PRECISION|CUDA_DOUBLE|USE_MKL|USE_CUDSS|_OPENMP' || true
 
 clean:
 	@echo "Cleaning..."

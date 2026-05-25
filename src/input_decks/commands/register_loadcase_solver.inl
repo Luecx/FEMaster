@@ -15,7 +15,19 @@ namespace fem::input_decks::commands {
 inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parser) {
     registry.command("SOLVER", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
-        command.doc("Configure solver options for the active loadcase.");
+        command.doc(
+            "Configure solver options for the active loadcase.\n"
+            "\n"
+            "Constraint | Backend   | DIRECT       | INDIRECT\n"
+            "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
+            "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
+            "NULLSPACE  | GPU       | Yes          | Yes\n"
+            "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
+            "LAGRANGE   | CPU MKL   | Yes          | No\n"
+            "LAGRANGE   | CPU Eigen | Limited      | No\n"
+            "LAGRANGE   | GPU       | No           | No\n"
+            "LAGRANGE   | GPU cuDSS | Yes          | No"
+        );
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
@@ -50,4 +62,3 @@ inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parse
 }
 
 } // namespace fem::input_decks::commands
-
