@@ -55,7 +55,10 @@ inline void Model::set_beam_element(ID id, ID orientation_node, Args&&... args) 
 }
 
 inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
-    logging::error(id < _data->max_surfaces, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
+    if (id >= _data->max_surfaces) {
+        _data->max_surfaces = id + 1;
+        _data->surfaces.resize(static_cast<std::size_t>(_data->max_surfaces));
+    }
 
     auto& elptr = _data->elements[element_id];
     logging::error(elptr != nullptr, "element with id=", element_id, " has not been defined");
@@ -73,6 +76,7 @@ inline void Model::set_surface(ID id, ID element_id, ID surface_id) {
             surf_id = _data->surfaces.size();
             _data->surfaces.reserve(surf_id + 128);
             _data->surfaces.resize(surf_id + 1);
+            _data->max_surfaces = static_cast<ID>(_data->surfaces.size());
         }
         logging::error(_data->surfaces[surf_id] == nullptr, "surface with id=", id, " has already been defined");
 

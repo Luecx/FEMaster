@@ -1,16 +1,12 @@
 #include "parser.h"
 
 #include <algorithm>
-#include <array>
-#include <cstddef>
 #include <stdexcept>
 #include <iostream>
 #include <utility>
 
-#include "../core/logging.h"
 #include "../dsl/engine.h"
 #include "../dsl/file.h"
-#include "../dsl/keys.h"
 #include "../loadcase/loadcase.h"
 #include "../loadcase/linear_buckling.h"
 #include "../loadcase/linear_eigenfreq.h"
@@ -20,8 +16,11 @@
 #include "../reader/writer.h"
 
 // Command registration helpers
-#include "commands/register_node.inl"
+#include "commands/register_node_count.inl"
+#include "commands/register_element_count.inl"
+#include "commands/register_surface_count.inl"
 #include "commands/register_field.inl"
+#include "commands/register_node.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_elset.inl"
 #include "commands/register_surface.inl"
@@ -81,7 +80,7 @@ Parser::Parser()
     , m_writer("")                                      // opened later in run()
 {
     // Commands available right away (for documentation mode).
-    register_commands();
+    register_documentation_commands();
 }
 
 Parser::~Parser() = default;
@@ -89,27 +88,18 @@ Parser::~Parser() = default;
 // ----------------- Public API -----------------
 
 void Parser::run(const std::string& input_path, const std::string& output_path) {
-    // 1) Prepass: learn topology and capacities
-    AnalyseData A = preprocess_ids(input_path);
+    // 1) Count ids needed for ModelData allocation.
+    CountData count = run_count_stage(input_path);
 
     // 2) Rebuild model with correct capacities, reset state
-    build_model_from(A);
+    allocate_model(count);
 
-    // 3) Populate topology and build the element-dependent field enumerations once.
-    replay_topology(A);
+    // 3) Parse topology and sets before fields exist.
+    run_topology_stage(input_path);
     m_model->_data->initialize_element_enumeration();
 
-    // 4) Re-register commands so all closures capture the NEW model
-    register_commands();
-
-    // 5) Parse all non-topology input and field data
-    m_writer.open(output_path);
-
-    dsl::File file(input_path);
-    dsl::Engine engine(m_registry);
-    engine.run(file);
-
-    m_writer.close();
+    // 4) Parse all non-topology input and field data.
+    run_data_stage(input_path, output_path);
 }
 
 void Parser::document(const DocOptions& opts) const {
@@ -187,130 +177,51 @@ const std::string& Parser::active_loadcase_type() const {
     return m_active_loadcase_type.empty() ? empty : m_active_loadcase_type;
 }
 
-// ----------------- Preprocess (ID scan) -----------------
+// ----------------- Parser stages -----------------
 
-Parser::AnalyseData Parser::preprocess_ids(const std::string& input_path) {
-    AnalyseData A{};
+Parser::CountData Parser::run_count_stage(const std::string& input_path) {
+    CountData count;
+    dsl::Registry registry;
+    register_count_commands(registry, count);
+    register_set_commands(registry);
+    register_analysis_commands(registry);
+
+    registry.set_active_mode(dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE", dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT", dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE", dsl::ActiveMode::Active);
+
     dsl::File file(input_path);
-    dsl::Line current;
-    current = file.next_line();
+    dsl::Engine engine(registry);
+    engine.run(file);
 
-    while (current.type() != dsl::LineType::END_OF_FILE) {
-        if (current.type() != dsl::LineType::KEYWORD_LINE) {
-            current = file.next_line();
-            continue;
-        }
-
-        const std::string cmd = current.command();
-        if (cmd == "NODE")     { analyse_nodes(file, current, A);     continue; }
-        if (cmd == "ELEMENT")  { analyse_elements(file, current, A);  continue; }
-        if (cmd == "SURFACE")  { analyse_surfaces(file, current, A);  continue; }
-
-        current = file.next_line();
-    }
-
-    return A;
+    return count;
 }
 
-std::size_t Parser::required_nodes_for_type(const std::string& type) {
-    if (type == "C3D4") return 4;
-    if (type == "C3D5") return 5;
-    if (type == "C3D6") return 6;
-    if (type == "C3D8") return 8;
-    if (type == "C3D10") return 10;
-    if (type == "C3D15") return 15;
-    if (type == "C3D20" || type == "C3D20R") return 20;
-    if (type == "B33") return 2;
-    if (type == "T3") return 2;
-    if (type == "S3") return 3;
-    if (type == "S4" || type == "MITC4" || type == "QSPT") return 4;
-    if (type == "S6") return 6;
-    if (type == "S8") return 8;
-    if (type == "P")  return 1;
-    return 0;
-}
+void Parser::run_topology_stage(const std::string& input_path) {
+    dsl::Registry registry;
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
 
-void Parser::analyse_nodes(dsl::File& file, dsl::Line& current, AnalyseData& A) {
-    const dsl::Keys keys = dsl::Keys::from_keyword_line(current);
-    const std::string nset = keys.has("NSET") ? keys.raw("NSET") : std::string(SET_NODE_ALL);
+    registry.set_active_mode(dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE", dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT", dsl::ActiveMode::Active);
+    registry.set_active_mode("NSET", dsl::ActiveMode::Active);
+    registry.set_active_mode("ELSET", dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE", dsl::ActiveMode::Active);
+    registry.set_active_mode("SFSET", dsl::ActiveMode::Active);
 
-    while (true) {
-        current = file.next_line();
-        if (current.type() != dsl::LineType::DATA_LINE) break;
-        const auto& values = current.values();
-        int node_id = std::stoi(values[0]);
-        A.highest_node_id = std::max(A.highest_node_id, node_id);
-        A.nodes.push_back(NodeRecord{
-            static_cast<ID>(node_id),
-            values.size() > 1 && !values[1].empty() ? static_cast<Precision>(std::stod(values[1])) : Precision{0},
-            values.size() > 2 && !values[2].empty() ? static_cast<Precision>(std::stod(values[2])) : Precision{0},
-            values.size() > 3 && !values[3].empty() ? static_cast<Precision>(std::stod(values[3])) : Precision{0},
-            nset
-        });
-    }
-}
-
-void Parser::analyse_elements(dsl::File& file, dsl::Line& current, AnalyseData& A) {
-    const dsl::Keys keys = dsl::Keys::from_keyword_line(current);
-    const std::string type = keys.raw("TYPE");
-    const std::string elset = keys.has("ELSET") ? keys.raw("ELSET") : std::string(SET_ELEM_ALL);
-    const std::size_t req  = required_nodes_for_type(type);
-
-    if (req == 0) {
-        throw std::runtime_error("Unknown element type during preprocessing: " + type);
-    }
-
-    while (true) {
-        current = file.next_line();
-        if (current.type() != dsl::LineType::DATA_LINE) break;
-
-        const auto& first_values = current.values();
-        int element_id = std::stoi(first_values[0]);
-        A.highest_element_id = std::max(A.highest_element_id, element_id);
-
-        ElementRecord record;
-        record.id = static_cast<ID>(element_id);
-        record.type = type;
-        record.elset = elset;
-        record.nodes.reserve(req);
-
-        for (std::size_t i = 1; i < first_values.size(); ++i) {
-            record.nodes.push_back(static_cast<ID>(std::stoi(first_values[i])));
-        }
-
-        std::size_t have = record.nodes.size();
-        while (have < req) {
-            current = file.next_line();
-            if (current.type() != dsl::LineType::DATA_LINE) {
-                throw std::runtime_error("Unexpected end of element connectivity while preprocessing");
-            }
-            for (const auto& value : current.values()) {
-                record.nodes.push_back(static_cast<ID>(std::stoi(value)));
-            }
-            have = record.nodes.size();
-        }
-        A.elements.push_back(std::move(record));
-    }
-}
-
-void Parser::analyse_surfaces(dsl::File& file, dsl::Line& current, AnalyseData& A) {
-    while (true) {
-        current = file.next_line();
-        if (current.type() != dsl::LineType::DATA_LINE) break;
-        try {
-            int surface_id = std::stoi(current.values()[0]);
-            A.highest_surface_id = std::max(A.highest_surface_id, surface_id);
-        } catch (const std::invalid_argument&) {
-        }
-    }
+    dsl::File file(input_path);
+    dsl::Engine engine(registry);
+    engine.run(file);
 }
 
 // ----------------- Model & registration -----------------
 
-void Parser::build_model_from(const AnalyseData& A) {
-    const int n_nodes    = A.highest_node_id    + 1;
-    const int n_elems    = A.highest_element_id + 1;
-    const int n_surfaces = A.highest_surface_id + 1;
+void Parser::allocate_model(const CountData& count) {
+    const int n_nodes    = count.highest_node_id    + 1;
+    const int n_elems    = count.highest_element_id + 1;
+    const int n_surfaces = count.highest_surface_id + 1;
 
     m_model = std::make_shared<model::Model>(n_nodes, n_elems, n_surfaces);
 
@@ -318,84 +229,77 @@ void Parser::build_model_from(const AnalyseData& A) {
     m_active_loadcase.reset();
     m_active_loadcase_type.clear();
     m_next_loadcase_id = 1;
+}
 
-    // Fresh registry so all closures capture the new Model references
+void Parser::run_data_stage(const std::string& input_path, const std::string& output_path) {
+    dsl::Registry registry;
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
+
+    registry.set_active_mode(dsl::ActiveMode::Active);
+    registry.set_active_mode("NODE", dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELEMENT", dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NSET", dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELSET", dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SURFACE", dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SFSET", dsl::ActiveMode::ConsumeOnly);
+
+    m_writer.open(output_path);
+
+    dsl::File file(input_path);
+    dsl::Engine engine(registry);
+    engine.run(file);
+
+    m_writer.close();
+}
+
+void Parser::register_documentation_commands() {
     m_registry = dsl::Registry{};
-    m_commands_registered = false;
+    register_topology_commands(m_registry);
+    register_analysis_commands(m_registry);
+    m_registry.set_active_mode(dsl::ActiveMode::Active);
 }
 
-namespace {
-template<class Elem, std::size_t... I>
-void replay_regular_element_impl(model::Model& model, ID id, const std::vector<ID>& nodes, std::index_sequence<I...>) {
-    model.set_element<Elem>(id, nodes[I]...);
+void Parser::register_count_commands(dsl::Registry& reg, CountData& count) {
+    commands::register_node_count(reg, [&count](ID id) {
+        count.highest_node_id = std::max(count.highest_node_id, static_cast<int>(id));
+    });
+    commands::register_element_count(reg, [&count](ID id) {
+        count.highest_element_id = std::max(count.highest_element_id, static_cast<int>(id));
+    });
+    commands::register_surface_count(reg, [&count](ID id) {
+        count.highest_surface_id = std::max(count.highest_surface_id, static_cast<int>(id));
+    });
 }
 
-template<class Elem, std::size_t N>
-void replay_regular_element(model::Model& model, ID id, const std::vector<ID>& nodes) {
-    logging::error(nodes.size() == N,
-                   "ELEMENT ", id, ": expected ", N, " nodes, got ", nodes.size());
-    replay_regular_element_impl<Elem>(model, id, nodes, std::make_index_sequence<N>{});
-}
-}
-
-void Parser::replay_topology(const AnalyseData& A) {
-    auto& mdl = model();
-
-    for (const NodeRecord& node : A.nodes) {
-        mdl._data->node_sets.activate(node.nset);
-        mdl.set_node(node.id, node.x, node.y, node.z);
-    }
-
-    for (const ElementRecord& element : A.elements) {
-        mdl._data->elem_sets.activate(element.elset);
-
-        const auto& type = element.type;
-        const auto& nodes = element.nodes;
-        if (type == "C3D4") replay_regular_element<model::C3D4, 4>(mdl, element.id, nodes);
-        else if (type == "C3D6") replay_regular_element<model::C3D6, 6>(mdl, element.id, nodes);
-        else if (type == "C3D8") replay_regular_element<model::C3D8, 8>(mdl, element.id, nodes);
-        else if (type == "C3D10") replay_regular_element<model::C3D10, 10>(mdl, element.id, nodes);
-        else if (type == "C3D15") replay_regular_element<model::C3D15, 15>(mdl, element.id, nodes);
-        else if (type == "C3D20") replay_regular_element<model::C3D20, 20>(mdl, element.id, nodes);
-        else if (type == "C3D20R") replay_regular_element<model::C3D20R, 20>(mdl, element.id, nodes);
-        else if (type == "T3") replay_regular_element<model::T3, 2>(mdl, element.id, nodes);
-        else if (type == "S3") replay_regular_element<model::S3, 3>(mdl, element.id, nodes);
-        else if (type == "S4") replay_regular_element<model::S4, 4>(mdl, element.id, nodes);
-        else if (type == "QSPT") replay_regular_element<model::QSPT, 4>(mdl, element.id, nodes);
-        else if (type == "MITC4") replay_regular_element<model::MITC4, 4>(mdl, element.id, nodes);
-        else if (type == "S6") replay_regular_element<model::S6, 6>(mdl, element.id, nodes);
-        else if (type == "S8") replay_regular_element<model::S8, 8>(mdl, element.id, nodes);
-        else if (type == "B33") {
-            logging::error(nodes.size() == 2 || nodes.size() == 3,
-                           "ELEMENT ", element.id, ": B33 expects 2 or 3 node ids, got ", nodes.size());
-            const ID orientation = nodes.size() == 3 ? nodes[2] : ID{-1};
-            mdl.set_beam_element<model::B33>(element.id, orientation, nodes[0], nodes[1]);
-        } else if (type == "C3D5") {
-            logging::error(nodes.size() == 5,
-                           "ELEMENT ", element.id, ": C3D5 expects 5 node ids, got ", nodes.size());
-            mdl.set_element<model::C3D8>(element.id,
-                                         nodes[0], nodes[1], nodes[2], nodes[3],
-                                         nodes[4], nodes[4], nodes[4], nodes[4]);
-        } else {
-            throw std::runtime_error("Unknown element type during topology replay: " + type);
-        }
-    }
-}
-
-void Parser::register_commands() {
-    if (m_commands_registered) return;
+void Parser::register_set_commands(dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
 
-    auto& reg = m_registry;
     auto& mdl = *m_model;
+    commands::register_nset(reg, mdl);
+    commands::register_elset(reg, mdl);
+    commands::register_sfset(reg, mdl);
+}
 
-    // Base model/sections/materials
+void Parser::register_topology_commands(dsl::Registry& reg) {
+    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+
+    auto& mdl = *m_model;
     commands::register_node(reg, mdl);
-    commands::register_field(reg, mdl);
+    commands::register_element(reg, mdl);
     commands::register_nset(reg, mdl);
     commands::register_elset(reg, mdl);
     commands::register_surface(reg, mdl);
     commands::register_sfset(reg, mdl);
+}
+
+void Parser::register_analysis_commands(dsl::Registry& reg) {
+    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+
+    auto& mdl = *m_model;
+
+    // Base model/sections/materials
+    commands::register_field(reg, mdl);
     commands::register_material(reg, mdl);
     commands::register_elastic(reg, mdl);
     commands::register_density(reg, mdl);
@@ -425,7 +329,6 @@ void Parser::register_commands() {
     commands::register_truss_section(reg, mdl);
     commands::register_shell_section(reg, mdl);
     commands::register_point_mass(reg, mdl);
-    commands::register_element(reg, mdl);
     commands::register_overview(reg, mdl);
 
     // Loadcase scaffold
@@ -451,7 +354,5 @@ void Parser::register_commands() {
     commands::register_loadcase_initialvelocity(reg, *this);
     commands::register_loadcase_inertiarelief(reg, *this);
     commands::register_loadcase_rebalance(reg, *this);
-
-    m_commands_registered = true;
 }
 } // namespace fem::input_decks

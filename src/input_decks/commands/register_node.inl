@@ -3,8 +3,9 @@
 #include <string>
 
 #include "../../core/types_num.h"
-
 #include "../../dsl/keyword.h"
+#include "../../dsl/registry.h"
+#include "../../model/model.h"
 
 namespace fem::input_decks::commands {
 
@@ -20,19 +21,21 @@ inline void register_node(fem::dsl::Registry& registry, model::Model& model) {
         );
 
         command.on_enter([&model](const fem::dsl::Keys& keys) {
-            const std::string& target = keys.raw("NSET");
-            model._data->node_sets.activate(target);
+            model._data->node_sets.activate(keys.raw("NSET"));
         });
 
         command.variant(fem::dsl::Variant::make()
             .segment(fem::dsl::Segment::make()
                 .range(fem::dsl::LineRange{}.min(0))
                 .pattern(fem::dsl::Pattern::make()
-                    .one<int>().name("ID").desc("Node identifier")
+                    .one<fem::ID>().name("ID").desc("Node identifier")
                     .one<fem::Precision>().name("X").desc("X-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
                     .one<fem::Precision>().name("Y").desc("Y-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
                     .one<fem::Precision>().name("Z").desc("Z-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
                 )
+                .bind([&model](fem::ID id, fem::Precision x, fem::Precision y, fem::Precision z) {
+                    model.set_node(id, x, y, z);
+                })
             )
         );
     });

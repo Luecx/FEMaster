@@ -10,6 +10,7 @@
 #include <sstream>
 #include <limits>
 #include <regex>
+#include <stdexcept>
 
 #include "command.h"
 #include "condition.h"
@@ -53,6 +54,20 @@ struct Registry {
     const Command* find(const std::string& name) const {
         auto it = _map.find(name);
         return it == _map.end() ? nullptr : &it->second;
+    }
+
+    void set_active_mode(ActiveMode mode) {
+        for (auto& kv : _map) {
+            kv.second.active(mode);
+        }
+    }
+
+    void set_active_mode(const std::string& name, ActiveMode mode) {
+        auto* cmd = find(name);
+        if (!cmd) {
+            throw std::runtime_error("Cannot set active mode for unknown command '" + name + "'");
+        }
+        cmd->active(mode);
     }
 
     // ---------------------------------------------------------------------

@@ -50,6 +50,7 @@
 #include <utility>
 #include <vector>
 
+#include "active.h"
 #include "condition.h"
 #include "variant.h"
 #include "keyword.h"
@@ -72,6 +73,9 @@ struct Command {
 
     /** Optional short description used by documentation printers. */
     std::string doc_;
+
+    /** Stage-local execution mode. */
+    ActiveMode active_ = ActiveMode::Active;
 
     /** Optional hook executed once when the command is entered (before segments run). */
     std::function<void(const Keys&)> on_enter_;
@@ -125,6 +129,14 @@ struct Command {
      */
     Command& doc(std::string d) {
         doc_ = std::move(d);
+        return *this;
+    }
+
+    /**
+     * @brief Sets whether this command executes, only consumes input, or is disabled.
+     */
+    Command& active(ActiveMode mode) {
+        active_ = mode;
         return *this;
     }
 

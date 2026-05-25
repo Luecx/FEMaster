@@ -132,7 +132,7 @@ struct Engine {
         auto pop_scope_to = [&](std::size_t new_size) {
             while (scope.size() > new_size) {
                 const Command* spec_ptr = scope_specs.back();
-                if (spec_ptr && spec_ptr->on_exit_) {
+                if (spec_ptr && spec_ptr->active_ == ActiveMode::Active && spec_ptr->on_exit_) {
                     // Pass the Keys captured at on_enter time for this scope entry.
                     spec_ptr->on_exit_(scope.back().keys);
                 }
@@ -189,6 +189,11 @@ struct Engine {
                 continue;
             }
 
+            if (spec->active_ == ActiveMode::Disabled) {
+                throw std::runtime_error("Command '" + cmd + "' is disabled in this parser stage");
+            }
+            const bool consume_only = spec->active_ == ActiveMode::ConsumeOnly;
+
             // Apply keyword spec normalization/validation if present
             if (spec->has_keyword_spec_) {
                 self_keys.apply_spec(spec->keyword_spec_, cmd);
@@ -222,11 +227,12 @@ struct Engine {
                 return a.order < b.order;
             });
 
-            // Minimal diagnostic (kept from your previous version)
-            logging::info("Processing command: *", cmd);
+            if (!consume_only) {
+                logging::info("Processing command: *", cmd);
+            }
 
             // on_enter (before running any segments)
-            if (spec->on_enter_) {
+            if (!consume_only && spec->on_enter_) {
                 spec->on_enter_(self_keys);
             }
 
@@ -250,7 +256,7 @@ struct Engine {
                 };
 
                 try {
-                    execute_variant(cmd, *vptr, attempt_pull, attempt_kw, have_attempt_kw);
+                    execute_variant(cmd, *vptr, attempt_pull, attempt_kw, have_attempt_kw, !consume_only);
                     // Success → commit attempt's keyword lookahead to outer
                     if (have_attempt_kw) {
                         outer_buffered_kw = attempt_kw;
@@ -346,7 +352,8 @@ private:
                          const Variant& var,
                          PullFn& pull_line,
                          Line& kw_out,
-                         bool& have_kw_out) const {
+                         bool& have_kw_out,
+                         bool invoke_segments) const {
         using LT = LineType;
 
         for (const auto& seg : var._segments) {
@@ -405,7 +412,7 @@ private:
                             throw std::runtime_error(os.str());
                         }
 
-                        if (seg._invoke) {
+                        if (invoke_segments && seg._invoke) {
                             seg._invoke(tokens);
                         }
                         ++records;
@@ -449,7 +456,7 @@ private:
                                 os << "Unexpected EOF with incomplete multiline record for " << cmd;
                                 throw std::runtime_error(os.str());
                             }
-                            if (seg._invoke) {
+                            if (invoke_segments && seg._invoke) {
                                 seg._invoke(tokens);
                             }
                             return;
@@ -473,7 +480,7 @@ private:
                                 os << "Next command arrived with incomplete multiline record for " << cmd;
                                 throw std::runtime_error(os.str());
                             }
-                            if (seg._invoke) {
+                            if (invoke_segments && seg._invoke) {
                                 seg._invoke(tokens);
                             }
                             kw_out = dl;
@@ -512,7 +519,7 @@ private:
                         throw std::runtime_error(os.str());
                     }
 
-                    if (seg._invoke) {
+                    if (invoke_segments && seg._invoke) {
                         seg._invoke(tokens);
                     }
                     // loop to try another record; a boundary will be detected at the top

@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "../core/types_num.h"
 #include "../dsl/registry.h"
@@ -60,41 +59,23 @@ public:
     const std::string& active_loadcase_type() const;
 
 private:
-    struct NodeRecord {
-        ID id = -1;
-        Precision x = 0;
-        Precision y = 0;
-        Precision z = 0;
-        std::string nset;
-    };
-
-    struct ElementRecord {
-        ID id = -1;
-        std::string type;
-        std::string elset;
-        std::vector<ID> nodes;
-    };
-
-    struct AnalyseData {
+    struct CountData {
         int highest_node_id    = -1;
         int highest_element_id = -1;
         int highest_surface_id = -1;
-        std::vector<NodeRecord> nodes;
-        std::vector<ElementRecord> elements;
     };
 
     // Pipeline steps
-    AnalyseData preprocess_ids(const std::string& input_path);
-    static std::size_t required_nodes_for_type(const std::string& type);
+    CountData run_count_stage(const std::string& input_path);
+    void run_topology_stage(const std::string& input_path);
+    void run_data_stage(const std::string& input_path, const std::string& output_path);
 
-    void analyse_nodes(dsl::File& file, dsl::Line& current, AnalyseData& A);
-    void analyse_elements(dsl::File& file, dsl::Line& current, AnalyseData& A);
-    void analyse_surfaces(dsl::File& file, dsl::Line& current, AnalyseData& A);
-
-    // (Re)build model and (re)register commands
-    void build_model_from(const AnalyseData& A);
-    void replay_topology(const AnalyseData& A);
-    void register_commands(); // uses current m_model & resets m_registry if needed
+    void allocate_model(const CountData& count);
+    void register_count_commands(dsl::Registry& registry, CountData& count);
+    void register_set_commands(dsl::Registry& registry);
+    void register_topology_commands(dsl::Registry& registry);
+    void register_analysis_commands(dsl::Registry& registry);
+    void register_documentation_commands();
 
 private:
     // Runtime state
@@ -106,7 +87,6 @@ private:
     std::string                         m_active_loadcase_type;
     int                                  m_next_loadcase_id = 1;
 
-    bool m_commands_registered = false;
 };
 
 // Templates
