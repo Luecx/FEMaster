@@ -11,6 +11,7 @@
 
 #include "cuda.h"
 #include "assert_cuda.h"
+#include "../core/logging.h"
 
 #include <iostream>
 #include <string>
@@ -35,17 +36,21 @@ void Manager::create_cuda() {
     runtime_check_cuda(cudaSetDevice(0));
     runtime_check_cuda(cudaGetDeviceProperties(&gpu_properties, 0));
 
+#ifndef USE_CUDSS
     runtime_check_cuda(cusolverSpCreate(&handle_cusolver_sp));
     runtime_check_cuda(cusolverDnCreate(&handle_cusolver_dn));
+#endif
     runtime_check_cuda(cublasCreate_v2(&handle_cublas));
     runtime_check_cuda(cusparseCreate(&handle_cusparse));
 
+#ifndef USE_CUDSS
     int major = -1;
     int minor = -1;
     int patch = -1;
     cusolverGetProperty(MAJOR_VERSION, &major);
     cusolverGetProperty(MINOR_VERSION, &minor);
     cusolverGetProperty(PATCH_LEVEL, &patch);
+#endif
 
     loaded = true;
 
@@ -53,7 +58,9 @@ void Manager::create_cuda() {
     logging::up();
     logging::info(true, "Using ", gpu_properties.name);
     logging::info(true, "Memory  : ", gpu_properties.totalGlobalMem);
+#ifndef USE_CUDSS
     logging::info(true, "CuSolver: ", major, ".", minor, ".", patch);
+#endif
     logging::down();
 }
 
@@ -61,8 +68,10 @@ void Manager::destroy_cuda() {
     if (!loaded) {
         return;
     }
+#ifndef USE_CUDSS
     cusolverSpDestroy(handle_cusolver_sp);
     cusolverDnDestroy(handle_cusolver_dn);
+#endif
     cublasDestroy_v2(handle_cublas);
     cusparseDestroy(handle_cusparse);
     loaded = false;

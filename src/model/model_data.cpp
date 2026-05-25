@@ -14,7 +14,7 @@
 namespace fem {
 namespace model {
 
-Index ModelData::field_rows(FieldDomain domain) const {
+Index ModelData::field_rows(FieldDomain domain) {
     switch (domain) {
         case FieldDomain::UNKNOWN:
             logging::error(false, "ModelData: cannot allocate UNKNOWN fields");
@@ -40,25 +40,33 @@ Index ModelData::field_rows(FieldDomain domain) const {
     return 0;
 }
 
-void ModelData::register_element_offsets(ElementInterface& element) {
-    logging::error(element_nodal_offsets != nullptr,
-                   "ModelData: element nodal offset field is not initialized");
-    logging::error(element_ip_offsets != nullptr,
-                   "ModelData: element IP offset field is not initialized");
-    logging::error(element.elem_id >= 0 && element.elem_id < max_elems,
-                   "ModelData: element id ", element.elem_id, " out of bounds for offset fields");
+void ModelData::initialize_element_enumeration() {
+    logging::error(element_nodal_offsets == nullptr && element_ip_offsets == nullptr,
+                   "ModelData: element enumeration has already been initialized");
 
-    const Index first_affected = static_cast<Index>(element.elem_id + 1);
-    const Index sentinel = static_cast<Index>(max_elems);
-    const Precision node_delta = static_cast<Precision>(element.n_nodes());
-    const Precision ip_delta = static_cast<Precision>(element.n_integration_points());
+    element_nodal_offsets = std::make_shared<Field>(
+        "ELEMENT_NODAL_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
+    element_ip_offsets = std::make_shared<Field>(
+        "ELEMENT_IP_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
 
-    for (Index row = first_affected; row <= sentinel; ++row) {
-        (*element_nodal_offsets)(row) += node_delta;
-        (*element_ip_offsets)(row) += ip_delta;
+    Index nodal_offset = 0;
+    Index ip_offset = 0;
+
+    for (Index row = 0; row < static_cast<Index>(max_elems); ++row) {
+        (*element_nodal_offsets)(row) = static_cast<Precision>(nodal_offset);
+        (*element_ip_offsets)(row) = static_cast<Precision>(ip_offset);
+
+        const ElementPtr& element = elements[row];
+        if (element != nullptr) {
+            nodal_offset += static_cast<Index>(element->n_nodes());
+            ip_offset += static_cast<Index>(element->n_integration_points());
+        }
     }
 
-    max_integration_points = static_cast<ID>((*element_ip_offsets)(sentinel));
+    const Index sentinel = static_cast<Index>(max_elems);
+    (*element_nodal_offsets)(sentinel) = static_cast<Precision>(nodal_offset);
+    (*element_ip_offsets)(sentinel) = static_cast<Precision>(ip_offset);
+    max_integration_points = static_cast<ID>(ip_offset);
 }
 
 bool ModelData::has_field(const std::string& name) const {

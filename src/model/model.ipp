@@ -33,7 +33,6 @@ inline void Model::set_element(ID id, Args&&... args) {
     logging::error(_data->elements[id] == nullptr, "element with id=", id, " has already been defined");
 
     _data->elements[id] = std::move(el);
-    _data->register_element_offsets(*_data->elements[id]);
     _data->elem_sets.add(id);
 }
 
@@ -52,7 +51,6 @@ inline void Model::set_beam_element(ID id, ID orientation_node, Args&&... args) 
     logging::error(_data->elements[id] == nullptr, "element with id=", id, " has already been defined");
 
     _data->elements[id] = std::move(el);
-    _data->register_element_offsets(*_data->elements[id]);
     _data->elem_sets.add(id);
 }
 

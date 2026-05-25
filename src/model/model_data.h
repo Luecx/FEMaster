@@ -109,22 +109,17 @@ struct ModelData {
         elements.resize(max_elems);
         surfaces.resize(max_surfaces);
 
-        element_nodal_offsets = std::make_shared<Field>(
-            "ELEMENT_NODAL_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
-        element_nodal_offsets->set_zero();
-
-        element_ip_offsets = std::make_shared<Field>(
-            "ELEMENT_IP_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
-        element_ip_offsets->set_zero();
+        element_nodal_offsets = nullptr;
+        element_ip_offsets = nullptr;
     }
 
     // Field management --------------------------------------------------------
 
     /// Returns the row count associated with a field domain.
-    Index field_rows(FieldDomain domain) const;
+    Index field_rows(FieldDomain domain);
 
-    /// Updates flat element-nodal and element-IP prefix offsets after insertion.
-    void register_element_offsets(ElementInterface& element);
+    /// Builds flat element-nodal and element-IP prefix offsets after topology has been read.
+    void initialize_element_enumeration();
 
     /// Checks whether a named field exists.
     bool has_field(const std::string& name) const;

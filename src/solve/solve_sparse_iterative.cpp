@@ -149,8 +149,7 @@ DynamicVector solve_iter(SolverDevice device,
                                              CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
                                              CUSPARSE_INDEX_BASE_ZERO, CUDA_P_TYPE));
         auto fill_mode = CUSPARSE_FILL_MODE_LOWER;
-        cusparseSpMatSetAttribute(descr_A, CUSPARSE_SPMAT_FILL_MODE, &fill_mode, sizeof(fill_mode));
-        cusparseSpMatSetAttribute(descr_L, CUSPARSE_SPMAT_FILL_MODE, &fill_mode, sizeof(fill_mode));
+        runtime_check_cuda(cusparseSpMatSetAttribute(descr_L, CUSPARSE_SPMAT_FILL_MODE, &fill_mode, sizeof(fill_mode)));
 
         // descriptors for inverse matrix operation
         cusparseSpSVDescr_t spsv_1_descr;

@@ -10,7 +10,7 @@
 namespace fem { namespace model{
 std::tuple<Field, Field>
 Model::compute_ip_stress_strain(Field& displacement) {
-    // 1) Build IP enumeration with sentinel total in the last row
+    // 1) Use IP enumeration with sentinel total in the last row
     logging::error(_data->element_ip_offsets != nullptr,
                    "element IP offset field has not been initialized");
     const auto& ip_enum = *_data->element_ip_offsets;

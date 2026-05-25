@@ -83,8 +83,8 @@ void SolidElement<N>::material_stress_strain(Precision r,
 // strain_displacement
 //-----------------------------------------------------------------------------
 template<Index N>
-StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
-    SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_global) {
+auto SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_global)
+    -> StaticMatrix<n_strain, D * N> {
     StaticMatrix<n_strain, D * N> B {};
     B.setZero();
 
@@ -111,8 +111,8 @@ StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
 }
 
 template<Index N>
-StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::n_strain>
-    SolidElement<N>::material_matrix(Precision r, Precision s, Precision t) {
+auto SolidElement<N>::material_matrix(Precision r, Precision s, Precision t)
+    -> StaticMatrix<n_strain, n_strain> {
     logging::error(material() != nullptr, "no _material assigned to element ", elem_id);
     logging::error(material()->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
 
@@ -147,8 +147,8 @@ StaticVector<K> SolidElement<N>::interpolate(StaticMatrix<N, K> data, Precision 
 // strain_displacements
 //-----------------------------------------------------------------------------
 template<Index N>
-StaticMatrix<SolidElement<N>::n_strain, SolidElement<N>::D * N>
-SolidElement<N>::strain_displacements(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t, Precision& det, bool check_det) {
+auto SolidElement<N>::strain_displacements(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t, Precision& det, bool check_det)
+    -> StaticMatrix<n_strain, D * N> {
     StaticMatrix<N, D> local_shape_der = shape_derivative(r, s, t);
     StaticMatrix<D, D> jac = jacobian(node_coords, r, s, t);
 
@@ -170,8 +170,8 @@ SolidElement<N>::strain_displacements(const StaticMatrix<N, D>& node_coords, Pre
 // jacobian
 //-----------------------------------------------------------------------------
 template<Index N>
-StaticMatrix<SolidElement<N>::D, SolidElement<N>::D>
-SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t) {
+auto SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t)
+    -> StaticMatrix<D, D> {
     StaticMatrix<N, D> local_shape_derivative = shape_derivative(r, s, t);
     StaticMatrix<D, D> jacobian {};
 

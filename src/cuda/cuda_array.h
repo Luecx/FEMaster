@@ -12,6 +12,7 @@
 #ifdef SUPPORT_GPU
 
 #include "cuda.h"
+#include "assert_cuda.h"
 #include "../core/assert.h"
 
 #include <type_traits>

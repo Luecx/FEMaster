@@ -18,6 +18,7 @@ eigen_fast_compile ?= 1   # 1: Eigen compile-speed tweaks
 time_report        ?= 0   # 1: -ftime-report
 static_link        ?= 0   # 1: -static-libstdc++ -static-libgcc + MKL static archives
 cuda_dp            ?= 1   # keep for legacy guards in GPU code paths
+cudss              ?= 0   # 1: link cuDSS for GPU sparse direct solves
 
 # -------- Normalize toggles (empty env vars override ?=) --------
 define _norm_toggle
@@ -35,6 +36,7 @@ $(eval $(call _norm_toggle,eigen_fast_compile,1))
 $(eval $(call _norm_toggle,time_report,0))
 $(eval $(call _norm_toggle,static_link,0))
 $(eval $(call _norm_toggle,cuda_dp,1))
+$(eval $(call _norm_toggle,cudss,0))
 
 # if sequential is requested, force MKL on
 mkl := $(if $(filter 1,$(mkl_sequential)),1,$(mkl))
@@ -139,6 +141,20 @@ endif
 LDLIBS  :=
 LDFLAGS :=
 
+# cuDSS is only used by GPU builds. If CUDSS_DIR is set, use that install;
+# otherwise rely on compiler/linker default search paths.
+ifeq ($(cudss),1)
+  FEATURES += -DUSE_CUDSS
+  ifneq ($(strip $(CUDSS_DIR)),)
+    CUDSS_LIBDIR ?= $(CUDSS_DIR)/lib
+    INCLUDES += -I$(CUDSS_DIR)/include
+    CXXFLAGS += -I$(CUDSS_DIR)/include
+    NVCCFLAGS += -I$(CUDSS_DIR)/include
+    LDLIBS += -L$(CUDSS_LIBDIR)
+  endif
+  LDLIBS += -lcudss -lcublas
+endif
+
 ifeq ($(static_link),1)
   LDFLAGS += -static-libstdc++ -static-libgcc
 endif
@@ -200,6 +216,10 @@ all: info cpu gpu tests
 cpu: info $(EXE_CPU)
 gpu: CXXFLAGS  += -DSUPPORT_GPU
 gpu: NVCCFLAGS += -DSUPPORT_GPU
+gpu: LDLIBS    += -lcusparse -lcublas
+ifeq ($(cudss),0)
+gpu: LDLIBS    += -lcusolver
+endif
 gpu: info $(EXE_GPU) clean-exp-lib
 
 tests: info $(EXE_TST)
@@ -279,6 +299,8 @@ info:
 	@echo "  MKL Enabled      : $(mkl)"
 	@echo "  MKL Sequential   : $(mkl_sequential)"
 	@echo "  OpenMP           : $(openmp)"
+	@echo "  cuDSS Enabled    : $(cudss)"
+	@echo "  CUDSS_DIR        : $(CUDSS_DIR)"
 	@echo "  Debug            : $(debug)"
  	@echo "  Double Precision : $(double_precision)"
 	@echo "  Eigen Fast Comp. : $(eigen_fast_compile)"

@@ -33,9 +33,6 @@ inline void register_node(fem::dsl::Registry& registry, model::Model& model) {
                     .one<fem::Precision>().name("Y").desc("Y-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
                     .one<fem::Precision>().name("Z").desc("Z-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
                 )
-                .bind([&model](int id, fem::Precision x, fem::Precision y, fem::Precision z) {
-                    model.set_node(id, x, y, z);
-                })
             )
         );
     });

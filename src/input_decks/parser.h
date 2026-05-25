@@ -2,7 +2,9 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "../core/types_num.h"
 #include "../dsl/registry.h"
 #include "../reader/writer.h"
 
@@ -58,10 +60,27 @@ public:
     const std::string& active_loadcase_type() const;
 
 private:
+    struct NodeRecord {
+        ID id = -1;
+        Precision x = 0;
+        Precision y = 0;
+        Precision z = 0;
+        std::string nset;
+    };
+
+    struct ElementRecord {
+        ID id = -1;
+        std::string type;
+        std::string elset;
+        std::vector<ID> nodes;
+    };
+
     struct AnalyseData {
         int highest_node_id    = -1;
         int highest_element_id = -1;
         int highest_surface_id = -1;
+        std::vector<NodeRecord> nodes;
+        std::vector<ElementRecord> elements;
     };
 
     // Pipeline steps
@@ -74,6 +93,7 @@ private:
 
     // (Re)build model and (re)register commands
     void build_model_from(const AnalyseData& A);
+    void replay_topology(const AnalyseData& A);
     void register_commands(); // uses current m_model & resets m_registry if needed
 
 private:

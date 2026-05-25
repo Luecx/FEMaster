@@ -350,9 +350,6 @@ private:
         using LT = LineType;
 
         for (const auto& seg : var._segments) {
-            if (!seg._invoke)
-                throw std::runtime_error("No binder for a segment of " + cmd);
-
             const bool multiline = seg._pattern.is_multiline();
 
             if (!multiline) {
@@ -408,7 +405,9 @@ private:
                             throw std::runtime_error(os.str());
                         }
 
-                        seg._invoke(tokens);
+                        if (seg._invoke) {
+                            seg._invoke(tokens);
+                        }
                         ++records;
                         continue;
                     }
@@ -450,7 +449,9 @@ private:
                                 os << "Unexpected EOF with incomplete multiline record for " << cmd;
                                 throw std::runtime_error(os.str());
                             }
-                            seg._invoke(tokens);
+                            if (seg._invoke) {
+                                seg._invoke(tokens);
+                            }
                             return;
                         }
 
@@ -472,7 +473,9 @@ private:
                                 os << "Next command arrived with incomplete multiline record for " << cmd;
                                 throw std::runtime_error(os.str());
                             }
-                            seg._invoke(tokens);
+                            if (seg._invoke) {
+                                seg._invoke(tokens);
+                            }
                             kw_out = dl;
                             have_kw_out = true;
                             return;
@@ -509,7 +512,9 @@ private:
                         throw std::runtime_error(os.str());
                     }
 
-                    seg._invoke(tokens);
+                    if (seg._invoke) {
+                        seg._invoke(tokens);
+                    }
                     // loop to try another record; a boundary will be detected at the top
                 }
             }
