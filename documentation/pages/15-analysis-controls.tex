@@ -33,6 +33,27 @@ the matrix \(A\) is factorized and the solution is obtained by triangular solves
 
 \val{INDIRECT} uses an iterative solution path. Instead of building a full direct factorization, an approximate solution is improved until the residual is sufficiently small. Iterative methods can be attractive for large systems because they avoid some of the memory cost of direct factorization. They are more sensitive to conditioning, scaling, constraint handling, and matrix definiteness. In FEMaster the indirect path should be used with \val{NULLSPACE} constraints, because the reduced system keeps the standard structural form. It is not intended for the saddle-point system produced by Lagrange multipliers.
 
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Constraint} & \textbf{Backend} & \textbf{DIRECT} & \textbf{INDIRECT} \\
+\midrule
+\val{NULLSPACE} & CPU MKL & Yes & Yes \\
+\val{NULLSPACE} & CPU Eigen & Yes & Yes \\
+\val{NULLSPACE} & GPU & Yes & Yes \\
+\val{NULLSPACE} & GPU cuDSS & Yes & Yes \\
+\midrule
+\val{LAGRANGE} & CPU MKL & Yes & No \\
+\val{LAGRANGE} & CPU Eigen & Limited & No \\
+\val{LAGRANGE} & GPU & No & No \\
+\val{LAGRANGE} & GPU cuDSS & Yes & No \\
+\bottomrule
+\end{tabular}
+\caption{Supported static solver and constraint combinations.}
+\label{tab:static-solver-constraint-combinations}
+\end{table}
+
 \section{Constraint method}
 
 \begin{syntax}
@@ -95,7 +116,7 @@ d
 \]
 \(\lambda\) contains the Lagrange multipliers, which can be interpreted as generalized constraint reactions. \(\epsilon\) is a possible small regularization term when configured by the solver path; conceptually, the pure Lagrange system has \(\epsilon=0\).
 
-This formulation is direct and preserves the original displacement variables, but it creates a saddle-point problem. Such systems are indefinite and more demanding numerically. In FEMaster, \val{LAGRANGE} requires the direct linear solver for linear static analysis. Use \val{NULLSPACE} when an indirect solver is desired.
+This formulation is direct and preserves the original displacement variables, but it creates a saddle-point problem. Such systems are indefinite and more demanding numerically. In FEMaster, \val{LAGRANGE} requires the direct linear solver for linear static analysis; see Table~\ref{tab:static-solver-constraint-combinations} for supported backend combinations. Use \val{NULLSPACE} when an indirect solver is desired.
 
 \section{Inertia relief}
 
