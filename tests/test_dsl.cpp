@@ -2,11 +2,13 @@
 #include "../src/dsl/file.h"
 #include "../src/dsl/keys.h"
 #include "../src/dsl/registry.h"
+#include "../src/dsl/engine.h"
 
 #include <gtest/gtest.h>
 #include <fstream>
 #include <string>
 #include <filesystem>
+#include <vector>
 
 using namespace fem;
 
@@ -116,4 +118,106 @@ TEST(DSL_Keys_Registry, KeysAndRegistry) {
     ASSERT_NE(reg.find("ELASTIC"), nullptr);
     // Smoke test for printing (no throw)
     reg.print_help();
+}
+
+TEST(DSL_Engine, FailedVariantDoesNotCommitCallbacks) {
+    const std::string input_path = "tests/TMP_DSL_BACKTRACK.INP";
+    std::filesystem::remove(input_path);
+
+    {
+        std::ofstream os(input_path);
+        ASSERT_TRUE(os.is_open());
+        os << "*CMD\n";
+        os << "1\n";
+        os << "*NEXT\n";
+    }
+
+    std::vector<int> calls;
+    dsl::Registry reg;
+    reg.command("CMD", [&](dsl::Command& command) {
+        command.on_enter([&](const dsl::Keys&) {
+            calls.push_back(10);
+        });
+
+        command.variant(dsl::Variant::make()
+            .rank(10)
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1).max(1))
+                .pattern(dsl::Pattern::make().one<int>())
+                .bind([&](int) {
+                    calls.push_back(100);
+                })
+            )
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1).max(1))
+                .pattern(dsl::Pattern::make().one<int>())
+                .bind([&](int) {
+                    calls.push_back(200);
+                })
+            )
+        );
+
+        command.variant(dsl::Variant::make()
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1).max(1))
+                .pattern(dsl::Pattern::make().one<int>())
+                .bind([&](int value) {
+                    calls.push_back(value);
+                })
+            )
+        );
+    });
+    reg.command("NEXT", [](dsl::Command& command) {
+        command.variant(dsl::Variant::make());
+    });
+
+    dsl::File file(input_path);
+    dsl::Engine engine(reg);
+    ASSERT_NO_THROW(engine.run(file));
+
+    ASSERT_EQ(calls.size(), 2u);
+    EXPECT_EQ(calls[0], 10);
+    EXPECT_EQ(calls[1], 1);
+
+    std::filesystem::remove(input_path);
+}
+
+TEST(DSL_Engine, OnEnterDoesNotRunWhenNoVariantMatches) {
+    const std::string input_path = "tests/TMP_DSL_NO_MATCH.INP";
+    std::filesystem::remove(input_path);
+
+    {
+        std::ofstream os(input_path);
+        ASSERT_TRUE(os.is_open());
+        os << "*CMD\n";
+        os << "*NEXT\n";
+    }
+
+    int enter_count = 0;
+    int callback_count = 0;
+    dsl::Registry reg;
+    reg.command("CMD", [&](dsl::Command& command) {
+        command.on_enter([&](const dsl::Keys&) {
+            ++enter_count;
+        });
+
+        command.variant(dsl::Variant::make()
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1).max(1))
+                .pattern(dsl::Pattern::make().one<int>())
+                .bind([&](int) {
+                    ++callback_count;
+                })
+            )
+        );
+    });
+
+    dsl::File file(input_path);
+    dsl::Engine engine(reg);
+    EXPECT_THROW(engine.run(file), std::runtime_error);
+
+    EXPECT_EQ(enter_count, 0);
+    EXPECT_EQ(callback_count, 0);
+
+    std::filesystem::remove(input_path);
 }

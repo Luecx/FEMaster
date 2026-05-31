@@ -27,7 +27,7 @@
  *
  * Remarks
  * -------
- * - The eigenproblem is homogeneous; any inhomogeneous constraints have been
+ * - The eigval problem is homogeneous; any inhomogeneous constraints have been
  *   reflected in the pre-buckling preload via u_p.
  * - We estimate a shift sigma from the preload displacement using a Rayleigh
  *   quotient in reduced space (optional but often helpful for convergence).
@@ -45,7 +45,7 @@
 #include <iomanip>
 #include <limits>
 
-#include "../solve/eigen.h"                 // solve(...), eigs(...)
+#include "../solve/eigval/solve_eigval.h"
 #include "../core/logging.h"
 #include "../reader/write_mtx.h"
 
@@ -84,7 +84,7 @@ struct BucklingMode {
  * -------
  * Provides a quick, scale-informed initial shift estimate from the preload
  * solution (expressed in reduced coordinates). This is not essential, but can
- * improve robustness of the eigensolver in buckling problems.
+ * improve robustness of the eigval solver in buckling problems.
  */
 static bool estimate_lambda_rayleigh(const SparseMatrix& A,
                                      const SparseMatrix& B,
@@ -359,13 +359,13 @@ void LinearBuckling::run() {
     SparseMatrix Bneg = (-1.0) * B;
 
     const int k_req = std::max(1, std::min<int>(num_eigenvalues, std::max<int>(1, int(A.rows()))));
-    solver::EigenOpts eigopt;
-    eigopt.mode  = solver::EigenMode::Buckling;     // your solver's mode for buckling EVP
+    solver::EigvalOpts eigopt;
+    eigopt.mode  = solver::EigvalMode::Buckling;     // your solver's mode for buckling EVP
     eigopt.sigma = sigma;                           // shift to guide convergence
-    eigopt.sort  = solver::EigenOpts::Sort::LargestMagn; // consistent with your eigs(...) contract
+    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // consistent with the eigvals(...) contract
 
     auto eig_pairs = Timer::measure(
-        [&]() { return solver::eigs(device, A, Bneg, k_req, eigopt); },
+        [&]() { return solver::eigvals(device, A, Bneg, k_req, eigopt); },
         "solving reduced generalized EVP for buckling"
     );
 

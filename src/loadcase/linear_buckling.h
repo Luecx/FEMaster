@@ -37,7 +37,7 @@
 #pragma once
 
 #include "loadcase.h"
-#include "../solve/solver.h"
+#include "../solve/sparse/solve_sparse.h"
 
 namespace fem { namespace loadcase {
 

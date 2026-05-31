@@ -56,7 +56,7 @@
 #include "../mattools/assemble.tpp"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_vec_to_vec.h"
-#include "../solve/eigen.h"
+#include "../solve/eigval/solve_eigval.h"
 #include "tools/inertia_relief.h"
 #include "tools/rebalance_loads.h"
 

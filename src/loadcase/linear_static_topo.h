@@ -15,7 +15,7 @@
 
 #include "loadcase.h"
 #include "linear_static.h"
-#include "../solve/solver.h"
+#include "../solve/sparse/solve_sparse.h"
 
 namespace fem {
 namespace loadcase {

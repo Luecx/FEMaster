@@ -73,6 +73,7 @@
 #include <sstream>
 #include <functional>
 #include <iostream>  // for diagnostic "Entering command '...'" prints
+#include <utility>
 
 #include "registry.h"
 #include "file.h"
@@ -98,6 +99,14 @@ struct Engine {
      * @param r Command/DSL registry defining commands, variants, and segments.
      */
     explicit Engine(const Registry& r) : _reg(r) {}
+
+private:
+    struct PendingInvocation {
+        const Segment* segment = nullptr;
+        std::vector<std::string> tokens;
+    };
+
+public:
 
     /**
      * @brief Executes the input deck by streaming from a file and applying the registry.
@@ -227,19 +236,12 @@ struct Engine {
                 return a.order < b.order;
             });
 
-            if (!consume_only) {
-                logging::info("Processing command: *", cmd);
-            }
-
-            // on_enter (before running any segments)
-            if (!consume_only && spec->on_enter_) {
-                spec->on_enter_(self_keys);
-            }
-
             std::string last_err;
             bool        matched = false;
+            std::vector<PendingInvocation> pending_invocations;
             for (const Candidate& cand : candidates) {
                 const Variant* vptr = cand.variant;
+                std::vector<PendingInvocation> candidate_invocations;
 
                 // Record every line consumed during this attempt
                 std::vector<Line> consumed;
@@ -256,12 +258,20 @@ struct Engine {
                 };
 
                 try {
-                    execute_variant(cmd, *vptr, attempt_pull, attempt_kw, have_attempt_kw, !consume_only);
+                    execute_variant(
+                        cmd,
+                        *vptr,
+                        attempt_pull,
+                        attempt_kw,
+                        have_attempt_kw,
+                        consume_only ? nullptr : &candidate_invocations
+                    );
                     // Success → commit attempt's keyword lookahead to outer
                     if (have_attempt_kw) {
                         outer_buffered_kw = attempt_kw;
                         outer_have_kw = true;
                     }
+                    pending_invocations = std::move(candidate_invocations);
                     matched = true;
                     break; // stop trying variants
                 } catch (const std::exception& e) {
@@ -281,6 +291,21 @@ struct Engine {
                 os << "No variant of '" << cmd << "' fits the upcoming data";
                 if (!last_err.empty()) os << ". Closest attempt failed with: " << last_err;
                 throw std::runtime_error(os.str());
+            }
+
+            if (!consume_only) {
+                logging::info("Processing command: *", cmd);
+
+                // on_enter runs only after a variant was selected, but before segment callbacks.
+                if (spec->on_enter_) {
+                    spec->on_enter_(self_keys);
+                }
+
+                for (const PendingInvocation& pending : pending_invocations) {
+                    if (pending.segment && pending.segment->_invoke) {
+                        pending.segment->_invoke(pending.tokens);
+                    }
+                }
             }
 
             // After successful processing, this keyword becomes the new parent (scope descends)
@@ -353,7 +378,7 @@ private:
                          PullFn& pull_line,
                          Line& kw_out,
                          bool& have_kw_out,
-                         bool invoke_segments) const {
+                         std::vector<PendingInvocation>* pending_invocations) const {
         using LT = LineType;
 
         for (const auto& seg : var._segments) {
@@ -412,8 +437,8 @@ private:
                             throw std::runtime_error(os.str());
                         }
 
-                        if (invoke_segments && seg._invoke) {
-                            seg._invoke(tokens);
+                        if (pending_invocations && seg._invoke) {
+                            pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
                         }
                         ++records;
                         continue;
@@ -456,8 +481,8 @@ private:
                                 os << "Unexpected EOF with incomplete multiline record for " << cmd;
                                 throw std::runtime_error(os.str());
                             }
-                            if (invoke_segments && seg._invoke) {
-                                seg._invoke(tokens);
+                            if (pending_invocations && seg._invoke) {
+                                pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
                             }
                             return;
                         }
@@ -480,8 +505,8 @@ private:
                                 os << "Next command arrived with incomplete multiline record for " << cmd;
                                 throw std::runtime_error(os.str());
                             }
-                            if (invoke_segments && seg._invoke) {
-                                seg._invoke(tokens);
+                            if (pending_invocations && seg._invoke) {
+                                pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
                             }
                             kw_out = dl;
                             have_kw_out = true;
@@ -519,8 +544,8 @@ private:
                         throw std::runtime_error(os.str());
                     }
 
-                    if (invoke_segments && seg._invoke) {
-                        seg._invoke(tokens);
+                    if (pending_invocations && seg._invoke) {
+                        pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
                     }
                     // loop to try another record; a boundary will be detected at the top
                 }

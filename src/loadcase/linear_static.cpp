@@ -23,7 +23,7 @@
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../reader/write_mtx.h"
-#include "../solve/eigen.h"
+#include "../solve/eigval/solve_eigval.h"
 #include "../model/model.h"
 #include "../model/element/element_structural.h"
 

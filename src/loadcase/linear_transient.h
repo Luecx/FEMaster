@@ -19,7 +19,7 @@
  */
 
 #include "loadcase.h"
-#include "../solve/newmark.h"     // NewmarkOpts, newmark_linear
+#include "../solve/newmark/solve_newmark.h"     // NewmarkOpts, newmark_linear
 #include "../damping/rayleigh.h"   // Rayleigh
 #include "../core/types_eig.h"
 #include "../data/field.h"         // model::Field

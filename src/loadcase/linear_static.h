@@ -6,7 +6,7 @@
  * configurable solver backends.
  *
  * @see src/loadcase/linear_static.cpp
- * @see src/solve/solver.h
+ * @see src/solve/sparse/solve_sparse.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -15,7 +15,7 @@
 
 #include "loadcase.h"
 #include "../constraints/transformer/constraint_transformer.h"
-#include "../solve/solver.h"
+#include "../solve/sparse/solve_sparse.h"
 
 #include <string>
 #include <vector>

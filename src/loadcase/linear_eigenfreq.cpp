@@ -33,7 +33,7 @@
  *   see its cost (which can dominate without zero-column compression).
  * - Reduced operators A and Mr are assembled via ConstraintMap routines. If
  *   you use direct solvers (as you do), explicit A/Mr is appropriate.
- * - The eigensolver is configured for shift-invert at sigma=0 to extract the
+ * - The eigval solver is configured for shift-invert at sigma=0 to extract the
  *   lowest frequencies first. Sorting is "largest magnitude" in SI space.
  *
  * Notes
@@ -56,7 +56,7 @@
 #include <vector>
 
 #include "../core/logging.h"
-#include "../solve/eigen.h"
+#include "../solve/eigval/solve_eigval.h"
 
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
@@ -70,7 +70,7 @@ namespace fem { namespace loadcase {
 constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
 
 /**
- * @struct EigenMode
+ * @struct ModalMode
  * @brief Small container that holds one modal eigenpair in reduced space
  *        together with derived/expanded quantities for output.
  *
@@ -82,14 +82,14 @@ constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
  * - mode_mat: full mode in node x 6 layout, suitable for writer output.
  * - participation: simple mass-weighted projections onto global axes (x,y,z,rx,ry,rz).
  */
-struct EigenMode {
+struct ModalMode {
     Precision     lambda;        // eigenvalue (omega^2)
     Precision     freq;          // f = sqrt(lambda) / (2 * pi)
     DynamicVector q_mode;        // reduced coordinates (q-space)
     model::Field  mode_mat;      // expanded node x 6 for writer
     Vec6          participation; // simple modal participation (x,y,z,rx,ry,rz)
 
-    explicit EigenMode(Precision lam, DynamicVector q)
+    explicit ModalMode(Precision lam, DynamicVector q)
         : lambda(lam),
           freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * pi)),
           q_mode(std::move(q)) {}
@@ -126,7 +126,7 @@ static DynamicMatrix build_active_axis_vectors(const IndexMatrix& active_dof_idx
  * @brief Compute a power-of-ten scaling exponent so that reported participations
  *        are O(1). If all participations are zero, returns 0.
  */
-static int compute_scaling_exponent(const std::vector<EigenMode>& modes) {
+static int compute_scaling_exponent(const std::vector<ModalMode>& modes) {
     Precision max_abs = 0;
     for (const auto& m : modes) {
         for (int i = 0; i < 6; ++i)
@@ -142,7 +142,7 @@ static int compute_scaling_exponent(const std::vector<EigenMode>& modes) {
 /**
  * @brief Pretty-print a summary table (lambda, frequency, participations).
  */
-static void display_eigen_summary(const std::vector<EigenMode>& modes) {
+static void display_eigen_summary(const std::vector<ModalMode>& modes) {
     const int       exp10 = compute_scaling_exponent(modes);
     const Precision scale = std::pow(Precision(10), exp10);
 
@@ -176,7 +176,7 @@ static void display_eigen_summary(const std::vector<EigenMode>& modes) {
 /**
  * @brief Write eigenvalues, eigenfrequencies, mode shapes, and participations.
  */
-static void write_results(const std::vector<EigenMode>& modes,
+static void write_results(const std::vector<ModalMode>& modes,
                           reader::Writer*               writer,
                           int                           loadcase_id)
 {
@@ -302,22 +302,22 @@ void LinearEigenfrequency::run() {
     // (6) Solve generalized EVP A * phi = lambda * Mr * phi; get the lowest modes.
     // We use shift-invert at sigma = 0.0, so "largest magnitude" in SI space
     // corresponds to the smallest original eigenvalues.
-    solver::EigenOpts eigopt;
-    eigopt.mode  = solver::EigenMode::ShiftInvert;
+    solver::EigvalOpts eigopt;
+    eigopt.mode  = solver::EigvalMode::ShiftInvert;
     eigopt.sigma = 0.0;
-    eigopt.sort  = solver::EigenOpts::Sort::LargestMagn; // largest in SI <-> smallest original
+    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
-        [&]() { return solver::eigs(device, A, Mr, k_req, eigopt); },
+        [&]() { return solver::eigvals(device, A, Mr, k_req, eigopt); },
         "solving generalized EVP (modal)"
     );
 
     // Collect modes (ascending lambda)
-    std::vector<EigenMode> modes; modes.reserve(eig_pairs.size());
+    std::vector<ModalMode> modes; modes.reserve(eig_pairs.size());
     for (const auto& p : eig_pairs) modes.emplace_back(Precision(p.value), p.vector);
     std::sort(modes.begin(), modes.end(),
-              [](const EigenMode& a, const EigenMode& b) { return a.lambda < b.lambda; });
+              [](const ModalMode& a, const ModalMode& b) { return a.lambda < b.lambda; });
 
     // (7) Expand mode shapes and compute simple participations
     //     For homogeneous constraints, u_p = 0 and u_mode = T * q_mode.
