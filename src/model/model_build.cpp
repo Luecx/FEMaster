@@ -85,6 +85,48 @@ Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision tim
     return load_matrix;
 }
 
+std::vector<std::pair<bc::Amplitude::Ptr, Field>>
+Model::build_load_basis(std::vector<std::string> load_sets) {
+    std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
+
+    auto field_for = [this, &basis](const bc::Amplitude::Ptr& amplitude) -> Field& {
+        for (auto& entry : basis) {
+            if (entry.first == amplitude) {
+                return entry.second;
+            }
+        }
+
+        Field load_matrix{"LOAD_BASIS", FieldDomain::NODE, static_cast<Index>(this->_data->max_nodes), 6};
+        load_matrix.set_zero();
+        basis.emplace_back(amplitude, std::move(load_matrix));
+        return basis.back().second;
+    };
+
+    for (auto& key: load_sets) {
+        auto data = this->_data->load_cols.get(key);
+        for (const auto& load : data->entries()) {
+            if (!load) {
+                continue;
+            }
+
+            auto amplitude = load->amplitude_;
+            auto& load_matrix = field_for(amplitude);
+
+            load->amplitude_ = nullptr;
+            load->apply(*_data, load_matrix, Precision(0));
+            load->amplitude_ = amplitude;
+        }
+    }
+
+    for (auto& entry : basis) {
+        for (auto& c: this->_data->couplings) {
+            c.apply_loads(*_data, entry.second);
+        }
+    }
+
+    return basis;
+}
+
 constraint::ConstraintGroups Model::collect_constraints(SystemDofIds& system_dof_ids,
                                                    const std::vector<std::string>& supp_sets) {
     constraint::ConstraintGroups groups{};
