@@ -132,6 +132,16 @@ void Transient::run() {
         return CT_ptr->assemble_b(K, f_active);
     };
 
+    solver::NewmarkForceBasis reduced_force_basis;
+    if (device == solver::GPU) {
+        auto load_basis = model->build_load_basis(this->loads);
+        reduced_force_basis.reserve(load_basis.size());
+        for (auto& [amplitude, load_matrix] : load_basis) {
+            auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
+            reduced_force_basis.emplace_back(amplitude, CT->assemble_b(K, f_active));
+        }
+    }
+
     // (8) Newmark options + IC (zeros in reduced space unless user provided an initial velocity field)
     solver::NewmarkOpts optsNm;
     optsNm.beta    = beta;
@@ -157,7 +167,7 @@ void Transient::run() {
     solver::NewmarkIC ic{q0, qdot0, DynamicVector()}; // a0 computed internally
 
     // (9) Solve reduced transient problem
-    auto result = solver::newmark_linear(Mr, Cr, A, ic, optsNm, reduced_force);
+    auto result = solver::newmark_linear(Mr, Cr, A, ic, optsNm, reduced_force, reduced_force_basis);
 
     // (10) Write results with cadence
     const int n_steps = static_cast<int>(std::ceil(std::max(0.0, t_end - t_start) / dt));

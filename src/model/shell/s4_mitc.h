@@ -38,9 +38,9 @@ struct MITC4
     strain_disp_shear_at(Precision r, Precision s, const LocalCoords& xy) override
     {
         // Helper: build 1x12 row for a shear strain component at (rr,ss)
-        // In YOUR convention (see DefaultShellElement::strain_disp_shear):
-        //   gamma_xz = dw/dx + theta_y   (-> uses ry with + sign)
+        // Shell transverse shear follows Voigt order: gamma_yz, gamma_xz.
         //   gamma_yz = dw/dy - theta_x   (-> uses rx with - sign)
+        //   gamma_xz = dw/dx + theta_y   (-> uses ry with + sign)
         auto Bs_at = [&](Precision rr, Precision ss, bool xz) -> StaticMatrix<1, 12> {
             ShapeDerivative dH_rs = this->shape_derivative(rr, ss);
             Jacobian        J     = this->jacobian(dH_rs, const_cast<LocalCoords&>(xy));
@@ -91,8 +91,8 @@ struct MITC4
 
         StaticMatrix<2, 12> Bs;
         Bs.setZero();
-        Bs.row(0) = row_xz;
-        Bs.row(1) = row_yz;
+        Bs.row(0) = row_yz;
+        Bs.row(1) = row_xz;
         return Bs;
     }
 };

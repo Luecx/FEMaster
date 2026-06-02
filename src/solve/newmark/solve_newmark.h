@@ -29,10 +29,12 @@
  */
 
 #include "../../core/types_eig.h"  // Precision, DynamicVector/Matrix, SparseMatrix
+#include "../../bc/amplitude.h"    // Amplitude
 #include "../solve_device.h"       // SolverDevice
 #include "../solve_method.h"       // SolverMethod
 
 #include <functional>
+#include <utility>
 #include <vector>
 
 namespace fem::solver {
@@ -67,6 +69,9 @@ struct NewmarkIC {
 /// Force callback: returns already BC-reduced force vector at time t.
 using ForceFn = std::function<DynamicVector(double)>;
 
+/// Reduced unit load vectors grouped by amplitude. A null amplitude means constant scale 1.
+using NewmarkForceBasis = std::vector<std::pair<bc::Amplitude::Ptr, DynamicVector>>;
+
 /// Result containers (dense; consider thinning in post if memory is a concern).
 struct NewmarkResult {
     std::vector<double>        t;
@@ -83,7 +88,8 @@ struct NewmarkResult {
  * @param K    Stiffness matrix (SPD). Constant over time.
  * @param ic   Initial conditions (a0 computed if empty).
  * @param opts Newmark options (β, γ, dt, t_end, device/method).
- * @param f_of_t Force callback f(t).
+ * @param f_of_t Force callback f(t), used by the CPU path.
+ * @param force_basis Reduced force basis, required by the GPU path.
  * @return Time history (t, u, v, a) sampled at each step including t=t_start.
  *
  * @note Re-factorizes the effective matrix only once. If you later support variable Δt/parameters,
@@ -95,5 +101,6 @@ newmark_linear(const SparseMatrix& M,
                const SparseMatrix& K,
                const NewmarkIC& ic,
                const NewmarkOpts& opts,
-               ForceFn f_of_t);
+               ForceFn f_of_t,
+               const NewmarkForceBasis& force_basis = {});
 } // namespace fem::solver

@@ -185,7 +185,10 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     Mat2 shear_strain_transform(const Mat2& section_to_element) {
-        return section_to_element.transpose();
+        Mat2 transform;
+        transform << section_to_element(1, 1), section_to_element(0, 1),
+                     section_to_element(1, 0), section_to_element(0, 0);
+        return transform;
     }
 
     StaticMatrix<3, 3> transform_plane_stiffness_to_element(
@@ -452,13 +455,13 @@ struct DefaultShellElement : public ShellElement<N> {
         res.setZero();
 
         for (int i = 0; i < N; i++) {
-            res(0, 3 * i)     = dH(0, i);
-            res(0, 3 * i + 1) = 0;
-            res(0, 3 * i + 2) = H(i);
+            res(0, 3 * i)     = dH(1, i);
+            res(0, 3 * i + 1) = -H(i);
+            res(0, 3 * i + 2) = 0;
 
-            res(1, 3 * i)     = dH(1, i);
-            res(1, 3 * i + 1) = -H(i);
-            res(1, 3 * i + 2) = 0;
+            res(1, 3 * i)     = dH(0, i);
+            res(1, 3 * i + 1) = 0;
+            res(1, 3 * i + 2) = H(i);
         }
 
         return res;

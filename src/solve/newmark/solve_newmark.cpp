@@ -15,16 +15,20 @@ newmark_linear(const SparseMatrix& M,
                const SparseMatrix& K,
                const NewmarkIC& ic,
                const NewmarkOpts& opts,
-               ForceFn f_of_t)
+               ForceFn f_of_t,
+               const NewmarkForceBasis& force_basis)
 {
     logging::error(M.rows() == M.cols(), "Newmark: M must be square.");
     logging::error(C.rows() == C.cols(), "Newmark: C must be square.");
     logging::error(K.rows() == K.cols(), "Newmark: K must be square.");
     logging::error(M.rows() == C.rows() && M.rows() == K.rows(), "Newmark: matrix size mismatch.");
 
-    return opts.device == GPU
-        ? detail::newmark_linear_gpu(M, C, K, ic, opts, std::move(f_of_t))
-        : detail::newmark_linear_cpu(M, C, K, ic, opts, std::move(f_of_t));
+    if (opts.device == GPU) {
+        logging::error(!force_basis.empty(), "Newmark GPU path requires force_basis.");
+        return detail::newmark_linear_gpu(M, C, K, ic, opts, force_basis);
+    }
+
+    return detail::newmark_linear_cpu(M, C, K, ic, opts, std::move(f_of_t));
 }
 
 } // namespace fem::solver

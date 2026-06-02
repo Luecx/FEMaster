@@ -46,8 +46,8 @@ struct Elasticity {
     virtual StaticMatrix<2, 2> get_shear(Precision thickness) {
         const StaticMatrix<6, 6> c = get_3d();
         StaticMatrix<2, 2> shear;
-        shear << c(4, 4), c(4, 3),
-                 c(3, 4), c(3, 3);
+        shear << c(3, 3), c(3, 4),
+                 c(4, 3), c(4, 4);
 
         const Precision k = Precision(5) / Precision(6);
         return shear * (thickness * k);

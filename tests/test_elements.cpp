@@ -160,6 +160,37 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     }
 }
 
+TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
+    fem::model::Model model(8, 4, 8);
+
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.set_node(2, 1.0, 1.0, 0.0);
+    model.set_node(3, 0.0, 1.0, 0.0);
+    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+
+    auto material = model._data->materials.activate("MAT");
+    fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Zero();
+    fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Zero();
+    shear(0, 0) = 2.0;
+    shear(1, 1) = 3.0;
+    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
+
+    model.shell_section("EALL", "MAT", 1.0);
+    model.assign_sections();
+
+    fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
+    displacement.set_zero();
+    displacement(2, 2) = 1.0;
+    displacement(3, 2) = 1.0;
+
+    auto resultants = model.compute_shell_resultants(displacement);
+    for (int node = 0; node < 4; ++node) {
+        EXPECT_NEAR(resultants(node, 6), 2.0, 1e-12);
+        EXPECT_NEAR(resultants(node, 7), 0.0, 1e-12);
+    }
+}
+
 TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
     fem::model::Model model(4, 4, 4);
 

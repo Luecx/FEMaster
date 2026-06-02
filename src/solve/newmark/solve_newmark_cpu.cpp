@@ -182,7 +182,7 @@ newmark_linear_cpu(const SparseMatrix& M,
     logging::info(true, "t_start : ", std::scientific, std::setprecision(6), t_start);
     logging::info(true, "t_end   : ", std::scientific, std::setprecision(6), t_end);
     logging::info(true, "β, γ   : ", std::fixed, std::setprecision(4), beta, ", ", gamma);
-    logging::down();
+    logging::up();
 
     // Newmark constants (fixed step)
     const double a0 = 1.0 / (beta * dt * dt);
@@ -286,7 +286,6 @@ newmark_linear_cpu(const SparseMatrix& M,
             logging::info(true, "Newmark step ",
                           std::setw(8), (k + 1), "/", n_steps,
                           "  t=", std::scientific, std::setprecision(6), tnp1, " s");
-            logging::down();
         }
     }
 
@@ -299,6 +298,7 @@ newmark_linear_cpu(const SparseMatrix& M,
     logging::info(true, "Loop time (steps only)  : ", tLoop.elapsed(), " ms");
     logging::info(true, "Avg per step            : ",
                          (n_steps > 0 ? tLoop.elapsed() / double(n_steps) : 0.0), " ms/step");
+    logging::down();
     logging::down();
 
     return out;

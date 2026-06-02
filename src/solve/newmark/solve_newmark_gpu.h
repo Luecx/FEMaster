@@ -10,6 +10,6 @@ newmark_linear_gpu(const SparseMatrix& M,
                    const SparseMatrix& K,
                    const NewmarkIC& ic,
                    const NewmarkOpts& opts,
-                   ForceFn f_of_t);
+                   const NewmarkForceBasis& force_basis);
 
 } // namespace fem::solver::detail

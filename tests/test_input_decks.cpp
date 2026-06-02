@@ -74,3 +74,19 @@ TEST(InputDecks_Parser, MapsOrthotropicElasticNu13ToNu31) {
     std::filesystem::remove(input_path);
     std::filesystem::remove(output_path);
 }
+
+TEST(Materials_Orthotropic, TransverseShellShearUsesVoigtYzThenZx) {
+    material::OrthotropicElasticity ortho(
+        100.0, 200.0, 300.0,
+        23.0, 13.0, 12.0,
+        0.23, 0.13, 0.12
+    );
+
+    const Precision k = Precision(5) / Precision(6);
+    const auto shear = ortho.get_shear(1.0);
+
+    EXPECT_NEAR(shear(0, 0), 23.0 * k, 1e-12);
+    EXPECT_NEAR(shear(1, 1), 13.0 * k, 1e-12);
+    EXPECT_NEAR(shear(0, 1), 0.0, 1e-12);
+    EXPECT_NEAR(shear(1, 0), 0.0, 1e-12);
+}
