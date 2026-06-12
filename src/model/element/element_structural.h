@@ -44,6 +44,28 @@ struct StructuralElement : ElementInterface {
                                        Field& displacement,
                                        int ip_offset) = 0;
 
+    /**
+     * @brief Computes the nonlinear integration-point stress used by
+     * current-configuration nonlinear stiffness/internal-force assembly.
+     *
+     * The model positions are interpreted as the reference coordinates for
+     * this call, while displacement is the deformation relative to that
+     * reference state.
+     */
+    virtual void compute_ip_stress_nonlinear(Field& ip_stress,
+                                             Field& displacement,
+                                             int ip_offset) = 0;
+
+    /**
+     * @brief Adds nonlinear internal nodal forces to a global NODE x 6 field.
+     *
+     * The model positions are interpreted as the current coordinates for this
+     * call. Implementations add to node_forces instead of overwriting it.
+     */
+    virtual void compute_internal_force_nonlinear(Field& node_forces,
+                                                  const Field& ip_stress,
+                                                  int ip_offset) = 0;
+
     virtual void compute_stress_strain_nodal(Field& displacement,
                                              Field& stress,
                                              Field& strain) = 0;

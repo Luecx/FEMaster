@@ -104,7 +104,29 @@ struct TrussElement : StructuralElement {
 
     // --- Interface overrides ---
     MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
-        throw std::runtime_error("Not implemented yet");
+        logging::error(ip_stress.components >= 1,
+                       "TrussElement: geometric stiffness requires nonlinear IP stress component 0");
+
+        const Precision L = length();
+        logging::error(L > Precision(0),
+                       "TrussElement: zero current length in stiffness_geom for element ",
+                       this->elem_id);
+
+        const Vec3 n = direction();
+        const Precision sigma = ip_stress(static_cast<Index>(ip_start_idx), 0);
+        const Precision axial_force = get_section()->area_ * sigma;
+        const Mat3 projector = Mat3::Identity() - n * n.transpose();
+        const Mat3 block = (axial_force / L) * projector;
+
+        StaticMatrix<N * 3, N * 3> Kg = StaticMatrix<N * 3, N * 3>::Zero();
+        Kg.template block<3, 3>(0, 0) = block;
+        Kg.template block<3, 3>(0, 3) = -block;
+        Kg.template block<3, 3>(3, 0) = -block;
+        Kg.template block<3, 3>(3, 3) = block;
+
+        MapMatrix result(buffer, N * 3, N * 3);
+        result = Kg;
+        return result;
     }
 
     MapMatrix mass(Precision* buffer) override {
@@ -180,6 +202,66 @@ struct TrussElement : StructuralElement {
         (void) displacement;
         (void) ip_offset;
     }
+
+    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override {
+        logging::error(ip_stress.components >= 1,
+                       "TrussElement: nonlinear IP stress field requires at least 1 component");
+
+        const Vec3 X0 = coordinate(0);
+        const Vec3 X1 = coordinate(1);
+        const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
+        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+        const Vec3 x0 = X0 + u0;
+        const Vec3 x1 = X1 + u1;
+
+        const Precision L0 = (X1 - X0).norm();
+        const Precision l = (x1 - x0).norm();
+        logging::error(L0 > Precision(0),
+                       "TrussElement: zero reference length in compute_ip_stress_nonlinear for element ",
+                       this->elem_id);
+        logging::error(l > Precision(0),
+                       "TrussElement: zero current length in compute_ip_stress_nonlinear for element ",
+                       this->elem_id);
+
+        const Precision lambda = l / L0;
+        const Precision green_lagrange_strain = Precision(0.5) * (lambda * lambda - Precision(1));
+        const Precision second_piola_stress = get_elasticity()->youngs * green_lagrange_strain;
+        const Precision cauchy_stress = lambda * second_piola_stress;
+
+        const Index row = static_cast<Index>(ip_offset);
+        ip_stress(row, 0) = cauchy_stress;
+        for (Index j = 1; j < ip_stress.components; ++j) {
+            ip_stress(row, j) = Precision(0);
+        }
+    }
+
+    void compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& ip_stress,
+                                          int ip_offset) override {
+        logging::error(node_forces.domain == FieldDomain::NODE,
+                       "TrussElement: nonlinear internal force output must use NODE domain");
+        logging::error(node_forces.components >= 3,
+                       "TrussElement: nonlinear internal force output requires at least 3 components");
+        logging::error(ip_stress.components >= 1,
+                       "TrussElement: nonlinear internal force requires IP stress component 0");
+
+        const Precision L = length();
+        logging::error(L > Precision(0),
+                       "TrussElement: zero current length in compute_internal_force_nonlinear for element ",
+                       this->elem_id);
+
+        const Vec3 n = direction();
+        const Precision sigma = ip_stress(static_cast<Index>(ip_offset), 0);
+        const Vec3 force = get_section()->area_ * sigma * n;
+
+        const Index n0 = static_cast<Index>(node_ids[0]);
+        const Index n1 = static_cast<Index>(node_ids[1]);
+        for (Dim d = 0; d < 3; ++d) {
+            node_forces(n0, d) -= force(d);
+            node_forces(n1, d) += force(d);
+        }
+    }
+
     void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
         (void) displacement;
         (void) stress;

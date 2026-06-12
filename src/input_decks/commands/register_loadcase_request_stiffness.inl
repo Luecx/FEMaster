@@ -7,6 +7,7 @@
 
 #include "../../loadcase/linear_buckling.h"
 #include "../../loadcase/linear_static.h"
+#include "../../loadcase/nonlinear_static.h"
 
 namespace fem::input_decks::commands {
 
@@ -36,6 +37,10 @@ inline void register_loadcase_request_stiffness(fem::dsl::Registry& registry, Pa
                 lc->stiffness_file = std::move(file);
                 return;
             }
+            if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+                lc->stiffness_file = std::move(file);
+                return;
+            }
 
             throw std::runtime_error("REQUESTSTIFFNESS not supported for loadcase type " + parser.active_loadcase_type());
         });
@@ -45,4 +50,3 @@ inline void register_loadcase_request_stiffness(fem::dsl::Registry& registry, Pa
 }
 
 } // namespace fem::input_decks::commands
-

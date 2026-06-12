@@ -55,6 +55,75 @@ Model::compute_ip_stress_strain(Field& displacement) {
     return {ip_stress, ip_strain};
 }
 
+Field Model::compute_ip_stress_nonlinear(Field& displacement) {
+    logging::error(_data->element_ip_offsets != nullptr,
+                   "element IP offset field has not been initialized");
+    const auto& ip_enum = *_data->element_ip_offsets;
+    logging::error(ip_enum.rows == static_cast<Index>(_data->max_elems + 1),
+                   "ip_numeration must have max_elems+1 rows (with total at the end).");
+
+    const ID total_ips = static_cast<ID>(ip_enum(static_cast<Index>(_data->max_elems), 0));
+    logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
+
+    Field ip_stress{"IP_STRESS_NONLINEAR", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
+    ip_stress.set_zero();
+
+    for (auto el : _data->elements) {
+        if (!el) continue;
+        if (auto sel = el->as<StructuralElement>()) {
+            const ID eid = sel->elem_id;
+            logging::error(eid >= 0 && eid < _data->max_elems,
+                           "Element id out of range in compute_ip_stress_nonlinear: ", eid);
+
+            const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
+            logging::error(ip_offset >= 0 && ip_offset <= total_ips,
+                           "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
+
+            sel->compute_ip_stress_nonlinear(ip_stress, displacement, ip_offset);
+        }
+    }
+
+    for (Index i = 0; i < ip_stress.rows; ++i) {
+        for (Index j = 0; j < ip_stress.components; ++j) {
+            const bool bad = std::isnan(ip_stress(i, j)) || std::isinf(ip_stress(i, j));
+            logging::error(!bad, "Nonlinear IP ", i, " has invalid stress at col ", j);
+        }
+    }
+
+    return ip_stress;
+}
+
+Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
+    logging::error(ip_stress.domain == FieldDomain::ELEMENT_IP,
+                   "nonlinear internal force assembly requires ELEMENT_IP stress field");
+    logging::error(_data->element_ip_offsets != nullptr,
+                   "element IP offset field has not been initialized");
+    const auto& ip_enum = *_data->element_ip_offsets;
+
+    Field internal{"INTERNAL_FORCES", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
+    internal.set_zero();
+
+    for (auto el : _data->elements) {
+        if (!el) continue;
+        if (auto sel = el->as<StructuralElement>()) {
+            const ID eid = sel->elem_id;
+            logging::error(eid >= 0 && eid < _data->max_elems,
+                           "Element id out of range in build_internal_force_nonlinear: ", eid);
+            const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
+            sel->compute_internal_force_nonlinear(internal, ip_stress, ip_offset);
+        }
+    }
+
+    for (Index i = 0; i < internal.rows; ++i) {
+        for (Index j = 0; j < internal.components; ++j) {
+            const bool bad = std::isnan(internal(i, j)) || std::isinf(internal(i, j));
+            logging::error(!bad, "Internal force at node ", i, " has invalid value at col ", j);
+        }
+    }
+
+    return internal;
+}
+
 std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement) {
     Field stress{"STRESS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
     Field strain{"STRAIN", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};

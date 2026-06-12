@@ -42,6 +42,23 @@ void set_console_width(std::size_t cols);
 std::size_t get_console_width();
 
 /**
+ * @brief Enable informational and warning log output.
+ */
+void enable();
+
+/**
+ * @brief Disable informational and warning log output.
+ *
+ * Error logging remains active so failed checks still abort with diagnostics.
+ */
+void disable();
+
+/**
+ * @brief Returns true when informational and warning log output is enabled.
+ */
+bool is_enabled();
+
+/**
  * @brief Increases the indentation used for subsequent log messages.
  */
 void up();

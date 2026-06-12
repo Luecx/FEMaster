@@ -27,9 +27,9 @@ class CylindricalSystem : public CoordinateSystem {
 public:
     CylindricalSystem(const std::string& name, const Vec3& base_point, const Vec3& r_point, const Vec3& theta_point);
 
-    Vec3 to_local(const Vec3& global_point) const override;
-    Vec3 to_global(const Vec3& local_point) const override;
-    Basis get_axes(const Vec3& local_point) const override;
+    Vec3  to_local (const Vec3& global_point) const override;
+    Vec3  to_global(const Vec3& local_point ) const override;
+    Basis get_axes (const Vec3& local_point ) const override;
 
 private:
     Vec3 base_point_{};

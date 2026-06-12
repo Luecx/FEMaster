@@ -284,6 +284,22 @@ struct BeamElement : StructuralElement {
         (void)ip_offset;
     }
 
+    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override {
+        (void)ip_stress;
+        (void)displacement;
+        (void)ip_offset;
+        logging::error(false, "BeamElement: compute_ip_stress_nonlinear is not implemented yet for element ", this->elem_id);
+    }
+
+    void compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& ip_stress,
+                                          int ip_offset) override {
+        (void)node_forces;
+        (void)ip_stress;
+        (void)ip_offset;
+        logging::error(false, "BeamElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
+    }
+
     void apply_vload(Field& node_loads, Vec3 load) override {
         const Precision L = length();
         const Precision A = get_profile()->area_;

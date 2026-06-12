@@ -11,6 +11,7 @@
 #include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_static_topo.h"
 #include "../../loadcase/linear_transient.h"
+#include "../../loadcase/nonlinear_static.h"
 
 namespace fem::input_decks::commands {
 
@@ -22,7 +23,8 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
-                    "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT"})
+                    "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
+                    "NONLINEARSTATIC"})
                 .key("NAME").optional()
         );
 
@@ -39,6 +41,8 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
             std::unique_ptr<loadcase::LoadCase> lc;
             if (type == "LINEARSTATIC") {
                 lc = std::make_unique<loadcase::LinearStatic>(id, &wrt, &mdl);
+            } else if (type == "NONLINEARSTATIC") {
+                lc = std::make_unique<loadcase::NonlinearStatic>(id, &wrt, &mdl);
             } else if (type == "LINEARBUCKLING") {
                 lc = std::make_unique<loadcase::LinearBuckling>(id, &wrt, &mdl, 10);
             } else if (type == "LINEARSTATICTOPO") {
@@ -74,4 +78,3 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
 }
 
 } // namespace fem::input_decks::commands
-

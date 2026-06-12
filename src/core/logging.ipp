@@ -18,6 +18,7 @@ namespace logging {
 
 inline int indentation_level = 0;
 inline std::size_t g_console_width = 102; // default; configurable
+inline bool g_enabled = true;
 
 inline void set_console_width(std::size_t cols) {
     g_console_width = std::max<std::size_t>(cols, 20);
@@ -25,6 +26,18 @@ inline void set_console_width(std::size_t cols) {
 
 inline std::size_t get_console_width() {
     return g_console_width;
+}
+
+inline void enable() {
+    g_enabled = true;
+}
+
+inline void disable() {
+    g_enabled = false;
+}
+
+inline bool is_enabled() {
+    return g_enabled;
 }
 
 inline void up() {
@@ -236,14 +249,14 @@ inline std::string process<std::ios_base& (*)(std::ios_base&)>(std::ios_base& (*
 
 template<typename... Args>
 void warning(bool condition, Args... args) {
-    if (!condition) {
+    if (!condition && g_enabled) {
         detail::log_wrapped_with_prefix("[WARNING]", std::forward<Args>(args)...);
     }
 }
 
 template<typename... Args>
 void info(bool condition, Args... args) {
-    if (condition) {
+    if (condition && g_enabled) {
         detail::log_wrapped_with_prefix("[INFO]", std::forward<Args>(args)...);
     }
 }

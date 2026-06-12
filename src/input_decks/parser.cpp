@@ -63,6 +63,7 @@
 #include "commands/register_loadcase_topoorient.inl"
 #include "commands/register_loadcase_topoexponent.inl"
 #include "commands/register_loadcase_constraintsummary.inl"
+#include "commands/register_loadcase_nonlinear.inl"
 
 // NEW transient-related commands
 #include "commands/register_loadcase_time.inl"
@@ -345,6 +346,7 @@ void Parser::register_analysis_commands(dsl::Registry& reg) {
     commands::register_loadcase_topoorient(reg, *this);
     commands::register_loadcase_topoexponent(reg, *this);
     commands::register_loadcase_constraintsummary(reg, *this);
+    commands::register_loadcase_nonlinear(reg, *this);
 
     // NEW: Transient-specific loadcase commands
     commands::register_loadcase_time(reg, *this);

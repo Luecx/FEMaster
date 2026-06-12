@@ -325,6 +325,10 @@ public:
      * @param ip_offset
      */
     void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override;
+    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override;
+    void compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& ip_stress,
+                                          int ip_offset) override;
 
     /**
      * @brief Computes the compliance (strain energy) for the element.

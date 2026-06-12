@@ -9,6 +9,7 @@
 
 #include "../../loadcase/linear_buckling.h"
 #include "../../loadcase/linear_static.h"
+#include "../../loadcase/nonlinear_static.h"
 
 namespace fem::input_decks::commands {
 
@@ -41,6 +42,10 @@ inline void register_loadcase_loads(fem::dsl::Registry& registry, Parser& parser
                         return;
                     }
                     if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+                        append_tokens(names, lc->loads);
+                        return;
+                    }
+                    if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
                         append_tokens(names, lc->loads);
                         return;
                     }

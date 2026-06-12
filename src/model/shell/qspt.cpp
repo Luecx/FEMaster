@@ -210,6 +210,24 @@ void QSPT::compute_stress_strain(Field& ip_stress,
     (void) ip_offset;
 }
 
+void QSPT::compute_ip_stress_nonlinear(Field& ip_stress,
+                                       Field& displacement,
+                                       int ip_offset) {
+    (void) ip_stress;
+    (void) displacement;
+    (void) ip_offset;
+    logging::error(false, "QSPT: compute_ip_stress_nonlinear is not implemented yet for element ", this->elem_id);
+}
+
+void QSPT::compute_internal_force_nonlinear(Field& node_forces,
+                                            const Field& ip_stress,
+                                            int ip_offset) {
+    (void) node_forces;
+    (void) ip_stress;
+    (void) ip_offset;
+    logging::error(false, "QSPT: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
+}
+
 void QSPT::compute_stress_strain_nodal(Field& displacement,
                                        Field& stress,
                                        Field& strain) {

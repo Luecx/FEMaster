@@ -6,6 +6,7 @@
 #include "../parser.h"
 
 #include "../../loadcase/linear_static.h"
+#include "../../loadcase/nonlinear_static.h"
 
 namespace fem::input_decks::commands {
 
@@ -38,14 +39,20 @@ inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Par
             }
 
             auto* lc = dynamic_cast<loadcase::LinearStatic*>(base);
-            if (!lc) {
-                throw std::runtime_error("CONSTRAINTMETHOD is only supported for LINEARSTATIC and LINEARSTATICTOPO loadcases");
+            auto* nlc = dynamic_cast<loadcase::NonlinearStatic*>(base);
+            if (!lc && !nlc) {
+                throw std::runtime_error("CONSTRAINTMETHOD is only supported for LINEARSTATIC, LINEARSTATICTOPO and NONLINEARSTATIC loadcases");
             }
 
             const std::string type = keys.raw("TYPE");
-            lc->constraint_method = (type == "LAGRANGE")
+            const auto method = (type == "LAGRANGE")
                 ? constraint::ConstraintTransformer::Method::Lagrange
                 : constraint::ConstraintTransformer::Method::NullSpace;
+            if (lc) {
+                lc->constraint_method = method;
+                return;
+            }
+            nlc->constraint_method = method;
         });
 
         command.variant(fem::dsl::Variant::make());

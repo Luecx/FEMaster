@@ -41,6 +41,12 @@ struct QSPT : ShellElement<4> {
                                Field& ip_strain,
                                Field& displacement,
                                int ip_offset) override;
+    void compute_ip_stress_nonlinear(Field& ip_stress,
+                                     Field& displacement,
+                                     int ip_offset) override;
+    void compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& ip_stress,
+                                          int ip_offset) override;
     void compute_stress_strain_nodal(Field& displacement,
                                      Field& stress,
                                      Field& strain) override;

@@ -113,8 +113,10 @@ struct Model {
                                               const Field& ip_stress,
                                               const Field* stiffness_scalar = nullptr);
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
+    Field         build_internal_force_nonlinear(const Field& ip_stress);
 
     std::tuple<Field, Field>       compute_ip_stress_strain(Field& displacement);
+    Field                          compute_ip_stress_nonlinear(Field& displacement);
     std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
     std::tuple<Field, Field>       compute_shell_stress_surfaces(Field& displacement);
     Field                          compute_shell_resultants(Field& displacement);

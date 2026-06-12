@@ -11,6 +11,7 @@
 #include "../../loadcase/linear_eigenfreq.h"
 #include "../../loadcase/linear_static.h"
 #include "../../loadcase/linear_static_topo.h"
+#include "../../loadcase/nonlinear_static.h"
 
 namespace fem::input_decks::commands {
 
@@ -47,6 +48,10 @@ inline void register_loadcase_supports(fem::dsl::Registry& registry, Parser& par
                         return;
                     }
                     if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+                        append_tokens(names, lc->supps);
+                        return;
+                    }
+                    if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
                         append_tokens(names, lc->supps);
                         return;
                     }

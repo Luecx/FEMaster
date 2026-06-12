@@ -15,6 +15,40 @@
 
 namespace fem::model {
 
+namespace detail_solid_nonlinear {
+
+inline Mat3 voigt_to_tensor(const Vec6& v) {
+    Mat3 tensor;
+    tensor << v(0), v(5), v(4),
+              v(5), v(1), v(3),
+              v(4), v(3), v(2);
+    return tensor;
+}
+
+inline Vec6 tensor_to_voigt(const Mat3& tensor) {
+    Vec6 v;
+    v << tensor(0, 0),
+         tensor(1, 1),
+         tensor(2, 2),
+         tensor(1, 2),
+         tensor(2, 0),
+         tensor(0, 1);
+    return v;
+}
+
+inline Vec6 green_lagrange_to_voigt(const Mat3& strain) {
+    Vec6 v;
+    v << strain(0, 0),
+         strain(1, 1),
+         strain(2, 2),
+         Precision(2) * strain(1, 2),
+         Precision(2) * strain(2, 0),
+         Precision(2) * strain(0, 1);
+    return v;
+}
+
+} // namespace detail_solid_nonlinear
+
 
 template<Index N>
 Strains SolidElement<N>::strain(Field& displacement, std::vector<Vec3>& rst) {
@@ -174,6 +208,90 @@ void SolidElement<N>::compute_stress_strain(Field& ip_stress, Field& ip_strain, 
             const Index row = static_cast<Index>(ip_offset) + n;
             ip_stress(row, j) = stresses(j);
             ip_strain(row, j) = strains(j);
+        }
+    }
+}
+
+template<Index N>
+void SolidElement<N>::compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) {
+    auto reference_coords = this->node_coords_global();
+    auto local_displacement = this->nodal_data<3>(displacement);
+    auto scheme = this->integration_scheme();
+
+    for (Index n = 0; n < scheme.count(); n++) {
+        const Precision r = scheme.get_point(n).r;
+        const Precision s = scheme.get_point(n).s;
+        const Precision t = scheme.get_point(n).t;
+        const Index row = static_cast<Index>(ip_offset) + n;
+
+        StaticMatrix<N, D> dN_local = this->shape_derivative(r, s, t);
+        StaticMatrix<D, D> J0 = this->jacobian(reference_coords, r, s, t);
+        const Precision detJ0 = J0.determinant();
+        logging::error(detJ0 > Precision(0),
+                       "negative reference determinant encountered in nonlinear stress for element ", elem_id,
+                       "\ndet        : ", detJ0,
+                       "\nCoordinates: ", reference_coords);
+
+        StaticMatrix<N, D> dN_dX = (J0.inverse() * dN_local.transpose()).transpose();
+
+        Mat3 grad_u = Mat3::Zero();
+        for (Index a = 0; a < N; ++a) {
+            for (Index i = 0; i < D; ++i) {
+                for (Index j = 0; j < D; ++j) {
+                    grad_u(i, j) += local_displacement(a, i) * dN_dX(a, j);
+                }
+            }
+        }
+
+        const Mat3 F = Mat3::Identity() + grad_u;
+        const Precision J = F.determinant();
+        logging::error(J > Precision(0),
+                       "non-positive deformation gradient determinant in element ", elem_id,
+                       "\nJ: ", J,
+                       "\nF: ", F);
+
+        const Mat3 green_lagrange =
+            Precision(0.5) * (F.transpose() * F - Mat3::Identity());
+        const Vec6 green_voigt =
+            detail_solid_nonlinear::green_lagrange_to_voigt(green_lagrange);
+
+        const Vec6 second_pk_voigt = material_matrix(r, s, t) * green_voigt;
+
+        const Mat3 second_pk = detail_solid_nonlinear::voigt_to_tensor(second_pk_voigt);
+        const Mat3 cauchy = (F * second_pk * F.transpose()) / J;
+        const Vec6 cauchy_voigt = detail_solid_nonlinear::tensor_to_voigt(cauchy);
+
+        for (Dim j = 0; j < n_strain; j++) {
+            ip_stress(row, j) = cauchy_voigt(j);
+        }
+    }
+}
+
+template<Index N>
+void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
+                                                       const Field& ip_stress,
+                                                       int ip_offset) {
+    auto current_coords = this->node_coords_global();
+    auto scheme = this->integration_scheme();
+
+    for (Index n = 0; n < scheme.count(); n++) {
+        const Precision r = scheme.get_point(n).r;
+        const Precision s = scheme.get_point(n).s;
+        const Precision t = scheme.get_point(n).t;
+        const Precision w = scheme.get_point(n).w;
+        const Index row = static_cast<Index>(ip_offset) + n;
+
+        Precision det;
+        StaticMatrix<n_strain, D * N> B =
+            this->strain_displacements(current_coords, r, s, t, det);
+        const Vec6 sigma = ip_stress.row_vec6(row);
+        const StaticVector<D * N> local_force = B.transpose() * sigma * (det * w);
+
+        for (Index a = 0; a < N; ++a) {
+            const Index node_id = static_cast<Index>(node_ids[a]);
+            for (Index d = 0; d < D; ++d) {
+                node_forces(node_id, d) += local_force(D * a + d);
+            }
         }
     }
 }
