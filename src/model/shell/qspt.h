@@ -37,23 +37,13 @@ struct QSPT : ShellElement<4> {
     Dim    n_integration_points() override { return 0; }
     ElDofs dofs() override { return ElDofs{true, true, true, false, false, false}; }
 
-    void compute_stress_strain(Field& ip_stress,
-                               Field& ip_strain,
-                               Field& displacement,
-                               int ip_offset) override;
-    void compute_ip_stress_nonlinear(Field& ip_stress,
-                                     Field& displacement,
-                                     int ip_offset) override;
     void compute_internal_force_nonlinear(Field& node_forces,
                                           const Field& ip_stress,
                                           int ip_offset) override;
-    void compute_stress_strain_nodal(Field& displacement,
-                                     Field& stress,
-                                     Field& strain) override;
 
-    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override;
-    Strains  strain(Field& displacement, std::vector<Vec3>& rst) override;
-    std::vector<Precision> shear_flow(Field& displacement) override;
+    bool compute_shear_flow(Field& shear_flow,
+                            const Field& displacement,
+                            int offset) override;
 
     Precision integrate_scalar_field(bool scale_by_density, const ScalarField& field) override;
     Vec3      integrate_vector_field(bool scale_by_density, const VecField& field) override;
@@ -86,6 +76,6 @@ private:
     MassMatrix       mass_impl();
     Precision        effective_density();
     Precision        effective_shear_modulus();
-    StaticVector<12> displacement_vector(Field& displacement);
+    StaticVector<12> displacement_vector(const Field& displacement);
 };
 } // namespace fem::model

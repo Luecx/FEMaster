@@ -130,6 +130,11 @@ struct ModelData {
     /// Creates a field or returns the existing one after validation.
     Field::Ptr create_field (const std::string& name, FieldDomain domain, Index components, bool fill_nan = true, bool reg = true);
     Field      create_field_(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true);
+
+    /// Projects an ELEMENT_NODAL field to NODE by weighted averaging over connected element nodes.
+    Field element_nodal_to_nodal(const Field& element_nodal,
+                                 const Field& element_weights,
+                                 const std::string& name) const;
 };
 } // namespace model
 } // namespace fem

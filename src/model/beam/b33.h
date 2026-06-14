@@ -202,11 +202,23 @@ struct B33 : BeamElement<2> {
         return Trot.transpose() * M_ref * Trot;
 	}
 
-    void compute_stress_strain(Field& ip_stress,
-                               Field& ip_strain,
-                               Field& displacement,
-                               int ip_offset) override {
-        (void)ip_strain;
+    RowMatrix stress_strain_ip_rst() override {
+        RowMatrix rst(1, 3);
+        rst.setZero();
+        return rst;
+    }
+
+    void compute_stress_strain(Field* strain,
+                               Field* stress,
+                               const Field& displacement,
+                               const RowMatrix& rst,
+                               int offset,
+                               bool use_green_lagrange_nl) override {
+        logging::error(!use_green_lagrange_nl,
+                       "B33: nonlinear stress/strain evaluation is not implemented yet for element ",
+                       this->elem_id);
+        logging::error(strain != nullptr || stress != nullptr,
+                       "B33: compute_stress_strain requires at least one output field");
 
         const Precision E = get_elasticity()->youngs;
         const Precision A = get_profile()->area_;
@@ -220,17 +232,22 @@ struct B33 : BeamElement<2> {
             }
         }
 
-        // u_local is in principal local frame at REF line (because stiffness_impl maps DOFs at REF line)
         StaticMatrix<12, 12> T = transformation();
         StaticMatrix<12, 1> u_local = T * u_global;
 
-        Precision eps = (u_local(6) - u_local(0)) / L;
-        Precision N = E * A * eps;
+        const Precision eps = (u_local(6) - u_local(0)) / L;
+        const Precision N = E * A * eps;
 
-        const Index row = static_cast<Index>(ip_offset);
-        ip_stress(row, 0) = N;
-        for (int j = 1; j < ip_stress.components; ++j) {
-            ip_stress(row, j) = 0.0;
+        for (Index i = 0; i < rst.rows(); ++i) {
+            const Index row = static_cast<Index>(offset) + i;
+            if (strain) {
+                for (Index j = 0; j < strain->components; ++j) (*strain)(row, j) = Precision(0);
+                (*strain)(row, 0) = eps;
+            }
+            if (stress) {
+                for (Index j = 0; j < stress->components; ++j) (*stress)(row, j) = Precision(0);
+                (*stress)(row, 0) = N;
+            }
         }
     }
 

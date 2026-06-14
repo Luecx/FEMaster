@@ -256,6 +256,8 @@ public:
      * @return Dim The number of integration points.
      */
     Dim n_integration_points() override;
+    RowMatrix stress_strain_nodal_rst() override;
+    RowMatrix stress_strain_ip_rst() override;
 
     /**
      * @brief Computes the volume of the element.
@@ -299,33 +301,18 @@ public:
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
     /**
-     * @brief Computes the nodal stress and strain for the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param displacement The nodal displacement data.
-     * @param stress The computed nodal stress.
-     * @param strain The computed nodal strain.
-     */
-    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override;
-
-    /**
-     * Computes the stress at a given point in the element.
-     * @param displacement
-     * @param xyz
-     * @return
-     */
-    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override;
-    Strains  strain(Field& displacement, std::vector<Vec3>& rst) override;
-
-    /**
      * Computes the stress and strain at the integration points of the elements
      * @param ip_stress
      * @param ip_strain
      * @param displacement
      * @param ip_offset
      */
-    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override;
-    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override;
+    void compute_stress_strain(Field* strain,
+                               Field* stress,
+                               const Field& displacement,
+                               const RowMatrix& rst,
+                               int offset,
+                               bool use_green_lagrange_nl) override;
     void compute_internal_force_nonlinear(Field& node_forces,
                                           const Field& ip_stress,
                                           int ip_offset) override;

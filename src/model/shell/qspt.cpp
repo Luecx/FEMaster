@@ -200,25 +200,6 @@ MapMatrix QSPT::mass(Precision* buffer) {
     return mapped;
 }
 
-void QSPT::compute_stress_strain(Field& ip_stress,
-                                 Field& ip_strain,
-                                 Field& displacement,
-                                 int ip_offset) {
-    (void) ip_stress;
-    (void) ip_strain;
-    (void) displacement;
-    (void) ip_offset;
-}
-
-void QSPT::compute_ip_stress_nonlinear(Field& ip_stress,
-                                       Field& displacement,
-                                       int ip_offset) {
-    (void) ip_stress;
-    (void) displacement;
-    (void) ip_offset;
-    logging::error(false, "QSPT: compute_ip_stress_nonlinear is not implemented yet for element ", this->elem_id);
-}
-
 void QSPT::compute_internal_force_nonlinear(Field& node_forces,
                                             const Field& ip_stress,
                                             int ip_offset) {
@@ -228,27 +209,7 @@ void QSPT::compute_internal_force_nonlinear(Field& node_forces,
     logging::error(false, "QSPT: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
 }
 
-void QSPT::compute_stress_strain_nodal(Field& displacement,
-                                       Field& stress,
-                                       Field& strain) {
-    (void) displacement;
-    (void) stress;
-    (void) strain;
-}
-
-Stresses QSPT::stress(Field& displacement, std::vector<Vec3>& rst) {
-    (void) displacement;
-    (void) rst;
-    return {};
-}
-
-Strains QSPT::strain(Field& displacement, std::vector<Vec3>& rst) {
-    (void) displacement;
-    (void) rst;
-    return {};
-}
-
-StaticVector<12> QSPT::displacement_vector(Field& displacement) {
+StaticVector<12> QSPT::displacement_vector(const Field& displacement) {
     const auto u_mat = this->template nodal_data<3>(displacement);
     StaticVector<12> u = StaticVector<12>::Zero();
     for (Index i = 0; i < 4; ++i) {
@@ -257,16 +218,18 @@ StaticVector<12> QSPT::displacement_vector(Field& displacement) {
     return u;
 }
 
-std::vector<Precision> QSPT::shear_flow(Field& displacement) {
+bool QSPT::compute_shear_flow(Field& shear_flow,
+                              const Field& displacement,
+                              int offset) {
     const ShearState state = shear_state();
     const StaticVector<12> u = displacement_vector(displacement);
     const Precision beta = (state.fn.dot(u)) / state.flexibility;
 
-    std::vector<Precision> result(4, Precision(0));
     for (Index i = 0; i < 4; ++i) {
-        result[static_cast<std::size_t>(i)] = state.q(i) / state.edge_lengths[i] * beta;
+        shear_flow(static_cast<Index>(offset) + i, 0) =
+            state.q(i) / state.edge_lengths[i] * beta;
     }
-    return result;
+    return true;
 }
 
 Precision QSPT::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {

@@ -271,26 +271,6 @@ struct BeamElement : StructuralElement {
         return result;
     }
 
-    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
-        (void)displacement;
-        (void)stress;
-        (void)strain;
-    }
-
-    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override {
-        (void)ip_stress;
-        (void)ip_strain;
-        (void)displacement;
-        (void)ip_offset;
-    }
-
-    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override {
-        (void)ip_stress;
-        (void)displacement;
-        (void)ip_offset;
-        logging::error(false, "BeamElement: compute_ip_stress_nonlinear is not implemented yet for element ", this->elem_id);
-    }
-
     void compute_internal_force_nonlinear(Field& node_forces,
                                           const Field& ip_stress,
                                           int ip_offset) override {
@@ -338,21 +318,10 @@ struct BeamElement : StructuralElement {
         (void)surface_id;
         return nullptr;
     }
-    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override {
-        (void)displacement;
-        (void)rst;
-        return {};
-    }
-    Strains strain(Field& displacement, std::vector<Vec3>& rst) override {
-        (void)displacement;
-        (void)rst;
-        return {};
-    }
 
-    std::vector<Vec6> section_forces(Field& displacement) override {
-        std::vector<Vec6> result;
-        result.resize(N);
-
+    bool compute_beam_section_forces(Field& section_forces,
+                                     const Field& displacement,
+                                     int offset) override {
         Eigen::Matrix<Precision, N * 6, 1> u_global;
         for (Index i = 0; i < N; ++i) {
             const ID nid = node_ids[i];
@@ -374,10 +343,12 @@ struct BeamElement : StructuralElement {
             for (Index d = 0; d < 6; ++d) {
                 q_i(d) = q_local(i * 6 + d) * ((i == 1 && N == 2) ? 1 : -1);
             }
-            result[i] = q_i;
+            for (Index d = 0; d < 6; ++d) {
+                section_forces(static_cast<Index>(offset) + i, d) = q_i(d);
+            }
         }
 
-        return result;
+        return true;
     }
 
     // Integrate vector field via simple 1-point mid-span sampling and equal distribution

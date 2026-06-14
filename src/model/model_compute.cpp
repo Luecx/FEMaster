@@ -2,14 +2,36 @@
 // Created by Finn Eggers on 04.09.23.
 //
 #include "../core/config.h"
-#include "../math/interpolate.h"
 #include "element/element_structural.h"
 #include "model.h"
 #include "shell/s8.h"
 
 namespace fem { namespace model{
+namespace {
+
+void check_field_finite(const Field& field, const std::string& label) {
+    for (Index i = 0; i < field.rows; ++i) {
+        for (Index j = 0; j < field.components; ++j) {
+            const bool bad = std::isnan(field(i, j)) || std::isinf(field(i, j));
+            logging::error(!bad, label, " row ", i, " has invalid value at col ", j);
+        }
+    }
+}
+
+RowMatrix with_through_thickness_coordinate(RowMatrix rst, Precision t) {
+    if (rst.cols() < 3) {
+        return rst;
+    }
+    for (Index i = 0; i < rst.rows(); ++i) {
+        rst(i, 2) = t;
+    }
+    return rst;
+}
+
+} // namespace
+
 std::tuple<Field, Field>
-Model::compute_ip_stress_strain(Field& displacement) {
+Model::compute_stress_ip(Field& displacement, bool use_green_lagrange_nl) {
     // 1) Use IP enumeration with sentinel total in the last row
     logging::error(_data->element_ip_offsets != nullptr,
                    "element IP offset field has not been initialized");
@@ -38,24 +60,27 @@ Model::compute_ip_stress_strain(Field& displacement) {
             logging::error(ip_offset >= 0 && ip_offset <= total_ips,
                            "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
 
-            sel->compute_stress_strain(ip_stress, ip_strain, displacement, ip_offset);
+            RowMatrix rst = sel->stress_strain_ip_rst();
+            logging::error(rst.rows() == sel->n_integration_points(),
+                           "Element ", eid, " returned ", rst.rows(),
+                           " stress IP coordinates, expected ", sel->n_integration_points());
+            if (rst.rows() == 0) continue;
+            sel->compute_stress_strain(&ip_strain,
+                                       &ip_stress,
+                                       displacement,
+                                       rst,
+                                       static_cast<int>(ip_offset),
+                                       use_green_lagrange_nl);
         }
     }
 
-    // 4) Basic sanity checks (optional but helpful)
-    for (Index i = 0; i < ip_stress.rows; ++i) {
-        for (Index j = 0; j < ip_stress.components; ++j) {
-            const bool badS = std::isnan(ip_stress(i, j)) || std::isinf(ip_stress(i, j));
-            const bool badE = std::isnan(ip_strain(i, j)) || std::isinf(ip_strain(i, j));
-            logging::error(!badS, "IP ", i, " has invalid stress at col ", j);
-            logging::error(!badE, "IP ", i, " has invalid strain at col ", j);
-        }
-    }
+    check_field_finite(ip_stress, "IP stress");
+    check_field_finite(ip_strain, "IP strain");
 
     return {ip_stress, ip_strain};
 }
 
-Field Model::compute_ip_stress_nonlinear(Field& displacement) {
+Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_nl) {
     logging::error(_data->element_ip_offsets != nullptr,
                    "element IP offset field has not been initialized");
     const auto& ip_enum = *_data->element_ip_offsets;
@@ -65,7 +90,7 @@ Field Model::compute_ip_stress_nonlinear(Field& displacement) {
     const ID total_ips = static_cast<ID>(ip_enum(static_cast<Index>(_data->max_elems), 0));
     logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
 
-    Field ip_stress{"IP_STRESS_NONLINEAR", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
+    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
     ip_stress.set_zero();
 
     for (auto el : _data->elements) {
@@ -73,24 +98,30 @@ Field Model::compute_ip_stress_nonlinear(Field& displacement) {
         if (auto sel = el->as<StructuralElement>()) {
             const ID eid = sel->elem_id;
             logging::error(eid >= 0 && eid < _data->max_elems,
-                           "Element id out of range in compute_ip_stress_nonlinear: ", eid);
+                           "Element id out of range in compute_stress_state: ", eid);
 
             const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
             logging::error(ip_offset >= 0 && ip_offset <= total_ips,
                            "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
 
-            sel->compute_ip_stress_nonlinear(ip_stress, displacement, ip_offset);
+            sel->compute_stress_state(ip_stress,
+                                      displacement,
+                                      static_cast<int>(ip_offset),
+                                      use_green_lagrange_nl);
         }
     }
 
-    for (Index i = 0; i < ip_stress.rows; ++i) {
-        for (Index j = 0; j < ip_stress.components; ++j) {
-            const bool bad = std::isnan(ip_stress(i, j)) || std::isinf(ip_stress(i, j));
-            logging::error(!bad, "Nonlinear IP ", i, " has invalid stress at col ", j);
-        }
-    }
+    check_field_finite(ip_stress, "Stress state");
 
     return ip_stress;
+}
+
+std::tuple<Field, Field> Model::compute_ip_stress_strain(Field& displacement) {
+    return compute_stress_ip(displacement, false);
+}
+
+Field Model::compute_ip_stress_nonlinear(Field& displacement) {
+    return compute_stress_state(displacement, true);
 }
 
 Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
@@ -124,114 +155,122 @@ Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
     return internal;
 }
 
-std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement) {
-    Field stress{"STRESS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
-    Field strain{"STRAIN", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
-    stress.set_zero();
-    strain.set_zero();
-    IndexVector count{_data->max_nodes};
-    count.setZero();
+std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl) {
+    logging::error(_data->element_nodal_offsets != nullptr,
+                   "element nodal offset field has not been initialized");
+    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const Index total_element_nodes =
+        static_cast<Index>(nodal_offsets(static_cast<Index>(_data->max_elems), 0));
 
-    for(auto el: _data->elements) {
-        if(el == nullptr) continue;
-        if(auto sel = el->as<StructuralElement>()) {
-            sel->compute_stress_strain_nodal(displacement, stress, strain);
-            for(int i = 0; i < sel->n_nodes(); i++) {
-                ID id = sel->nodes()[i];
-                count(id) ++;
-            }
+    Field element_stress{"ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_strain{"ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_weights{"STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
+    element_stress.set_zero();
+    element_strain.set_zero();
+    element_weights.set_zero();
+
+    for (auto el : _data->elements) {
+        if (!el) continue;
+        if (auto sel = el->as<StructuralElement>()) {
+            RowMatrix rst = sel->stress_strain_nodal_rst();
+            if (rst.rows() == 0) continue;
+            logging::error(rst.rows() == sel->n_nodes(),
+                           "Element ", sel->elem_id, " returned ", rst.rows(),
+                           " nodal stress coordinates, expected ", sel->n_nodes());
+            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+            sel->compute_stress_strain(&element_strain,
+                                       &element_stress,
+                                       displacement,
+                                       rst,
+                                       static_cast<int>(offset),
+                                       use_green_lagrange_nl);
+            element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }
 
-    for (int i = 0; i < _data->max_nodes; i++) {
-        if (count[i] != 0) {
-            for (int j = 0; j < 6; j++) {
-                stress(i, j) /= count[i];
-                strain(i, j) /= count[i];
-            }
-        }
-    }
-
-    // check for any nan or inf and then display the node id
-    for(int i = 0; i < _data->max_nodes; i++) {
-        for(int j = 0; j < 6; j++) {
-            bool inv_stress = std::isnan(stress(i, j)) || std::isinf(stress(i, j));
-            bool inv_strain = std::isnan(strain(i, j)) || std::isinf(strain(i, j));
-            logging::error(!inv_strain, "Node ", i, " has nan or inf strain. Node Usage=", count(i));
-            logging::error(!inv_stress, "Node ", i, " has nan or inf stress. Node Usage=", count(i));
-        }
-    }
+    Field stress = _data->element_nodal_to_nodal(element_stress, element_weights, "STRESS");
+    Field strain = _data->element_nodal_to_nodal(element_strain, element_weights, "STRAIN");
+    check_field_finite(stress, "Nodal stress");
+    check_field_finite(strain, "Nodal strain");
 
     return {stress, strain};
 }
 
-std::tuple<Field, Field> Model::compute_shell_stress_surfaces(Field& displacement) {
-    Field stress_top{"STRESS_TOP", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
-    Field stress_bot{"STRESS_BOT", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
-    stress_top.set_zero();
-    stress_bot.set_zero();
+std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement) {
+    return compute_stress_nodal(displacement, false);
+}
 
-    IndexVector count{_data->max_nodes};
-    count.setZero();
+std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl) {
+    logging::error(_data->element_nodal_offsets != nullptr,
+                   "element nodal offset field has not been initialized");
+    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const Index total_element_nodes =
+        static_cast<Index>(nodal_offsets(static_cast<Index>(_data->max_elems), 0));
 
-    for (auto el: _data->elements) {
-        if (el == nullptr) continue;
+    Field element_top{"ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_bot{"ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_weights{"STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
+    element_top.set_zero();
+    element_bot.set_zero();
+    element_weights.set_zero();
+
+    for (auto el : _data->elements) {
+        if (!el) continue;
         if (auto sel = el->as<StructuralElement>()) {
-            if (!sel->supports_shell_stress_surfaces()) continue;
-
-            sel->compute_shell_stress_surfaces_nodal(displacement, stress_top, stress_bot);
-            for (int i = 0; i < sel->n_nodes(); i++) {
-                ID id = sel->nodes()[i];
-                count(id)++;
-            }
+            RowMatrix base_rst = sel->stress_strain_nodal_rst();
+            if (base_rst.rows() == 0) continue;
+            logging::error(base_rst.rows() == sel->n_nodes(),
+                           "Element ", sel->elem_id, " returned ", base_rst.rows(),
+                           " nodal stress coordinates, expected ", sel->n_nodes());
+            RowMatrix rst_bot = with_through_thickness_coordinate(base_rst, Precision(-1));
+            RowMatrix rst_top = with_through_thickness_coordinate(base_rst, Precision(1));
+            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+            sel->compute_stress_strain(nullptr,
+                                       &element_bot,
+                                       displacement,
+                                       rst_bot,
+                                       static_cast<int>(offset),
+                                       use_green_lagrange_nl);
+            sel->compute_stress_strain(nullptr,
+                                       &element_top,
+                                       displacement,
+                                       rst_top,
+                                       static_cast<int>(offset),
+                                       use_green_lagrange_nl);
+            element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }
 
-    for (int i = 0; i < _data->max_nodes; i++) {
-        if (count[i] != 0) {
-            for (int j = 0; j < 6; j++) {
-                stress_top(i, j) /= count[i];
-                stress_bot(i, j) /= count[i];
-            }
-        }
-    }
-
-    for (int i = 0; i < _data->max_nodes; i++) {
-        for (int j = 0; j < 6; j++) {
-            const bool inv_top = std::isnan(stress_top(i, j)) || std::isinf(stress_top(i, j));
-            const bool inv_bot = std::isnan(stress_bot(i, j)) || std::isinf(stress_bot(i, j));
-            logging::error(!inv_top, "Node ", i, " has nan or inf top shell stress. Node Usage=", count(i));
-            logging::error(!inv_bot, "Node ", i, " has nan or inf bottom shell stress. Node Usage=", count(i));
-        }
-    }
+    Field stress_top = _data->element_nodal_to_nodal(element_top, element_weights, "STRESS_TOP");
+    Field stress_bot = _data->element_nodal_to_nodal(element_bot, element_weights, "STRESS_BOT");
+    check_field_finite(stress_top, "Nodal top stress");
+    check_field_finite(stress_bot, "Nodal bottom stress");
 
     return {stress_top, stress_bot};
+}
+
+std::tuple<Field, Field> Model::compute_shell_stress_surfaces(Field& displacement) {
+    return compute_stress_top_bot(displacement, false);
 }
 
 Field Model::compute_shell_resultants(Field& displacement) {
     Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 8};
     resultants.set_zero();
 
-    IndexVector count{_data->max_nodes};
-    count.setZero();
+    Field count{"SHELL_RESULTANTS_COUNT", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 1};
+    count.set_zero();
 
     for (auto el: _data->elements) {
         if (el == nullptr) continue;
         if (auto sel = el->as<StructuralElement>()) {
-            if (!sel->supports_shell_resultants()) continue;
-
-            sel->compute_shell_resultants_nodal(displacement, resultants);
-            for (int i = 0; i < sel->n_nodes(); i++) {
-                ID id = sel->nodes()[i];
-                count(id)++;
-            }
+            sel->compute_shell_section_forces(resultants, count, displacement);
         }
     }
 
     for (int i = 0; i < _data->max_nodes; i++) {
-        if (count[i] != 0) {
+        if (count(i, 0) != Precision(0)) {
             for (int j = 0; j < resultants.components; j++) {
-                resultants(i, j) /= count[i];
+                resultants(i, j) /= count(i, 0);
             }
         }
     }
@@ -240,7 +279,7 @@ Field Model::compute_shell_resultants(Field& displacement) {
         for (int j = 0; j < resultants.components; j++) {
             const bool invalid = std::isnan(resultants(i, j)) || std::isinf(resultants(i, j));
             logging::error(!invalid, "Node ", i, " has nan or inf shell resultant at col ", j,
-                           ". Node Usage=", count(i));
+                           ". Node Usage=", count(i, 0));
         }
     }
 
@@ -288,91 +327,49 @@ Field Model::compute_volumes() {
 
     return volumes;
 }
-DynamicMatrix
+Field
 Model::compute_section_forces(Field& displacement) {
-    using Entry = std::tuple<ID, Index, Vec6>;
-    std::vector<Entry> entries;
-    entries.reserve(_data->elements.size() * 2); // heuristic: mostly 2-node beams
+    logging::error(_data->element_nodal_offsets != nullptr,
+                   "element nodal offset field has not been initialized");
+    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const Index total_element_nodes =
+        static_cast<Index>(nodal_offsets(static_cast<Index>(_data->max_elems), 0));
 
-    // 1) Collect (elem_id, local_node, Vec6) for all beam elements
+    Field beam_forces{"BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    beam_forces.set_zero();
+
     for (auto el : _data->elements) {
         if (!el) continue;
 
         if (auto sel = el->as<StructuralElement>()) {
-            auto per_node_forces = sel->section_forces(displacement);
-
-            // non-beam elements return empty vector{}; skip them
-            if (per_node_forces.empty())
-                continue;
-
-            const ID eid = sel->elem_id;
-
-            for (Index ln = 0; ln < static_cast<Index>(per_node_forces.size()); ++ln) {
-                entries.emplace_back(eid, ln, per_node_forces[ln]);
-            }
+            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+            sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
         }
     }
 
-    // 2) Pack into DynamicMatrix: [elem_id, local_node, f1..f6]
-    const Index n_rows = static_cast<Index>(entries.size());
-    const Index n_cols = 2 + 6; // 2 index columns + 6 value columns
-
-    DynamicMatrix mat(n_rows, n_cols);
-    mat.setZero();
-
-    for (Index i = 0; i < n_rows; ++i) {
-        ID    eid;
-        Index ln;
-        Vec6  v;
-        std::tie(eid, ln, v) = entries[static_cast<std::size_t>(i)];
-
-        mat(i, 0) = static_cast<Precision>(eid);
-        // use ln or (ln + 1) depending on whether you want 0- or 1-based in the .res file
-        mat(i, 1) = static_cast<Precision>(ln);
-
-        for (Index k = 0; k < 6; ++k) {
-            mat(i, 2 + k) = v(k);
-        }
-    }
-
-    return mat;
+    return beam_forces;
 }
 
-DynamicMatrix
+Field
 Model::compute_shear_flow(Field& displacement) {
-    using Entry = std::tuple<ID, Index, Precision>;
-    std::vector<Entry> entries;
-    entries.reserve(_data->elements.size() * 4);
+    logging::error(_data->element_nodal_offsets != nullptr,
+                   "element nodal offset field has not been initialized");
+    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const Index total_element_nodes =
+        static_cast<Index>(nodal_offsets(static_cast<Index>(_data->max_elems), 0));
+
+    Field shear_flow{"SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, total_element_nodes, 1};
+    shear_flow.set_zero();
 
     for (auto el : _data->elements) {
         if (!el) continue;
 
         if (auto sel = el->as<StructuralElement>()) {
-            auto per_entry_values = sel->shear_flow(displacement);
-            if (per_entry_values.empty())
-                continue;
-
-            const ID eid = sel->elem_id;
-            for (Index local_id = 0; local_id < static_cast<Index>(per_entry_values.size()); ++local_id) {
-                entries.emplace_back(eid, local_id, per_entry_values[static_cast<std::size_t>(local_id)]);
-            }
+            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+            sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
         }
     }
 
-    DynamicMatrix mat(static_cast<Index>(entries.size()), 3);
-    mat.setZero();
-
-    for (Index i = 0; i < static_cast<Index>(entries.size()); ++i) {
-        ID        eid;
-        Index     local_id;
-        Precision value;
-        std::tie(eid, local_id, value) = entries[static_cast<std::size_t>(i)];
-
-        mat(i, 0) = static_cast<Precision>(eid);
-        mat(i, 1) = static_cast<Precision>(local_id);
-        mat(i, 2) = value;
-    }
-
-    return mat;
+    return shear_flow;
 }
 } }

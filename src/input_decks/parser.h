@@ -1,11 +1,11 @@
 #pragma once
 
-#include <memory>
-#include <string>
-
 #include "../core/types_num.h"
 #include "../dsl/registry.h"
-#include "../reader/writer.h"
+#include "../writer/writer.h"
+
+#include <memory>
+#include <string>
 
 namespace fem {
 namespace loadcase { struct LoadCase; }

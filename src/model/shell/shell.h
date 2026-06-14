@@ -93,24 +93,6 @@ struct ShellElement : StructuralElement {
         return node_ids.data();
     }
 
-    // not implemented
-    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
-        (void) displacement;
-        (void) stress;
-        (void) strain;
-    };
-    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override {
-        (void) ip_stress;
-        (void) ip_strain;
-        (void) displacement;
-        (void) ip_offset;
-    };
-    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override {
-        (void) ip_stress;
-        (void) displacement;
-        (void) ip_offset;
-        logging::error(false, "ShellElement: compute_ip_stress_nonlinear is not implemented yet for element ", this->elem_id);
-    };
     void compute_internal_force_nonlinear(Field& node_forces,
                                           const Field& ip_stress,
                                           int ip_offset) override {
@@ -190,13 +172,6 @@ struct ShellElement : StructuralElement {
         (void) displacement;
         (void) result;
     };
-    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override {
-        return {};
-    };
-    Strains  strain(Field& displacement, std::vector<Vec3>& rst) override {
-        return {};
-    };
-
     protected:
 };
 }

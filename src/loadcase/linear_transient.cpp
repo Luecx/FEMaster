@@ -5,19 +5,17 @@
 
 #include "linear_transient.h"
 
-#include "../core/logging.h"
-#include "../core/timer.h"
-#include "../reader/write_mtx.h"
-
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
-
+#include "../core/logging.h"
+#include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../mattools/reduce_vec_to_vec.h"
+#include "../writer/write_mtx.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
-#include <algorithm>
 
 namespace fem { namespace loadcase {
 
@@ -186,17 +184,17 @@ void Transient::run() {
         // Displacement: u = T q + u_p
         auto u_full = CT->recover_u(qk);
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
-        writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k));
+        writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k), model->_data.get());
 
         // Velocity recovery uses the active constraint backend mapping.
         auto v_full = CT->recover_v(qvk);
         auto V_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
-        writer->write_field(V_mat, "VELOCITY_" + std::to_string(k));
+        writer->write_field(V_mat, "VELOCITY_" + std::to_string(k), model->_data.get());
 
         // Acceleration recovery uses the active constraint backend mapping.
         auto a_full = CT->recover_a(qak);
         auto A_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
-        writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k));
+        writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k), model->_data.get());
     }
 
     logging::info(true, "Transient analysis completed.");

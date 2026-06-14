@@ -59,5 +59,29 @@ SolidElement<N>::n_integration_points() {
     return integration_scheme().count();
 }
 
+template<Index N>
+RowMatrix SolidElement<N>::stress_strain_nodal_rst() {
+    auto local = this->node_coords_local();
+    RowMatrix rst(static_cast<Index>(N), 3);
+    for (Index i = 0; i < N; ++i) {
+        rst(i, 0) = local(i, 0);
+        rst(i, 1) = local(i, 1);
+        rst(i, 2) = local(i, 2);
+    }
+    return rst;
+}
+
+template<Index N>
+RowMatrix SolidElement<N>::stress_strain_ip_rst() {
+    const auto& scheme = this->integration_scheme();
+    RowMatrix rst(scheme.count(), 3);
+    for (Index i = 0; i < scheme.count(); ++i) {
+        rst(i, 0) = scheme.get_point(i).r;
+        rst(i, 1) = scheme.get_point(i).s;
+        rst(i, 2) = scheme.get_point(i).t;
+    }
+    return rst;
+}
+
 
 }  // namespace fem::model

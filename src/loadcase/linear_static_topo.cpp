@@ -290,11 +290,11 @@ void LinearStaticTopo::run() {
 
     // (9) Post-processing: nodal stress/strain from displacements
     auto [stress, strain] = Timer::measure(
-        [&]() { return model->compute_stress_strain(global_disp_mat); },
+        [&]() { return model->compute_stress_nodal(global_disp_mat, false); },
         "Interpolating stress and strain at nodes"
     );
 
-    auto shear_flow_mat = Timer::measure(
+    auto shear_flow = Timer::measure(
         [&]() { return model->compute_shear_flow(global_disp_mat); },
         "computing shear-flow output"
     );
@@ -346,21 +346,21 @@ void LinearStaticTopo::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_field(global_disp_mat , "DISPLACEMENT");
-    writer->write_field(strain          , "STRAIN");
-    writer->write_field(stress          , "STRESS");
-    writer->write_field(global_load_mat , "EXTERNAL_FORCES");
-    writer->write_field(reaction_masked , "REACTION_FORCES");
-    writer->write_field(compliance_raw  , "COMPLIANCE");
-    writer->write_field(density_grad    , "DENS_GRAD");
-    writer->write_field(volumes         , "VOLUME");
-    writer->write_field(*density        , "DENSITY");
-    if (shear_flow_mat.rows() > 0) {
-        writer->write_eigen_matrix(shear_flow_mat, "SHEAR_FLOW", 2);
+    writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
+    writer->write_field(strain          , "STRAIN", model->_data.get());
+    writer->write_field(stress          , "STRESS", model->_data.get());
+    writer->write_field(global_load_mat , "EXTERNAL_FORCES", model->_data.get());
+    writer->write_field(reaction_masked , "REACTION_FORCES", model->_data.get());
+    writer->write_field(compliance_raw  , "COMPLIANCE", model->_data.get());
+    writer->write_field(density_grad    , "DENS_GRAD", model->_data.get());
+    writer->write_field(volumes         , "VOLUME", model->_data.get());
+    writer->write_field(*density        , "DENSITY", model->_data.get());
+    if (shear_flow.rows > 0) {
+        writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
     }
     if (has_orientation) {
-        writer->write_field(angle_grad  , "ORIENTATION_GRAD");
-        writer->write_field(*orientation, "ORIENTATION");
+        writer->write_field(angle_grad  , "ORIENTATION_GRAD", model->_data.get());
+        writer->write_field(*orientation, "ORIENTATION", model->_data.get());
     }
 
     // (13) Diagnostics (optional): projected residual checks

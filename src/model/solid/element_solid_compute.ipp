@@ -51,186 +51,55 @@ inline Vec6 green_lagrange_to_voigt(const Mat3& strain) {
 
 
 template<Index N>
-Strains SolidElement<N>::strain(Field& displacement, std::vector<Vec3>& rst) {
-    auto global_node_coords = this->node_coords_global();
-    auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
-    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+void SolidElement<N>::compute_stress_strain(Field* strain,
+                                            Field* stress,
+                                            const Field& displacement,
+                                            const RowMatrix& rst,
+                                            int offset,
+                                            bool use_green_lagrange_nl) {
+    logging::error(strain != nullptr || stress != nullptr,
+                   "SolidElement: compute_stress_strain requires at least one output field");
+    logging::error(rst.cols() >= 3,
+                   "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
 
-    return {};
-}
-
-template<Index N>
-Stresses SolidElement<N>::stress(Field& displacement, std::vector<Vec3>& rst) {
-    return {};
-}
-
-
-//-----------------------------------------------------------------------------
-// compute_stress_strain_nodal
-//-----------------------------------------------------------------------------
-template<Index N>
-void
-SolidElement<N>::compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) {
-    auto local_node_coords = this->node_coords_local();
-    auto global_node_coords = this->node_coords_global();
-
-    auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
-    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-
-    for (Dim n = 0; n < n_nodes(); n++) {
-        Precision r = local_node_coords(n, 0);
-        Precision s = local_node_coords(n, 1);
-        Precision t = local_node_coords(n, 2);
-        Precision det;
-        const Index node_id = static_cast<Index>(node_ids[n]);
-
-        StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det, false);
-
-        // some elements may have inf or nan determinant. if so, extrapolate
-        if (std::isnan(det) || std::isinf(det)) {
-            det = 0;
-        }
-        logging::error(det < 1e10, "invalid determinant encountered in element ", elem_id,
-                               "\ndet        : ", det,
-                               "\nCoordinates: ", global_node_coords);
-
-        if (det > 0) {
-            auto global_strains = B * local_displacement;
-            StaticVector<n_strain> strains;
-            StaticVector<n_strain> stresses;
-            material_stress_strain(r, s, t, global_strains, stresses, strains);
-
-            // if any nan
-            if (stresses.hasNaN()) {
-                logging::error(false, "invalid stress encountered in element ", elem_id,
-                               "\nStrains: ", strains,
-                               "\nStresses: ", stresses);
-            }
-
-            for (int j = 0; j < n_strain; j++) {
-                // check for any inf
-                if (std::isinf(strains(j)) || std::isinf(stresses(j))) {
-                        logging::error(false, "invalid stress encountered in element ", elem_id,
-                   "\nStrains: ", strains,
-                   "\nStresses: ", stresses);
-                }
-
-                strain(node_id, j) += strains(j);
-                stress(node_id, j) += stresses(j);
-            }
-        } else {
-            const Index n_ip = static_cast<Index>(this->n_integration_points());
-            RowMatrix ip_xyz(n_ip, 3);
-            ip_xyz.setZero();
-            Field ip_stress{"IP_STRESS_LOCAL", FieldDomain::ELEMENT_IP, n_ip, 6};
-            Field ip_strain{"IP_STRAIN_LOCAL", FieldDomain::ELEMENT_IP, n_ip, 6};
-            ip_stress.set_zero();
-            ip_strain.set_zero();
-
-            // fill ip_xyz
-            auto scheme = this->integration_scheme();
-            for (int i = 0; i < scheme.count(); i++) {
-                Precision r_ip = scheme.get_point(i).r;
-                Precision s_ip = scheme.get_point(i).s;
-                Precision t_ip = scheme.get_point(i).t;
-                Precision w_ip = scheme.get_point(i).w;
-
-                Precision x = 0;
-                Precision y = 0;
-                Precision z = 0;
-
-                auto shape_func = this->shape_function(r_ip, s_ip, t_ip);
-                for (Index j = 0; j < N; j++) {
-                    x += shape_func(j) * global_node_coords(j, 0);
-                    y += shape_func(j) * global_node_coords(j, 1);
-                    z += shape_func(j) * global_node_coords(j, 2);
-                }
-                ip_xyz(i, 0) = x;
-                ip_xyz(i, 1) = y;
-                ip_xyz(i, 2) = z;
-            }
-
-            compute_stress_strain(ip_stress, ip_strain, displacement, 0);
-
-            RowMatrix ip_stress_mat =
-                Eigen::Map<const RowMatrix>(ip_stress.data(), ip_stress.rows, ip_stress.components);
-            RowMatrix ip_strain_mat =
-                Eigen::Map<const RowMatrix>(ip_strain.data(), ip_strain.rows, ip_strain.components);
-            auto res1 =
-                fem::math::interpolate::interpolate(ip_xyz,
-                                                    ip_stress_mat,
-                                                    global_node_coords.row(n),
-                                                    nullptr,
-                                                    0.7,
-                                                    fem::math::interpolate::InterpolationFunction::CONSTANT);
-            auto res2 =
-                fem::math::interpolate::interpolate(ip_xyz,
-                                                    ip_strain_mat,
-                                                    global_node_coords.row(n),
-                                                    nullptr,
-                                                    0.7,
-                                                    fem::math::interpolate::InterpolationFunction::CONSTANT);
-
-            for (int j = 0; j < n_strain; j++) {
-
-                // if any nan or inf values produced, error
-                if (std::isnan(res1(j)) || std::isinf(res1(j))) {
-                    logging::error(false, "invalid stress encountered in element ", elem_id,
-                                   "\nStrains: ", res2,
-                                   "\nStresses: ", res1);
-                }
-
-                stress(node_id, j) += res1(j);
-                strain(node_id, j) += res2(j);
-            }
-        }
-    }
-}
-
-template<Index N>
-void SolidElement<N>::compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) {
-    auto global_node_coords = this->node_coords_global();
-    auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
-    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-    auto scheme = this->integration_scheme();
-    for (Index n = 0; n < scheme.count(); n++) {
-        Precision r = scheme.get_point(n).r;
-        Precision s = scheme.get_point(n).s;
-        Precision t = scheme.get_point(n).t;
-        Precision det;
-        StaticMatrix<N, 1> shape_func       = this->shape_function(r, s, t);
-        StaticMatrix<n_strain, D * N> B     = this->strain_displacements(global_node_coords, r, s, t, det);
-        auto global_strains = B * local_displacement;
-        StaticVector<n_strain> strains;
-        StaticVector<n_strain> stresses;
-        material_stress_strain(r, s, t, global_strains, stresses, strains);
-        for (Dim j = 0; j < n_strain; j++) {
-            const Index row = static_cast<Index>(ip_offset) + n;
-            ip_stress(row, j) = stresses(j);
-            ip_strain(row, j) = strains(j);
-        }
-    }
-}
-
-template<Index N>
-void SolidElement<N>::compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) {
-    auto reference_coords = this->node_coords_global();
+    auto node_coords = this->node_coords_global();
     auto local_displacement = this->nodal_data<3>(displacement);
-    auto scheme = this->integration_scheme();
+    auto local_disp_mat = StaticMatrix<3, N>(local_displacement.transpose());
+    auto local_displacement_vec = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
-    for (Index n = 0; n < scheme.count(); n++) {
-        const Precision r = scheme.get_point(n).r;
-        const Precision s = scheme.get_point(n).s;
-        const Precision t = scheme.get_point(n).t;
-        const Index row = static_cast<Index>(ip_offset) + n;
+    for (Index n = 0; n < rst.rows(); ++n) {
+        const Precision r = rst(n, 0);
+        const Precision s = rst(n, 1);
+        const Precision t = rst(n, 2);
+        const Index row = static_cast<Index>(offset) + n;
+
+        if (!use_green_lagrange_nl) {
+            Precision det;
+            StaticMatrix<n_strain, D * N> B =
+                this->strain_displacements(node_coords, r, s, t, det, false);
+            if (det <= Precision(0) || std::isnan(det) || std::isinf(det)) {
+                continue;
+            }
+
+            const Vec6 global_strain = B * local_displacement_vec;
+            Vec6 local_strain;
+            Vec6 local_stress;
+            material_stress_strain(r, s, t, global_strain, local_stress, local_strain);
+
+            for (Dim j = 0; j < n_strain; ++j) {
+                if (strain) (*strain)(row, j) = local_strain(j);
+                if (stress) (*stress)(row, j) = local_stress(j);
+            }
+            continue;
+        }
 
         StaticMatrix<N, D> dN_local = this->shape_derivative(r, s, t);
-        StaticMatrix<D, D> J0 = this->jacobian(reference_coords, r, s, t);
+        StaticMatrix<D, D> J0 = this->jacobian(node_coords, r, s, t);
         const Precision detJ0 = J0.determinant();
         logging::error(detJ0 > Precision(0),
                        "negative reference determinant encountered in nonlinear stress for element ", elem_id,
                        "\ndet        : ", detJ0,
-                       "\nCoordinates: ", reference_coords);
+                       "\nCoordinates: ", node_coords);
 
         StaticMatrix<N, D> dN_dX = (J0.inverse() * dN_local.transpose()).transpose();
 
@@ -256,13 +125,13 @@ void SolidElement<N>::compute_ip_stress_nonlinear(Field& ip_stress, Field& displ
             detail_solid_nonlinear::green_lagrange_to_voigt(green_lagrange);
 
         const Vec6 second_pk_voigt = material_matrix(r, s, t) * green_voigt;
-
         const Mat3 second_pk = detail_solid_nonlinear::voigt_to_tensor(second_pk_voigt);
         const Mat3 cauchy = (F * second_pk * F.transpose()) / J;
         const Vec6 cauchy_voigt = detail_solid_nonlinear::tensor_to_voigt(cauchy);
 
-        for (Dim j = 0; j < n_strain; j++) {
-            ip_stress(row, j) = cauchy_voigt(j);
+        for (Dim j = 0; j < n_strain; ++j) {
+            if (strain) (*strain)(row, j) = green_voigt(j);
+            if (stress) (*stress)(row, j) = cauchy_voigt(j);
         }
     }
 }
@@ -295,54 +164,6 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
         }
     }
 }
-
-
-// //-----------------------------------------------------------------------------
-// // compute_stress_strain
-// //-----------------------------------------------------------------------------
-// template<Index N>
-// void
-// SolidElement<N>::compute_stress_strain(Field& displacement, Field& stress, Field& strain, Field& xyz) {
-//     auto global_node_coords = this->node_coords_global();
-//
-//     auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
-//     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-//
-//     auto scheme = this->integration_scheme();
-//
-//     for (Index n = 0; n < scheme.count(); n++) {
-//         Precision r = scheme.get_point(n).r;
-//         Precision s = scheme.get_point(n).s;
-//         Precision t = scheme.get_point(n).t;
-//         Precision det;
-//
-//         StaticMatrix<N, 1> shape_func = this->shape_function(r, s, t);
-//         StaticMatrix<n_strain, D * N> B = this->strain_displacements(global_node_coords, r, s, t, det);
-//         StaticMatrix<n_strain, n_strain> E = material_matrix(r, s, t);
-//
-//         auto strains = B * local_displacement;
-//         auto stresses = E * strains;
-//
-//         Precision x = 0;
-//         Precision y = 0;
-//         Precision z = 0;
-//
-//         for (Dim j = 0; j < n_strain; j++) {
-//             strain(n, j) = strains(j);
-//             stress(n, j) = stresses(j);
-//         }
-//
-//         for (Index j = 0; j < N; j++) {
-//             x += shape_func(j) * global_node_coords(j, 0);
-//             y += shape_func(j) * global_node_coords(j, 1);
-//             z += shape_func(j) * global_node_coords(j, 2);
-//         }
-//
-//         xyz(n, 0) = x;
-//         xyz(n, 1) = y;
-//         xyz(n, 2) = z;
-//     }
-// }
 
 //-----------------------------------------------------------------------------
 // compute_compliance

@@ -1,19 +1,19 @@
 #include "parser.h"
 
-#include <algorithm>
-#include <stdexcept>
-#include <iostream>
-#include <utility>
-
 #include "../dsl/engine.h"
 #include "../dsl/file.h"
-#include "../loadcase/loadcase.h"
 #include "../loadcase/linear_buckling.h"
 #include "../loadcase/linear_eigenfreq.h"
 #include "../loadcase/linear_static.h"
 #include "../loadcase/linear_static_topo.h"
+#include "../loadcase/loadcase.h"
 #include "../model/model.h"
-#include "../reader/writer.h"
+#include "../writer/writer.h"
+
+#include <algorithm>
+#include <iostream>
+#include <stdexcept>
+#include <utility>
 
 // Command registration helpers
 #include "commands/register_node_count.inl"
