@@ -22,18 +22,17 @@
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../reader/write_mtx.h"
-#include "../solve/eigval/solve_eigval.h"
-#include "../model/model.h"
 #include "../model/element/element_structural.h"
-
+#include "../model/model.h"
+#include "../solve/eigval/solve_eigval.h"
+#include "../writer/write_mtx.h"
 #include "tools/inertia_relief.h"
 #include "tools/rebalance_loads.h"
 
-#include <utility>
-#include <limits>
 #include <algorithm>
 #include <iomanip>
+#include <limits>
+#include <utility>
 
 namespace fem {
 namespace loadcase {
@@ -221,21 +220,21 @@ void LinearStatic::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, r_support); },
         "expanding support reactions to matrix form");
 
-    auto section_force_mat = Timer::measure(
+    auto section_forces = Timer::measure(
         [&]() { return model->compute_section_forces(global_disp_mat); },
         "computing beam section forces");
 
-    auto shear_flow_mat = Timer::measure(
+    auto shear_flow = Timer::measure(
         [&]() { return model->compute_shear_flow(global_disp_mat); },
         "computing shear-flow output");
 
     auto [stress, strain] = Timer::measure(
-        [&]() { return model->compute_stress_strain(global_disp_mat); },
+        [&]() { return model->compute_stress_nodal(global_disp_mat, false); },
         "interpolating stress and strain at nodes");
 
     auto [stress_top, stress_bot] = Timer::measure(
-        [&]() { return model->compute_shell_stress_surfaces(global_disp_mat); },
-        "interpolating shell top/bottom stress at nodes");
+        [&]() { return model->compute_stress_top_bot(global_disp_mat, false); },
+        "interpolating top/bottom stress at nodes");
 
     auto shell_resultants = Timer::measure(
         [&]() { return model->compute_shell_resultants(global_disp_mat); },
@@ -277,17 +276,17 @@ void LinearStatic::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_field(global_disp_mat         , "DISPLACEMENT");
-    writer->write_field(strain                  , "STRAIN");
-    writer->write_field(stress                  , "STRESS");
-    writer->write_field(stress_top              , "STRESS_TOP");
-    writer->write_field(stress_bot              , "STRESS_BOT");
-    writer->write_field(shell_resultants        , "SHELL_RESULTANTS");
-    writer->write_field(global_load_mat         , "EXTERNAL_FORCES");
-    writer->write_field(reaction_masked         , "REACTION_FORCES");
-    writer->write_eigen_matrix(section_force_mat, "LOCAL_SECTION_FORCES", 2);
-    if (shear_flow_mat.rows() > 0) {
-        writer->write_eigen_matrix(shear_flow_mat, "SHEAR_FLOW", 2);
+    writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
+    writer->write_field(strain          , "STRAIN", model->_data.get());
+    writer->write_field(stress          , "STRESS", model->_data.get());
+    writer->write_field(stress_top      , "STRESS_TOP", model->_data.get());
+    writer->write_field(stress_bot      , "STRESS_BOT", model->_data.get());
+    writer->write_field(shell_resultants, "SHELL_RESULTANTS", model->_data.get());
+    writer->write_field(global_load_mat , "EXTERNAL_FORCES", model->_data.get());
+    writer->write_field(reaction_masked , "REACTION_FORCES", model->_data.get());
+    writer->write_field(section_forces  , "LOCAL_SECTION_FORCES", model->_data.get());
+    if (shear_flow.rows > 0) {
+        writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
     }
 
     transformer->post_check_static(K, f, u);

@@ -11,7 +11,7 @@
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
-#include "../reader/write_mtx.h"
+#include "../writer/write_mtx.h"
 
 #include <algorithm>
 #include <cmath>
@@ -272,7 +272,7 @@ void NonlinearStatic::run() {
     model::Field current_positions =
         current_positions_from_displacement(reference_positions, displacement);
 
-    model::Field final_ip_stress{"IP_STRESS_NONLINEAR", model::FieldDomain::ELEMENT_IP, 1, 6};
+    model::Field final_ip_stress{"IP_STRESS", model::FieldDomain::ELEMENT_IP, 1, 6};
     final_ip_stress.set_zero();
     model::Field final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE,
                                 static_cast<Index>(model->_data->max_nodes), 6};
@@ -300,8 +300,8 @@ void NonlinearStatic::run() {
 
             set_positions(*model, reference_positions);
             auto ip_stress = Timer::measure(
-                [&]() { return model->compute_ip_stress_nonlinear(displacement); },
-                "computing nonlinear IP stress",
+                [&]() { return model->compute_stress_state(displacement, true); },
+                "computing nonlinear stress state",
                 false);
 
             current_positions = current_positions_from_displacement(reference_positions, displacement);
@@ -405,8 +405,16 @@ void NonlinearStatic::run() {
 
     set_positions(*model, reference_positions);
     final_ip_stress = Timer::measure(
-        [&]() { return model->compute_ip_stress_nonlinear(displacement); },
-        "computing final nonlinear IP stress");
+        [&]() { return model->compute_stress_state(displacement, true); },
+        "computing final nonlinear stress state");
+
+    auto [final_stress, final_strain] = Timer::measure(
+        [&]() { return model->compute_stress_nodal(displacement, true); },
+        "computing final nonlinear nodal stress/strain");
+
+    auto [final_stress_top, final_stress_bot] = Timer::measure(
+        [&]() { return model->compute_stress_top_bot(displacement, true); },
+        "computing final nonlinear top/bottom stress");
 
     current_positions = current_positions_from_displacement(reference_positions, displacement);
     set_positions(*model, current_positions);
@@ -455,11 +463,14 @@ void NonlinearStatic::run() {
     }
 
     writer->add_loadcase(id);
-    writer->write_field(displacement, "DISPLACEMENT");
-    writer->write_field(final_ip_stress, "IP_STRESS_NONLINEAR");
-    writer->write_field(global_load_final, "EXTERNAL_FORCES");
-    writer->write_field(final_internal, "INTERNAL_FORCES");
-    writer->write_field(reaction_masked, "REACTION_FORCES");
+    writer->write_field(displacement     , "DISPLACEMENT", model->_data.get());
+    writer->write_field(final_strain     , "STRAIN", model->_data.get());
+    writer->write_field(final_stress     , "STRESS", model->_data.get());
+    writer->write_field(final_stress_top , "STRESS_TOP", model->_data.get());
+    writer->write_field(final_stress_bot , "STRESS_BOT", model->_data.get());
+    writer->write_field(global_load_final, "EXTERNAL_FORCES", model->_data.get());
+    writer->write_field(final_internal   , "INTERNAL_FORCES", model->_data.get());
+    writer->write_field(reaction_masked  , "REACTION_FORCES", model->_data.get());
 
     if (!stiffness_file.empty()) {
         write_mtx(stiffness_file + "_Kt.mtx", final_Kt);

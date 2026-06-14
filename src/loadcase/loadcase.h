@@ -12,9 +12,9 @@
 
 #pragma once
 
-#include "../model/model.h"
 #include "../constraints/constraint_groups.h"
-#include "../reader/writer.h"
+#include "../model/model.h"
+#include "../writer/writer.h"
 
 namespace fem {
 namespace loadcase {

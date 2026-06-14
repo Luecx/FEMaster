@@ -41,19 +41,17 @@
 
 #include "linear_buckling.h"
 
+#include "../constraints/transformer/constraint_transformer.h"
+#include "../constraints/types/equation.h"
+#include "../core/logging.h"
+#include "../mattools/reduce_mat_to_vec.h"
+#include "../mattools/reduce_vec_to_vec.h"
+#include "../solve/eigval/solve_eigval.h"
+#include "../writer/write_mtx.h"
+
 #include <algorithm>
 #include <iomanip>
 #include <limits>
-
-#include "../solve/eigval/solve_eigval.h"
-#include "../core/logging.h"
-#include "../reader/write_mtx.h"
-
-#include "../constraints/transformer/constraint_transformer.h"
-#include "../constraints/types/equation.h"
-
-#include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_vec_to_vec.h"
 
 namespace fem { namespace loadcase {
 
@@ -290,11 +288,10 @@ void LinearBuckling::run() {
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_pre); },
         "expanding u to node x DOF for IP stress"
     );
-    auto ip_pair = Timer::measure(
-        [&]() { return model->compute_ip_stress_strain(U_mat); },
-        "computing IP stress/strain for Kg"
+    auto ip_stress = Timer::measure(
+        [&]() { return model->compute_stress_state(U_mat, false); },
+        "computing stress state for Kg"
     );
-    const auto& ip_stress = std::get<0>(ip_pair);
 
     auto Kg = Timer::measure(
         [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
@@ -396,7 +393,8 @@ void LinearBuckling::run() {
         for (size_t i = 0; i < modes.size(); ++i) {
             lambdas(i) = modes[i].lambda;
             writer->write_field(modes[i].mode_mat,
-                                "BUCKLING_MODE_" + std::to_string(i + 1));
+                                "BUCKLING_MODE_" + std::to_string(i + 1),
+                                model->_data.get());
         }
         writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
     }

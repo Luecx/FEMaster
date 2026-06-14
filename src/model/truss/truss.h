@@ -159,79 +159,75 @@ struct TrussElement : StructuralElement {
         return nullptr;
     }
 
-    // --- Stress/Strain ---
-    Stresses stress(Field& displacement, std::vector<Vec3>& rst) override {
-        throw std::runtime_error("Not implemented yet");
-        // Vec3 u0 = displacement.row(node_ids[0]);
-        // Vec3 u1 = displacement.row(node_ids[1]);
-        //
-        // Vec3 t = direction();
-        // Precision L = length();
-        //
-        // Precision axial_strain = (u1 - u0).dot(t) / L;
-        // Precision stress_val = get_elasticity()->youngs * axial_strain;
-        //
-        // if (!rst.empty()) rst[0] = 0.5 * (coordinate(0) + coordinate(1));
-        //
-        // Stresses result(1, 1);
-        // result(0, 0) = stress_val;
-        // return result;
+    RowMatrix stress_strain_nodal_rst() override {
+        RowMatrix rst(N, 3);
+        rst.setZero();
+        rst(0, 0) = Precision(-1);
+        rst(1, 0) = Precision(1);
+        return rst;
     }
 
-    Strains strain(Field& displacement, std::vector<Vec3>& rst) override {
-        throw std::runtime_error("Not implemented yet");
-
-        // Vec3 u0 = displacement.row(node_ids[0]);
-        // Vec3 u1 = displacement.row(node_ids[1]);
-        //
-        // Vec3 t = direction();
-        // Precision L = length();
-        //
-        // Precision axial_strain = (u1 - u0).dot(t) / L;
-        //
-        // if (!rst.empty()) rst[0] = 0.5 * (coordinate(0) + coordinate(1));
-        //
-        // Strains result(1, 1);
-        // result(0, 0) = axial_strain;
-        // return result;
+    RowMatrix stress_strain_ip_rst() override {
+        RowMatrix rst(1, 3);
+        rst.setZero();
+        return rst;
     }
 
-    void compute_stress_strain(Field& ip_stress, Field& ip_strain, Field& displacement, int ip_offset) override {
-        (void) ip_stress;
-        (void) ip_strain;
-        (void) displacement;
-        (void) ip_offset;
-    }
+    void compute_stress_strain(Field* strain,
+                               Field* stress,
+                               const Field& displacement,
+                               const RowMatrix& rst,
+                               int offset,
+                               bool use_green_lagrange_nl) override {
+        logging::error(strain != nullptr || stress != nullptr,
+                       "TrussElement: compute_stress_strain requires at least one output field");
+        logging::error(rst.cols() >= 1,
+                       "TrussElement: stress/strain evaluation coordinates require at least 1 column");
 
-    void compute_ip_stress_nonlinear(Field& ip_stress, Field& displacement, int ip_offset) override {
-        logging::error(ip_stress.components >= 1,
-                       "TrussElement: nonlinear IP stress field requires at least 1 component");
+        Precision strain_value = Precision(0);
+        Precision stress_value = Precision(0);
 
-        const Vec3 X0 = coordinate(0);
-        const Vec3 X1 = coordinate(1);
-        const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-        const Vec3 x0 = X0 + u0;
-        const Vec3 x1 = X1 + u1;
+        if (use_green_lagrange_nl) {
+            const Vec3 X0 = coordinate(0);
+            const Vec3 X1 = coordinate(1);
+            const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
+            const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+            const Vec3 x0 = X0 + u0;
+            const Vec3 x1 = X1 + u1;
 
-        const Precision L0 = (X1 - X0).norm();
-        const Precision l = (x1 - x0).norm();
-        logging::error(L0 > Precision(0),
-                       "TrussElement: zero reference length in compute_ip_stress_nonlinear for element ",
-                       this->elem_id);
-        logging::error(l > Precision(0),
-                       "TrussElement: zero current length in compute_ip_stress_nonlinear for element ",
-                       this->elem_id);
+            const Precision L0 = (X1 - X0).norm();
+            const Precision l = (x1 - x0).norm();
+            logging::error(L0 > Precision(0),
+                           "TrussElement: zero reference length in compute_stress_strain for element ",
+                           this->elem_id);
+            logging::error(l > Precision(0),
+                           "TrussElement: zero current length in compute_stress_strain for element ",
+                           this->elem_id);
 
-        const Precision lambda = l / L0;
-        const Precision green_lagrange_strain = Precision(0.5) * (lambda * lambda - Precision(1));
-        const Precision second_piola_stress = get_elasticity()->youngs * green_lagrange_strain;
-        const Precision cauchy_stress = lambda * second_piola_stress;
+            const Precision lambda = l / L0;
+            strain_value = Precision(0.5) * (lambda * lambda - Precision(1));
+            const Precision second_piola_stress = get_elasticity()->youngs * strain_value;
+            stress_value = lambda * second_piola_stress;
+        } else {
+            const Precision L = length();
+            logging::error(L > Precision(0), "TrussElement: zero length in compute_stress_strain for element ",
+                           this->elem_id);
+            const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
+            const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+            strain_value = (u1 - u0).dot(direction()) / L;
+            stress_value = get_elasticity()->youngs * strain_value;
+        }
 
-        const Index row = static_cast<Index>(ip_offset);
-        ip_stress(row, 0) = cauchy_stress;
-        for (Index j = 1; j < ip_stress.components; ++j) {
-            ip_stress(row, j) = Precision(0);
+        for (Index i = 0; i < rst.rows(); ++i) {
+            const Index row = static_cast<Index>(offset) + i;
+            if (strain) {
+                for (Index j = 0; j < strain->components; ++j) (*strain)(row, j) = Precision(0);
+                (*strain)(row, 0) = strain_value;
+            }
+            if (stress) {
+                for (Index j = 0; j < stress->components; ++j) (*stress)(row, j) = Precision(0);
+                (*stress)(row, 0) = stress_value;
+            }
         }
     }
 
@@ -262,27 +258,28 @@ struct TrussElement : StructuralElement {
         }
     }
 
-    void compute_stress_strain_nodal(Field& displacement, Field& stress, Field& strain) override {
-        (void) displacement;
-        (void) stress;
-        (void) strain;
-    }
-    std::vector<Vec6> section_forces(Field& displacement) override {
-        std::vector<Vec6> result(N, Vec6::Zero());
-
+    bool compute_beam_section_forces(Field& section_forces,
+                                     const Field& displacement,
+                                     int offset) override {
         const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
         const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
         const Precision L = length();
-        logging::error(L > Precision(0), "TrussElement: zero length in section_forces for element ", this->elem_id);
+        logging::error(L > Precision(0),
+                       "TrussElement: zero length in compute_beam_section_forces for element ",
+                       this->elem_id);
 
         const Vec3 t = direction();
         const Precision axial_strain = (u1 - u0).dot(t) / L;
         const Precision axial_force = get_elasticity()->youngs * get_section()->area_ * axial_strain;
 
-        result[0](0) = axial_force;
-        result[1](0) = axial_force;
-        return result;
+        for (Index i = 0; i < N; ++i) {
+            for (Index d = 0; d < section_forces.components; ++d) {
+                section_forces(static_cast<Index>(offset) + i, d) = Precision(0);
+            }
+            section_forces(static_cast<Index>(offset) + i, 0) = axial_force;
+        }
+        return true;
     }
     void apply_vload(Field&, Vec3) override {}
     void apply_tload(Field&, const Field&, Precision) override {}

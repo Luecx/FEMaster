@@ -120,5 +120,83 @@ Field ModelData::create_field_(const std::string& name, FieldDomain domain, Inde
     }
     return field;
 }
+
+Field ModelData::element_nodal_to_nodal(const Field& element_nodal,
+                                        const Field& element_weights,
+                                        const std::string& name) const {
+    logging::error(element_nodal.domain == FieldDomain::ELEMENT_NODAL,
+                   "ModelData: element_nodal_to_nodal requires ELEMENT_NODAL input field '",
+                   element_nodal.name, "'");
+    logging::error(element_weights.domain == FieldDomain::ELEMENT,
+                   "ModelData: element_nodal_to_nodal requires ELEMENT weight field '",
+                   element_weights.name, "'");
+    logging::error(element_weights.components == 1,
+                   "ModelData: element weight field '", element_weights.name,
+                   "' must have exactly one component");
+    logging::error(element_weights.rows == static_cast<Index>(max_elems),
+                   "ModelData: element weight field '", element_weights.name,
+                   "' has ", element_weights.rows, " rows, expected ", max_elems);
+    logging::error(element_nodal_offsets != nullptr,
+                   "ModelData: element nodal offset field is not initialized");
+    logging::error(!name.empty(), "ModelData: projected nodal field name cannot be empty");
+
+    const Field& offsets = *element_nodal_offsets;
+    const Index expected_rows = static_cast<Index>(offsets(static_cast<Index>(max_elems), 0));
+    logging::error(element_nodal.rows == expected_rows,
+                   "ModelData: ELEMENT_NODAL field '", element_nodal.name,
+                   "' has ", element_nodal.rows, " rows, expected ", expected_rows);
+
+    Field nodal{name, FieldDomain::NODE, static_cast<Index>(max_nodes), element_nodal.components};
+    nodal.set_zero();
+    std::vector<Precision> weight_sum(static_cast<std::size_t>(max_nodes), Precision(0));
+
+    for (Index elem_idx = 0; elem_idx < static_cast<Index>(max_elems); ++elem_idx) {
+        const ElementPtr& element = elements[elem_idx];
+        if (!element) {
+            continue;
+        }
+
+        const ID elem_id = element->elem_id;
+        logging::error(elem_id >= 0 && elem_id < max_elems,
+                       "ModelData: element id out of range in element_nodal_to_nodal: ", elem_id);
+
+        const Precision weight = element_weights(static_cast<Index>(elem_id), 0);
+        if (weight == Precision(0)) {
+            continue;
+        }
+
+        const Index offset = static_cast<Index>(offsets(static_cast<Index>(elem_id), 0));
+        const Index next_offset = static_cast<Index>(offsets(static_cast<Index>(elem_id) + 1, 0));
+        logging::error(next_offset >= offset,
+                       "ModelData: invalid element nodal offsets for element ", elem_id);
+        logging::error(next_offset - offset == static_cast<Index>(element->n_nodes()),
+                       "ModelData: element nodal offset span does not match element node count for element ",
+                       elem_id);
+
+        for (Index local_node = 0; local_node < static_cast<Index>(element->n_nodes()); ++local_node) {
+            const Index element_row = offset + local_node;
+            const Index node_id = static_cast<Index>(element->nodes()[local_node]);
+            logging::error(node_id < static_cast<Index>(max_nodes),
+                           "ModelData: node id out of range in element_nodal_to_nodal: ", node_id);
+
+            for (Index component = 0; component < element_nodal.components; ++component) {
+                nodal(node_id, component) += weight * element_nodal(element_row, component);
+            }
+            weight_sum[static_cast<std::size_t>(node_id)] += weight;
+        }
+    }
+
+    for (Index node = 0; node < static_cast<Index>(max_nodes); ++node) {
+        const Precision weight = weight_sum[static_cast<std::size_t>(node)];
+        if (weight == Precision(0)) {
+            continue;
+        }
+        for (Index component = 0; component < element_nodal.components; ++component) {
+            nodal(node, component) /= weight;
+        }
+    }
+
+    return nodal;
+}
 } // namespace model
 } // namespace fem

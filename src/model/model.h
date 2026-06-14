@@ -115,6 +115,10 @@ struct Model {
     SparseMatrix  build_lumped_mass_matrix  (SystemDofIds& indices);
     Field         build_internal_force_nonlinear(const Field& ip_stress);
 
+    std::tuple<Field, Field>       compute_stress_ip(Field& displacement, bool use_green_lagrange_nl = false);
+    Field                          compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
+    std::tuple<Field, Field>       compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
+    std::tuple<Field, Field>       compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field>       compute_ip_stress_strain(Field& displacement);
     Field                          compute_ip_stress_nonlinear(Field& displacement);
     std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
@@ -123,8 +127,8 @@ struct Model {
     Field                          compute_compliance   (Field& displacement);
     Field                          compute_compliance_angle_derivative(Field& displacement);
     Field                          compute_volumes      ();
-    DynamicMatrix                  compute_section_forces(Field& displacement);
-    DynamicMatrix                  compute_shear_flow(Field& displacement);
+    Field                          compute_section_forces(Field& displacement);
+    Field                          compute_shear_flow(Field& displacement);
 };
 
 #include "model.ipp"

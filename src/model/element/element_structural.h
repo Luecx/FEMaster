@@ -34,27 +34,43 @@ struct StructuralElement : ElementInterface {
     virtual MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) = 0;
     virtual MapMatrix mass(Precision* buffer) = 0;
 
-    virtual Stresses stress(Field& displacement, std::vector<Vec3>& rst) = 0;
-    virtual Strains strain(Field& displacement, std::vector<Vec3>& rst) = 0;
-    virtual std::vector<Vec6> section_forces(Field& displacement) {return std::vector<Vec6>();};
-    virtual std::vector<Precision> shear_flow(Field& displacement) {return std::vector<Precision>();};
+    virtual bool compute_shear_flow(Field& shear_flow,
+                                    const Field& displacement,
+                                    int offset) {
+        (void) shear_flow;
+        (void) displacement;
+        (void) offset;
+        return false;
+    }
 
-    virtual void compute_stress_strain(Field& ip_stress,
-                                       Field& ip_strain,
-                                       Field& displacement,
-                                       int ip_offset) = 0;
+    virtual RowMatrix stress_strain_nodal_rst() { return RowMatrix(0, 3); }
+    virtual RowMatrix stress_strain_ip_rst() { return RowMatrix(0, 3); }
 
-    /**
-     * @brief Computes the nonlinear integration-point stress used by
-     * current-configuration nonlinear stiffness/internal-force assembly.
-     *
-     * The model positions are interpreted as the reference coordinates for
-     * this call, while displacement is the deformation relative to that
-     * reference state.
-     */
-    virtual void compute_ip_stress_nonlinear(Field& ip_stress,
-                                             Field& displacement,
-                                             int ip_offset) = 0;
+    virtual void compute_stress_strain(Field* strain,
+                                       Field* stress,
+                                       const Field& displacement,
+                                       const RowMatrix& rst,
+                                       int offset,
+                                       bool use_green_lagrange_nl) {
+        (void) strain;
+        (void) stress;
+        (void) displacement;
+        (void) rst;
+        (void) offset;
+        (void) use_green_lagrange_nl;
+        logging::error(false, "compute_stress_strain is not implemented for element ", this->elem_id);
+    }
+
+    virtual void compute_stress_state(Field& stress_state,
+                                      const Field& displacement,
+                                      int offset,
+                                      bool use_green_lagrange_nl) {
+        RowMatrix rst = stress_strain_ip_rst();
+        if (rst.rows() == 0) {
+            return;
+        }
+        compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
+    }
 
     /**
      * @brief Adds nonlinear internal nodal forces to a global NODE x 6 field.
@@ -66,26 +82,22 @@ struct StructuralElement : ElementInterface {
                                                   const Field& ip_stress,
                                                   int ip_offset) = 0;
 
-    virtual void compute_stress_strain_nodal(Field& displacement,
-                                             Field& stress,
-                                             Field& strain) = 0;
-
-    virtual bool supports_shell_stress_surfaces() const { return false; }
-
-    virtual void compute_shell_stress_surfaces_nodal(Field& displacement,
-                                                     Field& stress_top,
-                                                     Field& stress_bot) {
+    virtual bool compute_beam_section_forces(Field& section_forces,
+                                             const Field& displacement,
+                                             int offset) {
+        (void) section_forces;
         (void) displacement;
-        (void) stress_top;
-        (void) stress_bot;
+        (void) offset;
+        return false;
     }
 
-    virtual bool supports_shell_resultants() const { return false; }
-
-    virtual void compute_shell_resultants_nodal(Field& displacement,
-                                                Field& resultants) {
+    virtual bool compute_shell_section_forces(Field& section_forces,
+                                              Field& contribution_count,
+                                              const Field& displacement) {
+        (void) section_forces;
+        (void) contribution_count;
         (void) displacement;
-        (void) resultants;
+        return false;
     }
 
     // Field functors for volume/surface integrations (aliased to central types)

@@ -834,7 +834,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return h * A;
     }
 
-    virtual Stress stress(Field& displacement, Vec3& xyz) {
+    virtual Stress compute_stress_at(Field& displacement, Vec3& xyz) {
         const Precision r = xyz(0);
         const Precision s = xyz(1);
         const Precision t = xyz(2);
@@ -946,329 +946,9 @@ struct DefaultShellElement : public ShellElement<N> {
         return Stress{res_element}.transform(element_basis, this->global_basis());
     }
 
-    void compute_stress_strain_nodal(
-        Field& displacement,
-        Field& stress,
-        Field& strain
-    ) override {
-        Mat3 axes = get_xyz_axes();
-
-        Precision h = this->get_section()->thickness_;
-
-        Precision topo_scale = Precision(1);
-
-        if (this->_model_data && this->_model_data->element_stiffness_scale) {
-            auto scale_field = this->_model_data->element_stiffness_scale;
-
-            logging::error(
-                scale_field->components == 1,
-                "Field '", scale_field->name, "': element stiffness scale requires 1 component"
-            );
-
-            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
-        }
-
-        auto abd_section       = this->get_section()->get_abd();
-        Mat2 shear_section_mat = this->get_section()->get_shear();
-
-        abd_section       *= topo_scale;
-        shear_section_mat *= topo_scale;
-
-        StaticVector<2 * N> disp_membrane;
-        StaticVector<3 * N> disp_bending;
-        StaticVector<3 * N> disp_shear;
-
-        disp_membrane.setZero();
-        disp_bending.setZero();
-        disp_shear.setZero();
-
-        for (int a = 0; a < N; ++a) {
-            ID node_id = this->nodes()[a];
-
-            Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
-            Vec3 disp_xyz          = displacement_glob.head(3);
-            Vec3 disp_rot          = displacement_glob.tail(3);
-
-            disp_xyz = axes * disp_xyz;
-            disp_rot = axes * disp_rot;
-
-            disp_membrane(2 * a)     = disp_xyz(0);
-            disp_membrane(2 * a + 1) = disp_xyz(1);
-
-            disp_bending(3 * a)      = disp_xyz(2);
-            disp_bending(3 * a + 1)  = disp_rot(0);
-            disp_bending(3 * a + 2)  = disp_rot(1);
-
-            disp_shear(3 * a)        = disp_xyz(2);
-            disp_shear(3 * a + 1)    = disp_rot(0);
-            disp_shear(3 * a + 2)    = disp_rot(1);
-        }
-
-        StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
-        LocalCoords        xy_coords = get_xy_coords(axes);
-
-        const Mat3 element_basis = this->element_basis_global(axes);
-
-        for (int i = 0; i < N; ++i) {
-            ID node_id = this->nodes()[i];
-
-            Precision r = coords(i, 0);
-            Precision s = coords(i, 1);
-
-            ShapeDerivative shape_der = this->shape_derivative(r, s);
-            Jacobian        jac       = this->jacobian(shape_der, xy_coords);
-
-            auto B_membrane = this->strain_disp_membrane(shape_der, jac);
-            auto B_bending  = this->strain_disp_bending(shape_der, jac);
-            auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
-
-            const Mat2 A       = this->section_to_element_2d(r, s, axes);
-            const auto T_plane = this->plane_strain_transform(A);
-            const auto T_shear = this->shear_strain_transform(A);
-
-            Vec3 eps_element   = B_membrane * disp_membrane;
-            Vec3 kappa_element = B_bending  * disp_bending;
-            Vec2 gamma_element = B_shear    * disp_shear;
-
-            Vec3 eps_section   = T_plane * eps_element;
-            Vec3 kappa_section = T_plane * kappa_element;
-            Vec2 gamma_section = T_shear * gamma_element;
-
-            Vec6 generalized_strain_section;
-            generalized_strain_section << eps_section, kappa_section;
-
-            Vec6 generalized_resultant_section = abd_section * generalized_strain_section;
-
-            Vec3 membrane_force_section = generalized_resultant_section.template segment<3>(0);
-            Vec3 bending_moment_section = generalized_resultant_section.template segment<3>(3);
-            Vec2 shear_stress_section   = (shear_section_mat / h) * gamma_section;
-
-            Vec3 membrane_force_element = T_plane.transpose() * membrane_force_section;
-            Vec3 bending_moment_element = T_plane.transpose() * bending_moment_section;
-            Vec2 shear_stress_element   = T_shear.transpose()  * shear_stress_section;
-
-            Precision z_top = +Precision(0.5) * h;
-            Precision z_bot = -Precision(0.5) * h;
-
-            Vec6 stress_top_element = Vec6::Zero();
-            Vec6 stress_bot_element = Vec6::Zero();
-
-            Vec3 stress_top_plane =
-                membrane_force_element / h
-                + z_top * (Precision(12) / (h * h * h)) * bending_moment_element;
-
-            Vec3 stress_bot_plane =
-                membrane_force_element / h
-                + z_bot * (Precision(12) / (h * h * h)) * bending_moment_element;
-
-            stress_top_element(0) = stress_top_plane(0);
-            stress_top_element(1) = stress_top_plane(1);
-            stress_top_element(3) = shear_stress_element(0);
-            stress_top_element(4) = shear_stress_element(1);
-            stress_top_element(5) = stress_top_plane(2);
-
-            stress_bot_element(0) = stress_bot_plane(0);
-            stress_bot_element(1) = stress_bot_plane(1);
-            stress_bot_element(3) = shear_stress_element(0);
-            stress_bot_element(4) = shear_stress_element(1);
-            stress_bot_element(5) = stress_bot_plane(2);
-
-            Vec6 strain_mid_element = Vec6::Zero();
-
-            strain_mid_element(0) = eps_element(0);
-            strain_mid_element(1) = eps_element(1);
-            strain_mid_element(3) = gamma_element(0);
-            strain_mid_element(4) = gamma_element(1);
-            strain_mid_element(5) = eps_element(2);
-
-            Vec6 strain_top_element = strain_mid_element;
-            Vec6 strain_bot_element = strain_mid_element;
-
-            strain_top_element(0) += z_top * kappa_element(0);
-            strain_top_element(1) += z_top * kappa_element(1);
-            strain_top_element(5) += z_top * kappa_element(2);
-
-            strain_bot_element(0) += z_bot * kappa_element(0);
-            strain_bot_element(1) += z_bot * kappa_element(1);
-            strain_bot_element(5) += z_bot * kappa_element(2);
-
-            Stress stress_top_obj {stress_top_element};
-            Stress stress_bot_obj {stress_bot_element};
-
-            bool use_top = stress_top_obj.norm() > stress_bot_obj.norm();
-
-            Vec6 stress_nodal_element = use_top ? stress_top_element : stress_bot_element;
-            Vec6 strain_nodal_element = use_top ? strain_top_element : strain_bot_element;
-
-            Stress stress_nodal_global =
-                Stress{stress_nodal_element}.transform(element_basis, this->global_basis());
-
-            const Index node_idx = static_cast<Index>(node_id);
-
-            for (int j = 0; j < 6; ++j) {
-                stress(node_idx, j) += stress_nodal_global(j);
-
-                // Strain bleibt hier element-local, weil Stress-Voigt-Transformation
-                // nicht automatisch identisch mit Engineering-Strain-Transformation ist.
-                strain(node_idx, j) += strain_nodal_element(j);
-            }
-        }
-    }
-
-    bool supports_shell_stress_surfaces() const override {
-        return true;
-    }
-
-    void compute_shell_stress_surfaces_nodal(
-        Field& displacement,
-        Field& stress_top,
-        Field& stress_bot
-    ) override {
-        Mat3 axes = get_xyz_axes();
-
-        Precision h = this->get_section()->thickness_;
-
-        Precision topo_scale = Precision(1);
-
-        if (this->_model_data && this->_model_data->element_stiffness_scale) {
-            auto scale_field = this->_model_data->element_stiffness_scale;
-
-            logging::error(
-                scale_field->components == 1,
-                "Field '", scale_field->name, "': element stiffness scale requires 1 component"
-            );
-
-            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
-        }
-
-        auto abd_section       = this->get_section()->get_abd();
-        Mat2 shear_section_mat = this->get_section()->get_shear();
-
-        abd_section       *= topo_scale;
-        shear_section_mat *= topo_scale;
-
-        StaticVector<2 * N> disp_membrane;
-        StaticVector<3 * N> disp_bending;
-        StaticVector<3 * N> disp_shear;
-
-        disp_membrane.setZero();
-        disp_bending.setZero();
-        disp_shear.setZero();
-
-        for (int a = 0; a < N; ++a) {
-            ID node_id = this->nodes()[a];
-
-            Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
-            Vec3 disp_xyz          = displacement_glob.head(3);
-            Vec3 disp_rot          = displacement_glob.tail(3);
-
-            disp_xyz = axes * disp_xyz;
-            disp_rot = axes * disp_rot;
-
-            disp_membrane(2 * a)     = disp_xyz(0);
-            disp_membrane(2 * a + 1) = disp_xyz(1);
-
-            disp_bending(3 * a)      = disp_xyz(2);
-            disp_bending(3 * a + 1)  = disp_rot(0);
-            disp_bending(3 * a + 2)  = disp_rot(1);
-
-            disp_shear(3 * a)        = disp_xyz(2);
-            disp_shear(3 * a + 1)    = disp_rot(0);
-            disp_shear(3 * a + 2)    = disp_rot(1);
-        }
-
-        StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
-        LocalCoords        xy_coords = get_xy_coords(axes);
-
-        const Mat3 element_basis = this->element_basis_global(axes);
-
-        for (int i = 0; i < N; ++i) {
-            ID node_id = this->nodes()[i];
-
-            Precision r = coords(i, 0);
-            Precision s = coords(i, 1);
-
-            ShapeDerivative shape_der = this->shape_derivative(r, s);
-            Jacobian        jac       = this->jacobian(shape_der, xy_coords);
-
-            auto B_membrane = this->strain_disp_membrane(shape_der, jac);
-            auto B_bending  = this->strain_disp_bending(shape_der, jac);
-            auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
-
-            const Mat2 A       = this->section_to_element_2d(r, s, axes);
-            const auto T_plane = this->plane_strain_transform(A);
-            const auto T_shear = this->shear_strain_transform(A);
-
-            Vec3 eps_element   = B_membrane * disp_membrane;
-            Vec3 kappa_element = B_bending  * disp_bending;
-            Vec2 gamma_element = B_shear    * disp_shear;
-
-            Vec3 eps_section   = T_plane * eps_element;
-            Vec3 kappa_section = T_plane * kappa_element;
-            Vec2 gamma_section = T_shear * gamma_element;
-
-            Vec6 generalized_strain_section;
-            generalized_strain_section << eps_section, kappa_section;
-
-            Vec6 generalized_resultant_section = abd_section * generalized_strain_section;
-
-            Vec3 membrane_force_section = generalized_resultant_section.template segment<3>(0);
-            Vec3 bending_moment_section = generalized_resultant_section.template segment<3>(3);
-            Vec2 shear_stress_section   = (shear_section_mat / h) * gamma_section;
-
-            Vec3 membrane_force_element = T_plane.transpose() * membrane_force_section;
-            Vec3 bending_moment_element = T_plane.transpose() * bending_moment_section;
-            Vec2 shear_stress_element   = T_shear.transpose()  * shear_stress_section;
-
-            Precision z_top = +Precision(0.5) * h;
-            Precision z_bot = -Precision(0.5) * h;
-
-            Vec6 stress_top_element = Vec6::Zero();
-            Vec6 stress_bot_element = Vec6::Zero();
-
-            Vec3 stress_top_plane =
-                membrane_force_element / h
-                + z_top * (Precision(12) / (h * h * h)) * bending_moment_element;
-
-            Vec3 stress_bot_plane =
-                membrane_force_element / h
-                + z_bot * (Precision(12) / (h * h * h)) * bending_moment_element;
-
-            stress_top_element(0) = stress_top_plane(0);
-            stress_top_element(1) = stress_top_plane(1);
-            stress_top_element(3) = shear_stress_element(0);
-            stress_top_element(4) = shear_stress_element(1);
-            stress_top_element(5) = stress_top_plane(2);
-
-            stress_bot_element(0) = stress_bot_plane(0);
-            stress_bot_element(1) = stress_bot_plane(1);
-            stress_bot_element(3) = shear_stress_element(0);
-            stress_bot_element(4) = shear_stress_element(1);
-            stress_bot_element(5) = stress_bot_plane(2);
-
-            Stress stress_top_global =
-                Stress{stress_top_element}.transform(element_basis, this->global_basis());
-
-            Stress stress_bot_global =
-                Stress{stress_bot_element}.transform(element_basis, this->global_basis());
-
-            const Index node_idx = static_cast<Index>(node_id);
-
-            for (int j = 0; j < 6; ++j) {
-                stress_top(node_idx, j) += stress_top_global(j);
-                stress_bot(node_idx, j) += stress_bot_global(j);
-            }
-        }
-    }
-
-    bool supports_shell_resultants() const override {
-        return true;
-    }
-
-    void compute_shell_resultants_nodal(
-        Field& displacement,
-        Field& resultants
-    ) override {
+    bool compute_shell_section_forces(Field& resultants,
+                                      Field& contribution_count,
+                                      const Field& displacement) override {
         Mat3 axes = get_xyz_axes();
 
         Precision topo_scale = Precision(1);
@@ -1367,15 +1047,84 @@ struct DefaultShellElement : public ShellElement<N> {
             resultants(node_idx, 5) += bending_moment_section(2);
             resultants(node_idx, 6) += shear_force_section(0);
             resultants(node_idx, 7) += shear_force_section(1);
+            contribution_count(node_idx, 0) += Precision(1);
+        }
+        return true;
+    }
+
+    RowMatrix stress_strain_nodal_rst() override {
+        StaticMatrix<N, 2> coords = this->geometry.node_coords_local();
+        RowMatrix rst(N, 3);
+        rst.setZero();
+        for (Index i = 0; i < N; ++i) {
+            rst(i, 0) = coords(i, 0);
+            rst(i, 1) = coords(i, 1);
+            rst(i, 2) = Precision(0);
+        }
+        return rst;
+    }
+
+    RowMatrix stress_strain_ip_rst() override {
+        const auto& scheme = this->integration_scheme();
+        RowMatrix rst(scheme.count(), 3);
+        rst.setZero();
+        for (Index i = 0; i < scheme.count(); ++i) {
+            rst(i, 0) = scheme.get_point(i).r;
+            rst(i, 1) = scheme.get_point(i).s;
+            rst(i, 2) = Precision(0);
+        }
+        return rst;
+    }
+
+    void compute_stress_strain(Field* strain,
+                               Field* stress_out,
+                               const Field& displacement,
+                               const RowMatrix& rst,
+                               int offset,
+                               bool use_green_lagrange_nl) override {
+        logging::error(!use_green_lagrange_nl,
+                       "ShellElement: nonlinear stress/strain evaluation is not implemented yet for element ",
+                       this->elem_id);
+        logging::error(strain != nullptr || stress_out != nullptr,
+                       "ShellElement: compute_stress_strain requires at least one output field");
+        logging::error(rst.cols() >= 3,
+                       "ShellElement: stress/strain evaluation coordinates require at least 3 columns");
+
+        Field& displacement_mut = const_cast<Field&>(displacement);
+        for (Index i = 0; i < rst.rows(); ++i) {
+            Vec3 local;
+            local << rst(i, 0), rst(i, 1), rst(i, 2);
+            const Stress stress_value = this->compute_stress_at(displacement_mut, local);
+            const Index row = static_cast<Index>(offset) + i;
+
+            if (strain) {
+                for (Index j = 0; j < strain->components; ++j) {
+                    (*strain)(row, j) = Precision(0);
+                }
+            }
+            if (stress_out) {
+                for (Index j = 0; j < stress_out->components; ++j) {
+                    (*stress_out)(row, j) = stress_value(j);
+                }
+            }
         }
     }
 
-    void compute_stress_strain(
+    void compute_stress_state(Field& stress_state,
+                              const Field& displacement,
+                              int offset,
+                              bool use_green_lagrange_nl) override {
+        logging::error(!use_green_lagrange_nl,
+                       "ShellElement: nonlinear stress state is not implemented yet for element ",
+                       this->elem_id);
+        compute_membrane_stress_state(stress_state, displacement, offset);
+    }
+
+    void compute_membrane_stress_state(
         Field& ip_stress,
-        Field& /*ip_strain*/,
-        Field& displacement,
+        const Field& displacement,
         int    ip_offset
-    ) override {
+    ) {
         Mat3 axes      = get_xyz_axes();
         auto xy_coords = get_xy_coords(axes);
 

@@ -178,7 +178,8 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
  */
 static void write_results(const std::vector<ModalMode>& modes,
                           reader::Writer*               writer,
-                          int                           loadcase_id)
+                          int                           loadcase_id,
+                          model::Model*                 mdl)
 {
     writer->add_loadcase(loadcase_id);
 
@@ -190,7 +191,7 @@ static void write_results(const std::vector<ModalMode>& modes,
         eigenvalues(i) = modes[i].lambda;
         eigenfreqs (i) = modes[i].freq * 2 * pi;
         freqs      (i) = modes[i].freq;
-        writer->write_field       (modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1));
+        writer->write_field       (modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get());
         writer->write_eigen_matrix(modes[i].participation, "PARTICIPATION_" + std::to_string(i + 1));
     }
     writer->write_eigen_matrix(DynamicMatrix(eigenvalues), "EIGENVALUES");
@@ -339,7 +340,7 @@ void LinearEigenfrequency::run() {
 
     // (8) Print + write
     display_eigen_summary(modes);
-    write_results(modes, writer, id);
+    write_results(modes, writer, id, model);
 
     logging::info(true, "Eigenfrequency analysis completed.");
 }
