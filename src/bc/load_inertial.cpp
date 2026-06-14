@@ -107,7 +107,7 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
             const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
             return -(a0 + a_rot);
         };
-        structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+        structural->integrate_vector_field(bc, /*scale_by_density=*/true, f);
     }
 
     if (consider_point_masses_) {

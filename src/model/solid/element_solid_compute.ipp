@@ -137,6 +137,18 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
 }
 
 template<Index N>
+void SolidElement<N>::compute_stress_state(Field& stress_state,
+                                           const Field& displacement,
+                                           int offset,
+                                           bool use_green_lagrange_nl) {
+    RowMatrix rst = stress_strain_ip_rst();
+    if (rst.rows() == 0) {
+        return;
+    }
+    compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
+}
+
+template<Index N>
 void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
                                                        const Field& ip_stress,
                                                        int ip_offset) {
@@ -163,6 +175,36 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
             }
         }
     }
+}
+
+template<Index N>
+bool SolidElement<N>::compute_shear_flow(Field& shear_flow,
+                                         const Field& displacement,
+                                         int offset) {
+    (void) shear_flow;
+    (void) displacement;
+    (void) offset;
+    return false;
+}
+
+template<Index N>
+bool SolidElement<N>::compute_beam_section_forces(Field& section_forces,
+                                                  const Field& displacement,
+                                                  int offset) {
+    (void) section_forces;
+    (void) displacement;
+    (void) offset;
+    return false;
+}
+
+template<Index N>
+bool SolidElement<N>::compute_shell_section_forces(Field& section_forces,
+                                                   Field& contribution_count,
+                                                   const Field& displacement) {
+    (void) section_forces;
+    (void) contribution_count;
+    (void) displacement;
+    return false;
 }
 
 //-----------------------------------------------------------------------------

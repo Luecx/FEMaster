@@ -74,7 +74,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
             // Without an orientation the body force is constant in global
             // coordinates and can be integrated directly over the element.
             auto f = [f0](const Vec3& /*x*/) -> Vec3 { return f0; };
-            structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+            structural->integrate_vector_field(bc, /*scale_by_density=*/true, f);
         } else {
             const Vec3 f_local = local_values;
             auto*      ori     = orientation_.get();
@@ -85,7 +85,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
                 const auto axes        = ori->get_axes(local_point);
                 return axes * f_local;
             };
-            structural->integrate_vec_field(bc, /*scale_by_density=*/true, f);
+            structural->integrate_vector_field(bc, /*scale_by_density=*/true, f);
         }
     }
 }

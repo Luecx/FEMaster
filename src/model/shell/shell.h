@@ -101,27 +101,65 @@ struct ShellElement : StructuralElement {
         (void) ip_offset;
         logging::error(false, "ShellElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
     };
-    void apply_vload(Field& node_loads, Vec3 load) override {
-        logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
-        logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
-        const auto& node_positions = *this->_model_data->positions;
-        auto surf = this->surface(1);
-        if (!surf) return;
-        auto contrib = surf->shape_function_integral(node_positions);
-        const Precision t = get_section()->thickness_;
-        for (Index local_id = 0; local_id < N; ++local_id) {
-            const ID n_id = node_ids[local_id];
-            const Precision w = contrib(local_id) * t;
-            node_loads(n_id, 0) += w * load(0);
-            node_loads(n_id, 1) += w * load(1);
-            node_loads(n_id, 2) += w * load(2);
-        }
-    };
+
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
         (void) node_loads;
         (void) node_temp;
         (void) ref_temp;
     };
+
+    void compute_stress_strain(Field* strain,
+                               Field* stress,
+                               const Field& displacement,
+                               const RowMatrix& rst,
+                               int offset,
+                               bool use_green_lagrange_nl) override {
+        (void) strain;
+        (void) stress;
+        (void) displacement;
+        (void) rst;
+        (void) offset;
+        (void) use_green_lagrange_nl;
+        logging::error(false, "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
+    }
+
+    void compute_stress_state(Field& stress_state,
+                              const Field& displacement,
+                              int offset,
+                              bool use_green_lagrange_nl) override {
+        RowMatrix rst = stress_strain_ip_rst();
+        if (rst.rows() == 0) {
+            return;
+        }
+        compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
+    }
+
+    bool compute_shear_flow(Field& shear_flow,
+                            const Field& displacement,
+                            int offset) override {
+        (void) shear_flow;
+        (void) displacement;
+        (void) offset;
+        return false;
+    }
+
+    bool compute_beam_section_forces(Field& section_forces,
+                                     const Field& displacement,
+                                     int offset) override {
+        (void) section_forces;
+        (void) displacement;
+        (void) offset;
+        return false;
+    }
+
+    bool compute_shell_section_forces(Field& section_forces,
+                                      Field& contribution_count,
+                                      const Field& displacement) override {
+        (void) section_forces;
+        (void) contribution_count;
+        (void) displacement;
+        return false;
+    }
 
     /**
      * @brief Extracts nodal data for the element from the full global nodal data.

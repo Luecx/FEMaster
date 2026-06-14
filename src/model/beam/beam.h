@@ -71,8 +71,6 @@ struct BeamElement : StructuralElement {
         return section->material_->elasticity()->template as<material::IsotropicElasticity>();
     }
 
-    Vec3 coordinate(Index index) { return this->node_position(node_ids[index]); }
-
     ID orientation_node() const { return orientation_node_id_; }
 
     bool has_orientation_node() const { return orientation_node_id_ >= 0; }
@@ -89,7 +87,9 @@ struct BeamElement : StructuralElement {
 
         Vec3 n1_vec = Vec3::Zero();
         if (element_has_node) {
-            n1_vec = this->node_position(orientation_node_id_);
+            logging::error(this->_model_data            != nullptr, "no model data assigned to element ", this->elem_id);
+            logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+            n1_vec = this->_model_data->positions->row_vec3(static_cast<Index>(orientation_node_id_));
         } else {
             n1_vec = section->direction_;
         }
@@ -102,7 +102,9 @@ struct BeamElement : StructuralElement {
     Precision length() {
         Precision l = 0;
         for (Index i = 0; i < N - 1; i++) {
-            l += (coordinate(i) - coordinate(i + 1)).norm();
+            const Vec3 x0 = this->node_position(static_cast<ID>(i));
+            const Vec3 x1 = this->node_position(static_cast<ID>(i + 1));
+            l += (x0 - x1).norm();
         }
         return l;
     }
@@ -111,7 +113,7 @@ struct BeamElement : StructuralElement {
 
     // Base rotation (provided section frame; no principal rotation)
     Mat3 base_rotation_matrix() {
-        Vec3 x = (coordinate(1) - coordinate(0)).normalized();
+        Vec3 x = (this->node_position(1) - this->node_position(0)).normalized();
         Vec3 y = orientation_direction();
         Vec3 z = x.cross(y).normalized();
         y = z.cross(x).normalized();
@@ -280,17 +282,15 @@ struct BeamElement : StructuralElement {
         logging::error(false, "BeamElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
     }
 
-    void apply_vload(Field& node_loads, Vec3 load) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return;
-        const Vec3 F = load * (A * L / Precision(N));
-        for (Index i = 0; i < N; ++i) {
-            const ID n_id = node_ids[i];
-            node_loads(n_id, 0) += F(0);
-            node_loads(n_id, 1) += F(1);
-            node_loads(n_id, 2) += F(2);
+    void compute_stress_state(Field& stress_state,
+                              const Field& displacement,
+                              int offset,
+                              bool use_green_lagrange_nl) override {
+        RowMatrix rst = stress_strain_ip_rst();
+        if (rst.rows() == 0) {
+            return;
         }
+        compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
     }
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
@@ -307,6 +307,15 @@ struct BeamElement : StructuralElement {
     void compute_compliance_angle_derivative(Field& displacement, Field& result) override {
         (void)displacement;
         (void)result;
+    }
+
+    bool compute_shear_flow(Field& shear_flow,
+                            const Field& displacement,
+                            int offset) override {
+        (void)shear_flow;
+        (void)displacement;
+        (void)offset;
+        return false;
     }
 
     ElDofs dofs() override { return ElDofs{true, true, true, true, true, true}; }
@@ -351,16 +360,65 @@ struct BeamElement : StructuralElement {
         return true;
     }
 
+    bool compute_shell_section_forces(Field& section_forces,
+                                      Field& contribution_count,
+                                      const Field& displacement) override {
+        (void)section_forces;
+        (void)contribution_count;
+        (void)displacement;
+        return false;
+    }
+
+    Precision integrate_scalar_field(bool scale_by_density,
+                                     const ScalarField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->area_;
+        if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
+
+        Vec3 x_mid = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
+        x_mid /= static_cast<Precision>(N);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
+
+    Vec3 integrate_vector_field(bool scale_by_density,
+                                const VecField& field) override {
+        const Precision L = length();
+        const Precision A = get_profile()->area_;
+        if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
+
+        Vec3 x_mid = Vec3::Zero();
+        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
+        x_mid /= static_cast<Precision>(N);
+
+        Precision rho = 1.0;
+        if (scale_by_density) {
+            auto mat = get_material();
+            logging::error(mat && mat->has_density(),
+                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
+            rho = mat->get_density();
+        }
+        return field(x_mid) * (rho * A * L);
+    }
+
     // Integrate vector field via simple 1-point mid-span sampling and equal distribution
-    void integrate_vec_field(Field& node_loads,
-                             bool scale_by_density,
-                             const VecField& field) override {
+    void integrate_vector_field(Field& node_loads,
+                                bool scale_by_density,
+                                const VecField& field) override {
         const Precision L = length();
         const Precision A = get_profile()->area_;
         if (L <= Precision(0) || A <= Precision(0)) return;
 
         Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
+        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
         x_mid /= static_cast<Precision>(N);
 
         Precision rho = 1.0;
@@ -381,46 +439,6 @@ struct BeamElement : StructuralElement {
         }
     }
 
-    Precision integrate_scalar_field(bool scale_by_density,
-                                     const ScalarField& field) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
-
-        Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
-        x_mid /= static_cast<Precision>(N);
-
-        Precision rho = 1.0;
-        if (scale_by_density) {
-            auto mat = get_material();
-            logging::error(mat && mat->has_density(),
-                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
-        }
-        return field(x_mid) * (rho * A * L);
-    }
-
-    Vec3 integrate_vector_field(bool scale_by_density,
-                                const VecField& field) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
-
-        Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
-        x_mid /= static_cast<Precision>(N);
-
-        Precision rho = 1.0;
-        if (scale_by_density) {
-            auto mat = get_material();
-            logging::error(mat && mat->has_density(),
-                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
-        }
-        return field(x_mid) * (rho * A * L);
-    }
-
     Mat3 integrate_tensor_field(bool scale_by_density,
                                 const TenField& field) override {
         const Precision L = length();
@@ -428,7 +446,7 @@ struct BeamElement : StructuralElement {
         if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
 
         Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += coordinate(i);
+        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
         x_mid /= static_cast<Precision>(N);
 
         Precision rho = 1.0;

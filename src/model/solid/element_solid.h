@@ -267,15 +267,11 @@ public:
      */
     Precision volume() override;
 
-    /**
-     * @brief Applies a volume load to the element.
-     *
-     * @param node_coords The global nodal coordinates for the element.
-     * @param node_loads The nodal loads that will be updated by the applied load.
-     * @param load The external load vector.
-     */
-    void apply_vload(Field& node_loads, Vec3 load) override;
-
+    // Generic volume integrations (return accumulated values)
+    Precision integrate_scalar_field(bool scale_by_density,
+                                     const ScalarField& field) override;
+    Vec3      integrate_vector_field(bool scale_by_density,
+                                     const VecField& field) override;
     /**
      * @brief Integrates a vector field f(x) over the element volume and scatters equivalent nodal loads.
      *
@@ -283,14 +279,8 @@ public:
      * @param scale_by_density If true, multiply f(x) by the element material density.
      * @param field A callable f(x) with x in global coordinates returning a Vec3 body force density.
      */
-    void integrate_vec_field(Field& node_loads,
-                             bool scale_by_density,
-                             const VecField& field) override;
-
-    // Generic volume integrations (return accumulated values)
-    Precision integrate_scalar_field(bool scale_by_density,
-                                     const ScalarField& field) override;
-    Vec3      integrate_vector_field(bool scale_by_density,
+    void      integrate_vector_field(Field& node_loads,
+                                     bool scale_by_density,
                                      const VecField& field) override;
     Mat3      integrate_tensor_field(bool scale_by_density,
                                      const TenField& field) override;
@@ -313,9 +303,22 @@ public:
                                const RowMatrix& rst,
                                int offset,
                                bool use_green_lagrange_nl) override;
+    void compute_stress_state(Field& stress_state,
+                              const Field& displacement,
+                              int offset,
+                              bool use_green_lagrange_nl) override;
     void compute_internal_force_nonlinear(Field& node_forces,
                                           const Field& ip_stress,
                                           int ip_offset) override;
+    bool compute_shear_flow(Field& shear_flow,
+                            const Field& displacement,
+                            int offset) override;
+    bool compute_beam_section_forces(Field& section_forces,
+                                     const Field& displacement,
+                                     int offset) override;
+    bool compute_shell_section_forces(Field& section_forces,
+                                      Field& contribution_count,
+                                      const Field& displacement) override;
 
     /**
      * @brief Computes the compliance (strain energy) for the element.

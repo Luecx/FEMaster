@@ -241,55 +241,6 @@ struct DefaultShellElement : public ShellElement<N> {
         return jacobian;
     }
 
-    void integrate_vec_field(
-        Field&                                  node_loads,
-        bool                                    scale_by_density,
-        const typename ShellElement<N>::VecField& field
-    ) override {
-        Mat3 axes      = this->get_xyz_axes();
-        auto xy_coords = this->get_xy_coords(axes);
-
-        const auto&     scheme = this->integration_scheme();
-        const Precision t      = this->get_section()->thickness_;
-
-        Precision rho = Precision(1);
-
-        if (scale_by_density) {
-            rho = this->get_density(true);
-        }
-
-        auto node_coords_glob = this->node_coords_global();
-
-        for (Index ip = 0; ip < scheme.count(); ++ip) {
-            const auto      p = scheme.get_point(ip);
-            const Precision r = p.r;
-            const Precision s = p.s;
-            const Precision w = p.w;
-
-            ShapeFunction   H    = this->shape_function(r, s);
-            ShapeDerivative dH   = this->shape_derivative(r, s);
-            Jacobian        Jrs  = this->jacobian(dH, xy_coords);
-            const Precision detJ = std::abs(Jrs.determinant());
-
-            Vec3 x_ip = Vec3::Zero();
-
-            for (Index i = 0; i < N; ++i) {
-                x_ip += H(i) * node_coords_glob.row(i);
-            }
-
-            Vec3 f_ip = field(x_ip) * (rho * t * w * detJ);
-
-            for (Index i = 0; i < N; ++i) {
-                const ID        n_id = this->node_ids[i];
-                const Precision a    = H(i);
-
-                node_loads(n_id, 0) += a * f_ip(0);
-                node_loads(n_id, 1) += a * f_ip(1);
-                node_loads(n_id, 2) += a * f_ip(2);
-            }
-        }
-    }
-
     Precision integrate_scalar_field(
         bool                                       scale_by_density,
         const typename ShellElement<N>::ScalarField& field
@@ -372,6 +323,55 @@ struct DefaultShellElement : public ShellElement<N> {
         }
 
         return result;
+    }
+
+    void integrate_vector_field(
+        Field&                                  node_loads,
+        bool                                    scale_by_density,
+        const typename ShellElement<N>::VecField& field
+    ) override {
+        Mat3 axes      = this->get_xyz_axes();
+        auto xy_coords = this->get_xy_coords(axes);
+
+        const auto&     scheme = this->integration_scheme();
+        const Precision t      = this->get_section()->thickness_;
+
+        Precision rho = Precision(1);
+
+        if (scale_by_density) {
+            rho = this->get_density(true);
+        }
+
+        auto node_coords_glob = this->node_coords_global();
+
+        for (Index ip = 0; ip < scheme.count(); ++ip) {
+            const auto      p = scheme.get_point(ip);
+            const Precision r = p.r;
+            const Precision s = p.s;
+            const Precision w = p.w;
+
+            ShapeFunction   H    = this->shape_function(r, s);
+            ShapeDerivative dH   = this->shape_derivative(r, s);
+            Jacobian        Jrs  = this->jacobian(dH, xy_coords);
+            const Precision detJ = std::abs(Jrs.determinant());
+
+            Vec3 x_ip = Vec3::Zero();
+
+            for (Index i = 0; i < N; ++i) {
+                x_ip += H(i) * node_coords_glob.row(i);
+            }
+
+            Vec3 f_ip = field(x_ip) * (rho * t * w * detJ);
+
+            for (Index i = 0; i < N; ++i) {
+                const ID        n_id = this->node_ids[i];
+                const Precision a    = H(i);
+
+                node_loads(n_id, 0) += a * f_ip(0);
+                node_loads(n_id, 1) += a * f_ip(1);
+                node_loads(n_id, 2) += a * f_ip(2);
+            }
+        }
     }
 
     Mat3 integrate_tensor_field(

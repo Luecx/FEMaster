@@ -276,31 +276,9 @@ Vec3 QSPT::integrate_vector_field(bool scale_by_density, const VecField& field) 
     return result;
 }
 
-Mat3 QSPT::integrate_tensor_field(bool scale_by_density, const TenField& field) {
-    const NodeCoords coords = this->node_coords_global();
-    const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
-    const Precision thickness = this->get_section()->thickness_;
-
-    Mat3 result = Mat3::Zero();
-    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-        const auto p = integration_scheme_.get_point(ip);
-        const ShapeFunction N = geometry.shape_function(p.r, p.s);
-        const auto J = geometry.jacobian(coords, p.r, p.s);
-        const Precision dA = J.col(0).cross(J.col(1)).norm();
-
-        Vec3 x = Vec3::Zero();
-        for (Index i = 0; i < 4; ++i) {
-            x += N(i) * row_as_vec3(coords, i);
-        }
-
-        result += field(x) * density_scale * thickness * p.w * dA;
-    }
-    return result;
-}
-
-void QSPT::integrate_vec_field(Field& node_loads,
-                               bool scale_by_density,
-                               const VecField& field) {
+void QSPT::integrate_vector_field(Field& node_loads,
+                                  bool scale_by_density,
+                                  const VecField& field) {
     const NodeCoords coords = this->node_coords_global();
     const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
     const Precision thickness = this->get_section()->thickness_;
@@ -324,6 +302,28 @@ void QSPT::integrate_vec_field(Field& node_loads,
             node_loads(node_id, 2) += N(i) * value(2);
         }
     }
+}
+
+Mat3 QSPT::integrate_tensor_field(bool scale_by_density, const TenField& field) {
+    const NodeCoords coords = this->node_coords_global();
+    const Precision density_scale = scale_by_density ? effective_density() : Precision(1);
+    const Precision thickness = this->get_section()->thickness_;
+
+    Mat3 result = Mat3::Zero();
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        const auto p = integration_scheme_.get_point(ip);
+        const ShapeFunction N = geometry.shape_function(p.r, p.s);
+        const auto J = geometry.jacobian(coords, p.r, p.s);
+        const Precision dA = J.col(0).cross(J.col(1)).norm();
+
+        Vec3 x = Vec3::Zero();
+        for (Index i = 0; i < 4; ++i) {
+            x += N(i) * row_as_vec3(coords, i);
+        }
+
+        result += field(x) * density_scale * thickness * p.w * dA;
+    }
+    return result;
 }
 
 void QSPT::compute_compliance(Field& displacement, Field& result) {
