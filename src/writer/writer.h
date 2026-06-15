@@ -62,9 +62,7 @@ class Writer {
     /**
      * @brief Write a model::Field as a FIELD block.
      *
-     * Writes a field with indices derived from its domain. NODE and ELEMENT
-     * rows get one index, ELEMENT_NODAL and ELEMENT_IP rows get element/local
-     * indices. Rows with all value components equal to zero are omitted.
+     * Writes all stored field rows without adding index columns.
      */
     void write_field(const model::Field& field,
                      const std::string& field_name,
