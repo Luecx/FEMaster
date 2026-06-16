@@ -7,7 +7,7 @@ namespace model {
 namespace {
 
 Vec3 midpoint(T3& elem) {
-    return (elem.node_position(0) + elem.node_position(1)) * Precision(0.5);
+    return (elem.node_position_current(0) + elem.node_position_current(1)) * Precision(0.5);
 }
 
 Precision density_scale(T3& elem, bool scale_by_density) {
@@ -29,7 +29,7 @@ T3::T3(ID elem_id, std::array<ID, N> node_ids_in)
     , node_ids(node_ids_in) {}
 
 ElDofs T3::dofs() {
-    return ElDofs{true, true, true, false, false, false};
+    return ElDofs {true, true, true, false, false, false};
 }
 
 Dim T3::dimensions() {
@@ -49,7 +49,7 @@ ID* T3::nodes() {
 }
 
 SurfacePtr T3::surface(ID surface_id) {
-    (void)surface_id;
+    (void) surface_id;
     return nullptr;
 }
 
@@ -61,6 +61,7 @@ TrussSection* T3::get_section() {
     logging::error(this->_section != nullptr,
                    "T3: missing section for element ",
                    this->elem_id);
+
     auto* section = this->_section->template as<TrussSection>();
     logging::error(section != nullptr,
                    "T3: section is not a truss section for element ",
@@ -81,6 +82,7 @@ material::IsotropicElasticity* T3::get_elasticity() {
     logging::error(mat->has_elasticity(),
                    "T3: material has no elasticity for element ",
                    this->elem_id);
+
     auto* elasticity = mat->elasticity()->template as<material::IsotropicElasticity>();
     logging::error(elasticity != nullptr,
                    "T3: material elasticity is not isotropic for element ",
@@ -88,41 +90,116 @@ material::IsotropicElasticity* T3::get_elasticity() {
     return elasticity;
 }
 
+Vec3 T3::node_position_reference(Index local_node) const {
+    logging::error(local_node >= 0 && local_node < N,
+                   "T3: local node index out of range in element ",
+                   this->elem_id);
+    logging::error(this->_model_data != nullptr,
+                   "T3: no model data assigned to element ",
+                   this->elem_id);
+    logging::error(this->_model_data->positions_reference != nullptr,
+                   "T3: reference positions field not set in model data");
+
+    const Index node = static_cast<Index>(node_ids[local_node]);
+    return this->_model_data->positions_reference->row_vec3(node);
+}
+
+Vec3 T3::node_position_current(Index local_node) const {
+    logging::error(local_node >= 0 && local_node < N,
+                   "T3: local node index out of range in element ",
+                   this->elem_id);
+    logging::error(this->_model_data != nullptr,
+                   "T3: no model data assigned to element ",
+                   this->elem_id);
+    logging::error(this->_model_data->positions != nullptr,
+                   "T3: current positions field not set in model data");
+
+    const Index node = static_cast<Index>(node_ids[local_node]);
+    return this->_model_data->positions->row_vec3(node);
+}
+
+Precision T3::length_reference() const {
+    return (node_position_reference(1) - node_position_reference(0)).norm();
+}
+
+Precision T3::length_current() const {
+    return (node_position_current(1) - node_position_current(0)).norm();
+}
+
+Precision T3::stretch() const {
+    const Precision L0 = length_reference();
+    const Precision l  = length_current();
+
+    logging::error(L0 > Precision(0),
+                   "T3: zero reference length for element ",
+                   this->elem_id);
+    logging::error(l > Precision(0),
+                   "T3: zero current length for element ",
+                   this->elem_id);
+
+    return l / L0;
+}
+
+Vec3 T3::direction_reference() const {
+    const Precision L0 = length_reference();
+    logging::error(L0 > Precision(0),
+                   "T3: zero reference length for element ",
+                   this->elem_id);
+
+    return (node_position_reference(1) - node_position_reference(0)) / L0;
+}
+
+Vec3 T3::direction_current() const {
+    const Precision l = length_current();
+    logging::error(l > Precision(0),
+                   "T3: zero current length for element ",
+                   this->elem_id);
+
+    return (node_position_current(1) - node_position_current(0)) / l;
+}
+
+Precision T3::material_tangent_reference() {
+    return get_elasticity()->youngs;
+}
+
+Precision T3::material_tangent_spatial() {
+    const Precision lambda = stretch();
+    return lambda * lambda * lambda * material_tangent_reference();
+}
+
 Precision T3::length() {
-    return (this->node_position(1) - this->node_position(0)).norm();
+    return length_current();
 }
 
 Vec3 T3::direction() {
-    const Precision L = length();
-    logging::error(L > Precision(0),
-                   "T3: zero length for element ",
-                   this->elem_id);
-    return (this->node_position(1) - this->node_position(0)) / L;
+    return direction_current();
 }
 
 Precision T3::volume() {
-    return get_section()->area_ * length();
+    return get_section()->area_ * length_current();
 }
 
 MapMatrix T3::stiffness(Precision* buffer) {
-    const Precision E = get_elasticity()->youngs;
     const Precision A = get_section()->area_;
-    const Precision L = length();
-    logging::error(L > Precision(0),
-                   "T3: zero length in stiffness for element ",
+    const Precision l = length_current();
+
+    logging::error(l > Precision(0),
+                   "T3: zero current length in stiffness for element ",
                    this->elem_id);
 
-    StaticMatrix<2, 2> k_local;
-    k_local << Precision(1), Precision(-1),
-               Precision(-1), Precision(1);
+    const Precision c = material_tangent_spatial();
+    const Vec3      n = direction_current();
+    const Mat3      k = (A * c / l) * (n * n.transpose());
 
-    const Vec3 t = direction();
-    StaticMatrix<N * 3, 2> P = StaticMatrix<N * 3, 2>::Zero();
-    P.block(0, 0, 3, 1) = t;
-    P.block(3, 1, 3, 1) = t;
+    StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
+
+    K.block(0, 0, 3, 3) =  k;
+    K.block(0, 3, 3, 3) = -k;
+    K.block(3, 0, 3, 3) = -k;
+    K.block(3, 3, 3, 3) =  k;
 
     MapMatrix result(buffer, N * 3, N * 3);
-    result = P * (k_local * (E * A / L)) * P.transpose();
+    result = K;
     return result;
 }
 
@@ -130,25 +207,25 @@ MapMatrix T3::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_s
     logging::error(ip_stress.components >= 1,
                    "T3: geometric stiffness requires nonlinear IP stress component 0");
 
-    const Precision L = length();
-    logging::error(L > Precision(0),
-                   "T3: zero length in stiffness_geom for element ",
+    const Precision l = length_current();
+
+    logging::error(l > Precision(0),
+                   "T3: zero current length in stiffness_geom for element ",
                    this->elem_id);
 
-    const Vec3 n = direction();
-    const Precision sigma = ip_stress(static_cast<Index>(ip_start_idx), 0);
-    const Precision axial_force = get_section()->area_ * sigma;
-    const Mat3 projector = Mat3::Identity() - n * n.transpose();
-    const Mat3 block = (axial_force / L) * projector;
+    const Precision stress      = ip_stress(static_cast<Index>(ip_start_idx), 0);
+    const Precision axial_force = get_section()->area_ * stress;
+    const Mat3      k           = (axial_force / l) * Mat3::Identity();
 
-    StaticMatrix<N * 3, N * 3> Kg = StaticMatrix<N * 3, N * 3>::Zero();
-    Kg.block(0, 0, 3, 3) = block;
-    Kg.block(0, 3, 3, 3) = -block;
-    Kg.block(3, 0, 3, 3) = -block;
-    Kg.block(3, 3, 3, 3) = block;
+    StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
+
+    K.block(0, 0, 3, 3) =  k;
+    K.block(0, 3, 3, 3) = -k;
+    K.block(3, 0, 3, 3) = -k;
+    K.block(3, 3, 3, 3) =  k;
 
     MapMatrix result(buffer, N * 3, N * 3);
-    result = Kg;
+    result = K;
     return result;
 }
 
@@ -156,14 +233,16 @@ MapMatrix T3::mass(Precision* buffer) {
     StaticMatrix<N * 3, N * 3> M = StaticMatrix<N * 3, N * 3>::Zero();
 
     auto mat = get_material();
+
     if (mat->has_density()) {
         const Precision rho = mat->get_density();
-        const Precision A = get_section()->area_;
-        const Precision L = length();
-        const Precision m = rho * A * L;
+        const Precision A   = get_section()->area_;
+        const Precision L0  = length_reference();
+        const Precision m   = rho * A * L0;
 
         for (Index i = 0; i < N; ++i) {
-            M.block(i * 3, i * 3, 3, 3) = Mat3::Identity() * (m / Precision(2));
+            M.block(i * 3, i * 3, 3, 3) =
+                Mat3::Identity() * (m / Precision(2));
         }
     }
 
@@ -175,8 +254,10 @@ MapMatrix T3::mass(Precision* buffer) {
 RowMatrix T3::stress_strain_nodal_rst() {
     RowMatrix rst(N, 3);
     rst.setZero();
+
     rst(0, 0) = Precision(-1);
     rst(1, 0) = Precision(1);
+
     return rst;
 }
 
@@ -186,66 +267,88 @@ RowMatrix T3::stress_strain_ip_rst() {
     return rst;
 }
 
-Precision T3::integrate_scalar_field(bool scale_by_density,
+Precision T3::integrate_scalar_field(bool               scale_by_density,
                                      const ScalarField& field) {
-    const Precision L = length();
+    const Precision L = length_current();
     const Precision A = get_section()->area_;
+
     if (L <= Precision(0) || A <= Precision(0)) {
         return Precision(0);
     }
-    return field(midpoint(*this)) * (density_scale(*this, scale_by_density) * A * L);
+
+    return field(midpoint(*this))
+         * density_scale(*this, scale_by_density)
+         * A
+         * L;
 }
 
-Vec3 T3::integrate_vector_field(bool scale_by_density,
+Vec3 T3::integrate_vector_field(bool            scale_by_density,
                                 const VecField& field) {
-    const Precision L = length();
+    const Precision L = length_current();
     const Precision A = get_section()->area_;
+
     if (L <= Precision(0) || A <= Precision(0)) {
         return Vec3::Zero();
     }
-    return field(midpoint(*this)) * (density_scale(*this, scale_by_density) * A * L);
+
+    return field(midpoint(*this))
+         * density_scale(*this, scale_by_density)
+         * A
+         * L;
 }
 
-void T3::integrate_vector_field(Field& node_loads,
-                                bool scale_by_density,
+void T3::integrate_vector_field(Field&          node_loads,
+                                bool            scale_by_density,
                                 const VecField& field) {
-    const Precision L = length();
+    const Precision L = length_current();
     const Precision A = get_section()->area_;
+
     if (L <= Precision(0) || A <= Precision(0)) {
         return;
     }
 
-    const Vec3 F = field(midpoint(*this)) * (density_scale(*this, scale_by_density) * A * L);
+    const Vec3 force =
+        field(midpoint(*this))
+        * density_scale(*this, scale_by_density)
+        * A
+        * L;
+
     for (Index i = 0; i < N; ++i) {
-        const Index n_id = static_cast<Index>(node_ids[i]);
-        node_loads(n_id, 0) += F(0) * Precision(0.5);
-        node_loads(n_id, 1) += F(1) * Precision(0.5);
-        node_loads(n_id, 2) += F(2) * Precision(0.5);
+        const Index node = static_cast<Index>(node_ids[i]);
+
+        node_loads(node, 0) += force(0) * Precision(0.5);
+        node_loads(node, 1) += force(1) * Precision(0.5);
+        node_loads(node, 2) += force(2) * Precision(0.5);
     }
 }
 
-Mat3 T3::integrate_tensor_field(bool scale_by_density,
+Mat3 T3::integrate_tensor_field(bool            scale_by_density,
                                 const TenField& field) {
-    const Precision L = length();
+    const Precision L = length_current();
     const Precision A = get_section()->area_;
+
     if (L <= Precision(0) || A <= Precision(0)) {
         return Mat3::Zero();
     }
-    return field(midpoint(*this)) * (density_scale(*this, scale_by_density) * A * L);
+
+    return field(midpoint(*this))
+         * density_scale(*this, scale_by_density)
+         * A
+         * L;
 }
 
 void T3::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    (void)node_loads;
-    (void)node_temp;
-    (void)ref_temp;
+    (void) node_loads;
+    (void) node_temp;
+    (void) ref_temp;
 }
 
-void T3::compute_stress_strain(Field* strain,
-                               Field* stress,
-                               const Field& displacement,
+void T3::compute_stress_strain(Field*           strain,
+                               Field*           stress,
+                               const Field&     displacement,
                                const RowMatrix& rst,
-                               int offset,
-                               bool use_green_lagrange_nl) {
+                               int              offset,
+                               bool             use_green_lagrange_nl) {
     logging::error(strain != nullptr || stress != nullptr,
                    "T3: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 1,
@@ -255,65 +358,76 @@ void T3::compute_stress_strain(Field* strain,
     Precision stress_value = Precision(0);
 
     if (use_green_lagrange_nl) {
-        const Vec3 X0 = this->node_position(0);
-        const Vec3 X1 = this->node_position(1);
-        const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-        const Vec3 x0 = X0 + u0;
-        const Vec3 x1 = X1 + u1;
+        const Precision lambda = stretch();
 
-        const Precision L0 = (X1 - X0).norm();
-        const Precision l = (x1 - x0).norm();
+        strain_value =
+            Precision(0.5)
+            * (lambda * lambda - Precision(1));
+
+        const Precision second_piola =
+            material_tangent_reference() * strain_value;
+
+        stress_value = lambda * second_piola;
+    } else {
+        const Precision L0 = length_reference();
+
         logging::error(L0 > Precision(0),
                        "T3: zero reference length in compute_stress_strain for element ",
                        this->elem_id);
-        logging::error(l > Precision(0),
-                       "T3: zero current length in compute_stress_strain for element ",
-                       this->elem_id);
 
-        const Precision lambda = l / L0;
-        strain_value = Precision(0.5) * (lambda * lambda - Precision(1));
-        const Precision second_piola_stress = get_elasticity()->youngs * strain_value;
-        stress_value = lambda * second_piola_stress;
-    } else {
-        const Precision L = length();
-        logging::error(L > Precision(0),
-                       "T3: zero length in compute_stress_strain for element ",
-                       this->elem_id);
-        const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-        const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
-        strain_value = (u1 - u0).dot(direction()) / L;
-        stress_value = get_elasticity()->youngs * strain_value;
+        const Vec3 u0 =
+            displacement.row_vec3(static_cast<Index>(node_ids[0]));
+
+        const Vec3 u1 =
+            displacement.row_vec3(static_cast<Index>(node_ids[1]));
+
+        strain_value =
+            (u1 - u0).dot(direction_reference()) / L0;
+
+        stress_value =
+            material_tangent_reference() * strain_value;
     }
 
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
         const Index row = static_cast<Index>(offset) + i;
+
         if (strain) {
             for (Index j = 0; j < strain->components; ++j) {
                 (*strain)(row, j) = Precision(0);
             }
+
             (*strain)(row, 0) = strain_value;
         }
+
         if (stress) {
             for (Index j = 0; j < stress->components; ++j) {
                 (*stress)(row, j) = Precision(0);
             }
+
             (*stress)(row, 0) = stress_value;
         }
     }
 }
 
-void T3::compute_stress_state(Field& stress_state,
+void T3::compute_stress_state(Field&       stress_state,
                               const Field& displacement,
-                              int offset,
-                              bool use_green_lagrange_nl) {
+                              int          offset,
+                              bool         use_green_lagrange_nl) {
     RowMatrix rst = stress_strain_ip_rst();
-    compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
+
+    compute_stress_strain(
+        nullptr,
+        &stress_state,
+        displacement,
+        rst,
+        offset,
+        use_green_lagrange_nl
+    );
 }
 
-void T3::compute_internal_force_nonlinear(Field& node_forces,
+void T3::compute_internal_force_nonlinear(Field&       node_forces,
                                           const Field& ip_stress,
-                                          int ip_offset) {
+                                          int          ip_offset) {
     logging::error(node_forces.domain == FieldDomain::NODE,
                    "T3: nonlinear internal force output must use NODE domain");
     logging::error(node_forces.components >= 3,
@@ -321,20 +435,22 @@ void T3::compute_internal_force_nonlinear(Field& node_forces,
     logging::error(ip_stress.components >= 1,
                    "T3: nonlinear internal force requires IP stress component 0");
 
-    const Precision L = length();
-    logging::error(L > Precision(0),
-                   "T3: zero length in compute_internal_force_nonlinear for element ",
+    const Precision l = length_current();
+
+    logging::error(l > Precision(0),
+                   "T3: zero current length in compute_internal_force_nonlinear for element ",
                    this->elem_id);
 
-    const Vec3 n = direction();
-    const Precision sigma = ip_stress(static_cast<Index>(ip_offset), 0);
-    const Vec3 force = get_section()->area_ * sigma * n;
+    const Vec3      n      = direction_current();
+    const Precision stress = ip_stress(static_cast<Index>(ip_offset), 0);
+    const Vec3      force  = get_section()->area_ * stress * n;
 
-    const Index n0 = static_cast<Index>(node_ids[0]);
-    const Index n1 = static_cast<Index>(node_ids[1]);
+    const Index node_0 = static_cast<Index>(node_ids[0]);
+    const Index node_1 = static_cast<Index>(node_ids[1]);
+
     for (Dim d = 0; d < 3; ++d) {
-        node_forces(n0, d) -= force(d);
-        node_forces(n1, d) += force(d);
+        node_forces(node_0, d) -= force(d);
+        node_forces(node_1, d) += force(d);
     }
 }
 
@@ -343,59 +459,78 @@ void T3::compute_compliance(Field& displacement, Field& result) {
     MapMatrix K = stiffness(buffer);
 
     StaticVector<N * 3> u;
+
     for (Index i = 0; i < N; ++i) {
-        const Vec3 ui = displacement.row_vec3(static_cast<Index>(node_ids[i]));
+        const Vec3 ui =
+            displacement.row_vec3(static_cast<Index>(node_ids[i]));
+
         for (Index d = 0; d < 3; ++d) {
             u(i * 3 + d) = ui(d);
         }
     }
 
-    result(static_cast<Index>(this->elem_id), 0) = u.dot(K * u);
+    result(static_cast<Index>(this->elem_id), 0) =
+        u.dot(K * u);
 }
 
 void T3::compute_compliance_angle_derivative(Field& displacement, Field& result) {
-    (void)displacement;
-    (void)result;
+    (void) displacement;
+    (void) result;
 }
 
-bool T3::compute_shear_flow(Field& shear_flow,
+bool T3::compute_shear_flow(Field&       shear_flow,
                             const Field& displacement,
-                            int offset) {
-    (void)shear_flow;
-    (void)displacement;
-    (void)offset;
+                            int          offset) {
+    (void) shear_flow;
+    (void) displacement;
+    (void) offset;
+
     return false;
 }
 
-bool T3::compute_beam_section_forces(Field& section_forces,
+bool T3::compute_beam_section_forces(Field&       section_forces,
                                      const Field& displacement,
-                                     int offset) {
-    const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
-    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+                                     int          offset) {
+    const Vec3 u0 =
+        displacement.row_vec3(static_cast<Index>(node_ids[0]));
 
-    const Precision L = length();
-    logging::error(L > Precision(0),
-                   "T3: zero length in compute_beam_section_forces for element ",
+    const Vec3 u1 =
+        displacement.row_vec3(static_cast<Index>(node_ids[1]));
+
+    const Precision L0 = length_reference();
+
+    logging::error(L0 > Precision(0),
+                   "T3: zero reference length in compute_beam_section_forces for element ",
                    this->elem_id);
 
-    const Precision axial_strain = (u1 - u0).dot(direction()) / L;
-    const Precision axial_force = get_elasticity()->youngs * get_section()->area_ * axial_strain;
+    const Precision axial_strain =
+        (u1 - u0).dot(direction_reference()) / L0;
+
+    const Precision axial_force =
+        material_tangent_reference()
+        * get_section()->area_
+        * axial_strain;
 
     for (Index i = 0; i < N; ++i) {
         for (Index d = 0; d < section_forces.components; ++d) {
-            section_forces(static_cast<Index>(offset) + i, d) = Precision(0);
+            section_forces(static_cast<Index>(offset) + i, d) =
+                Precision(0);
         }
-        section_forces(static_cast<Index>(offset) + i, 0) = axial_force;
+
+        section_forces(static_cast<Index>(offset) + i, 0) =
+            axial_force;
     }
+
     return true;
 }
 
-bool T3::compute_shell_section_forces(Field& section_forces,
-                                      Field& contribution_count,
+bool T3::compute_shell_section_forces(Field&       section_forces,
+                                      Field&       contribution_count,
                                       const Field& displacement) {
-    (void)section_forces;
-    (void)contribution_count;
-    (void)displacement;
+    (void) section_forces;
+    (void) contribution_count;
+    (void) displacement;
+
     return false;
 }
 

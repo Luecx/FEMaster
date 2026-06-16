@@ -29,9 +29,20 @@ struct T3 : StructuralElement {
 
     std::string type_name() const override;
 
-    TrussSection*                   get_section();
-    material::MaterialPtr           get_material();
-    material::IsotropicElasticity*  get_elasticity();
+    TrussSection*                  get_section();
+    material::MaterialPtr          get_material();
+    material::IsotropicElasticity* get_elasticity();
+
+    Vec3      node_position_reference(Index local_node) const;
+    Vec3      node_position_current  (Index local_node) const;
+    Precision length_reference      () const;
+    Precision length_current        () const;
+    Precision stretch               () const;
+    Vec3      direction_reference   () const;
+    Vec3      direction_current     () const;
+
+    Precision material_tangent_reference();
+    Precision material_tangent_spatial  ();
 
     Precision length();
     Vec3      direction();
