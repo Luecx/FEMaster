@@ -71,6 +71,7 @@ struct ModelData {
 
     // Cached semantic fields ---------------------------------------------------
     Field::Ptr positions               = nullptr;
+    Field::Ptr positions_reference     = nullptr;
     Field::Ptr element_stiffness_scale = nullptr;
     Field::Ptr material_orientation    = nullptr;
     Field::Ptr element_nodal_offsets   = nullptr;

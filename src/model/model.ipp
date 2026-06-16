@@ -6,6 +6,7 @@ inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     logging::error(id < _data->max_nodes, "internal error; allocated less data than required. id=", id, " exceeds maximum limit");
     logging::error(_data->positions != nullptr, "positions field has not been initialized");
     auto& node_coords = *_data->positions;
+    auto* node_coords_reference = _data->positions_reference.get();
     const Index row = static_cast<Index>(id);
 
     logging::error(node_coords(row, 0) == 0 &&
@@ -15,6 +16,11 @@ inline void Model::set_node(ID id, Precision x, Precision y, Precision z) {
     node_coords(row, 0) = x;
     node_coords(row, 1) = y;
     node_coords(row, 2) = z;
+    if (node_coords_reference != nullptr) {
+        (*node_coords_reference)(row, 0) = x;
+        (*node_coords_reference)(row, 1) = y;
+        (*node_coords_reference)(row, 2) = z;
+    }
     _data->node_sets.add(id);
 }
 

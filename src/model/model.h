@@ -27,6 +27,9 @@ struct Model {
         auto positions = _data->create_field("POSITION", FieldDomain::NODE, 6, false);
         positions->set_zero();
         _data->positions = positions;
+        auto positions_reference = _data->create_field("POSITION_REFERENCE", FieldDomain::NODE, 6, false);
+        positions_reference->set_zero();
+        _data->positions_reference = positions_reference;
     }
 
     // adding nodes and elements

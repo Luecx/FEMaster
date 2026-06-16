@@ -27,12 +27,6 @@ using constraint::ConstraintTransformer;
 
 namespace {
 
-void set_positions(model::Model& model, const model::Field& positions) {
-    logging::error(model._data != nullptr, "NonlinearStatic: model data not initialized");
-    logging::error(model._data->positions != nullptr, "NonlinearStatic: positions field not initialized");
-    *model._data->positions = positions;
-}
-
 model::Field current_positions_from_displacement(const model::Field& reference,
                                                  const model::Field& displacement) {
     logging::error(reference.domain == model::FieldDomain::NODE,
@@ -216,6 +210,9 @@ void NonlinearStatic::run() {
     }
 
     model::Field reference_positions = *model->_data->positions;
+    logging::error(model->_data->positions_reference != nullptr,
+                   "NonlinearStatic: positions_reference field not initialized");
+    *model->_data->positions_reference = reference_positions;
 
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
@@ -297,15 +294,13 @@ void NonlinearStatic::run() {
             asm_timer.start();
 
             displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+            current_positions = current_positions_from_displacement(reference_positions, displacement);
+            *model->_data->positions = current_positions;
 
-            set_positions(*model, reference_positions);
             auto ip_stress = Timer::measure(
                 [&]() { return model->compute_stress_state(displacement, true); },
                 "computing nonlinear stress state",
                 false);
-
-            current_positions = current_positions_from_displacement(reference_positions, displacement);
-            set_positions(*model, current_positions);
 
             auto K = Timer::measure(
                 [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
@@ -402,8 +397,9 @@ void NonlinearStatic::run() {
     }
 
     displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+    current_positions = current_positions_from_displacement(reference_positions, displacement);
+    *model->_data->positions = current_positions;
 
-    set_positions(*model, reference_positions);
     final_ip_stress = Timer::measure(
         [&]() { return model->compute_stress_state(displacement, true); },
         "computing final nonlinear stress state");
@@ -415,9 +411,6 @@ void NonlinearStatic::run() {
     auto [final_stress_top, final_stress_bot] = Timer::measure(
         [&]() { return model->compute_stress_top_bot(displacement, true); },
         "computing final nonlinear top/bottom stress");
-
-    current_positions = current_positions_from_displacement(reference_positions, displacement);
-    set_positions(*model, current_positions);
 
     auto final_K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
@@ -476,8 +469,6 @@ void NonlinearStatic::run() {
         write_mtx(stiffness_file + "_Kt.mtx", final_Kt);
         write_mtx(stiffness_file + "_A.mtx", final_A);
     }
-
-    set_positions(*model, reference_positions);
 }
 
 } // namespace loadcase

@@ -62,7 +62,8 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
     logging::error(rst.cols() >= 3,
                    "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
 
-    auto node_coords = this->node_coords_global();
+    auto reference_coords = this->node_coords_reference();
+    auto current_coords = this->node_coords_current();
     auto local_displacement = this->nodal_data<3>(displacement);
     auto local_disp_mat = StaticMatrix<3, N>(local_displacement.transpose());
     auto local_displacement_vec = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
@@ -76,7 +77,7 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
         if (!use_green_lagrange_nl) {
             Precision det;
             StaticMatrix<n_strain, D * N> B =
-                this->strain_displacements(node_coords, r, s, t, det, false);
+                this->strain_displacements(reference_coords, r, s, t, det, false);
             if (det <= Precision(0) || std::isnan(det) || std::isinf(det)) {
                 continue;
             }
@@ -93,38 +94,15 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
             continue;
         }
 
-        StaticMatrix<N, D> dN_local = this->shape_derivative(r, s, t);
-        StaticMatrix<D, D> J0 = this->jacobian(node_coords, r, s, t);
-        const Precision detJ0 = J0.determinant();
-        logging::error(detJ0 > Precision(0),
-                       "negative reference determinant encountered in nonlinear stress for element ", elem_id,
-                       "\ndet        : ", detJ0,
-                       "\nCoordinates: ", node_coords);
-
-        StaticMatrix<N, D> dN_dX = (J0.inverse() * dN_local.transpose()).transpose();
-
-        Mat3 grad_u = Mat3::Zero();
-        for (Index a = 0; a < N; ++a) {
-            for (Index i = 0; i < D; ++i) {
-                for (Index j = 0; j < D; ++j) {
-                    grad_u(i, j) += local_displacement(a, i) * dN_dX(a, j);
-                }
-            }
-        }
-
-        const Mat3 F = Mat3::Identity() + grad_u;
+        const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
         const Precision J = F.determinant();
-        logging::error(J > Precision(0),
-                       "non-positive deformation gradient determinant in element ", elem_id,
-                       "\nJ: ", J,
-                       "\nF: ", F);
 
         const Mat3 green_lagrange =
             Precision(0.5) * (F.transpose() * F - Mat3::Identity());
         const Vec6 green_voigt =
             detail_solid_nonlinear::green_lagrange_to_voigt(green_lagrange);
 
-        const Vec6 second_pk_voigt = material_matrix(r, s, t) * green_voigt;
+        const Vec6 second_pk_voigt = material_tangent_reference(r, s, t) * green_voigt;
         const Mat3 second_pk = detail_solid_nonlinear::voigt_to_tensor(second_pk_voigt);
         const Mat3 cauchy = (F * second_pk * F.transpose()) / J;
         const Vec6 cauchy_voigt = detail_solid_nonlinear::tensor_to_voigt(cauchy);
@@ -152,7 +130,7 @@ template<Index N>
 void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
                                                        const Field& ip_stress,
                                                        int ip_offset) {
-    auto current_coords = this->node_coords_global();
+    auto current_coords = this->node_coords_current();
     auto scheme = this->integration_scheme();
 
     for (Index n = 0; n < scheme.count(); n++) {
@@ -266,7 +244,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         Precision det;
 
         // compute the B matrix
-        StaticMatrix<n_strain, D * N> B = this->strain_displacements(this->node_coords_global(), r, s, t, det);
+        StaticMatrix<n_strain, D * N> B = this->strain_displacements(this->node_coords_current(), r, s, t, det);
 
         // compute the strain vector
         StaticVector<n_strain> strain = B * local_displacement;

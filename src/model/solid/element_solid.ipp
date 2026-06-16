@@ -39,7 +39,7 @@ Mat3 SolidElement<N>::section_orientation_basis(Precision r, Precision s, Precis
         return Mat3::Identity();
     }
 
-    const Vec3 point_global = this->interpolate<D>(this->node_coords_global(), r, s, t);
+    const Vec3 point_global = this->interpolate<D>(this->node_coords_reference(), r, s, t);
     const Vec3 point_local  = section->orientation_->to_local(point_global);
     return section->orientation_->get_axes(point_local);
 }
@@ -62,6 +62,44 @@ Mat3 SolidElement<N>::material_orientation_basis(Precision r, Precision s, Preci
 }
 
 template<Index N>
+auto SolidElement<N>::node_coords_reference()
+    -> StaticMatrix<N, D> {
+    logging::error(this->_model_data != nullptr,
+                   "no model data assigned to element ", this->elem_id);
+    logging::error(this->_model_data->positions_reference != nullptr,
+                   "reference positions field not set in model data");
+
+    const auto& positions = *this->_model_data->positions_reference;
+    StaticMatrix<N, D> coords {};
+
+    for (Index i = 0; i < N; ++i) {
+        coords.row(i) =
+            positions.row_vec3(static_cast<Index>(this->node_ids[i])).transpose();
+    }
+
+    return coords;
+}
+
+template<Index N>
+auto SolidElement<N>::node_coords_current()
+    -> StaticMatrix<N, D> {
+    logging::error(this->_model_data != nullptr,
+                   "no model data assigned to element ", this->elem_id);
+    logging::error(this->_model_data->positions != nullptr,
+                   "current positions field not set in model data");
+
+    const auto& positions = *this->_model_data->positions;
+    StaticMatrix<N, D> coords {};
+
+    for (Index i = 0; i < N; ++i) {
+        coords.row(i) =
+            positions.row_vec3(static_cast<Index>(this->node_ids[i])).transpose();
+    }
+
+    return coords;
+}
+
+template<Index N>
 void SolidElement<N>::material_stress_strain(Precision r,
                                              Precision s,
                                              Precision t,
@@ -70,7 +108,7 @@ void SolidElement<N>::material_stress_strain(Precision r,
                                              StaticVector<n_strain>& out_strain) {
     if (!has_material_orientation()) {
         out_strain = global_strain;
-        out_stress = material_matrix(r, s, t) * out_strain;
+        out_stress = material_tangent_reference(r, s, t) * out_strain;
         return;
     }
 
@@ -111,7 +149,7 @@ auto SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_gl
 }
 
 template<Index N>
-auto SolidElement<N>::material_matrix(Precision r, Precision s, Precision t)
+auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t)
     -> StaticMatrix<n_strain, n_strain> {
     logging::error(material() != nullptr, "no _material assigned to element ", elem_id);
     logging::error(material()->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
@@ -130,6 +168,70 @@ auto SolidElement<N>::material_matrix(Precision r, Precision s, Precision t)
     } else {
         return scaling * this->material()->elasticity()->template get<D>();
     }
+}
+
+template<Index N>
+auto SolidElement<N>::material_tangent_spatial(Precision r, Precision s, Precision t, const Mat3& F)
+    -> StaticMatrix<n_strain, n_strain> {
+    const Precision J = F.determinant();
+    logging::error(J > Precision(0),
+                   "non-positive deformation gradient determinant in spatial tangent for element ", elem_id,
+                   "\nJ: ", J,
+                   "\nF: ", F);
+
+    const StaticMatrix<n_strain, n_strain> C_ref = material_tangent_reference(r, s, t);
+    const std::array<std::array<int, 2>, n_strain> voigt_pair{{
+        {{0, 0}}, {{1, 1}}, {{2, 2}}, {{1, 2}}, {{2, 0}}, {{0, 1}}
+    }};
+
+    StaticMatrix<n_strain, n_strain> C_spatial;
+    C_spatial.setZero();
+
+    for (Index a = 0; a < n_strain; ++a) {
+        const int i = voigt_pair[a][0];
+        const int j = voigt_pair[a][1];
+        for (Index b = 0; b < n_strain; ++b) {
+            const int k = voigt_pair[b][0];
+            const int l = voigt_pair[b][1];
+
+            Precision value = Precision(0);
+            for (int I = 0; I < D; ++I) {
+                for (int Jm = 0; Jm < D; ++Jm) {
+                    for (int K = 0; K < D; ++K) {
+                        for (int L = 0; L < D; ++L) {
+                            Index alpha = 0;
+                            if (I == Jm) {
+                                alpha = I;
+                            } else if ((I == 1 && Jm == 2) || (I == 2 && Jm == 1)) {
+                                alpha = 3;
+                            } else if ((I == 2 && Jm == 0) || (I == 0 && Jm == 2)) {
+                                alpha = 4;
+                            } else {
+                                alpha = 5;
+                            }
+
+                            Index beta = 0;
+                            if (K == L) {
+                                beta = K;
+                            } else if ((K == 1 && L == 2) || (K == 2 && L == 1)) {
+                                beta = 3;
+                            } else if ((K == 2 && L == 0) || (K == 0 && L == 2)) {
+                                beta = 4;
+                            } else {
+                                beta = 5;
+                            }
+
+                            value += F(i, I) * F(j, Jm) * F(k, K) * F(l, L) * C_ref(alpha, beta);
+                        }
+                    }
+                }
+            }
+
+            C_spatial(a, b) = value / J;
+        }
+    }
+
+    return C_spatial;
 }
 
 template<Index N>
@@ -188,6 +290,37 @@ auto SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision 
     return jacobian;
 }
 
+template<Index N>
+Mat3 SolidElement<N>::deformation_gradient(const StaticMatrix<N, D>& reference_coords,
+                                           const StaticMatrix<N, D>& current_coords,
+                                           Precision r,
+                                           Precision s,
+                                           Precision t) {
+    const Mat3 J_reference = jacobian(reference_coords, r, s, t);
+    const Mat3 J_current = jacobian(current_coords, r, s, t);
+    const Precision det_reference = J_reference.determinant();
+    const Precision det_current = J_current.determinant();
+
+    logging::error(det_reference > Precision(0),
+                   "non-positive reference determinant encountered in element ", elem_id,
+                   "\ndet        : ", det_reference,
+                   "\nCoordinates: ", reference_coords,
+                   "\nJacobi     : ", J_reference);
+    logging::error(det_current > Precision(0),
+                   "non-positive current determinant encountered in element ", elem_id,
+                   "\ndet        : ", det_current,
+                   "\nCoordinates: ", current_coords,
+                   "\nJacobi     : ", J_current);
+
+    const Mat3 F = J_current.transpose() * J_reference.inverse().transpose();
+    const Precision det_F = F.determinant();
+    logging::error(det_F > Precision(0),
+                   "non-positive deformation gradient determinant in element ", elem_id,
+                   "\ndet(F): ", det_F,
+                   "\nF     : ", F);
+    return F;
+}
+
 //-----------------------------------------------------------------------------
 // nodal_data
 //-----------------------------------------------------------------------------
@@ -217,13 +350,15 @@ SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) 
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness(Precision* buffer) {
-    StaticMatrix<N, D> node_coords = this->node_coords_global();
+    StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+    StaticMatrix<N, D> current_coords = this->node_coords_current();
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
-        [this, &node_coords](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
+        [this, &reference_coords, &current_coords](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det;
-            StaticMatrix<n_strain, D * N> B = this->strain_displacements(node_coords, r, s, t, det);
-            StaticMatrix<n_strain, n_strain> E = material_matrix(r,s,t);
+            StaticMatrix<n_strain, D * N> B = this->strain_displacements(current_coords, r, s, t, det);
+            const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
+            StaticMatrix<n_strain, n_strain> E = material_tangent_spatial(r, s, t, F);
             StaticMatrix<D * N, D * N> res = B.transpose() * (E * B) * det;
             return StaticMatrix<D * N, D * N>(res);
         };
@@ -239,7 +374,7 @@ SolidElement<N>::stiffness(Precision* buffer) {
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) {
-    StaticMatrix<N, D> node_coords = this->node_coords_global();
+    StaticMatrix<N, D> node_coords = this->node_coords_current();
 
     Index ip_counter = 0;
 
@@ -306,7 +441,7 @@ SolidElement<N>::mass(Precision* buffer) {
 
     Precision density = material()->get_density();
 
-    StaticMatrix<N, D> node_coords = this->node_coords_global();
+    StaticMatrix<N, D> node_coords = this->node_coords_current();
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, node_coords, density](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
@@ -342,7 +477,7 @@ SolidElement<N>::mass(Precision* buffer) {
 template<Index N>
 Precision
 SolidElement<N>::volume() {
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
     std::function<Precision(Precision, Precision, Precision)> func =
         [this, node_coords_glob](Precision r, Precision s, Precision t) -> Precision {

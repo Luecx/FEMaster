@@ -19,7 +19,7 @@ namespace fem::model {
 template<Index N>
 void
 SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
     logging::error(node_temp.domain == FieldDomain::NODE,
                    "Temperature field '", node_temp.name, "' must be a node field");
     logging::error(node_temp.components == 1,
@@ -54,7 +54,7 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
         Vec6 strain{strain_value, strain_value, strain_value, 0, 0, 0};
 
         // stress tensor
-        auto mat_matrix = material_matrix(r,s,t);
+        auto mat_matrix = material_tangent_reference(r,s,t);
         auto stress = mat_matrix * strain;
 
         // compute strain-displacement matrix
@@ -86,7 +86,7 @@ SolidElement<N>::integrate_scalar_field(bool scale_by_density,
                                         const ScalarField& field)
 {
     // Node coordinates
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
     // Optional density scaling
     Precision rho = 1.0;
@@ -124,7 +124,7 @@ SolidElement<N>::integrate_vector_field(bool scale_by_density,
                                         const VecField& field)
 {
     // Node coordinates
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
     Precision rho = 1.0;
     if (scale_by_density) {
@@ -162,7 +162,7 @@ SolidElement<N>::integrate_vector_field(Field& node_loads,
                                         const VecField& field)
 {
     // Node coordinates
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
     // Optional density scaling
     Precision rho = 1.0;
@@ -206,7 +206,7 @@ SolidElement<N>::integrate_tensor_field(bool scale_by_density,
                                         const TenField& field)
 {
     // Node coordinates
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
+    StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
 
     Precision rho = 1.0;
     if (scale_by_density) {
