@@ -13,6 +13,7 @@
 #include "../../model/shell/qspt.h"
 #include "../../model/shell/s3.h"
 #include "../../model/shell/s4.h"
+#include "../../model/shell/s4_frt_mitc_nonlinear.h"
 #include "../../model/shell/s4_mitc.h"
 #include "../../model/shell/s6.h"
 #include "../../model/shell/s8.h"
@@ -55,7 +56,7 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
                     .doc("Element topology/type")
                     .allowed({
                         "C3D4", "C3D5", "C3D6", "C3D8", "C3D10", "C3D15", "C3D20", "C3D20R",
-                        "B33", "T3", "S3", "S4", "MITC4", "S6", "S8", "QSPT"
+                        "B33", "T3", "S3", "S4", "MITC4", "MITC4FRT", "S6", "S8", "QSPT"
                     })
         );
 
@@ -91,6 +92,7 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
         FEM_ADD_ELEMENT_VARIANT("S4", S4, 4, "S4 connectivity (4 nodes)");
         FEM_ADD_ELEMENT_VARIANT("QSPT", QSPT, 4, "QSPT connectivity (4 nodes)");
         FEM_ADD_ELEMENT_VARIANT("MITC4", MITC4, 4, "MITC4 connectivity (4 nodes)");
+        FEM_ADD_ELEMENT_VARIANT("MITC4FRT", S4FRTMITC, 4, "MITC4FRT connectivity (4 nodes)");
         FEM_ADD_ELEMENT_VARIANT("S6", S6, 6, "S6 connectivity (6 nodes)");
         FEM_ADD_ELEMENT_VARIANT("S8", S8, 8, "S8 connectivity (8 nodes)");
 

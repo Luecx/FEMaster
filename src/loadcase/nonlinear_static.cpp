@@ -35,13 +35,17 @@ model::Field current_positions_from_displacement(const model::Field& reference,
                    "NonlinearStatic: displacement must use NODE domain");
     logging::error(reference.rows == displacement.rows,
                    "NonlinearStatic: reference/displacement row mismatch");
+    logging::error(reference.components == displacement.components,
+                   "NonlinearStatic: reference/displacement component mismatch");
 
     model::Field current = reference;
+
     for (Index i = 0; i < current.rows; ++i) {
-        for (Index d = 0; d < std::min<Index>(3, current.components); ++d) {
+        for (Index d = 0; d < current.components; ++d) {
             current(i, d) = reference(i, d) + displacement(i, d);
         }
     }
+
     return current;
 }
 

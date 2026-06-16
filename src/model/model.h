@@ -24,11 +24,11 @@ struct Model {
     // constructor which defines max elements and max nodes
     Model(ID max_nodes, ID max_elems, ID max_surfaces, ID max_integration_points = 0) :
         _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces, max_integration_points)) {
-        auto positions = _data->create_field("POSITION", FieldDomain::NODE, 6, false);
-        positions->set_zero();
-        _data->positions = positions;
+        auto positions           = _data->create_field("POSITION"          , FieldDomain::NODE, 6, false);
         auto positions_reference = _data->create_field("POSITION_REFERENCE", FieldDomain::NODE, 6, false);
+        positions->set_zero();
         positions_reference->set_zero();
+        _data->positions           = positions;
         _data->positions_reference = positions_reference;
     }
 

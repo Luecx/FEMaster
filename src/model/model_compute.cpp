@@ -90,7 +90,7 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
     const ID total_ips = static_cast<ID>(ip_enum(static_cast<Index>(_data->max_elems), 0));
     logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
 
-    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
+    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 8};
     ip_stress.set_zero();
 
     for (auto el : _data->elements) {
