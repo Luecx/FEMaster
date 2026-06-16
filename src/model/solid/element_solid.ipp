@@ -15,6 +15,32 @@
 #include "../../section/section_solid.h"
 
 namespace fem::model {
+
+template<Index N>
+SolidElement<N>::SolidElement(ID elem_id, std::array<ID, N> node_ids_in)
+    : StructuralElement(elem_id)
+    , node_ids(node_ids_in) {}
+
+template<Index N>
+const quadrature::Quadrature& SolidElement<N>::integration_scheme_mass() {
+    return this->integration_scheme();
+}
+
+template<Index N>
+auto SolidElement<N>::node_coords_global()
+    -> StaticMatrix<N, D> {
+    logging::error(this->_model_data            != nullptr, "no model data assigned to element ", this->elem_id);
+    logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
+
+    StaticMatrix<N, D> res {};
+    const auto& positions = *this->_model_data->positions;
+    for (Index i = 0; i < N; ++i) {
+        const Index row = static_cast<Index>(this->node_ids[i]);
+        res.row(i) = positions.row_vec3(row).transpose();
+    }
+    return res;
+}
+
 template<Index N>
 SolidSection* SolidElement<N>::get_section() {
     logging::error(this->_section != nullptr, "Section not set for element ", this->elem_id);
@@ -24,17 +50,44 @@ SolidSection* SolidElement<N>::get_section() {
 }
 
 template<Index N>
-bool SolidElement<N>::has_material_orientation() const {
-    const bool has_section_orientation =
-        this->_section && this->_section->template as<SolidSection>() &&
-        this->_section->template as<SolidSection>()->orientation_;
-    const bool has_topo_orientation = this->_model_data && this->_model_data->material_orientation;
-    return has_section_orientation || has_topo_orientation;
+bool SolidElement<N>::has_section_orientation() const {
+    const auto section = this->_section ? this->_section->template as<SolidSection>() : nullptr;
+    return section && section->orientation_;
 }
 
 template<Index N>
-Mat3 SolidElement<N>::section_orientation_basis(Precision r, Precision s, Precision t) {
-    auto section = get_section();
+bool SolidElement<N>::has_topo_orientation() const {
+    return this->_model_data && this->_model_data->material_orientation;
+}
+
+template<Index N>
+bool SolidElement<N>::has_material_orientation() const {
+    return has_section_orientation() || has_topo_orientation();
+}
+
+template<Index N>
+Vec3 SolidElement<N>::topo_angles() const {
+    if (!has_topo_orientation()) {
+        return Vec3::Zero();
+    }
+
+    const auto angles_field = this->_model_data->material_orientation;
+    logging::error(angles_field->components == 3,
+                   "Field '", angles_field->name, "': topo orientation requires 3 components");
+    return angles_field->row_vec3(static_cast<Index>(this->elem_id));
+}
+
+template<Index N>
+Mat3 SolidElement<N>::section_basis(
+    Precision r,
+    Precision s,
+    Precision t
+) {
+    if (has_topo_orientation()) {
+        return Mat3::Identity();
+    }
+
+    const auto section = get_section();
     if (!section->orientation_) {
         return Mat3::Identity();
     }
@@ -45,20 +98,49 @@ Mat3 SolidElement<N>::section_orientation_basis(Precision r, Precision s, Precis
 }
 
 template<Index N>
-Mat3 SolidElement<N>::material_orientation_basis(Precision r, Precision s, Precision t) {
-    Mat3 basis = section_orientation_basis(r, s, t);
-
-    if (this->_model_data && this->_model_data->material_orientation) {
-        auto angles_field = this->_model_data->material_orientation;
-        logging::error(angles_field->components == 3,
-                       "Field '", angles_field->name, "': material orientation requires 3 components");
-        const Index row = static_cast<Index>(this->elem_id);
-        const Vec3 angles = angles_field->row_vec3(row);
-        const Mat3 topo_basis = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3::Zero());
-        basis = basis * topo_basis;
+Mat3 SolidElement<N>::topo_basis() const {
+    if (!has_topo_orientation()) {
+        return Mat3::Identity();
     }
 
-    return basis;
+    const Vec3 angles = topo_angles();
+    return cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3::Zero());
+}
+
+template<Index N>
+Mat3 SolidElement<N>::topo_basis_derivative(Index angle_id) const {
+    if (!has_topo_orientation()) {
+        return Mat3::Zero();
+    }
+
+    const Vec3 angles = topo_angles();
+    switch (angle_id) {
+        case 0: return cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
+        case 1: return cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));
+        case 2: return cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2));
+        default:
+            logging::error(false, "Invalid topo orientation angle index ", angle_id);
+            return Mat3::Zero();
+    }
+}
+
+template<Index N>
+Mat3 SolidElement<N>::material_basis(
+    Precision r,
+    Precision s,
+    Precision t
+) {
+    return section_basis(r, s, t) * topo_basis();
+}
+
+template<Index N>
+Mat3 SolidElement<N>::material_basis_derivative(
+    Precision r,
+    Precision s,
+    Precision t,
+    Index     angle_id
+) {
+    return section_basis(r, s, t) * topo_basis_derivative(angle_id);
 }
 
 template<Index N>
@@ -74,9 +156,9 @@ void SolidElement<N>::material_stress_strain(Precision r,
         return;
     }
 
-    const Mat3 basis = material_orientation_basis(r, s, t);
-    out_strain = material()->elasticity()->transformation(basis) * global_strain;
-    out_stress = material()->elasticity()->template get<D>() * out_strain;
+    const Mat3 basis = material_basis(r, s, t);
+    out_strain       = material()->elasticity()->transformation(basis) * global_strain;
+    out_stress       = material()->elasticity()->template get<D>() * out_strain;
 }
 
 //-----------------------------------------------------------------------------
@@ -124,19 +206,19 @@ auto SolidElement<N>::material_matrix(Precision r, Precision s, Precision t)
         scaling = (*scale_field)(static_cast<Index>(this->elem_id));
     }
 
-    if (has_material_orientation()) {
-        auto result = this->material()->elasticity()->template get_transformed<D>(material_orientation_basis(r, s, t));
-        return scaling * result;
-    } else {
+    if (!has_material_orientation()) {
         return scaling * this->material()->elasticity()->template get<D>();
     }
+
+    const auto result = this->material()->elasticity()->template get_transformed<D>(material_basis(r, s, t));
+    return scaling * result;
 }
 
 template<Index N>
 template<Dim K>
 StaticVector<K> SolidElement<N>::interpolate(StaticMatrix<N, K> data, Precision r, Precision s, Precision t) {
     StaticMatrix<N, 1> shape_func = shape_function(r, s, t);
-    StaticVector<K> res {};
+    StaticVector<K>    res {};
     for (Index i = 0; i < K; i++) {
         res(i) = shape_func.dot(data.col(i));
     }
@@ -342,15 +424,6 @@ SolidElement<N>::mass(Precision* buffer) {
 template<Index N>
 Precision
 SolidElement<N>::volume() {
-    StaticMatrix<N, D> node_coords_glob = this->node_coords_global();
-
-    std::function<Precision(Precision, Precision, Precision)> func =
-        [this, node_coords_glob](Precision r, Precision s, Precision t) -> Precision {
-            Precision det = jacobian(node_coords_glob, r, s, t).determinant();
-            return det;
-        };
-
-    Precision volume = integration_scheme().integrate(func);
-    return volume;
+    return integrate_scalar_field(false, [](const Vec3&) { return Precision(1); });
 }
 }  // namespace fem::model

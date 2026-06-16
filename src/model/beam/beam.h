@@ -109,7 +109,9 @@ struct BeamElement : StructuralElement {
         return l;
     }
 
-    Precision volume() override { return get_profile()->area_ * length(); }
+    Precision volume() override {
+        return integrate_scalar_field(false, [](const Vec3&) { return Precision(1); });
+    }
 
     // Base rotation (provided section frame; no principal rotation)
     Mat3 base_rotation_matrix() {
@@ -274,9 +276,11 @@ struct BeamElement : StructuralElement {
     }
 
     void compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& displacement,
                                           const Field& ip_stress,
                                           int ip_offset) override {
         (void)node_forces;
+        (void)displacement;
         (void)ip_stress;
         (void)ip_offset;
         logging::error(false, "BeamElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);

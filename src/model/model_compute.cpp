@@ -90,7 +90,7 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
     const ID total_ips = static_cast<ID>(ip_enum(static_cast<Index>(_data->max_elems), 0));
     logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
 
-    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
+    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 8};
     ip_stress.set_zero();
 
     for (auto el : _data->elements) {
@@ -124,7 +124,8 @@ Field Model::compute_ip_stress_nonlinear(Field& displacement) {
     return compute_stress_state(displacement, true);
 }
 
-Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
+Field Model::build_internal_force_nonlinear(const Field& displacement,
+                                            const Field& ip_stress) {
     logging::error(ip_stress.domain == FieldDomain::ELEMENT_IP,
                    "nonlinear internal force assembly requires ELEMENT_IP stress field");
     logging::error(_data->element_ip_offsets != nullptr,
@@ -141,7 +142,7 @@ Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
             logging::error(eid >= 0 && eid < _data->max_elems,
                            "Element id out of range in build_internal_force_nonlinear: ", eid);
             const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
-            sel->compute_internal_force_nonlinear(internal, ip_stress, ip_offset);
+            sel->compute_internal_force_nonlinear(internal, displacement, ip_stress, ip_offset);
         }
     }
 

@@ -72,6 +72,7 @@ struct StructuralElement : ElementInterface {
     ) = 0;
     virtual void compute_internal_force_nonlinear(
         Field&       node_forces,
+        const Field& displacement,
         const Field& ip_stress,
         int          ip_offset
     ) = 0;

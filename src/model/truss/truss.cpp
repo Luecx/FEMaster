@@ -101,7 +101,7 @@ Vec3 T3::direction() {
 }
 
 Precision T3::volume() {
-    return get_section()->area_ * length();
+    return integrate_scalar_field(false, [](const Vec3&) { return Precision(1); });
 }
 
 MapMatrix T3::stiffness(Precision* buffer) {
@@ -312,8 +312,11 @@ void T3::compute_stress_state(Field& stress_state,
 }
 
 void T3::compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& displacement,
                                           const Field& ip_stress,
                                           int ip_offset) {
+    (void) displacement;
+
     logging::error(node_forces.domain == FieldDomain::NODE,
                    "T3: nonlinear internal force output must use NODE domain");
     logging::error(node_forces.components >= 3,

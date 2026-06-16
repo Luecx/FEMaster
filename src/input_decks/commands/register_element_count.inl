@@ -29,7 +29,7 @@ inline void register_element_count(fem::dsl::Registry& registry, ElementCountSin
                     .doc("Element topology/type")
                     .allowed({
                         "C3D4", "C3D5", "C3D6", "C3D8", "C3D10", "C3D15", "C3D20", "C3D20R",
-                        "B33", "T3", "S3", "S4", "MITC4", "S6", "S8", "QSPT"
+                        "B33", "T3", "S3", "S4", "MITC4", "MITC4NL", "S6", "S8", "QSPT"
                     })
         );
 
@@ -61,6 +61,7 @@ inline void register_element_count(fem::dsl::Registry& registry, ElementCountSin
         FEM_ADD_ELEMENT_COUNT_VARIANT("S4", 4, "S4 connectivity (4 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("QSPT", 4, "QSPT connectivity (4 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("MITC4", 4, "MITC4 connectivity (4 nodes)");
+        FEM_ADD_ELEMENT_COUNT_VARIANT("MITC4NL", 4, "MITC4NL connectivity (4 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("S6", 6, "S6 connectivity (6 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("S8", 8, "S8 connectivity (8 nodes)");
 

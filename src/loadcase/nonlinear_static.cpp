@@ -9,8 +9,11 @@
 #include "../core/config.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/assemble.h"
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../model/element/element_structural.h"
 #include "../model/model.h"
+#include "../model/shell/s4_mitc_nl.h"
 #include "../writer/write_mtx.h"
 
 #include <algorithm>
@@ -19,6 +22,7 @@
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <vector>
 
 namespace fem {
 namespace loadcase {
@@ -272,7 +276,7 @@ void NonlinearStatic::run() {
     model::Field current_positions =
         current_positions_from_displacement(reference_positions, displacement);
 
-    model::Field final_ip_stress{"IP_STRESS", model::FieldDomain::ELEMENT_IP, 1, 6};
+    model::Field final_ip_stress{"IP_STRESS", model::FieldDomain::ELEMENT_IP, 1, 8};
     final_ip_stress.set_zero();
     model::Field final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE,
                                 static_cast<Index>(model->_data->max_nodes), 6};
@@ -307,15 +311,36 @@ void NonlinearStatic::run() {
             current_positions = current_positions_from_displacement(reference_positions, displacement);
             set_positions(*model, current_positions);
 
-            auto K = Timer::measure(
-                [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-                "assembling current material stiffness K",
+            auto Kt = Timer::measure(
+                [&]() {
+                    logging::error(model->_data->element_ip_offsets != nullptr,
+                                   "element IP offset field has not been initialized");
+                    const auto& ip_enum = *model->_data->element_ip_offsets;
+
+                    auto tangent = [&](const fem::model::ElementPtr& element, Precision* storage) -> MapMatrix {
+                        if (auto mitc4nl = element->as<fem::model::MITC4NL>()) {
+                            return mitc4nl->consistent_tangent(storage, displacement);
+                        }
+
+                        if (auto structural = element->as<fem::model::StructuralElement>()) {
+                            const ID eid      = structural->elem_id;
+                            const ID ip_start = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
+                            MapMatrix K       = structural->stiffness(storage);
+
+                            std::vector<Precision> kg_storage(static_cast<std::size_t>(K.rows() * K.cols()));
+                            MapMatrix Kg = structural->stiffness_geom(kg_storage.data(), ip_stress, ip_start);
+                            K += Kg;
+                            return K;
+                        }
+
+                        MapMatrix empty{storage, 0, 0};
+                        return empty;
+                    };
+
+                    return mattools::assemble_matrix(model->_data->elements, active_dof_idx_mat, tangent);
+                },
+                "assembling current nonlinear tangent K_t",
                 false);
-            auto Kg = Timer::measure(
-                [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
-                "assembling current geometric stiffness K_g",
-                false);
-            SparseMatrix Kt = K + Kg;
             Kt.makeCompressed();
             if (regularize_zero_stiffness_rows) {
                 apply_zero_stiffness_regularization(Kt, zero_stiffness_regularization_alpha);
@@ -323,7 +348,7 @@ void NonlinearStatic::run() {
             check_finite(Kt, "K_t");
 
             auto internal_mat = Timer::measure(
-                [&]() { return model->build_internal_force_nonlinear(ip_stress); },
+                [&]() { return model->build_internal_force_nonlinear(displacement, ip_stress); },
                 "assembling nonlinear internal force",
                 false);
             auto f_int = Timer::measure(
@@ -419,20 +444,42 @@ void NonlinearStatic::run() {
     current_positions = current_positions_from_displacement(reference_positions, displacement);
     set_positions(*model, current_positions);
 
-    auto final_K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-        "assembling final current material stiffness K");
-    auto final_Kg = Timer::measure(
-        [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, final_ip_stress); },
-        "assembling final current geometric stiffness K_g");
-    final_Kt = final_K + final_Kg;
+    final_Kt = Timer::measure(
+        [&]() {
+            logging::error(model->_data->element_ip_offsets != nullptr,
+                           "element IP offset field has not been initialized");
+            const auto& ip_enum = *model->_data->element_ip_offsets;
+
+            auto tangent = [&](const fem::model::ElementPtr& element, Precision* storage) -> MapMatrix {
+                if (auto mitc4nl = element->as<fem::model::MITC4NL>()) {
+                    return mitc4nl->consistent_tangent(storage, displacement);
+                }
+
+                if (auto structural = element->as<fem::model::StructuralElement>()) {
+                    const ID eid      = structural->elem_id;
+                    const ID ip_start = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
+                    MapMatrix K       = structural->stiffness(storage);
+
+                    std::vector<Precision> kg_storage(static_cast<std::size_t>(K.rows() * K.cols()));
+                    MapMatrix Kg = structural->stiffness_geom(kg_storage.data(), final_ip_stress, ip_start);
+                    K += Kg;
+                    return K;
+                }
+
+                MapMatrix empty{storage, 0, 0};
+                return empty;
+            };
+
+            return mattools::assemble_matrix(model->_data->elements, active_dof_idx_mat, tangent);
+        },
+        "assembling final nonlinear tangent K_t");
     final_Kt.makeCompressed();
     if (regularize_zero_stiffness_rows) {
         apply_zero_stiffness_regularization(final_Kt, zero_stiffness_regularization_alpha);
     }
     final_A = transformer->assemble_A(final_Kt);
     final_internal = Timer::measure(
-        [&]() { return model->build_internal_force_nonlinear(final_ip_stress); },
+        [&]() { return model->build_internal_force_nonlinear(displacement, final_ip_stress); },
         "assembling final nonlinear internal force");
 
     auto global_load_final = global_load_total;

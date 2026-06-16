@@ -34,9 +34,7 @@ const quadrature::Quadrature& QSPT::integration_scheme() const {
 }
 
 Precision QSPT::volume() {
-    logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
-    logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
-    return this->get_section()->thickness_ * geometry.area(*this->_model_data->positions);
+    return integrate_scalar_field(false, [](const Vec3&) { return Precision(1); });
 }
 
 QSPT::GeometryData QSPT::geometry_data() {
@@ -201,9 +199,11 @@ MapMatrix QSPT::mass(Precision* buffer) {
 }
 
 void QSPT::compute_internal_force_nonlinear(Field& node_forces,
+                                            const Field& displacement,
                                             const Field& ip_stress,
                                             int ip_offset) {
     (void) node_forces;
+    (void) displacement;
     (void) ip_stress;
     (void) ip_offset;
     logging::error(false, "QSPT: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);

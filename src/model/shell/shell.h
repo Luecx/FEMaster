@@ -94,9 +94,11 @@ struct ShellElement : StructuralElement {
     }
 
     void compute_internal_force_nonlinear(Field& node_forces,
+                                          const Field& displacement,
                                           const Field& ip_stress,
                                           int ip_offset) override {
         (void) node_forces;
+        (void) displacement;
         (void) ip_stress;
         (void) ip_offset;
         logging::error(false, "ShellElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
