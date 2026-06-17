@@ -14,7 +14,6 @@
 #include "../writer/write_mtx.h"
 
 #include <algorithm>
-#include <Eigen/Geometry>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -27,110 +26,6 @@ namespace loadcase {
 using constraint::ConstraintTransformer;
 
 namespace {
-
-Mat3 skew(const Vec3& vector) {
-    Mat3 result;
-    result << Precision(0), -vector(2),     vector(1),
-              vector(2),     Precision(0), -vector(0),
-             -vector(1),     vector(0),     Precision(0);
-    return result;
-}
-
-Mat3 rotation_exp(const Vec3& rotation_vector) {
-    const Precision angle_squared = rotation_vector.squaredNorm();
-    const Precision angle         = std::sqrt(angle_squared);
-    const Mat3      omega         = skew(rotation_vector);
-    const Mat3      omega_squared = omega * omega;
-
-    Precision a;
-    Precision b;
-
-    if (angle < Precision(1e-8)) {
-        const Precision angle_fourth = angle_squared * angle_squared;
-        a = Precision(1)
-          - angle_squared / Precision(6)
-          + angle_fourth  / Precision(120);
-        b = Precision(0.5)
-          - angle_squared / Precision(24)
-          + angle_fourth  / Precision(720);
-    } else {
-        a = std::sin(angle) / angle;
-        b = (Precision(1) - std::cos(angle)) / angle_squared;
-    }
-
-    return Mat3::Identity() + a * omega + b * omega_squared;
-}
-
-Vec3 rotation_log(const Mat3& rotation) {
-    Eigen::Quaternion<Precision> quaternion(rotation);
-    logging::error(quaternion.coeffs().allFinite(),
-                   "NonlinearStatic: invalid quaternion during logarithmic rotation update");
-
-    quaternion.normalize();
-    Eigen::AngleAxis<Precision> angle_axis(quaternion);
-
-    const Precision angle = angle_axis.angle();
-    if (angle < Precision(1e-12)) {
-        const Mat3 antisymmetric = Precision(0.5) * (rotation - rotation.transpose());
-        Vec3 result;
-        result << antisymmetric(2, 1),
-                  antisymmetric(0, 2),
-                  antisymmetric(1, 0);
-        return result;
-    }
-
-    Vec3 axis = angle_axis.axis();
-    logging::error(axis.allFinite(),
-                   "NonlinearStatic: invalid rotation axis during logarithmic rotation update");
-
-    const Precision axis_norm = axis.norm();
-    logging::error(axis_norm > Precision(0),
-                   "NonlinearStatic: zero rotation axis during logarithmic rotation update");
-
-    return angle * axis / axis_norm;
-}
-
-model::Field rotation_state_from_displacement(const model::Field& displacement) {
-    logging::error(displacement.domain == model::FieldDomain::NODE,
-                   "NonlinearStatic: displacement must use NODE domain");
-    logging::error(displacement.components >= 6,
-                   "NonlinearStatic: displacement requires six components");
-
-    model::Field rotations{
-        "ROTATION_STATE",
-        model::FieldDomain::NODE,
-        displacement.rows,
-        3
-    };
-
-    for (Index i = 0; i < displacement.rows; ++i) {
-        for (Index d = 0; d < 3; ++d) {
-            rotations(i, d) = displacement(i, d + 3);
-        }
-    }
-
-    return rotations;
-}
-
-void inject_rotation_state(model::Field& displacement,
-                           const model::Field& rotations) {
-    logging::error(displacement.domain == model::FieldDomain::NODE,
-                   "NonlinearStatic: displacement must use NODE domain");
-    logging::error(rotations.domain == model::FieldDomain::NODE,
-                   "NonlinearStatic: rotation state must use NODE domain");
-    logging::error(displacement.rows == rotations.rows,
-                   "NonlinearStatic: displacement/rotation row mismatch");
-    logging::error(displacement.components >= 6,
-                   "NonlinearStatic: displacement requires six components");
-    logging::error(rotations.components == 3,
-                   "NonlinearStatic: rotation state requires three components");
-
-    for (Index i = 0; i < displacement.rows; ++i) {
-        for (Index d = 0; d < 3; ++d) {
-            displacement(i, d + 3) = rotations(i, d);
-        }
-    }
-}
 
 model::Field current_positions_from_displacement(const model::Field& reference,
                                                  const model::Field& displacement) {
@@ -152,63 +47,15 @@ model::Field current_positions_from_displacement(const model::Field& reference,
             current(i, d) = reference(i, d) + displacement(i, d);
         }
 
-        // Rotations are stored as the physical logarithmic rotation vector of
-        // the current nodal orientation. They are not added component-wise to
-        // the reference field.
-        for (Index d = 0; d < 3; ++d) {
-            current(i, d + 3) = displacement(i, d + 3);
+        // The rotational entries are the total generalized displacement
+        // coordinates rx, ry and rz. They are constrained, solved and written
+        // exactly like the translational displacement components.
+        for (Index d = 3; d < 6; ++d) {
+            current(i, d) = displacement(i, d);
         }
     }
 
     return current;
-}
-
-void update_nonlinear_state(DynamicVector&       solver_state,
-                            model::Field&         rotation_state,
-                            const DynamicVector& increment,
-                            const SystemDofIds&   system_dof_ids) {
-    logging::error(solver_state.size() == increment.size(),
-                   "NonlinearStatic: state/increment size mismatch");
-    logging::error(rotation_state.rows == system_dof_ids.rows(),
-                   "NonlinearStatic: rotation-state/index row mismatch");
-    logging::error(system_dof_ids.cols() >= 6,
-                   "NonlinearStatic: system index matrix requires six columns");
-
-    // Keep the algebraic solver coordinates additive. Since `increment` is
-    // already T*dq, this preserves all linear supports, equations, couplings,
-    // and the affine null-space constraint manifold.
-    solver_state += increment;
-
-    // Independently update the physical nodal orientations on SO(3). The
-    // rotational entries of `solver_state` are only algebraic Newton
-    // coordinates; the physical total rotation written to POSITION and to the
-    // result field is stored in `rotation_state`.
-    for (Index node = 0; node < system_dof_ids.rows(); ++node) {
-        Vec3 delta_rotation = Vec3::Zero();
-        bool has_rotation   = false;
-
-        for (Index d = 0; d < 3; ++d) {
-            const Index index = system_dof_ids(node, d + 3);
-
-            if (index >= 0) {
-                delta_rotation(d) = increment(index);
-                has_rotation      = true;
-            }
-        }
-
-        if (!has_rotation || delta_rotation.squaredNorm() == Precision(0)) {
-            continue;
-        }
-
-        const Vec3 rotation_old = rotation_state.row_vec3(node);
-        const Mat3 rotation_new =
-            rotation_exp(delta_rotation) * rotation_exp(rotation_old);
-        const Vec3 vector_new = rotation_log(rotation_new);
-
-        for (Index d = 0; d < 3; ++d) {
-            rotation_state(node, d) = vector_new(d);
-        }
-    }
 }
 
 model::Field subtract_field(const model::Field& lhs, const model::Field& rhs, const std::string& name) {
@@ -437,8 +284,6 @@ void NonlinearStatic::run() {
 
     model::Field displacement =
         mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
-    model::Field rotation_state = rotation_state_from_displacement(displacement);
-    inject_rotation_state(displacement, rotation_state);
 
     model::Field current_positions =
         current_positions_from_displacement(reference_positions, displacement);
@@ -468,7 +313,6 @@ void NonlinearStatic::run() {
             asm_timer.start();
 
             displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
-            inject_rotation_state(displacement, rotation_state);
             current_positions = current_positions_from_displacement(reference_positions, displacement);
             *model->_data->positions = current_positions;
 
@@ -549,7 +393,12 @@ void NonlinearStatic::run() {
 
             DynamicVector du = homogeneous_increment(*transformer, dq);
             du_norm = du.norm();
-            update_nonlinear_state(u_total, rotation_state, du, active_dof_idx_mat);
+
+            // All six displacement components are total generalized
+            // coordinates. Since du = T*dq, this additive update preserves the
+            // complete affine constraint manifold, including rotational
+            // supports and coupling equations.
+            u_total += du;
 
             final_A = A;
 
@@ -572,7 +421,6 @@ void NonlinearStatic::run() {
     }
 
     displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
-    inject_rotation_state(displacement, rotation_state);
     current_positions = current_positions_from_displacement(reference_positions, displacement);
     *model->_data->positions = current_positions;
 

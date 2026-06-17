@@ -30,8 +30,24 @@ struct ShellElement : StructuralElement {
         }
         return this->_section->template as<ShellSection>();
     }
+    const ShellSection* get_section() const {
+        if (!this->_section) {
+            logging::error(false, "Section not set for element ", this->elem_id);
+        }
+        if (!this->_section->template as<ShellSection>()) {
+            logging::error(false, "Section is not a shell section for element ", this->elem_id);
+        }
+        return this->_section->template as<ShellSection>();
+    }
     material::MaterialPtr get_material() {
         ShellSection* section = get_section();
+        if (!section->material_) {
+            logging::error(false, "Material not set for element ", this->elem_id);
+        }
+        return section->material_;
+    }
+    material::MaterialPtr get_material() const {
+        const ShellSection* section = get_section();
         if (!section->material_) {
             logging::error(false, "Material not set for element ", this->elem_id);
         }
@@ -44,8 +60,23 @@ struct ShellElement : StructuralElement {
         }
         return mat_ptr->elasticity().get();
     }
+    material::Elasticity* get_elasticity() const {
+        auto mat_ptr = get_material();
+        if (!mat_ptr->has_elasticity()) {
+            logging::error(false, "Material has no elasticity assigned");
+        }
+        return mat_ptr->elasticity().get();
+    }
     Precision get_density(bool required = false) {
         ShellSection* section = get_section();
+        if (required) {
+            logging::error(section->has_density(),
+                           "ShellElement: density is required for element ", this->elem_id);
+        }
+        return section->get_density();
+    }
+    Precision get_density(bool required = false) const {
+        const ShellSection* section = get_section();
         if (required) {
             logging::error(section->has_density(),
                            "ShellElement: density is required for element ", this->elem_id);

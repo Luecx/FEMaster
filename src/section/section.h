@@ -53,6 +53,11 @@ struct Section : public fem::Printable {
         return dynamic_cast<T*>(this);
     }
 
+    template<typename T>
+    const T* as() const {
+        return dynamic_cast<const T*>(this);
+    }
+
     /**
      * @brief Outputs section details through the logger.
      */
