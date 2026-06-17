@@ -2,24 +2,28 @@
  * @file s4_frt_mitc_nonlinear.h
  * @brief Four-node fully geometrically nonlinear FRT/MITC shell element.
  *
- * The element implements the same five-parameter Reissner-Mindlin finite-rotation
- * shell core as the analytical Python validation element.  The mechanical core
- * uses 20 DOFs per element, ordered node-wise as [ux, uy, uz, r1, r2].  For
- * compatibility with the solver, these five local DOFs are embedded into the
- * usual six-DOF-per-node layout by a reference-basis projection.  The sixth
- * rotational DOF is stabilized by a small drill penalty.
+ * The element is a Total-Lagrangian Reissner-Mindlin shell with finite nodal
+ * rotations. Each solver node contributes six global DOFs ordered as
+ * [ux, uy, uz, rx, ry, rz]. The nonlinear solver stores the physical total
+ * orientation as a logarithmic rotation vector and updates the orientation
+ * multiplicatively on SO(3). The element linearization is therefore written
+ * with respect to spatial incremental rotations about the current state.
  *
  * Mechanical model:
- *   - Total-Lagrangian reference midsurface integration.
- *   - Finite nodal director rotations using the rational Rodrigues/Cayley
- *     parametrization.
+ *   - Total-Lagrangian reference-midsurface integration.
+ *   - Current director d = R d0 with R = Exp(theta).
  *   - Green-Lagrange membrane, bending and transverse-shear strains.
- *   - MITC4 transverse shear tying, including differentiated B and G terms.
+ *   - MITC4 transverse-shear tying, including differentiated B and G terms.
  *   - Optional compact membrane EAS condensation controlled by eas_parameters.
  *   - Split nonlinear tangent K_T = K_mat + K_geo.
+ *   - K_geo contains membrane, bending and transverse-shear resultant terms.
  *
- * The reference director and in-plane axes are built locally from the planar
- * reference element geometry.
+ * A small tangent-only drilling stabilization regularizes the rotation about
+ * the current director. It is a numerical stabilization, not an additional
+ * physical shell resultant.
+ *
+ * The reference director and in-plane basis are generated locally from the
+ * planar reference element geometry.
  */
 
 #pragma once
@@ -41,49 +45,44 @@ namespace fem::model {
 struct S4FRTMITC : ShellElement<4> {
     using Base = ShellElement<4>;
 
-    static constexpr Index num_nodes         = 4;
-    static constexpr Index dofs_per_node_5   = 5;
-    static constexpr Index dofs_per_node_6   = 6;
-    static constexpr Index num_dofs_5        = num_nodes * dofs_per_node_5;
-    static constexpr Index num_dofs_6        = num_nodes * dofs_per_node_6;
-    static constexpr Index num_strains       = 8;
+    static constexpr Index num_nodes      = 4;
+    static constexpr Index dofs_per_node = 6;
+    static constexpr Index num_dofs       = num_nodes * dofs_per_node;
+    static constexpr Index num_strains    = 8;
 
     // 0 disables EAS. Use 4 for the compact membrane EAS4 mode or 5 for EAS5.
-    static constexpr Index eas_parameters    = 0;
+    static constexpr Index eas_parameters = 0;
 
-    // Small drill stabilization. This is intentionally dimensionless and is
-    // scaled by transverse shear stiffness and element area.  Keep this small;
-    // for a strict 5-DOF comparison, additionally fix rz on all nodes.
-    static constexpr Precision drill_scale   = Precision(1e-5);
+    // Small tangent-only drill stabilization. It regularizes the otherwise
+    // rank-deficient rotation about the current director without introducing a
+    // physical drilling energy into the shell resultants.
+    static constexpr Precision drill_scale = Precision(1e-5);
 
     using Vec8     = StaticVector<num_strains>;
-    using Vec20    = StaticVector<num_dofs_5>;
-    using Vec24    = StaticVector<num_dofs_6>;
+    using Vec24    = StaticVector<num_dofs>;
     using Mat8     = StaticMatrix<num_strains, num_strains>;
-    using Mat20    = StaticMatrix<num_dofs_5, num_dofs_5>;
-    using Mat24    = StaticMatrix<num_dofs_6, num_dofs_6>;
-    using Mat8x20  = StaticMatrix<num_strains, num_dofs_5>;
-    using Mat20x24 = StaticMatrix<num_dofs_5, num_dofs_6>;
+    using Mat24    = StaticMatrix<num_dofs, num_dofs>;
+    using Mat8x24  = StaticMatrix<num_strains, num_dofs>;
     using Mat43    = StaticMatrix<4, 3>;
     using Mat42    = StaticMatrix<4, 2>;
-    using Vec20Mat = std::array<Mat20, num_strains>;
+    using Vec24Mat = std::array<Mat24, num_strains>;
 
     struct VectorDerivatives {
-        Vec3                 value = Vec3::Zero();
-        StaticMatrix<num_dofs_5, 3> d1 = StaticMatrix<num_dofs_5, 3>::Zero();
-        std::array<Mat20, 3> d2{};
+        Vec3                        value = Vec3::Zero();
+        StaticMatrix<num_dofs, 3>   d1    = StaticMatrix<num_dofs, 3>::Zero();
+        std::array<Mat24, 3>        d2{};
 
         VectorDerivatives() {
-            for (auto& m : d2) {
-                m.setZero();
+            for (auto& matrix : d2) {
+                matrix.setZero();
             }
         }
     };
 
     struct ScalarDerivatives {
         Precision value = Precision(0);
-        Vec20     d1    = Vec20::Zero();
-        Mat20     d2    = Mat20::Zero();
+        Vec24     d1    = Vec24::Zero();
+        Mat24     d2    = Mat24::Zero();
     };
 
     struct ElementBasis {
@@ -91,28 +90,24 @@ struct S4FRTMITC : ShellElement<4> {
         Vec3  e2 = Vec3::Zero();
         Vec3  e3 = Vec3::Zero();
         Mat43 d0 = Mat43::Zero();
-        Mat43 a1 = Mat43::Zero();
-        Mat43 a2 = Mat43::Zero();
         Mat42 xy = Mat42::Zero();
     };
 
     struct CurrentState {
-        Mat43 x  = Mat43::Zero();
-        Mat43 d  = Mat43::Zero();
-        Mat43 a1 = Mat43::Zero();
-        Mat43 a2 = Mat43::Zero();
-        Mat42 r  = Mat42::Zero(); ///< Total local rotation parameters r1,r2.
+        Mat43                 x = Mat43::Zero();
+        Mat43                 d = Mat43::Zero();
+        std::array<Mat3, 4>   rotation{};
     };
 
     struct StrainData {
         Vec8     strain = Vec8::Zero();
-        Mat8x20  B      = Mat8x20::Zero();
-        Vec20Mat G{};
+        Mat8x24  B      = Mat8x24::Zero();
+        Vec24Mat G{};
         Precision detJ  = Precision(0);
 
         StrainData() {
-            for (auto& m : G) {
-                m.setZero();
+            for (auto& matrix : G) {
+                matrix.setZero();
             }
         }
     };
@@ -193,45 +188,29 @@ struct S4FRTMITC : ShellElement<4> {
         return S;
     }
 
-    static Mat3 rodrigues_cayley(const Vec3& p) {
-        const Mat3      P  = skew(p);
-        const Precision p2 = p.dot(p);
-        return Mat3::Identity()
-             + (Precision(4) / (Precision(4) + p2)) * (P + Precision(0.5) * (P * P));
-    }
+    static Mat3 rotation_exp(const Vec3& rotation_vector) {
+        const Precision angle_squared = rotation_vector.squaredNorm();
+        const Precision angle         = std::sqrt(angle_squared);
+        const Mat3      omega         = skew(rotation_vector);
+        const Mat3      omega_squared = omega * omega;
 
-    static void rodrigues_cayley_derivatives(const Vec3&                 p,
-                                             const std::array<Vec3, 2>&  basis,
-                                             Mat3&                       R,
-                                             std::array<Mat3, 2>&        dR,
-                                             std::array<std::array<Mat3, 2>, 2>& hR) {
-        const Mat3      P = skew(p);
-        const Mat3      A = P + Precision(0.5) * (P * P);
-        const Precision s = Precision(4) + p.dot(p);
-        const Precision c = Precision(4) / s;
+        Precision a;
+        Precision b;
 
-        R = Mat3::Identity() + c * A;
-
-        std::array<Mat3, 2> E;
-        std::array<Mat3, 2> Am;
-        std::array<Precision, 2> ci{};
-
-        for (Index i = 0; i < 2; ++i) {
-            E[i]  = skew(basis[i]);
-            Am[i] = E[i] + Precision(0.5) * (E[i] * P + P * E[i]);
-            ci[i] = -Precision(8) * p.dot(basis[i]) / (s * s);
-            dR[i] = ci[i] * A + c * Am[i];
+        if (angle < Precision(1e-8)) {
+            const Precision angle_fourth = angle_squared * angle_squared;
+            a = Precision(1)
+              - angle_squared / Precision(6)
+              + angle_fourth  / Precision(120);
+            b = Precision(0.5)
+              - angle_squared / Precision(24)
+              + angle_fourth  / Precision(720);
+        } else {
+            a = std::sin(angle) / angle;
+            b = (Precision(1) - std::cos(angle)) / angle_squared;
         }
 
-        for (Index i = 0; i < 2; ++i) {
-            for (Index j = 0; j < 2; ++j) {
-                Precision cij = -Precision(8) * basis[i].dot(basis[j]) / (s * s);
-                cij += Precision(32) * p.dot(basis[i]) * p.dot(basis[j]) / (s * s * s);
-
-                const Mat3 Aij = Precision(0.5) * (E[i] * E[j] + E[j] * E[i]);
-                hR[i][j] = cij * A + ci[i] * Am[j] + ci[j] * Am[i] + c * Aij;
-            }
-        }
+        return Mat3::Identity() + a * omega + b * omega_squared;
     }
 
     static ScalarDerivatives dot_derivatives(const VectorDerivatives& a,
@@ -241,8 +220,8 @@ struct S4FRTMITC : ShellElement<4> {
         out.d1    = a.d1 * b.value + b.d1 * a.value;
         out.d2.setZero();
 
-        for (Index i = 0; i < num_dofs_5; ++i) {
-            for (Index j = 0; j < num_dofs_5; ++j) {
+        for (Index i = 0; i < num_dofs; ++i) {
+            for (Index j = 0; j < num_dofs; ++j) {
                 Precision v = Precision(0);
                 v += a.d1.row(i).dot(b.d1.row(j));
                 v += a.d1.row(j).dot(b.d1.row(i));
@@ -335,8 +314,6 @@ struct S4FRTMITC : ShellElement<4> {
 
         for (Index i = 0; i < 4; ++i) {
             basis.d0.row(i) = basis.e3.transpose();
-            basis.a1.row(i) = basis.e1.transpose();
-            basis.a2.row(i) = basis.e2.transpose();
         }
 
         compute_local_reference_coordinates(X, basis);
@@ -358,57 +335,20 @@ struct S4FRTMITC : ShellElement<4> {
     }
 
     CurrentState current_state(const ElementBasis& basis) const {
-        const StaticMatrix<4, 6> pos = node_coords_current_6();
+        const StaticMatrix<4, 6> positions = node_coords_current_6();
 
         CurrentState state;
         for (Index i = 0; i < 4; ++i) {
-            const Vec3 x     = pos.template block<1, 3>(i, 0).transpose();
-            const Vec3 theta = pos.template block<1, 3>(i, 3).transpose();
+            const Vec3 x               = positions.template block<1, 3>(i, 0).transpose();
+            const Vec3 rotation_vector = positions.template block<1, 3>(i, 3).transpose();
+            const Vec3 d0              = basis.d0.row(i).transpose();
+            const Mat3 rotation        = rotation_exp(rotation_vector);
 
-            const Vec3 a1_ref = basis.a1.row(i).transpose();
-            const Vec3 a2_ref = basis.a2.row(i).transpose();
-            const Vec3 d0     = basis.d0.row(i).transpose();
-
-            const Precision r1 = theta.dot(a1_ref);
-            const Precision r2 = theta.dot(a2_ref);
-            const Vec3      p  = r1 * a1_ref + r2 * a2_ref;
-            const Mat3      R  = rodrigues_cayley(p);
-
-            state.x.row(i)  = x.transpose();
-            state.d.row(i)  = (R * d0).transpose();
-            state.a1.row(i) = (R * a1_ref).transpose();
-            state.a2.row(i) = (R * a2_ref).transpose();
-            state.r(i, 0)   = r1;
-            state.r(i, 1)   = r2;
+            state.x.row(i)       = x.transpose();
+            state.d.row(i)       = (rotation * d0).transpose();
+            state.rotation[i]    = rotation;
         }
         return state;
-    }
-
-    Mat20x24 projection_5_to_6(const ElementBasis& basis) const {
-        Mat20x24 P;
-        P.setZero();
-
-        // Constant reference-basis projection.  This is the six-DOF embedding
-        // of the Python element's 5-DOF vector q = [ux,uy,uz,r1,r2].  Because P
-        // is independent of the current state, K6 = P^T K5 P is a consistent
-        // tangent for this embedding.
-        for (Index i = 0; i < 4; ++i) {
-            const Index r5 = dofs_per_node_5 * i;
-            const Index r6 = dofs_per_node_6 * i;
-
-            P(r5 + 0, r6 + 0) = Precision(1);
-            P(r5 + 1, r6 + 1) = Precision(1);
-            P(r5 + 2, r6 + 2) = Precision(1);
-
-            const Vec3 a1 = basis.a1.row(i).transpose();
-            const Vec3 a2 = basis.a2.row(i).transpose();
-
-            for (Index c = 0; c < 3; ++c) {
-                P(r5 + 3, r6 + 3 + c) = a1(c);
-                P(r5 + 4, r6 + 3 + c) = a2(c);
-            }
-        }
-        return P;
     }
 
     void shape_gradients_physical(const StaticMatrix<4, 2>& dN_rs,
@@ -447,7 +387,7 @@ struct S4FRTMITC : ShellElement<4> {
         std::array<VectorDerivatives, 4> x_nodes;
 
         for (Index i = 0; i < 4; ++i) {
-            const Index k = dofs_per_node_5 * i;
+            const Index k = dofs_per_node * i;
             x_nodes[i].value = state.x.row(i).transpose();
             x_nodes[i].d1(k + 0, 0) = Precision(1);
             x_nodes[i].d1(k + 1, 1) = Precision(1);
@@ -456,42 +396,50 @@ struct S4FRTMITC : ShellElement<4> {
         return x_nodes;
     }
 
-    std::array<VectorDerivatives, 4> director_derivatives(const CurrentState& state,
-                                                            const ElementBasis& basis) const {
-        std::array<VectorDerivatives, 4> d_nodes;
+    std::array<VectorDerivatives, 4> director_derivatives(const CurrentState& state) const {
+        std::array<VectorDerivatives, 4> directors;
+
+        std::array<Vec3, 3> axes{
+            Vec3::UnitX(),
+            Vec3::UnitY(),
+            Vec3::UnitZ()
+        };
+
+        std::array<Mat3, 3> generators{
+            skew(axes[0]),
+            skew(axes[1]),
+            skew(axes[2])
+        };
 
         for (Index i = 0; i < 4; ++i) {
-            const Index k = dofs_per_node_5 * i;
+            const Index base     = dofs_per_node * i;
+            const Vec3  director = state.d.row(i).transpose();
 
-            // Match frt_shell4_analytic.py::state_from_total_dofs and
-            // _trial_nodal_derivatives with the initial/reference state:
-            // p = r1*a1_ref + r2*a2_ref, and derivatives are taken with
-            // respect to the total local parameters r1,r2.
-            const Vec3 d0     = basis.d0.row(i).transpose();
-            const Vec3 a1_ref = basis.a1.row(i).transpose();
-            const Vec3 a2_ref = basis.a2.row(i).transpose();
-            const Vec3 p      = state.r(i, 0) * a1_ref + state.r(i, 1) * a2_ref;
+            directors[i].value = director;
 
-            Mat3 R;
-            std::array<Mat3, 2> dR;
-            std::array<std::array<Mat3, 2>, 2> hR;
-            rodrigues_cayley_derivatives(p, {a1_ref, a2_ref}, R, dR, hR);
+            // The nonlinear solver supplies spatial incremental rotations and
+            // updates R_{k+1} = Exp(delta_theta) R_k. Therefore the local
+            // derivatives are evaluated at zero increment about the current
+            // orientation, not with respect to the components of Log(R).
+            for (Index a = 0; a < 3; ++a) {
+                const Index ia = base + 3 + a;
+                directors[i].d1.row(ia) = (generators[a] * director).transpose();
 
-            d_nodes[i].value = R * d0;
-            for (Index a = 0; a < 2; ++a) {
-                const Index ia = k + 3 + a;
-                d_nodes[i].d1.row(ia) = (dR[a] * d0).transpose();
+                for (Index b = 0; b < 3; ++b) {
+                    const Index ib = base + 3 + b;
+                    const Vec3 second = Precision(0.5)
+                                      * (generators[a] * generators[b]
+                                       + generators[b] * generators[a])
+                                      * director;
 
-                for (Index b = 0; b < 2; ++b) {
-                    const Index ib = k + 3 + b;
-                    const Vec3  dd = hR[a][b] * d0;
                     for (Index c = 0; c < 3; ++c) {
-                        d_nodes[i].d2[c](ia, ib) = dd(c);
+                        directors[i].d2[c](ia, ib) = second(c);
                     }
                 }
             }
         }
-        return d_nodes;
+
+        return directors;
     }
 
     void reference_fields(const ElementBasis& basis,
@@ -535,7 +483,7 @@ struct S4FRTMITC : ShellElement<4> {
         shape_gradients_physical(dN_rs, basis, dN_da, dN_db, out.detJ, A);
 
         const auto x_nodes = x_derivatives(state);
-        const auto d_nodes = director_derivatives(state, basis);
+        const auto d_nodes = director_derivatives(state);
 
         Vec3 X_a, X_b, D, D_a, D_b;
         reference_fields(basis, N, dN_da, dN_db, X_a, X_b, D, D_a, D_b);
@@ -589,13 +537,13 @@ struct S4FRTMITC : ShellElement<4> {
                                   Precision           r,
                                   Precision           s,
                                   Vec2&               shear_nat,
-                                  StaticMatrix<2, num_dofs_5>& B_nat,
-                                  std::array<Mat20, 2>& G_nat) const {
+                                  StaticMatrix<2, num_dofs>& B_nat,
+                                  std::array<Mat24, 2>& G_nat) const {
         const StaticVector<4>   N     = shape_function(r, s);
         const StaticMatrix<4,2> dN_rs = shape_derivative(r, s);
 
         const auto x_nodes = x_derivatives(state);
-        const auto d_nodes = director_derivatives(state, basis);
+        const auto d_nodes = director_derivatives(state);
 
         StaticVector<4> dN_dxi  = dN_rs.col(0);
         StaticVector<4> dN_deta = dN_rs.col(1);
@@ -634,11 +582,11 @@ struct S4FRTMITC : ShellElement<4> {
                             Precision           s,
                             const Mat2&         A,
                             Vec2&               shear,
-                            StaticMatrix<2, num_dofs_5>& B_shear,
-                            std::array<Mat20, 2>& G_shear) const {
+                            StaticMatrix<2, num_dofs>& B_shear,
+                            std::array<Mat24, 2>& G_shear) const {
         Vec2 gb, gt, gl, gr;
-        StaticMatrix<2, num_dofs_5> Bb, Bt, Bl, Br;
-        std::array<Mat20, 2> Gb, Gt, Gl, Gr;
+        StaticMatrix<2, num_dofs> Bb, Bt, Bl, Br;
+        std::array<Mat24, 2> Gb, Gt, Gl, Gr;
         for (Index i = 0; i < 2; ++i) {
             Gb[i].setZero(); Gt[i].setZero(); Gl[i].setZero(); Gr[i].setZero();
         }
@@ -649,8 +597,8 @@ struct S4FRTMITC : ShellElement<4> {
         raw_natural_shear_B_G_at(state, basis, Precision( 1), Precision(0), gr, Br, Gr);
 
         Vec2 g_nat = Vec2::Zero();
-        StaticMatrix<2, num_dofs_5> B_nat = StaticMatrix<2, num_dofs_5>::Zero();
-        std::array<Mat20, 2> G_nat;
+        StaticMatrix<2, num_dofs> B_nat = StaticMatrix<2, num_dofs>::Zero();
+        std::array<Mat24, 2> G_nat;
         for (auto& m : G_nat) {
             m.setZero();
         }
@@ -693,8 +641,8 @@ struct S4FRTMITC : ShellElement<4> {
         shape_gradients_physical(dN_rs, basis, dN_da, dN_db, detJ_unused, A);
 
         Vec2 shear;
-        StaticMatrix<2, num_dofs_5> B_shear;
-        std::array<Mat20, 2> G_shear;
+        StaticMatrix<2, num_dofs> B_shear;
+        std::array<Mat24, 2> G_shear;
         mitc4_shear_B_G_at(state, basis, r, s, A, shear, B_shear, G_shear);
 
         out.strain(6) = shear(0);
@@ -775,12 +723,12 @@ struct S4FRTMITC : ShellElement<4> {
         }
     }
 
-    void material_and_geometric_stiffness_5(const CurrentState& state,
+    void material_and_geometric_stiffness(const CurrentState& state,
                                             const ElementBasis& basis,
                                             const Mat8&         H,
-                                            Mat20&              Kmat,
-                                            Mat20&              Kgeo,
-                                            Vec20*              force = nullptr) const {
+                                            Mat24&              Kmat,
+                                            Mat24&              Kgeo,
+                                            Vec24*              force = nullptr) const {
         Kmat.setZero();
         Kgeo.setZero();
         if (force) {
@@ -790,8 +738,8 @@ struct S4FRTMITC : ShellElement<4> {
         if constexpr (eas_parameters > 0) {
             StaticMatrix<eas_parameters, eas_parameters> Kaa;
             StaticVector<eas_parameters>                 ba;
-            StaticMatrix<eas_parameters, num_dofs_5>     Jb;
-            std::array<Mat20, eas_parameters>            Hb;
+            StaticMatrix<eas_parameters, num_dofs>     Jb;
+            std::array<Mat24, eas_parameters>            Hb;
             Kaa.setZero();
             ba.setZero();
             Jb.setZero();
@@ -875,156 +823,164 @@ struct S4FRTMITC : ShellElement<4> {
     }
 
     // ---------------------------------------------------------------------
-    // 5-DOF core to 6-DOF solver mapping and drill stabilization
+    // Drill stabilization and StructuralElement interface
     // ---------------------------------------------------------------------
 
     Precision reference_area(const ElementBasis& basis) const {
         Precision area = Precision(0);
+
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto      p      = integration_scheme_.get_point(ip);
-            const auto      dN_rs  = shape_derivative(p.r, p.s);
+            const auto      point = integration_scheme_.get_point(ip);
+            const auto      dN_rs = shape_derivative(point.r, point.s);
             StaticVector<4> dN_da;
             StaticVector<4> dN_db;
             Precision       detJ;
-            Mat2            A;
-            shape_gradients_physical(dN_rs, basis, dN_da, dN_db, detJ, A);
-            area += p.w * detJ;
+            Mat2            jacobian;
+
+            shape_gradients_physical(
+                dN_rs,
+                basis,
+                dN_da,
+                dN_db,
+                detJ,
+                jacobian
+            );
+
+            area += point.w * detJ;
         }
+
         return area;
     }
 
-    Precision drill_stiffness_per_node(const ElementBasis& basis, const Mat8& H) const {
+    Precision drill_stiffness_per_node(const ElementBasis& basis,
+                                       const Mat8&         H) const {
         const Precision area = reference_area(basis);
-        const Precision shear_scale = Precision(0.5) * (std::abs(H(6, 6)) + std::abs(H(7, 7)));
-        return drill_scale * shear_scale * area / Precision(4);
+        const Precision shear_scale = Precision(0.5)
+                                      * (std::abs(H(6, 6)) + std::abs(H(7, 7)));
+        return drill_scale * shear_scale * area / Precision(num_nodes);
     }
 
-    void add_drill_stiffness(Mat24& K, const ElementBasis& basis, const Mat8& H) const {
+    void add_drill_stiffness(Mat24&              stiffness_matrix,
+                             const CurrentState& state,
+                             const ElementBasis& basis,
+                             const Mat8&         H) const {
         const Precision kd = drill_stiffness_per_node(basis, H);
-        for (Index i = 0; i < 4; ++i) {
-            const Vec3 d0 = basis.d0.row(i).transpose();
-            const Mat3 Kd = kd * (d0 * d0.transpose());
-            K.template block<3, 3>(6 * i + 3, 6 * i + 3) += Kd;
+
+        for (Index i = 0; i < num_nodes; ++i) {
+            const Vec3 director = state.d.row(i).transpose();
+            const Mat3 block    = kd * (director * director.transpose());
+
+            stiffness_matrix.template block<3, 3>(
+                dofs_per_node * i + 3,
+                dofs_per_node * i + 3
+            ) += block;
         }
     }
-
-    void add_drill_force(Vec24& f, const ElementBasis& basis) const {
-        const Mat8 H = resultant_stiffness();
-        const Precision kd = drill_stiffness_per_node(basis, H);
-        const StaticMatrix<4, 6> pos = node_coords_current_6();
-
-        for (Index i = 0; i < 4; ++i) {
-            const Vec3 d0    = basis.d0.row(i).transpose();
-            const Vec3 theta = pos.template block<1, 3>(i, 3).transpose();
-            const Vec3 fd    = kd * theta.dot(d0) * d0;
-            f.template segment<3>(6 * i + 3) += fd;
-        }
-    }
-
-    Mat24 map_stiffness_to_6(const Mat20& K5, const ElementBasis& basis) const {
-        const Mat20x24 P = projection_5_to_6(basis);
-        return P.transpose() * K5 * P;
-    }
-
-    Vec24 map_force_to_6(const Vec20& f5, const ElementBasis& basis) const {
-        const Mat20x24 P = projection_5_to_6(basis);
-        return P.transpose() * f5;
-    }
-
-    // ---------------------------------------------------------------------
-    // StructuralElement interface
-    // ---------------------------------------------------------------------
 
     MapMatrix stiffness(Precision* buffer) override {
         const ElementBasis basis = reference_basis();
         const CurrentState state = current_state(basis);
         const Mat8         H     = resultant_stiffness();
 
-        Mat20 Kmat5;
-        Mat20 Kgeo_dummy;
-        material_and_geometric_stiffness_5(state, basis, H, Kmat5, Kgeo_dummy, nullptr);
+        Mat24 material_stiffness;
+        Mat24 geometric_dummy;
 
-        Mat24 K6 = map_stiffness_to_6(Kmat5, basis);
-        add_drill_stiffness(K6, basis, H);
-        K6 = Precision(0.5) * (K6 + K6.transpose());
+        material_and_geometric_stiffness(
+            state,
+            basis,
+            H,
+            material_stiffness,
+            geometric_dummy,
+            nullptr
+        );
 
-        MapMatrix mapped(buffer, num_dofs_6, num_dofs_6);
-        mapped = K6;
+        add_drill_stiffness(material_stiffness, state, basis, H);
+        material_stiffness = Precision(0.5)
+                           * (material_stiffness + material_stiffness.transpose());
+
+        MapMatrix mapped(buffer, num_dofs, num_dofs);
+        mapped = material_stiffness;
         return mapped;
     }
 
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
+    MapMatrix stiffness_geom(Precision*   buffer,
+                             const Field& ip_stress,
+                             int          ip_start_idx) override {
+        logging::error(
+            ip_stress.components >= num_strains,
+            "S4FRTMITC: geometric stiffness requires eight shell resultants "
+            "[N11,N22,N12,M11,M22,M12,Q13,Q23]"
+        );
+
         const ElementBasis basis = reference_basis();
         const CurrentState state = current_state(basis);
 
-        Mat20 Kg5;
-        Kg5.setZero();
+        Mat24 geometric_stiffness;
+        geometric_stiffness.setZero();
 
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto      p  = integration_scheme_.get_point(ip);
-            const StrainData sd = strain_B_G_at(state, basis, p.r, p.s);
-            const Precision fac = p.w * sd.detJ;
-            const Index     row = static_cast<Index>(ip_start_idx) + ip;
+            const auto       point  = integration_scheme_.get_point(ip);
+            const StrainData data   = strain_B_G_at(state, basis, point.r, point.s);
+            const Precision  factor = point.w * data.detJ;
+            const Index      row    = static_cast<Index>(ip_start_idx) + ip;
 
-            Vec8 stress = Vec8::Zero();
-            const Index ncomp = std::min<Index>(ip_stress.components, num_strains);
-            for (Index a = 0; a < ncomp; ++a) {
-                stress(a) = ip_stress(row, a);
-            }
-
-            // Backward compatibility for old 6-component stress fields:
-            // [N11,N22,?, ?, ?,N12] -> use membrane part only.
-            if (ip_stress.components == 6) {
-                stress.setZero();
-                stress(0) = ip_stress(row, 0);
-                stress(1) = ip_stress(row, 1);
-                stress(2) = ip_stress(row, 5);
-            }
-
+            Vec8 resultants;
             for (Index a = 0; a < num_strains; ++a) {
-                Kg5 += fac * stress(a) * sd.G[a];
+                resultants(a) = ip_stress(row, a);
+            }
+
+            // Rao's finite-rotation tangent contracts the complete generalized
+            // resultant vector with the second strain variation. Consequently,
+            // membrane, bending and transverse-shear contributions all enter.
+            for (Index a = 0; a < num_strains; ++a) {
+                geometric_stiffness += factor * resultants(a) * data.G[a];
             }
         }
 
-        Mat24 Kg6 = map_stiffness_to_6(Kg5, basis);
-        Kg6 = Precision(0.5) * (Kg6 + Kg6.transpose());
+        geometric_stiffness = Precision(0.5)
+                            * (geometric_stiffness + geometric_stiffness.transpose());
 
-        MapMatrix mapped(buffer, num_dofs_6, num_dofs_6);
-        mapped = Kg6;
+        MapMatrix mapped(buffer, num_dofs, num_dofs);
+        mapped = geometric_stiffness;
         return mapped;
     }
 
     void compute_internal_force_nonlinear(Field&       node_forces,
                                           const Field& ip_stress,
                                           int          ip_offset) override {
+        logging::error(
+            ip_stress.components >= num_strains,
+            "S4FRTMITC: internal force requires eight shell resultants "
+            "[N11,N22,N12,M11,M22,M12,Q13,Q23]"
+        );
+
         const ElementBasis basis = reference_basis();
         const CurrentState state = current_state(basis);
 
-        Vec20 f5;
-        f5.setZero();
+        Vec24 internal_force = Vec24::Zero();
 
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto      p  = integration_scheme_.get_point(ip);
-            const StrainData sd = strain_B_G_at(state, basis, p.r, p.s);
-            const Precision fac = p.w * sd.detJ;
-            const Index     row = static_cast<Index>(ip_offset) + ip;
+            const auto       point  = integration_scheme_.get_point(ip);
+            const StrainData data   = strain_B_G_at(state, basis, point.r, point.s);
+            const Precision  factor = point.w * data.detJ;
+            const Index      row    = static_cast<Index>(ip_offset) + ip;
 
-            Vec8 stress = Vec8::Zero();
-            const Index ncomp = std::min<Index>(ip_stress.components, num_strains);
-            for (Index a = 0; a < ncomp; ++a) {
-                stress(a) = ip_stress(row, a);
+            Vec8 resultants;
+            for (Index a = 0; a < num_strains; ++a) {
+                resultants(a) = ip_stress(row, a);
             }
 
-            f5 += fac * (sd.B.transpose() * stress);
+            internal_force += factor * (data.B.transpose() * resultants);
         }
 
-        Vec24 f6 = map_force_to_6(f5, basis);
-        add_drill_force(f6, basis);
-
-        for (Index a = 0; a < 4; ++a) {
+        // The drilling stabilization is tangent-only. It regularizes the null
+        // mode but does not add a physical drilling resultant.
+        for (Index a = 0; a < num_nodes; ++a) {
             const Index node_id = static_cast<Index>(this->node_ids[a]);
-            for (Index d = 0; d < 6; ++d) {
-                node_forces(node_id, d) += f6(6 * a + d);
+
+            for (Index d = 0; d < dofs_per_node; ++d) {
+                node_forces(node_id, d) +=
+                    internal_force(dofs_per_node * a + d);
             }
         }
     }
@@ -1119,43 +1075,61 @@ struct S4FRTMITC : ShellElement<4> {
 
     MapMatrix mass(Precision* buffer) override {
         const ElementBasis basis = reference_basis();
-        const Precision rho = this->get_density(false);
+        const Precision    rho   = this->get_density(false);
 
-        Mat24 M6;
-        M6.setZero();
+        Mat24 mass_matrix;
+        mass_matrix.setZero();
 
         if (rho > Precision(0)) {
-            const Precision h  = this->get_section()->thickness_;
-            const Precision mt = rho * h;
-            const Precision mr = rho * (h * h * h / Precision(12));
+            const Precision h            = this->get_section()->thickness_;
+            const Precision mass_surface = rho * h;
+            const Precision inertia_rot  =
+                rho * h * h * h / Precision(12);
             const auto MNN = integrate_NNt(basis);
 
-            for (Index i = 0; i < 4; ++i) {
-                for (Index j = 0; j < 4; ++j) {
-                    const Precision mij_t = mt * MNN(i, j);
-                    const Precision mij_r = mr * MNN(i, j);
+            const Vec3 d0 = basis.e3;
+            const Mat3 tangent_projector =
+                Mat3::Identity() - d0 * d0.transpose();
+            const Mat3 drill_projector = d0 * d0.transpose();
 
-                    for (Index d = 0; d < 3; ++d) {
-                        M6(6 * i + d, 6 * j + d) += mij_t;
-                    }
-                    for (Index d = 0; d < 2; ++d) {
-                        M6(6 * i + 3 + d, 6 * j + 3 + d) += mij_r;
-                    }
+            for (Index i = 0; i < num_nodes; ++i) {
+                for (Index j = 0; j < num_nodes; ++j) {
+                    const Precision mij_t = mass_surface * MNN(i, j);
+                    const Precision mij_r = inertia_rot  * MNN(i, j);
+
+                    mass_matrix.template block<3, 3>(
+                        dofs_per_node * i,
+                        dofs_per_node * j
+                    ) += mij_t * Mat3::Identity();
+
+                    mass_matrix.template block<3, 3>(
+                        dofs_per_node * i + 3,
+                        dofs_per_node * j + 3
+                    ) += mij_r * tangent_projector;
                 }
             }
 
-            Precision avg = Precision(0);
-            for (Index i = 0; i < 4; ++i) {
-                avg += mt * MNN(i, i);
+            Precision average_nodal_mass = Precision(0);
+
+            for (Index i = 0; i < num_nodes; ++i) {
+                average_nodal_mass += mass_surface * MNN(i, i);
             }
-            avg /= Precision(4);
-            for (Index i = 0; i < 4; ++i) {
-                M6(6 * i + 5, 6 * i + 5) += Precision(1e-6) * avg;
+
+            average_nodal_mass /= Precision(num_nodes);
+
+            const Precision drill_inertia =
+                Precision(1e-6) * average_nodal_mass;
+
+            for (Index i = 0; i < num_nodes; ++i) {
+                mass_matrix.template block<3, 3>(
+                    dofs_per_node * i + 3,
+                    dofs_per_node * i + 3
+                ) += drill_inertia * drill_projector;
             }
         }
 
-        MapMatrix mapped(buffer, num_dofs_6, num_dofs_6);
-        mapped = M6;
+        MapMatrix mapped(buffer, num_dofs, num_dofs);
+        mapped = mass_matrix;
         return mapped;
     }
 
