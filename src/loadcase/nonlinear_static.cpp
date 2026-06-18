@@ -27,8 +27,10 @@ using constraint::ConstraintTransformer;
 
 namespace {
 
-model::Field current_positions_from_displacement(const model::Field& reference,
-                                                 const model::Field& displacement) {
+model::Field current_positions_from_displacement(
+    const model::Field& reference,
+    const model::Field& displacement
+) {
     logging::error(reference.domain == model::FieldDomain::NODE,
                    "NonlinearStatic: reference positions must use NODE domain");
     logging::error(displacement.domain == model::FieldDomain::NODE,
@@ -58,15 +60,21 @@ model::Field current_positions_from_displacement(const model::Field& reference,
     return current;
 }
 
-model::Field subtract_field(const model::Field& lhs, const model::Field& rhs, const std::string& name) {
+model::Field subtract_field(
+    const model::Field& lhs,
+    const model::Field& rhs,
+    const std::string&  name
+) {
     model::Field result = lhs;
     result.name = name;
     result -= rhs;
     return result;
 }
 
-DynamicVector homogeneous_increment(const ConstraintTransformer& transformer,
-                                    const DynamicVector& dq) {
+DynamicVector homogeneous_increment(
+    const ConstraintTransformer& transformer,
+    const DynamicVector&         dq
+) {
     return transformer.map().T() * dq;
 }
 
@@ -94,20 +102,23 @@ int apply_zero_stiffness_regularization(SparseMatrix& matrix, Precision alpha) {
         return 0;
     }
 
-    Precision diagonal_sum = Precision(0);
-    Index diagonal_count = 0;
-    Precision entry_sum = Precision(0);
-    Index entry_count = 0;
-    DynamicVector row_norm = DynamicVector::Zero(matrix.rows());
+    Precision     diagonal_sum   = Precision(0);
+    Index         diagonal_count = 0;
+    Precision     entry_sum      = Precision(0);
+    Index         entry_count    = 0;
+    DynamicVector row_norm       = DynamicVector::Zero(matrix.rows());
 
     for (int col = 0; col < matrix.outerSize(); ++col) {
         for (SparseMatrix::InnerIterator it(matrix, col); it; ++it) {
             const Precision value_abs = std::abs(it.value());
+
             row_norm(it.row()) += value_abs;
+
             if (value_abs > Precision(0)) {
                 entry_sum += value_abs;
                 ++entry_count;
             }
+
             if (it.row() == it.col() && value_abs > Precision(0)) {
                 diagonal_sum += value_abs;
                 ++diagonal_count;
@@ -116,6 +127,7 @@ int apply_zero_stiffness_regularization(SparseMatrix& matrix, Precision alpha) {
     }
 
     Precision stiffness_scale = Precision(0);
+
     if (diagonal_count > 0) {
         stiffness_scale = diagonal_sum / static_cast<Precision>(diagonal_count);
     } else if (entry_count > 0) {
@@ -128,9 +140,11 @@ int apply_zero_stiffness_regularization(SparseMatrix& matrix, Precision alpha) {
 
     const Precision min_row_stiffness = std::max(
         alpha * stiffness_scale,
-        std::numeric_limits<Precision>::epsilon());
+        std::numeric_limits<Precision>::epsilon()
+    );
 
     TripletList additions;
+
     for (int row = 0; row < matrix.rows(); ++row) {
         if (row_norm(row) < min_row_stiffness) {
             additions.emplace_back(row, row, min_row_stiffness - row_norm(row));
@@ -143,13 +157,16 @@ int apply_zero_stiffness_regularization(SparseMatrix& matrix, Precision alpha) {
 
     SparseMatrix regularization(matrix.rows(), matrix.cols());
     regularization.setFromTriplets(additions.begin(), additions.end());
+
     matrix += regularization;
     matrix.makeCompressed();
+
     return static_cast<int>(additions.size());
 }
 
 std::string nonlinear_solver_backend(solver::SolverDevice device) {
     std::ostringstream out;
+
     if (device == solver::GPU) {
 #ifdef SUPPORT_GPU
 #ifdef USE_CUDSS
@@ -174,29 +191,37 @@ std::string nonlinear_solver_backend(solver::SolverDevice device) {
         out << " Eigen SimplicialLDLT";
 #endif
     }
+
     out << ", max threads = " << global_config.max_threads;
+
     return out.str();
 }
 
-DynamicVector solve_quietly(solver::SolverDevice device,
-                            solver::SolverMethod method,
-                            SparseMatrix& matrix,
-                            DynamicVector& rhs) {
+DynamicVector solve_quietly(
+    solver::SolverDevice device,
+    solver::SolverMethod method,
+    SparseMatrix&        matrix,
+    DynamicVector&       rhs
+) {
     const bool logging_was_enabled = logging::is_enabled();
+
     if (logging_was_enabled) {
         logging::disable();
     }
 
     try {
         DynamicVector result = solver::solve(device, method, matrix, rhs);
+
         if (logging_was_enabled) {
             logging::enable();
         }
+
         return result;
     } catch (...) {
         if (logging_was_enabled) {
             logging::enable();
         }
+
         throw;
     }
 }
@@ -223,46 +248,59 @@ void NonlinearStatic::run() {
                    "NONLINEARSTATIC currently supports only DIRECT solver method");
 
     model->assign_sections();
+
     if (!model->_data->element_ip_offsets) {
         model->_data->initialize_element_enumeration();
     }
 
     model::Field reference_positions = *model->_data->positions;
+
     logging::error(model->_data->positions_reference != nullptr,
                    "NonlinearStatic: positions_reference field not initialized");
+
     *model->_data->positions_reference = reference_positions;
 
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
-        "generating active_dof_idx_mat index matrix");
+        "generating active_dof_idx_mat index matrix"
+    );
 
     auto global_load_total = Timer::measure(
         [&]() { return model->build_load_matrix(loads); },
-        "constructing total load matrix (node x 6)");
+        "constructing total load matrix (node x 6)"
+    );
 
     auto f_total = Timer::measure(
         [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_total); },
-        "reducing total load matrix -> active RHS vector f");
+        "reducing total load matrix -> active RHS vector f"
+    );
 
     auto groups = Timer::measure(
         [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
-        "building constraints");
+        "building constraints"
+    );
+
     report_constraint_groups(groups);
+
     auto equations = groups.flatten();
 
     const Index n_active = active_dof_idx_mat.maxCoeff() + 1;
+
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::BuildOptions options;
-            options.method = constraint_method;
+            options.method            = constraint_method;
             options.set.scale_columns = true;
+
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,
                 n_active,
-                options);
+                options
+            );
         },
-        "building constraint transformer");
+        "building constraint transformer"
+    );
 
     logging::info(true, "");
     logging::info(true, "Constraint summary");
@@ -274,27 +312,55 @@ void NonlinearStatic::run() {
     logging::info(true, "masters (n-r)     : ", transformer->n_master());
     logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");
+
     if (!transformer->feasible()) {
         logging::info(true, "residual ||C u - d|| : ", transformer->report().residual_norm);
     }
+
     logging::down();
 
-    DynamicVector q_zero = DynamicVector::Zero(transformer->n_master());
+    DynamicVector q_zero  = DynamicVector::Zero(transformer->n_master());
     DynamicVector u_total = transformer->recover_u(q_zero);
 
-    model::Field displacement =
-        mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+    model::Field displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
 
-    model::Field current_positions =
-        current_positions_from_displacement(reference_positions, displacement);
+    model::Field current_positions = current_positions_from_displacement(
+        reference_positions,
+        displacement
+    );
 
-    model::Field final_ip_stress{"IP_STRESS", model::FieldDomain::ELEMENT_IP, 1, 8};
+    model::Field final_ip_stress{
+        "IP_STRESS",
+        model::FieldDomain::ELEMENT_IP,
+        1,
+        8
+    };
     final_ip_stress.set_zero();
-    model::Field final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE,
-                                static_cast<Index>(model->_data->max_nodes), 6};
+
+    model::Field final_internal{
+        "INTERNAL_FORCES",
+        model::FieldDomain::NODE,
+        static_cast<Index>(model->_data->max_nodes),
+        6
+    };
     final_internal.set_zero();
+
     SparseMatrix final_Kt;
     SparseMatrix final_A;
+
+    const Precision minimum_load_increment = Precision(1e-4);
+    const Precision maximum_load_increment = Precision(1.0);
+    const Precision load_increment_growth  = Precision(1.5);
+    const Precision load_increment_cutback = Precision(0.5);
+
+    const int fast_convergence_iterations = 4;
+    const int slow_convergence_iterations = 10;
+    const int maximum_cutbacks            = 20;
+
+    Precision load_factor        = Precision(0);
+    Precision load_increment     = Precision(1) / static_cast<Precision>(num_increments);
+    int       accepted_increment = 0;
+    int       cutback_count      = 0;
 
     logging::info(true, "");
     logging::info(true, "Solver backend: ", nonlinear_solver_backend(device));
@@ -302,97 +368,164 @@ void NonlinearStatic::run() {
     logging::info(true, " inc iter      lambda        rel_res          du_norm   asm_ms solve_ms");
     logging::info(true, "--------------------------------------------------------------------------");
 
-    for (int increment = 1; increment <= num_increments; ++increment) {
-        const Precision load_factor =
-            static_cast<Precision>(increment) / static_cast<Precision>(num_increments);
-        const DynamicVector f_ext = load_factor * f_total;
+    while (load_factor < Precision(1)) {
+        load_increment = std::min(load_increment, Precision(1) - load_factor);
 
-        bool converged = false;
+        logging::error(
+            load_increment >= minimum_load_increment,
+            "NONLINEARSTATIC required load increment ",
+            load_increment,
+            " is smaller than minimum load increment ",
+            minimum_load_increment
+        );
+
+        const Precision target_load_factor = load_factor + load_increment;
+        const DynamicVector f_ext           = target_load_factor * f_total;
+        const DynamicVector u_converged      = u_total;
+
+        bool converged       = false;
+        int  iterations_used = 0;
+
         for (int iter = 1; iter <= max_iterations; ++iter) {
             Timer asm_timer;
             asm_timer.start();
 
-            displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
-            current_positions = current_positions_from_displacement(reference_positions, displacement);
+            displacement      = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+            current_positions = current_positions_from_displacement(
+                reference_positions,
+                displacement
+            );
+
             *model->_data->positions = current_positions;
 
             auto ip_stress = Timer::measure(
                 [&]() { return model->compute_stress_state(displacement, true); },
                 "computing nonlinear stress state",
-                false);
+                false
+            );
 
             auto K = Timer::measure(
                 [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
                 "assembling current material stiffness K",
-                false);
+                false
+            );
+
             auto Kg = Timer::measure(
-                [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
+                [&]() {
+                    return model->build_geom_stiffness_matrix(
+                        active_dof_idx_mat,
+                        ip_stress
+                    );
+                },
                 "assembling current geometric stiffness K_g",
-                false);
+                false
+            );
+
             SparseMatrix Kt = K + Kg;
             Kt.makeCompressed();
+
             if (regularize_zero_stiffness_rows) {
-                apply_zero_stiffness_regularization(Kt, zero_stiffness_regularization_alpha);
+                apply_zero_stiffness_regularization(
+                    Kt,
+                    zero_stiffness_regularization_alpha
+                );
             }
+
             check_finite(Kt, "K_t");
 
             auto internal_mat = Timer::measure(
                 [&]() { return model->build_internal_force_nonlinear(ip_stress); },
                 "assembling nonlinear internal force",
-                false);
+                false
+            );
+
             auto f_int = Timer::measure(
-                [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat); },
+                [&]() {
+                    return mattools::reduce_mat_to_vec(
+                        active_dof_idx_mat,
+                        internal_mat
+                    );
+                },
                 "reducing internal force matrix -> active vector",
-                false);
+                false
+            );
 
             DynamicVector residual = f_ext - f_int;
+
             DynamicVector reduced_residual;
             transformer->apply_Tt(residual, reduced_residual);
 
             DynamicVector reduced_external;
             transformer->apply_Tt(f_ext, reduced_external);
-            const Precision denom = std::max<Precision>(reduced_external.norm(), Precision(1));
-            const Precision rel_residual = reduced_residual.norm() / denom;
-            Precision du_norm = Precision(0);
-            Time solve_ms = Time(0);
+
+            const Precision denominator = std::max<Precision>(
+                reduced_external.norm(),
+                Precision(1)
+            );
+
+            const Precision rel_residual = reduced_residual.norm() / denominator;
+
+            Precision du_norm  = Precision(0);
+            Time      solve_ms = Time(0);
 
             final_ip_stress = ip_stress;
-            final_internal = internal_mat;
-            final_Kt = Kt;
+            final_internal  = internal_mat;
+            final_Kt        = Kt;
 
             if (rel_residual <= tolerance) {
                 final_A = transformer->assemble_A(Kt);
+
                 asm_timer.stop();
-                logging::info(true,
-                              std::setw(4), increment,
-                              std::setw(5), iter,
-                              std::scientific, std::setprecision(3),
-                              std::setw(12), load_factor,
-                              std::setw(15), rel_residual,
-                              std::setw(15), du_norm,
-                              std::fixed, std::setprecision(1),
-                              std::setw(9), asm_timer.elapsed(),
-                              std::setw(9), solve_ms);
-                converged = true;
+
+                logging::info(
+                    true,
+                    std::setw(4), accepted_increment + 1,
+                    std::setw(5), iter,
+                    std::scientific, std::setprecision(3),
+                    std::setw(12), target_load_factor,
+                    std::setw(15), rel_residual,
+                    std::setw(15), du_norm,
+                    std::fixed, std::setprecision(1),
+                    std::setw(9), asm_timer.elapsed(),
+                    std::setw(9), solve_ms
+                );
+
+                converged       = true;
+                iterations_used = iter;
+
                 break;
             }
 
             auto A = Timer::measure(
                 [&]() { return transformer->assemble_A(Kt); },
                 "assembling reduced tangent A = T^T K_t T",
-                false);
+                false
+            );
+
             check_finite(A, "A");
-            logging::error(reduced_residual.allFinite(), "Reduced residual contains NaN/Inf entries");
+
+            logging::error(
+                reduced_residual.allFinite(),
+                "Reduced residual contains NaN/Inf entries"
+            );
+
             asm_timer.stop();
 
             Timer solve_timer;
             solve_timer.start();
-            auto dq = solve_quietly(device, method, A, reduced_residual);
+
+            auto dq = solve_quietly(
+                device,
+                method,
+                A,
+                reduced_residual
+            );
+
             solve_timer.stop();
             solve_ms = solve_timer.elapsed();
 
             DynamicVector du = homogeneous_increment(*transformer, dq);
-            du_norm = du.norm();
+            du_norm          = du.norm();
 
             // All six displacement components are total generalized
             // coordinates. Since du = T*dq, this additive update preserves the
@@ -402,75 +535,167 @@ void NonlinearStatic::run() {
 
             final_A = A;
 
-            logging::info(true,
-                          std::setw(4), increment,
-                          std::setw(5), iter,
-                          std::scientific, std::setprecision(3),
-                          std::setw(12), load_factor,
-                          std::setw(15), rel_residual,
-                          std::setw(15), du_norm,
-                          std::fixed, std::setprecision(1),
-                          std::setw(9), asm_timer.elapsed(),
-                          std::setw(9), solve_ms);
+            logging::info(
+                true,
+                std::setw(4), accepted_increment + 1,
+                std::setw(5), iter,
+                std::scientific, std::setprecision(3),
+                std::setw(12), target_load_factor,
+                std::setw(15), rel_residual,
+                std::setw(15), du_norm,
+                std::fixed, std::setprecision(1),
+                std::setw(9), asm_timer.elapsed(),
+                std::setw(9), solve_ms
+            );
         }
 
-        logging::warning(converged,
-                         "NONLINEARSTATIC increment ", increment,
-                         " did not converge after ", max_iterations,
-                         " iterations; continuing with current state");
+        if (!converged) {
+            u_total = u_converged;
+
+            displacement      = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+            current_positions = current_positions_from_displacement(
+                reference_positions,
+                displacement
+            );
+
+            *model->_data->positions = current_positions;
+
+            load_increment *= load_increment_cutback;
+            ++cutback_count;
+
+            logging::info(
+                true,
+                "Increment rejected at lambda = ",
+                target_load_factor,
+                "; reducing load increment to ",
+                load_increment
+            );
+
+            logging::error(
+                cutback_count <= maximum_cutbacks,
+                "NONLINEARSTATIC exceeded maximum number of load cutbacks"
+            );
+
+            continue;
+        }
+
+        load_factor = target_load_factor;
+        ++accepted_increment;
+        cutback_count = 0;
+
+        if (iterations_used <= fast_convergence_iterations) {
+            load_increment *= load_increment_growth;
+        } else if (iterations_used >= slow_convergence_iterations) {
+            load_increment *= load_increment_cutback;
+        }
+
+        load_increment = std::clamp(
+            load_increment,
+            minimum_load_increment,
+            maximum_load_increment
+        );
+
+        logging::info(
+            true,
+            "Accepted increment ",
+            accepted_increment,
+            ": lambda = ",
+            load_factor,
+            ", Newton iterations = ",
+            iterations_used,
+            ", next delta lambda = ",
+            load_increment
+        );
     }
 
-    displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
-    current_positions = current_positions_from_displacement(reference_positions, displacement);
+    displacement      = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+    current_positions = current_positions_from_displacement(
+        reference_positions,
+        displacement
+    );
+
     *model->_data->positions = current_positions;
 
     final_ip_stress = Timer::measure(
         [&]() { return model->compute_stress_state(displacement, true); },
-        "computing final nonlinear stress state");
+        "computing final nonlinear stress state"
+    );
 
     auto [final_stress, final_strain] = Timer::measure(
         [&]() { return model->compute_stress_nodal(displacement, true); },
-        "computing final nonlinear nodal stress/strain");
+        "computing final nonlinear nodal stress/strain"
+    );
 
     auto [final_stress_top, final_stress_bot] = Timer::measure(
         [&]() { return model->compute_stress_top_bot(displacement, true); },
-        "computing final nonlinear top/bottom stress");
+        "computing final nonlinear top/bottom stress"
+    );
 
     auto final_K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-        "assembling final current material stiffness K");
+        "assembling final current material stiffness K"
+    );
+
     auto final_Kg = Timer::measure(
-        [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, final_ip_stress); },
-        "assembling final current geometric stiffness K_g");
+        [&]() {
+            return model->build_geom_stiffness_matrix(
+                active_dof_idx_mat,
+                final_ip_stress
+            );
+        },
+        "assembling final current geometric stiffness K_g"
+    );
+
     final_Kt = final_K + final_Kg;
     final_Kt.makeCompressed();
+
     if (regularize_zero_stiffness_rows) {
-        apply_zero_stiffness_regularization(final_Kt, zero_stiffness_regularization_alpha);
+        apply_zero_stiffness_regularization(
+            final_Kt,
+            zero_stiffness_regularization_alpha
+        );
     }
+
     final_A = transformer->assemble_A(final_Kt);
+
     final_internal = Timer::measure(
         [&]() { return model->build_internal_force_nonlinear(final_ip_stress); },
-        "assembling final nonlinear internal force");
+        "assembling final nonlinear internal force"
+    );
 
     auto global_load_final = global_load_total;
-    auto reaction_full = subtract_field(final_internal, global_load_final, "REACTION_FORCES_RAW");
+    auto reaction_full     = subtract_field(
+        final_internal,
+        global_load_final,
+        "REACTION_FORCES_RAW"
+    );
 
-    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
+    BooleanMatrix support_mask(
+        active_dof_idx_mat.rows(),
+        active_dof_idx_mat.cols()
+    );
     support_mask.setConstant(false);
+
     for (const auto& eq : groups.supports) {
         for (const auto& e : eq.entries) {
-            if (e.node_id >= 0 && e.node_id < support_mask.rows() &&
-                e.dof >= 0 && e.dof < support_mask.cols() &&
+            if (e.node_id >= 0 &&
+                e.node_id < support_mask.rows() &&
+                e.dof >= 0 &&
+                e.dof < support_mask.cols() &&
                 active_dof_idx_mat(e.node_id, e.dof) != -1) {
                 support_mask(e.node_id, e.dof) = true;
             }
         }
     }
 
-    model::Field reaction_masked{"REACTION_FORCES", model::FieldDomain::NODE,
-                                 reaction_full.rows,
-                                 reaction_full.components};
+    model::Field reaction_masked{
+        "REACTION_FORCES",
+        model::FieldDomain::NODE,
+        reaction_full.rows,
+        reaction_full.components
+    };
     reaction_masked.fill_nan();
+
     for (int i = 0; i < reaction_masked.rows; ++i) {
         for (int j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
