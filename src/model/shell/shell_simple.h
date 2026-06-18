@@ -943,7 +943,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         const Mat3 element_basis = this->element_basis_global(axes);
 
-        return Stress{res_element}.transform(element_basis, this->global_basis());
+        return Stress{res_element}.transformed(element_basis, this->global_basis());
     }
 
     bool compute_shell_section_forces(Field& resultants,
@@ -1104,7 +1104,7 @@ struct DefaultShellElement : public ShellElement<N> {
             }
             if (stress_out) {
                 for (Index j = 0; j < stress_out->components; ++j) {
-                    (*stress_out)(row, j) = stress_value(j);
+                    (*stress_out)(row, j) = stress_value.voigt()(j);
                 }
             }
         }

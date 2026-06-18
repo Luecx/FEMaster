@@ -385,11 +385,8 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int i
     {
         // ---- Stress at IP (Voigt = [xx, yy, zz, yz, zx, xy]) ----
         const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
-        const Vec6 v = ip_stress.row_vec6(ip_row);
-        Eigen::Matrix<Precision,3,3> sigma;
-        sigma << v(0), v(5), v(4),
-            v(5), v(1), v(3),
-            v(4), v(3), v(2);
+        const CauchyStress stress{ip_stress.row_vec6(ip_row)};
+        const Mat3 sigma = stress.tensor();
 
         // ---- Local -> global shape derivatives, Jacobian, det ----
         StaticMatrix<N, D> dN_local = this->shape_derivative(r, s, t);

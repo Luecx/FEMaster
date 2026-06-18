@@ -10,18 +10,60 @@
 
 #include "stress.h"
 
+#include <Eigen/LU>
+
 namespace fem {
 
-/**
- * @copydoc Stress::transform
- */
+Stress::Stress(const Vec6& voigt)
+    : voigt_(voigt) {}
+
+Precision& Stress::operator[](Component component) {
+    return voigt_(static_cast<int>(component));
+}
+
+Precision Stress::operator[](Component component) const {
+    return voigt_(static_cast<int>(component));
+}
+
+const Vec6& Stress::voigt() const {
+    return voigt_;
+}
+
+Vec6& Stress::voigt() {
+    return voigt_;
+}
+
+Mat3 Stress::tensor() const {
+    Mat3 tensor;
+    tensor << voigt_(0), voigt_(5), voigt_(4),
+              voigt_(5), voigt_(1), voigt_(3),
+              voigt_(4), voigt_(3), voigt_(2);
+    return tensor;
+}
+
+Stress Stress::transformed(
+    const cos::Basis& from_basis,
+    const cos::Basis& to_basis
+) const {
+    return Stress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
+}
+
 Stress Stress::transform(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return Stress{
-        Stress::get_transformation_matrix(from_basis, to_basis) * (*this)
-    };
+    return transformed(from_basis, to_basis);
+}
+
+Stress Stress::from_tensor(const Mat3& tensor) {
+    Vec6 voigt;
+    voigt << tensor(0, 0),
+             tensor(1, 1),
+             tensor(2, 2),
+             tensor(1, 2),
+             tensor(2, 0),
+             tensor(0, 1);
+    return Stress{voigt};
 }
 
 /**
@@ -72,6 +114,35 @@ Mat6 Stress::get_transformation_matrix(
         R11 * R21, R12 * R22, R13 * R23, R12 * R23 + R13 * R22, R11 * R23 + R13 * R21, R11 * R22 + R12 * R21;
 
     return T_sigma;
+}
+
+CauchyStress CauchyStress::transformed(
+    const cos::Basis& from_basis,
+    const cos::Basis& to_basis
+) const {
+    return CauchyStress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
+}
+
+CauchyStress CauchyStress::from_tensor(const Mat3& tensor) {
+    return CauchyStress{Stress::from_tensor(tensor).voigt()};
+}
+
+PK2Stress PK2Stress::transformed(
+    const cos::Basis& from_basis,
+    const cos::Basis& to_basis
+) const {
+    return PK2Stress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
+}
+
+CauchyStress PK2Stress::to_cauchy(const Mat3& deformation_gradient) const {
+    const Precision J = deformation_gradient.determinant();
+    return CauchyStress::from_tensor(
+        (deformation_gradient * tensor() * deformation_gradient.transpose()) / J
+    );
+}
+
+PK2Stress PK2Stress::from_tensor(const Mat3& tensor) {
+    return PK2Stress{Stress::from_tensor(tensor).voigt()};
 }
 
 } // namespace fem

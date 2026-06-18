@@ -189,14 +189,6 @@ struct S4FRTMITC : ShellElement<4> {
 
     Vec24 element_displacement_vector(const Field& displacement) const;
 
-    static Mat3 strain_tensor_from_voigt(const Vec6& strain);
-
-    static Vec6 strain_voigt_from_tensor(const Mat3& strain);
-
-    static Mat3 stress_tensor_from_voigt(const Vec6& stress);
-
-    static Vec6 stress_voigt_from_tensor(const Mat3& stress);
-
     static Mat3 reference_basis_global(const ElementBasis& basis);
 
     void shape_gradients_physical(const StaticMatrix<4, 2>& dN_rs,

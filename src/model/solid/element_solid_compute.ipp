@@ -15,41 +15,6 @@
 
 namespace fem::model {
 
-namespace detail_solid_nonlinear {
-
-inline Mat3 voigt_to_tensor(const Vec6& v) {
-    Mat3 tensor;
-    tensor << v(0), v(5), v(4),
-              v(5), v(1), v(3),
-              v(4), v(3), v(2);
-    return tensor;
-}
-
-inline Vec6 tensor_to_voigt(const Mat3& tensor) {
-    Vec6 v;
-    v << tensor(0, 0),
-         tensor(1, 1),
-         tensor(2, 2),
-         tensor(1, 2),
-         tensor(2, 0),
-         tensor(0, 1);
-    return v;
-}
-
-inline Vec6 green_lagrange_to_voigt(const Mat3& strain) {
-    Vec6 v;
-    v << strain(0, 0),
-         strain(1, 1),
-         strain(2, 2),
-         Precision(2) * strain(1, 2),
-         Precision(2) * strain(2, 0),
-         Precision(2) * strain(0, 1);
-    return v;
-}
-
-} // namespace detail_solid_nonlinear
-
-
 template<Index N>
 void SolidElement<N>::compute_stress_strain(Field* strain,
                                             Field* stress,
@@ -95,21 +60,17 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
         }
 
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
-        const Precision J = F.determinant();
 
-        const Mat3 green_lagrange =
-            Precision(0.5) * (F.transpose() * F - Mat3::Identity());
-        const Vec6 green_voigt =
-            detail_solid_nonlinear::green_lagrange_to_voigt(green_lagrange);
-
-        const Vec6 second_pk_voigt = material_tangent_reference(r, s, t) * green_voigt;
-        const Mat3 second_pk = detail_solid_nonlinear::voigt_to_tensor(second_pk_voigt);
-        const Mat3 cauchy = (F * second_pk * F.transpose()) / J;
-        const Vec6 cauchy_voigt = detail_solid_nonlinear::tensor_to_voigt(cauchy);
+        const GreenLagrangeStrain green_lagrange =
+            GreenLagrangeStrain::from_deformation_gradient(F);
+        const PK2Stress second_pk{
+            material_tangent_reference(r, s, t) * green_lagrange.voigt()
+        };
+        const CauchyStress cauchy = second_pk.to_cauchy(F);
 
         for (Dim j = 0; j < n_strain; ++j) {
-            if (strain) (*strain)(row, j) = green_voigt(j);
-            if (stress) (*stress)(row, j) = cauchy_voigt(j);
+            if (strain) (*strain)(row, j) = green_lagrange.voigt()(j);
+            if (stress) (*stress)(row, j) = cauchy.voigt()(j);
         }
     }
 }

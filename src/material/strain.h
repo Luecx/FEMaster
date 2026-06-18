@@ -23,24 +23,88 @@ namespace fem {
 
 /**
  * @struct Strain
- * @brief Represents strain in Voigt notation and offers rotation helpers.
+ * @brief Represents a symmetric strain tensor in engineering Voigt notation.
+ *
+ * Stored Voigt ordering:
+ *
+ *     [e11, e22, e33, gamma23, gamma13, gamma12]^T
  */
-struct Strain : Vec6 {
-    /**
-     * @brief Rotates the strain vector into a different basis.
-     *
-     * @param basis Target coordinate basis.
-     * @return Strain Rotated strain vector.
-     */
+struct Strain {
+    enum class Component : int {
+        XX = 0,
+        YY = 1,
+        ZZ = 2,
+        GammaYZ = 3,
+        GammaZX = 4,
+        GammaXY = 5
+    };
+
+    enum class ComponentDerived : int {
+        TrueYZ,
+        TrueZX,
+        TrueXY
+    };
+
+    Strain() = default;
+    explicit Strain(const Vec6& voigt);
+
+    Precision& operator[](Component component);
+    Precision  operator[](Component component) const;
+    Precision  operator[](ComponentDerived component) const;
+
+    void set(ComponentDerived component, Precision value);
+
+    [[nodiscard]] const Vec6& voigt() const;
+    [[nodiscard]] Vec6&       voigt();
+    [[nodiscard]] Mat3        tensor() const;
+
+    [[nodiscard]] Strain transformed(
+        const cos::Basis& from_basis,
+        const cos::Basis& to_basis
+    ) const;
+
     [[nodiscard]] Strain transform(const cos::Basis& basis) const;
 
+    static Strain from_tensor(const Mat3& tensor);
+
     /**
-     * @brief Computes the 6x6 transformation matrix for a given basis.
-     *
-     * @param basis Target coordinate basis.
-     * @return Mat6 Transformation matrix in Voigt notation.
+     * @brief Computes the 6x6 strain transformation matrix between two bases.
+     */
+    static Mat6 get_transformation_matrix(
+        const cos::Basis& from_basis,
+        const cos::Basis& to_basis
+    );
+
+    /**
+     * @brief Legacy helper for a basis matrix interpreted as the full transform.
      */
     static Mat6 get_transformation_matrix(const cos::Basis& basis);
+
+protected:
+    Vec6 voigt_{Vec6::Zero()};
+};
+
+struct LinearizedStrain : Strain {
+    using Strain::Strain;
+
+    [[nodiscard]] LinearizedStrain transformed(
+        const cos::Basis& from_basis,
+        const cos::Basis& to_basis
+    ) const;
+
+    static LinearizedStrain from_tensor(const Mat3& tensor);
+};
+
+struct GreenLagrangeStrain : Strain {
+    using Strain::Strain;
+
+    [[nodiscard]] GreenLagrangeStrain transformed(
+        const cos::Basis& from_basis,
+        const cos::Basis& to_basis
+    ) const;
+
+    static GreenLagrangeStrain from_tensor(const Mat3& tensor);
+    static GreenLagrangeStrain from_deformation_gradient(const Mat3& deformation_gradient);
 };
 
 using Strains = std::vector<Strain>; ///< Collection alias for strain vectors.
