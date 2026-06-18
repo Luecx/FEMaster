@@ -47,6 +47,7 @@ struct Strain {
 
     Strain() = default;
     explicit Strain(const Vec6& voigt);
+    explicit Strain(const Mat3& tensor);
 
     Precision& operator[](Component component);
     Precision  operator[](Component component) const;
@@ -62,10 +63,6 @@ struct Strain {
         const cos::Basis& from_basis,
         const cos::Basis& to_basis
     ) const;
-
-    [[nodiscard]] Strain transform(const cos::Basis& basis) const;
-
-    static Strain from_tensor(const Mat3& tensor);
 
     /**
      * @brief Computes the 6x6 strain transformation matrix between two bases.
@@ -85,25 +82,26 @@ protected:
 };
 
 struct LinearizedStrain : Strain {
-    using Strain::Strain;
+    LinearizedStrain() = default;
+    explicit LinearizedStrain(const Vec6& voigt);
+    explicit LinearizedStrain(const Mat3& tensor);
 
     [[nodiscard]] LinearizedStrain transformed(
         const cos::Basis& from_basis,
         const cos::Basis& to_basis
     ) const;
-
-    static LinearizedStrain from_tensor(const Mat3& tensor);
 };
 
 struct GreenLagrangeStrain : Strain {
-    using Strain::Strain;
+    GreenLagrangeStrain() = default;
+    explicit GreenLagrangeStrain(const Vec6& voigt);
+    explicit GreenLagrangeStrain(const Mat3& tensor);
 
     [[nodiscard]] GreenLagrangeStrain transformed(
         const cos::Basis& from_basis,
         const cos::Basis& to_basis
     ) const;
 
-    static GreenLagrangeStrain from_tensor(const Mat3& tensor);
     static GreenLagrangeStrain from_deformation_gradient(const Mat3& deformation_gradient);
 };
 

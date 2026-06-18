@@ -41,6 +41,7 @@ struct Stress {
 
     Stress() = default;
     explicit Stress(const Vec6& voigt);
+    explicit Stress(const Mat3& tensor);
 
     Precision& operator[](Component component);
     Precision  operator[](Component component) const;
@@ -53,13 +54,6 @@ struct Stress {
         const cos::Basis& from_basis,
         const cos::Basis& to_basis
     ) const;
-
-    [[nodiscard]] Stress transform(
-        const cos::Basis& from_basis,
-        const cos::Basis& to_basis
-    ) const;
-
-    static Stress from_tensor(const Mat3& tensor);
 
     /**
      * @brief Computes the 6x6 stress transformation matrix between two bases.
@@ -74,18 +68,20 @@ protected:
 };
 
 struct CauchyStress : Stress {
-    using Stress::Stress;
+    CauchyStress() = default;
+    explicit CauchyStress(const Vec6& voigt);
+    explicit CauchyStress(const Mat3& tensor);
 
     [[nodiscard]] CauchyStress transformed(
         const cos::Basis& from_basis,
         const cos::Basis& to_basis
     ) const;
-
-    static CauchyStress from_tensor(const Mat3& tensor);
 };
 
 struct PK2Stress : Stress {
-    using Stress::Stress;
+    PK2Stress() = default;
+    explicit PK2Stress(const Vec6& voigt);
+    explicit PK2Stress(const Mat3& tensor);
 
     [[nodiscard]] PK2Stress transformed(
         const cos::Basis& from_basis,
@@ -93,8 +89,6 @@ struct PK2Stress : Stress {
     ) const;
 
     [[nodiscard]] CauchyStress to_cauchy(const Mat3& deformation_gradient) const;
-
-    static PK2Stress from_tensor(const Mat3& tensor);
 };
 
 using Stresses = std::vector<Stress>; ///< Collection alias for stress vectors.

@@ -1193,10 +1193,10 @@ void S4FRTMITC::physical_stress_strain_at(const Field&        displacement,
         * PK2Stress{stress_local}.tensor()
         * reference_basis_matrix.transpose();
 
-    strain_out = GreenLagrangeStrain::from_tensor(green_lagrange_global).voigt();
+    strain_out = GreenLagrangeStrain{green_lagrange_global}.voigt();
 
     if (!nonlinear) {
-        stress_out = PK2Stress::from_tensor(second_pk_global).voigt();
+        stress_out = PK2Stress{second_pk_global}.voigt();
         return;
     }
 
@@ -1213,7 +1213,7 @@ void S4FRTMITC::physical_stress_strain_at(const Field&        displacement,
     const Mat3 cauchy_global =
         (F * second_pk_global * F.transpose()) / J;
 
-    stress_out = CauchyStress::from_tensor(cauchy_global).voigt();
+    stress_out = CauchyStress{cauchy_global}.voigt();
 }
 
 

@@ -15,6 +15,15 @@ namespace fem {
 Strain::Strain(const Vec6& voigt)
     : voigt_(voigt) {}
 
+Strain::Strain(const Mat3& tensor) {
+    voigt_ << tensor(0, 0),
+              tensor(1, 1),
+              tensor(2, 2),
+              Precision(2) * tensor(1, 2),
+              Precision(2) * tensor(2, 0),
+              Precision(2) * tensor(0, 1);
+}
+
 Precision& Strain::operator[](Component component) {
     return voigt_(static_cast<int>(component));
 }
@@ -72,21 +81,6 @@ Strain Strain::transformed(
     return Strain{Strain::get_transformation_matrix(from_basis, to_basis) * voigt_};
 }
 
-Strain Strain::transform(const cos::Basis& basis) const {
-    return Strain{Strain::get_transformation_matrix(basis) * voigt_};
-}
-
-Strain Strain::from_tensor(const Mat3& tensor) {
-    Vec6 voigt;
-    voigt << tensor(0, 0),
-             tensor(1, 1),
-             tensor(2, 2),
-             Precision(2) * tensor(1, 2),
-             Precision(2) * tensor(2, 0),
-             Precision(2) * tensor(0, 1);
-    return Strain{voigt};
-}
-
 Mat6 Strain::get_transformation_matrix(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
@@ -126,6 +120,12 @@ Mat6 Strain::get_transformation_matrix(const cos::Basis& basis) {
     return T_eps;
 }
 
+LinearizedStrain::LinearizedStrain(const Vec6& voigt)
+    : Strain(voigt) {}
+
+LinearizedStrain::LinearizedStrain(const Mat3& tensor)
+    : Strain(tensor) {}
+
 LinearizedStrain LinearizedStrain::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
@@ -133,9 +133,11 @@ LinearizedStrain LinearizedStrain::transformed(
     return LinearizedStrain{Strain::get_transformation_matrix(from_basis, to_basis) * voigt_};
 }
 
-LinearizedStrain LinearizedStrain::from_tensor(const Mat3& tensor) {
-    return LinearizedStrain{Strain::from_tensor(tensor).voigt()};
-}
+GreenLagrangeStrain::GreenLagrangeStrain(const Vec6& voigt)
+    : Strain(voigt) {}
+
+GreenLagrangeStrain::GreenLagrangeStrain(const Mat3& tensor)
+    : Strain(tensor) {}
 
 GreenLagrangeStrain GreenLagrangeStrain::transformed(
     const cos::Basis& from_basis,
@@ -144,16 +146,12 @@ GreenLagrangeStrain GreenLagrangeStrain::transformed(
     return GreenLagrangeStrain{Strain::get_transformation_matrix(from_basis, to_basis) * voigt_};
 }
 
-GreenLagrangeStrain GreenLagrangeStrain::from_tensor(const Mat3& tensor) {
-    return GreenLagrangeStrain{Strain::from_tensor(tensor).voigt()};
-}
-
 GreenLagrangeStrain GreenLagrangeStrain::from_deformation_gradient(
     const Mat3& deformation_gradient
 ) {
-    return GreenLagrangeStrain::from_tensor(
+    return GreenLagrangeStrain{
         Precision(0.5)
         * (deformation_gradient.transpose() * deformation_gradient - Mat3::Identity())
-    );
+    };
 }
 } // namespace fem

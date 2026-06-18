@@ -17,6 +17,15 @@ namespace fem {
 Stress::Stress(const Vec6& voigt)
     : voigt_(voigt) {}
 
+Stress::Stress(const Mat3& tensor) {
+    voigt_ << tensor(0, 0),
+              tensor(1, 1),
+              tensor(2, 2),
+              tensor(1, 2),
+              tensor(2, 0),
+              tensor(0, 1);
+}
+
 Precision& Stress::operator[](Component component) {
     return voigt_(static_cast<int>(component));
 }
@@ -46,24 +55,6 @@ Stress Stress::transformed(
     const cos::Basis& to_basis
 ) const {
     return Stress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
-}
-
-Stress Stress::transform(
-    const cos::Basis& from_basis,
-    const cos::Basis& to_basis
-) const {
-    return transformed(from_basis, to_basis);
-}
-
-Stress Stress::from_tensor(const Mat3& tensor) {
-    Vec6 voigt;
-    voigt << tensor(0, 0),
-             tensor(1, 1),
-             tensor(2, 2),
-             tensor(1, 2),
-             tensor(2, 0),
-             tensor(0, 1);
-    return Stress{voigt};
 }
 
 /**
@@ -116,6 +107,12 @@ Mat6 Stress::get_transformation_matrix(
     return T_sigma;
 }
 
+CauchyStress::CauchyStress(const Vec6& voigt)
+    : Stress(voigt) {}
+
+CauchyStress::CauchyStress(const Mat3& tensor)
+    : Stress(tensor) {}
+
 CauchyStress CauchyStress::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
@@ -123,9 +120,11 @@ CauchyStress CauchyStress::transformed(
     return CauchyStress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
 }
 
-CauchyStress CauchyStress::from_tensor(const Mat3& tensor) {
-    return CauchyStress{Stress::from_tensor(tensor).voigt()};
-}
+PK2Stress::PK2Stress(const Vec6& voigt)
+    : Stress(voigt) {}
+
+PK2Stress::PK2Stress(const Mat3& tensor)
+    : Stress(tensor) {}
 
 PK2Stress PK2Stress::transformed(
     const cos::Basis& from_basis,
@@ -136,13 +135,9 @@ PK2Stress PK2Stress::transformed(
 
 CauchyStress PK2Stress::to_cauchy(const Mat3& deformation_gradient) const {
     const Precision J = deformation_gradient.determinant();
-    return CauchyStress::from_tensor(
+    return CauchyStress{
         (deformation_gradient * tensor() * deformation_gradient.transpose()) / J
-    );
-}
-
-PK2Stress PK2Stress::from_tensor(const Mat3& tensor) {
-    return PK2Stress{Stress::from_tensor(tensor).voigt()};
+    };
 }
 
 } // namespace fem
