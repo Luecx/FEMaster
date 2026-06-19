@@ -71,6 +71,27 @@ model::Field subtract_field(
     return result;
 }
 
+class PositionRestoreScope {
+public:
+    explicit PositionRestoreScope(model::Model& model)
+        : positions_(model._data->positions) {
+        logging::error(positions_ != nullptr,
+                       "NonlinearStatic: positions field not initialized");
+        original_ = *positions_;
+    }
+
+    ~PositionRestoreScope() {
+        *positions_ = original_;
+    }
+
+    PositionRestoreScope(const PositionRestoreScope&) = delete;
+    PositionRestoreScope& operator=(const PositionRestoreScope&) = delete;
+
+private:
+    model::Field::Ptr positions_;
+    model::Field      original_;
+};
+
 DynamicVector homogeneous_increment(
     const ConstraintTransformer& transformer,
     const DynamicVector&         dq
@@ -253,12 +274,15 @@ void NonlinearStatic::run() {
         model->_data->initialize_element_enumeration();
     }
 
-    model::Field reference_positions = *model->_data->positions;
-
+    logging::error(model->_data->positions != nullptr,
+                   "NonlinearStatic: positions field not initialized");
     logging::error(model->_data->positions_reference != nullptr,
                    "NonlinearStatic: positions_reference field not initialized");
 
-    *model->_data->positions_reference = reference_positions;
+    PositionRestoreScope position_restore(*model);
+    const model::Field reference_positions = *model->_data->positions_reference;
+    *model->_data->positions = reference_positions;
+
     StepScope step_scope(*this);
 
     auto active_dof_idx_mat = Timer::measure(

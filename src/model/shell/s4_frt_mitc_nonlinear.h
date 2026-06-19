@@ -124,6 +124,32 @@ struct S4FRTMITC : ShellElement<4> {
         }
     };
 
+    struct NaturalShearData {
+        Vec2                         shear_nat = Vec2::Zero();
+        StaticMatrix<2, num_dofs>    B_nat     = StaticMatrix<2, num_dofs>::Zero();
+        std::array<Mat24, 2>         G_nat{};
+
+        NaturalShearData() {
+            for (auto& matrix : G_nat) {
+                matrix.setZero();
+            }
+        }
+    };
+
+    struct TyingData {
+        NaturalShearData bottom;
+        NaturalShearData top;
+        NaturalShearData left;
+        NaturalShearData right;
+    };
+
+    struct EvaluationData {
+        CurrentState                              state;
+        std::array<VectorDerivatives, num_nodes>  x_nodes;
+        std::array<VectorDerivatives, num_nodes>  d_nodes;
+        TyingData                                 tying;
+    };
+
     struct ReferencePointData {
         Precision           r    = Precision(0);
         Precision           s    = Precision(0);
@@ -241,6 +267,8 @@ struct S4FRTMITC : ShellElement<4> {
     std::array<VectorDerivatives, 4> director_derivatives(
         const CurrentState& state) const;
 
+    EvaluationData create_evaluation_data(const CurrentState& state) const;
+
     void reference_fields(const StaticVector<4>& N,
                           const StaticVector<4>& dN_da,
                           const StaticVector<4>& dN_db,
@@ -250,24 +278,32 @@ struct S4FRTMITC : ShellElement<4> {
                           Vec3& D_a,
                           Vec3& D_b) const;
 
-    StrainData raw_strain_B_G_at(const CurrentState& state,
-                                 Precision           r,
-                                 Precision           s) const;
+    StrainData raw_strain_B_G_at(const EvaluationData&     data,
+                                 const ReferencePointData& point) const;
 
-    void raw_natural_shear_B_G_at(const CurrentState& state,
-                                  Precision           r,
-                                  Precision           s,
-                                  Vec2&               shear_nat,
-                                  StaticMatrix<2, num_dofs>& B_nat,
-                                  std::array<Mat24, 2>& G_nat) const;
+    StrainData raw_strain_B_G_at(const EvaluationData& data,
+                                 Precision             r,
+                                 Precision             s) const;
 
-    void mitc4_shear_B_G_at(const CurrentState& state,
-                            Precision           r,
-                            Precision           s,
-                            const Mat2&         A,
-                            Vec2&               shear,
+    NaturalShearData raw_natural_shear_B_G_at(const EvaluationData&     data,
+                                              const ReferencePointData& point) const;
+
+    NaturalShearData raw_natural_shear_B_G_at(const EvaluationData& data,
+                                              Precision             r,
+                                              Precision             s) const;
+
+    void mitc4_shear_B_G_at(const EvaluationData&     data,
+                            const ReferencePointData& point,
+                            Vec2&                     shear,
                             StaticMatrix<2, num_dofs>& B_shear,
-                            std::array<Mat24, 2>& G_shear) const;
+                            std::array<Mat24, 2>&     G_shear) const;
+
+    StrainData strain_B_G_at(const EvaluationData&     data,
+                             const ReferencePointData& point) const;
+
+    StrainData strain_B_G_at(const EvaluationData& data,
+                             Precision             r,
+                             Precision             s) const;
 
     StrainData strain_B_G_at(const CurrentState& state,
                              Precision           r,
