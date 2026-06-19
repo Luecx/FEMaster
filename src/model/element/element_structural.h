@@ -29,9 +29,10 @@ struct StructuralElement : ElementInterface {
 
     ~StructuralElement() override = default;
 
-    virtual Precision volume        () = 0;
-    virtual MapMatrix stiffness     (Precision* buffer) = 0;
-    virtual MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) = 0;
+    virtual Precision volume           () = 0;
+    virtual MapMatrix stiffness        (Precision* buffer) = 0;
+    virtual MapMatrix stiffness_geom   (Precision* buffer, const Field& ip_stress, int ip_start_idx) = 0;
+    virtual MapMatrix stiffness_tangent(Precision* buffer, NodeData& nodal_forces, const Field& displacement);
     virtual MapMatrix mass          (Precision* buffer) = 0;
 
     virtual RowMatrix stress_strain_nodal_rst() { return RowMatrix(0, 3); }

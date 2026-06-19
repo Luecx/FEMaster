@@ -69,7 +69,6 @@ struct S4FRTMITC : ShellElement<4> {
     using Vec24Mat = std::array<Mat24, num_strains>;
 
 
-
     struct VectorDerivatives {
         Vec3                        value = Vec3::Zero();
         StaticMatrix<num_dofs, 3>   d1    = StaticMatrix<num_dofs, 3>::Zero();
@@ -111,11 +110,28 @@ struct S4FRTMITC : ShellElement<4> {
         Precision b_ss  = Precision(0);
     };
 
+    enum class EvaluationLevel {
+        Strain,
+        StrainB,
+        StrainBG
+    };
+
+    struct StrainValueData {
+        Vec8      strain = Vec8::Zero();
+        Precision detJ   = Precision(0);
+    };
+
+    struct StrainBData {
+        Vec8      strain = Vec8::Zero();
+        Mat8x24   B      = Mat8x24::Zero();
+        Precision detJ   = Precision(0);
+    };
+
     struct StrainData {
-        Vec8     strain = Vec8::Zero();
-        Mat8x24  B      = Mat8x24::Zero();
-        Vec24Mat G{};
-        Precision detJ  = Precision(0);
+        Vec8      strain = Vec8::Zero();
+        Mat8x24   B      = Mat8x24::Zero();
+        Vec24Mat  G{};
+        Precision detJ   = Precision(0);
 
         StrainData() {
             for (auto& matrix : G) {
@@ -124,10 +140,19 @@ struct S4FRTMITC : ShellElement<4> {
         }
     };
 
+    struct NaturalShearValueData {
+        Vec2 shear_nat = Vec2::Zero();
+    };
+
+    struct NaturalShearBData {
+        Vec2                      shear_nat = Vec2::Zero();
+        StaticMatrix<2, num_dofs> B_nat     = StaticMatrix<2, num_dofs>::Zero();
+    };
+
     struct NaturalShearData {
-        Vec2                         shear_nat = Vec2::Zero();
-        StaticMatrix<2, num_dofs>    B_nat     = StaticMatrix<2, num_dofs>::Zero();
-        std::array<Mat24, 2>         G_nat{};
+        Vec2                      shear_nat = Vec2::Zero();
+        StaticMatrix<2, num_dofs> B_nat     = StaticMatrix<2, num_dofs>::Zero();
+        std::array<Mat24, 2>      G_nat{};
 
         NaturalShearData() {
             for (auto& matrix : G_nat) {
@@ -222,6 +247,11 @@ struct S4FRTMITC : ShellElement<4> {
         std::array<Mat3, 3>&                       first,
         std::array<std::array<Mat3, 3>, 3>&        second);
 
+    static void rotation_exp_first_derivatives(
+        const Vec3&          rotation_vector,
+        Mat3&                rotation,
+        std::array<Mat3, 3>& first);
+
     static Mat3 rotation_exp(const Vec3& rotation_vector);
 
     static ScalarDerivatives dot_derivatives(const VectorDerivatives& a,
@@ -265,9 +295,12 @@ struct S4FRTMITC : ShellElement<4> {
     std::array<VectorDerivatives, 4> x_derivatives(const CurrentState& state) const;
 
     std::array<VectorDerivatives, 4> director_derivatives(
-        const CurrentState& state) const;
+        const CurrentState& state,
+        bool                with_second_derivatives = true) const;
 
-    EvaluationData create_evaluation_data(const CurrentState& state) const;
+    EvaluationData create_evaluation_data(
+        const CurrentState& state,
+        EvaluationLevel     level = EvaluationLevel::StrainBG) const;
 
     void reference_fields(const StaticVector<4>& N,
                           const StaticVector<4>& dN_da,
@@ -278,12 +311,40 @@ struct S4FRTMITC : ShellElement<4> {
                           Vec3& D_a,
                           Vec3& D_b) const;
 
+    StrainValueData raw_strain_at(const EvaluationData&     data,
+                                  const ReferencePointData& point) const;
+
+    StrainValueData raw_strain_at(const EvaluationData& data,
+                                  Precision             r,
+                                  Precision             s) const;
+
+    StrainBData raw_strain_B_at(const EvaluationData&     data,
+                                const ReferencePointData& point) const;
+
+    StrainBData raw_strain_B_at(const EvaluationData& data,
+                                Precision             r,
+                                Precision             s) const;
+
     StrainData raw_strain_B_G_at(const EvaluationData&     data,
                                  const ReferencePointData& point) const;
 
     StrainData raw_strain_B_G_at(const EvaluationData& data,
                                  Precision             r,
                                  Precision             s) const;
+
+    NaturalShearValueData raw_natural_shear_at(const EvaluationData&     data,
+                                               const ReferencePointData& point) const;
+
+    NaturalShearValueData raw_natural_shear_at(const EvaluationData& data,
+                                               Precision             r,
+                                               Precision             s) const;
+
+    NaturalShearBData raw_natural_shear_B_at(const EvaluationData&     data,
+                                             const ReferencePointData& point) const;
+
+    NaturalShearBData raw_natural_shear_B_at(const EvaluationData& data,
+                                             Precision             r,
+                                             Precision             s) const;
 
     NaturalShearData raw_natural_shear_B_G_at(const EvaluationData&     data,
                                               const ReferencePointData& point) const;
@@ -292,11 +353,42 @@ struct S4FRTMITC : ShellElement<4> {
                                               Precision             r,
                                               Precision             s) const;
 
-    void mitc4_shear_B_G_at(const EvaluationData&     data,
-                            const ReferencePointData& point,
-                            Vec2&                     shear,
+    void mitc4_shear_at(const EvaluationData&     data,
+                        const ReferencePointData& point,
+                        Vec2&                     shear) const;
+
+    void mitc4_shear_B_at(const EvaluationData&      data,
+                          const ReferencePointData&  point,
+                          Vec2&                      shear,
+                          StaticMatrix<2, num_dofs>& B_shear) const;
+
+    void mitc4_shear_B_G_at(const EvaluationData&      data,
+                            const ReferencePointData&  point,
+                            Vec2&                      shear,
                             StaticMatrix<2, num_dofs>& B_shear,
-                            std::array<Mat24, 2>&     G_shear) const;
+                            std::array<Mat24, 2>&      G_shear) const;
+
+    StrainValueData strain_at(const EvaluationData&     data,
+                              const ReferencePointData& point) const;
+
+    StrainValueData strain_at(const EvaluationData& data,
+                              Precision             r,
+                              Precision             s) const;
+
+    StrainValueData strain_at(const CurrentState& state,
+                              Precision           r,
+                              Precision           s) const;
+
+    StrainBData strain_B_at(const EvaluationData&     data,
+                            const ReferencePointData& point) const;
+
+    StrainBData strain_B_at(const EvaluationData& data,
+                            Precision             r,
+                            Precision             s) const;
+
+    StrainBData strain_B_at(const CurrentState& state,
+                            Precision           r,
+                            Precision           s) const;
 
     StrainData strain_B_G_at(const EvaluationData&     data,
                              const ReferencePointData& point) const;
@@ -320,11 +412,15 @@ struct S4FRTMITC : ShellElement<4> {
     StaticVector<eas_parameters> compute_eas_alpha(const CurrentState& state,
                                                    const Mat8&         H) const;
 
+    void material_stiffness(const CurrentState& state,
+                            const Mat8&         H,
+                            Mat24&              Kmat) const;
+
     void material_and_geometric_stiffness(const CurrentState& state,
-                                            const Mat8&         H,
-                                            Mat24&              Kmat,
-                                            Mat24&              Kgeo,
-                                            Vec24*              force = nullptr) const;
+                                          const Mat8&         H,
+                                          Mat24&              Kmat,
+                                          Mat24&              Kgeo,
+                                          Vec24*              force = nullptr) const;
 
     Vec8 shell_resultant_at(const CurrentState& state,
                             const Mat8&         H,
@@ -368,8 +464,6 @@ struct S4FRTMITC : ShellElement<4> {
     // Drill stabilization and StructuralElement interface
     // ---------------------------------------------------------------------
 
-    Precision reference_area() const;
-
     Precision drill_stiffness_per_node(const Mat8& H) const;
 
     void add_drill_stiffness(Mat24&              stiffness_matrix,
@@ -385,21 +479,9 @@ struct S4FRTMITC : ShellElement<4> {
                              const Field& ip_stress,
                              int          ip_start_idx) override;
 
-    void compute_internal_force_nonlinear(Field&       node_forces,
-                                          const Field& ip_stress,
-                                          int          ip_offset) override;
-
-    void compute_stress_strain(Field*           strain,
-                               Field*           stress_out,
-                               const Field&     displacement,
-                               const RowMatrix& rst,
-                               int              offset,
-                               bool             use_green_lagrange_nl) override;
-
-    void compute_stress_state(Field&       stress_state,
-                              const Field& displacement,
-                              int          offset,
-                              bool         use_green_lagrange_nl) override;
+    MapMatrix stiffness_tangent(Precision* buffer,
+                                NodeData& nodal_forces,
+                                const Field& displacement) override;
 
     RowMatrix stress_strain_ip_rst() override;
 
@@ -417,31 +499,60 @@ struct S4FRTMITC : ShellElement<4> {
 
     Vec3 global_point_current(Precision r, Precision s) const;
 
-    Precision integrate_scalar_field(bool scale_by_density, const ScalarField& field) override;
+    // integration over the volume
+    Precision integrate_scalar_field(bool            scale_by_density,
+                                     const ScalarField& field) override;
+    Vec3      integrate_vector_field(bool            scale_by_density,
+                                     const VecField& field) override;
+    void      integrate_vector_field(Field&          node_loads,
+                                     bool            scale_by_density,
+                                     const VecField& field) override;
+    Mat3      integrate_tensor_field(bool            scale_by_density,
+                                     const TenField& field) override;
 
-    Vec3 integrate_vector_field(bool scale_by_density, const VecField& field) override;
-
-    void integrate_vector_field(Field& node_loads, bool scale_by_density, const VecField& field) override;
-
-    Mat3 integrate_tensor_field(bool scale_by_density, const TenField& field) override;
-
-    void compute_compliance(Field& displacement, Field& result) override;
-
-    void compute_compliance_angle_derivative(Field& displacement,
-                                             Field& result) override;
-
-    bool compute_shear_flow(Field&       shear_flow,
-                            const Field& displacement,
-                            int          offset) override;
-
-    bool compute_beam_section_forces(Field&       section_forces,
-                                     const Field& displacement,
-                                     int          offset) override;
-
-    bool compute_shell_section_forces(Field&       resultants,
-                                      Field&       contribution_count,
-                                      const Field& displacement) override;
-
+    // compute functions (inherited)
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        bool             use_green_lagrange_nl
+    ) override;
+    void compute_stress_state(
+        Field&       stress_state,
+        const Field& displacement,
+        int          offset,
+        bool         use_green_lagrange_nl
+    ) override;
+    void compute_internal_force_nonlinear(
+        Field&       node_forces,
+        const Field& ip_stress,
+        int          ip_offset
+    ) override;
+    void compute_compliance(
+        Field& displacement,
+        Field& result
+    ) override;
+    void compute_compliance_angle_derivative(
+        Field& displacement,
+        Field& result
+    ) override;
+    bool compute_shear_flow(
+        Field&       shear_flow,
+        const Field& displacement,
+        int          offset
+    ) override;
+    bool compute_beam_section_forces(
+        Field&       section_forces,
+        const Field& displacement,
+        int          offset
+    ) override;
+    bool compute_shell_section_forces(
+        Field&       section_forces,
+        Field&       contribution_count,
+        const Field& displacement
+    ) override;
 };
 
 } // namespace fem::model

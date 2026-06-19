@@ -423,31 +423,25 @@ void NonlinearStatic::run() {
 
             *model->_data->positions = current_positions;
 
-            auto ip_stress = Timer::measure(
-                [&]() { return model->compute_stress_state(displacement, true); },
-                "computing nonlinear stress state",
-                false
-            );
+            model::NodeData internal_mat{
+                "INTERNAL_FORCES",
+                model::FieldDomain::NODE,
+                static_cast<Index>(model->_data->max_nodes),
+                6
+            };
+            internal_mat.set_zero();
 
-            auto K = Timer::measure(
-                [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-                "assembling current material stiffness K",
-                false
-            );
-
-            auto Kg = Timer::measure(
+            auto Kt = Timer::measure(
                 [&]() {
-                    return model->build_geom_stiffness_matrix(
+                    return model->build_tangent_stiffness_matrix(
                         active_dof_idx_mat,
-                        ip_stress
+                        internal_mat,
+                        displacement
                     );
                 },
-                "assembling current geometric stiffness K_g",
+                "assembling nonlinear tangent stiffness K_t and internal force",
                 false
             );
-
-            SparseMatrix Kt = K + Kg;
-            Kt.makeCompressed();
 
             if (regularize_zero_stiffness_rows) {
                 apply_zero_stiffness_regularization(
@@ -457,12 +451,6 @@ void NonlinearStatic::run() {
             }
 
             check_finite(Kt, "K_t");
-
-            auto internal_mat = Timer::measure(
-                [&]() { return model->build_internal_force_nonlinear(ip_stress); },
-                "assembling nonlinear internal force",
-                false
-            );
 
             auto f_int = Timer::measure(
                 [&]() {
@@ -493,7 +481,6 @@ void NonlinearStatic::run() {
             Precision du_norm  = Precision(0);
             Time      solve_ms = Time(0);
 
-            final_ip_stress = ip_stress;
             final_internal  = internal_mat;
             final_Kt        = Kt;
 
@@ -656,23 +643,24 @@ void NonlinearStatic::run() {
         "computing final nonlinear top/bottom stress"
     );
 
-    auto final_K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-        "assembling final current material stiffness K"
-    );
+    final_internal = model::NodeData{
+        "INTERNAL_FORCES",
+        model::FieldDomain::NODE,
+        static_cast<Index>(model->_data->max_nodes),
+        6
+    };
+    final_internal.set_zero();
 
-    auto final_Kg = Timer::measure(
+    final_Kt = Timer::measure(
         [&]() {
-            return model->build_geom_stiffness_matrix(
+            return model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
-                final_ip_stress
+                final_internal,
+                displacement
             );
         },
-        "assembling final current geometric stiffness K_g"
+        "assembling final nonlinear tangent stiffness K_t and internal force"
     );
-
-    final_Kt = final_K + final_Kg;
-    final_Kt.makeCompressed();
 
     if (regularize_zero_stiffness_rows) {
         apply_zero_stiffness_regularization(
@@ -682,11 +670,6 @@ void NonlinearStatic::run() {
     }
 
     final_A = transformer->assemble_A(final_Kt);
-
-    final_internal = Timer::measure(
-        [&]() { return model->build_internal_force_nonlinear(final_ip_stress); },
-        "assembling final nonlinear internal force"
-    );
 
     auto global_load_final = global_load_total;
     auto reaction_full     = subtract_field(

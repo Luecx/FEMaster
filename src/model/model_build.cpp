@@ -12,6 +12,7 @@
 #include <iterator>
 #include <utility>
 #include <string>
+#include <cmath>
 
 namespace fem {
 namespace model {
@@ -244,6 +245,97 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, const Field* s
         if (!trips.empty()) res.insertFromTriplets(trips.begin(), trips.end());
     }
     return res;
+}
+
+SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
+                                                   NodeData& nodal_forces,
+                                                   const Field& displacement,
+                                                   const Field* stiffness_scalar) {
+    logging::error(nodal_forces.domain == FieldDomain::NODE,
+                   "tangent internal force output must use NODE domain");
+    logging::error(nodal_forces.rows == static_cast<Index>(_data->max_nodes),
+                   "tangent internal force output has wrong node count");
+    logging::error(nodal_forces.components >= 6,
+                   "tangent internal force output requires at least 6 components");
+
+    nodal_forces.set_zero();
+
+    const int global_size = indices.maxCoeff() + 1;
+    TripletList triplets;
+    SparseMatrix global_matrix(global_size, global_size);
+
+    for (const auto& element : _data->elements) {
+        if (!element) {
+            continue;
+        }
+
+        auto* structural = element->as<StructuralElement>();
+        if (!structural) {
+            continue;
+        }
+
+        constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
+        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
+
+        MapMatrix tangent =
+            structural->stiffness_tangent(local_matrix_storage, nodal_forces, displacement);
+
+        if (stiffness_scalar) {
+            logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
+                           "stiffness scale field must use ELEMENT domain");
+            logging::error(stiffness_scalar->components == 1,
+                           "stiffness scale field must have 1 component");
+            tangent *= (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
+        }
+
+        const int num_nodes = element->n_nodes();
+        const int local_matrix_size = static_cast<int>(tangent.rows());
+        const int dofs_per_node = local_matrix_size / num_nodes;
+
+        for (int i = 0; i < num_nodes; ++i) {
+            for (int j = 0; j < num_nodes; ++j) {
+                for (int idof = 0; idof < dofs_per_node; ++idof) {
+                    for (int jdof = 0; jdof < dofs_per_node; ++jdof) {
+                        const int global_row = indices(element->nodes()[i], idof);
+                        const int global_col = indices(element->nodes()[j], jdof);
+
+                        if (global_row < 0 || global_col < 0) {
+                            continue;
+                        }
+
+                        triplets.emplace_back(
+                            global_row,
+                            global_col,
+                            tangent(i * dofs_per_node + idof, j * dofs_per_node + jdof)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+
+    if (!_data->features.empty()) {
+        TripletList feature_triplets;
+        for (const auto& feature : _data->features) {
+            if (feature) {
+                feature->assemble_stiffness(indices, feature_triplets);
+            }
+        }
+        if (!feature_triplets.empty()) {
+            global_matrix.insertFromTriplets(feature_triplets.begin(), feature_triplets.end());
+        }
+    }
+
+    for (Index i = 0; i < nodal_forces.rows; ++i) {
+        for (Index j = 0; j < nodal_forces.components; ++j) {
+            const bool bad = std::isnan(nodal_forces(i, j)) || std::isinf(nodal_forces(i, j));
+            logging::error(!bad, "Internal force at node ", i, " has invalid value at col ", j);
+        }
+    }
+
+    return global_matrix;
 }
 
 SparseMatrix Model::build_geom_stiffness_matrix(SystemDofIds &indices,

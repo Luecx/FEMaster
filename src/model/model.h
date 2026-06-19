@@ -116,6 +116,10 @@ struct Model {
 
     // matrices
     SparseMatrix  build_stiffness_matrix     (SystemDofIds& indices, const Field* stiffness_scalar = nullptr);
+    SparseMatrix  build_tangent_stiffness_matrix(SystemDofIds& indices,
+                                                  NodeData& nodal_forces,
+                                                  const Field& displacement,
+                                                  const Field* stiffness_scalar = nullptr);
     SparseMatrix  build_geom_stiffness_matrix(SystemDofIds& indices,
                                               const Field& ip_stress,
                                               const Field* stiffness_scalar = nullptr);

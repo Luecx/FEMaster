@@ -253,5 +253,7 @@ struct Field {
         return *this;
     }
 };
+
+using NodeData = Field;
 } // namespace model
 } // namespace fem
