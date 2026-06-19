@@ -471,12 +471,33 @@ void NonlinearStatic::run() {
             DynamicVector reduced_external;
             transformer->apply_Tt(f_ext, reduced_external);
 
-            const Precision denominator = std::max<Precision>(
-                reduced_external.norm(),
-                Precision(1)
+            DynamicVector reduced_internal;
+            transformer->apply_Tt(f_int, reduced_internal);
+
+            const Index reduced_dofs = std::max<Index>(
+                static_cast<Index>(reduced_residual.size()),
+                Index(1)
             );
 
-            const Precision rel_residual = reduced_residual.norm() / denominator;
+            const Precision inv_sqrt_reduced_dofs =
+                Precision(1) / std::sqrt(static_cast<Precision>(reduced_dofs));
+
+            const Precision residual_rms =
+                reduced_residual.norm() * inv_sqrt_reduced_dofs;
+
+            const Precision external_rms =
+                reduced_external.norm() * inv_sqrt_reduced_dofs;
+
+            const Precision internal_rms =
+                reduced_internal.norm() * inv_sqrt_reduced_dofs;
+
+            const Precision denominator = std::max({
+                external_rms,
+                internal_rms,
+                Precision(1)
+            });
+
+            const Precision rel_residual = residual_rms / denominator;
 
             Precision du_norm  = Precision(0);
             Time      solve_ms = Time(0);

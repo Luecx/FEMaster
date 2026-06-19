@@ -18,17 +18,10 @@ using Mat42 = S4FRTMITC::Mat42;
 using Vec24Mat = S4FRTMITC::Vec24Mat;
 using VectorDerivatives = S4FRTMITC::VectorDerivatives;
 using ScalarDerivatives = S4FRTMITC::ScalarDerivatives;
-using ElementBasis = S4FRTMITC::ElementBasis;
 using CurrentState = S4FRTMITC::CurrentState;
 using RotationCoefficients = S4FRTMITC::RotationCoefficients;
-using StrainValueData = S4FRTMITC::StrainValueData;
-using StrainBData = S4FRTMITC::StrainBData;
-using StrainData = S4FRTMITC::StrainData;
-using NaturalShearValueData = S4FRTMITC::NaturalShearValueData;
-using NaturalShearBData = S4FRTMITC::NaturalShearBData;
-using NaturalShearData = S4FRTMITC::NaturalShearData;
-using EvaluationLevel = S4FRTMITC::EvaluationLevel;
 using EvaluationData = S4FRTMITC::EvaluationData;
+using ReferenceData  = S4FRTMITC::ReferenceData;
 
 using mattools::normalized;
 using mattools::skew;
@@ -56,26 +49,26 @@ S4FRTMITC::S4FRTMITC(ID id, std::array<ID, 4> nodes)
 void S4FRTMITC::step_begin() {
     auto data = std::make_unique<ReferenceData>();
 
-    data->X     = init_ref_node_coords();
-    data->basis = init_reference_basis(data->X);
-    data->area  = Precision(0);
+    data->X    = init_ref_node_coords();
+    data->area = Precision(0);
+
+    init_reference_basis(*data);
 
     reference_data_ = std::move(data);
-    auto& reference_data = *reference_data_;
+    auto& ref       = *reference_data_;
 
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
         const auto point = integration_scheme_.get_point(ip);
 
-        reference_data.integration_points[ip] = init_ref_point_data(point.r, point.s, point.w);
+        init_ref_point_data(ref, ip, point.r, point.s, point.w);
 
-        reference_data.area += point.w
-                             * reference_data.integration_points[ip].detJ;
+        ref.area += ref.w(ip) * ref.detJ(ip);
     }
 
-    reference_data.tying_points[0] = init_ref_point_data(Precision(0),  Precision(-1), Precision(0));
-    reference_data.tying_points[1] = init_ref_point_data(Precision(0),  Precision( 1), Precision(0));
-    reference_data.tying_points[2] = init_ref_point_data(Precision(-1), Precision(0),  Precision(0));
-    reference_data.tying_points[3] = init_ref_point_data(Precision( 1), Precision(0),  Precision(0));
+    init_ref_point_data(ref, ReferenceData::tying_start + 0, Precision(0),  Precision(-1), Precision(0));
+    init_ref_point_data(ref, ReferenceData::tying_start + 1, Precision(0),  Precision( 1), Precision(0));
+    init_ref_point_data(ref, ReferenceData::tying_start + 2, Precision(-1), Precision(0),  Precision(0));
+    init_ref_point_data(ref, ReferenceData::tying_start + 3, Precision( 1), Precision(0),  Precision(0));
 }
 
 Mat43 S4FRTMITC::init_ref_node_coords() const {
@@ -92,9 +85,7 @@ Mat43 S4FRTMITC::init_ref_node_coords() const {
     return X;
 }
 
-ElementBasis S4FRTMITC::init_reference_basis(const Mat43& X) const {
-    ElementBasis basis;
-
+void S4FRTMITC::init_reference_basis(ReferenceData& ref) const {
     // Match frt_shell4_analytic.py: construct the element basis from the
     // bilinear mapping derivatives at the element centre.
     const StaticVector<4> dN_dxi  = (StaticVector<4>() <<
@@ -106,32 +97,30 @@ ElementBasis S4FRTMITC::init_reference_basis(const Mat43& X) const {
 
     Vec3 X_xi  = Vec3::Zero();
     Vec3 X_eta = Vec3::Zero();
-    for (Index i = 0; i < 4; ++i) {
-        X_xi  += dN_dxi(i)  * X.row(i).transpose();
-        X_eta += dN_deta(i) * X.row(i).transpose();
+    for (Index i = 0; i < num_nodes; ++i) {
+        X_xi  += dN_dxi(i)  * ref.X.row(i).transpose();
+        X_eta += dN_deta(i) * ref.X.row(i).transpose();
     }
 
-    basis.e1 = normalized(X_xi);
-    basis.e3 = normalized(X_xi.cross(X_eta));
-    basis.e2 = normalized(basis.e3.cross(basis.e1));
+    ref.e1 = normalized(X_xi);
+    ref.e3 = normalized(X_xi.cross(X_eta));
+    ref.e2 = normalized(ref.e3.cross(ref.e1));
 
-    for (Index i = 0; i < 4; ++i) {
-        basis.d0.row(i) = basis.e3.transpose();
+    for (Index i = 0; i < num_nodes; ++i) {
+        ref.d0.row(i) = ref.e3.transpose();
     }
 
     Vec3 x0 = Vec3::Zero();
-    for (Index i = 0; i < 4; ++i) {
-        x0 += X.row(i).transpose();
+    for (Index i = 0; i < num_nodes; ++i) {
+        x0 += ref.X.row(i).transpose();
     }
-    x0 /= Precision(4);
+    x0 /= Precision(num_nodes);
 
-    for (Index i = 0; i < 4; ++i) {
-        const Vec3 dx = X.row(i).transpose() - x0;
-        basis.xy(i, 0) = dx.dot(basis.e1);
-        basis.xy(i, 1) = dx.dot(basis.e2);
+    for (Index i = 0; i < num_nodes; ++i) {
+        const Vec3 dx = ref.X.row(i).transpose() - x0;
+        ref.xy(i, 0) = dx.dot(ref.e1);
+        ref.xy(i, 1) = dx.dot(ref.e2);
     }
-
-    return basis;
 }
 
 
@@ -151,28 +140,21 @@ const S4FRTMITC::ReferenceData& S4FRTMITC::reference_data() const {
 }
 
 
-const S4FRTMITC::ReferencePointData* S4FRTMITC::cached_reference_point(
-    Precision r,
-    Precision s) const {
+int S4FRTMITC::cached_reference_point_id(Precision r, Precision s) const {
     if (!reference_data_) {
-        return nullptr;
+        return -1;
     }
 
     const Precision tol = Precision(1e-14);
+    const auto&     ref = *reference_data_;
 
-    for (const auto& point : reference_data_->integration_points) {
-        if (std::abs(point.r - r) <= tol && std::abs(point.s - s) <= tol) {
-            return &point;
+    for (Index ref_id = 0; ref_id < ReferenceData::num_ref_points; ++ref_id) {
+        if (std::abs(ref.r(ref_id) - r) <= tol && std::abs(ref.s(ref_id) - s) <= tol) {
+            return static_cast<int>(ref_id);
         }
     }
 
-    for (const auto& point : reference_data_->tying_points) {
-        if (std::abs(point.r - r) <= tol && std::abs(point.s - s) <= tol) {
-            return &point;
-        }
-    }
-
-    return nullptr;
+    return -1;
 }
 
 std::string S4FRTMITC::type_name() const { return "MITC4FRT"; }
@@ -496,77 +478,87 @@ StaticMatrix<4, 6> S4FRTMITC::node_coords_current_6() const {
     return q;
 }
 
-S4FRTMITC::ReferencePointData S4FRTMITC::init_ref_point_data(
-    Precision           r,
-    Precision           s,
-    Precision           w) const {
-    ReferencePointData point;
+void S4FRTMITC::init_ref_point_data(
+    ReferenceData& ref,
+    Index          ref_id,
+    Precision      r,
+    Precision      s,
+    Precision      w
+) const {
+    ref.r(ref_id)    = r;
+    ref.s(ref_id)    = s;
+    ref.w(ref_id)    = w;
+    ref.detJ(ref_id) = Precision(0);
 
-    const Mat43&        X     = this->reference_data().X;
-    const ElementBasis& basis = this->reference_data().basis;
+    ref.N[ref_id]     = shape_function(r, s);
+    ref.dN_rs[ref_id] = shape_derivative(r, s);
+    ref.dN_da[ref_id].setZero();
+    ref.dN_db[ref_id].setZero();
+    ref.A[ref_id].setZero();
+    ref.invA[ref_id].setZero();
 
-    point.r     = r;
-    point.s     = s;
-    point.w     = w;
-    point.N     = shape_function(r, s);
-    point.dN_rs = shape_derivative(r, s);
+    ref.X_a[ref_id].setZero();
+    ref.X_b[ref_id].setZero();
+    ref.X_xi[ref_id].setZero();
+    ref.X_eta[ref_id].setZero();
+    ref.D[ref_id].setZero();
+    ref.D_a[ref_id].setZero();
+    ref.D_b[ref_id].setZero();
 
-    const StaticVector<4> a_nodes = basis.xy.col(0);
-    const StaticVector<4> b_nodes = basis.xy.col(1);
+    const StaticVector<4> a_nodes = ref.xy.col(0);
+    const StaticVector<4> b_nodes = ref.xy.col(1);
 
-    const Precision a_xi  = point.dN_rs.col(0).dot(a_nodes);
-    const Precision a_eta = point.dN_rs.col(1).dot(a_nodes);
-    const Precision b_xi  = point.dN_rs.col(0).dot(b_nodes);
-    const Precision b_eta = point.dN_rs.col(1).dot(b_nodes);
+    const Precision a_xi  = ref.dN_rs[ref_id].col(0).dot(a_nodes);
+    const Precision a_eta = ref.dN_rs[ref_id].col(1).dot(a_nodes);
+    const Precision b_xi  = ref.dN_rs[ref_id].col(0).dot(b_nodes);
+    const Precision b_eta = ref.dN_rs[ref_id].col(1).dot(b_nodes);
 
-    point.A << a_xi,  b_xi,
-               a_eta, b_eta;
+    ref.A[ref_id] << a_xi,  b_xi,
+                     a_eta, b_eta;
 
-    const Precision detA = point.A.determinant();
+    const Precision detA = ref.A[ref_id].determinant();
     logging::error(
         std::abs(detA) > Precision(1e-14),
         "S4FRTMITC: singular reference Jacobian in element ",
         this->elem_id
     );
 
-    point.detJ = std::abs(detA);
-    point.invA = point.A.inverse();
+    ref.detJ(ref_id) = std::abs(detA);
+    ref.invA[ref_id] = ref.A[ref_id].inverse();
 
     for (Index i = 0; i < num_nodes; ++i) {
         Vec2 rhs;
-        rhs << point.dN_rs(i, 0), point.dN_rs(i, 1);
-        const Vec2 grad = point.invA * rhs;
+        rhs << ref.dN_rs[ref_id](i, 0), ref.dN_rs[ref_id](i, 1);
+        const Vec2 grad = ref.invA[ref_id] * rhs;
 
-        point.dN_da(i) = grad(0);
-        point.dN_db(i) = grad(1);
+        ref.dN_da[ref_id](i) = grad(0);
+        ref.dN_db[ref_id](i) = grad(1);
     }
 
     for (Index i = 0; i < num_nodes; ++i) {
-        const Vec3 X_i  = X.row(i).transpose();
-        const Vec3 D_i  = basis.d0.row(i).transpose();
+        const Vec3 X_i = ref.X.row(i).transpose();
+        const Vec3 D_i = ref.d0.row(i).transpose();
 
-        point.X_a   += point.dN_da(i)    * X_i;
-        point.X_b   += point.dN_db(i)    * X_i;
-        point.X_xi  += point.dN_rs(i, 0) * X_i;
-        point.X_eta += point.dN_rs(i, 1) * X_i;
-        point.D     += point.N(i)        * D_i;
-        point.D_a   += point.dN_da(i)    * D_i;
-        point.D_b   += point.dN_db(i)    * D_i;
+        ref.X_a[ref_id]   += ref.dN_da[ref_id](i)    * X_i;
+        ref.X_b[ref_id]   += ref.dN_db[ref_id](i)    * X_i;
+        ref.X_xi[ref_id]  += ref.dN_rs[ref_id](i, 0) * X_i;
+        ref.X_eta[ref_id] += ref.dN_rs[ref_id](i, 1) * X_i;
+        ref.D[ref_id]     += ref.N[ref_id](i)        * D_i;
+        ref.D_a[ref_id]   += ref.dN_da[ref_id](i)    * D_i;
+        ref.D_b[ref_id]   += ref.dN_db[ref_id](i)    * D_i;
     }
-
-    return point;
 }
 
 
 CurrentState S4FRTMITC::current_state() const {
-    const ElementBasis& basis = reference_data().basis;
+    const auto& ref = reference_data();
     const StaticMatrix<4, 6> positions = node_coords_current_6();
 
     CurrentState state;
     for (Index i = 0; i < 4; ++i) {
         const Vec3 x               = positions.template block<1, 3>(i, 0).transpose();
         const Vec3 rotation_vector = positions.template block<1, 3>(i, 3).transpose();
-        const Vec3 d0              = basis.d0.row(i).transpose();
+        const Vec3 d0              = ref.d0.row(i).transpose();
         const Mat3 rotation        = rotation_exp(rotation_vector);
 
         state.x.row(i)     = x.transpose();
@@ -578,12 +570,12 @@ CurrentState S4FRTMITC::current_state() const {
 
 
 CurrentState S4FRTMITC::reference_state() const {
-    const ElementBasis& basis = reference_data().basis;
-    const Mat43 X = reference_data().X;
+    const auto& ref = reference_data();
+    const Mat43 X   = ref.X;
 
     CurrentState state;
     state.x     = X;
-    state.d     = basis.d0;
+    state.d     = ref.d0;
     state.theta.setZero();
     return state;
 }
@@ -596,8 +588,8 @@ CurrentState S4FRTMITC::current_state_from_displacement(
     logging::error(displacement.components >= dofs_per_node,
                    "S4FRTMITC: displacement field requires six components");
 
-    const ElementBasis& basis = reference_data().basis;
-    const Mat43 X = reference_data().X;
+    const auto& ref = reference_data();
+    const Mat43 X   = ref.X;
 
     CurrentState state;
     for (Index i = 0; i < num_nodes; ++i) {
@@ -605,7 +597,7 @@ CurrentState S4FRTMITC::current_state_from_displacement(
         const Vec6  q       = displacement.row_vec6(node_id);
         const Vec3  x       = X.row(i).transpose() + q.template head<3>();
         const Vec3  theta   = q.template tail<3>();
-        const Vec3  d0      = basis.d0.row(i).transpose();
+        const Vec3  d0      = ref.d0.row(i).transpose();
         const Mat3  R       = rotation_exp(theta);
 
         state.x.row(i)     = x.transpose();
@@ -633,11 +625,11 @@ Vec24 S4FRTMITC::element_displacement_vector(const Field& displacement) const {
 
 
 Mat3 S4FRTMITC::reference_basis_global() const {
-    const ElementBasis& basis = reference_data().basis;
+    const auto& ref = reference_data();
     Mat3 result;
-    result.col(0) = basis.e1;
-    result.col(1) = basis.e2;
-    result.col(2) = basis.e3;
+    result.col(0) = ref.e1;
+    result.col(1) = ref.e2;
+    result.col(2) = ref.e3;
     return result;
 }
 
@@ -647,9 +639,9 @@ void S4FRTMITC::shape_gradients_physical(const StaticMatrix<4, 2>& dN_rs,
                               StaticVector<4>&          dN_db,
                               Precision&                detJ,
                               Mat2&                     A) const {
-    const ElementBasis& basis = reference_data().basis;
-    const StaticVector<4> a_nodes = basis.xy.col(0);
-    const StaticVector<4> b_nodes = basis.xy.col(1);
+    const auto& ref = reference_data();
+    const StaticVector<4> a_nodes = ref.xy.col(0);
+    const StaticVector<4> b_nodes = ref.xy.col(1);
 
     const Precision a_xi  = dN_rs.col(0).dot(a_nodes);
     const Precision a_eta = dN_rs.col(1).dot(a_nodes);
@@ -690,13 +682,13 @@ std::array<VectorDerivatives, 4> S4FRTMITC::x_derivatives(const CurrentState& st
 std::array<VectorDerivatives, 4> S4FRTMITC::director_derivatives(
     const CurrentState& state,
     bool                with_second_derivatives) const {
-    const ElementBasis& basis = reference_data().basis;
+    const auto& ref = reference_data();
     std::array<VectorDerivatives, 4> directors;
 
     for (Index i = 0; i < num_nodes; ++i) {
         const Index base            = dofs_per_node * i;
         const Vec3  rotation_vector = state.theta.row(i).transpose();
-        const Vec3  d0              = basis.d0.row(i).transpose();
+        const Vec3  d0              = ref.d0.row(i).transpose();
 
         Mat3 rotation;
         std::array<Mat3, 3> first;
@@ -759,9 +751,8 @@ void S4FRTMITC::reference_fields(
     Vec3& D_a,
     Vec3& D_b
 ) const {
-    const auto& data  = reference_data();
-    const auto& X     = data.X;
-    const auto& basis = data.basis;
+    const auto& ref = reference_data();
+    const auto& X   = ref.X;
 
     X_a.setZero();
     X_b.setZero();
@@ -771,7 +762,7 @@ void S4FRTMITC::reference_fields(
 
     for (Index i = 0; i < num_nodes; ++i) {
         const Vec3 X_i = X.row(i).transpose();
-        const Vec3 D_i = basis.d0.row(i).transpose();
+        const Vec3 D_i = ref.d0.row(i).transpose();
 
         X_a += dN_da(i) * X_i;
         X_b += dN_db(i) * X_i;
@@ -780,599 +771,610 @@ void S4FRTMITC::reference_fields(
         D_b += dN_db(i) * D_i;
     }
 }
-EvaluationData S4FRTMITC::create_evaluation_data(
+S4FRTMITC::ReferenceData::ReferenceData() {
+    for (auto& value : N) {
+        value.setZero();
+    }
+    for (auto& value : dN_rs) {
+        value.setZero();
+    }
+    for (auto& value : dN_da) {
+        value.setZero();
+    }
+    for (auto& value : dN_db) {
+        value.setZero();
+    }
+    for (auto& value : A) {
+        value.setZero();
+    }
+    for (auto& value : invA) {
+        value.setZero();
+    }
+    for (auto& value : X_a) {
+        value.setZero();
+    }
+    for (auto& value : X_b) {
+        value.setZero();
+    }
+    for (auto& value : X_xi) {
+        value.setZero();
+    }
+    for (auto& value : X_eta) {
+        value.setZero();
+    }
+    for (auto& value : D) {
+        value.setZero();
+    }
+    for (auto& value : D_a) {
+        value.setZero();
+    }
+    for (auto& value : D_b) {
+        value.setZero();
+    }
+}
+
+
+S4FRTMITC::EvaluationData::EvaluationData() {
+    for (auto& value : tying_shear_nat) {
+        value.setZero();
+    }
+    for (auto& value : tying_B_nat) {
+        value.setZero();
+    }
+    for (auto& tying : tying_G_nat) {
+        for (auto& value : tying) {
+            value.setZero();
+        }
+    }
+
+    for (auto& value : ip_strain) {
+        value.setZero();
+    }
+    for (auto& value : ip_B) {
+        value.setZero();
+    }
+    for (auto& ip : ip_G) {
+        for (auto& value : ip) {
+            value.setZero();
+        }
+    }
+    for (auto& value : ip_resultants) {
+        value.setZero();
+    }
+    for (auto& value : ip_weight) {
+        value = Precision(0);
+    }
+
+    eas_Kaa.setZero();
+    eas_Jb.setZero();
+    eas_ba.setZero();
+    eas_alpha.setZero();
+}
+
+
+EvaluationData S4FRTMITC::init_evaluation(
     const CurrentState& state,
-    EvaluationLevel     level) const {
+    bool                with_strain,
+    bool                with_B,
+    bool                with_G,
+    bool                with_resultants,
+    bool                with_eas,
+    const Field*        ip_stress,
+    int                 ip_start_idx
+) const {
+    if (with_G) {
+        with_B      = true;
+        with_strain = true;
+    }
+    if (with_B) {
+        with_strain = true;
+    }
+    if (with_eas) {
+        with_strain = true;
+    }
+    if (with_resultants && ip_stress == nullptr) {
+        with_strain = true;
+    }
+
     EvaluationData data;
+    data.with_strain     = with_strain;
+    data.with_B          = with_B;
+    data.with_G          = with_G;
+    data.with_resultants = with_resultants;
+    data.with_eas        = with_eas;
+    data.state           = state;
+    data.H               = resultant_stiffness();
+    data.drill_k         = drill_stiffness_per_node(data.H);
 
-    data.state = state;
-
-    if (level == EvaluationLevel::Strain) {
+    if (with_B || with_G) {
+        data.x_nodes = x_derivatives(state);
+        data.d_nodes = director_derivatives(state, with_G);
+    } else {
         for (Index i = 0; i < num_nodes; ++i) {
             data.x_nodes[i].value = state.x.row(i).transpose();
             data.d_nodes[i].value = state.d.row(i).transpose();
         }
-    } else {
-        data.x_nodes = x_derivatives(state);
-        data.d_nodes = director_derivatives(
-            state,
-            level == EvaluationLevel::StrainBG
-        );
     }
 
-    const auto& reference = reference_data();
+    if (with_strain) {
+        const auto& ref = reference_data();
 
-    if (level == EvaluationLevel::Strain) {
-        data.tying.bottom.shear_nat = raw_natural_shear_at(data, reference.tying_points[0]).shear_nat;
-        data.tying.top.shear_nat    = raw_natural_shear_at(data, reference.tying_points[1]).shear_nat;
-        data.tying.left.shear_nat   = raw_natural_shear_at(data, reference.tying_points[2]).shear_nat;
-        data.tying.right.shear_nat  = raw_natural_shear_at(data, reference.tying_points[3]).shear_nat;
-
-        return data;
+        for (Index tying = 0; tying < ReferenceData::num_tying_points; ++tying) {
+            evaluate_tying_point(data, tying, ref, ReferenceData::tying_start + tying);
+        }
+        for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+            evaluate_integration_point(data, ip, ref, ip);
+        }
     }
 
-    if (level == EvaluationLevel::StrainB) {
-        const auto bottom = raw_natural_shear_B_at(data, reference.tying_points[0]);
-        const auto top    = raw_natural_shear_B_at(data, reference.tying_points[1]);
-        const auto left   = raw_natural_shear_B_at(data, reference.tying_points[2]);
-        const auto right  = raw_natural_shear_B_at(data, reference.tying_points[3]);
-
-        data.tying.bottom.shear_nat = bottom.shear_nat;
-        data.tying.bottom.B_nat     = bottom.B_nat;
-        data.tying.top.shear_nat    = top.shear_nat;
-        data.tying.top.B_nat        = top.B_nat;
-        data.tying.left.shear_nat   = left.shear_nat;
-        data.tying.left.B_nat       = left.B_nat;
-        data.tying.right.shear_nat  = right.shear_nat;
-        data.tying.right.B_nat      = right.B_nat;
-
-        return data;
+    if (with_eas) {
+        compute_eas_data(data);
     }
 
-    data.tying.bottom = raw_natural_shear_B_G_at(data, reference.tying_points[0]);
-    data.tying.top    = raw_natural_shear_B_G_at(data, reference.tying_points[1]);
-    data.tying.left   = raw_natural_shear_B_G_at(data, reference.tying_points[2]);
-    data.tying.right  = raw_natural_shear_B_G_at(data, reference.tying_points[3]);
+    if (with_resultants) {
+        if (ip_stress != nullptr) {
+            load_ip_resultants(data, *ip_stress, ip_start_idx);
+        } else {
+            compute_material_resultants(data);
+        }
+    }
 
     return data;
 }
 
 
-
-
-StrainValueData S4FRTMITC::raw_strain_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    StrainValueData out;
-
-    out.detJ = point.detJ;
-
-    Vec3 x_a = Vec3::Zero();
-    Vec3 x_b = Vec3::Zero();
-    Vec3 d   = Vec3::Zero();
-    Vec3 d_a = Vec3::Zero();
-    Vec3 d_b = Vec3::Zero();
-
-    for (Index i = 0; i < num_nodes; ++i) {
-        x_a += point.dN_da(i) * data.x_nodes[i].value;
-        x_b += point.dN_db(i) * data.x_nodes[i].value;
-        d   += point.N(i)     * data.d_nodes[i].value;
-        d_a += point.dN_da(i) * data.d_nodes[i].value;
-        d_b += point.dN_db(i) * data.d_nodes[i].value;
-    }
-
-    out.strain(0) = Precision(0.5) * x_a.dot(x_a)
-                  - Precision(0.5) * point.X_a.dot(point.X_a);
-    out.strain(1) = Precision(0.5) * x_b.dot(x_b)
-                  - Precision(0.5) * point.X_b.dot(point.X_b);
-    out.strain(2) = x_a.dot(x_b)
-                  - point.X_a.dot(point.X_b);
-    out.strain(3) = x_a.dot(d_a)
-                  - point.X_a.dot(point.D_a);
-    out.strain(4) = x_b.dot(d_b)
-                  - point.X_b.dot(point.D_b);
-    out.strain(5) = x_a.dot(d_b) + x_b.dot(d_a)
-                  - point.X_a.dot(point.D_b)
-                  - point.X_b.dot(point.D_a);
-    out.strain(6) = x_a.dot(d)
-                  - point.X_a.dot(point.D);
-    out.strain(7) = x_b.dot(d)
-                  - point.X_b.dot(point.D);
-
-    return out;
-}
-
-
-StrainValueData S4FRTMITC::raw_strain_at(
+void S4FRTMITC::compute_raw_strain(
     const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return raw_strain_at(data, *point);
+    const ReferenceData&  ref,
+    Index                 ref_id,
+    Vec8&                 strain,
+    Mat8x24*              B,
+    Vec24Mat*             G
+) const {
+    strain.setZero();
+    if (B) {
+        B->setZero();
+    }
+    if (G) {
+        for (auto& value : *G) {
+            value.setZero();
+        }
     }
 
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return raw_strain_at(data, point);
-}
+    const auto& N     = ref.N[ref_id];
+    const auto& dN_da = ref.dN_da[ref_id];
+    const auto& dN_db = ref.dN_db[ref_id];
 
+    const bool with_G = G != nullptr;
+    const bool with_B = B != nullptr || with_G;
 
-StrainBData S4FRTMITC::raw_strain_B_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    StrainBData out;
+    if (!with_B) {
+        Vec3 x_a = Vec3::Zero();
+        Vec3 x_b = Vec3::Zero();
+        Vec3 d   = Vec3::Zero();
+        Vec3 d_a = Vec3::Zero();
+        Vec3 d_b = Vec3::Zero();
 
-    out.detJ = point.detJ;
+        for (Index i = 0; i < num_nodes; ++i) {
+            x_a += dN_da(i) * data.x_nodes[i].value;
+            x_b += dN_db(i) * data.x_nodes[i].value;
+            d   += N(i)     * data.d_nodes[i].value;
+            d_a += dN_da(i) * data.d_nodes[i].value;
+            d_b += dN_db(i) * data.d_nodes[i].value;
+        }
 
-    const VectorDerivatives x_a = linear_combination(data.x_nodes, point.dN_da);
-    const VectorDerivatives x_b = linear_combination(data.x_nodes, point.dN_db);
-    const VectorDerivatives d   = linear_combination(data.d_nodes, point.N);
-    const VectorDerivatives d_a = linear_combination(data.d_nodes, point.dN_da);
-    const VectorDerivatives d_b = linear_combination(data.d_nodes, point.dN_db);
-
-    std::array<ScalarDerivatives, 8> items;
-    items[0] = scaled(dot_value_B(x_a, x_a), Precision(0.5));
-    items[1] = scaled(dot_value_B(x_b, x_b), Precision(0.5));
-    items[2] = dot_value_B(x_a, x_b);
-    items[3] = dot_value_B(x_a, d_a);
-    items[4] = dot_value_B(x_b, d_b);
-
-    {
-        const ScalarDerivatives xa_db = dot_value_B(x_a, d_b);
-        const ScalarDerivatives xb_da = dot_value_B(x_b, d_a);
-        items[5].value = xa_db.value + xb_da.value;
-        items[5].d1    = xa_db.d1    + xb_da.d1;
+        strain(0) = Precision(0.5) * x_a.dot(x_a)
+                  - Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
+        strain(1) = Precision(0.5) * x_b.dot(x_b)
+                  - Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
+        strain(2) = x_a.dot(x_b)
+                  - ref.X_a[ref_id].dot(ref.X_b[ref_id]);
+        strain(3) = x_a.dot(d_a)
+                  - ref.X_a[ref_id].dot(ref.D_a[ref_id]);
+        strain(4) = x_b.dot(d_b)
+                  - ref.X_b[ref_id].dot(ref.D_b[ref_id]);
+        strain(5) = x_a.dot(d_b) + x_b.dot(d_a)
+                  - ref.X_a[ref_id].dot(ref.D_b[ref_id])
+                  - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
+        strain(6) = x_a.dot(d)
+                  - ref.X_a[ref_id].dot(ref.D[ref_id]);
+        strain(7) = x_b.dot(d)
+                  - ref.X_b[ref_id].dot(ref.D[ref_id]);
+        return;
     }
 
-    items[6] = dot_value_B(x_a, d);
-    items[7] = dot_value_B(x_b, d);
+    const VectorDerivatives x_a = linear_combination(data.x_nodes, dN_da);
+    const VectorDerivatives x_b = linear_combination(data.x_nodes, dN_db);
+    const VectorDerivatives d   = linear_combination(data.d_nodes, N);
+    const VectorDerivatives d_a = linear_combination(data.d_nodes, dN_da);
+    const VectorDerivatives d_b = linear_combination(data.d_nodes, dN_db);
 
-    const std::array<Precision, 8> constants {{
-        Precision(0.5) * point.X_a.dot(point.X_a),
-        Precision(0.5) * point.X_b.dot(point.X_b),
-        point.X_a.dot(point.X_b),
-        point.X_a.dot(point.D_a),
-        point.X_b.dot(point.D_b),
-        point.X_a.dot(point.D_b) + point.X_b.dot(point.D_a),
-        point.X_a.dot(point.D),
-        point.X_b.dot(point.D)
-    }};
+    std::array<ScalarDerivatives, num_strains> items;
 
-    for (Index a = 0; a < num_strains; ++a) {
-        out.strain(a) = items[a].value - constants[a];
-        out.B.row(a)  = items[a].d1.transpose();
-    }
+    if (with_G) {
+        items[0] = scaled(dot_derivatives(x_a, x_a), Precision(0.5));
+        items[1] = scaled(dot_derivatives(x_b, x_b), Precision(0.5));
+        items[2] = dot_derivatives(x_a, x_b);
+        items[3] = dot_derivatives(x_a, d_a);
+        items[4] = dot_derivatives(x_b, d_b);
 
-    return out;
-}
-
-
-StrainBData S4FRTMITC::raw_strain_B_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return raw_strain_B_at(data, *point);
-    }
-
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return raw_strain_B_at(data, point);
-}
-
-
-StrainData S4FRTMITC::raw_strain_B_G_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    StrainData out;
-
-    out.detJ = point.detJ;
-
-    const VectorDerivatives x_a = linear_combination(data.x_nodes, point.dN_da);
-    const VectorDerivatives x_b = linear_combination(data.x_nodes, point.dN_db);
-    const VectorDerivatives d   = linear_combination(data.d_nodes, point.N);
-    const VectorDerivatives d_a = linear_combination(data.d_nodes, point.dN_da);
-    const VectorDerivatives d_b = linear_combination(data.d_nodes, point.dN_db);
-
-    std::array<ScalarDerivatives, 8> items;
-    items[0] = scaled(dot_derivatives(x_a, x_a), Precision(0.5));
-    items[1] = scaled(dot_derivatives(x_b, x_b), Precision(0.5));
-    items[2] = dot_derivatives(x_a, x_b);
-    items[3] = dot_derivatives(x_a, d_a);
-    items[4] = dot_derivatives(x_b, d_b);
-
-    {
         const ScalarDerivatives xa_db = dot_derivatives(x_a, d_b);
         const ScalarDerivatives xb_da = dot_derivatives(x_b, d_a);
+
         items[5].value = xa_db.value + xb_da.value;
         items[5].d1    = xa_db.d1    + xb_da.d1;
         items[5].d2    = xa_db.d2    + xb_da.d2;
+
+        items[6] = dot_derivatives(x_a, d);
+        items[7] = dot_derivatives(x_b, d);
+    } else {
+        items[0] = scaled(dot_value_B(x_a, x_a), Precision(0.5));
+        items[1] = scaled(dot_value_B(x_b, x_b), Precision(0.5));
+        items[2] = dot_value_B(x_a, x_b);
+        items[3] = dot_value_B(x_a, d_a);
+        items[4] = dot_value_B(x_b, d_b);
+
+        const ScalarDerivatives xa_db = dot_value_B(x_a, d_b);
+        const ScalarDerivatives xb_da = dot_value_B(x_b, d_a);
+
+        items[5].value = xa_db.value + xb_da.value;
+        items[5].d1    = xa_db.d1    + xb_da.d1;
+
+        items[6] = dot_value_B(x_a, d);
+        items[7] = dot_value_B(x_b, d);
     }
 
-    items[6] = dot_derivatives(x_a, d);
-    items[7] = dot_derivatives(x_b, d);
-
-    const std::array<Precision, 8> constants {{
-        Precision(0.5) * point.X_a.dot(point.X_a),
-        Precision(0.5) * point.X_b.dot(point.X_b),
-        point.X_a.dot(point.X_b),
-        point.X_a.dot(point.D_a),
-        point.X_b.dot(point.D_b),
-        point.X_a.dot(point.D_b) + point.X_b.dot(point.D_a),
-        point.X_a.dot(point.D),
-        point.X_b.dot(point.D)
+    const std::array<Precision, num_strains> constants{{
+        Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]),
+        Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]),
+        ref.X_a[ref_id].dot(ref.X_b[ref_id]),
+        ref.X_a[ref_id].dot(ref.D_a[ref_id]),
+        ref.X_b[ref_id].dot(ref.D_b[ref_id]),
+        ref.X_a[ref_id].dot(ref.D_b[ref_id]) + ref.X_b[ref_id].dot(ref.D_a[ref_id]),
+        ref.X_a[ref_id].dot(ref.D[ref_id]),
+        ref.X_b[ref_id].dot(ref.D[ref_id])
     }};
 
     for (Index a = 0; a < num_strains; ++a) {
-        out.strain(a) = items[a].value - constants[a];
-        out.B.row(a)  = items[a].d1.transpose();
-        out.G[a]      = items[a].d2;
-    }
-
-    return out;
-}
-
-
-StrainData S4FRTMITC::raw_strain_B_G_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return raw_strain_B_G_at(data, *point);
-    }
-
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return raw_strain_B_G_at(data, point);
-}
-
-
-NaturalShearValueData S4FRTMITC::raw_natural_shear_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    NaturalShearValueData out;
-
-    const StaticVector<4> dN_dxi  = point.dN_rs.col(0);
-    const StaticVector<4> dN_deta = point.dN_rs.col(1);
-
-    Vec3 x_xi  = Vec3::Zero();
-    Vec3 x_eta = Vec3::Zero();
-    Vec3 d     = Vec3::Zero();
-
-    for (Index i = 0; i < num_nodes; ++i) {
-        x_xi  += dN_dxi(i)  * data.x_nodes[i].value;
-        x_eta += dN_deta(i) * data.x_nodes[i].value;
-        d     += point.N(i) * data.d_nodes[i].value;
-    }
-
-    out.shear_nat(0) = x_xi.dot(d)  - point.X_xi.dot(point.D);
-    out.shear_nat(1) = x_eta.dot(d) - point.X_eta.dot(point.D);
-
-    return out;
-}
-
-
-NaturalShearValueData S4FRTMITC::raw_natural_shear_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return raw_natural_shear_at(data, *point);
-    }
-
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return raw_natural_shear_at(data, point);
-}
-
-
-NaturalShearBData S4FRTMITC::raw_natural_shear_B_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    NaturalShearBData out;
-
-    const StaticVector<4> dN_dxi  = point.dN_rs.col(0);
-    const StaticVector<4> dN_deta = point.dN_rs.col(1);
-
-    const VectorDerivatives x_xi  = linear_combination(data.x_nodes, dN_dxi);
-    const VectorDerivatives x_eta = linear_combination(data.x_nodes, dN_deta);
-    const VectorDerivatives d     = linear_combination(data.d_nodes, point.N);
-
-    const ScalarDerivatives gamma_xi  = dot_value_B(x_xi, d);
-    const ScalarDerivatives gamma_eta = dot_value_B(x_eta, d);
-
-    out.shear_nat(0) = gamma_xi.value  - point.X_xi.dot(point.D);
-    out.shear_nat(1) = gamma_eta.value - point.X_eta.dot(point.D);
-
-    out.B_nat.row(0) = gamma_xi.d1.transpose();
-    out.B_nat.row(1) = gamma_eta.d1.transpose();
-
-    return out;
-}
-
-
-NaturalShearBData S4FRTMITC::raw_natural_shear_B_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return raw_natural_shear_B_at(data, *point);
-    }
-
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return raw_natural_shear_B_at(data, point);
-}
-
-
-NaturalShearData S4FRTMITC::raw_natural_shear_B_G_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    NaturalShearData out;
-
-    const StaticVector<4> dN_dxi  = point.dN_rs.col(0);
-    const StaticVector<4> dN_deta = point.dN_rs.col(1);
-
-    const VectorDerivatives x_xi  = linear_combination(data.x_nodes, dN_dxi);
-    const VectorDerivatives x_eta = linear_combination(data.x_nodes, dN_deta);
-    const VectorDerivatives d     = linear_combination(data.d_nodes, point.N);
-
-    const ScalarDerivatives gamma_xi  = dot_derivatives(x_xi, d);
-    const ScalarDerivatives gamma_eta = dot_derivatives(x_eta, d);
-
-    out.shear_nat(0) = gamma_xi.value  - point.X_xi.dot(point.D);
-    out.shear_nat(1) = gamma_eta.value - point.X_eta.dot(point.D);
-
-    out.B_nat.row(0) = gamma_xi.d1.transpose();
-    out.B_nat.row(1) = gamma_eta.d1.transpose();
-
-    out.G_nat[0] = gamma_xi.d2;
-    out.G_nat[1] = gamma_eta.d2;
-
-    return out;
-}
-
-
-NaturalShearData S4FRTMITC::raw_natural_shear_B_G_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return raw_natural_shear_B_G_at(data, *point);
-    }
-
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return raw_natural_shear_B_G_at(data, point);
-}
-
-
-void S4FRTMITC::mitc4_shear_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point,
-    Vec2&                     shear) const {
-    Vec2 g_nat = Vec2::Zero();
-
-    const Precision r = point.r;
-    const Precision s = point.s;
-
-    const Precision c_bottom = Precision(0.5) * (Precision(1) - s);
-    const Precision c_top    = Precision(0.5) * (Precision(1) + s);
-    const Precision c_left   = Precision(0.5) * (Precision(1) - r);
-    const Precision c_right  = Precision(0.5) * (Precision(1) + r);
-
-    const auto& bottom = data.tying.bottom;
-    const auto& top    = data.tying.top;
-    const auto& left   = data.tying.left;
-    const auto& right  = data.tying.right;
-
-    g_nat(0) = c_bottom * bottom.shear_nat(0) + c_top   * top.shear_nat(0);
-    g_nat(1) = c_left   * left.shear_nat(1)   + c_right * right.shear_nat(1);
-
-    shear = point.invA * g_nat;
-}
-
-
-void S4FRTMITC::mitc4_shear_B_at(
-    const EvaluationData&      data,
-    const ReferencePointData&  point,
-    Vec2&                      shear,
-    StaticMatrix<2, num_dofs>& B_shear) const {
-    Vec2 g_nat = Vec2::Zero();
-    StaticMatrix<2, num_dofs> B_nat = StaticMatrix<2, num_dofs>::Zero();
-
-    const Precision r = point.r;
-    const Precision s = point.s;
-
-    const Precision c_bottom = Precision(0.5) * (Precision(1) - s);
-    const Precision c_top    = Precision(0.5) * (Precision(1) + s);
-    const Precision c_left   = Precision(0.5) * (Precision(1) - r);
-    const Precision c_right  = Precision(0.5) * (Precision(1) + r);
-
-    const auto& bottom = data.tying.bottom;
-    const auto& top    = data.tying.top;
-    const auto& left   = data.tying.left;
-    const auto& right  = data.tying.right;
-
-    g_nat(0)     = c_bottom * bottom.shear_nat(0) + c_top   * top.shear_nat(0);
-    B_nat.row(0) = c_bottom * bottom.B_nat.row(0) + c_top   * top.B_nat.row(0);
-
-    g_nat(1)     = c_left   * left.shear_nat(1)   + c_right * right.shear_nat(1);
-    B_nat.row(1) = c_left   * left.B_nat.row(1)   + c_right * right.B_nat.row(1);
-
-    shear   = point.invA * g_nat;
-    B_shear = point.invA * B_nat;
-}
-
-
-void S4FRTMITC::mitc4_shear_B_G_at(
-    const EvaluationData&      data,
-    const ReferencePointData&  point,
-    Vec2&                      shear,
-    StaticMatrix<2, num_dofs>& B_shear,
-    std::array<Mat24, 2>&      G_shear) const {
-    Vec2 g_nat = Vec2::Zero();
-    StaticMatrix<2, num_dofs> B_nat = StaticMatrix<2, num_dofs>::Zero();
-    std::array<Mat24, 2> G_nat;
-    for (auto& matrix : G_nat) {
-        matrix.setZero();
-    }
-
-    const Precision r = point.r;
-    const Precision s = point.s;
-
-    const Precision c_bottom = Precision(0.5) * (Precision(1) - s);
-    const Precision c_top    = Precision(0.5) * (Precision(1) + s);
-    const Precision c_left   = Precision(0.5) * (Precision(1) - r);
-    const Precision c_right  = Precision(0.5) * (Precision(1) + r);
-
-    const auto& bottom = data.tying.bottom;
-    const auto& top    = data.tying.top;
-    const auto& left   = data.tying.left;
-    const auto& right  = data.tying.right;
-
-    g_nat(0)     = c_bottom * bottom.shear_nat(0) + c_top   * top.shear_nat(0);
-    B_nat.row(0) = c_bottom * bottom.B_nat.row(0) + c_top   * top.B_nat.row(0);
-    G_nat[0]     = c_bottom * bottom.G_nat[0]     + c_top   * top.G_nat[0];
-
-    g_nat(1)     = c_left   * left.shear_nat(1)   + c_right * right.shear_nat(1);
-    B_nat.row(1) = c_left   * left.B_nat.row(1)   + c_right * right.B_nat.row(1);
-    G_nat[1]     = c_left   * left.G_nat[1]       + c_right * right.G_nat[1];
-
-    shear   = point.invA * g_nat;
-    B_shear = point.invA * B_nat;
-
-    for (Index a = 0; a < 2; ++a) {
-        G_shear[a].setZero();
-        for (Index b = 0; b < 2; ++b) {
-            G_shear[a] += point.invA(a, b) * G_nat[b];
+        strain(a) = items[a].value - constants[a];
+        if (B) {
+            B->row(a) = items[a].d1.transpose();
+        }
+        if (G) {
+            (*G)[a] = items[a].d2;
         }
     }
 }
 
 
-StrainValueData S4FRTMITC::strain_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    StrainValueData out = raw_strain_at(data, point);
-
-    Vec2 shear;
-    mitc4_shear_at(data, point, shear);
-
-    out.strain(6) = shear(0);
-    out.strain(7) = shear(1);
-
-    return out;
-}
-
-
-StrainValueData S4FRTMITC::strain_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return strain_at(data, *point);
+void S4FRTMITC::compute_natural_shear(
+    const EvaluationData&      data,
+    const ReferenceData&       ref,
+    Index                      ref_id,
+    Vec2&                      shear_nat,
+    StaticMatrix<2, num_dofs>* B_nat,
+    std::array<Mat24, 2>*      G_nat
+) const {
+    shear_nat.setZero();
+    if (B_nat) {
+        B_nat->setZero();
+    }
+    if (G_nat) {
+        for (auto& value : *G_nat) {
+            value.setZero();
+        }
     }
 
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return strain_at(data, point);
+    const StaticVector<4> dN_dxi  = ref.dN_rs[ref_id].col(0);
+    const StaticVector<4> dN_deta = ref.dN_rs[ref_id].col(1);
+
+    const bool with_G = G_nat != nullptr;
+    const bool with_B = B_nat != nullptr || with_G;
+
+    if (!with_B) {
+        Vec3 x_xi  = Vec3::Zero();
+        Vec3 x_eta = Vec3::Zero();
+        Vec3 d     = Vec3::Zero();
+
+        for (Index i = 0; i < num_nodes; ++i) {
+            x_xi  += dN_dxi(i)        * data.x_nodes[i].value;
+            x_eta += dN_deta(i)       * data.x_nodes[i].value;
+            d     += ref.N[ref_id](i) * data.d_nodes[i].value;
+        }
+
+        shear_nat(0) = x_xi.dot(d)  - ref.X_xi[ref_id].dot(ref.D[ref_id]);
+        shear_nat(1) = x_eta.dot(d) - ref.X_eta[ref_id].dot(ref.D[ref_id]);
+        return;
+    }
+
+    const VectorDerivatives x_xi  = linear_combination(data.x_nodes, dN_dxi);
+    const VectorDerivatives x_eta = linear_combination(data.x_nodes, dN_deta);
+    const VectorDerivatives d     = linear_combination(data.d_nodes, ref.N[ref_id]);
+
+    const ScalarDerivatives gamma_xi  = with_G
+                                      ? dot_derivatives(x_xi, d)
+                                      : dot_value_B(x_xi, d);
+    const ScalarDerivatives gamma_eta = with_G
+                                      ? dot_derivatives(x_eta, d)
+                                      : dot_value_B(x_eta, d);
+
+    shear_nat(0) = gamma_xi.value  - ref.X_xi[ref_id].dot(ref.D[ref_id]);
+    shear_nat(1) = gamma_eta.value - ref.X_eta[ref_id].dot(ref.D[ref_id]);
+
+    if (B_nat) {
+        B_nat->row(0) = gamma_xi.d1.transpose();
+        B_nat->row(1) = gamma_eta.d1.transpose();
+    }
+    if (G_nat) {
+        (*G_nat)[0] = gamma_xi.d2;
+        (*G_nat)[1] = gamma_eta.d2;
+    }
 }
 
 
-StrainValueData S4FRTMITC::strain_at(
-    const CurrentState& state,
-    Precision           r,
-    Precision           s) const {
-    const EvaluationData data = create_evaluation_data(
-        state,
-        EvaluationLevel::Strain
+void S4FRTMITC::compute_mitc4_shear(
+    const EvaluationData&      data,
+    const ReferenceData&       ref,
+    Index                      ref_id,
+    Vec2&                      shear,
+    StaticMatrix<2, num_dofs>* B_shear,
+    std::array<Mat24, 2>*      G_shear
+) const {
+    Vec2 g_nat = Vec2::Zero();
+    StaticMatrix<2, num_dofs> B_nat;
+    std::array<Mat24, 2>      G_nat;
+
+    if (B_shear) {
+        B_nat.setZero();
+        B_shear->setZero();
+    }
+    if (G_shear) {
+        for (auto& value : G_nat) {
+            value.setZero();
+        }
+        for (auto& value : *G_shear) {
+            value.setZero();
+        }
+    }
+
+    const Precision r = ref.r(ref_id);
+    const Precision s = ref.s(ref_id);
+
+    const Precision c_bottom = Precision(0.5) * (Precision(1) - s);
+    const Precision c_top    = Precision(0.5) * (Precision(1) + s);
+    const Precision c_left   = Precision(0.5) * (Precision(1) - r);
+    const Precision c_right  = Precision(0.5) * (Precision(1) + r);
+
+    g_nat(0) = c_bottom * data.tying_shear_nat[0](0)
+             + c_top    * data.tying_shear_nat[1](0);
+    g_nat(1) = c_left   * data.tying_shear_nat[2](1)
+             + c_right  * data.tying_shear_nat[3](1);
+
+    if (B_shear) {
+        B_nat.row(0) = c_bottom * data.tying_B_nat[0].row(0)
+                     + c_top    * data.tying_B_nat[1].row(0);
+        B_nat.row(1) = c_left   * data.tying_B_nat[2].row(1)
+                     + c_right  * data.tying_B_nat[3].row(1);
+    }
+
+    if (G_shear) {
+        G_nat[0] = c_bottom * data.tying_G_nat[0][0]
+                 + c_top    * data.tying_G_nat[1][0];
+        G_nat[1] = c_left   * data.tying_G_nat[2][1]
+                 + c_right  * data.tying_G_nat[3][1];
+    }
+
+    shear = ref.invA[ref_id] * g_nat;
+
+    if (B_shear) {
+        *B_shear = ref.invA[ref_id] * B_nat;
+    }
+
+    if (G_shear) {
+        for (Index a = 0; a < 2; ++a) {
+            (*G_shear)[a].setZero();
+            for (Index b = 0; b < 2; ++b) {
+                (*G_shear)[a] += ref.invA[ref_id](a, b) * G_nat[b];
+            }
+        }
+    }
+}
+
+
+void S4FRTMITC::evaluate_tying_point(
+    EvaluationData&      data,
+    Index                tying_id,
+    const ReferenceData& ref,
+    Index                ref_id
+) const {
+    compute_natural_shear(
+        data,
+        ref,
+        ref_id,
+        data.tying_shear_nat[tying_id],
+        data.with_B ? &data.tying_B_nat[tying_id] : nullptr,
+        data.with_G ? &data.tying_G_nat[tying_id] : nullptr
     );
-    return strain_at(data, r, s);
 }
 
 
-StrainBData S4FRTMITC::strain_B_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    StrainBData out = raw_strain_B_at(data, point);
+void S4FRTMITC::evaluate_integration_point(
+    EvaluationData&      data,
+    Index                ip,
+    const ReferenceData& ref,
+    Index                ref_id
+) const {
+    data.ip_weight[ip] = ref.w(ref_id) * ref.detJ(ref_id);
+
+    compute_raw_strain(
+        data,
+        ref,
+        ref_id,
+        data.ip_strain[ip],
+        data.with_B ? &data.ip_B[ip] : nullptr,
+        data.with_G ? &data.ip_G[ip] : nullptr
+    );
 
     Vec2 shear;
     StaticMatrix<2, num_dofs> B_shear;
+    std::array<Mat24, 2>      G_shear;
 
-    mitc4_shear_B_at(data, point, shear, B_shear);
+    compute_mitc4_shear(
+        data,
+        ref,
+        ref_id,
+        shear,
+        data.with_B ? &B_shear : nullptr,
+        data.with_G ? &G_shear : nullptr
+    );
 
-    out.strain(6) = shear(0);
-    out.strain(7) = shear(1);
-    out.B.row(6)  = B_shear.row(0);
-    out.B.row(7)  = B_shear.row(1);
+    data.ip_strain[ip](6) = shear(0);
+    data.ip_strain[ip](7) = shear(1);
 
-    return out;
-}
-
-
-StrainBData S4FRTMITC::strain_B_at(
-    const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return strain_B_at(data, *point);
+    if (data.with_B) {
+        data.ip_B[ip].row(6) = B_shear.row(0);
+        data.ip_B[ip].row(7) = B_shear.row(1);
     }
 
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return strain_B_at(data, point);
+    if (data.with_G) {
+        data.ip_G[ip][6] = G_shear[0];
+        data.ip_G[ip][7] = G_shear[1];
+    }
 }
 
 
-StrainBData S4FRTMITC::strain_B_at(
-    const CurrentState& state,
-    Precision           r,
-    Precision           s) const {
-    const EvaluationData data = create_evaluation_data(
-        state,
-        EvaluationLevel::StrainB
+void S4FRTMITC::load_ip_resultants(
+    EvaluationData& data,
+    const Field&    ip_stress,
+    int             ip_start_idx
+) const {
+    logging::error(
+        ip_stress.components >= num_strains,
+        "S4FRTMITC: shell resultant field requires eight components "
+        "[N11,N22,N12,M11,M22,M12,Q13,Q23]"
     );
-    return strain_B_at(data, r, s);
+
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        const Index row = static_cast<Index>(ip_start_idx) + ip;
+        for (Index a = 0; a < num_strains; ++a) {
+            data.ip_resultants[ip](a) = ip_stress(row, a);
+        }
+    }
 }
 
 
-StrainData S4FRTMITC::strain_B_G_at(
-    const EvaluationData&     data,
-    const ReferencePointData& point) const {
-    StrainData out = raw_strain_B_G_at(data, point);
+void S4FRTMITC::compute_eas_data(EvaluationData& data) const {
+    data.eas_Kaa.setZero();
+    data.eas_Jb.setZero();
+    data.eas_ba.setZero();
+    data.eas_alpha.setZero();
 
-    Vec2 shear;
-    StaticMatrix<2, num_dofs> B_shear;
-    std::array<Mat24, 2> G_shear;
+    if constexpr (eas_parameters == 0) {
+        return;
+    } else {
+        const auto& ref = reference_data();
+        for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+            const auto M   = eas_matrix(ref.r(ip), ref.s(ip));
+            const auto MTH = M.transpose() * data.H;
+            const auto fac = data.ip_weight[ip];
 
-    mitc4_shear_B_G_at(data, point, shear, B_shear, G_shear);
+            data.eas_Kaa += fac * (MTH * M);
 
-    out.strain(6) = shear(0);
-    out.strain(7) = shear(1);
-    out.B.row(6)  = B_shear.row(0);
-    out.B.row(7)  = B_shear.row(1);
-    out.G[6]      = G_shear[0];
-    out.G[7]      = G_shear[1];
+            if (data.with_strain) {
+                data.eas_ba += fac * (MTH * data.ip_strain[ip]);
+            }
+            if (data.with_B) {
+                data.eas_Jb += fac * (MTH * data.ip_B[ip]);
+            }
+        }
 
-    return out;
+        if (data.with_strain) {
+            data.eas_alpha = -data.eas_Kaa.ldlt().solve(data.eas_ba);
+        }
+    }
 }
 
 
-StrainData S4FRTMITC::strain_B_G_at(
+void S4FRTMITC::compute_material_resultants(EvaluationData& data) const {
+    logging::error(data.with_strain,
+                   "S4FRTMITC: material resultants require strain evaluation");
+
+    const auto& ref = reference_data();
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        Vec8 eps = data.ip_strain[ip];
+
+        if constexpr (eas_parameters > 0) {
+            if (data.with_eas) {
+                eps += eas_matrix(ref.r(ip), ref.s(ip)) * data.eas_alpha;
+            }
+        }
+
+        data.ip_resultants[ip] = data.H * eps;
+    }
+}
+
+
+void S4FRTMITC::assemble_material_stiffness(
     const EvaluationData& data,
-    Precision             r,
-    Precision             s) const {
-    if (const ReferencePointData* point = cached_reference_point(r, s)) {
-        return strain_B_G_at(data, *point);
+    Mat24&                Kmat
+) const {
+    logging::error(data.with_B,
+                   "S4FRTMITC: material stiffness requires B evaluation");
+
+    Kmat.setZero();
+
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        Kmat += data.ip_weight[ip]
+              * (data.ip_B[ip].transpose() * data.H * data.ip_B[ip]);
     }
 
-    const ReferencePointData point = init_ref_point_data(r, s, Precision(0));
-    return strain_B_G_at(data, point);
+    if constexpr (eas_parameters > 0) {
+        if (data.with_eas) {
+            Kmat -= data.eas_Jb.transpose()
+                  * data.eas_Kaa.ldlt().solve(data.eas_Jb);
+        }
+    }
 }
 
 
-StrainData S4FRTMITC::strain_B_G_at(
-    const CurrentState& state,
-    Precision           r,
-    Precision           s) const {
-    const EvaluationData data = create_evaluation_data(
-        state,
-        EvaluationLevel::StrainBG
-    );
-    return strain_B_G_at(data, r, s);
+void S4FRTMITC::assemble_geometric_stiffness(
+    const EvaluationData& data,
+    Mat24&                Kgeo
+) const {
+    logging::error(data.with_G,
+                   "S4FRTMITC: geometric stiffness requires G evaluation");
+    logging::error(data.with_resultants,
+                   "S4FRTMITC: geometric stiffness requires resultants");
+
+    Kgeo.setZero();
+
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        for (Index a = 0; a < num_strains; ++a) {
+            Kgeo += data.ip_weight[ip]
+                  * data.ip_resultants[ip](a)
+                  * data.ip_G[ip][a];
+        }
+    }
+
+    Kgeo = Precision(0.5) * (Kgeo + Kgeo.transpose());
+}
+
+
+void S4FRTMITC::assemble_internal_force(
+    const EvaluationData& data,
+    Vec24&                internal_force
+) const {
+    logging::error(data.with_B,
+                   "S4FRTMITC: internal force requires B evaluation");
+    logging::error(data.with_resultants,
+                   "S4FRTMITC: internal force requires resultants");
+
+    internal_force.setZero();
+
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        internal_force += data.ip_weight[ip]
+                        * (data.ip_B[ip].transpose() * data.ip_resultants[ip]);
+    }
 }
 
 
@@ -1418,254 +1420,138 @@ StaticMatrix<S4FRTMITC::num_strains, S4FRTMITC::eas_parameters> S4FRTMITC::eas_m
 }
 
 
-StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha(const CurrentState& state,
-                                               const Mat8&         H) const {
-    StaticVector<eas_parameters> alpha;
-    alpha.setZero();
+StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha(
+    const CurrentState& state,
+    const Mat8&         H
+) const {
+    (void) H;
 
-    if constexpr (eas_parameters == 0) {
-        return alpha;
-    } else {
-        StaticMatrix<eas_parameters, eas_parameters> Kaa;
-        StaticVector<eas_parameters> ba;
-        Kaa.setZero();
-        ba.setZero();
-
-        const EvaluationData data = create_evaluation_data(
-            state,
-            EvaluationLevel::Strain
-        );
-
-        for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto&           point = reference_data().integration_points[ip];
-            const StrainValueData sd    = strain_at(data, point);
-            const Precision  fac  = point.w * sd.detJ;
-            const auto       M    = eas_matrix(point.r, point.s);
-            const StaticMatrix<eas_parameters, num_strains> MTH = M.transpose() * H;
-
-            Kaa += fac * (MTH * M);
-            ba  += fac * (MTH * sd.strain);
-        }
-
-        alpha = -Kaa.ldlt().solve(ba);
-        return alpha;
-    }
-}
-
-
-
-void S4FRTMITC::material_stiffness(const CurrentState& state,
-                                   const Mat8&         H,
-                                   Mat24&              Kmat) const {
-    Kmat.setZero();
-
-    if constexpr (eas_parameters > 0) {
-        StaticMatrix<eas_parameters, eas_parameters> Kaa;
-        StaticMatrix<eas_parameters, num_dofs>       Jb;
-        Kaa.setZero();
-        Jb.setZero();
-
-        const EvaluationData data = create_evaluation_data(
-            state,
-            EvaluationLevel::StrainB
-        );
-
-        for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto&       point = reference_data().integration_points[ip];
-            const StrainBData sd    = strain_B_at(data, point);
-            const Precision   fac   = point.w * sd.detJ;
-            const auto        M     = eas_matrix(point.r, point.s);
-            const StaticMatrix<eas_parameters, num_strains> MTH = M.transpose() * H;
-
-            Kmat += fac * (sd.B.transpose() * H * sd.B);
-            Kaa  += fac * (MTH * M);
-            Jb   += fac * (MTH * sd.B);
-        }
-
-        const auto solver = Kaa.ldlt();
-        Kmat -= Jb.transpose() * solver.solve(Jb);
-        return;
-    }
-
-    const EvaluationData data = create_evaluation_data(
+    const EvaluationData data = init_evaluation(
         state,
-        EvaluationLevel::StrainB
+        true,
+        false,
+        false,
+        false,
+        true
     );
-
-    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-        const auto&       point = reference_data().integration_points[ip];
-        const StrainBData sd    = strain_B_at(data, point);
-        const Precision   fac   = point.w * sd.detJ;
-
-        Kmat += fac * (sd.B.transpose() * H * sd.B);
-    }
+    return data.eas_alpha;
 }
 
 
-void S4FRTMITC::material_and_geometric_stiffness(const CurrentState& state,
-                                        const Mat8&         H,
-                                        Mat24&              Kmat,
-                                        Mat24&              Kgeo,
-                                        Vec24*              force) const {
-    Kmat.setZero();
-    Kgeo.setZero();
-    if (force) {
-        force->setZero();
-    }
-
-    if constexpr (eas_parameters > 0) {
-        StaticMatrix<eas_parameters, eas_parameters> Kaa;
-        StaticVector<eas_parameters>                 ba;
-        StaticMatrix<eas_parameters, num_dofs>     Jb;
-        std::array<Mat24, eas_parameters>            Hb;
-        Kaa.setZero();
-        ba.setZero();
-        Jb.setZero();
-        for (auto& h : Hb) {
-            h.setZero();
-        }
-
-        const EvaluationData data = create_evaluation_data(
-            state,
-            EvaluationLevel::StrainBG
-        );
-
-        for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto&      point = reference_data().integration_points[ip];
-            const StrainData sd    = strain_B_G_at(data, point);
-            const Precision  fac   = point.w * sd.detJ;
-            const Vec8       res   = H * sd.strain;
-
-            Kmat += fac * (sd.B.transpose() * H * sd.B);
-            for (Index a = 0; a < num_strains; ++a) {
-                Kgeo += fac * res(a) * sd.G[a];
-            }
-            if (force) {
-                *force += fac * (sd.B.transpose() * res);
-            }
-
-            const auto M = eas_matrix(point.r, point.s);
-            const StaticMatrix<eas_parameters, num_strains> MTH = M.transpose() * H;
-            Kaa += fac * (MTH * M);
-            ba  += fac * (MTH * sd.strain);
-            Jb  += fac * (MTH * sd.B);
-
-            for (Index k = 0; k < eas_parameters; ++k) {
-                for (Index a = 0; a < num_strains; ++a) {
-                    Hb[k] += fac * MTH(k, a) * sd.G[a];
-                }
-            }
-        }
-
-        const auto solver = Kaa.ldlt();
-        const StaticVector<eas_parameters> alpha = -solver.solve(ba);
-
-        Kmat -= Jb.transpose() * solver.solve(Jb);
-        for (Index k = 0; k < eas_parameters; ++k) {
-            Kgeo += alpha(k) * Hb[k];
-        }
-        if (force) {
-            *force += Jb.transpose() * alpha;
-        }
-    } else {
-        const EvaluationData data = create_evaluation_data(
-            state,
-            EvaluationLevel::StrainBG
-        );
-
-        for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto&     point = reference_data().integration_points[ip];
-            const StrainData sd   = strain_B_G_at(data, point);
-            const Precision  fac  = point.w * sd.detJ;
-            const Vec8       s    = H * sd.strain;
-
-            Kmat += fac * (sd.B.transpose() * H * sd.B);
-            for (Index a = 0; a < num_strains; ++a) {
-                Kgeo += fac * s(a) * sd.G[a];
-            }
-            if (force) {
-                *force += fac * (sd.B.transpose() * s);
-            }
-        }
-    }
-}
-Vec8 S4FRTMITC::shell_resultant_at(const CurrentState& state,
-                        const Mat8&         H,
-                        Precision           r,
-                        Precision           s,
-                        Vec8*               strain_out) const {
-    const StrainValueData sd = strain_at(state, r, s);
-    Vec8 eps = sd.strain;
-
-    if constexpr (eas_parameters > 0) {
-        const auto alpha = compute_eas_alpha(state, H);
-        eps += eas_matrix(r, s) * alpha;
-    }
-
-    if (strain_out) {
-        *strain_out = eps;
-    }
-    return H * eps;
-}
 StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha_linear(
-    const Field&        displacement,
-    const Mat8&         H) const {
+    const Field& displacement,
+    const Mat8&  H
+) const {
     StaticVector<eas_parameters> alpha;
     alpha.setZero();
 
     if constexpr (eas_parameters == 0) {
+        (void) displacement;
+        (void) H;
         return alpha;
     } else {
-        const CurrentState state0 = reference_state();
-        const Vec24        q      = element_displacement_vector(displacement);
+        const CurrentState   state = reference_state();
+        const Vec24          q     = element_displacement_vector(displacement);
+        const EvaluationData data  = init_evaluation(
+            state,
+            false,
+            true,
+            false,
+            false,
+            false
+        );
 
         StaticMatrix<eas_parameters, eas_parameters> Kaa;
         StaticVector<eas_parameters>                 ba;
         Kaa.setZero();
         ba.setZero();
 
-        const EvaluationData data0 = create_evaluation_data(
-            state0,
-            EvaluationLevel::StrainB
-        );
-
+        const auto& ref = reference_data();
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto&       point = reference_data().integration_points[ip];
-            const StrainBData sd    = strain_B_at(data0, point);
-            const Precision   dA    = point.w * sd.detJ;
-            const Vec8        eps   = sd.B * q;
-            const auto        M     = eas_matrix(point.r, point.s);
-            const StaticMatrix<eas_parameters, num_strains> MTH = M.transpose() * H;
+            const auto M   = eas_matrix(ref.r(ip), ref.s(ip));
+            const auto MTH = M.transpose() * H;
+            const Vec8 eps = data.ip_B[ip] * q;
+            const auto fac = data.ip_weight[ip];
 
-            Kaa += dA * (MTH * M);
-            ba  += dA * (MTH * eps);
+            Kaa += fac * (MTH * M);
+            ba  += fac * (MTH * eps);
         }
 
         alpha = -Kaa.ldlt().solve(ba);
         return alpha;
     }
 }
-Vec8 S4FRTMITC::generalized_strain_at(const Field&        displacement,
-                           Precision           r,
-                           Precision           s,
-                           bool                nonlinear) const {
+
+
+Vec8 S4FRTMITC::generalized_strain_at(
+    const Field& displacement,
+    Precision    r,
+    Precision    s,
+    bool         nonlinear
+) const {
     const Mat8 H = resultant_stiffness();
 
+    auto make_output_ref = [&]() {
+        ReferenceData out = reference_data();
+        init_ref_point_data(out, 0, r, s, Precision(0));
+        return out;
+    };
+
+    const int cached_id = cached_reference_point_id(r, s);
+
     if (nonlinear) {
-        const CurrentState     state = current_state_from_displacement(displacement);
-        const StrainValueData  data  = strain_at(state, r, s);
-        Vec8                  eps   = data.strain;
+        const CurrentState   state = current_state_from_displacement(displacement);
+        const EvaluationData data  = init_evaluation(
+            state,
+            true,
+            false,
+            false,
+            false,
+            true
+        );
+
+        const ReferenceData output_ref = cached_id >= 0 ? reference_data() : make_output_ref();
+        const Index         ref_id     = cached_id >= 0 ? static_cast<Index>(cached_id) : Index(0);
+
+        Vec8 eps;
+        Vec2 shear;
+        compute_raw_strain(data, output_ref, ref_id, eps);
+        compute_mitc4_shear(data, output_ref, ref_id, shear);
+        eps(6) = shear(0);
+        eps(7) = shear(1);
 
         if constexpr (eas_parameters > 0) {
-            eps += eas_matrix(r, s) * compute_eas_alpha(state, H);
+            eps += eas_matrix(r, s) * data.eas_alpha;
         }
         return eps;
     }
 
-    const CurrentState state0 = reference_state();
-    const Vec24        q      = element_displacement_vector(displacement);
-    const StrainBData  data0  = strain_B_at(state0, r, s);
-    Vec8               eps    = data0.B * q;
+    const CurrentState   state = reference_state();
+    const Vec24          q     = element_displacement_vector(displacement);
+    const EvaluationData data  = init_evaluation(
+        state,
+        false,
+        true,
+        false,
+        false,
+        false
+    );
+
+    const ReferenceData output_ref = cached_id >= 0 ? reference_data() : make_output_ref();
+    const Index         ref_id     = cached_id >= 0 ? static_cast<Index>(cached_id) : Index(0);
+
+    Vec8    dummy;
+    Mat8x24 B;
+    Vec2    shear;
+    StaticMatrix<2, num_dofs> B_shear;
+
+    compute_raw_strain(data, output_ref, ref_id, dummy, &B);
+    compute_mitc4_shear(data, output_ref, ref_id, shear, &B_shear);
+
+    B.row(6) = B_shear.row(0);
+    B.row(7) = B_shear.row(1);
+
+    Vec8 eps = B * q;
 
     if constexpr (eas_parameters > 0) {
         eps += eas_matrix(r, s) * compute_eas_alpha_linear(displacement, H);
@@ -1674,12 +1560,13 @@ Vec8 S4FRTMITC::generalized_strain_at(const Field&        displacement,
 }
 
 
-
-Vec8 S4FRTMITC::generalized_resultant_at(const Field&        displacement,
-                              Precision           r,
-                              Precision           s,
-                              bool                nonlinear,
-                              Vec8*               strain_out) const {
+Vec8 S4FRTMITC::generalized_resultant_at(
+    const Field& displacement,
+    Precision    r,
+    Precision    s,
+    bool         nonlinear,
+    Vec8*        strain_out
+) const {
     const Vec8 eps = generalized_strain_at(displacement, r, s, nonlinear);
 
     if (strain_out) {
@@ -1687,6 +1574,7 @@ Vec8 S4FRTMITC::generalized_resultant_at(const Field&        displacement,
     }
     return resultant_stiffness() * eps;
 }
+
 
 
 Mat3 S4FRTMITC::current_output_basis(const CurrentState& state,
@@ -1884,11 +1772,11 @@ Precision S4FRTMITC::drill_stiffness_per_node(const Mat8& H) const {
 
 void S4FRTMITC::add_drill_stiffness(Mat24&              stiffness_matrix,
                          const Mat8&         H) const {
-    const ElementBasis& basis = reference_data().basis;
+    const auto& ref = reference_data();
     const Precision kd = drill_stiffness_per_node(H);
 
     for (Index i = 0; i < num_nodes; ++i) {
-        const Vec3 d0    = basis.d0.row(i).transpose();
+        const Vec3 d0    = ref.d0.row(i).transpose();
         const Mat3 block = kd * (d0 * d0.transpose());
 
         stiffness_matrix.template block<3, 3>(
@@ -1902,11 +1790,11 @@ void S4FRTMITC::add_drill_stiffness(Mat24&              stiffness_matrix,
 void S4FRTMITC::add_drill_force(Vec24&              internal_force,
                      const CurrentState& state,
                      const Mat8&         H) const {
-    const ElementBasis& basis = reference_data().basis;
+    const auto& ref = reference_data();
     const Precision kd = drill_stiffness_per_node(H);
 
     for (Index i = 0; i < num_nodes; ++i) {
-        const Vec3 d0              = basis.d0.row(i).transpose();
+        const Vec3 d0              = ref.d0.row(i).transpose();
         const Vec3 rotation_vector = state.theta.row(i).transpose();
         const Precision drill      = rotation_vector.dot(d0);
 
@@ -1916,13 +1804,20 @@ void S4FRTMITC::add_drill_force(Vec24&              internal_force,
     }
 }
 MapMatrix S4FRTMITC::stiffness(Precision* buffer) {
-    const CurrentState state = current_state();
-    const Mat8         H     = resultant_stiffness();
+    const CurrentState   state = current_state();
+    const EvaluationData data  = init_evaluation(
+        state,
+        true,
+        true,
+        false,
+        false,
+        true
+    );
 
     Mat24 Kmat;
-    material_stiffness(state, H, Kmat);
+    assemble_material_stiffness(data, Kmat);
 
-    add_drill_stiffness(Kmat, H);
+    add_drill_stiffness(Kmat, data.H);
     Kmat = Precision(0.5) * (Kmat + Kmat.transpose());
 
     MapMatrix mapped(buffer, num_dofs, num_dofs);
@@ -1931,46 +1826,25 @@ MapMatrix S4FRTMITC::stiffness(Precision* buffer) {
 }
 
 
-
-MapMatrix S4FRTMITC::stiffness_geom(Precision*   buffer,
-                         const Field& ip_stress,
-                         int          ip_start_idx) {
-    logging::error(
-        ip_stress.components >= num_strains,
-        "S4FRTMITC: geometric stiffness requires eight shell resultants "
-        "[N11,N22,N12,M11,M22,M12,Q13,Q23]"
-    );
-
+MapMatrix S4FRTMITC::stiffness_geom(
+    Precision*   buffer,
+    const Field& ip_stress,
+    int          ip_start_idx
+) {
     const CurrentState   state = current_state();
-    const EvaluationData data  = create_evaluation_data(
+    const EvaluationData data  = init_evaluation(
         state,
-        EvaluationLevel::StrainBG
+        false,
+        false,
+        true,
+        true,
+        false,
+        &ip_stress,
+        ip_start_idx
     );
 
     Mat24 geometric_stiffness;
-    geometric_stiffness.setZero();
-
-    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-        const auto&      point  = reference_data().integration_points[ip];
-        const StrainData strain = strain_B_G_at(data, point);
-        const Precision  factor = point.w * strain.detJ;
-        const Index      row    = static_cast<Index>(ip_start_idx) + ip;
-
-        Vec8 resultants;
-        for (Index a = 0; a < num_strains; ++a) {
-            resultants(a) = ip_stress(row, a);
-        }
-
-        // Rao's finite-rotation tangent contracts the complete generalized
-        // resultant vector with the second strain variation. Consequently,
-        // membrane, bending and transverse-shear contributions all enter.
-        for (Index a = 0; a < num_strains; ++a) {
-            geometric_stiffness += factor * resultants(a) * strain.G[a];
-        }
-    }
-
-    geometric_stiffness = Precision(0.5)
-                        * (geometric_stiffness + geometric_stiffness.transpose());
+    assemble_geometric_stiffness(data, geometric_stiffness);
 
     MapMatrix mapped(buffer, num_dofs, num_dofs);
     mapped = geometric_stiffness;
@@ -1978,29 +1852,33 @@ MapMatrix S4FRTMITC::stiffness_geom(Precision*   buffer,
 }
 
 
-MapMatrix S4FRTMITC::stiffness_tangent(Precision* buffer,
-                                       NodeData& nodal_forces,
-                                       const Field& displacement) {
-    const CurrentState state = current_state_from_displacement(displacement);
-    const Mat8         H     = resultant_stiffness();
+MapMatrix S4FRTMITC::stiffness_tangent(
+    Precision*   buffer,
+    NodeData&    nodal_forces,
+    const Field& displacement
+) {
+    const CurrentState   state = current_state_from_displacement(displacement);
+    const EvaluationData data  = init_evaluation(
+        state,
+        true,
+        true,
+        true,
+        true,
+        true
+    );
 
-    Mat24 tangent;
     Mat24 material_stiffness;
     Mat24 geometric_stiffness;
     Vec24 internal_force;
 
-    material_and_geometric_stiffness(
-        state,
-        H,
-        material_stiffness,
-        geometric_stiffness,
-        &internal_force
-    );
+    assemble_material_stiffness  (data, material_stiffness);
+    assemble_geometric_stiffness (data, geometric_stiffness);
+    assemble_internal_force      (data, internal_force);
 
-    tangent = material_stiffness + geometric_stiffness;
+    Mat24 tangent = material_stiffness + geometric_stiffness;
 
-    add_drill_stiffness(tangent, H);
-    add_drill_force(internal_force, state, H);
+    add_drill_stiffness(tangent, data.H);
+    add_drill_force(internal_force, state, data.H);
 
     tangent = Precision(0.5) * (tangent + tangent.transpose());
 
@@ -2018,49 +1896,37 @@ MapMatrix S4FRTMITC::stiffness_tangent(Precision* buffer,
 }
 
 
-void S4FRTMITC::compute_internal_force_nonlinear(Field&       node_forces,
-                                      const Field& ip_stress,
-                                      int          ip_offset) {
-    logging::error(
-        ip_stress.components >= num_strains,
-        "S4FRTMITC: internal force requires eight shell resultants "
-        "[N11,N22,N12,M11,M22,M12,Q13,Q23]"
-    );
-
+void S4FRTMITC::compute_internal_force_nonlinear(
+    Field&       node_forces,
+    const Field& ip_stress,
+    int          ip_offset
+) {
     const CurrentState   state = current_state();
-    const EvaluationData data = create_evaluation_data(
+    const EvaluationData data  = init_evaluation(
         state,
-        EvaluationLevel::StrainB
+        false,
+        true,
+        false,
+        true,
+        false,
+        &ip_stress,
+        ip_offset
     );
-    const Mat8           H     = resultant_stiffness();
 
-    Vec24 internal_force = Vec24::Zero();
+    Vec24 internal_force;
+    assemble_internal_force(data, internal_force);
 
-    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-        const auto&      point  = reference_data().integration_points[ip];
-        const StrainBData strain = strain_B_at(data, point);
-        const Precision  factor = point.w * strain.detJ;
-        const Index      row    = static_cast<Index>(ip_offset) + ip;
-
-        Vec8 resultants;
-        for (Index a = 0; a < num_strains; ++a) {
-            resultants(a) = ip_stress(row, a);
-        }
-
-        internal_force += factor * (strain.B.transpose() * resultants);
-    }
-
-    add_drill_force(internal_force, state, H);
+    add_drill_force(internal_force, state, data.H);
 
     for (Index a = 0; a < num_nodes; ++a) {
         const Index node_id = static_cast<Index>(this->node_ids[a]);
 
         for (Index d = 0; d < dofs_per_node; ++d) {
-            node_forces(node_id, d) +=
-                internal_force(dofs_per_node * a + d);
+            node_forces(node_id, d) += internal_force(dofs_per_node * a + d);
         }
     }
 }
+
 
 
 void S4FRTMITC::compute_stress_strain(Field*           strain,
@@ -2105,54 +1971,48 @@ void S4FRTMITC::compute_stress_strain(Field*           strain,
         }
     }
 }
-void S4FRTMITC::compute_stress_state(Field&       stress_state,
-                          const Field& displacement,
-                          int          offset,
-                          bool         use_green_lagrange_nl) {
+void S4FRTMITC::compute_stress_state(
+    Field&       stress_state,
+    const Field& displacement,
+    int          offset,
+    bool         use_green_lagrange_nl
+) {
     logging::error(stress_state.components >= num_strains,
                    "S4FRTMITC: stress state requires at least eight components "
                    "[N11,N22,N12,M11,M22,M12,Q13,Q23]");
 
-    const Mat8 H = resultant_stiffness();
-
     if (use_green_lagrange_nl) {
-        const CurrentState state = current_state_from_displacement(displacement);
-        const EvaluationData data = create_evaluation_data(
+        const CurrentState   state = current_state_from_displacement(displacement);
+        const EvaluationData data  = init_evaluation(
             state,
-            EvaluationLevel::Strain
+            true,
+            false,
+            false,
+            true,
+            true
         );
 
-        StaticVector<eas_parameters> alpha;
-        alpha.setZero();
-        if constexpr (eas_parameters > 0) {
-            alpha = compute_eas_alpha(state, H);
-        }
-
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-            const auto&           point = reference_data().integration_points[ip];
-            const StrainValueData sd    = strain_at(data, point);
-            Vec8                  eps   = sd.strain;
-
-            if constexpr (eas_parameters > 0) {
-                eps += eas_matrix(point.r, point.s) * alpha;
-            }
-
-            const Vec8  values = H * eps;
-            const Index row    = static_cast<Index>(offset) + ip;
+            const Index row = static_cast<Index>(offset) + ip;
 
             for (Index component = 0; component < stress_state.components; ++component) {
-                stress_state(row, component) =
-                    component < num_strains ? values(component) : Precision(0);
+                stress_state(row, component) = component < num_strains
+                                             ? data.ip_resultants[ip](component)
+                                             : Precision(0);
             }
         }
-
         return;
     }
 
-    const CurrentState state = reference_state();
-    const EvaluationData data = create_evaluation_data(
+    const Mat8           H     = resultant_stiffness();
+    const CurrentState   state = reference_state();
+    const EvaluationData data  = init_evaluation(
         state,
-        EvaluationLevel::StrainB
+        false,
+        true,
+        false,
+        false,
+        false
     );
     const Vec24 q = element_displacement_vector(displacement);
 
@@ -2162,24 +2022,25 @@ void S4FRTMITC::compute_stress_state(Field&       stress_state,
         alpha = compute_eas_alpha_linear(displacement, H);
     }
 
+    const auto& ref = reference_data();
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
-        const auto&       point = reference_data().integration_points[ip];
-        const StrainBData sd    = strain_B_at(data, point);
-        Vec8              eps   = sd.B * q;
+        Vec8 eps = data.ip_B[ip] * q;
 
         if constexpr (eas_parameters > 0) {
-            eps += eas_matrix(point.r, point.s) * alpha;
+            eps += eas_matrix(ref.r(ip), ref.s(ip)) * alpha;
         }
 
         const Vec8  values = H * eps;
         const Index row    = static_cast<Index>(offset) + ip;
 
         for (Index component = 0; component < stress_state.components; ++component) {
-            stress_state(row, component) =
-                component < num_strains ? values(component) : Precision(0);
+            stress_state(row, component) = component < num_strains
+                                         ? values(component)
+                                         : Precision(0);
         }
     }
 }
+
 
 
 RowMatrix S4FRTMITC::stress_strain_ip_rst() {
@@ -2218,15 +2079,16 @@ StaticMatrix<4, 4> S4FRTMITC::integrate_NNt() const {
     StaticMatrix<4, 4> M;
     M.setZero();
 
-    for (const auto& point : reference_data().integration_points) {
-        M += point.w * point.detJ * (point.N * point.N.transpose());
+    const auto& ref = reference_data();
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        M += ref.w(ip) * ref.detJ(ip) * (ref.N[ip] * ref.N[ip].transpose());
     }
     return M;
 }
 
 
 MapMatrix S4FRTMITC::mass(Precision* buffer) {
-    const ElementBasis& basis = reference_data().basis;
+    const auto& ref = reference_data();
     const Precision    rho   = this->get_density(false);
 
     Mat24 mass_matrix;
@@ -2239,7 +2101,7 @@ MapMatrix S4FRTMITC::mass(Precision* buffer) {
             rho * h * h * h / Precision(12);
         const auto MNN = integrate_NNt();
 
-        const Vec3 d0 = basis.e3;
+        const Vec3 d0 = ref.e3;
         const Mat3 tangent_projector =
             Mat3::Identity() - d0 * d0.transpose();
         const Mat3 drill_projector = d0 * d0.transpose();
@@ -2301,10 +2163,11 @@ Precision S4FRTMITC::integrate_scalar_field(bool scale_by_density, const ScalarF
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
 
+    const auto& ref = reference_data();
     Precision result = Precision(0);
-    for (const auto& point : reference_data().integration_points) {
-        result += field(global_point_current(point.r, point.s))
-                * (rho * h * point.w * point.detJ);
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        result += field(global_point_current(ref.r(ip), ref.s(ip)))
+                * (rho * h * ref.w(ip) * ref.detJ(ip));
     }
     return result;
 }
@@ -2314,10 +2177,11 @@ Vec3 S4FRTMITC::integrate_vector_field(bool scale_by_density, const VecField& fi
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
 
+    const auto& ref = reference_data();
     Vec3 result = Vec3::Zero();
-    for (const auto& point : reference_data().integration_points) {
-        result += field(global_point_current(point.r, point.s))
-                * (rho * h * point.w * point.detJ);
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        result += field(global_point_current(ref.r(ip), ref.s(ip)))
+                * (rho * h * ref.w(ip) * ref.detJ(ip));
     }
     return result;
 }
@@ -2327,14 +2191,15 @@ void S4FRTMITC::integrate_vector_field(Field& node_loads, bool scale_by_density,
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
 
-    for (const auto& point : reference_data().integration_points) {
-        const Vec3 f = field(global_point_current(point.r, point.s))
-                     * (rho * h * point.w * point.detJ);
+    const auto& ref = reference_data();
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        const Vec3 f = field(global_point_current(ref.r(ip), ref.s(ip)))
+                     * (rho * h * ref.w(ip) * ref.detJ(ip));
 
         for (Index i = 0; i < num_nodes; ++i) {
             const Index node_id = static_cast<Index>(this->node_ids[i]);
             for (Index d = 0; d < 3; ++d) {
-                node_loads(node_id, d) += point.N(i) * f(d);
+                node_loads(node_id, d) += ref.N[ip](i) * f(d);
             }
         }
     }
@@ -2345,10 +2210,11 @@ Mat3 S4FRTMITC::integrate_tensor_field(bool scale_by_density, const TenField& fi
     const Precision h   = this->get_section()->thickness_;
     const Precision rho = scale_by_density ? this->get_density(true) : Precision(1);
 
+    const auto& ref = reference_data();
     Mat3 result = Mat3::Zero();
-    for (const auto& point : reference_data().integration_points) {
-        result += field(global_point_current(point.r, point.s))
-                * (rho * h * point.w * point.detJ);
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        result += field(global_point_current(ref.r(ip), ref.s(ip)))
+                * (rho * h * ref.w(ip) * ref.detJ(ip));
     }
     return result;
 }

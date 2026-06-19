@@ -87,14 +87,6 @@ struct S4FRTMITC : ShellElement<4> {
         Mat24     d2    = Mat24::Zero();
     };
 
-    struct ElementBasis {
-        Vec3  e1 = Vec3::Zero();
-        Vec3  e2 = Vec3::Zero();
-        Vec3  e3 = Vec3::Zero();
-        Mat43 d0 = Mat43::Zero();
-        Mat42 xy = Mat42::Zero();
-    };
-
     struct CurrentState {
         Mat43 x     = Mat43::Zero();
         Mat43 d     = Mat43::Zero();
@@ -110,103 +102,146 @@ struct S4FRTMITC : ShellElement<4> {
         Precision b_ss  = Precision(0);
     };
 
-    enum class EvaluationLevel {
-        Strain,
-        StrainB,
-        StrainBG
-    };
-
-    struct StrainValueData {
-        Vec8      strain = Vec8::Zero();
-        Precision detJ   = Precision(0);
-    };
-
-    struct StrainBData {
-        Vec8      strain = Vec8::Zero();
-        Mat8x24   B      = Mat8x24::Zero();
-        Precision detJ   = Precision(0);
-    };
-
-    struct StrainData {
-        Vec8      strain = Vec8::Zero();
-        Mat8x24   B      = Mat8x24::Zero();
-        Vec24Mat  G{};
-        Precision detJ   = Precision(0);
-
-        StrainData() {
-            for (auto& matrix : G) {
-                matrix.setZero();
-            }
-        }
-    };
-
-    struct NaturalShearValueData {
-        Vec2 shear_nat = Vec2::Zero();
-    };
-
-    struct NaturalShearBData {
-        Vec2                      shear_nat = Vec2::Zero();
-        StaticMatrix<2, num_dofs> B_nat     = StaticMatrix<2, num_dofs>::Zero();
-    };
-
-    struct NaturalShearData {
-        Vec2                      shear_nat = Vec2::Zero();
-        StaticMatrix<2, num_dofs> B_nat     = StaticMatrix<2, num_dofs>::Zero();
-        std::array<Mat24, 2>      G_nat{};
-
-        NaturalShearData() {
-            for (auto& matrix : G_nat) {
-                matrix.setZero();
-            }
-        }
-    };
-
-    struct TyingData {
-        NaturalShearData bottom;
-        NaturalShearData top;
-        NaturalShearData left;
-        NaturalShearData right;
-    };
-
     struct EvaluationData {
-        CurrentState                              state;
-        std::array<VectorDerivatives, num_nodes>  x_nodes;
-        std::array<VectorDerivatives, num_nodes>  d_nodes;
-        TyingData                                 tying;
-    };
+        // -----------------------------------------------------------------
+        // Requested evaluation content
+        // -----------------------------------------------------------------
 
-    struct ReferencePointData {
-        Precision           r    = Precision(0);
-        Precision           s    = Precision(0);
-        Precision           w    = Precision(0);
-        Precision           detJ = Precision(0);
+        bool with_strain     = false;
+        bool with_B          = false;
+        bool with_G          = false;
+        bool with_resultants = false;
+        bool with_eas        = false;
 
-        StaticVector<4>     N     = StaticVector<4>::Zero();
-        StaticMatrix<4, 2>  dN_rs = StaticMatrix<4, 2>::Zero();
+        // -----------------------------------------------------------------
+        // Current nodal state and derivative data
+        // -----------------------------------------------------------------
 
-        StaticVector<4>     dN_da = StaticVector<4>::Zero();
-        StaticVector<4>     dN_db = StaticVector<4>::Zero();
+        CurrentState                             state;
+        std::array<VectorDerivatives, num_nodes> x_nodes;
+        std::array<VectorDerivatives, num_nodes> d_nodes;
 
-        Mat2                A     = Mat2::Zero();
-        Mat2                invA  = Mat2::Zero();
+        // -----------------------------------------------------------------
+        // Generalized shell stiffness/resultants
+        // -----------------------------------------------------------------
 
-        Vec3                X_a   = Vec3::Zero();
-        Vec3                X_b   = Vec3::Zero();
-        Vec3                X_xi  = Vec3::Zero();
-        Vec3                X_eta = Vec3::Zero();
-        Vec3                D     = Vec3::Zero();
-        Vec3                D_a   = Vec3::Zero();
-        Vec3                D_b   = Vec3::Zero();
+        Mat8 H = Mat8::Zero();
+
+        // -----------------------------------------------------------------
+        // MITC4 tying data
+        //
+        // Index convention:
+        //   0 : bottom tying point, r =  0, s = -1
+        //   1 : top    tying point, r =  0, s =  1
+        //   2 : left   tying point, r = -1, s =  0
+        //   3 : right  tying point, r =  1, s =  0
+        // -----------------------------------------------------------------
+
+        std::array<Vec2,                      4> tying_shear_nat;
+        std::array<StaticMatrix<2, num_dofs>, 4> tying_B_nat;
+        std::array<std::array<Mat24, 2>,      4> tying_G_nat;
+
+        // -----------------------------------------------------------------
+        // Integration point data
+        //
+        // Index convention:
+        //   0..3 : Gauss integration points.
+        //
+        // ip_strain:
+        //   [eps11, eps22, gamma12, kappa11, kappa22, kappa12,
+        //    gamma13, gamma23]
+        //
+        // ip_resultants:
+        //   [N11, N22, N12, M11, M22, M12, Q13, Q23]
+        // -----------------------------------------------------------------
+
+        std::array<Vec8,      4> ip_strain;
+        std::array<Mat8x24,   4> ip_B;
+        std::array<Vec24Mat,  4> ip_G;
+        std::array<Vec8,      4> ip_resultants;
+        std::array<Precision, 4> ip_weight;
+
+        // -----------------------------------------------------------------
+        // EAS condensation data
+        // -----------------------------------------------------------------
+
+        StaticMatrix<eas_parameters, eas_parameters> eas_Kaa;
+        StaticMatrix<eas_parameters, num_dofs>       eas_Jb;
+        StaticVector<eas_parameters>                 eas_ba;
+        StaticVector<eas_parameters>                 eas_alpha;
+
+        // -----------------------------------------------------------------
+        // Drill stabilization
+        // -----------------------------------------------------------------
+
+        Precision drill_k = Precision(0);
+
+        EvaluationData();
     };
 
     struct ReferenceData {
-        Mat43        X     = Mat43::Zero();
-        ElementBasis basis;
+        // -----------------------------------------------------------------
+        // Reference nodal geometry
+        // -----------------------------------------------------------------
 
-        std::array<ReferencePointData, 4> integration_points;
-        std::array<ReferencePointData, 4> tying_points;
+        Mat43 X  = Mat43::Zero();
+        Mat43 d0 = Mat43::Zero();
+        Mat42 xy = Mat42::Zero();
+
+        Vec3 e1 = Vec3::Zero();
+        Vec3 e2 = Vec3::Zero();
+        Vec3 e3 = Vec3::Zero();
 
         Precision area = Precision(0);
+
+        // -----------------------------------------------------------------
+        // Reference point indexing
+        //
+        //   0..3 : Gauss integration points
+        //   4    : bottom tying point, r =  0, s = -1
+        //   5    : top    tying point, r =  0, s =  1
+        //   6    : left   tying point, r = -1, s =  0
+        //   7    : right  tying point, r =  1, s =  0
+        //
+        // A temporary ReferenceData object may also be used with ref_id = 0
+        // for arbitrary output points that are not part of the cached eight
+        // points above.
+        // -----------------------------------------------------------------
+
+        static constexpr Index num_integration_points = 4;
+        static constexpr Index num_tying_points       = 4;
+        static constexpr Index tying_start            = num_integration_points;
+        static constexpr Index num_ref_points         = num_integration_points
+                                                       + num_tying_points;
+
+        StaticVector<num_ref_points> r    = StaticVector<num_ref_points>::Zero();
+        StaticVector<num_ref_points> s    = StaticVector<num_ref_points>::Zero();
+        StaticVector<num_ref_points> w    = StaticVector<num_ref_points>::Zero();
+        StaticVector<num_ref_points> detJ = StaticVector<num_ref_points>::Zero();
+
+        std::array<StaticVector<4>,    num_ref_points> N{};
+        std::array<StaticMatrix<4, 2>, num_ref_points> dN_rs{};
+
+        std::array<StaticVector<4>, num_ref_points> dN_da{};
+        std::array<StaticVector<4>, num_ref_points> dN_db{};
+
+        std::array<Mat2, num_ref_points> A{};
+        std::array<Mat2, num_ref_points> invA{};
+
+        // -----------------------------------------------------------------
+        // Reference midsurface/director derivatives at all reference points
+        // -----------------------------------------------------------------
+
+        std::array<Vec3, num_ref_points> X_a{};
+        std::array<Vec3, num_ref_points> X_b{};
+        std::array<Vec3, num_ref_points> X_xi{};
+        std::array<Vec3, num_ref_points> X_eta{};
+
+        std::array<Vec3, num_ref_points> D{};
+        std::array<Vec3, num_ref_points> D_a{};
+        std::array<Vec3, num_ref_points> D_b{};
+
+        ReferenceData();
     };
 
     Surface4                        geometry;
@@ -221,8 +256,8 @@ struct S4FRTMITC : ShellElement<4> {
     void step_end  () override;
 
     Mat43              init_ref_node_coords() const;
-    ElementBasis       init_reference_basis(const Mat43& X) const;
-    ReferencePointData init_ref_point_data (Precision r, Precision s, Precision w) const;
+    void init_reference_basis(ReferenceData& data) const;
+    void init_ref_point_data(ReferenceData& data, Index ref_id, Precision r, Precision s, Precision w) const;
     std::string type_name() const override;
 
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
@@ -272,8 +307,7 @@ struct S4FRTMITC : ShellElement<4> {
     const ReferenceData& reference_data() const;
 
 
-    const ReferencePointData* cached_reference_point(Precision r,
-                                                     Precision s) const;
+    int cached_reference_point_id(Precision r, Precision s) const;
 
     CurrentState current_state() const;
 
@@ -298,9 +332,16 @@ struct S4FRTMITC : ShellElement<4> {
         const CurrentState& state,
         bool                with_second_derivatives = true) const;
 
-    EvaluationData create_evaluation_data(
+    EvaluationData init_evaluation(
         const CurrentState& state,
-        EvaluationLevel     level = EvaluationLevel::StrainBG) const;
+        bool                with_strain,
+        bool                with_B,
+        bool                with_G,
+        bool                with_resultants,
+        bool                with_eas,
+        const Field*        ip_stress    = nullptr,
+        int                 ip_start_idx = 0
+    ) const;
 
     void reference_fields(const StaticVector<4>& N,
                           const StaticVector<4>& dN_da,
@@ -311,95 +352,70 @@ struct S4FRTMITC : ShellElement<4> {
                           Vec3& D_a,
                           Vec3& D_b) const;
 
-    StrainValueData raw_strain_at(const EvaluationData&     data,
-                                  const ReferencePointData& point) const;
+    void compute_raw_strain(
+        const EvaluationData& data,
+        const ReferenceData&  ref,
+        Index                 ref_id,
+        Vec8&                 strain,
+        Mat8x24*                  B = nullptr,
+        Vec24Mat*                 G = nullptr
+    ) const;
 
-    StrainValueData raw_strain_at(const EvaluationData& data,
-                                  Precision             r,
-                                  Precision             s) const;
+    void compute_natural_shear(
+        const EvaluationData&      data,
+        const ReferenceData&       ref,
+        Index                      ref_id,
+        Vec2&                      shear_nat,
+        StaticMatrix<2, num_dofs>*       B_nat = nullptr,
+        std::array<Mat24, 2>*            G_nat = nullptr
+    ) const;
 
-    StrainBData raw_strain_B_at(const EvaluationData&     data,
-                                const ReferencePointData& point) const;
+    void compute_mitc4_shear(
+        const EvaluationData&      data,
+        const ReferenceData&       ref,
+        Index                      ref_id,
+        Vec2&                      shear,
+        StaticMatrix<2, num_dofs>*       B_shear = nullptr,
+        std::array<Mat24, 2>*            G_shear = nullptr
+    ) const;
 
-    StrainBData raw_strain_B_at(const EvaluationData& data,
-                                Precision             r,
-                                Precision             s) const;
+    void evaluate_tying_point(
+        EvaluationData&      data,
+        Index                tying_id,
+        const ReferenceData& ref,
+        Index                ref_id
+    ) const;
 
-    StrainData raw_strain_B_G_at(const EvaluationData&     data,
-                                 const ReferencePointData& point) const;
+    void evaluate_integration_point(
+        EvaluationData&      data,
+        Index                ip,
+        const ReferenceData& ref,
+        Index                ref_id
+    ) const;
 
-    StrainData raw_strain_B_G_at(const EvaluationData& data,
-                                 Precision             r,
-                                 Precision             s) const;
+    void load_ip_resultants(
+        EvaluationData& data,
+        const Field&    ip_stress,
+        int             ip_start_idx
+    ) const;
 
-    NaturalShearValueData raw_natural_shear_at(const EvaluationData&     data,
-                                               const ReferencePointData& point) const;
+    void compute_eas_data(EvaluationData& data) const;
+    void compute_material_resultants(EvaluationData& data) const;
 
-    NaturalShearValueData raw_natural_shear_at(const EvaluationData& data,
-                                               Precision             r,
-                                               Precision             s) const;
+    void assemble_material_stiffness(
+        const EvaluationData& data,
+        Mat24&                Kmat
+    ) const;
 
-    NaturalShearBData raw_natural_shear_B_at(const EvaluationData&     data,
-                                             const ReferencePointData& point) const;
+    void assemble_geometric_stiffness(
+        const EvaluationData& data,
+        Mat24&                Kgeo
+    ) const;
 
-    NaturalShearBData raw_natural_shear_B_at(const EvaluationData& data,
-                                             Precision             r,
-                                             Precision             s) const;
-
-    NaturalShearData raw_natural_shear_B_G_at(const EvaluationData&     data,
-                                              const ReferencePointData& point) const;
-
-    NaturalShearData raw_natural_shear_B_G_at(const EvaluationData& data,
-                                              Precision             r,
-                                              Precision             s) const;
-
-    void mitc4_shear_at(const EvaluationData&     data,
-                        const ReferencePointData& point,
-                        Vec2&                     shear) const;
-
-    void mitc4_shear_B_at(const EvaluationData&      data,
-                          const ReferencePointData&  point,
-                          Vec2&                      shear,
-                          StaticMatrix<2, num_dofs>& B_shear) const;
-
-    void mitc4_shear_B_G_at(const EvaluationData&      data,
-                            const ReferencePointData&  point,
-                            Vec2&                      shear,
-                            StaticMatrix<2, num_dofs>& B_shear,
-                            std::array<Mat24, 2>&      G_shear) const;
-
-    StrainValueData strain_at(const EvaluationData&     data,
-                              const ReferencePointData& point) const;
-
-    StrainValueData strain_at(const EvaluationData& data,
-                              Precision             r,
-                              Precision             s) const;
-
-    StrainValueData strain_at(const CurrentState& state,
-                              Precision           r,
-                              Precision           s) const;
-
-    StrainBData strain_B_at(const EvaluationData&     data,
-                            const ReferencePointData& point) const;
-
-    StrainBData strain_B_at(const EvaluationData& data,
-                            Precision             r,
-                            Precision             s) const;
-
-    StrainBData strain_B_at(const CurrentState& state,
-                            Precision           r,
-                            Precision           s) const;
-
-    StrainData strain_B_G_at(const EvaluationData&     data,
-                             const ReferencePointData& point) const;
-
-    StrainData strain_B_G_at(const EvaluationData& data,
-                             Precision             r,
-                             Precision             s) const;
-
-    StrainData strain_B_G_at(const CurrentState& state,
-                             Precision           r,
-                             Precision           s) const;
+    void assemble_internal_force(
+        const EvaluationData& data,
+        Vec24&                internal_force
+    ) const;
 
     // ---------------------------------------------------------------------
     // Material/resultant matrices and EAS
@@ -409,28 +425,15 @@ struct S4FRTMITC : ShellElement<4> {
 
     StaticMatrix<num_strains, eas_parameters> eas_matrix(Precision r, Precision s) const;
 
-    StaticVector<eas_parameters> compute_eas_alpha(const CurrentState& state,
-                                                   const Mat8&         H) const;
-
-    void material_stiffness(const CurrentState& state,
-                            const Mat8&         H,
-                            Mat24&              Kmat) const;
-
-    void material_and_geometric_stiffness(const CurrentState& state,
-                                          const Mat8&         H,
-                                          Mat24&              Kmat,
-                                          Mat24&              Kgeo,
-                                          Vec24*              force = nullptr) const;
-
-    Vec8 shell_resultant_at(const CurrentState& state,
-                            const Mat8&         H,
-                            Precision           r,
-                            Precision           s,
-                            Vec8*               strain_out = nullptr) const;
+    StaticVector<eas_parameters> compute_eas_alpha(
+        const CurrentState& state,
+        const Mat8&         H
+    ) const;
 
     StaticVector<eas_parameters> compute_eas_alpha_linear(
-        const Field&        displacement,
-        const Mat8&         H) const;
+        const Field& displacement,
+        const Mat8&  H
+    ) const;
 
     Vec8 generalized_strain_at(const Field&        displacement,
                                Precision           r,
