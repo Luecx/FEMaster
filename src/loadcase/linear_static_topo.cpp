@@ -119,6 +119,7 @@ void LinearStaticTopo::run() {
     // assign the model stiffness and
     model->_data->element_stiffness_scale = stiffness;
     model->_data->material_orientation    = orientation;
+    StepScope step_scope(*this);
 
     // (1) Unconstrained DOF indexing (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(

@@ -227,6 +227,7 @@ void LinearEigenfrequency::run() {
 
     // (0) Sections/materials
     model->assign_sections();
+    StepScope step_scope(*this);
 
     // (1) Unconstrained system DOF indices (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(

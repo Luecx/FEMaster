@@ -37,6 +37,10 @@ struct StructuralElement : ElementInterface {
     virtual RowMatrix stress_strain_nodal_rst() { return RowMatrix(0, 3); }
     virtual RowMatrix stress_strain_ip_rst() { return RowMatrix(0, 3); }
 
+    // Some elements precompute step-local data and free it after the load case.
+    virtual void step_begin() {}
+    virtual void step_end()   {}
+
     // Field functors for volume/surface integrations (aliased to central types)
     using ScalarField = ::fem::ScalarField;
     using VecField    = ::fem::VecField;

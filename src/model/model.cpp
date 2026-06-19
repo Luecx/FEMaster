@@ -12,6 +12,31 @@
 
 namespace fem {
 namespace model {
+void Model::step_begin() {
+    try {
+        for (auto& elem : _data->elements) {
+            if (elem != nullptr) {
+                if (auto* structural = elem->as<StructuralElement>()) {
+                    structural->step_begin();
+                }
+            }
+        }
+    } catch (...) {
+        step_end();
+        throw;
+    }
+}
+
+void Model::step_end() {
+    for (auto& elem : _data->elements) {
+        if (elem != nullptr) {
+            if (auto* structural = elem->as<StructuralElement>()) {
+                structural->step_end();
+            }
+        }
+    }
+}
+
 void Model::add_connector(const std::string& set1,
                           const std::string& set2,
                           const std::string& coordinate_system,

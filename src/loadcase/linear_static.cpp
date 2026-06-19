@@ -61,6 +61,7 @@ void LinearStatic::run() {
     logging::info(true, "");
 
     model->assign_sections();
+    StepScope step_scope(*this);
 
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },

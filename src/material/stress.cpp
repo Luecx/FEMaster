@@ -54,7 +54,8 @@ Stress Stress::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return Stress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
+    const Vec6 transformed = Stress::get_transformation_matrix(from_basis, to_basis) * voigt_;
+    return Stress(transformed);
 }
 
 /**
@@ -117,7 +118,8 @@ CauchyStress CauchyStress::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return CauchyStress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
+    const Vec6 transformed = Stress::get_transformation_matrix(from_basis, to_basis) * voigt_;
+    return CauchyStress(transformed);
 }
 
 PK2Stress::PK2Stress(const Vec6& voigt)
@@ -130,14 +132,15 @@ PK2Stress PK2Stress::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return PK2Stress{Stress::get_transformation_matrix(from_basis, to_basis) * voigt_};
+    const Vec6 transformed = Stress::get_transformation_matrix(from_basis, to_basis) * voigt_;
+    return PK2Stress(transformed);
 }
 
 CauchyStress PK2Stress::to_cauchy(const Mat3& deformation_gradient) const {
     const Precision J = deformation_gradient.determinant();
-    return CauchyStress{
-        (deformation_gradient * tensor() * deformation_gradient.transpose()) / J
-    };
+    const Mat3 cauchy_tensor =
+        (deformation_gradient * tensor() * deformation_gradient.transpose()) / J;
+    return CauchyStress(cauchy_tensor);
 }
 
 } // namespace fem

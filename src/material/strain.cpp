@@ -78,7 +78,8 @@ Strain Strain::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return Strain{Strain::get_transformation_matrix(from_basis, to_basis) * voigt_};
+    const Vec6 transformed = Strain::get_transformation_matrix(from_basis, to_basis) * voigt_;
+    return Strain(transformed);
 }
 
 Mat6 Strain::get_transformation_matrix(
@@ -130,7 +131,8 @@ LinearizedStrain LinearizedStrain::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return LinearizedStrain{Strain::get_transformation_matrix(from_basis, to_basis) * voigt_};
+    const Vec6 transformed = Strain::get_transformation_matrix(from_basis, to_basis) * voigt_;
+    return LinearizedStrain(transformed);
 }
 
 GreenLagrangeStrain::GreenLagrangeStrain(const Vec6& voigt)
@@ -143,15 +145,15 @@ GreenLagrangeStrain GreenLagrangeStrain::transformed(
     const cos::Basis& from_basis,
     const cos::Basis& to_basis
 ) const {
-    return GreenLagrangeStrain{Strain::get_transformation_matrix(from_basis, to_basis) * voigt_};
+    const Vec6 transformed = Strain::get_transformation_matrix(from_basis, to_basis) * voigt_;
+    return GreenLagrangeStrain(transformed);
 }
 
 GreenLagrangeStrain GreenLagrangeStrain::from_deformation_gradient(
     const Mat3& deformation_gradient
 ) {
-    return GreenLagrangeStrain{
-        Precision(0.5)
-        * (deformation_gradient.transpose() * deformation_gradient - Mat3::Identity())
-    };
+    const Mat3 strain_tensor = Precision(0.5)
+        * (deformation_gradient.transpose() * deformation_gradient - Mat3::Identity());
+    return GreenLagrangeStrain(strain_tensor);
 }
 } // namespace fem

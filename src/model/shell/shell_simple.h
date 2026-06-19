@@ -943,7 +943,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         const Mat3 element_basis = this->element_basis_global(axes);
 
-        return Stress{res_element}.transformed(element_basis, this->global_basis());
+        return Stress(res_element).transformed(element_basis, this->global_basis());
     }
 
     bool compute_shell_section_forces(Field& resultants,

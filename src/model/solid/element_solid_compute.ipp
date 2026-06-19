@@ -63,9 +63,9 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
 
         const GreenLagrangeStrain green_lagrange =
             GreenLagrangeStrain::from_deformation_gradient(F);
-        const PK2Stress second_pk{
-            material_tangent_reference(r, s, t) * green_lagrange.voigt()
-        };
+        const Vec6 second_pk_voigt =
+            material_tangent_reference(r, s, t) * green_lagrange.voigt();
+        const PK2Stress second_pk(second_pk_voigt);
         const CauchyStress cauchy = second_pk.to_cauchy(F);
 
         for (Dim j = 0; j < n_strain; ++j) {

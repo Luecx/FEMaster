@@ -259,6 +259,7 @@ void NonlinearStatic::run() {
                    "NonlinearStatic: positions_reference field not initialized");
 
     *model->_data->positions_reference = reference_positions;
+    StepScope step_scope(*this);
 
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },

@@ -68,6 +68,8 @@ struct S4FRTMITC : ShellElement<4> {
     using Mat42    = StaticMatrix<4, 2>;
     using Vec24Mat = std::array<Mat24, num_strains>;
 
+
+
     struct VectorDerivatives {
         Vec3                        value = Vec3::Zero();
         StaticMatrix<num_dofs, 3>   d1    = StaticMatrix<num_dofs, 3>::Zero();
@@ -122,13 +124,54 @@ struct S4FRTMITC : ShellElement<4> {
         }
     };
 
-    Surface4                 geometry;
-    quadrature::Quadrature   integration_scheme_;
+    struct ReferencePointData {
+        Precision           r    = Precision(0);
+        Precision           s    = Precision(0);
+        Precision           w    = Precision(0);
+        Precision           detJ = Precision(0);
+
+        StaticVector<4>     N     = StaticVector<4>::Zero();
+        StaticMatrix<4, 2>  dN_rs = StaticMatrix<4, 2>::Zero();
+
+        StaticVector<4>     dN_da = StaticVector<4>::Zero();
+        StaticVector<4>     dN_db = StaticVector<4>::Zero();
+
+        Mat2                A     = Mat2::Zero();
+        Mat2                invA  = Mat2::Zero();
+
+        Vec3                X_a   = Vec3::Zero();
+        Vec3                X_b   = Vec3::Zero();
+        Vec3                X_xi  = Vec3::Zero();
+        Vec3                X_eta = Vec3::Zero();
+        Vec3                D     = Vec3::Zero();
+        Vec3                D_a   = Vec3::Zero();
+        Vec3                D_b   = Vec3::Zero();
+    };
+
+    struct ReferenceData {
+        Mat43        X     = Mat43::Zero();
+        ElementBasis basis;
+
+        std::array<ReferencePointData, 4> integration_points;
+        std::array<ReferencePointData, 4> tying_points;
+
+        Precision area = Precision(0);
+    };
+
+    Surface4                        geometry;
+    quadrature::Quadrature          integration_scheme_;
+    std::unique_ptr<ReferenceData>  reference_data_;
 
     S4FRTMITC(ID id, std::array<ID, 4> nodes);
 
     ~S4FRTMITC() override = default;
 
+    void step_begin() override;
+    void step_end  () override;
+
+    Mat43              init_ref_node_coords() const;
+    ElementBasis       init_reference_basis(const Mat43& X) const;
+    ReferencePointData init_ref_point_data (Precision r, Precision s, Precision w) const;
     std::string type_name() const override;
 
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
@@ -144,10 +187,6 @@ struct S4FRTMITC : ShellElement<4> {
     // ---------------------------------------------------------------------
     // Basic vector/tensor helpers
     // ---------------------------------------------------------------------
-
-    static Vec3 normalized(Vec3 v, const std::string& name);
-
-    static Mat3 skew(const Vec3& v);
 
     static RotationCoefficients rotation_coefficients(Precision angle_squared);
 
@@ -171,28 +210,27 @@ struct S4FRTMITC : ShellElement<4> {
     // Reference/current kinematics
     // ---------------------------------------------------------------------
 
-    Mat43 node_coords_reference_xyz() const;
 
     StaticMatrix<4, 6> node_coords_current_6() const;
 
-    ElementBasis reference_basis() const;
+    const ReferenceData& reference_data() const;
 
-    static void compute_local_reference_coordinates(const Mat43& X, ElementBasis& basis);
 
-    CurrentState current_state(const ElementBasis& basis) const;
+    const ReferencePointData* cached_reference_point(Precision r,
+                                                     Precision s) const;
 
-    CurrentState reference_state(const ElementBasis& basis) const;
+    CurrentState current_state() const;
+
+    CurrentState reference_state() const;
 
     CurrentState current_state_from_displacement(
-        const ElementBasis& basis,
         const Field&        displacement) const;
 
     Vec24 element_displacement_vector(const Field& displacement) const;
 
-    static Mat3 reference_basis_global(const ElementBasis& basis);
+    Mat3 reference_basis_global() const;
 
     void shape_gradients_physical(const StaticMatrix<4, 2>& dN_rs,
-                                  const ElementBasis&       basis,
                                   StaticVector<4>&          dN_da,
                                   StaticVector<4>&          dN_db,
                                   Precision&                detJ,
@@ -201,11 +239,9 @@ struct S4FRTMITC : ShellElement<4> {
     std::array<VectorDerivatives, 4> x_derivatives(const CurrentState& state) const;
 
     std::array<VectorDerivatives, 4> director_derivatives(
-        const CurrentState& state,
-        const ElementBasis& basis) const;
+        const CurrentState& state) const;
 
-    void reference_fields(const ElementBasis& basis,
-                          const StaticVector<4>& N,
+    void reference_fields(const StaticVector<4>& N,
                           const StaticVector<4>& dN_da,
                           const StaticVector<4>& dN_db,
                           Vec3& X_a,
@@ -215,12 +251,10 @@ struct S4FRTMITC : ShellElement<4> {
                           Vec3& D_b) const;
 
     StrainData raw_strain_B_G_at(const CurrentState& state,
-                                 const ElementBasis& basis,
                                  Precision           r,
                                  Precision           s) const;
 
     void raw_natural_shear_B_G_at(const CurrentState& state,
-                                  const ElementBasis& basis,
                                   Precision           r,
                                   Precision           s,
                                   Vec2&               shear_nat,
@@ -228,7 +262,6 @@ struct S4FRTMITC : ShellElement<4> {
                                   std::array<Mat24, 2>& G_nat) const;
 
     void mitc4_shear_B_G_at(const CurrentState& state,
-                            const ElementBasis& basis,
                             Precision           r,
                             Precision           s,
                             const Mat2&         A,
@@ -237,7 +270,6 @@ struct S4FRTMITC : ShellElement<4> {
                             std::array<Mat24, 2>& G_shear) const;
 
     StrainData strain_B_G_at(const CurrentState& state,
-                             const ElementBasis& basis,
                              Precision           r,
                              Precision           s) const;
 
@@ -250,18 +282,15 @@ struct S4FRTMITC : ShellElement<4> {
     StaticMatrix<num_strains, eas_parameters> eas_matrix(Precision r, Precision s) const;
 
     StaticVector<eas_parameters> compute_eas_alpha(const CurrentState& state,
-                                                   const ElementBasis& basis,
                                                    const Mat8&         H) const;
 
     void material_and_geometric_stiffness(const CurrentState& state,
-                                            const ElementBasis& basis,
                                             const Mat8&         H,
                                             Mat24&              Kmat,
                                             Mat24&              Kgeo,
                                             Vec24*              force = nullptr) const;
 
     Vec8 shell_resultant_at(const CurrentState& state,
-                            const ElementBasis& basis,
                             const Mat8&         H,
                             Precision           r,
                             Precision           s,
@@ -269,35 +298,29 @@ struct S4FRTMITC : ShellElement<4> {
 
     StaticVector<eas_parameters> compute_eas_alpha_linear(
         const Field&        displacement,
-        const ElementBasis& basis,
         const Mat8&         H) const;
 
     Vec8 generalized_strain_at(const Field&        displacement,
-                               const ElementBasis& basis,
                                Precision           r,
                                Precision           s,
                                bool                nonlinear) const;
 
     Vec8 generalized_resultant_at(const Field&        displacement,
-                                  const ElementBasis& basis,
                                   Precision           r,
                                   Precision           s,
                                   bool                nonlinear,
                                   Vec8*               strain_out = nullptr) const;
 
     Mat3 current_output_basis(const CurrentState& state,
-                              const ElementBasis& basis,
                               Precision           r,
                               Precision           s) const;
 
     Mat3 deformation_gradient_at(const CurrentState& state,
-                                 const ElementBasis& basis,
                                  Precision           r,
                                  Precision           s,
                                  Precision           z) const;
 
     void physical_stress_strain_at(const Field&        displacement,
-                                   const ElementBasis& basis,
                                    Precision           r,
                                    Precision           s,
                                    Precision           zeta,
@@ -309,18 +332,15 @@ struct S4FRTMITC : ShellElement<4> {
     // Drill stabilization and StructuralElement interface
     // ---------------------------------------------------------------------
 
-    Precision reference_area(const ElementBasis& basis) const;
+    Precision reference_area() const;
 
-    Precision drill_stiffness_per_node(const ElementBasis& basis,
-                                       const Mat8&         H) const;
+    Precision drill_stiffness_per_node(const Mat8& H) const;
 
     void add_drill_stiffness(Mat24&              stiffness_matrix,
-                             const ElementBasis& basis,
                              const Mat8&         H) const;
 
     void add_drill_force(Vec24&              internal_force,
                          const CurrentState& state,
-                         const ElementBasis& basis,
                          const Mat8&         H) const;
 
     MapMatrix stiffness(Precision* buffer) override;
@@ -355,7 +375,7 @@ struct S4FRTMITC : ShellElement<4> {
 
     Precision volume() override;
 
-    StaticMatrix<4, 4> integrate_NNt(const ElementBasis& basis) const;
+    StaticMatrix<4, 4> integrate_NNt() const;
 
     MapMatrix mass(Precision* buffer) override;
 
