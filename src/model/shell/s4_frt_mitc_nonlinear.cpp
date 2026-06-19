@@ -1942,7 +1942,7 @@ MapMatrix S4FRTMITC::stiffness_geom(Precision*   buffer,
     );
 
     const CurrentState   state = current_state();
-    const EvaluationData data = create_evaluation_data(
+    const EvaluationData data  = create_evaluation_data(
         state,
         EvaluationLevel::StrainBG
     );
