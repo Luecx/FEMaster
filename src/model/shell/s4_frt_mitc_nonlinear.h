@@ -68,7 +68,6 @@
         using Mat42    = StaticMatrix<4, 2>;
         using Vec24Mat = std::array<Mat24, num_strains>;
 
-
         struct VectorDerivatives {
             Vec3                        value = Vec3::Zero();
             StaticMatrix<num_dofs, 3>   d1    = StaticMatrix<num_dofs, 3>::Zero();
@@ -93,7 +92,7 @@
             Mat43 theta = Mat43::Zero();
         };
 
-    struct EvaluationData {
+        struct EvaluationData {
             // -----------------------------------------------------------------
             // Requested evaluation content
             // -----------------------------------------------------------------
@@ -265,8 +264,8 @@
         // Basic vector/tensor helpers
         // ---------------------------------------------------------------------
 
-    static ScalarDerivatives dot_derivatives(const VectorDerivatives& a,
-                                             const VectorDerivatives& b);
+        static ScalarDerivatives dot_derivatives(const VectorDerivatives& a,
+                                                 const VectorDerivatives& b);
 
         static ScalarDerivatives scaled(const ScalarDerivatives& a, Precision scale);
 
@@ -281,7 +280,6 @@
         StaticMatrix<4, 6> node_coords_current_6() const;
 
         const ReferenceData& reference_data() const;
-
 
         int cached_reference_point_id(Precision r, Precision s) const;
 

@@ -35,6 +35,192 @@ ScalarDerivatives dot_value_B(const VectorDerivatives& a,
     return out;
 }
 
+void add_xx_derivatives(
+    const std::array<VectorDerivatives, S4FRTMITC::num_nodes>& x_nodes,
+    const StaticVector<S4FRTMITC::num_nodes>&                  a_coeffs,
+    const StaticVector<S4FRTMITC::num_nodes>&                  b_coeffs,
+    Precision                                                  scale,
+    Index                                                      strain_id,
+    Vec8&                                                      strain,
+    Mat8x24*                                                   B,
+    Vec24Mat*                                                  G
+) {
+    Vec3 a_value = Vec3::Zero();
+    Vec3 b_value = Vec3::Zero();
+    for (Index node = 0; node < S4FRTMITC::num_nodes; ++node) {
+        a_value += a_coeffs(node) * x_nodes[node].value;
+        b_value += b_coeffs(node) * x_nodes[node].value;
+    }
+
+    strain(strain_id) += scale * a_value.dot(b_value);
+
+    if (B) {
+        for (Index node = 0; node < S4FRTMITC::num_nodes; ++node) {
+            const Index base = S4FRTMITC::dofs_per_node * node;
+            const Vec3 value = scale
+                             * (a_coeffs(node) * b_value
+                              + b_coeffs(node) * a_value);
+
+            B->template block<1, 3>(strain_id, base) += value.transpose();
+        }
+    }
+
+    if (G) {
+        Mat24& hessian = (*G)[strain_id];
+        for (Index i = 0; i < S4FRTMITC::num_nodes; ++i) {
+            const Index row = S4FRTMITC::dofs_per_node * i;
+            for (Index j = 0; j < S4FRTMITC::num_nodes; ++j) {
+                const Index col = S4FRTMITC::dofs_per_node * j;
+                const Precision block_scale = scale
+                    * (a_coeffs(i) * b_coeffs(j)
+                     + b_coeffs(i) * a_coeffs(j));
+
+                if (block_scale != Precision(0)) {
+                    hessian.template block<3, 3>(row, col).diagonal().array() += block_scale;
+                }
+            }
+        }
+    }
+}
+
+void add_xd_derivatives(
+    const std::array<VectorDerivatives, S4FRTMITC::num_nodes>& x_nodes,
+    const std::array<VectorDerivatives, S4FRTMITC::num_nodes>& d_nodes,
+    const StaticVector<S4FRTMITC::num_nodes>&                  x_coeffs,
+    const StaticVector<S4FRTMITC::num_nodes>&                  d_coeffs,
+    Precision                                                  scale,
+    Index                                                      strain_id,
+    Vec8&                                                      strain,
+    Mat8x24*                                                   B,
+    Vec24Mat*                                                  G
+) {
+    Vec3 x_value = Vec3::Zero();
+    Vec3 d_value = Vec3::Zero();
+    for (Index node = 0; node < S4FRTMITC::num_nodes; ++node) {
+        x_value += x_coeffs(node) * x_nodes[node].value;
+        d_value += d_coeffs(node) * d_nodes[node].value;
+    }
+
+    strain(strain_id) += scale * x_value.dot(d_value);
+
+    if (B) {
+        for (Index x_node = 0; x_node < S4FRTMITC::num_nodes; ++x_node) {
+            const Index x_base = S4FRTMITC::dofs_per_node * x_node;
+            const Vec3 value = scale * x_coeffs(x_node) * d_value;
+            B->template block<1, 3>(strain_id, x_base) += value.transpose();
+        }
+    }
+
+    Mat24* hessian = G ? &(*G)[strain_id] : nullptr;
+
+    for (Index d_node = 0; d_node < S4FRTMITC::num_nodes; ++d_node) {
+        const Index rot_base = S4FRTMITC::dofs_per_node * d_node + 3;
+        const Precision d_coeff = d_coeffs(d_node);
+
+        for (Index a = 0; a < 3; ++a) {
+            const Vec3 director_first =
+                d_nodes[d_node].d1.row(rot_base + a).transpose();
+
+            if (B) {
+                (*B)(strain_id, rot_base + a) +=
+                    scale * d_coeff * director_first.dot(x_value);
+            }
+
+            if (hessian) {
+                for (Index x_node = 0; x_node < S4FRTMITC::num_nodes; ++x_node) {
+                    const Index x_base = S4FRTMITC::dofs_per_node * x_node;
+                    const Vec3 mixed =
+                        scale * x_coeffs(x_node) * d_coeff * director_first;
+
+                    hessian->template block<3, 1>(x_base, rot_base + a) += mixed;
+                    hessian->template block<1, 3>(rot_base + a, x_base) += mixed.transpose();
+                }
+            }
+        }
+
+        if (hessian) {
+            for (Index a = 0; a < 3; ++a) {
+                for (Index b = 0; b < 3; ++b) {
+                    Precision second = Precision(0);
+                    for (Index c = 0; c < 3; ++c) {
+                        second += x_value(c)
+                                * d_nodes[d_node].d2[c](rot_base + a, rot_base + b);
+                    }
+                    (*hessian)(rot_base + a, rot_base + b) += scale * d_coeff * second;
+                }
+            }
+        }
+    }
+}
+
+void add_xd_shear_derivatives(
+    const std::array<VectorDerivatives, S4FRTMITC::num_nodes>& x_nodes,
+    const std::array<VectorDerivatives, S4FRTMITC::num_nodes>& d_nodes,
+    const StaticVector<S4FRTMITC::num_nodes>&                  x_coeffs,
+    const StaticVector<S4FRTMITC::num_nodes>&                  d_coeffs,
+    Index                                                      shear_id,
+    Vec2&                                                      shear_nat,
+    StaticMatrix<2, S4FRTMITC::num_dofs>*                      B_nat,
+    std::array<Mat24, 2>*                                      G_nat
+) {
+    Vec3 x_value = Vec3::Zero();
+    Vec3 d_value = Vec3::Zero();
+    for (Index node = 0; node < S4FRTMITC::num_nodes; ++node) {
+        x_value += x_coeffs(node) * x_nodes[node].value;
+        d_value += d_coeffs(node) * d_nodes[node].value;
+    }
+
+    shear_nat(shear_id) += x_value.dot(d_value);
+
+    if (B_nat) {
+        for (Index x_node = 0; x_node < S4FRTMITC::num_nodes; ++x_node) {
+            const Index x_base = S4FRTMITC::dofs_per_node * x_node;
+            const Vec3 value = x_coeffs(x_node) * d_value;
+            B_nat->template block<1, 3>(shear_id, x_base) += value.transpose();
+        }
+    }
+
+    Mat24* hessian = G_nat ? &(*G_nat)[shear_id] : nullptr;
+
+    for (Index d_node = 0; d_node < S4FRTMITC::num_nodes; ++d_node) {
+        const Index rot_base = S4FRTMITC::dofs_per_node * d_node + 3;
+        const Precision d_coeff = d_coeffs(d_node);
+
+        for (Index a = 0; a < 3; ++a) {
+            const Vec3 director_first =
+                d_nodes[d_node].d1.row(rot_base + a).transpose();
+
+            if (B_nat) {
+                (*B_nat)(shear_id, rot_base + a) +=
+                    d_coeff * director_first.dot(x_value);
+            }
+
+            if (hessian) {
+                for (Index x_node = 0; x_node < S4FRTMITC::num_nodes; ++x_node) {
+                    const Index x_base = S4FRTMITC::dofs_per_node * x_node;
+                    const Vec3 mixed = x_coeffs(x_node) * d_coeff * director_first;
+
+                    hessian->template block<3, 1>(x_base, rot_base + a) += mixed;
+                    hessian->template block<1, 3>(rot_base + a, x_base) += mixed.transpose();
+                }
+            }
+        }
+
+        if (hessian) {
+            for (Index a = 0; a < 3; ++a) {
+                for (Index b = 0; b < 3; ++b) {
+                    Precision second = Precision(0);
+                    for (Index c = 0; c < 3; ++c) {
+                        second += x_value(c)
+                                * d_nodes[d_node].d2[c](rot_base + a, rot_base + b);
+                    }
+                    (*hessian)(rot_base + a, rot_base + b) += d_coeff * second;
+                }
+            }
+        }
+    }
+}
+
 
 } // namespace
 
@@ -218,19 +404,12 @@ ScalarDerivatives S4FRTMITC::dot_derivatives(const VectorDerivatives& a,
     ScalarDerivatives out;
     out.value = a.value.dot(b.value);
     out.d1    = a.d1 * b.value + b.d1 * a.value;
-    out.d2.setZero();
+    out.d2.noalias() = a.d1 * b.d1.transpose();
+    out.d2.noalias() += b.d1 * a.d1.transpose();
 
-    for (Index i = 0; i < num_dofs; ++i) {
-        for (Index j = 0; j < num_dofs; ++j) {
-            Precision v = Precision(0);
-            v += a.d1.row(i).dot(b.d1.row(j));
-            v += a.d1.row(j).dot(b.d1.row(i));
-            for (Index c = 0; c < 3; ++c) {
-                v += a.d2[c](i, j) * b.value(c);
-                v += b.d2[c](i, j) * a.value(c);
-            }
-            out.d2(i, j) = v;
-        }
+    for (Index c = 0; c < 3; ++c) {
+        out.d2.noalias() += b.value(c) * a.d2[c];
+        out.d2.noalias() += a.value(c) * b.d2[c];
     }
     return out;
 }
@@ -701,6 +880,7 @@ EvaluationData S4FRTMITC::init_evaluation(
         for (Index tying = 0; tying < ReferenceData::num_tying_points; ++tying) {
             evaluate_tying_point(data, tying, ref, ReferenceData::tying_start + tying);
         }
+
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
             evaluate_integration_point(data, ip, ref, ip);
         }
@@ -775,10 +955,36 @@ void S4FRTMITC::compute_raw_strain(
         strain(5) = x_a.dot(d_b) + x_b.dot(d_a)
                   - ref.X_a[ref_id].dot(ref.D_b[ref_id])
                   - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
-        strain(6) = x_a.dot(d)
-                  - ref.X_a[ref_id].dot(ref.D[ref_id]);
-        strain(7) = x_b.dot(d)
-                  - ref.X_b[ref_id].dot(ref.D[ref_id]);
+        // we dont need these since mitc overwrites them anyway
+        // strain(6) = x_a.dot(d)
+        //           - ref.X_a[ref_id].dot(ref.D[ref_id]);
+        // strain(7) = x_b.dot(d)
+        //           - ref.X_b[ref_id].dot(ref.D[ref_id]);
+        return;
+    }
+
+    if (with_G) {
+        add_xx_derivatives(data.x_nodes, dN_da, dN_da, Precision(0.5), 0, strain, B, G);
+        add_xx_derivatives(data.x_nodes, dN_db, dN_db, Precision(0.5), 1, strain, B, G);
+        add_xx_derivatives(data.x_nodes, dN_da, dN_db, Precision(1),   2, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, dN_da, Precision(1), 3, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, dN_db, Precision(1), 4, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, dN_db, Precision(1), 5, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, dN_da, Precision(1), 5, strain, B, G);
+        // we dont need these since mitc overwrites them anyway
+        // add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, N,     Precision(1), 6, strain, B, G);
+        // add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, N,     Precision(1), 7, strain, B, G);
+
+        strain(0) -= Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
+        strain(1) -= Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
+        strain(2) -= ref.X_a[ref_id].dot(ref.X_b[ref_id]);
+        strain(3) -= ref.X_a[ref_id].dot(ref.D_a[ref_id]);
+        strain(4) -= ref.X_b[ref_id].dot(ref.D_b[ref_id]);
+        strain(5) -= ref.X_a[ref_id].dot(ref.D_b[ref_id])
+                   + ref.X_b[ref_id].dot(ref.D_a[ref_id]);
+        // we dont need these since mitc overwrites them anyway
+        // strain(6) -= ref.X_a[ref_id].dot(ref.D[ref_id]);
+        // strain(7) -= ref.X_b[ref_id].dot(ref.D[ref_id]);
         return;
     }
 
@@ -790,57 +996,37 @@ void S4FRTMITC::compute_raw_strain(
 
     std::array<ScalarDerivatives, num_strains> items;
 
-    if (with_G) {
-        items[0] = scaled(dot_derivatives(x_a, x_a), Precision(0.5));
-        items[1] = scaled(dot_derivatives(x_b, x_b), Precision(0.5));
-        items[2] = dot_derivatives(x_a, x_b);
-        items[3] = dot_derivatives(x_a, d_a);
-        items[4] = dot_derivatives(x_b, d_b);
+    items[0] = scaled(dot_value_B(x_a, x_a), Precision(0.5));
+    items[1] = scaled(dot_value_B(x_b, x_b), Precision(0.5));
+    items[2] = dot_value_B(x_a, x_b);
+    items[3] = dot_value_B(x_a, d_a);
+    items[4] = dot_value_B(x_b, d_b);
 
-        const ScalarDerivatives xa_db = dot_derivatives(x_a, d_b);
-        const ScalarDerivatives xb_da = dot_derivatives(x_b, d_a);
+    const ScalarDerivatives xa_db = dot_value_B(x_a, d_b);
+    const ScalarDerivatives xb_da = dot_value_B(x_b, d_a);
 
-        items[5].value = xa_db.value + xb_da.value;
-        items[5].d1    = xa_db.d1    + xb_da.d1;
-        items[5].d2    = xa_db.d2    + xb_da.d2;
+    items[5].value = xa_db.value + xb_da.value;
+    items[5].d1    = xa_db.d1    + xb_da.d1;
 
-        items[6] = dot_derivatives(x_a, d);
-        items[7] = dot_derivatives(x_b, d);
-    } else {
-        items[0] = scaled(dot_value_B(x_a, x_a), Precision(0.5));
-        items[1] = scaled(dot_value_B(x_b, x_b), Precision(0.5));
-        items[2] = dot_value_B(x_a, x_b);
-        items[3] = dot_value_B(x_a, d_a);
-        items[4] = dot_value_B(x_b, d_b);
+    // we dont need these since mitc overwrites them anyway
+    // items[6] = dot_value_B(x_a, d);
+    // items[7] = dot_value_B(x_b, d);
 
-        const ScalarDerivatives xa_db = dot_value_B(x_a, d_b);
-        const ScalarDerivatives xb_da = dot_value_B(x_b, d_a);
+    strain(0) = items[0].value - Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
+    strain(1) = items[1].value - Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
+    strain(2) = items[2].value - ref.X_a[ref_id].dot(ref.X_b[ref_id]);
+    strain(3) = items[3].value - ref.X_a[ref_id].dot(ref.D_a[ref_id]);
+    strain(4) = items[4].value - ref.X_b[ref_id].dot(ref.D_b[ref_id]);
+    strain(5) = items[5].value
+              - ref.X_a[ref_id].dot(ref.D_b[ref_id])
+              - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
+    // we dont need these since mitc overwrites them anyway
+    // strain(6) = items[6].value - ref.X_a[ref_id].dot(ref.D[ref_id]);
+    // strain(7) = items[7].value - ref.X_b[ref_id].dot(ref.D[ref_id]);
 
-        items[5].value = xa_db.value + xb_da.value;
-        items[5].d1    = xa_db.d1    + xb_da.d1;
-
-        items[6] = dot_value_B(x_a, d);
-        items[7] = dot_value_B(x_b, d);
-    }
-
-    const std::array<Precision, num_strains> constants{{
-        Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]),
-        Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]),
-        ref.X_a[ref_id].dot(ref.X_b[ref_id]),
-        ref.X_a[ref_id].dot(ref.D_a[ref_id]),
-        ref.X_b[ref_id].dot(ref.D_b[ref_id]),
-        ref.X_a[ref_id].dot(ref.D_b[ref_id]) + ref.X_b[ref_id].dot(ref.D_a[ref_id]),
-        ref.X_a[ref_id].dot(ref.D[ref_id]),
-        ref.X_b[ref_id].dot(ref.D[ref_id])
-    }};
-
-    for (Index a = 0; a < num_strains; ++a) {
-        strain(a) = items[a].value - constants[a];
-        if (B) {
+    if (B) {
+        for (Index a = 0; a < num_strains; ++a) {
             B->row(a) = items[a].d1.transpose();
-        }
-        if (G) {
-            (*G)[a] = items[a].d2;
         }
     }
 }
@@ -886,16 +1072,39 @@ void S4FRTMITC::compute_natural_shear(
         return;
     }
 
+    if (with_G) {
+        add_xd_shear_derivatives(
+            data.x_nodes,
+            data.d_nodes,
+            dN_dxi,
+            ref.N[ref_id],
+            0,
+            shear_nat,
+            B_nat,
+            G_nat
+        );
+        add_xd_shear_derivatives(
+            data.x_nodes,
+            data.d_nodes,
+            dN_deta,
+            ref.N[ref_id],
+            1,
+            shear_nat,
+            B_nat,
+            G_nat
+        );
+
+        shear_nat(0) -= ref.X_xi[ref_id].dot(ref.D[ref_id]);
+        shear_nat(1) -= ref.X_eta[ref_id].dot(ref.D[ref_id]);
+        return;
+    }
+
     const VectorDerivatives x_xi  = linear_combination(data.x_nodes, dN_dxi);
     const VectorDerivatives x_eta = linear_combination(data.x_nodes, dN_deta);
     const VectorDerivatives d     = linear_combination(data.d_nodes, ref.N[ref_id]);
 
-    const ScalarDerivatives gamma_xi  = with_G
-                                      ? dot_derivatives(x_xi, d)
-                                      : dot_value_B(x_xi, d);
-    const ScalarDerivatives gamma_eta = with_G
-                                      ? dot_derivatives(x_eta, d)
-                                      : dot_value_B(x_eta, d);
+    const ScalarDerivatives gamma_xi  = dot_value_B(x_xi, d);
+    const ScalarDerivatives gamma_eta = dot_value_B(x_eta, d);
 
     shear_nat(0) = gamma_xi.value  - ref.X_xi[ref_id].dot(ref.D[ref_id]);
     shear_nat(1) = gamma_eta.value - ref.X_eta[ref_id].dot(ref.D[ref_id]);
@@ -1656,7 +1865,8 @@ MapMatrix S4FRTMITC::stiffness_tangent(
     NodeData&    nodal_forces,
     const Field& displacement
 ) {
-    const CurrentState   state = current_state_from_displacement(displacement);
+    const CurrentState state = current_state_from_displacement(displacement);
+
     const EvaluationData data  = init_evaluation(
         state,
         true,
