@@ -1,6 +1,7 @@
 #include "s4_frt_mitc_nonlinear.h"
 
-#include "../../mattools/vec_util.h"
+#include "../../math/so3.h"
+#include "../../math/vec_util.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,12 +20,10 @@ using Vec24Mat = S4FRTMITC::Vec24Mat;
 using VectorDerivatives = S4FRTMITC::VectorDerivatives;
 using ScalarDerivatives = S4FRTMITC::ScalarDerivatives;
 using CurrentState = S4FRTMITC::CurrentState;
-using RotationCoefficients = S4FRTMITC::RotationCoefficients;
 using EvaluationData = S4FRTMITC::EvaluationData;
 using ReferenceData  = S4FRTMITC::ReferenceData;
 
-using mattools::normalized;
-using mattools::skew;
+using math::normalized;
 
 namespace {
 
@@ -214,206 +213,6 @@ ShellSection* S4FRTMITC::shell_section() const {
 // Basic vector/tensor helpers
 // ---------------------------------------------------------------------
 
-RotationCoefficients S4FRTMITC::rotation_coefficients(Precision angle_squared) {
-    RotationCoefficients coefficients;
-
-    if (angle_squared < Precision(1e-4)) {
-        const Precision s2 = angle_squared * angle_squared;
-        const Precision s3 = s2 * angle_squared;
-
-        coefficients.a    = Precision(1)
-                          - angle_squared / Precision(6)
-                          + s2            / Precision(120)
-                          - s3            / Precision(5040);
-        coefficients.b    = Precision(0.5)
-                          - angle_squared / Precision(24)
-                          + s2            / Precision(720)
-                          - s3            / Precision(40320);
-        coefficients.a_s  = -Precision(1) / Precision(6)
-                          + angle_squared / Precision(60)
-                          - s2            / Precision(1680)
-                          + s3            / Precision(90720);
-        coefficients.b_s  = -Precision(1) / Precision(24)
-                          + angle_squared / Precision(360)
-                          - s2            / Precision(13440)
-                          + s3            / Precision(907200);
-        coefficients.a_ss = Precision(1) / Precision(60)
-                          - angle_squared / Precision(840)
-                          + s2            / Precision(30240);
-        coefficients.b_ss = Precision(1) / Precision(360)
-                          - angle_squared / Precision(6720)
-                          + s2            / Precision(302400);
-
-        return coefficients;
-    }
-
-    const Precision angle       = std::sqrt(angle_squared);
-    const Precision angle_cubed = angle_squared * angle;
-    const Precision angle_fourth = angle_squared * angle_squared;
-    const Precision angle_fifth  = angle_fourth * angle;
-    const Precision angle_sixth  = angle_fourth * angle_squared;
-    const Precision sin_angle    = std::sin(angle);
-    const Precision cos_angle    = std::cos(angle);
-
-    coefficients.a    = sin_angle / angle;
-    coefficients.b    = (Precision(1) - cos_angle) / angle_squared;
-    coefficients.a_s  = (angle * cos_angle - sin_angle)
-                      / (Precision(2) * angle_cubed);
-    coefficients.b_s  = (Precision(0.5) * angle * sin_angle
-                       + cos_angle - Precision(1))
-                      / angle_fourth;
-    coefficients.a_ss = (-angle_squared * sin_angle
-                       - Precision(3) * angle * cos_angle
-                       + Precision(3) * sin_angle)
-                      / (Precision(4) * angle_fifth);
-    coefficients.b_ss = (angle_squared * cos_angle
-                       - Precision(5) * angle * sin_angle
-                       - Precision(8) * cos_angle
-                       + Precision(8))
-                      / (Precision(4) * angle_sixth);
-
-    return coefficients;
-}
-
-
-void S4FRTMITC::rotation_exp_derivatives(
-    const Vec3&                                rotation_vector,
-    Mat3&                                      rotation,
-    std::array<Mat3, 3>&                       first,
-    std::array<std::array<Mat3, 3>, 3>&        second) {
-    const Precision angle_squared = rotation_vector.squaredNorm();
-    const auto      coefficients  = rotation_coefficients(angle_squared);
-    const Mat3      omega         = skew(rotation_vector);
-    const Mat3      omega_squared = omega * omega;
-
-    const std::array<Mat3, 3> generators{
-        skew(Vec3::UnitX()),
-        skew(Vec3::UnitY()),
-        skew(Vec3::UnitZ())
-    };
-
-    std::array<Mat3, 3> omega_derivatives;
-
-    rotation = Mat3::Identity()
-             + coefficients.a * omega
-             + coefficients.b * omega_squared;
-
-    for (Index i = 0; i < 3; ++i) {
-        const Precision a_i = Precision(2)
-                            * coefficients.a_s
-                            * rotation_vector(i);
-        const Precision b_i = Precision(2)
-                            * coefficients.b_s
-                            * rotation_vector(i);
-
-        omega_derivatives[i] = generators[i] * omega
-                             + omega * generators[i];
-
-        first[i] = a_i * omega
-                 + coefficients.a * generators[i]
-                 + b_i * omega_squared
-                 + coefficients.b * omega_derivatives[i];
-    }
-
-    for (Index i = 0; i < 3; ++i) {
-        const Precision a_i = Precision(2)
-                            * coefficients.a_s
-                            * rotation_vector(i);
-        const Precision b_i = Precision(2)
-                            * coefficients.b_s
-                            * rotation_vector(i);
-
-        for (Index j = 0; j < 3; ++j) {
-            const Precision delta = i == j
-                                  ? Precision(1)
-                                  : Precision(0);
-            const Precision a_j = Precision(2)
-                                * coefficients.a_s
-                                * rotation_vector(j);
-            const Precision b_j = Precision(2)
-                                * coefficients.b_s
-                                * rotation_vector(j);
-            const Precision a_ij = Precision(4)
-                                 * coefficients.a_ss
-                                 * rotation_vector(i)
-                                 * rotation_vector(j)
-                                 + Precision(2)
-                                 * coefficients.a_s
-                                 * delta;
-            const Precision b_ij = Precision(4)
-                                 * coefficients.b_ss
-                                 * rotation_vector(i)
-                                 * rotation_vector(j)
-                                 + Precision(2)
-                                 * coefficients.b_s
-                                 * delta;
-
-            second[i][j] = a_ij * omega
-                         + a_i * generators[j]
-                         + a_j * generators[i]
-                         + b_ij * omega_squared
-                         + b_i * omega_derivatives[j]
-                         + b_j * omega_derivatives[i]
-                         + coefficients.b
-                         * (generators[i] * generators[j]
-                          + generators[j] * generators[i]);
-        }
-    }
-}
-
-
-void S4FRTMITC::rotation_exp_first_derivatives(
-    const Vec3&          rotation_vector,
-    Mat3&                rotation,
-    std::array<Mat3, 3>& first) {
-    const Precision angle_squared = rotation_vector.squaredNorm();
-    const auto      coefficients  = rotation_coefficients(angle_squared);
-    const Mat3      omega         = skew(rotation_vector);
-    const Mat3      omega_squared = omega * omega;
-
-    const std::array<Mat3, 3> generators{
-        skew(Vec3::UnitX()),
-        skew(Vec3::UnitY()),
-        skew(Vec3::UnitZ())
-    };
-
-    rotation = Mat3::Identity()
-             + coefficients.a * omega
-             + coefficients.b * omega_squared;
-
-    for (Index i = 0; i < 3; ++i) {
-        const Precision a_i = Precision(2)
-                            * coefficients.a_s
-                            * rotation_vector(i);
-        const Precision b_i = Precision(2)
-                            * coefficients.b_s
-                            * rotation_vector(i);
-
-        const Mat3 omega_derivative = generators[i] * omega
-                                    + omega * generators[i];
-
-        first[i] = a_i * omega
-                 + coefficients.a * generators[i]
-                 + b_i * omega_squared
-                 + coefficients.b * omega_derivative;
-    }
-}
-
-
-
-Mat3 S4FRTMITC::rotation_exp(const Vec3& rotation_vector) {
-    const auto coefficients = rotation_coefficients(
-        rotation_vector.squaredNorm()
-    );
-    const Mat3 omega         = skew(rotation_vector);
-    const Mat3 omega_squared = omega * omega;
-
-    return Mat3::Identity()
-         + coefficients.a * omega
-         + coefficients.b * omega_squared;
-}
-
-
 ScalarDerivatives S4FRTMITC::dot_derivatives(const VectorDerivatives& a,
                                          const VectorDerivatives& b) {
     ScalarDerivatives out;
@@ -559,7 +358,7 @@ CurrentState S4FRTMITC::current_state() const {
         const Vec3 x               = positions.template block<1, 3>(i, 0).transpose();
         const Vec3 rotation_vector = positions.template block<1, 3>(i, 3).transpose();
         const Vec3 d0              = ref.d0.row(i).transpose();
-        const Mat3 rotation        = rotation_exp(rotation_vector);
+        const Mat3 rotation        = so3::rotation_matrix(rotation_vector);
 
         state.x.row(i)     = x.transpose();
         state.d.row(i)     = (rotation * d0).transpose();
@@ -598,7 +397,7 @@ CurrentState S4FRTMITC::current_state_from_displacement(
         const Vec3  x       = X.row(i).transpose() + q.template head<3>();
         const Vec3  theta   = q.template tail<3>();
         const Vec3  d0      = ref.d0.row(i).transpose();
-        const Mat3  R       = rotation_exp(theta);
+        const Mat3  R       = so3::rotation_matrix(theta);
 
         state.x.row(i)     = x.transpose();
         state.d.row(i)     = (R * d0).transpose();
@@ -696,7 +495,7 @@ std::array<VectorDerivatives, 4> S4FRTMITC::director_derivatives(
         if (with_second_derivatives) {
             std::array<std::array<Mat3, 3>, 3> second;
 
-            rotation_exp_derivatives(
+            so3::rotation_matrix_second_derivatives(
                 rotation_vector,
                 rotation,
                 first,
@@ -722,7 +521,7 @@ std::array<VectorDerivatives, 4> S4FRTMITC::director_derivatives(
             continue;
         }
 
-        rotation_exp_first_derivatives(
+        so3::rotation_matrix_first_derivatives(
             rotation_vector,
             rotation,
             first

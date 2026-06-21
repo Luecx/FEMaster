@@ -2,7 +2,7 @@
 
 #include "../core/core.h"
 
-namespace fem { namespace mattools {
+namespace fem { namespace math {
 
 Vec3 normalized(Vec3 v) {
     const Precision n = v.norm();
@@ -18,4 +18,4 @@ Mat3 skew(const Vec3& v) {
     return S;
 }
 
-} } // namespace fem::mattools
+} } // namespace fem::math

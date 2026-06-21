@@ -7,10 +7,10 @@
 
 #include "../core/types_eig.h"
 
-namespace fem { namespace mattools {
+namespace fem { namespace math {
 
 Vec3 normalized(Vec3 v);
 
 Mat3 skew(const Vec3& v);
 
-} } // namespace fem::mattools
+} } // namespace fem::math
