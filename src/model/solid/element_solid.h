@@ -90,6 +90,18 @@ public:
     StaticMatrix<n_strain, D * N> strain_displacement(
         const StaticMatrix<N, D>& shape_der_global
     );
+    StaticMatrix<N, D> shape_derivatives_reference(
+        const StaticMatrix<N, D>& reference_coords,
+        Precision                 r,
+        Precision                 s,
+        Precision                 t,
+        Precision&                det,
+        bool                      check_det = true
+    );
+    StaticMatrix<n_strain, D * N> green_lagrange_strain_displacement(
+        const StaticMatrix<N, D>& dN_dX,
+        const Mat3&               F
+    );
     StaticMatrix<n_strain, D * N> strain_displacements(
         const StaticMatrix<N, D>& node_coords,
         Precision                 r,

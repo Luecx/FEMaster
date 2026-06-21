@@ -149,6 +149,53 @@ auto SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_gl
 }
 
 template<Index N>
+auto SolidElement<N>::shape_derivatives_reference(const StaticMatrix<N, D>& reference_coords,
+                                                  Precision r,
+                                                  Precision s,
+                                                  Precision t,
+                                                  Precision& det,
+                                                  bool check_det)
+    -> StaticMatrix<N, D> {
+    const StaticMatrix<N, D> local_shape_der = shape_derivative(r, s, t);
+    const StaticMatrix<D, D> J0 = jacobian(reference_coords, r, s, t);
+
+    det = J0.determinant();
+
+    if (check_det) {
+        logging::error(det > 0, "negative reference determinant encountered in element ", elem_id,
+                       "\ndet        : ", det,
+                       "\nCoordinates: ", reference_coords,
+                       "\nJacobi     : ", J0);
+    }
+
+    return (J0.inverse() * local_shape_der.transpose()).transpose();
+}
+
+template<Index N>
+auto SolidElement<N>::green_lagrange_strain_displacement(const StaticMatrix<N, D>& dN_dX,
+                                                         const Mat3& F)
+    -> StaticMatrix<n_strain, D * N> {
+    StaticMatrix<n_strain, D * N> B {};
+    B.setZero();
+
+    for (Index a = 0; a < N; ++a) {
+        for (Dim p = 0; p < D; ++p) {
+            const Index col = D * a + p;
+
+            B(0, col) = F(p, 0) * dN_dX(a, 0);
+            B(1, col) = F(p, 1) * dN_dX(a, 1);
+            B(2, col) = F(p, 2) * dN_dX(a, 2);
+
+            B(3, col) = F(p, 1) * dN_dX(a, 2) + F(p, 2) * dN_dX(a, 1);
+            B(4, col) = F(p, 2) * dN_dX(a, 0) + F(p, 0) * dN_dX(a, 2);
+            B(5, col) = F(p, 0) * dN_dX(a, 1) + F(p, 1) * dN_dX(a, 0);
+        }
+    }
+
+    return B;
+}
+
+template<Index N>
 auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t)
     -> StaticMatrix<n_strain, n_strain> {
     logging::error(material() != nullptr, "no _material assigned to element ", elem_id);
@@ -355,11 +402,14 @@ SolidElement<N>::stiffness(Precision* buffer) {
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, &reference_coords, &current_coords](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
-            Precision det;
-            StaticMatrix<n_strain, D * N> B = this->strain_displacements(current_coords, r, s, t, det);
+            Precision det0;
+            const StaticMatrix<N, D> dN_dX =
+                this->shape_derivatives_reference(reference_coords, r, s, t, det0);
             const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
-            StaticMatrix<n_strain, n_strain> E = material_tangent_spatial(r, s, t, F);
-            StaticMatrix<D * N, D * N> res = B.transpose() * (E * B) * det;
+            const StaticMatrix<n_strain, D * N> B =
+                this->green_lagrange_strain_displacement(dN_dX, F);
+            const StaticMatrix<n_strain, n_strain> C = material_tangent_reference(r, s, t);
+            StaticMatrix<D * N, D * N> res = B.transpose() * (C * B) * det0;
             return StaticMatrix<D * N, D * N>(res);
         };
 
@@ -374,45 +424,37 @@ SolidElement<N>::stiffness(Precision* buffer) {
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) {
-    StaticMatrix<N, D> node_coords = this->node_coords_current();
+    StaticMatrix<N, D> reference_coords = this->node_coords_reference();
 
     Index ip_counter = 0;
 
-    // Funktor OHNE w-Parameter; integrate() übernimmt die Gewichte.
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
-        [this, &node_coords, &ip_stress, ip_start_idx, &ip_counter]
+        [this, &reference_coords, &ip_stress, ip_start_idx, &ip_counter]
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
-        // ---- Stress at IP (Voigt = [xx, yy, zz, yz, zx, xy]) ----
         const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
-        const CauchyStress stress{ip_stress.row_vec6(ip_row)};
-        const Mat3 sigma = stress.tensor();
+        const PK2Stress stress{ip_stress.row_vec6(ip_row)};
+        const Mat3 S = stress.tensor();
 
-        // ---- Local -> global shape derivatives, Jacobian, det ----
-        StaticMatrix<N, D> dN_local = this->shape_derivative(r, s, t);
-        StaticMatrix<D, D> J        = this->jacobian(node_coords, r, s, t);
-        StaticMatrix<D, D> Jinv     = J.inverse();
-        Precision det               = J.determinant();
-        StaticMatrix<N, D> dN       = (Jinv * dN_local.transpose()).transpose(); // global grads per node
+        Precision det0;
+        const StaticMatrix<N, D> dN_dX =
+            this->shape_derivatives_reference(reference_coords, r, s, t, det0);
 
-        // ---- Geometric stiffness integrand (scalar s_ab * I3) ----
         StaticMatrix<D * N, D * N> Kg = StaticMatrix<D * N, D * N>::Zero();
 
-        for (Index a = 0; a < N; ++a)
-        {
-            Eigen::Matrix<Precision,3,1> gNa;
-            gNa << dN(a,0), dN(a,1), dN(a,2);
+        for (Index a = 0; a < N; ++a) {
+            Vec3 dNa;
+            dNa << dN_dX(a, 0), dN_dX(a, 1), dN_dX(a, 2);
 
-            for (Index b = 0; b < N; ++b)
-            {
-                Eigen::Matrix<Precision,3,1> gNb;
-                gNb << dN(b,0), dN(b,1), dN(b,2);
+            for (Index b = 0; b < N; ++b) {
+                Vec3 dNb;
+                dNb << dN_dX(b, 0), dN_dX(b, 1), dN_dX(b, 2);
 
-                Precision s_ab = (gNa.transpose() * sigma * gNb)(0,0); // scalar
+                const Precision s_ab = (dNa.transpose() * S * dNb)(0, 0);
 
-                // add s_ab * I3 to block (a,b)
-                for (int d = 0; d < 3; ++d)
-                    Kg(3*a + d, 3*b + d) += s_ab * det;
+                for (Dim d = 0; d < D; ++d) {
+                    Kg(D * a + d, D * b + d) += s_ab * det0;
+                }
             }
         }
 
@@ -420,7 +462,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int i
     };
 
     StaticMatrix<D * N, D * N> Kg = integration_scheme().integrate(func);
-    Kg = 0.5 * (Kg + Kg.transpose()); // Numerisch symmetrisieren
+    Kg = 0.5 * (Kg + Kg.transpose()); // Symmetrize
 
     MapMatrix mapped{buffer, D * N, D * N};
     mapped = Kg;

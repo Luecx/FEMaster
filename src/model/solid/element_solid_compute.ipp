@@ -66,11 +66,10 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
         const Vec6 second_pk_voigt =
             material_tangent_reference(r, s, t) * green_lagrange.voigt();
         const PK2Stress second_pk(second_pk_voigt);
-        const CauchyStress cauchy = second_pk.to_cauchy(F);
 
         for (Dim j = 0; j < n_strain; ++j) {
             if (strain) (*strain)(row, j) = green_lagrange.voigt()(j);
-            if (stress) (*stress)(row, j) = cauchy.voigt()(j);
+            if (stress) (*stress)(row, j) = second_pk.voigt()(j);
         }
     }
 }
@@ -91,6 +90,7 @@ template<Index N>
 void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
                                                        const Field& ip_stress,
                                                        int ip_offset) {
+    auto reference_coords = this->node_coords_reference();
     auto current_coords = this->node_coords_current();
     auto scheme = this->integration_scheme();
 
@@ -101,11 +101,14 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
         const Precision w = scheme.get_point(n).w;
         const Index row = static_cast<Index>(ip_offset) + n;
 
-        Precision det;
-        StaticMatrix<n_strain, D * N> B =
-            this->strain_displacements(current_coords, r, s, t, det);
-        const Vec6 sigma = ip_stress.row_vec6(row);
-        const StaticVector<D * N> local_force = B.transpose() * sigma * (det * w);
+        Precision det0;
+        const StaticMatrix<N, D> dN_dX =
+            this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+        const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
+        const StaticMatrix<n_strain, D * N> B =
+            this->green_lagrange_strain_displacement(dN_dX, F);
+        const Vec6 S_voigt = ip_stress.row_vec6(row);
+        const StaticVector<D * N> local_force = B.transpose() * S_voigt * (det0 * w);
 
         for (Index a = 0; a < N; ++a) {
             const Index node_id = static_cast<Index>(node_ids[a]);
