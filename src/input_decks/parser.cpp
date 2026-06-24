@@ -42,6 +42,7 @@
 #include "commands/register_connector.inl"
 #include "commands/register_coupling.inl"
 #include "commands/register_tie.inl"
+#include "commands/register_contact.inl"
 #include "commands/register_profile.inl"
 #include "commands/register_solid_section.inl"
 #include "commands/register_beam_section.inl"
@@ -322,6 +323,7 @@ void Parser::register_analysis_commands(dsl::Registry& reg) {
     commands::register_connector(reg, mdl);
     commands::register_coupling(reg, mdl);
     commands::register_tie(reg, mdl);
+    commands::register_contact(reg, mdl);
 
     // Profiles & sections & elements
     commands::register_profile(reg, mdl);

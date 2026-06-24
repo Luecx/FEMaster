@@ -221,6 +221,9 @@ constraint::Equations Model::build_constraints(SystemDofIds& system_dof_ids,
 }
 
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds &indices, const Field* stiffness_scalar) {
+    logging::error(_data->contacts.empty(),
+                   "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");
+
     auto lambda = [&](const ElementPtr &el, Precision* storage) {
         if (auto sel = el->as<StructuralElement>()) {
             MapMatrix stiff = sel->stiffness(storage);
@@ -312,6 +315,10 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
                 }
             }
         }
+    }
+
+    for (const auto& contact : _data->contacts) {
+        contact.assemble(indices, *_data, nodal_forces, triplets);
     }
 
     global_matrix.insertFromTriplets(triplets.begin(), triplets.end());

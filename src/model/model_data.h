@@ -19,6 +19,7 @@
 #include "../bc/support_collector.h"
 #include "../constraints/types/connector.h"
 #include "../constraints/types/coupling.h"
+#include "../constraints/types/contact.h"
 #include "../constraints/types/equation.h"
 #include "../constraints/types/tie.h"
 #include "../constraints/types/rbm.h"
@@ -92,6 +93,7 @@ struct ModelData {
     std::vector<constraint::Connector> connectors{};
     std::vector<constraint::Coupling> couplings{};
     std::vector<constraint::Tie> ties{};
+    std::vector<constraint::Contact> contacts{};
     std::vector<constraint::Rbm> rbms{};
     std::vector<constraint::Equation> equations{};
 

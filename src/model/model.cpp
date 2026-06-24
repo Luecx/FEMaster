@@ -136,6 +136,50 @@ void Model::add_tie(const std::string& master_set,
     logging::error(false, "Master set ", master_set, " contains neither surfaces nor lines");
 }
 
+void Model::add_contact(const std::string& master_set,
+                        const std::string& slave_set,
+                        Precision distance,
+                        Precision penalty,
+                        Precision clearance,
+                        bool flip_normal) {
+    NodeRegion::Ptr    slave_node_ptr    = nullptr;
+    SurfaceRegion::Ptr slave_surface_ptr = nullptr;
+
+    if (_data->node_sets.has(slave_set) && _data->node_sets.get(slave_set) &&
+        _data->node_sets.get(slave_set)->size() > 0) {
+        slave_node_ptr = _data->node_sets.get(slave_set);
+    } else if (_data->surface_sets.has(slave_set) && _data->surface_sets.get(slave_set) &&
+               _data->surface_sets.get(slave_set)->size() > 0) {
+        slave_surface_ptr = _data->surface_sets.get(slave_set);
+    } else {
+        logging::error(false,
+                       "CONTACT: slave set ", slave_set,
+                       " is neither a defined non-empty node set nor a defined non-empty surface set");
+    }
+
+    logging::error(_data->surface_sets.has(master_set) &&
+                   _data->surface_sets.get(master_set) &&
+                   _data->surface_sets.get(master_set)->size() > 0,
+                   "CONTACT: master set ", master_set, " is not a defined non-empty surface set");
+
+    SurfaceRegion::Ptr master_ptr = _data->surface_sets.get(master_set);
+    if (slave_node_ptr) {
+        _data->contacts.emplace_back(master_ptr,
+                                     slave_node_ptr,
+                                     distance,
+                                     penalty,
+                                     clearance,
+                                     flip_normal);
+    } else {
+        _data->contacts.emplace_back(master_ptr,
+                                     slave_surface_ptr,
+                                     distance,
+                                     penalty,
+                                     clearance,
+                                     flip_normal);
+    }
+}
+
 void Model::add_rbm(const std::string& set) {
     logging::error(_data->elem_sets.has(set), "RBM: element set ", set, " not found");
     logging::error(_data->elem_sets.get(set) && _data->elem_sets.get(set)->size() > 0,

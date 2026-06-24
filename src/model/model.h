@@ -49,6 +49,12 @@ struct Model {
     void add_connector(const std::string& set1      , const std::string& set2, const std::string& coordinate_system, constraint::ConnectorType type);
     void add_coupling (const std::string& master_set, const std::string& slave_set, Dofs coupled_dofs, constraint::CouplingType type, bool is_surface);
     void add_tie      (const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
+    void add_contact  (const std::string& master_set,
+                       const std::string& slave_set,
+                       Precision distance,
+                       Precision penalty,
+                       Precision clearance,
+                       bool flip_normal);
     // rbm constraints: remove rigid-body motion on an element set
     void add_rbm      (const std::string& set);
 
