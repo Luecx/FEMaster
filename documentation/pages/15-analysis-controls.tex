@@ -13,7 +13,7 @@ This chapter describes commands that are used inside loadcases to activate colle
 <load-collector-1>, <load-collector-2>, ...
 \end{syntax}
 
-\cmd{SUPPORTS} activates named support collectors that were populated by \cmd{SUPPORT}. \cmd{LOADS} activates named load collectors that were populated by \cmd{CLOAD}, \cmd{DLOAD}, \cmd{PLOAD}, \cmd{VLOAD}, \cmd{TLOAD}, or \cmd{INERTIALOAD}. The loadcase does not activate every support or load in the model automatically. It assembles only the collectors listed in these commands.
+\cmd{SUPPORTS} activates named support collectors that were populated by \cmd{SUPPORT}. \cmd{LOADS} activates named load collectors that were populated by \cmd{CLOAD}, \cmd{DLOAD}, \cmd{PLOAD}, \cmd{VLOAD}, \cmd{TLOAD}, or \cmd{INERTIALOAD}. Load collectors are assembled only when listed by \cmd{LOADS}. Support collectors are normally selected with \cmd{SUPPORTS}; if no support collector is listed and the special all-support collector exists, FEMaster uses that collector as the active support set.
 
 Mathematically, active support collectors contribute equations to the global constraint set \(C u=d\). Active load collectors contribute to the right-hand side vector \(f\). In a transient loadcase, time-dependent amplitudes are evaluated during time integration, so the active load vector is a function \(f(t)\).
 
@@ -64,7 +64,7 @@ The active supports and constraints define
 \[
 C u = d .
 \]
-\cmd{CONSTRAINTMETHOD} selects how this equation set is introduced into the analysis equations.
+\cmd{CONSTRAINTMETHOD} selects how this equation set is introduced into the analysis equations for \val{LINEARSTATIC} and \val{LINEARSTATICTOPO}. \val{NONLINEARSTATIC} currently uses the Nullspace path only; selecting \val{LAGRANGE} for that loadcase is accepted by the parser but rejected when the nonlinear solver starts. \val{EIGENFREQ}, \val{LINEARBUCKLING}, and \val{LINEARTRANSIENT} use Nullspace constraints internally and do not accept \cmd{CONSTRAINTMETHOD}.
 
 \subsection{Nullspace method}
 
@@ -118,6 +118,34 @@ d
 
 This formulation is direct and preserves the original displacement variables, but it creates a saddle-point problem. Such systems are indefinite and more demanding numerically. In FEMaster, \val{LAGRANGE} requires the direct linear solver for linear static analysis; see Table~\ref{tab:static-solver-constraint-combinations} for supported backend combinations. Use \val{NULLSPACE} when an indirect solver is desired.
 
+\section{Nonlinear static controls}
+
+\begin{syntax}
+*NONLINEAR, INCREMENTS=<n>, MAXITER=<n>, TOL=<tol>,
+            REGULARIZE_ZERO_ROWS=ON|OFF, REGULARIZATION_ALPHA=<alpha>
+\end{syntax}
+
+\cmd{NONLINEAR} configures the incremental Newton solve used by \val{NONLINEARSTATIC}. The command is valid only inside a nonlinear static loadcase. The defaults are \key{INCREMENTS=10}, \key{MAXITER=20}, \key{TOL=1e-8}, \key{REGULARIZE_ZERO_ROWS=ON}, and \key{REGULARIZATION_ALPHA=1e-4}.
+
+\key{INCREMENTS} sets the initial load increment as \(1/n\), where \(n\) is the supplied increment count. The solver applies the total active load through a scalar load factor \(\lambda\) from 0 to 1. Within each increment it assembles the current tangent stiffness and internal force, solves the reduced Newton equation, and applies the full Newton correction.
+
+The nonlinear residual is evaluated in reduced coordinates. With external force \(f_\mathrm{ext}\), internal force \(f_\mathrm{int}(u)\), residual \(r=f_\mathrm{ext}-f_\mathrm{int}\), and Nullspace basis \(T\), the reported convergence value is
+\[
+\frac{\|T^T r\|_\mathrm{RMS}}
+     {\max(\|T^T f_\mathrm{ext}\|_\mathrm{RMS},
+           \|T^T f_\mathrm{int}\|_\mathrm{RMS},
+           1)} .
+\]
+The increment is converged when this value is less than or equal to \key{TOL}. If an increment does not converge within \key{MAXITER}, the state is restored to the last accepted increment and the load increment is cut back.
+
+The current adaptive load stepping uses fixed internal constants: minimum increment \(10^{-4}\), maximum increment \(1\), growth factor \(1.5\), cutback factor \(0.5\), fast-convergence threshold 4 iterations, slow-convergence threshold 10 iterations, and at most 20 cutbacks per accepted increment. These values are not deck parameters in the current implementation.
+
+\key{REGULARIZE_ZERO_ROWS} adds a small diagonal stiffness to rows whose tangent row norm is effectively zero. This can help with temporarily mechanism-like states or inactive degrees of freedom, but it changes the tangent system. \key{REGULARIZATION_ALPHA} scales the added diagonal against the assembled stiffness scale.
+
+\begin{warningbox}[Nonlinear solver limits]
+\val{NONLINEARSTATIC} currently requires \cmd{SOLVER, METHOD=DIRECT} and \cmd{CONSTRAINTMETHOD, TYPE=NULLSPACE}. It does not have line search, arc-length control, contact damping, or automatic penalty scaling. Strong contact active-set changes may therefore require small load increments and carefully chosen contact penalty stiffness.
+\end{warningbox}
+
 \section{Inertia relief}
 
 \begin{syntax}
@@ -148,7 +176,7 @@ The distinction from inertia relief is important. Inertia relief says: the struc
 *CONSTRAINTSUMMARY
 \end{syntax}
 
-\cmd{REQUESTSTIFFNESS} requests stiffness matrix output for diagnostics or external comparison. \cmd{REQUESTSTGEOM} requests geometric stiffness output in buckling analysis. \cmd{CONSTRAINTSUMMARY} prints the internally generated constraint equations grouped by origin, such as supports, RBM equations, couplings, ties, and connectors.
+\cmd{REQUESTSTIFFNESS} requests stiffness matrix output for diagnostics or external comparison. In \val{LINEARSTATIC} and \val{LINEARSTATICTOPO} it writes the active stiffness and reduced stiffness, with the linear static path also writing the reduced right-hand side. In \val{LINEARBUCKLING} it writes the preload stiffness and reduced stiffness. In \val{NONLINEARSTATIC} it writes the final tangent stiffness and final reduced tangent. \cmd{REQUESTSTGEOM} requests geometric stiffness output in buckling analysis. \cmd{CONSTRAINTSUMMARY} prints the internally generated constraint equations grouped by origin, such as supports, RBM equations, couplings, ties, and connectors.
 
 These commands should be treated as diagnostic output controls. They do not change the physical model. They are helpful when validating assemblies, comparing reduced matrices, debugging constraint generation, or checking why a loadcase is singular or over-constrained.
 

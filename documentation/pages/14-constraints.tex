@@ -7,7 +7,7 @@ Most constraint equations can be written as
 \[
 C u = d .
 \]
-\(u\) is the vector of active nodal degrees of freedom, \(C\) is the constraint matrix, and \(d\) is the right-hand side. Homogeneous constraints have \(d=0\). The constraint definitions in this chapter describe which equations are generated. The numerical handling of those equations, for example Nullspace reduction or Lagrange multipliers, is selected by \cmd{CONSTRAINTMETHOD} and described in Chapter~\ref{chap:analysis-controls}.
+\(u\) is the vector of active nodal degrees of freedom, \(C\) is the constraint matrix, and \(d\) is the right-hand side. Homogeneous constraints have \(d=0\). Most definitions in this chapter generate linear equations. \cmd{CONTACT} is different: it stores a nonlinear interaction that contributes internal force and tangent stiffness during \val{NONLINEARSTATIC}. The numerical handling of linear equations, for example Nullspace reduction or Lagrange multipliers, is selected by \cmd{CONSTRAINTMETHOD} and described in Chapter~\ref{chap:analysis-controls}.
 
 \section{Rigid-body motion suppression: \cmd{RBM}}
 
@@ -125,6 +125,42 @@ Let \(s\) be a slave node projected onto a master surface or line at local coord
 u_s - \sum_a N_a(\xi) u_a = 0 .
 \]
 This ties the slave degree of freedom to the interpolated master motion. For surface masters the interpolation uses the surface shape functions; for line masters it uses the line shape functions. The same equation form is used for translational and rotational degrees of freedom when those degrees of freedom exist on both slave and all master nodes.
+
+\section{Contact: \cmd{CONTACT}}
+
+\begin{syntax}
+*CONTACT, MASTER=<master-surface-set>, SLAVE=<slave-node-or-surface-set>,
+          DISTANCE=<search-distance>, PENALTY=<normal-stiffness>,
+          CLEARANCE=<clearance>, FLIP=NO|YES
+\end{syntax}
+
+\cmd{CONTACT} defines frictionless node-to-surface penalty contact. The master side must be a surface set. The slave side may be a node set or a surface set; if a slave surface set is given, FEMaster collects the unique nodes belonging to those slave surfaces. Contact is not a linear constraint equation and is assembled only in \val{NONLINEARSTATIC}. A linear stiffness assembly aborts if contact definitions are present.
+
+For every slave node, FEMaster searches master surfaces whose inflated bounding boxes contain the current slave position. \key{DISTANCE} is both the broad-phase inflation distance and the maximum accepted closest-point distance. Among the candidates, the closest projected master point is used. The projection is clipped to the master surface boundary.
+
+Let \(x_s\) be the current slave position, \(x_m(\xi)\) the closest point on the master surface, \(n(\xi)\) the master normal, and \(N_a(\xi)\) the master shape function values at the projected point. If \key{FLIP=YES}, the normal is multiplied by \(-1\). The normal gap used by the implementation is
+\[
+g = (x_s - x_m)\cdot n - c ,
+\]
+where \(c\) is \key{CLEARANCE}. Contact is active only when \(g<0\). The slave contact force contribution is
+\[
+f_s = k_p g n ,
+\]
+where \(k_p\) is \key{PENALTY}. The opposite force is distributed to the master nodes with the surface shape functions,
+\[
+f_a = -N_a(\xi) f_s .
+\]
+Only translational degrees of freedom are used.
+
+The tangent contribution is the penalty outer product of the linearized normal-gap coefficients at the current projection:
+\[
+K_c \approx k_p a a^T,
+\]
+where \(a\) contains the slave normal coefficients and the negative master interpolation coefficients. The current implementation keeps the closest-point coordinates and master normal fixed for this tangent contribution. This makes the contact tangent simple and symmetric, but it is not a fully consistent closest-point/contact-active-set tangent.
+
+\begin{warningbox}[Penalty contact]
+Penalty contact is sensitive to normal orientation, penalty scaling, load-increment size, and mesh bias between slave and master sides. A too small penalty allows visible penetration; a too large penalty can make the reduced tangent ill-conditioned and hurt Newton convergence. The current contact implementation is frictionless, node-to-surface, and has no contact-pressure or active-contact result output.
+\end{warningbox}
 
 \section{Connector: \cmd{CONNECTOR}}
 

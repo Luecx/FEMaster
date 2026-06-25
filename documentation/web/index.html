@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FEMaster Documentation</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Documentation navigation">
+      <div class="brand">
+        <div class="brand-mark">FM</div>
+        <div>
+          <div class="brand-title">FEMaster</div>
+          <div class="brand-subtitle">Reference docs</div>
+        </div>
+      </div>
+
+      <label class="search-label" for="global-search">Search</label>
+      <input id="global-search" class="search-input" type="search" placeholder="Command, topic, element...">
+
+      <nav id="tree-nav" class="tree-nav"></nav>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <button id="nav-toggle" class="nav-toggle" type="button" aria-label="Toggle navigation">Menu</button>
+        <div id="breadcrumbs" class="breadcrumbs"></div>
+      </header>
+
+      <section id="page" class="page" tabindex="-1"></section>
+    </main>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

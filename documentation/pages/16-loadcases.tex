@@ -136,6 +136,8 @@ T^TKT\psi_i = \omega_i^2 T^TMT\psi_i,
 
 A free-free model can contain rigid-body modes with zero or near-zero frequency. A supported model computes modes relative to the active supports and constraints.
 
+\val{EIGENFREQ} uses Nullspace constraints internally. \cmd{CONSTRAINTMETHOD} is not a valid command for this loadcase.
+
 \section{Linear Buckling}
 \label{sec:loadcase-linear-buckling}
 
@@ -191,6 +193,58 @@ When this estimate is valid and positive, the generated shift is \(\lambda_\math
 
 \cmd{LOADS} defines the preload. \cmd{REQUESTSTIFFNESS} and \cmd{REQUESTSTGEOM} can be used to write elastic and geometric stiffness matrices for diagnostics.
 
+\val{LINEARBUCKLING} uses Nullspace constraints internally. \cmd{CONSTRAINTMETHOD} is not a valid command for this loadcase.
+
+\section{Nonlinear Static}
+\label{sec:loadcase-nonlinear-static}
+
+\val{NONLINEARSTATIC} solves quasi-static equilibrium by applying the active load in increments and iterating with a tangent stiffness matrix in each increment. It is the only loadcase that assembles \cmd{CONTACT}. It also uses the nonlinear element tangent/internal-force path where available.
+
+\subsection{Governing equation}
+
+At a load factor \(\lambda\), the physical equilibrium equation is
+\[
+f_\mathrm{int}(u) = \lambda f_\mathrm{total}.
+\]
+FEMaster stores a reference position field and updates current nodal positions from the total displacement. Translational coordinates are updated as
+\[
+x = X + u ,
+\]
+while rotational entries are treated as total generalized displacement components. Linear constraints are enforced with the Nullspace representation
+\[
+u = u_p + Tq .
+\]
+The reduced Newton residual is
+\[
+\hat r(q)=T^T(\lambda f_\mathrm{total}-f_\mathrm{int}(u_p+Tq)).
+\]
+The reduced tangent equation solved in each Newton iteration is
+\[
+T^T K_t T\,\Delta q = \hat r .
+\]
+The current implementation applies the full correction \(u \leftarrow u + T\Delta q\).
+
+\subsection{Convergence and stepping}
+
+The relative residual reported in the nonlinear iteration log is the reduced residual RMS normalized by the larger of the reduced external-force RMS, the reduced internal-force RMS, and 1. The increment is accepted when this value is less than or equal to \key{TOL}. If convergence fails within \key{MAXITER}, FEMaster restores the last accepted state and cuts the load increment back. If convergence is fast, the next increment is allowed to grow.
+
+\cmd{NONLINEAR} controls the initial increment count, maximum iterations, residual tolerance, and optional zero-row tangent regularization. Detailed syntax is given in Chapter~\ref{chap:analysis-controls}.
+
+\subsection{Typical DSL}
+
+\begin{syntax}
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=<name>
+  *SUPPORTS
+  <support-collector>
+  *LOADS
+  <load-collector>
+  *SOLVER, DEVICE=CPU, METHOD=DIRECT
+  *CONSTRAINTMETHOD, TYPE=NULLSPACE
+  *NONLINEAR, INCREMENTS=20, MAXITER=25, TOL=1e-8
+\end{syntax}
+
+\val{NONLINEARSTATIC} currently requires \val{DIRECT} solver method and \val{NULLSPACE} constraints. \cmd{REQUESTSTIFFNESS} writes the final tangent stiffness \(K_t\) and final reduced tangent \(T^TK_tT\). Contact definitions are global model definitions, not loadcase commands; they contribute only when this loadcase is executed.
+
 \section{Linear Transient}
 \label{sec:loadcase-linear-transient}
 
@@ -239,6 +293,8 @@ C=\alpha M+\beta K .
 
 The transient-specific keywords \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, and \cmd{INITIALVELOCITY} are described in Chapter~\ref{chap:analysis-controls}.
 
+\val{LINEARTRANSIENT} uses Nullspace constraints internally. \cmd{CONSTRAINTMETHOD} is not a valid command for this loadcase.
+
 \section{Typical command overview}
 
 \begin{longtable}{@{}p{0.24\linewidth}p{0.66\linewidth}@{}}
@@ -248,8 +304,9 @@ The transient-specific keywords \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{W
 \endhead
 \val{LINEARSTATIC} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, optional \cmd{INERTIARELIEF}, \cmd{REBALANCELOADS}, \cmd{REQUESTSTIFFNESS}, \cmd{CONSTRAINTSUMMARY}. \\
 \val{LINEARSTATICTOPO} & Linear-static commands plus \cmd{TOPODENSITY}, \cmd{TOPOORIENT}, \cmd{TOPOEXPONENT}. \\
-\val{EIGENFREQ} & \cmd{SUPPORTS}, \cmd{CONSTRAINTMETHOD}, \cmd{NUMEIGENVALUES}. \\
-\val{LINEARBUCKLING} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{CONSTRAINTMETHOD}, \cmd{NUMEIGENVALUES}, optional \cmd{SIGMA}, \cmd{REQUESTSTIFFNESS}, \cmd{REQUESTSTGEOM}. \\
-\val{LINEARTRANSIENT} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, \cmd{INITIALVELOCITY}. \\
+\val{NONLINEARSTATIC} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD} with \val{NULLSPACE}, \cmd{NONLINEAR}, optional \cmd{REQUESTSTIFFNESS}, \cmd{CONSTRAINTSUMMARY}. \\
+\val{EIGENFREQ} & \cmd{SUPPORTS}, \cmd{NUMEIGENVALUES}. \\
+\val{LINEARBUCKLING} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{NUMEIGENVALUES}, optional \cmd{SIGMA}, \cmd{REQUESTSTIFFNESS}, \cmd{REQUESTSTGEOM}. \\
+\val{LINEARTRANSIENT} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, \cmd{INITIALVELOCITY}. \\
 \bottomrule
 \end{longtable}

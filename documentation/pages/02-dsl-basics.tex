@@ -13,7 +13,7 @@ Command names and keywords are normalized by the parser. Case is not significant
 
 \section{Scopes}
 
-Some commands open an active context. \cmd{MATERIAL} activates a material; subsequent material subcommands such as \cmd{ELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to it. \cmd{LOADCASE} activates an analysis context; commands such as \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, and \cmd{CONSTRAINTMETHOD} configure that loadcase.
+Some commands open an active context. \cmd{MATERIAL} activates a material; subsequent material subcommands such as \cmd{ELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to it. \cmd{LOADCASE} activates an analysis context; commands such as \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, and, where supported, \cmd{CONSTRAINTMETHOD} configure that loadcase.
 
 No explicit end command is required. A context ends when a following command no longer belongs to it or when the file ends.
 

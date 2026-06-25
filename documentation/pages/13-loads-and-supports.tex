@@ -1,7 +1,7 @@
 \chapter{Loads, Supports, and Amplitudes}
 \label{chap:loads-supports}
 
-Loads and supports are not activated directly by their definition command. They are assigned to named collectors first. A support collector is a named list of support entries. A load collector is a named list of load entries. A loadcase later selects one or more of these collectors with \cmd{SUPPORTS} and \cmd{LOADS}.
+Loads and supports are assigned to named collectors first. A support collector is a named list of support entries. A load collector is a named list of load entries. A loadcase later selects one or more of these collectors with \cmd{SUPPORTS} and \cmd{LOADS}. Load collectors are never assembled unless they are listed in \cmd{LOADS}. Support collectors are normally selected explicitly with \cmd{SUPPORTS}; when no support collector is listed, the solver may use the special all-support collector if it exists.
 
 This collector model is important for reusable decks. For example, one support collector may contain all fixture supports, another may contain symmetry supports, and a third may contain temporary stabilization supports. A static loadcase can activate only the fixture collector, while a modal loadcase can activate fixture and symmetry collectors. Loads work the same way: each \cmd{CLOAD}, \cmd{DLOAD}, \cmd{PLOAD}, \cmd{VLOAD}, \cmd{TLOAD}, or \cmd{INERTIALOAD} entry declares which \key{LOAD_COLLECTOR} it belongs to; the loadcase decides which collectors are assembled.
 

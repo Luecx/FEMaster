@@ -57,6 +57,7 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \cmd{AMPLITUDE} & Define a time function for transient load scaling. \\
 \cmd{COUPLING} & Define kinematic or structural couplings. \\
 \cmd{TIE} & Define tie constraints between slave nodes and master geometry. \\
+\cmd{CONTACT} & Define frictionless node-to-surface penalty contact for nonlinear static analysis. \\
 \cmd{CONNECTOR} & Define connector constraints between two node sets. \\
 \cmd{RBM} & Generate rigid-body-motion suppression equations. \\
 \bottomrule
@@ -73,7 +74,8 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \cmd{SUPPORTS} & Activate support collectors. \\
 \cmd{LOADS} & Activate load collectors. \\
 \cmd{SOLVER} & Select device and linear solution method. \\
-\cmd{CONSTRAINTMETHOD} & Select Nullspace or Lagrange constraint handling. \\
+\cmd{CONSTRAINTMETHOD} & Select Nullspace or Lagrange constraint handling for static loadcases that support it. \\
+\cmd{NONLINEAR} & Configure nonlinear static increments, iterations, residual tolerance, and zero-row regularization. \\
 \cmd{INERTIARELIEF} & Enable inertia relief for free static models. \\
 \cmd{REBALANCELOADS} & Balance residual resultant force and moment. \\
 \cmd{REQUESTSTIFFNESS} & Request stiffness matrix output. \\
