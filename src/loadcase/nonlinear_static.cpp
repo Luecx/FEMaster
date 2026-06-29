@@ -644,6 +644,15 @@ void NonlinearStatic::run() {
             model->_data.get()
         );
 
+        auto [increment_stress, increment_strain] =
+            model->compute_stress_nodal(displacement, true);
+        (void) increment_strain;
+        writer->write_field(
+            increment_stress,
+            "STRESS_" + std::to_string(accepted_increment),
+            model->_data.get()
+        );
+
         DynamicMatrix lambda_frame(1, 1);
         lambda_frame(0, 0) = load_factor;
         writer->write_eigen_matrix(
