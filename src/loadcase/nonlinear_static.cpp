@@ -384,6 +384,7 @@ void NonlinearStatic::run() {
 
     Precision load_factor        = Precision(0);
     Precision load_increment     = Precision(1) / static_cast<Precision>(num_increments);
+    const Precision fixed_load_increment = load_increment;
     int       accepted_increment = 0;
     int       cutback_count      = 0;
 
@@ -393,8 +394,22 @@ void NonlinearStatic::run() {
     logging::info(true, " inc iter      lambda        rel_res          du_norm   asm_ms solve_ms");
     logging::info(true, "--------------------------------------------------------------------------");
 
-    while (load_factor < Precision(1)) {
-        load_increment = std::min(load_increment, Precision(1) - load_factor);
+    // Stream converged increment frames as they become available. This keeps
+    // the accepted path in the result file even if a later increment fails.
+    writer->add_loadcase(id);
+
+    while (adaptive_increments
+               ? load_factor < Precision(1)
+               : accepted_increment < num_increments) {
+        Precision target_load_factor = Precision(0);
+        if (adaptive_increments) {
+            load_increment = std::min(load_increment, Precision(1) - load_factor);
+            target_load_factor = load_factor + load_increment;
+        } else {
+            target_load_factor = static_cast<Precision>(accepted_increment + 1)
+                               / static_cast<Precision>(num_increments);
+            load_increment = target_load_factor - load_factor;
+        }
 
         logging::error(
             load_increment >= minimum_load_increment,
@@ -404,7 +419,6 @@ void NonlinearStatic::run() {
             minimum_load_increment
         );
 
-        const Precision target_load_factor = load_factor + load_increment;
         const DynamicVector f_ext           = target_load_factor * f_total;
         const DynamicVector u_converged      = u_total;
 
@@ -593,6 +607,13 @@ void NonlinearStatic::run() {
 
             *model->_data->positions = current_positions;
 
+            logging::error(
+                adaptive_increments,
+                "NONLINEARSTATIC fixed increment failed at lambda = ",
+                target_load_factor,
+                "; ADAPTIVE=OFF forbids load cutback"
+            );
+
             load_increment *= load_increment_cutback;
             ++cutback_count;
 
@@ -616,17 +637,35 @@ void NonlinearStatic::run() {
         ++accepted_increment;
         cutback_count = 0;
 
-        if (iterations_used <= fast_convergence_iterations) {
-            load_increment *= load_increment_growth;
-        } else if (iterations_used >= slow_convergence_iterations) {
-            load_increment *= load_increment_cutback;
-        }
-
-        load_increment = std::clamp(
-            load_increment,
-            minimum_load_increment,
-            maximum_load_increment
+        displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
+        writer->write_field(
+            displacement,
+            "DISPLACEMENT_" + std::to_string(accepted_increment),
+            model->_data.get()
         );
+
+        DynamicMatrix lambda_frame(1, 1);
+        lambda_frame(0, 0) = load_factor;
+        writer->write_eigen_matrix(
+            lambda_frame,
+            "LAMBDA_" + std::to_string(accepted_increment)
+        );
+
+        if (adaptive_increments) {
+            if (iterations_used <= fast_convergence_iterations) {
+                load_increment *= load_increment_growth;
+            } else if (iterations_used >= slow_convergence_iterations) {
+                load_increment *= load_increment_cutback;
+            }
+
+            load_increment = std::clamp(
+                load_increment,
+                minimum_load_increment,
+                maximum_load_increment
+            );
+        } else {
+            load_increment = fixed_load_increment;
+        }
 
         logging::info(
             true,
@@ -733,7 +772,6 @@ void NonlinearStatic::run() {
         }
     }
 
-    writer->add_loadcase(id);
     writer->write_field(displacement     , "DISPLACEMENT", model->_data.get());
     writer->write_field(final_strain     , "STRAIN", model->_data.get());
     writer->write_field(final_stress     , "STRESS", model->_data.get());

@@ -16,6 +16,7 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("INCREMENTS").optional("10")
+                .key("ADAPTIVE").optional("ON")
                 .key("MAXITER").optional("20")
                 .key("TOL").optional("1e-8")
                 .key("REGULARIZE_ZERO_ROWS").optional("ON")
@@ -34,6 +35,7 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
             }
 
             lc->num_increments = keys.get<int>("INCREMENTS");
+            lc->adaptive_increments = keys.get<bool>("ADAPTIVE");
             lc->max_iterations = keys.get<int>("MAXITER");
             lc->tolerance = keys.get<Precision>("TOL");
             lc->regularize_zero_stiffness_rows = keys.get<bool>("REGULARIZE_ZERO_ROWS");

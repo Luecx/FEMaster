@@ -81,6 +81,14 @@ struct NonlinearStatic : public LoadCase {
     int num_increments = 10;
 
     /**
+     * @brief Enables automatic growth and cutback of load increments.
+     *
+     * When disabled, every accepted increment has exactly 1/num_increments
+     * of the total load. A failed increment aborts instead of being cut back.
+     */
+    bool adaptive_increments = true;
+
+    /**
      * @brief Maximum number of nonlinear iterations per increment.
      */
     int max_iterations = 20;
