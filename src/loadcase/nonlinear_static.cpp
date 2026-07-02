@@ -252,6 +252,7 @@ void NonlinearStatic::run() {
     Precision load_increment      = initial_increment;
     int       accepted_increment  = 0;
     int       cutback_count       = 0;
+    bool      adjusting_final_arc_step = false;
 
     DynamicVector previous_delta_q = DynamicVector::Zero(transformer->n_master());
     Precision previous_delta_lambda = Precision(1);
@@ -268,7 +269,7 @@ void NonlinearStatic::run() {
     // the accepted path in the result file even if a later increment fails.
     writer->add_loadcase(id);
 
-    while (load_factor < Precision(1) && accepted_increment < max_increments) {
+    while (load_factor < Precision(1) - tolerance && accepted_increment < max_increments) {
         const bool arc_length = control == NonlinearControl::ArcLength;
         const Precision psi2 = arc_length_psi * arc_length_psi;
 
@@ -324,8 +325,6 @@ void NonlinearStatic::run() {
                 load_scale2 + psi2 * load_scale2
             );
 
-            arc_radius = load_increment * predictor_norm;
-
             Precision path_sign = Precision(1);
 
             if (accepted_increment > 0) {
@@ -335,6 +334,18 @@ void NonlinearStatic::run() {
 
                 path_sign = direction >= Precision(0) ? Precision(1) : Precision(-1);
             }
+
+            const Precision remaining_delta_lambda =
+                Precision(1) - lambda_accepted;
+
+            if (path_sign > Precision(0) &&
+                !adjusting_final_arc_step &&
+                load_increment >= remaining_delta_lambda) {
+                load_increment = remaining_delta_lambda;
+                adjusting_final_arc_step = true;
+            }
+
+            arc_radius = load_increment * predictor_norm;
 
             q_total     = q_accepted + path_sign * load_increment * dq_load;
             load_factor = lambda_accepted + path_sign * load_increment;
@@ -595,11 +606,59 @@ void NonlinearStatic::run() {
             continue;
         }
 
+        if (arc_length &&
+            adjusting_final_arc_step &&
+            std::abs(load_factor - Precision(1)) > tolerance) {
+            const Precision reached_load_factor = load_factor;
+            const Precision achieved_delta_lambda =
+                load_factor - lambda_accepted;
+            const Precision remaining_delta_lambda =
+                Precision(1) - lambda_accepted;
+
+            logging::error(
+                achieved_delta_lambda > Precision(0),
+                "ArcLength: invalid load-factor direction while adjusting the final radius"
+            );
+
+            const Precision previous_increment = load_increment;
+            load_increment *= remaining_delta_lambda / achieved_delta_lambda;
+
+            q_total     = q_accepted;
+            u_total     = u_accepted;
+            load_factor = lambda_accepted;
+            update_positions();
+
+            ++cutback_count;
+
+            logging::info(
+                true,
+                "Arc-length step reached lambda = ",
+                reached_load_factor,
+                " instead of 1; adjusting increment from ",
+                previous_increment,
+                " to ",
+                load_increment
+            );
+
+            logging::error(
+                load_increment >= minimum_increment,
+                "NONLINEARSTATIC adjusted final arc-length increment is smaller than minimum increment"
+            );
+
+            logging::error(
+                cutback_count <= maximum_cutbacks,
+                "NONLINEARSTATIC exceeded maximum number of final arc-length adjustments"
+            );
+
+            continue;
+        }
+
         if (!arc_length) {
             load_factor = target_load_factor;
         } else {
             previous_delta_q      = q_total - q_accepted;
             previous_delta_lambda = load_factor - lambda_accepted;
+            adjusting_final_arc_step = false;
         }
 
         accepted_increment++;
