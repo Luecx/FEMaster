@@ -8,6 +8,7 @@
 #include "../../cuda/cuda_defs.h"
 #include "../../cuda/cuda_vec.h"
 
+#include <algorithm>
 #include <iomanip>
 
 namespace fem::solver::detail {
@@ -53,8 +54,8 @@ void solve_indirect_gpu_precon(cuda::CudaCSR& mat) {
 } // namespace
 #endif
 
-DynamicVector solve_indirect_gpu(SparseMatrix& mat,
-                                 DynamicVector& rhs) {
+DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
+                                 const DynamicMatrix& rhs) {
 #ifndef SUPPORT_GPU
     logging::info(true, "This build does not support gpu-accelerated solving, falling back to cpu");
     return solve_indirect_cpu(mat, rhs);
@@ -193,49 +194,67 @@ DynamicVector solve_indirect_gpu(SparseMatrix& mat,
                                              descr_L, vec_i, vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
                                              spsv_2_descr, buffer_spsv_2));
 
-    vec_r.upload(rhs.data());
-    runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one,
-                                          descr_L, vec_r, vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr));
-    runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE, &one,
-                                          descr_L, vec_i, vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr));
-    vec_p.copy(vec_z);
-
     logging::info(true, "Starting iterations");
-    CudaPrecision r_norm;
-    int k;
-    for (k = 1; k < N; k++) {
-        cusparseSpMV(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descr_A, vec_p, &zero,
-                     vec_ap, CUDA_P_TYPE, CUSPARSE_SPMV_CSR_ALG1, buffer_ap);
-        CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_r, 1, vec_z, 1, &val_rz);
-        CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_ap, 1, vec_p, 1, &val_pap);
+    DynamicMatrix sol = DynamicMatrix::Zero(N, rhs.cols());
+    int max_iterations = 0;
+    CudaPrecision max_residual = 0;
 
-        val_alpha  = val_rz / val_pap;
-        val_alpha2 = -val_alpha;
-
-        CUBLAS_AXPY(cuda::manager.handle_cublas, N, &val_alpha, vec_p, 1, vec_x, 1);
-        CUBLAS_AXPY(cuda::manager.handle_cublas, N, &val_alpha2, vec_ap, 1, vec_r, 1);
-
-        CUBLAS_NRM(cuda::manager.handle_cublas, N, vec_r, 1, &r_norm);
-
-        if (k % 1000 == 0) {
-            logging::info("Iteration ", k, " r_norm: ", r_norm);
+    for (Eigen::Index column = 0; column < rhs.cols(); ++column) {
+        if (rhs.col(column).isZero()) {
+            continue;
         }
 
-        if (r_norm < 1e-8) {
-            break;
+        vec_x.clear();
+        vec_r.upload(rhs.col(column).data());
+        runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one,
+                                              descr_L, vec_r, vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
+                                              spsv_1_descr));
+        runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE, &one,
+                                              descr_L, vec_i, vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
+                                              spsv_2_descr));
+        vec_p.copy(vec_z);
+
+        CudaPrecision r_norm = static_cast<CudaPrecision>(rhs.col(column).norm());
+        int k = 0;
+        for (k = 1; k <= N; ++k) {
+            runtime_check_cuda(cusparseSpMV(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                            &one, descr_A, vec_p, &zero, vec_ap, CUDA_P_TYPE,
+                                            CUSPARSE_SPMV_CSR_ALG1, buffer_ap));
+            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_r, 1, vec_z, 1, &val_rz));
+            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_ap, 1, vec_p, 1, &val_pap));
+
+            val_alpha  = val_rz / val_pap;
+            val_alpha2 = -val_alpha;
+
+            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N, &val_alpha, vec_p, 1, vec_x, 1));
+            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N, &val_alpha2, vec_ap, 1, vec_r, 1));
+            runtime_check_cuda(CUBLAS_NRM(cuda::manager.handle_cublas, N, vec_r, 1, &r_norm));
+
+            if (k % 1000 == 0) {
+                logging::info(true, "RHS ", column, " iteration ", k, " r_norm: ", r_norm);
+            }
+
+            if (r_norm < 1e-8) {
+                break;
+            }
+
+            runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse,
+                                                   CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descr_L, vec_r, vec_i,
+                                                   CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr));
+            runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse,
+                                                   CUSPARSE_OPERATION_TRANSPOSE, &one, descr_L, vec_i, vec_z,
+                                                   CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr));
+
+            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_r, 1, vec_z, 1, &val_alpha2));
+            val_alpha = val_alpha2 / val_rz;
+
+            runtime_check_cuda(CUBLAS_SCAL(cuda::manager.handle_cublas, N, &val_alpha, vec_p, 1));
+            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N, &one, vec_z, 1, vec_p, 1));
         }
 
-        cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descr_L, vec_r,
-                           vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr);
-        cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE, &one, descr_L, vec_i,
-                           vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr);
-
-        CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_r, 1, vec_z, 1, &val_alpha2);
-
-        val_alpha = val_alpha2 / val_rz;
-
-        CUBLAS_SCAL(cuda::manager.handle_cublas, N, &val_alpha, vec_p, 1);
-        CUBLAS_AXPY(cuda::manager.handle_cublas, N, &one, vec_z, 1, vec_p, 1);
+        vec_x.download(sol.col(column).data());
+        max_iterations = std::max(max_iterations, std::min(k, static_cast<int>(N)));
+        max_residual = std::max(max_residual, r_norm);
     }
 
     runtime_check_cuda(cusparseSpSV_destroyDescr(spsv_1_descr));
@@ -246,11 +265,9 @@ DynamicVector solve_indirect_gpu(SparseMatrix& mat,
     t.stop();
     logging::info(true, "Running PCG method finished");
     logging::info(true, "Elapsed time: ", t.elapsed(), " ms");
-    logging::info(true, "iterations  : ", k);
-    logging::info(true, "residual    : ", r_norm);
+    logging::info(true, "max iterations: ", max_iterations);
+    logging::info(true, "max residual  : ", max_residual);
 
-    DynamicVector sol{N};
-    vec_x.download(sol.data());
     return sol;
 #endif
 }

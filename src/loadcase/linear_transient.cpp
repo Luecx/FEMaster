@@ -36,7 +36,7 @@ void Transient::run() {
 
     // (0) Materials/sections
     model->assign_sections();
-    StepScope step_scope(*this);
+    model->step_begin();
 
     // (1) Unconstrained DOF index
     auto active_dof_idx_mat = Timer::measure(
@@ -199,5 +199,6 @@ void Transient::run() {
     }
 
     logging::info(true, "Transient analysis completed.");
+    model->step_end();
 }
 }} // namespace fem::loadcase

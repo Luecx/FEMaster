@@ -15,7 +15,21 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
-                .key("INCREMENTS").optional("10")
+                .key("INCREMENTS").optional()
+                    .doc("Legacy increment count; sets INITIAL_INCREMENT to 1 / INCREMENTS.")
+                .key("MAX_INCREMENTS").optional()
+                    .doc("Maximum number of accepted nonlinear increments.")
+                .key("INITIAL_INCREMENT").optional()
+                    .doc("Initial nonlinear increment size.")
+                .key("MINIMUM_INCREMENT").optional()
+                    .doc("Minimum nonlinear increment size.")
+                .key("MAXIMUM_INCREMENT").optional()
+                    .doc("Maximum nonlinear increment size.")
+                .key("CONTROL").optional("LOAD")
+                    .allowed({"LOAD", "ARC_LENGTH"})
+                    .doc("Nonlinear path control: LOAD or ARC_LENGTH.")
+                .key("ARC_LENGTH_PSI").optional("1.0")
+                    .doc("Weighting factor for the load part of the arc-length constraint.")
                 .key("ADAPTIVE").optional("ON")
                 .key("MAXITER").optional("20")
                 .key("TOL").optional("1e-8")
@@ -34,7 +48,32 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
                 throw std::runtime_error("NONLINEAR is only supported for NONLINEARSTATIC loadcases");
             }
 
-            lc->num_increments = keys.get<int>("INCREMENTS");
+            if (keys.has("INCREMENTS")) {
+                const int increments = keys.get<int>("INCREMENTS");
+                if (increments <= 0) {
+                    throw std::runtime_error("NONLINEAR requires INCREMENTS > 0");
+                }
+                lc->initial_increment =
+                    Precision(1) / static_cast<Precision>(increments);
+            }
+
+            if (keys.has("MAX_INCREMENTS")) {
+                lc->max_increments = keys.get<int>("MAX_INCREMENTS");
+            }
+            if (keys.has("INITIAL_INCREMENT")) {
+                lc->initial_increment = keys.get<Precision>("INITIAL_INCREMENT");
+            }
+            if (keys.has("MINIMUM_INCREMENT")) {
+                lc->minimum_increment = keys.get<Precision>("MINIMUM_INCREMENT");
+            }
+            if (keys.has("MAXIMUM_INCREMENT")) {
+                lc->maximum_increment = keys.get<Precision>("MAXIMUM_INCREMENT");
+            }
+
+            lc->control = keys.equals("CONTROL", "ARC_LENGTH")
+                ? loadcase::NonlinearControl::ArcLength
+                : loadcase::NonlinearControl::LoadControl;
+            lc->arc_length_psi = keys.get<Precision>("ARC_LENGTH_PSI");
             lc->adaptive_increments = keys.get<bool>("ADAPTIVE");
             lc->max_iterations = keys.get<int>("MAXITER");
             lc->tolerance = keys.get<Precision>("TOL");

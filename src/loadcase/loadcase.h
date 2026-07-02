@@ -47,18 +47,6 @@ struct LoadCase {
     ID get_id() const { return id; }
 
 protected:
-    class StepScope {
-    public:
-        explicit StepScope(LoadCase& loadcase);
-        ~StepScope();
-
-        StepScope(const StepScope&) = delete;
-        StepScope& operator=(const StepScope&) = delete;
-
-    private:
-        model::Model* model_;
-    };
-
     /**
      * @brief Logs a summary of the active constraint groups.
      *

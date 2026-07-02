@@ -13,8 +13,8 @@
 
 namespace fem::solver::detail {
 
-DynamicVector solve_direct_cpu(SparseMatrix& mat,
-                               DynamicVector& rhs,
+DynamicMatrix solve_direct_cpu(SparseMatrix& mat,
+                               const DynamicMatrix& rhs,
                                DirectSolverMatrixType /*matrix_type*/) {
     Timer t {};
     t.start();
@@ -29,7 +29,7 @@ DynamicVector solve_direct_cpu(SparseMatrix& mat,
 
     solver.compute(mat);
     logging::warning(solver.info() == Eigen::Success, "Decomposition failed with PardisoLDLT");
-    DynamicVector sol = solver.solve(rhs);
+    DynamicMatrix sol = solver.solve(rhs);
 
     if (solver.info() != Eigen::Success) {
         logging::warning(true, "Solving failed with PardisoLDLT");
@@ -43,7 +43,7 @@ DynamicVector solve_direct_cpu(SparseMatrix& mat,
 
     Eigen::SimplicialLDLT<SparseMatrix> solver {};
     solver.compute(mat);
-    DynamicVector sol;
+    DynamicMatrix sol;
     if (solver.info() == Eigen::Success) {
         sol = solver.solve(rhs);
     }

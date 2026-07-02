@@ -31,16 +31,16 @@ const char* cudss_status_name(cudssStatus_t status) {
 } // namespace
 #endif
 
-DynamicVector solve_direct_gpu(SparseMatrix& mat,
-                               DynamicVector& rhs,
+DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
+                               const DynamicMatrix& rhs,
                                DirectSolverMatrixType matrix_type) {
 #ifndef SUPPORT_GPU
     logging::info(true, "This build does not support gpu-accelerated solving, falling back to cpu");
     return solve_direct_cpu(mat, rhs, matrix_type);
 #else
     const auto N = mat.cols();
-    DynamicVector sol{N};
-    sol.setZero();
+    const auto nrhs = rhs.cols();
+    DynamicMatrix sol = DynamicMatrix::Zero(N, nrhs);
 
     cuda::manager.create_cuda();
     cuda::CudaCSR mat_gpu{mat};
@@ -51,9 +51,9 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
                         ? "Using cuDSS direct solver (SPD)"
                         : "Using cuDSS direct solver (general)");
 
-    cuda::CudaArray<CudaPrecision> vec_rhs {static_cast<std::size_t>(rhs.size())};
-    cuda::CudaArray<CudaPrecision> vec_sol {static_cast<std::size_t>(rhs.size())};
-    vec_rhs.upload(rhs.data());
+    cuda::CudaArray<CudaPrecision> dense_rhs {static_cast<std::size_t>(rhs.size())};
+    cuda::CudaArray<CudaPrecision> dense_sol {static_cast<std::size_t>(rhs.size())};
+    dense_rhs.upload(rhs.data());
 
     cudssHandle_t handle {};
     cudssConfig_t config {};
@@ -76,8 +76,8 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
     int* row_start = row_offsets;
     int* col_indices = mat_gpu.col_ind();
     CudaPrecision* values = mat_gpu.val_ptr();
-    CudaPrecision* rhs_values = vec_rhs;
-    CudaPrecision* sol_values = vec_sol;
+    CudaPrecision* rhs_values = dense_rhs;
+    CudaPrecision* sol_values = dense_sol;
     const cudssMatrixType_t cudss_matrix_type =
         (matrix_type == DirectSolverMatrixType::SPD) ? CUDSS_MTYPE_SPD : CUDSS_MTYPE_GENERAL;
     const cudssMatrixViewType_t cudss_matrix_view =
@@ -104,7 +104,7 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
                         "cudssMatrixCreateCsr");
     runtime_check_cudss(cudssMatrixCreateDn(&cudss_rhs,
                                             nrows,
-                                            1,
+                                            static_cast<int64_t>(nrhs),
                                             nrows,
                                             rhs_values,
                                             CUDA_P_TYPE,
@@ -112,7 +112,7 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
                         "cudssMatrixCreateDn(rhs)");
     runtime_check_cudss(cudssMatrixCreateDn(&cudss_sol,
                                             nrows,
-                                            1,
+                                            static_cast<int64_t>(nrhs),
                                             nrows,
                                             sol_values,
                                             CUDA_P_TYPE,
@@ -127,7 +127,7 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
                         "cudssExecute(solve)");
 
     t.stop();
-    vec_sol.download(sol.data());
+    dense_sol.download(sol.data());
 
     runtime_check_cudss(cudssMatrixDestroy(cudss_mat), "cudssMatrixDestroy(mat)");
     runtime_check_cudss(cudssMatrixDestroy(cudss_sol), "cudssMatrixDestroy(sol)");
@@ -139,11 +139,12 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
     logging::error(matrix_type == DirectSolverMatrixType::SPD,
                    "GPU direct solve for non-SPD systems requires cuDSS; "
                    "cuSolver sparse direct path only supports Cholesky/SPD here");
+    logging::info(nrhs > 1,
+                  "Legacy cuSolver solves multiple right-hand sides sequentially; "
+                  "enable cuDSS for a native multi-RHS solve");
 
-    cuda::CudaVector vec_rhs {int(rhs.size())};
-    cuda::CudaVector vec_sol {int(rhs.size())};
-    vec_rhs.upload(rhs.data());
-    vec_sol.upload(rhs.data());
+    cuda::CudaVector vec_rhs {int(N)};
+    cuda::CudaVector vec_sol {int(N)};
 
     int nnz = static_cast<int>(mat_gpu.nnz());
 
@@ -153,22 +154,25 @@ DynamicVector solve_direct_gpu(SparseMatrix& mat,
     runtime_check_cuda(cusparseSetMatIndexBase(descr, CUSPARSE_INDEX_BASE_ZERO));
 
     t.start();
-    int singularity;
-    runtime_check_cuda(CUSOLV_CHOLESKY(cuda::manager.handle_cusolver_sp,
-                                       N,
-                                       nnz,
-                                       descr,
-                                       mat_gpu.val_ptr(),
-                                       mat_gpu.row_ptr(),
-                                       mat_gpu.col_ind(),
-                                       vec_rhs,
-                                       0,
-                                       3,
-                                       vec_sol,
-                                       &singularity));
+    for (Eigen::Index column = 0; column < nrhs; ++column) {
+        vec_rhs.upload(rhs.col(column).data());
+        int singularity;
+        runtime_check_cuda(CUSOLV_CHOLESKY(cuda::manager.handle_cusolver_sp,
+                                           N,
+                                           nnz,
+                                           descr,
+                                           mat_gpu.val_ptr(),
+                                           mat_gpu.row_ptr(),
+                                           mat_gpu.col_ind(),
+                                           vec_rhs,
+                                           0,
+                                           3,
+                                           vec_sol,
+                                           &singularity));
+        logging::error(singularity == -1, "decomposing system not possible for RHS ", column);
+        vec_sol.download(sol.col(column).data());
+    }
     t.stop();
-    logging::error(singularity == -1, "decomposing system not possible");
-    vec_sol.download(sol.data());
 
     runtime_check_cuda(cusparseDestroyMatDescr(descr));
 #endif

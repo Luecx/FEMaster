@@ -26,19 +26,6 @@ LoadCase::LoadCase(ID case_id, reader::Writer* writer_in, model::Model* model_in
     , writer(writer_in)
     , model(model_in) {}
 
-LoadCase::StepScope::StepScope(LoadCase& loadcase)
-    : model_(loadcase.model) {
-    if (model_ != nullptr) {
-        model_->step_begin();
-    }
-}
-
-LoadCase::StepScope::~StepScope() {
-    if (model_ != nullptr) {
-        model_->step_end();
-    }
-}
-
 /**
  * @copydoc LoadCase::report_constraint_groups
  */

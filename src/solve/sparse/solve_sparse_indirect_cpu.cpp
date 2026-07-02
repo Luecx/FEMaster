@@ -5,14 +5,14 @@
 
 #include <Eigen/IterativeLinearSolvers>
 
+#include <algorithm>
+
 namespace fem::solver::detail {
 
-DynamicVector solve_indirect_cpu(SparseMatrix& mat,
-                                 DynamicVector& rhs) {
+DynamicMatrix solve_indirect_cpu(SparseMatrix& mat,
+                                 const DynamicMatrix& rhs) {
     Timer t {};
     t.start();
-
-    DynamicVector indirect_rhs = rhs;
 
     Eigen::ConjugateGradient<
         Eigen::SparseMatrix<Precision>,
@@ -22,14 +22,22 @@ DynamicVector solve_indirect_cpu(SparseMatrix& mat,
     cg.compute(mat);
     cg.setTolerance(1e-12);
     logging::error(cg.info() == Eigen::Success, "Decomposition failed");
-    DynamicVector sol = cg.solve(indirect_rhs);
-    logging::error(cg.info() == Eigen::Success, "Solving failed");
+
+    DynamicMatrix sol(mat.rows(), rhs.cols());
+    Eigen::Index max_iterations = 0;
+    Precision max_error = 0;
+    for (Eigen::Index column = 0; column < rhs.cols(); ++column) {
+        sol.col(column) = cg.solve(rhs.col(column));
+        logging::error(cg.info() == Eigen::Success, "Solving failed for RHS ", column);
+        max_iterations = std::max(max_iterations, cg.iterations());
+        max_error = std::max(max_error, cg.error());
+    }
 
     t.stop();
     logging::info(true, "Running PCG method finished");
     logging::info(true, "Elapsed time: ", t.elapsed(), " ms");
-    logging::info(true, "iterations  : ", cg.iterations());
-    logging::info(true, "residual    : ", cg.error());
+    logging::info(true, "max iterations: ", max_iterations);
+    logging::info(true, "max residual  : ", max_error);
 
     return sol;
 }

@@ -22,12 +22,20 @@ namespace fem {
 namespace loadcase {
 
 /**
+ * @brief Nonlinear path control method.
+ */
+enum class NonlinearControl {
+    LoadControl,
+    ArcLength
+};
+
+/**
  * @brief Nonlinear static load case using incremental equilibrium iterations.
  *
  * The nonlinear static load case solves a quasi-static problem by applying
- * loads over a prescribed number of increments. Within each increment, the
- * equilibrium residual is iteratively reduced until the configured convergence
- * tolerance is reached or the maximum number of iterations is exceeded.
+ * loads over nonlinear increments. Within each increment, the equilibrium
+ * residual is iteratively reduced until the configured convergence tolerance is
+ * reached or the maximum number of iterations is exceeded.
  *
  * The current implementation is intended for updated-Lagrangian nonlinear
  * analyses, where the structural state is updated incrementally after each
@@ -65,26 +73,61 @@ struct NonlinearStatic : public LoadCase {
     ConstraintMethod constraint_method = ConstraintMethod::NullSpace;
 
     /**
-     * @brief Optional file path for exporting or importing stiffness data.
+     * @brief Nonlinear path control method.
      *
-     * The precise interpretation depends on the nonlinear static implementation.
-     * An empty string disables stiffness file output/input.
+     * LoadControl prescribes the load factor increment directly. ArcLength uses
+     * the same increment value as an equivalent load-factor step and converts it
+     * internally into an arc-length radius.
+     */
+    NonlinearControl control = NonlinearControl::LoadControl;
+
+    /**
+     * @brief Optional file path for exporting stiffness data.
+     *
+     * An empty string disables stiffness matrix output.
      */
     std::string stiffness_file;
 
     /**
-     * @brief Number of load increments.
+     * @brief Maximum number of accepted nonlinear increments.
      *
-     * The total external load is applied incrementally. Larger values generally
-     * improve robustness for strongly nonlinear problems, but increase runtime.
+     * For LoadControl this is mostly a safety limit because the analysis stops
+     * once the load factor reaches one. For ArcLength it limits the number of
+     * accepted path-following steps.
      */
-    int num_increments = 10;
+    int max_increments = 100;
 
     /**
-     * @brief Enables automatic growth and cutback of load increments.
+     * @brief Initial nonlinear step size.
      *
-     * When disabled, every accepted increment has exactly 1/num_increments
-     * of the total load. A failed increment aborts instead of being cut back.
+     * For LoadControl this is the initial load-factor increment. For ArcLength
+     * this is interpreted as an equivalent load-factor increment used to compute
+     * the internal arc-length radius from the current tangent predictor.
+     */
+    Precision initial_increment = Precision(0.1);
+
+    /**
+     * @brief Minimum allowed nonlinear step size.
+     *
+     * For LoadControl this limits the load-factor increment. For ArcLength this
+     * limits the equivalent load-factor increment used to compute the internal
+     * arc-length radius.
+     */
+    Precision minimum_increment = Precision(1e-4);
+
+    /**
+     * @brief Maximum allowed nonlinear step size.
+     *
+     * For LoadControl this limits the load-factor increment. For ArcLength this
+     * limits the equivalent load-factor increment used to compute the internal
+     * arc-length radius.
+     */
+    Precision maximum_increment = Precision(1.0);
+
+    /**
+     * @brief Enables automatic growth and cutback of nonlinear increments.
+     *
+     * When disabled, every attempted increment uses @ref initial_increment.
      */
     bool adaptive_increments = true;
 
@@ -100,6 +143,15 @@ struct NonlinearStatic : public LoadCase {
      * the corresponding source file.
      */
     Precision tolerance = Precision(1e-8);
+
+    /**
+     * @brief Weighting factor for the load-factor part of the arc-length constraint.
+     *
+     * The internal arc-length constraint is
+     * ||Delta q||^2 + psi^2 * load_scale^2 * Delta lambda^2 = radius^2,
+     * where load_scale = ||dq_load|| and A dq_load = T^T f_total.
+     */
+    Precision arc_length_psi = Precision(1.0);
 
     /**
      * @brief Enables artificial regularization of zero-stiffness rows.

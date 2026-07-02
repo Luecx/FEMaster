@@ -10,19 +10,28 @@ enum class DirectSolverMatrixType {
     General
 };
 
-DynamicVector solve_direct(SolverDevice device,
+DynamicMatrix solve_direct(SolverDevice device,
                            SparseMatrix& mat,
-                           DynamicVector& rhs,
+                           const DynamicMatrix& rhs,
                            DirectSolverMatrixType matrix_type = DirectSolverMatrixType::SPD);
+
+inline DynamicVector solve_direct(SolverDevice device,
+                                  SparseMatrix& mat,
+                                  const DynamicVector& rhs,
+                                  DirectSolverMatrixType matrix_type = DirectSolverMatrixType::SPD) {
+    const DynamicMatrix rhs_matrix = rhs;
+    const DynamicMatrix solution = solve_direct(device, mat, rhs_matrix, matrix_type);
+    return solution.col(0);
+}
 
 namespace detail {
 
-DynamicVector solve_direct_cpu(SparseMatrix& mat,
-                               DynamicVector& rhs,
+DynamicMatrix solve_direct_cpu(SparseMatrix& mat,
+                               const DynamicMatrix& rhs,
                                DirectSolverMatrixType matrix_type);
 
-DynamicVector solve_direct_gpu(SparseMatrix& mat,
-                               DynamicVector& rhs,
+DynamicMatrix solve_direct_gpu(SparseMatrix& mat,
+                               const DynamicMatrix& rhs,
                                DirectSolverMatrixType matrix_type);
 
 } // namespace detail
