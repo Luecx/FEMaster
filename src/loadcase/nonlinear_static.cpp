@@ -31,15 +31,15 @@ model::Field current_positions_from_displacement(
     const model::Field& reference,
     const model::Field& displacement
 ) {
-    logging::error(reference.domain == model::FieldDomain::NODE,
+    logging::error(reference.domain      == model::FieldDomain::NODE,
                    "NonlinearStatic: reference positions must use NODE domain");
-    logging::error(displacement.domain == model::FieldDomain::NODE,
+    logging::error(displacement.domain   == model::FieldDomain::NODE,
                    "NonlinearStatic: displacement must use NODE domain");
-    logging::error(reference.rows == displacement.rows,
+    logging::error(reference.rows        == displacement.rows,
                    "NonlinearStatic: reference/displacement row mismatch");
-    logging::error(reference.components == displacement.components,
+    logging::error(reference.components  == displacement.components,
                    "NonlinearStatic: reference/displacement component mismatch");
-    logging::error(reference.components >= 6,
+    logging::error(reference.components  >= 6,
                    "NonlinearStatic: position fields require six components");
 
     model::Field current = reference;
@@ -87,19 +87,15 @@ Precision calculate_relative_residual(
     transformer.apply_Tt(internal_force, reduced_internal);
 
     const Index reduced_dofs = std::max<Index>(
-        static_cast<Index>(reduced_residual.size()),
-        Index(1)
+        static_cast<Index>(reduced_residual.size()), Index(1)
     );
 
     const Precision inv_sqrt_reduced_dofs =
         Precision(1) / std::sqrt(static_cast<Precision>(reduced_dofs));
 
-    const Precision residual_rms =
-        reduced_residual.norm() * inv_sqrt_reduced_dofs;
-    const Precision external_rms =
-        reduced_external.norm() * inv_sqrt_reduced_dofs;
-    const Precision internal_rms =
-        reduced_internal.norm() * inv_sqrt_reduced_dofs;
+    const Precision residual_rms = reduced_residual.norm() * inv_sqrt_reduced_dofs;
+    const Precision external_rms = reduced_external.norm() * inv_sqrt_reduced_dofs;
+    const Precision internal_rms = reduced_internal.norm() * inv_sqrt_reduced_dofs;
 
     const Precision denominator = std::max({
         external_rms,
@@ -108,6 +104,96 @@ Precision calculate_relative_residual(
     });
 
     return residual_rms / denominator;
+}
+
+Precision calculate_arc_length_constraint(
+    const DynamicVector& delta_q,
+    Precision            delta_lambda,
+    Precision            psi2,
+    Precision            load_scale2,
+    Precision            arc_radius
+) {
+    return delta_q.dot(delta_q)
+         + psi2 * load_scale2 * delta_lambda * delta_lambda
+         - arc_radius * arc_radius;
+}
+
+Precision calculate_relative_arc_length_residual(
+    Precision constraint,
+    Precision arc_radius
+) {
+    return std::abs(constraint) / std::max(
+        arc_radius * arc_radius,
+        std::numeric_limits<Precision>::epsilon()
+    );
+}
+
+void build_arc_length_augmented_system(
+    const SparseMatrix&  A,
+    const DynamicVector& reduced_residual,
+    const DynamicVector& reduced_total_load,
+    const DynamicVector& delta_q,
+    Precision            delta_lambda,
+    Precision            constraint,
+    Precision            psi2,
+    Precision            load_scale2,
+    SparseMatrix&        augmented,
+    DynamicVector&       augmented_rhs,
+    Precision&           load_scale
+) {
+    const Index n = static_cast<Index>(A.rows());
+
+    load_scale = std::sqrt(load_scale2);
+
+    logging::error(load_scale > Precision(0) && std::isfinite(load_scale),
+                   "ArcLength: invalid load scaling in augmented corrector");
+
+    TripletList augmented_triplets;
+    augmented_triplets.reserve(static_cast<std::size_t>(A.nonZeros())
+                             + static_cast<std::size_t>(2 * n + 1));
+
+    for (Index outer = 0; outer < A.outerSize(); ++outer) {
+        for (SparseMatrix::InnerIterator entry(A, outer); entry; ++entry) {
+            augmented_triplets.emplace_back(entry.row(), entry.col(), entry.value());
+        }
+    }
+
+    // Use dmu = load_scale * dlambda as the final unknown. This balances the
+    // displacement and load parts of the constraint.
+    for (Index i = 0; i < n; ++i) {
+        const Precision load_entry = -reduced_total_load(i) / load_scale;
+
+        if (load_entry != Precision(0)) {
+            augmented_triplets.emplace_back(i, n, load_entry);
+        }
+    }
+
+    const DynamicVector constraint_q  = Precision(2) * delta_q;
+    const Precision     constraint_mu = Precision(2) * psi2 * load_scale * delta_lambda;
+
+    const Precision constraint_scale = std::max({
+        constraint_q.template lpNorm<Eigen::Infinity>(),
+        std::abs(constraint_mu),
+        std::numeric_limits<Precision>::epsilon()
+    });
+
+    for (Index i = 0; i < n; ++i) {
+        const Precision value = constraint_q(i) / constraint_scale;
+
+        if (value != Precision(0)) {
+            augmented_triplets.emplace_back(n, i, value);
+        }
+    }
+
+    augmented_triplets.emplace_back(n, n, constraint_mu / constraint_scale);
+
+    augmented.resize(n + 1, n + 1);
+    augmented.setFromTriplets(augmented_triplets.begin(), augmented_triplets.end());
+    augmented.makeCompressed();
+
+    augmented_rhs.resize(n + 1);
+    augmented_rhs.head(n) = reduced_residual;
+    augmented_rhs(n)      = -constraint / constraint_scale;
 }
 
 } // namespace
@@ -125,30 +211,31 @@ void NonlinearStatic::run() {
 
     // perform important checks
     logging::error(max_increments > 0,
-        "NONLINEARSTATIC requires MAX_INCREMENTS > 0");
+                   "NONLINEARSTATIC requires MAX_INCREMENTS > 0");
     logging::error(initial_increment > Precision(0),
-        "NONLINEARSTATIC requires INITIAL_INCREMENT > 0");
+                   "NONLINEARSTATIC requires INITIAL_INCREMENT > 0");
     logging::error(minimum_increment > Precision(0),
-        "NONLINEARSTATIC requires MINIMUM_INCREMENT > 0");
+                   "NONLINEARSTATIC requires MINIMUM_INCREMENT > 0");
     logging::error(maximum_increment >= minimum_increment,
-        "NONLINEARSTATIC requires MAXIMUM_INCREMENT >= MINIMUM_INCREMENT");
-    logging::error(initial_increment >= minimum_increment &&
-                   initial_increment <= maximum_increment,
-        "NONLINEARSTATIC requires INITIAL_INCREMENT between MINIMUM_INCREMENT and MAXIMUM_INCREMENT");
+                   "NONLINEARSTATIC requires MAXIMUM_INCREMENT >= MINIMUM_INCREMENT");
+    logging::error(initial_increment >= minimum_increment && initial_increment <= maximum_increment,
+                   "NONLINEARSTATIC requires INITIAL_INCREMENT between MINIMUM_INCREMENT and MAXIMUM_INCREMENT");
     logging::error(max_iterations > 0,
-        "NONLINEARSTATIC requires MAXITER > 0");
+                   "NONLINEARSTATIC requires MAXITER > 0");
     logging::error(tolerance > Precision(0),
-        "NONLINEARSTATIC requires TOL > 0");
+                   "NONLINEARSTATIC requires TOL > 0");
     logging::error(arc_length_psi >= Precision(0),
-        "NONLINEARSTATIC requires ARC_LENGTH_PSI >= 0");
+                   "NONLINEARSTATIC requires ARC_LENGTH_PSI >= 0");
+    logging::error(arc_length_final_load_threshold >= Precision(0),
+                   "NONLINEARSTATIC requires FINAL_LOAD_CONTROL_THRESHOLD >= 0");
     logging::error(constraint_method == ConstraintTransformer::Method::NullSpace,
-        "NONLINEARSTATIC currently supports only NULLSPACE constraints");
+                   "NONLINEARSTATIC currently supports only NULLSPACE constraints");
     logging::error(method == solver::DIRECT,
-        "NONLINEARSTATIC currently supports only DIRECT solver method");
+                   "NONLINEARSTATIC currently supports only DIRECT solver method");
     logging::error(model->_data->positions != nullptr,
-        "NonlinearStatic: positions field not initialized");
+                   "NonlinearStatic: positions field not initialized");
     logging::error(model->_data->positions_reference != nullptr,
-        "NonlinearStatic: positions_reference field not initialized");
+                   "NonlinearStatic: positions_reference field not initialized");
 
     // create a copy of original and reference positions and reset them at the end
     const model::Field original_positions  = *model->_data->positions;
@@ -198,17 +285,13 @@ void NonlinearStatic::run() {
             options.set.scale_columns = true;
 
             return std::make_unique<ConstraintTransformer>(
-                equations,
-                active_dof_idx_mat,
-                n_active,
-                options
+                equations, active_dof_idx_mat, n_active, options
             );
         },
         "building constraint transformer"
     );
-
-    logging::info(true                    , "");
-    logging::info(true                    , "Constraint summary");
+    logging::info(true, "");
+    logging::info(true, "Constraint summary");
     logging::up();
     logging::info(true                    , "m (rows of C)     : "   , transformer->report().m);
     logging::info(true                    , "n (cols of C)     : "   , transformer->report().n);
@@ -230,17 +313,20 @@ void NonlinearStatic::run() {
 
     auto update_positions = [&]() {
         displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
-        *model->_data->positions = current_positions_from_displacement(
-            reference_positions,
-            displacement
-        );
+        *model->_data->positions = current_positions_from_displacement(reference_positions, displacement);
     };
 
     update_positions();
 
-    model::Field final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
-    final_internal.set_zero();
+    // create fields used below
+    model::NodeData internal_mat      {"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
+    model::NodeData predictor_internal{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
+    model::NodeData final_internal    {"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
+    internal_mat      .set_zero();
+    predictor_internal.set_zero();
+    final_internal    .set_zero();
 
+    // settings for the convergence
     const Precision load_increment_growth  = Precision(1.5);
     const Precision load_increment_cutback = Precision(0.5);
 
@@ -248,19 +334,18 @@ void NonlinearStatic::run() {
     const int slow_convergence_iterations = 10;
     const int maximum_cutbacks            = 20;
 
-    Precision load_factor         = Precision(0);
-    Precision load_increment      = initial_increment;
-    int       accepted_increment  = 0;
-    int       cutback_count       = 0;
-    bool      adjusting_final_arc_step = false;
+    Precision load_factor               = Precision(0);
+    Precision load_increment            = initial_increment;
+    int       accepted_increment        = 0;
+    int       cutback_count             = 0;
+    bool      final_load_control_failed = false;
 
-    DynamicVector previous_delta_q = DynamicVector::Zero(transformer->n_master());
-    Precision previous_delta_lambda = Precision(1);
+    DynamicVector previous_delta_q      = DynamicVector::Zero(transformer->n_master());
+    Precision     previous_delta_lambda = Precision(1);
 
     logging::info(true, "");
     logging::info(true, "Solver: ", solver::get_solver_name(device, method));
-    logging::info(true, "Control: ",
-        control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
+    logging::info(true, "Control: ", control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
     logging::info(true, "");
     logging::info(true, " inc iter      lambda        rel_res          du_norm   asm_ms solve_ms");
     logging::info(true, "--------------------------------------------------------------------------");
@@ -270,35 +355,44 @@ void NonlinearStatic::run() {
     writer->add_loadcase(id);
 
     while (load_factor < Precision(1) - tolerance && accepted_increment < max_increments) {
-        const bool arc_length = control == NonlinearControl::ArcLength;
-        const Precision psi2 = arc_length_psi * arc_length_psi;
+        const bool      arc_length_control      = control == NonlinearControl::ArcLength;
+        const Precision remaining_delta_lambda  = Precision(1) - load_factor;
+        const bool      final_load_step         =
+            arc_length_control &&
+            !final_load_control_failed &&
+            remaining_delta_lambda > Precision(0) &&
+            (remaining_delta_lambda <= arc_length_final_load_threshold ||
+             load_increment >= remaining_delta_lambda);
+        const bool      arc_length              = arc_length_control && !final_load_step;
+        const Precision psi2                    = arc_length_psi * arc_length_psi;
 
         Precision target_load_factor = load_factor;
-        Precision arc_radius  = Precision(0);
-        Precision load_scale2 = Precision(0);
+        Precision arc_radius         = Precision(0);
+        Precision load_scale2        = Precision(0);
 
-        const DynamicVector q_accepted = q_total;
-        const DynamicVector u_accepted = u_total;
-        const Precision lambda_accepted = load_factor;
+        const DynamicVector q_accepted      = q_total;
+        const DynamicVector u_accepted      = u_total;
+        const Precision     lambda_accepted = load_factor;
 
         if (!arc_length) {
-            load_increment = std::min(load_increment, Precision(1) - load_factor);
-            target_load_factor = load_factor + load_increment;
+            if (final_load_step) {
+                load_increment     = std::min(load_increment, remaining_delta_lambda);
+                target_load_factor = Precision(1);
+
+                logging::info(true,
+                              "Trying final load-controlled step from lambda = ", lambda_accepted,
+                              " to 1");
+            } else {
+                load_increment     = std::min(load_increment, remaining_delta_lambda);
+                target_load_factor = load_factor + load_increment;
+            }
         } else {
             update_positions();
 
-            model::NodeData predictor_internal{
-                "INTERNAL_FORCES",
-                model::FieldDomain::NODE,
-                max_nodes,
-                6
-            };
             predictor_internal.set_zero();
 
             auto Kt_predictor = model->build_tangent_stiffness_matrix(
-                active_dof_idx_mat,
-                predictor_internal,
-                displacement
+                active_dof_idx_mat, predictor_internal, displacement
             );
 
             if (regularize_zero_stiffness_rows) {
@@ -308,22 +402,15 @@ void NonlinearStatic::run() {
             auto A_predictor = transformer->assemble_A(Kt_predictor);
 
             logging::disable();
-            DynamicVector dq_load = solver::solve(
-                device,
-                method,
-                A_predictor,
-                reduced_total_load
-            );
+            DynamicVector dq_load = solver::solve(device, method, A_predictor, reduced_total_load);
             logging::enable();
 
             load_scale2 = dq_load.squaredNorm();
 
             logging::error(load_scale2 > Precision(0),
-                "ArcLength: zero load predictor");
+                           "ArcLength: zero load predictor");
 
-            const Precision predictor_norm = std::sqrt(
-                load_scale2 + psi2 * load_scale2
-            );
+            const Precision predictor_norm = std::sqrt(load_scale2 + psi2 * load_scale2);
 
             Precision path_sign = Precision(1);
 
@@ -335,32 +422,18 @@ void NonlinearStatic::run() {
                 path_sign = direction >= Precision(0) ? Precision(1) : Precision(-1);
             }
 
-            const Precision remaining_delta_lambda =
-                Precision(1) - lambda_accepted;
-
-            if (path_sign > Precision(0) &&
-                !adjusting_final_arc_step &&
-                load_increment >= remaining_delta_lambda) {
-                load_increment = remaining_delta_lambda;
-                adjusting_final_arc_step = true;
-            }
-
             arc_radius = load_increment * predictor_norm;
 
-            q_total     = q_accepted + path_sign * load_increment * dq_load;
+            q_total     = q_accepted      + path_sign * load_increment * dq_load;
             load_factor = lambda_accepted + path_sign * load_increment;
             u_total     = transformer->recover_u(q_total);
 
             target_load_factor = load_factor;
         }
 
-        logging::error(
-            load_increment >= minimum_increment,
-            "NONLINEARSTATIC required increment ",
-            load_increment,
-            " is smaller than minimum increment ",
-            minimum_increment
-        );
+        logging::error(load_increment >= minimum_increment,
+                       "NONLINEARSTATIC required increment ", load_increment,
+                       " is smaller than minimum increment ", minimum_increment);
 
         bool converged       = false;
         int  iterations_used = 0;
@@ -375,55 +448,37 @@ void NonlinearStatic::run() {
             update_positions();
 
             // store the internal forces at the current displacement inside a matrix.
-            model::NodeData internal_mat{
-                "INTERNAL_FORCES",
-                model::FieldDomain::NODE,
-                max_nodes,
-                6
-            };
             internal_mat.set_zero();
 
             auto Kt = model->build_tangent_stiffness_matrix(
-                active_dof_idx_mat,
-                internal_mat,
-                displacement
+                active_dof_idx_mat, internal_mat, displacement
             );
 
             if (regularize_zero_stiffness_rows) {
                 regularise_stiffness(Kt, zero_stiffness_regularization_alpha);
             }
 
-            auto f_int = mattools::reduce_mat_to_vec(
-                active_dof_idx_mat,
-                internal_mat
-            );
+            auto f_int = mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
 
             const DynamicVector f_ext =
                 (arc_length ? load_factor : target_load_factor) * f_total;
 
             DynamicVector reduced_residual;
             const Precision rel_residual = calculate_relative_residual(
-                *transformer,
-                f_ext,
-                f_int,
-                reduced_residual
+                *transformer, f_ext, f_int, reduced_residual
             );
 
             Precision rel_arc = Precision(0);
 
             if (arc_length) {
-                const DynamicVector delta_q = q_total - q_accepted;
-                const Precision delta_lambda = load_factor - lambda_accepted;
+                const DynamicVector delta_q      = q_total     - q_accepted;
+                const Precision     delta_lambda = load_factor - lambda_accepted;
 
-                const Precision g =
-                    delta_q.dot(delta_q)
-                  + psi2 * load_scale2 * delta_lambda * delta_lambda
-                  - arc_radius * arc_radius;
-
-                rel_arc = std::abs(g) / std::max(
-                    arc_radius * arc_radius,
-                    std::numeric_limits<Precision>::epsilon()
+                const Precision arc_constraint = calculate_arc_length_constraint(
+                    delta_q, delta_lambda, psi2, load_scale2, arc_radius
                 );
+
+                rel_arc = calculate_relative_arc_length_residual(arc_constraint, arc_radius);
             }
 
             Precision du_norm  = Precision(0);
@@ -455,10 +510,8 @@ void NonlinearStatic::run() {
 
             auto A = transformer->assemble_A(Kt);
 
-            logging::error(
-                reduced_residual.allFinite(),
-                "Reduced residual contains NaN/Inf entries"
-            );
+            logging::error(reduced_residual.allFinite(),
+                           "Reduced residual contains NaN/Inf entries");
 
             asm_timer.stop();
 
@@ -470,80 +523,41 @@ void NonlinearStatic::run() {
             if (!arc_length) {
                 dq = solver::solve(device, method, A, reduced_residual);
             } else {
-                DynamicMatrix rhs(A.rows(), 2);
-                rhs.col(0) = reduced_residual;
-                rhs.col(1) = reduced_total_load;
+                const DynamicVector delta_q      = q_total     - q_accepted;
+                const Precision     delta_lambda = load_factor - lambda_accepted;
 
-                DynamicMatrix sol = solver::solve(device, method, A, rhs);
+                const Precision arc_constraint = calculate_arc_length_constraint(
+                    delta_q, delta_lambda, psi2, load_scale2, arc_radius
+                );
 
-                DynamicVector dq_r = sol.col(0);
-                DynamicVector dq_f = sol.col(1);
+                // Solve equilibrium and the linearized arc-length constraint
+                // as one bordered system. The former partitioned corrector
+                // solved K*dq_r=r and K*dq_f=f separately and then selected a
+                // root of a quadratic equation. That formulation becomes
+                // numerically singular at precisely the load limit points for
+                // which arc-length control is needed, even though the bordered
+                // continuation system remains regular.
+                const Index n = static_cast<Index>(A.rows());
 
-                const DynamicVector delta_q = q_total - q_accepted;
-                const Precision delta_lambda = load_factor - lambda_accepted;
+                SparseMatrix  augmented;
+                DynamicVector augmented_rhs;
+                Precision     load_scale = Precision(0);
 
-                DynamicVector a = delta_q + dq_r;
-                DynamicVector b = dq_f;
+                build_arc_length_augmented_system(
+                    A, reduced_residual, reduced_total_load,
+                    delta_q, delta_lambda, arc_constraint, psi2, load_scale2,
+                    augmented, augmented_rhs, load_scale
+                );
 
-                const Precision qa =
-                    b.dot(b) + psi2 * load_scale2;
+                const DynamicVector correction = solver::solve(
+                    device, method, augmented, augmented_rhs, solver::DirectSolverMatrixType::General
+                );
 
-                const Precision qb =
-                    Precision(2) * (a.dot(b) + psi2 * load_scale2 * delta_lambda);
+                logging::error(correction.allFinite(),
+                               "ArcLength: augmented corrector returned NaN/Inf entries");
 
-                const Precision qc =
-                    a.dot(a)
-                  + psi2 * load_scale2 * delta_lambda * delta_lambda
-                  - arc_radius * arc_radius;
-
-                const Precision disc =
-                    qb * qb - Precision(4) * qa * qc;
-
-                logging::error(disc >= Precision(0),
-                    "ArcLength: negative discriminant in arc-length equation");
-
-                const Precision sqrt_disc = std::sqrt(disc);
-
-                const Precision dlambda_1 =
-                    (-qb + sqrt_disc) / (Precision(2) * qa);
-
-                const Precision dlambda_2 =
-                    (-qb - sqrt_disc) / (Precision(2) * qa);
-
-                DynamicVector dq_1 = dq_r + dlambda_1 * dq_f;
-                DynamicVector dq_2 = dq_r + dlambda_2 * dq_f;
-
-                const DynamicVector total_delta_q_1 = delta_q + dq_1;
-                const DynamicVector total_delta_q_2 = delta_q + dq_2;
-
-                const Precision total_delta_lambda_1 =
-                    delta_lambda + dlambda_1;
-
-                const Precision total_delta_lambda_2 =
-                    delta_lambda + dlambda_2;
-
-                Precision score_1;
-                Precision score_2;
-
-                if (accepted_increment == 0) {
-                    score_1 = total_delta_lambda_1;
-                    score_2 = total_delta_lambda_2;
-                } else {
-                    score_1 =
-                        previous_delta_q.dot(total_delta_q_1)
-                      + psi2 * load_scale2 * previous_delta_lambda * total_delta_lambda_1;
-
-                    score_2 =
-                        previous_delta_q.dot(total_delta_q_2)
-                      + psi2 * load_scale2 * previous_delta_lambda * total_delta_lambda_2;
-                }
-
-                const bool use_first = score_1 >= score_2;
-
-                const Precision d_lambda = use_first ? dlambda_1 : dlambda_2;
-
-                dq = use_first ? dq_1 : dq_2;
-                load_factor += d_lambda;
+                dq           = correction.head(n);
+                load_factor += correction(n) / load_scale;
             }
 
             logging::enable();
@@ -578,77 +592,30 @@ void NonlinearStatic::run() {
             update_positions();
 
             logging::error(adaptive_increments,
-                "NONLINEARSTATIC fixed increment failed at lambda = ",
-                target_load_factor,
-                "; ADAPTIVE=OFF forbids cutback"
-            );
+                           "NONLINEARSTATIC fixed increment failed at lambda = ",
+                           target_load_factor,
+                           "; ADAPTIVE=OFF forbids cutback");
 
             load_increment *= load_increment_cutback;
             cutback_count++;
 
             logging::info(true,
-                "Increment rejected at lambda = ",
-                target_load_factor,
-                "; reducing increment to ",
-                load_increment
-            );
+                          "Increment rejected at lambda = ", target_load_factor,
+                          "; reducing increment to ", load_increment);
 
-            logging::error(
-                load_increment >= minimum_increment,
-                "NONLINEARSTATIC required cutback increment is smaller than minimum increment"
-            );
+            logging::error(load_increment >= minimum_increment,
+                           "NONLINEARSTATIC required cutback increment is smaller than minimum increment");
 
-            logging::error(
-                cutback_count <= maximum_cutbacks,
-                "NONLINEARSTATIC exceeded maximum number of cutbacks"
-            );
+            logging::error(cutback_count <= maximum_cutbacks,
+                           "NONLINEARSTATIC exceeded maximum number of cutbacks");
 
-            continue;
-        }
+            if (final_load_step) {
+                final_load_control_failed = true;
 
-        if (arc_length &&
-            adjusting_final_arc_step &&
-            std::abs(load_factor - Precision(1)) > tolerance) {
-            const Precision reached_load_factor = load_factor;
-            const Precision achieved_delta_lambda =
-                load_factor - lambda_accepted;
-            const Precision remaining_delta_lambda =
-                Precision(1) - lambda_accepted;
-
-            logging::error(
-                achieved_delta_lambda > Precision(0),
-                "ArcLength: invalid load-factor direction while adjusting the final radius"
-            );
-
-            const Precision previous_increment = load_increment;
-            load_increment *= remaining_delta_lambda / achieved_delta_lambda;
-
-            q_total     = q_accepted;
-            u_total     = u_accepted;
-            load_factor = lambda_accepted;
-            update_positions();
-
-            ++cutback_count;
-
-            logging::info(
-                true,
-                "Arc-length step reached lambda = ",
-                reached_load_factor,
-                " instead of 1; adjusting increment from ",
-                previous_increment,
-                " to ",
-                load_increment
-            );
-
-            logging::error(
-                load_increment >= minimum_increment,
-                "NONLINEARSTATIC adjusted final arc-length increment is smaller than minimum increment"
-            );
-
-            logging::error(
-                cutback_count <= maximum_cutbacks,
-                "NONLINEARSTATIC exceeded maximum number of final arc-length adjustments"
-            );
+                logging::info(true,
+                              "Final load-controlled step did not converge; "
+                              "continuing with arc-length cutback");
+            }
 
             continue;
         }
@@ -656,37 +623,27 @@ void NonlinearStatic::run() {
         if (!arc_length) {
             load_factor = target_load_factor;
         } else {
-            previous_delta_q      = q_total - q_accepted;
+            previous_delta_q      = q_total     - q_accepted;
             previous_delta_lambda = load_factor - lambda_accepted;
-            adjusting_final_arc_step = false;
         }
 
-        accepted_increment++;
-        cutback_count = 0;
+        accepted_increment          ++;
+        cutback_count               = 0;
+        final_load_control_failed   = false;
 
         update_positions();
 
-        writer->write_field(
-            displacement,
-            "DISPLACEMENT_" + std::to_string(accepted_increment),
-            model->_data.get()
-        );
 
         auto [increment_stress, increment_strain] =
             model->compute_stress_nodal(displacement, true);
         (void) increment_strain;
-        writer->write_field(
-            increment_stress,
-            "STRESS_" + std::to_string(accepted_increment),
-            model->_data.get()
-        );
-
         DynamicMatrix lambda_frame(1, 1);
         lambda_frame(0, 0) = load_factor;
-        writer->write_eigen_matrix(
-            lambda_frame,
-            "LAMBDA_" + std::to_string(accepted_increment)
-        );
+
+        // write displacement and stress for the current increment
+        writer->write_field       (displacement    , "DISPLACEMENT_" + std::to_string(accepted_increment), model->_data.get());
+        writer->write_field       (increment_stress, "STRESS_"       + std::to_string(accepted_increment), model->_data.get());
+        writer->write_eigen_matrix(lambda_frame    , "LAMBDA_"       + std::to_string(accepted_increment));
 
         if (adaptive_increments) {
             if (iterations_used <= fast_convergence_iterations) {
@@ -695,25 +652,20 @@ void NonlinearStatic::run() {
                 load_increment *= load_increment_cutback;
             }
 
-            load_increment = std::clamp(
-                load_increment,
-                minimum_increment,
-                maximum_increment
-            );
+            load_increment = std::clamp(load_increment, minimum_increment, maximum_increment);
         } else {
             load_increment = initial_increment;
         }
 
         logging::info(true,
-            "Accepted increment "   , accepted_increment,
-            ": lambda = "           , load_factor,
-            ", Newton iterations = ", iterations_used,
-            ", next increment = "  , load_increment
-        );
+                      "Accepted increment ", accepted_increment,
+                      ": lambda = ", load_factor,
+                      ", Newton iterations = ", iterations_used,
+                      ", next increment = ", load_increment);
     }
 
     logging::error(load_factor >= Precision(1) - tolerance,
-        "NONLINEARSTATIC did not reach lambda = 1 within MAX_INCREMENTS");
+                   "NONLINEARSTATIC did not reach lambda = 1 within MAX_INCREMENTS");
 
     update_positions();
 
@@ -727,15 +679,12 @@ void NonlinearStatic::run() {
         "computing final nonlinear top/bottom stress"
     );
 
-    final_internal = model::NodeData{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
     final_internal.set_zero();
 
     auto final_Kt = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
-                active_dof_idx_mat,
-                final_internal,
-                displacement
+                active_dof_idx_mat, final_internal, displacement
             );
         },
         "assembling final nonlinear tangent stiffness K_t and internal force"
@@ -753,16 +702,9 @@ void NonlinearStatic::run() {
     }
 
     auto global_load_final = global_load_total;
-    auto reaction_full     = subtract_field(
-        final_internal,
-        global_load_final,
-        "REACTION_FORCES_RAW"
-    );
+    auto reaction_full     = subtract_field(final_internal, global_load_final, "REACTION_FORCES_RAW");
 
-    BooleanMatrix support_mask(
-        active_dof_idx_mat.rows(),
-        active_dof_idx_mat.cols()
-    );
+    BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
     support_mask.setConstant(false);
 
     for (const auto& eq : groups.supports) {
@@ -793,14 +735,14 @@ void NonlinearStatic::run() {
         }
     }
 
-    writer->write_field(displacement     , "DISPLACEMENT", model->_data.get());
-    writer->write_field(final_strain     , "STRAIN", model->_data.get());
-    writer->write_field(final_stress     , "STRESS", model->_data.get());
-    writer->write_field(final_stress_top , "STRESS_TOP", model->_data.get());
-    writer->write_field(final_stress_bot , "STRESS_BOT", model->_data.get());
-    writer->write_field(global_load_final, "EXTERNAL_FORCES", model->_data.get());
-    writer->write_field(final_internal   , "INTERNAL_FORCES", model->_data.get());
-    writer->write_field(reaction_masked  , "REACTION_FORCES", model->_data.get());
+    writer->write_field(displacement     , "DISPLACEMENT"     , model->_data.get());
+    writer->write_field(final_strain     , "STRAIN"           , model->_data.get());
+    writer->write_field(final_stress     , "STRESS"           , model->_data.get());
+    writer->write_field(final_stress_top , "STRESS_TOP"       , model->_data.get());
+    writer->write_field(final_stress_bot , "STRESS_BOT"       , model->_data.get());
+    writer->write_field(global_load_final, "EXTERNAL_FORCES"  , model->_data.get());
+    writer->write_field(final_internal   , "INTERNAL_FORCES"  , model->_data.get());
+    writer->write_field(reaction_masked  , "REACTION_FORCES"  , model->_data.get());
 
     *model->_data->positions = original_positions;
     model->step_end();

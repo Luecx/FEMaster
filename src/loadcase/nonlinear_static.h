@@ -154,6 +154,15 @@ struct NonlinearStatic : public LoadCase {
     Precision arc_length_psi = Precision(1.0);
 
     /**
+     * @brief Remaining load-factor interval for trying an exact load-controlled endpoint.
+     *
+     * Arc-length steps remain the fallback if the load-controlled attempt does
+     * not converge. A value of zero disables the proximity trigger; an arc
+     * predictor that would cross lambda = 1 still triggers an endpoint attempt.
+     */
+    Precision arc_length_final_load_threshold = Precision(0.01);
+
+    /**
      * @brief Enables artificial regularization of zero-stiffness rows.
      *
      * This can improve robustness for temporarily unconstrained or mechanism-like

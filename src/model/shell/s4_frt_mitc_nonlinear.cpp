@@ -2228,7 +2228,6 @@ Mat3 S4FRTMITC::integrate_tensor_field(bool scale_by_density, const TenField& fi
     return result;
 }
 
-
 void S4FRTMITC::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[num_dofs * num_dofs];
     MapMatrix   K = stiffness(buffer);

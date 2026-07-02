@@ -30,6 +30,8 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
                     .doc("Nonlinear path control: LOAD or ARC_LENGTH.")
                 .key("ARC_LENGTH_PSI").optional("1.0")
                     .doc("Weighting factor for the load part of the arc-length constraint.")
+                .key("FINAL_LOAD_CONTROL_THRESHOLD").optional("0.01")
+                    .doc("Switch to an exact load-controlled endpoint attempt within this remaining lambda interval.")
                 .key("ADAPTIVE").optional("ON")
                 .key("MAXITER").optional("20")
                 .key("TOL").optional("1e-8")
@@ -74,6 +76,8 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
                 ? loadcase::NonlinearControl::ArcLength
                 : loadcase::NonlinearControl::LoadControl;
             lc->arc_length_psi = keys.get<Precision>("ARC_LENGTH_PSI");
+            lc->arc_length_final_load_threshold =
+                keys.get<Precision>("FINAL_LOAD_CONTROL_THRESHOLD");
             lc->adaptive_increments = keys.get<bool>("ADAPTIVE");
             lc->max_iterations = keys.get<int>("MAXITER");
             lc->tolerance = keys.get<Precision>("TOL");
