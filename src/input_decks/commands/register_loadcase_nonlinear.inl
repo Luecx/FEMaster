@@ -31,6 +31,16 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
                 .key("ARC_LENGTH_PSI").optional("1.0")
                     .doc("Weighting factor for the load part of the arc-length constraint.")
                 .key("ADAPTIVE").optional("ON")
+                .key("GROWTH_FACTOR").optional("1.5")
+                    .doc("Growth factor for quickly converged nonlinear increments.")
+                .key("CUTBACK_FACTOR").optional("0.5")
+                    .doc("Reduction factor for rejected or slowly converged increments.")
+                .key("FAST_ITERATIONS").optional("6")
+                    .doc("Accepted increments converging within this count are enlarged.")
+                .key("SLOW_ITERATIONS").optional("10")
+                    .doc("Accepted increments requiring at least this count are reduced.")
+                .key("MAXIMUM_CUTBACKS").optional("20")
+                    .doc("Maximum consecutive cutbacks allowed for one increment.")
                 .key("MAXITER").optional("20")
                 .key("TOL").optional("1e-8")
                 .key("REGULARIZE_ZERO_ROWS").optional("ON")
@@ -73,11 +83,16 @@ inline void register_loadcase_nonlinear(fem::dsl::Registry& registry, Parser& pa
             lc->control = keys.equals("CONTROL", "ARC_LENGTH")
                 ? loadcase::NonlinearControl::ArcLength
                 : loadcase::NonlinearControl::LoadControl;
-            lc->arc_length_psi = keys.get<Precision>("ARC_LENGTH_PSI");
-            lc->adaptive_increments = keys.get<bool>("ADAPTIVE");
-            lc->max_iterations = keys.get<int>("MAXITER");
-            lc->tolerance = keys.get<Precision>("TOL");
-            lc->regularize_zero_stiffness_rows = keys.get<bool>("REGULARIZE_ZERO_ROWS");
+            lc->arc_length_psi                       = keys.get<Precision>("ARC_LENGTH_PSI");
+            lc->adaptive_increments                  = keys.get<bool>("ADAPTIVE");
+            lc->growth_factor                        = keys.get<Precision>("GROWTH_FACTOR");
+            lc->cutback_factor                       = keys.get<Precision>("CUTBACK_FACTOR");
+            lc->fast_iterations                      = keys.get<int>("FAST_ITERATIONS");
+            lc->slow_iterations                      = keys.get<int>("SLOW_ITERATIONS");
+            lc->maximum_cutbacks                     = keys.get<int>("MAXIMUM_CUTBACKS");
+            lc->max_iterations                       = keys.get<int>("MAXITER");
+            lc->tolerance                            = keys.get<Precision>("TOL");
+            lc->regularize_zero_stiffness_rows       = keys.get<bool>("REGULARIZE_ZERO_ROWS");
             lc->zero_stiffness_regularization_alpha = keys.get<Precision>("REGULARIZATION_ALPHA");
         });
 

@@ -101,8 +101,8 @@ struct NonlinearStatic : public LoadCase {
      * @brief Initial nonlinear step size.
      *
      * For LoadControl this is the initial load-factor increment. For ArcLength
-     * this is interpreted as an equivalent load-factor increment used to compute
-     * the internal arc-length radius from the current tangent predictor.
+     * this is an equivalent initial load-factor increment used to establish the
+     * fixed arc-length radius scale from the first tangent predictor.
      */
     Precision initial_increment = Precision(0.1);
 
@@ -110,8 +110,8 @@ struct NonlinearStatic : public LoadCase {
      * @brief Minimum allowed nonlinear step size.
      *
      * For LoadControl this limits the load-factor increment. For ArcLength this
-     * limits the equivalent load-factor increment used to compute the internal
-     * arc-length radius.
+     * limits the normalized arc-length radius relative to the fixed initial
+     * predictor scale.
      */
     Precision minimum_increment = Precision(1e-4);
 
@@ -119,8 +119,8 @@ struct NonlinearStatic : public LoadCase {
      * @brief Maximum allowed nonlinear step size.
      *
      * For LoadControl this limits the load-factor increment. For ArcLength this
-     * limits the equivalent load-factor increment used to compute the internal
-     * arc-length radius.
+     * limits the normalized arc-length radius relative to the fixed initial
+     * predictor scale.
      */
     Precision maximum_increment = Precision(1.0);
 
@@ -130,6 +130,31 @@ struct NonlinearStatic : public LoadCase {
      * When disabled, every attempted increment uses @ref initial_increment.
      */
     bool adaptive_increments = true;
+
+    /**
+     * @brief Multiplicative growth factor for quickly converged increments.
+     */
+    Precision growth_factor = Precision(1.5);
+
+    /**
+     * @brief Multiplicative cutback factor for rejected or slow increments.
+     */
+    Precision cutback_factor = Precision(0.5);
+
+    /**
+     * @brief Iteration count up to which an accepted increment is enlarged.
+     */
+    int fast_iterations = 6;
+
+    /**
+     * @brief Iteration count from which an accepted increment is reduced.
+     */
+    int slow_iterations = 10;
+
+    /**
+     * @brief Maximum number of consecutive cutbacks for one increment.
+     */
+    int maximum_cutbacks = 20;
 
     /**
      * @brief Maximum number of nonlinear iterations per increment.
@@ -149,7 +174,8 @@ struct NonlinearStatic : public LoadCase {
      *
      * The internal arc-length constraint is
      * ||Delta q||^2 + psi^2 * load_scale^2 * Delta lambda^2 = radius^2,
-     * where load_scale = ||dq_load|| and A dq_load = T^T f_total.
+     * where load_scale = ||dq_load|| is fixed from the first predictor and
+     * A dq_load = T^T f_total.
      */
     Precision arc_length_psi = Precision(1.0);
 
