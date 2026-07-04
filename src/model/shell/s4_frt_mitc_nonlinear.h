@@ -405,20 +405,28 @@
         ) const;
 
         StaticVector<eas_parameters> compute_eas_alpha_linear(
-            const Field& displacement,
-            const Mat8&  H
+            const EvaluationData& data,
+            const Vec24&          q
         ) const;
 
-        Vec8 generalized_strain_at(const Field&        displacement,
-                                   Precision           r,
-                                   Precision           s,
-                                   bool                nonlinear) const;
+        Vec8 generalized_strain_at(
+            const EvaluationData&                 data,
+            const Vec24&                          q,
+            const StaticVector<eas_parameters>&   alpha,
+            Precision                             r,
+            Precision                             s,
+            bool                                  nonlinear
+        ) const;
 
-        Vec8 generalized_resultant_at(const Field&        displacement,
-                                      Precision           r,
-                                      Precision           s,
-                                      bool                nonlinear,
-                                      Vec8*               strain_out = nullptr) const;
+        Vec8 generalized_resultant_at(
+            const EvaluationData&                 data,
+            const Vec24&                          q,
+            const StaticVector<eas_parameters>&   alpha,
+            Precision                             r,
+            Precision                             s,
+            bool                                  nonlinear,
+            Vec8*                                 strain_out = nullptr
+        ) const;
 
         Mat3 current_output_basis(const CurrentState& state,
                                   Precision           r,
@@ -429,13 +437,17 @@
                                      Precision           s,
                                      Precision           z) const;
 
-        void physical_stress_strain_at(const Field&        displacement,
-                                       Precision           r,
-                                       Precision           s,
-                                       Precision           zeta,
-                                       bool                nonlinear,
-                                       Vec6&               strain_out,
-                                       Vec6&               stress_out) const;
+        void physical_stress_strain_at(
+            const EvaluationData&                 data,
+            const Vec24&                          q,
+            const StaticVector<eas_parameters>&   alpha,
+            Precision                             r,
+            Precision                             s,
+            Precision                             zeta,
+            bool                                  nonlinear,
+            Vec6&                                 strain_out,
+            Vec6&                                 stress_out
+        ) const;
 
         // ---------------------------------------------------------------------
         // Drill stabilization and StructuralElement interface

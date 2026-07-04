@@ -13,6 +13,7 @@ openmp             ?= 1   # 1: enable OpenMP (-fopenmp)
 mkl                ?= 1   # 1: link MKL
 mkl_sequential     ?= 0   # 1: libmkl_sequential; 0: libmkl_intel_thread (+iomp5)
 debug              ?= 0   # 1: -g3 and O2; 0: -DNDEBUG -DEIGEN_NO_DEBUG and O3
+profile            ?= 0   # 1: optimized build with symbols and frame pointers
 double_precision   ?= 1   # 1: -DDOUBLE_PRECISION (and CUDA_DOUBLE_PRECISION)
 eigen_fast_compile ?= 1   # 1: Eigen compile-speed tweaks
 time_report        ?= 0   # 1: -ftime-report
@@ -31,6 +32,7 @@ $(eval $(call _norm_toggle,openmp,1))
 $(eval $(call _norm_toggle,mkl,1))
 $(eval $(call _norm_toggle,mkl_sequential,0))
 $(eval $(call _norm_toggle,debug,0))
+$(eval $(call _norm_toggle,profile,0))
 $(eval $(call _norm_toggle,double_precision,1))
 $(eval $(call _norm_toggle,eigen_fast_compile,1))
 $(eval $(call _norm_toggle,time_report,0))
@@ -99,8 +101,11 @@ CXXFLAGS := -std=c++17 $(INCLUDES) -MMD -MP
 NVCCFLAGS := -std=c++17 $(INCLUDES) -MMD -MP --expt-relaxed-constexpr
 FEATURES :=
 
-# Debug vs Release
-ifeq ($(debug),1)
+# Profile vs Debug vs Release
+ifeq ($(profile),1)
+  CXXFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(CXXFLAGS)) -O3 -g3 -fno-omit-frame-pointer -DNDEBUG -DEIGEN_NO_DEBUG
+  NVCCFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(NVCCFLAGS)) -O3 -lineinfo
+else ifeq ($(debug),1)
   CXXFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(CXXFLAGS)) -O2 -g3
   NVCCFLAGS := $(filter-out -O0 -O1 -O2 -O3,$(NVCCFLAGS)) -O2 -G -g
 else
@@ -304,7 +309,8 @@ info:
 	@echo "  cuDSS Enabled    : $(cudss)"
 	@echo "  CUDSS_DIR        : $(CUDSS_DIR)"
 	@echo "  Debug            : $(debug)"
- 	@echo "  Double Precision : $(double_precision)"
+	@echo "  Profile          : $(profile)"
+	@echo "  Double Precision : $(double_precision)"
 	@echo "  Eigen Fast Comp. : $(eigen_fast_compile)"
 	@echo "  Static Link      : $(static_link)"
 	@echo "  MKLROOT          : $(MKLROOT)"
@@ -326,6 +332,7 @@ help:
 	@echo "  make -j mkl=1 mkl_sequential=1          # MKL sequential (keine iomp5-Abhängigkeit)"
 	@echo "  make -j openmp=0                        # OpenMP komplett aus"
 	@echo "  make -j debug=1                         # Debug (O2 + -g3)"
+	@echo "  make -j profile=1                       # Profiling (O3 + -g3 + frame pointers)"
 	@echo "  make -j static_link=1                   # statische libstdc++/libgcc + MKL-Archive"
 	@echo "  make -j static_link=1 mkl_sequential=1  # komplett ohne iomp5 (sequentielles MKL)"
 	@echo "  make clean"

@@ -1447,28 +1447,17 @@ StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha(
 
 
 StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha_linear(
-    const Field& displacement,
-    const Mat8&  H
+    const EvaluationData& data,
+    const Vec24&          q
 ) const {
     StaticVector<eas_parameters> alpha;
     alpha.setZero();
 
     if constexpr (eas_parameters == 0) {
-        (void) displacement;
-        (void) H;
+        (void) data;
+        (void) q;
         return alpha;
     } else {
-        const CurrentState   state = reference_state();
-        const Vec24          q     = element_displacement_vector(displacement);
-        const EvaluationData data  = init_evaluation(
-            state,
-            false,
-            true,
-            false,
-            false,
-            false
-        );
-
         StaticMatrix<eas_parameters, eas_parameters> Kaa;
         StaticVector<eas_parameters>                 ba;
         Kaa.setZero();
@@ -1477,7 +1466,7 @@ StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha_linear(
         const auto& ref = reference_data();
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
             const auto M   = eas_matrix(ref.r(ip), ref.s(ip));
-            const auto MTH = M.transpose() * H;
+            const auto MTH = M.transpose() * data.H;
             const Vec8 eps = data.ip_B[ip] * q;
             const auto fac = data.ip_weight[ip];
 
@@ -1492,13 +1481,13 @@ StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha_linear(
 
 
 Vec8 S4FRTMITC::generalized_strain_at(
-    const Field& displacement,
-    Precision    r,
-    Precision    s,
-    bool         nonlinear
+    const EvaluationData&               data,
+    const Vec24&                        q,
+    const StaticVector<eas_parameters>& alpha,
+    Precision                           r,
+    Precision                           s,
+    bool                                nonlinear
 ) const {
-    const Mat8 H = resultant_stiffness();
-
     auto make_output_ref = [&]() {
         ReferenceData out = reference_data();
         init_ref_point_data(out, 0, r, s, Precision(0));
@@ -1508,16 +1497,6 @@ Vec8 S4FRTMITC::generalized_strain_at(
     const int cached_id = cached_reference_point_id(r, s);
 
     if (nonlinear) {
-        const CurrentState   state = current_state_from_displacement(displacement);
-        const EvaluationData data  = init_evaluation(
-            state,
-            true,
-            false,
-            false,
-            false,
-            true
-        );
-
         const ReferenceData output_ref = cached_id >= 0 ? reference_data() : make_output_ref();
         const Index         ref_id     = cached_id >= 0 ? static_cast<Index>(cached_id) : Index(0);
 
@@ -1529,21 +1508,10 @@ Vec8 S4FRTMITC::generalized_strain_at(
         eps(7) = shear(1);
 
         if constexpr (eas_parameters > 0) {
-            eps += eas_matrix(r, s) * data.eas_alpha;
+            eps += eas_matrix(r, s) * alpha;
         }
         return eps;
     }
-
-    const CurrentState   state = reference_state();
-    const Vec24          q     = element_displacement_vector(displacement);
-    const EvaluationData data  = init_evaluation(
-        state,
-        false,
-        true,
-        false,
-        false,
-        false
-    );
 
     const ReferenceData output_ref = cached_id >= 0 ? reference_data() : make_output_ref();
     const Index         ref_id     = cached_id >= 0 ? static_cast<Index>(cached_id) : Index(0);
@@ -1562,25 +1530,27 @@ Vec8 S4FRTMITC::generalized_strain_at(
     Vec8 eps = B * q;
 
     if constexpr (eas_parameters > 0) {
-        eps += eas_matrix(r, s) * compute_eas_alpha_linear(displacement, H);
+        eps += eas_matrix(r, s) * alpha;
     }
     return eps;
 }
 
 
 Vec8 S4FRTMITC::generalized_resultant_at(
-    const Field& displacement,
-    Precision    r,
-    Precision    s,
-    bool         nonlinear,
-    Vec8*        strain_out
+    const EvaluationData&               data,
+    const Vec24&                        q,
+    const StaticVector<eas_parameters>& alpha,
+    Precision                           r,
+    Precision                           s,
+    bool                                nonlinear,
+    Vec8*                               strain_out
 ) const {
-    const Vec8 eps = generalized_strain_at(displacement, r, s, nonlinear);
+    const Vec8 eps = generalized_strain_at(data, q, alpha, r, s, nonlinear);
 
     if (strain_out) {
         *strain_out = eps;
     }
-    return resultant_stiffness() * eps;
+    return data.H * eps;
 }
 
 
@@ -1681,16 +1651,22 @@ Mat3 S4FRTMITC::deformation_gradient_at(const CurrentState& state,
 }
 
 
-void S4FRTMITC::physical_stress_strain_at(const Field&        displacement,
-                               Precision           r,
-                               Precision           s,
-                               Precision           zeta,
-                               bool                nonlinear,
-                               Vec6&               strain_out,
-                               Vec6&               stress_out) const {
+void S4FRTMITC::physical_stress_strain_at(
+    const EvaluationData&               data,
+    const Vec24&                        q,
+    const StaticVector<eas_parameters>& alpha,
+    Precision                           r,
+    Precision                           s,
+    Precision                           zeta,
+    bool                                nonlinear,
+    Vec6&                               strain_out,
+    Vec6&                               stress_out
+) const {
     Vec8 generalized_strain;
     const Vec8 resultants = generalized_resultant_at(
-        displacement,
+        data,
+        q,
+        alpha,
         r,
         s,
         nonlinear,
@@ -1748,9 +1724,7 @@ void S4FRTMITC::physical_stress_strain_at(const Field&        displacement,
         return;
     }
 
-    const CurrentState state =
-        current_state_from_displacement(displacement);
-    const Mat3 F = deformation_gradient_at(state, r, s, z);
+    const Mat3 F = deformation_gradient_at(data.state, r, s, z);
     const Precision J = F.determinant();
 
     logging::error(J > Precision(0) && std::isfinite(J),
@@ -1949,12 +1923,38 @@ void S4FRTMITC::compute_stress_strain(Field*           strain,
     logging::error(rst.cols() >= 3,
                    "S4FRTMITC: stress/strain coordinates require r,s,t columns");
 
+    const CurrentState state = use_green_lagrange_nl
+        ? current_state_from_displacement(displacement)
+        : reference_state();
+
+    const EvaluationData data = init_evaluation(
+        state,
+        use_green_lagrange_nl,
+        !use_green_lagrange_nl,
+        false,
+        false,
+        use_green_lagrange_nl
+    );
+
+    const Vec24 q = element_displacement_vector(displacement);
+
+    StaticVector<eas_parameters> alpha;
+    alpha.setZero();
+
+    if constexpr (eas_parameters > 0) {
+        alpha = use_green_lagrange_nl
+            ? data.eas_alpha
+            : compute_eas_alpha_linear(data, q);
+    }
+
     for (Index n = 0; n < rst.rows(); ++n) {
         Vec6 strain_value;
         Vec6 stress_value;
 
         physical_stress_strain_at(
-            displacement,
+            data,
+            q,
+            alpha,
             rst(n, 0),
             rst(n, 1),
             rst(n, 2),
@@ -2013,7 +2013,6 @@ void S4FRTMITC::compute_stress_state(
         return;
     }
 
-    const Mat8           H     = resultant_stiffness();
     const CurrentState   state = reference_state();
     const EvaluationData data  = init_evaluation(
         state,
@@ -2028,7 +2027,7 @@ void S4FRTMITC::compute_stress_state(
     StaticVector<eas_parameters> alpha;
     alpha.setZero();
     if constexpr (eas_parameters > 0) {
-        alpha = compute_eas_alpha_linear(displacement, H);
+        alpha = compute_eas_alpha_linear(data, q);
     }
 
     const auto& ref = reference_data();
@@ -2039,7 +2038,7 @@ void S4FRTMITC::compute_stress_state(
             eps += eas_matrix(ref.r(ip), ref.s(ip)) * alpha;
         }
 
-        const Vec8  values = H * eps;
+        const Vec8  values = data.H * eps;
         const Index row    = static_cast<Index>(offset) + ip;
 
         for (Index component = 0; component < stress_state.components; ++component) {
@@ -2273,9 +2272,29 @@ bool S4FRTMITC::compute_shell_section_forces(Field&       resultants,
 
     const RowMatrix rst = stress_strain_nodal_rst();
 
+    const CurrentState   state = current_state_from_displacement(displacement);
+    const EvaluationData data  = init_evaluation(
+        state,
+        true,
+        false,
+        false,
+        false,
+        true
+    );
+    const Vec24 q = element_displacement_vector(displacement);
+
+    StaticVector<eas_parameters> alpha;
+    alpha.setZero();
+
+    if constexpr (eas_parameters > 0) {
+        alpha = data.eas_alpha;
+    }
+
     for (Index i = 0; i < num_nodes; ++i) {
         const Vec8 values = generalized_resultant_at(
-            displacement,
+            data,
+            q,
+            alpha,
             rst(i, 0),
             rst(i, 1),
             true
