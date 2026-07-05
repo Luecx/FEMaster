@@ -161,6 +161,27 @@ B & D
 \]
 \(A\) is membrane stiffness, \(B\) is membrane-bending coupling, and \(D\) is bending stiffness. This model is appropriate when the section stiffness has already been homogenized outside FEMaster or when a laminate should be represented directly by engineering stiffness resultants rather than by individual plies.
 
+The final four input values form the transverse shear stiffness matrix
+\[
+S =
+\begin{bmatrix}
+s_{11} & s_{12}\\
+s_{21} & s_{22}
+\end{bmatrix},
+\qquad
+\begin{bmatrix}
+Q_y\\
+Q_x
+\end{bmatrix}
+=
+S
+\begin{bmatrix}
+\gamma_{yz}\\
+\gamma_{xz}
+\end{bmatrix}.
+\]
+Thus the complete generalized shell law consists of the \(6\times6\) ABD matrix and the separate \(2\times2\) matrix \(S\). FEMaster uses the transverse-shear component order \((yz,xz)\), so the four values following the 36 ABD entries map exactly to \(s_{11},s_{12},s_{21},s_{22}\). For \val{TYPE=ABD}, these are already section stiffnesses: FEMaster does not multiply the supplied ABD or \(S\) matrix by shell thickness and does not apply an additional shear-correction factor.
+
 \begin{exampledeck}
 *MATERIAL, NAME=STEEL
 *ELASTIC, TYPE=ISOTROPIC

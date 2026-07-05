@@ -37,6 +37,7 @@ Some result quantities are not simple node or element fields. Indexed fields use
 \endhead
 Linear Static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{EXTERNAL_FORCES}, \val{REACTION_FORCES}, shell and section fields. \\
 Linear Static Topology & Static fields plus \val{COMPLIANCE}, \val{DENS_GRAD}, \val{VOLUME}, \val{DENSITY}, and optional orientation fields. \\
+Nonlinear Static & Per accepted increment: \val{DISPLACEMENT_i}, \val{STRESS_i}, \val{LAMBDA_i}. Final state: \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{STRESS_TOP}, \val{STRESS_BOT}, \val{EXTERNAL_FORCES}, \val{INTERNAL_FORCES}, and \val{REACTION_FORCES}. \\
 Eigenfrequency & \val{MODE_SHAPE_i}, \val{PARTICIPATION_i}, \val{EIGENVALUES}, \val{EIGENFREQUENCIES}, \val{FREQUENCIES}. \\
 Linear Buckling & \val{BUCKLING_MODE_i}, \val{BUCKLING_FACTORS}. \\
 Linear Transient & \val{DISPLACEMENT_k}, \val{VELOCITY_k}, \val{ACCELERATION_k} for written time steps. \\

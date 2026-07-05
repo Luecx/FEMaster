@@ -1,63 +1,397 @@
-\chapter{Examples}
+\chapter{Complete Examples}
 
-\section{Linear static}
+Every example in this chapter is a complete input deck. It includes geometry, properties, boundary conditions, loads where applicable, and the loadcase. The examples can therefore be copied into separate \file{.inp} files and run directly.
 
-See Section~\ref{sec:loadcase-linear-static} for the governing equation and a minimal static loadcase.
+\section{Linear static truss}
 
-\section{Eigenfrequency}
+This first model is a single axial bar in N--mm units. The guide support at the tip removes the two transverse rigid-body modes without constraining axial extension.
 
 \begin{exampledeck}
-*LOADCASE, TYPE=EIGENFREQ
-  *SUPPORTS
-  FIX
-  *NUMEIGENVALUES
-  12
+*MODEL, NAME=LINEAR_TRUSS
+
+*NODE, NSET=NALL
+1,    0.0, 0.0, 0.0
+2, 1000.0, 0.0, 0.0
+
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+
+*NSET, NAME=FIXED
+1
+*NSET, NAME=TIP
+2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000.0, 0.3
+
+*TRUSSSECTION, ELSET=BAR, MATERIAL=STEEL
+100.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED, 0.0, 0.0, 0.0, NAN, NAN, NAN
+TIP,   NAN, 0.0, 0.0, NAN, NAN, NAN
+
+*CLOAD, LOAD_COLLECTOR=AXIAL_LOAD
+TIP, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+*LOADCASE, TYPE=LINEARSTATIC, NAME=AXIAL_TENSION
+*SUPPORTS
+BC
+*LOADS
+AXIAL_LOAD
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*END
 \end{exampledeck}
 
-\section{Linear buckling}
+\section{Topology-aware linear static solid}
+
+The density and orientation fields are defined at root level and referenced by keyword. \cmd{TOPODENSITY} requires \key{FIELD}; the data-line form is not valid. The orientation angles are Euler angles in radians and are optional. Density \(\rho_e=0.8\) with \(p=3\) scales this element's stiffness by \(0.8^3\).
 
 \begin{exampledeck}
-*LOADCASE, TYPE=LINEARBUCKLING
-  *SUPPORTS
-  FIX
-  *LOADS
-  PRELOAD
-  *NUMEIGENVALUES
-  6
-  *SIGMA
-  0.0
-  *REQUESTSTGEOM, FILE=buckling_geom
+*MODEL, NAME=TOPOLOGY_CUBE
+
+*NODE, NSET=NALL
+1, 0.0, 0.0, 0.0
+2, 0.0, 1.0, 0.0
+3, 0.0, 0.0, 1.0
+4, 0.0, 1.0, 1.0
+5, 1.0, 0.0, 0.0
+6, 1.0, 1.0, 0.0
+7, 1.0, 0.0, 1.0
+8, 1.0, 1.0, 1.0
+
+*ELEMENT, TYPE=C3D8, ELSET=DESIGN_DOMAIN
+1, 1, 5, 6, 2, 3, 7, 8, 4
+
+*NSET, NAME=FIXED_FACE
+1, 2, 3, 4
+*NSET, NAME=LOADED_FACE
+5, 6, 7, 8
+
+*MATERIAL, NAME=ORTHOTROPIC_SOLID
+*ELASTIC, TYPE=ORTHOTROPIC
+100000.0, 50000.0, 50000.0, 20000.0, 20000.0, 25000.0, 0.25, 0.25, 0.25
+
+*SOLIDSECTION, ELSET=DESIGN_DOMAIN, MATERIAL=ORTHOTROPIC_SOLID
+
+*FIELD, NAME=RHO, TYPE=ELEMENT, COLS=1, FILL=ZERO
+1, 0.8
+
+*FIELD, NAME=ANGLES, TYPE=ELEMENT, COLS=3, FILL=ZERO
+1, 0.0, 0.0, 0.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED_FACE, 0.0, 0.0, 0.0, NAN, NAN, NAN
+
+*CLOAD, LOAD_COLLECTOR=TENSION
+LOADED_FACE, 250.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+*LOADCASE, TYPE=LINEARSTATICTOPO, NAME=TOPO_STATIC
+*SUPPORTS
+BC
+*LOADS
+TENSION
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*TOPODENSITY, FIELD=RHO
+*TOPOORIENT, FIELD=ANGLES
+*TOPOEXPONENT
+3.0
+*END
 \end{exampledeck}
 
-\section{Transient load with amplitude}
+\section{Shell with explicit ABD and transverse shear stiffness}
+
+The six lines following \cmd{ELASTIC} are the rows of the \(6\times6\) ABD matrix. The final line contains the four entries of \(S\) in row-major order. The example uses a symmetric uncoupled laminate, but the parser accepts all 36 ABD entries independently.
 
 \begin{exampledeck}
+*MODEL, NAME=ABD_CANTILEVER
+
+*NODE, NSET=NALL
+1,    0.0,   0.0, 0.0
+2, 1000.0,   0.0, 0.0
+3, 1000.0, 500.0, 0.0
+4,    0.0, 500.0, 0.0
+
+*ELEMENT, TYPE=S4, ELSET=PANEL
+1, 1, 2, 3, 4
+
+*NSET, NAME=ROOT
+1, 4
+*NSET, NAME=TIP
+2, 3
+
+*MATERIAL, NAME=LAMINATE_ABD
+*ELASTIC, TYPE=ABD
+1.0e6, 2.5e5, 0.0, 0.0, 0.0, 0.0
+2.5e5, 1.0e6, 0.0, 0.0, 0.0, 0.0
+0.0, 0.0, 3.0e5, 0.0, 0.0, 0.0
+0.0, 0.0, 0.0, 1.0e3, 2.5e2, 0.0
+0.0, 0.0, 0.0, 2.5e2, 1.0e3, 0.0
+0.0, 0.0, 0.0, 0.0, 0.0, 3.0e2
+3.0e5, 0.0, 0.0, 3.0e5
+
+*SHELLSECTION, ELSET=PANEL, MATERIAL=LAMINATE_ABD
+1.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+ROOT, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+*CLOAD, LOAD_COLLECTOR=TIP_LOAD
+TIP, 0.0, 0.0, -100.0, 0.0, 0.0, 0.0
+
+*LOADCASE, TYPE=LINEARSTATIC, NAME=ABD_BENDING
+*SUPPORTS
+BC
+*LOADS
+TIP_LOAD
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*END
+\end{exampledeck}
+
+\section{Nonlinear load control}
+
+The two initially horizontal bars have no linearized vertical stiffness at their midpoint. Zero-row regularization supplies the initial perturbation; after deflection, geometric stiffness carries the load.
+
+\begin{exampledeck}
+*MODEL, NAME=TWO_BAR_MECHANISM
+
+*NODE, NSET=NALL
+1, -1000.0, 0.0, 0.0
+2,     0.0, 0.0, 0.0
+3,  1000.0, 0.0, 0.0
+
+*ELEMENT, TYPE=T3, ELSET=BARS
+1, 1, 2
+2, 2, 3
+
+*NSET, NAME=END_SUPPORTS
+1, 3
+*NSET, NAME=MIDPOINT
+2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000.0, 0.3
+
+*TRUSSSECTION, ELSET=BARS, MATERIAL=STEEL
+100.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+END_SUPPORTS, 0.0, 0.0, 0.0, NAN, NAN, NAN
+MIDPOINT, NAN, NAN, 0.0, NAN, NAN, NAN
+
+*CLOAD, LOAD_COLLECTOR=MIDPOINT_LOAD
+MIDPOINT, 0.0, -1000.0, 0.0, 0.0, 0.0, 0.0
+
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=LOAD_CONTROL
+*SUPPORTS
+BC
+*LOADS
+MIDPOINT_LOAD
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*NONLINEAR, CONTROL=LOAD, INCREMENTS=20, MAXITER=40, TOL=1e-8, ADAPTIVE=ON, REGULARIZE_ZERO_ROWS=ON, REGULARIZATION_ALPHA=1e-4
+*END
+\end{exampledeck}
+
+\section{Snap-through with arc-length control}
+
+The 20 kN reference load exceeds the first limit load of the shallow two-bar arch. Arc-length control can follow the equilibrium path while the load factor temporarily decreases.
+
+\begin{exampledeck}
+*MODEL, NAME=SNAP_THROUGH_TRUSS
+
+*NODE, NSET=NALL
+1, -1000.0,   0.0, 0.0
+2,     0.0, 100.0, 0.0
+3,  1000.0,   0.0, 0.0
+
+*ELEMENT, TYPE=T3, ELSET=BARS
+1, 1, 2
+2, 2, 3
+
+*NSET, NAME=END_SUPPORTS
+1, 3
+*NSET, NAME=APEX
+2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000.0, 0.3
+
+*TRUSSSECTION, ELSET=BARS, MATERIAL=STEEL
+100.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+END_SUPPORTS, 0.0, 0.0, 0.0, NAN, NAN, NAN
+APEX, 0.0, NAN, 0.0, NAN, NAN, NAN
+
+*CLOAD, LOAD_COLLECTOR=APEX_LOAD
+APEX, 0.0, -20000.0, 0.0, 0.0, 0.0, 0.0
+
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=ARC_LENGTH
+*SUPPORTS
+BC
+*LOADS
+APEX_LOAD
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*NONLINEAR, CONTROL=ARC_LENGTH, ARC_LENGTH_PSI=1.0, MAX_INCREMENTS=200, INITIAL_INCREMENT=0.1, MINIMUM_INCREMENT=1e-5, MAXIMUM_INCREMENT=0.1, ADAPTIVE=ON, MAXITER=30, TOL=1e-8, REGULARIZE_ZERO_ROWS=OFF
+*END
+\end{exampledeck}
+
+\section{Eigenfrequency with a point mass}
+
+The two-element bar has two free axial degrees of freedom; the loadcase requests the lowest mode. Its distributed density and the concentrated tip mass both contribute to the mass matrix.
+
+\begin{exampledeck}
+*MODEL, NAME=AXIAL_EIGENFREQUENCY
+
+*NODE, NSET=NALL
+1,    0.0, 0.0, 0.0
+2,  500.0, 0.0, 0.0
+3, 1000.0, 0.0, 0.0
+
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+2, 2, 3
+
+*NSET, NAME=FIXED
+1
+*NSET, NAME=GUIDED
+2, 3
+*NSET, NAME=TIP
+3
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000.0, 0.3
+*DENSITY
+7.85e-9
+
+*TRUSSSECTION, ELSET=BAR, MATERIAL=STEEL
+100.0
+
+*POINTMASS, NSET=TIP
+0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED, 0.0, 0.0, 0.0, NAN, NAN, NAN
+GUIDED, NAN, 0.0, 0.0, NAN, NAN, NAN
+
+*LOADCASE, TYPE=EIGENFREQ, NAME=AXIAL_MODE
+*SUPPORTS
+BC
+*NUMEIGENVALUES
+1
+*END
+\end{exampledeck}
+
+\section{Linear buckling of a shallow truss}
+
+The preload places both bars in compression. Linear buckling then evaluates the geometric stiffness of that preloaded state and reports the requested factor and mode.
+
+\begin{exampledeck}
+*MODEL, NAME=SHALLOW_TRUSS_BUCKLING
+
+*NODE, NSET=NALL
+1, -1000.0,   0.0, 0.0
+2,     0.0, 100.0, 0.0
+3,  1000.0,   0.0, 0.0
+
+*ELEMENT, TYPE=T3, ELSET=BARS
+1, 1, 2
+2, 2, 3
+
+*NSET, NAME=ENDS
+1, 3
+*NSET, NAME=APEX
+2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000.0, 0.3
+
+*TRUSSSECTION, ELSET=BARS, MATERIAL=STEEL
+100.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+ENDS, 0.0, 0.0, 0.0, NAN, NAN, NAN
+APEX, NAN, NAN, 0.0, NAN, NAN, NAN
+
+*CLOAD, LOAD_COLLECTOR=PRELOAD
+APEX, 0.0, -1000.0, 0.0, 0.0, 0.0, 0.0
+
+*LOADCASE, TYPE=LINEARBUCKLING, NAME=LIMIT_ESTIMATE
+*SUPPORTS
+BC
+*LOADS
+PRELOAD
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*NUMEIGENVALUES
+1
+*SIGMA
+0.0
+*END
+\end{exampledeck}
+
+\section{Linear transient ramp load}
+
+The amplitude ramps the axial force over 0.1 seconds and then holds it constant. Results are written every ten integration steps.
+
+\begin{exampledeck}
+*MODEL, NAME=TRANSIENT_TRUSS
+
+*NODE, NSET=NALL
+1,    0.0, 0.0, 0.0
+2, 1000.0, 0.0, 0.0
+
+*ELEMENT, TYPE=T3, ELSET=BAR
+1, 1, 2
+
+*NSET, NAME=FIXED
+1
+*NSET, NAME=TIP
+2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000.0, 0.3
+*DENSITY
+7.85e-9
+
+*TRUSSSECTION, ELSET=BAR, MATERIAL=STEEL
+100.0
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED, 0.0, 0.0, 0.0, NAN, NAN, NAN
+TIP,   NAN, 0.0, 0.0, NAN, NAN, NAN
+
 *AMPLITUDE, NAME=RAMP, TYPE=LINEAR
 0.0, 0.0
+0.1, 1.0
 1.0, 1.0
 
-*CLOAD, LOAD_COLLECTOR=F_RAMP, AMPLITUDE=RAMP
-TIP, 0, 0, -1000, 0, 0, 0
+*CLOAD, LOAD_COLLECTOR=DYNAMIC_LOAD, AMPLITUDE=RAMP
+TIP, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-*LOADCASE, TYPE=LINEARTRANSIENT
-  *SUPPORTS
-  FIX
-  *LOADS
-  F_RAMP
-  *TIME
-  0.0, 1.0, 0.01
-  *NEWMARK
-  0.25, 0.5
-  *WRITEEVERY, TYPE=STEPS
-  10
-\end{exampledeck}
-
-\section{Point mass}
-
-\begin{exampledeck}
-*NSET, NAME=MASS_NODE
-100
-
-*POINTMASS, NSET=MASS_NODE
-5.0, 0.02, 0.02, 0.04, 0, 0, 0, 0, 0, 0
+*LOADCASE, TYPE=LINEARTRANSIENT, NAME=RAMP_RESPONSE
+*SUPPORTS
+BC
+*LOADS
+DYNAMIC_LOAD
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*TIME
+0.0, 1.0, 0.01
+*NEWMARK
+0.25, 0.5
+*DAMPING, TYPE=RAYLEIGH
+0.0, 1e-5
+*WRITEEVERY, TYPE=STEPS
+10
+*END
 \end{exampledeck}

@@ -90,17 +90,66 @@ where \(p\) is supplied by \cmd{TOPOEXPONENT}. Low densities reduce stiffness co
 
 \begin{syntax}
 *LOADCASE, TYPE=LINEARSTATICTOPO, NAME=<name>
-  *TOPODENSITY
-  <element-field>
-  *TOPOORIENT
-  <element-field>
+  *TOPODENSITY, FIELD=<element-field>
+  *TOPOORIENT, FIELD=<element-field>
   *TOPOEXPONENT
   <p>
 \end{syntax}
 
-\cmd{TOPODENSITY} requires an element field with one component. \cmd{TOPOORIENT} requires an element field with three components. The static controls from \val{LINEARSTATIC} are used in the same way.
+\cmd{TOPODENSITY} requires \key{FIELD} to reference an element field with one component. \cmd{TOPOORIENT} is optional and requires an element field with three components. Both commands also accept \key{NAME} as an alias for \key{FIELD}. \cmd{TOPOEXPONENT} remains a data-line command; if it is omitted, \(p=1\). The density field itself is required. The static controls from \val{LINEARSTATIC} are used in the same way.
 
 The compliance, density sensitivity, and orientation sensitivity derivations are collected in Appendix~\ref{chap:appendix-derivations}.
+
+\section{Nonlinear Static}
+\label{sec:loadcase-nonlinear-static}
+
+\val{NONLINEARSTATIC} solves quasi-static equilibrium with an updated geometry and a repeatedly assembled tangent stiffness. It supports load control and arc-length path following. Nonlinear contact contributions are assembled only by this loadcase.
+
+\subsection{Governing equation}
+
+At load factor \(\lambda\), equilibrium is
+\[
+f_\mathrm{int}(u)=\lambda f_\mathrm{ref}.
+\]
+For a Newton correction at the current state, FEMaster assembles the tangent stiffness \(K_T\) and solves the constrained, reduced equation
+\[
+T^T K_T T\,\Delta q
+=
+T^T\!\left(\lambda f_\mathrm{ref}-f_\mathrm{int}(u)\right),
+\qquad
+u=u_p+Tq.
+\]
+The model positions are updated from the current displacement during nonlinear assembly. After the loadcase finishes, the original model positions are restored so that later loadcases start from the original geometry.
+
+Load control prescribes \(\lambda\) incrementally. Arc-length control treats \(q\) and \(\lambda\) as coupled unknowns and adds a path constraint, allowing the solver to pass load limit points. Both methods and all \cmd{NONLINEAR} options are described in Section~\ref{sec:nonlinear-controls}.
+
+\subsection{Typical DSL}
+
+\begin{exampledeck}
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=load-control
+  *SUPPORTS
+  FIXED
+  *LOADS
+  FORCE
+  *SOLVER, DEVICE=CPU, METHOD=DIRECT
+  *CONSTRAINTMETHOD, TYPE=NULLSPACE
+  *NONLINEAR, CONTROL=LOAD, INITIAL_INCREMENT=0.05, MINIMUM_INCREMENT=1e-5, MAXIMUM_INCREMENT=0.1, MAX_INCREMENTS=100, ADAPTIVE=ON, MAXITER=30, TOL=1e-8
+\end{exampledeck}
+
+For an equilibrium path containing a limit point, select arc-length control:
+
+\begin{exampledeck}
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=arc-length
+  *SUPPORTS
+  FIXED
+  *LOADS
+  FORCE
+  *SOLVER, DEVICE=CPU, METHOD=DIRECT
+  *CONSTRAINTMETHOD, TYPE=NULLSPACE
+  *NONLINEAR, CONTROL=ARC_LENGTH, ARC_LENGTH_PSI=1.0, INITIAL_INCREMENT=0.05, MINIMUM_INCREMENT=1e-6, MAXIMUM_INCREMENT=0.1, MAX_INCREMENTS=300, ADAPTIVE=ON, MAXITER=35, TOL=1e-7, REGULARIZE_ZERO_ROWS=OFF
+\end{exampledeck}
+
+Each accepted increment writes \val{DISPLACEMENT_i}, \val{STRESS_i}, and \val{LAMBDA_i}. These path frames are retained even if a later increment fails. On successful completion, FEMaster additionally writes the final displacement, strain, stress, internal-force, external-force, and reaction-force fields. \cmd{REQUESTSTIFFNESS} writes the final full tangent and its reduced form.
 
 \section{Eigenfrequency}
 \label{sec:loadcase-eigenfrequency}
@@ -248,8 +297,9 @@ The transient-specific keywords \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{W
 \endhead
 \val{LINEARSTATIC} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, optional \cmd{INERTIARELIEF}, \cmd{REBALANCELOADS}, \cmd{REQUESTSTIFFNESS}, \cmd{CONSTRAINTSUMMARY}. \\
 \val{LINEARSTATICTOPO} & Linear-static commands plus \cmd{TOPODENSITY}, \cmd{TOPOORIENT}, \cmd{TOPOEXPONENT}. \\
-\val{EIGENFREQ} & \cmd{SUPPORTS}, \cmd{CONSTRAINTMETHOD}, \cmd{NUMEIGENVALUES}. \\
-\val{LINEARBUCKLING} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{CONSTRAINTMETHOD}, \cmd{NUMEIGENVALUES}, optional \cmd{SIGMA}, \cmd{REQUESTSTIFFNESS}, \cmd{REQUESTSTGEOM}. \\
-\val{LINEARTRANSIENT} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, \cmd{INITIALVELOCITY}. \\
+\val{NONLINEARSTATIC} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{CONSTRAINTMETHOD}, \cmd{NONLINEAR}, optional \cmd{REQUESTSTIFFNESS} and \cmd{CONSTRAINTSUMMARY}. \\
+\val{EIGENFREQ} & \cmd{SUPPORTS}, \cmd{NUMEIGENVALUES}; Nullspace constraints are applied internally. \\
+\val{LINEARBUCKLING} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{NUMEIGENVALUES}, optional \cmd{SIGMA}, \cmd{REQUESTSTIFFNESS}, \cmd{REQUESTSTGEOM}; Nullspace constraints are applied internally. \\
+\val{LINEARTRANSIENT} & \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, \cmd{TIME}, \cmd{NEWMARK}, \cmd{DAMPING}, \cmd{WRITEEVERY}, \cmd{INITIALVELOCITY}; Nullspace constraints are applied internally. \\
 \bottomrule
 \end{longtable}

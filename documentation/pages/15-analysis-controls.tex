@@ -191,6 +191,98 @@ If the Rayleigh estimate is not usable, FEMaster falls back to a diagonal ratio 
 \]
 for positive finite diagonal entries and uses a conservative lower quartile of those values. If no valid estimate exists, the fallback shift is \(10^{-12}\).
 
+\section{Nonlinear static controls}
+\label{sec:nonlinear-controls}
+
+\begin{syntax}
+*NONLINEAR, CONTROL=LOAD|ARC_LENGTH,
+  INCREMENTS=<n>, MAX_INCREMENTS=<n>,
+  INITIAL_INCREMENT=<value>, MINIMUM_INCREMENT=<value>,
+  MAXIMUM_INCREMENT=<value>, ARC_LENGTH_PSI=<value>,
+  ADAPTIVE=ON|OFF, GROWTH_FACTOR=<value>,
+  CUTBACK_FACTOR=<value>, FAST_ITERATIONS=<n>,
+  SLOW_ITERATIONS=<n>, MAXIMUM_CUTBACKS=<n>,
+  MAXITER=<n>, TOL=<value>,
+  REGULARIZE_ZERO_ROWS=ON|OFF,
+  REGULARIZATION_ALPHA=<value>
+\end{syntax}
+
+\cmd{NONLINEAR} configures a \val{NONLINEARSTATIC} loadcase. It combines the path-control method, the increment controller, the Newton iteration limit, and optional regularization of weak tangent rows. All arguments are optional; omitted arguments use the defaults in Table~\ref{tab:nonlinear-options}.
+
+\begin{longtable}{@{}p{0.27\linewidth}p{0.13\linewidth}p{0.50\linewidth}@{}}
+\caption{Options of \cmd{NONLINEAR}.}\label{tab:nonlinear-options}\\
+\toprule
+\textbf{Option} & \textbf{Default} & \textbf{Meaning} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Option} & \textbf{Default} & \textbf{Meaning} \\
+\midrule
+\endhead
+\key{CONTROL} & \val{LOAD} & Select \val{LOAD} control or \val{ARC_LENGTH} path following. \\
+\key{INCREMENTS} & --- & Legacy shorthand that sets \key{INITIAL_INCREMENT} to \(1/n\). It does not prescribe the number of accepted increments. An explicitly supplied \key{INITIAL_INCREMENT} takes precedence. \\
+\key{MAX_INCREMENTS} & 100 & Maximum number of accepted increments. \\
+\key{INITIAL_INCREMENT} & 0.1 & Initial step scale. Under load control this is \(\Delta\lambda\); under arc-length control it scales the initial reference radius. \\
+\key{MINIMUM_INCREMENT} & \(10^{-4}\) & Smallest step scale permitted after cutback. \\
+\key{MAXIMUM_INCREMENT} & 1.0 & Largest step scale permitted after growth. \\
+\key{ARC_LENGTH_PSI} & 1.0 & Nonnegative weight of the load-factor term in the arc-length constraint. Ignored by load control. \\
+\key{ADAPTIVE} & \val{ON} & Enable step growth and cutback. With \val{OFF}, every attempt uses \key{INITIAL_INCREMENT}; a rejected increment terminates the loadcase. \\
+\key{GROWTH_FACTOR} & 1.5 & Multiplier applied after fast convergence. \\
+\key{CUTBACK_FACTOR} & 0.5 & Multiplier applied after slow convergence or a rejected attempt; it must lie strictly between 0 and 1. \\
+\key{FAST_ITERATIONS} & 6 & An accepted increment using no more than this number of Newton iterations is enlarged. \\
+\key{SLOW_ITERATIONS} & 10 & An accepted increment using at least this number of Newton iterations is reduced. \\
+\key{MAXIMUM_CUTBACKS} & 20 & Maximum consecutive cutbacks or final-step adjustments for one increment. \\
+\key{MAXITER} & 20 & Maximum Newton iterations per attempted increment. \\
+\key{TOL} & \(10^{-8}\) & Relative equilibrium-residual tolerance; arc-length control also applies it to the normalized path constraint. \\
+\key{REGULARIZE_ZERO_ROWS} & \val{ON} & Add diagonal stiffness to tangent rows whose row norm is below the configured threshold. \\
+\key{REGULARIZATION_ALPHA} & \(10^{-4}\) & Scale used to derive the minimum row stiffness from the mean nonzero tangent diagonal, or from the mean nonzero entry if no usable diagonal exists. \\
+\bottomrule
+\end{longtable}
+
+The increment bounds must satisfy
+\[
+0 < \Delta s_\mathrm{min}
+\leq \Delta s_\mathrm{initial}
+\leq \Delta s_\mathrm{max}.
+\]
+All count limits must be positive. This applies to \key{MAX_INCREMENTS}, \key{MAXITER}, \key{FAST_ITERATIONS}, and \key{MAXIMUM_CUTBACKS}. In addition, \key{SLOW_ITERATIONS} must not be smaller than \key{FAST_ITERATIONS}.
+
+\subsection{Load control}
+
+With \key{CONTROL=LOAD}, FEMaster prescribes the load factor at each attempt:
+\[
+f_\mathrm{ext}=\lambda f_\mathrm{ref},
+\qquad
+\lambda_{i+1}=\min(\lambda_i+\Delta\lambda,1).
+\]
+The Newton iterations enforce equilibrium at the prescribed \(\lambda_{i+1}\). The last step is shortened so that the analysis ends at \(\lambda=1\), provided the remaining step does not fall below \key{MINIMUM_INCREMENT}. Load control is appropriate while the equilibrium path remains representable as a single-valued function of the load factor. It generally cannot pass a limit point at which increasing displacement requires a decreasing load factor.
+
+\subsection{Arc-length control}
+
+With \key{CONTROL=ARC_LENGTH}, displacement and load factor are corrected together. For one increment FEMaster enforces
+\[
+\lVert\Delta q\rVert^2
++ \psi^2 s_f^2(\Delta\lambda)^2
+= r^2,
+\]
+where \(\Delta q\) is the reduced-coordinate increment, \(\Delta\lambda\) is the load-factor increment, \(s_f=\lVert\Delta q_f\rVert\) is a fixed load scale obtained from the first tangent predictor, and \(r\) is the current arc radius. The configured increment is a normalized radius scale: the first predictor establishes a fixed reference radius and subsequent growth or cutback multiplies that reference.
+
+\key{ARC_LENGTH_PSI} is dimensionless. \(\psi=1\) gives the default scaled weighting. \(\psi=0\) removes the load-factor term and produces a cylindrical constraint. Increasing \(\psi\) restricts load-factor changes more strongly for a fixed radius. Arc-length control selects the continuation direction from the previous accepted path increment and can therefore follow branches through limit points where \(\lambda\) temporarily decreases. The loadcase completes when the continued path reaches \(\lambda=1\); the final radius is adjusted when necessary to hit that value within \key{TOL}.
+
+\subsection{Adaptation and convergence}
+
+After an accepted increment, adaptive control multiplies the next step by \key{GROWTH_FACTOR} when the solve used at most \key{FAST_ITERATIONS}, or by \key{CUTBACK_FACTOR} when it used at least \key{SLOW_ITERATIONS}. The result is clamped to the configured minimum and maximum. A rejected attempt restores the last accepted state and applies a cutback. Exceeding the minimum step, the cutback limit, or the maximum accepted-increment count terminates the loadcase.
+
+For equilibrium, FEMaster forms the reduced residual
+\[
+r=T^T(\lambda f_\mathrm{ref}-f_\mathrm{int})
+\]
+and compares its RMS value with the larger of the reduced external-force RMS, reduced internal-force RMS, and 1. Under arc-length control, the convergence measure is the larger of this relative equilibrium residual and the normalized arc-constraint error. The displacement-correction norm printed in the solver log is diagnostic; equilibrium convergence is controlled by \key{TOL}.
+
+\begin{warningbox}[Current restrictions]
+\val{NONLINEARSTATIC} currently requires \key{METHOD=DIRECT} and \key{TYPE=NULLSPACE}. Zero-row regularization changes the tangent and should be enabled only when its numerical stabilization is intended. It is not a physical stiffness contribution.
+\end{warningbox}
+
 \section{Transient-specific controls}
 
 \begin{syntax}
