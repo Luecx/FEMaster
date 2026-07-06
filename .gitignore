@@ -3,6 +3,8 @@
 
 bin/
 obj/
+build/
+!build/.gitkeep
 res/
 vtk/
 

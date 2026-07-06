@@ -1,0 +1,54 @@
+FEMaster Third-Party Software Notices
+=====================================
+
+FEMaster itself is licensed under the MIT License. See LICENSE.txt.
+
+This distribution contains or links against the third-party components listed
+below. Their original license texts and required notices are preserved in the
+licenses directory. Those original files govern the corresponding components.
+
+argparse
+--------
+Header-only command-line argument parser by Pranav Srinivas Kumar.
+License: MIT
+License file: licenses/argparse.txt
+
+Eigen
+-----
+Header-only linear algebra library. Eigen is primarily licensed under the
+Mozilla Public License 2.0 and contains files under additional compatible
+licenses.
+FEMaster is currently built against Eigen development headers reporting
+version 3.4.90.
+Upstream source (current master):
+  https://gitlab.com/libeigen/eigen/-/tree/master
+License and notice files:
+  licenses/eigen-COPYING.README.txt
+  licenses/eigen-COPYING.MPL2.txt
+  licenses/eigen-COPYING.BSD.txt
+  licenses/eigen-COPYING.APACHE.txt
+  licenses/eigen-COPYING.MINPACK.txt
+
+Spectra
+-------
+Header-only library for large-scale eigenvalue problems.
+License: Mozilla Public License 2.0
+License file: licenses/spectra.txt
+
+Intel oneAPI Math Kernel Library (oneMKL)
+-----------------------------------------
+Numerical runtime code from oneMKL is statically linked into MKL-enabled
+FEMaster builds.
+License and notice files:
+  licenses/intel-oneMKL-license.rtf
+  licenses/intel-oneMKL-third-party-programs.txt
+
+Intel OpenMP Runtime
+--------------------
+Parallel MKL builds on Windows are distributed with libiomp5md.dll.
+License, notice, and redistributable-list files:
+  licenses/intel-compiler-EULA.rtf
+  licenses/intel-openmp-third-party-programs.txt
+  licenses/intel-compiler-redistributables.txt
+
+No endorsement by any third-party project or vendor is implied.

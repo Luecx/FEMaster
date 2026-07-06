@@ -1,0 +1,220 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "common",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FEMASTER_BUILD_TESTS": "OFF",
+        "FEMASTER_DOUBLE_PRECISION": "ON",
+        "FEMASTER_FAST_EIGEN_COMPILE": "ON"
+      }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "common",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "ON"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux CPU (Release)",
+      "inherits": "linux-base"
+    },
+    {
+      "name": "linux-profile",
+      "displayName": "Linux CPU (profiling symbols)",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "linux-mkl",
+      "displayName": "Linux CPU + threaded static oneMKL",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_SEQUENTIAL": "OFF",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "linux-mkl-sequential",
+      "displayName": "Linux CPU + sequential static oneMKL",
+      "inherits": "linux-mkl",
+      "cacheVariables": {
+        "FEMASTER_MKL_SEQUENTIAL": "ON"
+      }
+    },
+    {
+      "name": "linux-cuda",
+      "displayName": "Linux CUDA",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "linux-cuda-mkl",
+      "displayName": "Linux CUDA + oneMKL",
+      "inherits": "linux-cuda",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "linux-cuda-cudss",
+      "displayName": "Linux CUDA + cuDSS",
+      "inherits": "linux-cuda",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_CUDSS": "ON"
+      }
+    },
+    {
+      "name": "linux-full",
+      "displayName": "Linux CUDA + cuDSS + oneMKL",
+      "inherits": "linux-cuda-cudss",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "inherits": "common",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "OFF"
+      }
+    },
+    {
+      "name": "windows-release",
+      "displayName": "Windows CPU (Release)",
+      "inherits": "windows-base"
+    },
+    {
+      "name": "windows-mkl",
+      "displayName": "Windows CPU + threaded static oneMKL",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_SEQUENTIAL": "OFF",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "windows-mkl-sequential",
+      "displayName": "Windows CPU + sequential static oneMKL",
+      "inherits": "windows-mkl",
+      "cacheVariables": {
+        "FEMASTER_MKL_SEQUENTIAL": "ON"
+      }
+    },
+    {
+      "name": "windows-cuda",
+      "displayName": "Windows CUDA",
+      "inherits": "windows-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_CUDA": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "windows-cuda-mkl",
+      "displayName": "Windows CUDA + oneMKL",
+      "inherits": "windows-cuda",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_STATIC": "ON"
+      }
+    },
+    {
+      "name": "windows-cuda-cudss",
+      "displayName": "Windows CUDA + cuDSS",
+      "inherits": "windows-cuda",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_CUDSS": "ON"
+      }
+    },
+    {
+      "name": "windows-full",
+      "displayName": "Windows CUDA + cuDSS + oneMKL",
+      "inherits": "windows-cuda-cudss",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_STATIC": "ON"
+      }
+    },
+    {
+      "name": "macos-base",
+      "hidden": true,
+      "inherits": "common",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS CPU (Release)",
+      "inherits": "macos-base"
+    },
+    {
+      "name": "macos-openmp",
+      "displayName": "macOS CPU + OpenMP",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux-release", "configurePreset": "linux-release", "jobs": 8 },
+    { "name": "linux-profile", "configurePreset": "linux-profile", "jobs": 8 },
+    { "name": "linux-mkl", "configurePreset": "linux-mkl", "jobs": 8 },
+    { "name": "linux-mkl-sequential", "configurePreset": "linux-mkl-sequential", "jobs": 8 },
+    { "name": "linux-cuda", "configurePreset": "linux-cuda", "jobs": 8 },
+    { "name": "linux-cuda-mkl", "configurePreset": "linux-cuda-mkl", "jobs": 8 },
+    { "name": "linux-cuda-cudss", "configurePreset": "linux-cuda-cudss", "jobs": 8 },
+    { "name": "linux-full", "configurePreset": "linux-full", "jobs": 8 },
+    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release", "jobs": 8 },
+    { "name": "windows-mkl", "configurePreset": "windows-mkl", "configuration": "Release", "jobs": 8 },
+    { "name": "windows-mkl-sequential", "configurePreset": "windows-mkl-sequential", "configuration": "Release", "jobs": 8 },
+    { "name": "windows-cuda", "configurePreset": "windows-cuda", "configuration": "Release", "jobs": 8 },
+    { "name": "windows-cuda-mkl", "configurePreset": "windows-cuda-mkl", "configuration": "Release", "jobs": 8 },
+    { "name": "windows-cuda-cudss", "configurePreset": "windows-cuda-cudss", "configuration": "Release", "jobs": 8 },
+    { "name": "windows-full", "configurePreset": "windows-full", "configuration": "Release", "jobs": 8 },
+    { "name": "macos-release", "configurePreset": "macos-release", "jobs": 8 },
+    { "name": "macos-openmp", "configurePreset": "macos-openmp", "jobs": 8 }
+  ]
+}
