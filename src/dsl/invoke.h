@@ -23,6 +23,8 @@
  */
 
 #pragma once
+#include <cctype>
+#include <limits>
 #include <tuple>
 #include <type_traits>
 #include <array>
@@ -181,8 +183,13 @@ template<class... Us>
 struct Invoker {
     template<class F>
     static void run(F&& f, const std::vector<std::string>& toks) {
+        using ArgsTuple = std::tuple<std::remove_cv_t<std::remove_reference_t<Us>>...>;
+
         std::size_t i = 0;
-        auto args = std::tuple<std::remove_cv_t<std::remove_reference_t<Us>>...>{ take<Us>(toks, i)... };
+        ArgsTuple args{};
+        std::apply([&](auto&... arg) {
+            ((arg = take<std::decay_t<decltype(arg)>>(toks, i)), ...);
+        }, args);
         std::apply(std::forward<F>(f), args);
     }
 };

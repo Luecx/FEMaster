@@ -30,14 +30,12 @@ void print_banner() {
     std::cout << "*                                                                    *\n";
     std::cout << "*           Copyright (c) 2024, Finn Eggers                          *\n";
     std::cout << "*                                                                    *\n";
-    std::cout << "*           All rights reserved.                                     *\n";
+    std::cout << "*           Licensed under the MIT License.                          *\n";
+    std::cout << "*           See LICENSE.txt for the complete license terms.          *\n";
     std::cout << "*                                                                    *\n";
     std::cout << "*           This program is provided \"as is\" without any             *\n";
     std::cout << "*           warranty of any kind, either expressed or                *\n";
     std::cout << "*           implied. Use at your own risk.                           *\n";
-    std::cout << "*                                                                    *\n";
-    std::cout << "*           Decompilation or reverse engineering of this             *\n";
-    std::cout << "*           software is strictly prohibited.                         *\n";
     std::cout << "*                                                                    *\n";
     std::cout << "*....................................................................*\n";
     std::cout << "*                                                                    *\n";

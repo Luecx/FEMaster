@@ -175,4 +175,4 @@ Contributions are welcome! Please submit issues and pull requests to the reposit
 
 ## License
 
-FEMaster is licensed under the MIT License. See `LICENSE` for more details.
+FEMaster is licensed under the MIT License. See `LICENSE.txt` for more details.
