@@ -208,8 +208,18 @@ if(FEMASTER_TIME_REPORT)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CMAKE_COMMAND} -E time")
 endif()
 
+set(FEMASTER_MSVC_MP_JOBS "8" CACHE STRING "MSVC /MP parallel compiler processes")
+
 if(MSVC)
-    add_compile_options(/MP)
+    target_compile_options(femaster_core PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:/MP${FEMASTER_MSVC_MP_JOBS}>
+            $<$<COMPILE_LANGUAGE:CXX>:/bigobj>
+            $<$<COMPILE_LANGUAGE:CXX>:/permissive->
+    )
+else()
+    target_compile_options(femaster_core PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra>
+    )
 endif()
 
 # -----------------------------------------------------------------------------
