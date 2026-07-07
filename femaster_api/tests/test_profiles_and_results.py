@@ -3,12 +3,18 @@ from femaster_api import (
     BeamSection,
     Element,
     ElementSet,
+    FEMasterWriter,
     FieldDomain,
     Material,
+    ModalStep,
     Model,
     Node,
+    BucklingStep,
+    NonlinearStaticStep,
     Profile,
     ResultReader,
+    TimeControl,
+    TransientStep,
 )
 
 
@@ -55,3 +61,49 @@ def test_result_reader_maps_loadcases_frames_and_element_nodal_fields() -> None:
     assert energy.row(0) == (42.0,)
     assert ip_stress.domain is FieldDomain.ELEMENT_IP
     assert ip_stress.row(0) == (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+
+
+def test_nonlinear_static_step_writes_current_femaster_keywords() -> None:
+    model = Model("nonlinear")
+    model.steps.add(
+        NonlinearStaticStep(
+            "arc",
+            control="ARC_LENGTH",
+            initial_increment=0.05,
+            minimum_increment=1e-6,
+            maximum_increment=0.1,
+            max_increments=300,
+            adaptive=False,
+            max_iterations=35,
+            tolerance=1e-7,
+            regularize_zero_rows=False,
+            constraint_summary=True,
+        )
+    )
+
+    deck = FEMasterWriter(model, include_header=False).render()
+
+    assert "*LOADCASE, TYPE=NONLINEARSTATIC, NAME=arc" in deck
+    assert "*NONLINEAR, CONTROL=ARC_LENGTH" in deck
+    assert "INITIAL_INCREMENT=0.05" in deck
+    assert "MINIMUM_INCREMENT=1e-06" in deck
+    assert "MAX_INCREMENTS=300" in deck
+    assert "ADAPTIVE=OFF" in deck
+    assert "MAXITER=35" in deck
+    assert "TOL=1e-07" in deck
+    assert "REGULARIZE_ZERO_ROWS=OFF" in deck
+    assert "*CONSTRAINTSUMMARY" in deck
+
+
+def test_writer_does_not_emit_unsupported_constraintmethod_for_modal_buckling_or_transient() -> None:
+    model = Model("constraintmethod")
+    model.steps.add(ModalStep("modes"))
+    model.steps.add(BucklingStep("buckling", loads=()))
+    model.steps.add(TransientStep("transient", loads=(), time=TimeControl(0.0, 1.0, 0.1)))
+
+    deck = FEMasterWriter(model, include_header=False).render()
+
+    assert "*CONSTRAINTMETHOD" not in deck
+    assert "*LOADCASE, TYPE=EIGENFREQ, NAME=modes" in deck
+    assert "*LOADCASE, TYPE=LINEARBUCKLING, NAME=buckling" in deck
+    assert "*LOADCASE, TYPE=LINEARTRANSIENT, NAME=transient" in deck

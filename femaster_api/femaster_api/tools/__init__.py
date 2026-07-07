@@ -1,5 +1,5 @@
 """Optional modeling tools."""
 
-from .tovtk import tovtk
+from .vtk_export import tovtk
 
 __all__ = ["tovtk"]

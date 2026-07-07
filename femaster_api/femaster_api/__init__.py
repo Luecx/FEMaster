@@ -3,6 +3,7 @@
 from ._version import __version__
 from .backend import FEMaster, Frame, LoadCase, ProcessResult, Result, ResultReader
 from .export.femaster_writer import FEMasterWriter
+from .importers import FEMasterInputError, FEMasterReader, load_model_from_inp
 from .model import (
     ABDElasticity,
     Amplitude,
@@ -43,6 +44,7 @@ from .model import (
     Material,
     MaterialRepository,
     ModalStep,
+    NonlinearStaticStep,
     Model,
     NewmarkControl,
     NodalForce,
@@ -124,6 +126,8 @@ __all__ = [
     "EntitySet",
     "EntityType",
     "FEMaster",
+    "FEMasterInputError",
+    "FEMasterReader",
     "FEMasterWriter",
     "Field",
     "FieldDomain",
@@ -132,6 +136,7 @@ __all__ = [
     "IsotropicElasticity",
     "Frame",
     "LoadCase",
+    "load_model_from_inp",
     "LoadCollector",
     "LoadCollectorRepository",
     "LoadRepository",
@@ -139,6 +144,7 @@ __all__ = [
     "Material",
     "MaterialRepository",
     "ModalStep",
+    "NonlinearStaticStep",
     "Model",
     "NewmarkControl",
     "NodalForce",

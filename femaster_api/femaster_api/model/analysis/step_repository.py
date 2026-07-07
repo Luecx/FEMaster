@@ -6,11 +6,12 @@ from typing import Iterator
 
 from .buckling_step import BucklingStep
 from .modal_step import ModalStep
+from .nonlinear_static_step import NonlinearStaticStep
 from .static_step import StaticStep
 from .topology_static_step import TopologyStaticStep
 from .transient_step import TransientStep
 
-Step = StaticStep | TopologyStaticStep | ModalStep | BucklingStep | TransientStep
+Step = StaticStep | TopologyStaticStep | ModalStep | BucklingStep | NonlinearStaticStep | TransientStep
 
 
 class StepRepository:
@@ -20,7 +21,7 @@ class StepRepository:
         self._steps: list[Step] = []
 
     def add(self, step: Step) -> Step:
-        if not isinstance(step, (StaticStep, TopologyStaticStep, ModalStep, BucklingStep, TransientStep)):
+        if not isinstance(step, (StaticStep, TopologyStaticStep, ModalStep, BucklingStep, NonlinearStaticStep, TransientStep)):
             raise TypeError("step must be an analysis step object")
         self._steps.append(step)
         return step

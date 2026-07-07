@@ -6,6 +6,7 @@ from femaster_api.export.femaster_format import block, csv, keyword
 from femaster_api.model.analysis import (
     BucklingStep,
     ModalStep,
+    NonlinearStaticStep,
     StaticStep,
     StepRepository,
     TopologyStaticStep,
@@ -27,6 +28,8 @@ def _write_step(step) -> str:
         return _write_modal(step)
     if isinstance(step, BucklingStep):
         return _write_buckling(step)
+    if isinstance(step, NonlinearStaticStep):
+        return _write_nonlinear_static(step)
     if isinstance(step, TransientStep):
         return _write_transient(step)
     raise TypeError(f"unsupported analysis step: {type(step).__name__}")
@@ -67,7 +70,6 @@ def _write_topology_static(step: TopologyStaticStep) -> str:
 def _write_modal(step: ModalStep) -> str:
     lines = [keyword("LOADCASE", TYPE="EIGENFREQ", NAME=step.name)]
     _write_supports(lines, step.supports)
-    _write_constraint_method(lines, step)
     lines.append(keyword("NUMEIGENVALUES"))
     lines.append(csv((step.number_of_modes,)))
     return block(lines)
@@ -78,7 +80,6 @@ def _write_buckling(step: BucklingStep) -> str:
     _write_supports(lines, step.supports)
     _write_loads(lines, step.loads)
     _write_solver(lines, step)
-    _write_constraint_method(lines, step)
     lines.append(keyword("NUMEIGENVALUES"))
     lines.append(csv((step.number_of_modes,)))
     if step.sigma is not None:
@@ -91,12 +92,25 @@ def _write_buckling(step: BucklingStep) -> str:
     return block(lines)
 
 
+def _write_nonlinear_static(step: NonlinearStaticStep) -> str:
+    lines = [keyword("LOADCASE", TYPE="NONLINEARSTATIC", NAME=step.name)]
+    _write_supports(lines, step.supports)
+    _write_loads(lines, step.loads)
+    _write_solver(lines, step)
+    _write_constraint_method(lines, step)
+    lines.append(keyword("NONLINEAR", **_nonlinear_keys(step)))
+    if step.request_stiffness is not None:
+        lines.append(keyword("REQUESTSTIFFNESS", FILE=step.request_stiffness))
+    if step.constraint_summary:
+        lines.append(keyword("CONSTRAINTSUMMARY"))
+    return block(lines)
+
+
 def _write_transient(step: TransientStep) -> str:
     lines = [keyword("LOADCASE", TYPE="LINEARTRANSIENT", NAME=step.name)]
     _write_supports(lines, step.supports)
     _write_loads(lines, step.loads)
     _write_solver(lines, step)
-    _write_constraint_method(lines, step)
     lines.append(keyword("TIME"))
     lines.append(csv((step.time.start, step.time.end, step.time.step)))
     if step.newmark is not None:
@@ -133,3 +147,33 @@ def _write_solver(lines: list[str], step) -> None:
 def _write_constraint_method(lines: list[str], step) -> None:
     if step.constraint_method is not None:
         lines.append(keyword("CONSTRAINTMETHOD", TYPE=step.constraint_method.value))
+
+
+def _nonlinear_keys(step: NonlinearStaticStep) -> dict[str, object]:
+    keys: dict[str, object] = {"CONTROL": step.control}
+    optional = {
+        "INCREMENTS": step.increments,
+        "MAX_INCREMENTS": step.max_increments,
+        "INITIAL_INCREMENT": step.initial_increment,
+        "MINIMUM_INCREMENT": step.minimum_increment,
+        "MAXIMUM_INCREMENT": step.maximum_increment,
+        "ARC_LENGTH_PSI": step.arc_length_psi,
+        "ADAPTIVE": _on_off(step.adaptive),
+        "GROWTH_FACTOR": step.growth_factor,
+        "CUTBACK_FACTOR": step.cutback_factor,
+        "FAST_ITERATIONS": step.fast_iterations,
+        "SLOW_ITERATIONS": step.slow_iterations,
+        "MAXIMUM_CUTBACKS": step.maximum_cutbacks,
+        "MAXITER": step.max_iterations,
+        "TOL": step.tolerance,
+        "REGULARIZE_ZERO_ROWS": _on_off(step.regularize_zero_rows),
+        "REGULARIZATION_ALPHA": step.regularization_alpha,
+    }
+    keys.update({key: value for key, value in optional.items() if value is not None})
+    return keys
+
+
+def _on_off(value: bool | None) -> str | None:
+    if value is None:
+        return None
+    return "ON" if value else "OFF"

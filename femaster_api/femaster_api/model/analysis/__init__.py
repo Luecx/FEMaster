@@ -3,6 +3,7 @@
 from .constraint_method import ConstraintMethod
 from .buckling_step import BucklingStep
 from .modal_step import ModalStep
+from .nonlinear_static_step import NonlinearStaticStep
 from .newmark_control import NewmarkControl
 from .rayleigh_damping import RayleighDamping
 from .solver_control import SolverControl
@@ -18,6 +19,7 @@ __all__ = [
     "BucklingStep",
     "ConstraintMethod",
     "ModalStep",
+    "NonlinearStaticStep",
     "NewmarkControl",
     "RayleighDamping",
     "SolverControl",
