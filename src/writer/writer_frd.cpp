@@ -6,241 +6,194 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstddef>
 #include <iomanip>
 #include <set>
-#include <utility>
 
 namespace fem {
 namespace reader {
 
 namespace {
 
-std::string frd_name(const std::string& input,
-                     std::size_t max_length,
-                     const std::string& fallback) {
+struct FRDComponent {
+    std::string name;
+    int entity      = 1; // scalar = 1, vector = 2, tensor = 4
+    int index_1     = 0; // first index, e.g. for vectors or tensors
+    int index_2     = 0; // only relevant for tensors
+    std::string exists_name;
+
+    static FRDComponent scalar(const std::string& name, int index   ) { return {name, 1, index, 0, ""};}
+    static FRDComponent vector(const std::string& name, int index   ) { return {name, 2, index, 0, ""};}
+    static FRDComponent tensor(const std::string& name, int i, int j) { return {name, 4, i, j, ""};}
+    static FRDComponent vcnorm(const std::string& name)               { return {name, 2, 0, 0, name};}
+};
+
+int frd_frame(const std::string& s) {
     std::string out;
+    for (unsigned char c : s) {
+        if (std::isdigit(c)) out += static_cast<char>(c);
+    }
+    return out.empty() ? 0 : std::stoi(out);
+}
 
-    for (char c : input) {
-        const unsigned char uc = static_cast<unsigned char>(c);
 
-        if (std::isalnum(uc) || c == '_' || c == '-') {
-            out.push_back(static_cast<char>(std::toupper(uc)));
+int frd_element_type(const model::ElementInterface& element) {
+    const Dim dim     = element.dimensions();
+    const Dim n_nodes = element.n_nodes();
+
+    if (dim == 1) {
+        if (n_nodes == 2) return 11;
+        if (n_nodes == 3) return 12;
+    }
+
+    if (dim == 2) {
+        if (n_nodes == 3) return 7;
+        if (n_nodes == 6) return 8;
+        if (n_nodes == 4) return 9;
+        if (n_nodes == 8) return 10;
+    }
+
+    if (dim == 3) {
+        if (n_nodes == 2)  return 11;
+        if (n_nodes == 3)  return 12;
+        if (n_nodes == 4)  return 3;
+        if (n_nodes == 10) return 6;
+        if (n_nodes == 8)  return 1;
+        if (n_nodes == 20) return 4;
+        if (n_nodes == 6)  return 2;
+        if (n_nodes == 15) return 5;
+    }
+
+    return 0;
+}
+
+std::string frd_name(const std::string& s) {
+    std::string name;
+    for (unsigned char c : s) {
+        if (std::isalpha(c)) {
+            name += static_cast<char>(std::toupper(c));
         }
-
-        if (out.size() == max_length) {
-            break;
-        }
     }
+    if (name == "DISPLACEMENT"      ) return "DISP";
+    if (name == "MODESHAPE"         ) return "DISP";
+    if (name == "BUCKLINGMODE"      ) return "DISP";
 
-    return out.empty() ? fallback : out;
+    if (name == "VELOCITY"          ) return "V";
+    if (name == "ACCELERATION"      ) return "A";
+
+    if (name == "STRESS"            ) return "STRESS";
+    if (name == "STRAIN"            ) return "STRAIN";
+    if (name == "STRESSTOP"         ) return "S_TOP";
+    if (name == "STRESSBOT"         ) return "S_BOT";
+
+    if (name == "REACTIONFORCES"    ) return "RF";
+    if (name == "EXTERNALFORCES"    ) return "CF";
+    if (name == "INTERNALFORCES"    ) return "NFORC";
+
+    if (name == "LOCALSECTIONFORCES") return "SF";
+    if (name == "SHELLRESULTANTS"   ) return "SHR";
+    if (name == "SHEARFLOW"         ) return "SHEAR";
+
+    logging::error(false, "FrdWriter: unsupported NODE field name: ", s);
+    return "FIELD";
 }
 
-bool starts_with(const std::string& text,
-                 const std::string& prefix) {
-    return text.size() >= prefix.size()
-        && text.compare(0, prefix.size(), prefix) == 0;
+std::vector<FRDComponent> vector_components(const std::string& prefix,
+                                            Index field_components,
+                                            bool add_norm = false) {
+    std::vector<FRDComponent> components;
+
+    for (Index i = 0; i < std::min<Index>(field_components, 3); ++i) {
+        components.push_back(FRDComponent::vector(prefix + std::to_string(i + 1), static_cast<int>(i + 1)));
+    }
+
+    if (add_norm && field_components >= 3) {
+        components.push_back(FRDComponent::vcnorm("ALL"));
+    }
+
+    return components;
 }
 
-std::string dataset_name(const std::string& field_name) {
-    const std::string name = frd_name(field_name, 64, "FIELD");
+std::vector<FRDComponent> tensor_components(const std::string& prefix,
+                                            Index field_components) {
+    logging::error(field_components >= 6,
+                   "FrdWriter: tensor field requires at least 6 components");
 
-    if (name == "U" || name == "DISP" || name == "DISPLACEMENT") {
-        return "DISP";
-    }
-
-    if (name == "RF" || name == "REACTION" || name == "REACTION_FORCE" ||
-        name == "REACTION_FORCES") {
-        return "RF";
-    }
-
-    if (name == "F" || name == "FORC" || name == "FORCE" || name == "FORCES" ||
-        name == "LOAD" || name == "CLOAD" || name == "CLOADS" ||
-        name == "EXTERNAL" || name == "EXTERNAL_FORCE" || name == "EXTERNAL_FORCES") {
-        return "FORC";
-    }
-
-    if (name == "V" || name == "VELO" || name == "VELOCITY") {
-        return "VELO";
-    }
-
-    if (name == "A" || name == "ACC" || name == "ACCELERATION") {
-        return "ACC";
-    }
-
-    return frd_name(name, 8, "FIELD");
+    return {
+        FRDComponent::tensor(prefix + "XX", 1, 1),
+        FRDComponent::tensor(prefix + "YY", 2, 2),
+        FRDComponent::tensor(prefix + "ZZ", 3, 3),
+        FRDComponent::tensor(prefix + "YZ", 2, 3),
+        FRDComponent::tensor(prefix + "ZX", 3, 1),
+        FRDComponent::tensor(prefix + "XY", 1, 2)
+    };
 }
 
-bool is_tensor_dataset(const std::string& name,
-                       Index components) {
-    return components == 6
-        && (starts_with(name, "STRESS") || starts_with(name, "STRAIN"));
+std::vector<FRDComponent> scalar_components(const std::string& prefix,
+                                            Index field_components) {
+    std::vector<FRDComponent> components;
+
+    for (Index i = 0; i < std::min<Index>(field_components, 6); ++i) {
+        components.push_back(FRDComponent::scalar(prefix + std::to_string(i + 1), static_cast<int>(i + 1))
+        );
+    }
+
+    return components;
 }
 
-Index exported_components(const std::string& name,
-                          Index field_components) {
-    if (field_components <= 0) {
-        return 0;
-    }
+std::vector<FRDComponent> components_for(const std::string& name,
+                                         Index field_components) {
+    logging::error(field_components > 0,
+                   "FrdWriter: field has no components");
 
-    if (name == "DISP" && field_components >= 3) {
-        return 4; // D1, D2, D3, ALL
-    }
+    if (name == "DISP"  ) return vector_components("D" , field_components, true);
+    if (name == "V"     ) return vector_components("V" , field_components);
+    if (name == "A"     ) return vector_components("A" , field_components);
+    if (name == "RF"    ) return vector_components("RF", field_components);
+    if (name == "CF"    ) return vector_components("CF", field_components);
+    if (name == "NFORC" ) return vector_components("NF", field_components);
 
-    if ((name == "RF" || name == "FORC" || name == "VELO" || name == "ACC") &&
-        field_components >= 3) {
-        return 3;
-    }
+    if (name == "STRESS") return tensor_components("S", field_components);
+    if (name == "STRAIN") return tensor_components("E", field_components);
+    if (name == "S_TOP" ) return tensor_components("S", field_components);
+    if (name == "S_BOT" ) return tensor_components("S", field_components);
 
-    return std::min<Index>(field_components, static_cast<Index>(6));
+    if (name == "SF"    ) return scalar_components("SF"   , field_components);
+    if (name == "SHR"   ) return scalar_components("SHR"  , field_components);
+    if (name == "SHEAR" ) return scalar_components("SHEAR", field_components);
+
+    logging::error(false, "FrdWriter: unsupported FRD result name: ", name);
+    return {};
 }
 
-std::string component_name(const std::string& name,
-                           Index component,
-                           Index components) {
-    if (name == "DISP") {
-        if (component == 0) return "D1";
-        if (component == 1) return "D2";
-        if (component == 2) return "D3";
-        if (component == 3) return "ALL";
-    }
-
-    if (name == "RF") {
-        if (component == 0) return "RF1";
-        if (component == 1) return "RF2";
-        if (component == 2) return "RF3";
-    }
-
-    if (name == "FORC") {
-        if (component == 0) return "F1";
-        if (component == 1) return "F2";
-        if (component == 2) return "F3";
-    }
-
-    if (name == "VELO") {
-        if (component == 0) return "V1";
-        if (component == 1) return "V2";
-        if (component == 2) return "V3";
-    }
-
-    if (name == "ACC") {
-        if (component == 0) return "A1";
-        if (component == 1) return "A2";
-        if (component == 2) return "A3";
-    }
-
-    if (is_tensor_dataset(name, components)) {
-        if (starts_with(name, "STRAIN")) {
-            if (component == 0) return "EXX";
-            if (component == 1) return "EYY";
-            if (component == 2) return "EZZ";
-            if (component == 3) return "EXY";
-            if (component == 4) return "EYZ";
-            if (component == 5) return "EZX";
-        }
-
-        if (component == 0) return "SXX";
-        if (component == 1) return "SYY";
-        if (component == 2) return "SZZ";
-        if (component == 3) return "SXY";
-        if (component == 4) return "SYZ";
-        if (component == 5) return "SZX";
-    }
-
-    if (component == 0) return "C1";
-    if (component == 1) return "C2";
-    if (component == 2) return "C3";
-    if (component == 3) return "C4";
-    if (component == 4) return "C5";
-    if (component == 5) return "C6";
-
-    return "C";
-}
-
-void component_definition(const std::string& name,
-                          Index component,
-                          Index components,
-                          int& entity,
-                          int& index_1,
-                          int& index_2,
-                          bool& exists,
-                          std::string& exists_name) {
-    entity      = 1;
-    index_1     = static_cast<int>(component + 1);
-    index_2     = 0;
-    exists      = false;
-    exists_name = "";
-
-    if (name == "DISP") {
-        entity = 2;
-
-        if (component == 3) {
-            index_1     = 0;
-            index_2     = 0;
-            exists      = true;
-            exists_name = "ALL";
-        }
-
-        return;
-    }
-
-    if (components == 3) {
-        entity = 2;
-        return;
-    }
-
-    if (is_tensor_dataset(name, components)) {
-        entity = 4;
-
-        if (component == 0) { index_1 = 1; index_2 = 1; return; }
-        if (component == 1) { index_1 = 2; index_2 = 2; return; }
-        if (component == 2) { index_1 = 3; index_2 = 3; return; }
-        if (component == 3) { index_1 = 1; index_2 = 2; return; }
-        if (component == 4) { index_1 = 2; index_2 = 3; return; }
-        if (component == 5) { index_1 = 3; index_2 = 1; return; }
-    }
-}
-
-double safe_value(double value) {
-    return std::isfinite(value) ? value : 0.0;
-}
-
-double field_value(const model::Field& field,
+Precision field_value(const model::Field& field,
                    Index row,
                    Index component,
                    const std::string& name) {
-    if (name == "DISP" && component == 3) {
-        const double u = safe_value(static_cast<double>(field(row, 0)));
-        const double v = safe_value(static_cast<double>(field(row, 1)));
-        const double w = safe_value(static_cast<double>(field(row, 2)));
+    if (name == "U" && component == 3) {
+        const Precision u = std::isfinite(field(row, 0)) ? field(row, 0) : 0.0;;
+        const Precision v = std::isfinite(field(row, 1)) ? field(row, 1) : 0.0;;
+        const Precision w = std::isfinite(field(row, 2)) ? field(row, 2) : 0.0;;
 
         return std::sqrt(u * u + v * v + w * w);
     }
 
-    return safe_value(static_cast<double>(field(row, component)));
+    return std::isfinite(field(row, component)) ? field(row, component) : 0;
 }
 
-void write_frd_float(std::ofstream& file_path,
-                     double value) {
+void write_float(std::ofstream& file_path,
+                 Precision value,
+                 int width = 12) {
     file_path << std::right
               << std::uppercase
               << std::scientific
               << std::setprecision(5)
-              << std::setw(12)
-              << safe_value(value);
-}
-
-void write_result_value(std::ofstream& file_path,
-                        double value) {
-    file_path << std::right
-              << std::uppercase
-              << std::scientific
-              << std::setprecision(5)
-              << std::setw(11)
-              << safe_value(value);
+              << std::setw(width)
+              << (std::isfinite(value) ? value : 0);
 }
 
 } // namespace
+
+
 
 FrdWriter::FrdWriter(const std::string& filename) {
     if (!filename.empty()) {
@@ -252,41 +205,6 @@ FrdWriter::~FrdWriter() {
     close();
 }
 
-FrdWriter::FrdWriter(FrdWriter&& other) noexcept
-    : file_path(std::move(other.file_path)),
-      model_data_written(other.model_data_written),
-      footer_written(other.footer_written),
-      current_loadcase(other.current_loadcase),
-      current_result_block(other.current_result_block),
-      remap_zero_node_ids(other.remap_zero_node_ids),
-      remap_zero_element_ids(other.remap_zero_element_ids),
-      frd_node_ids(std::move(other.frd_node_ids)) {
-    other.model_data_written   = false;
-    other.footer_written       = true;
-    other.current_result_block = 0;
-}
-
-FrdWriter& FrdWriter::operator=(FrdWriter&& other) noexcept {
-    if (this != &other) {
-        close();
-
-        file_path              = std::move(other.file_path);
-        model_data_written     = other.model_data_written;
-        footer_written         = other.footer_written;
-        current_loadcase       = other.current_loadcase;
-        current_result_block   = other.current_result_block;
-        remap_zero_node_ids    = other.remap_zero_node_ids;
-        remap_zero_element_ids = other.remap_zero_element_ids;
-        frd_node_ids           = std::move(other.frd_node_ids);
-
-        other.model_data_written   = false;
-        other.footer_written       = true;
-        other.current_result_block = 0;
-    }
-
-    return *this;
-}
-
 void FrdWriter::open(const std::string& filename) {
     close();
 
@@ -296,62 +214,36 @@ void FrdWriter::open(const std::string& filename) {
                    "FrdWriter: failed to open file: ", filename);
 
     model_data_written     = false;
-    footer_written         = false;
-    current_loadcase       = 1;
+    current_step           = 1;
     current_result_block   = 0;
     remap_zero_node_ids    = false;
     remap_zero_element_ids = false;
     frd_node_ids.clear();
 
-    write_header(filename);
-}
-
-void FrdWriter::close() {
-    if (file_path.is_open()) {
-        write_footer();
-        file_path.close();
-    }
-}
-
-bool FrdWriter::has_model_data() const {
-    return model_data_written;
-}
-
-void FrdWriter::write_header(const std::string&) {
     file_path << "    1CFEMAST\n";
     file_path << "    1Ugenerated by FEMaster\n";
 }
 
-void FrdWriter::write_footer() {
-    if (!footer_written) {
+void FrdWriter::close() {
+    if (file_path.is_open()) {
         file_path << " 9999\n";
-        footer_written = true;
+        file_path.close();
     }
 }
 
 void FrdWriter::add_loadcase(int id) {
-    logging::error(file_path.is_open(),
-                   "FrdWriter: cannot add loadcase: file is not open");
+    logging::error(file_path.is_open(), "FrdWriter: cannot add loadcase: file is not open");
 
-    current_loadcase = id > 0 ? id : 1;
+    current_step = id > 0 ? id : 1;
 }
 
 void FrdWriter::write_model_data(const model::ModelData& model_data) {
-    logging::error(file_path.is_open(),
-                   "FrdWriter: cannot write model data: file is not open");
+    logging::error(file_path.is_open()            , "FrdWriter: cannot write model data: file is not open");
+    logging::error(model_data.positions != nullptr, "FrdWriter: model_data.positions is not initialized");
 
     if (model_data_written) {
         return;
     }
-
-    logging::error(model_data.positions != nullptr,
-                   "FrdWriter: model_data.positions is not initialized");
-
-    frd_node_ids = collect_frd_node_ids(model_data);
-
-    remap_zero_node_ids = std::find(frd_node_ids.begin(),
-                                    frd_node_ids.end(),
-                                    static_cast<ID>(0)) != frd_node_ids.end();
 
     remap_zero_element_ids = false;
 
@@ -373,58 +265,14 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
 void FrdWriter::write_field(const model::Field& field,
                             const std::string& field_name,
                             const model::ModelData* model_data) {
-    logging::error(file_path.is_open(),
-                   "FrdWriter: cannot write field '", field_name,
-                   "': file is not open");
-
-    if (!supports_field(field, field_name)) {
+    if (!file_path.is_open()) {
+        return;
+    }
+    if (field.domain != model::FieldDomain::NODE) {
         return;
     }
 
-    if (!model_data_written) {
-        logging::error(model_data != nullptr,
-                       "FrdWriter: NODE field '", field_name,
-                       "' requires model data because mesh was not written yet");
-
-        write_model_data(*model_data);
-    }
-
     write_nodal_field(field, field_name);
-}
-
-bool FrdWriter::supports_field(const model::Field& field,
-                               const std::string&) const {
-    return field.domain == model::FieldDomain::NODE;
-}
-
-std::vector<ID> FrdWriter::collect_frd_node_ids(const model::ModelData& model_data) const {
-    std::set<ID> node_ids;
-
-    for (const auto& element : model_data.elements) {
-        if (!element || frd_element_type(*element) == 0) {
-            continue;
-        }
-
-        const ID* nodes = element->nodes();
-
-        for (Dim local = 0; local < element->n_nodes(); ++local) {
-            node_ids.insert(nodes[static_cast<Index>(local)]);
-        }
-    }
-
-    return std::vector<ID>(node_ids.begin(), node_ids.end());
-}
-
-std::size_t FrdWriter::count_supported_elements(const model::ModelData& model_data) const {
-    std::size_t count = 0;
-
-    for (const auto& element : model_data.elements) {
-        if (element && frd_element_type(*element) != 0) {
-            ++count;
-        }
-    }
-
-    return count;
 }
 
 ID FrdWriter::frd_node_number(ID internal_node_id) const {
@@ -442,8 +290,25 @@ ID FrdWriter::frd_element_number(ID internal_element_id) const {
 void FrdWriter::write_nodes(const model::ModelData& model_data) {
     const auto& positions = *model_data.positions;
 
-    logging::error(!frd_node_ids.empty(),
-                   "FrdWriter: no supported nodes found for FRD output");
+    std::set<ID> node_ids;
+
+    for (const auto& element : model_data.elements) {
+        if (!element || frd_element_type(*element) == 0) {
+            continue;
+        }
+
+        for (ID node_id : *element) {
+            node_ids.insert(node_id);
+        }
+    }
+
+    frd_node_ids.assign(node_ids.begin(), node_ids.end());
+
+    remap_zero_node_ids = std::find(frd_node_ids.begin(),
+                                    frd_node_ids.end(),
+                                    static_cast<ID>(0)) != frd_node_ids.end();
+
+    logging::error(!frd_node_ids.empty(), "FrdWriter: no supported nodes found for FRD output");
 
     file_path << "    2C"
               << std::string(18, ' ')
@@ -452,20 +317,20 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
               << 1
               << '\n';
 
-    for (ID internal_node_id : frd_node_ids) {
-        const Index row = static_cast<Index>(internal_node_id);
+    for (ID node_id : frd_node_ids) {
+        const Index row = static_cast<Index>(node_id);
 
         logging::error(row >= 0 && row < positions.rows,
-                       "FrdWriter: node id ", internal_node_id,
+                       "FrdWriter: node id ", node_id,
                        " is outside positions field rows");
 
         file_path << " -1"
                   << std::setw(10)
-                  << static_cast<long long>(frd_node_number(internal_node_id));
+                  << static_cast<long long>(frd_node_number(node_id));
 
-        write_frd_float(file_path, static_cast<double>(positions(row, 0)));
-        write_frd_float(file_path, static_cast<double>(positions(row, 1)));
-        write_frd_float(file_path, static_cast<double>(positions(row, 2)));
+        write_float(file_path,  positions(row, 0));
+        write_float(file_path,  positions(row, 1));
+        write_float(file_path,  positions(row, 2));
 
         file_path << '\n';
     }
@@ -474,7 +339,13 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
 }
 
 void FrdWriter::write_elements(const model::ModelData& model_data) {
-    const std::size_t element_count = count_supported_elements(model_data);
+    std::size_t element_count = 0;
+
+    for (const auto& element : model_data.elements) {
+        if (element && frd_element_type(*element) != 0) {
+            ++element_count;
+        }
+    }
 
     logging::error(element_count > 0,
                    "FrdWriter: no supported elements found for FRD output");
@@ -505,25 +376,24 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
                   << std::setw(5) << 0
                   << '\n';
 
-        const ID* nodes = element->nodes();
+        Dim local = 0;
 
-        for (Dim local = 0; local < element->n_nodes(); local += static_cast<Dim>(10)) {
-            file_path << " -2";
+        for (ID node_id : *element) {
+            if (local % static_cast<Dim>(10) == 0) {
+                if (local != 0) {
+                    file_path << '\n';
+                }
 
-            const Dim n = std::min<Dim>(
-                static_cast<Dim>(10),
-                static_cast<Dim>(element->n_nodes() - local)
-            );
-
-            for (Dim k = 0; k < n; ++k) {
-                const ID internal_node_id = nodes[static_cast<Index>(local + k)];
-
-                file_path << std::setw(10)
-                          << static_cast<long long>(frd_node_number(internal_node_id));
+                file_path << " -2";
             }
 
-            file_path << '\n';
+            file_path << std::setw(10)
+                      << static_cast<long long>(frd_node_number(node_id));
+
+            ++local;
         }
+
+        file_path << '\n';
     }
 
     file_path << " -3\n";
@@ -531,95 +401,56 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
 
 void FrdWriter::write_nodal_field(const model::Field& field,
                                   const std::string& field_name) {
-    logging::error(field.components > 0,
-                   "FrdWriter: field '", field_name, "' has no components");
+    logging::error(field.components > 0 , "FrdWriter: field '", field_name, "' has no components");
+    logging::error(!frd_node_ids.empty(), "FrdWriter: no FRD nodes available for field '", field_name, "'");
 
-    logging::error(!frd_node_ids.empty(),
-                   "FrdWriter: no FRD nodes available for field '", field_name, "'");
+    const std::string name = frd_name(field_name);
+    const int frame        = frd_frame(field_name);
+    const int step         = current_step > 0 ? current_step : 1;
+    const int block        = ++current_result_block;
+    const auto components  = components_for(name, field.components);
 
-    const std::string name = dataset_name(field_name);
-    const Index components = exported_components(name, field.components);
+    file_path << "    1PSTEP" << std::setw(26) <<       block << std::setw(12) << frame << std::setw(12) << step << '\n';
+    file_path << "  100CL  "  << std::setw(3 ) << 100 + block << ' ';
 
-    logging::error(components > 0,
-                   "FrdWriter: field '", field_name, "' has no exportable components");
+    write_float(file_path, frame, 11);
 
-    const int step  = 1;
-    const int frame = current_loadcase > 0 ? current_loadcase : 1;
-    const int block = ++current_result_block;
-
-    file_path << "    1PSTEP"
-              << std::setw(26) << block
-              << std::setw(12) << frame
-              << std::setw(12) << step
-              << '\n';
-
-    file_path << "  100CL  "
-              << std::setw(3) << 100 + block
-              << ' ';
-
-    write_result_value(file_path, static_cast<double>(frame));
-
-    file_path << std::setw(12) << static_cast<long long>(frd_node_ids.size())
-              << std::string(21, ' ')
-              << 0
-              << std::setw(5) << block
-              << std::string(11, ' ')
-              << 1
+    file_path << std::setw  (12)      << frd_node_ids.size()
+              << std::string(21, ' ') << 0
+              << std::setw  (5)       << block
+              << std::string(11, ' ') << 1
               << '\n';
 
     file_path << " -4  "
               << std::left << std::setw(8) << name
               << std::right
-              << std::setw(5) << static_cast<int>(components)
+              << std::setw(5) << static_cast<int>(components.size())
               << std::setw(5) << 1
               << '\n';
 
-    for (Index component = 0; component < components; ++component) {
-        int entity;
-        int index_1;
-        int index_2;
-        bool exists;
-        std::string exists_name;
-
-        component_definition(name,
-                             component,
-                             components,
-                             entity,
-                             index_1,
-                             index_2,
-                             exists,
-                             exists_name);
-
-        const std::string label = component_name(name, component, components);
-
+    for (const FRDComponent& component : components) {
         file_path << " -5  "
-                  << std::left << std::setw(8) << label
+                  << std::left << std::setw(8) << component.name
                   << std::right
                   << std::setw(5) << 1
-                  << std::setw(5) << entity
-                  << std::setw(5) << index_1
-                  << std::setw(5) << index_2;
+                  << std::setw(5) << component.entity
+                  << std::setw(5) << component.index_1
+                  << std::setw(5) << component.index_2;
 
-        if (exists) {
-            file_path << std::setw(5) << 1 << exists_name;
+        if (!component.exists_name.empty()) {
+            file_path << std::setw(5) << 1 << component.exists_name;
         }
 
         file_path << '\n';
     }
 
-    for (ID internal_node_id : frd_node_ids) {
-        const Index row = static_cast<Index>(internal_node_id);
+    for (ID node_id : frd_node_ids) {
+        const Index row = static_cast<Index>(node_id);
 
-        logging::error(row >= 0 && row < field.rows,
-                       "FrdWriter: node id ", internal_node_id,
-                       " is outside rows of field '", field_name, "'");
+        file_path << " -1" << std::setw(10) << frd_node_number(node_id);
 
-        file_path << " -1"
-                  << std::setw(10)
-                  << static_cast<long long>(frd_node_number(internal_node_id));
-
-        for (Index component = 0; component < components; ++component) {
-            write_frd_float(file_path, field_value(field, row, component, name));
+        for (Index component = 0; component < static_cast<Index>(components.size()); ++component) {
+            write_float(file_path, field_value(field, row, component, name));
         }
 
         file_path << '\n';
@@ -628,35 +459,6 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     file_path << " -3\n";
 }
 
-int FrdWriter::frd_element_type(const model::ElementInterface& element) const {
-    const Dim dim     = element.dimensions();
-    const Dim n_nodes = element.n_nodes();
-
-    if (dim == 1) {
-        if (n_nodes == 2) return 11;
-        if (n_nodes == 3) return 12;
-    }
-
-    if (dim == 2) {
-        if (n_nodes == 3) return 7;
-        if (n_nodes == 6) return 8;
-        if (n_nodes == 4) return 9;
-        if (n_nodes == 8) return 10;
-    }
-
-    if (dim == 3) {
-        if (n_nodes == 2)  return 11;
-        if (n_nodes == 3)  return 12;
-        if (n_nodes == 4)  return 3;
-        if (n_nodes == 10) return 6;
-        if (n_nodes == 8)  return 1;
-        if (n_nodes == 20) return 4;
-        if (n_nodes == 6)  return 2;
-        if (n_nodes == 15) return 5;
-    }
-
-    return 0;
-}
 
 } // namespace reader
 } // namespace fem
