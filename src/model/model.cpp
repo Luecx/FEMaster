@@ -392,11 +392,6 @@ void Model::add_support(const ID id, const StaticVector<6> constraint, const std
     supp_col->add_supp(region, constraint, _data->coordinate_systems.get(orientation));
 }
 
-void Model::set_field_temperature(const std::string& name, ID id, Precision value) {
-    auto temp_field = _data->create_field(name, FieldDomain::NODE, 1, true);
-    (*temp_field)(static_cast<Index>(id)) = value;
-}
-
 void Model::solid_section(const std::string& set, const std::string& material, const std::string& orientation) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");

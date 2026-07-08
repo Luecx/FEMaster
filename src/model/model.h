@@ -85,9 +85,6 @@ struct Model {
     void add_support    (const std::string& nset, StaticVector<6> constraint, const std::string& orientation="");
     void add_support    (ID id, StaticVector<6> constraint, const std::string& orientation="");
 
-    // filling in fields
-    void set_field_temperature(const std::string& name, ID id, Precision value);
-
     // connecting materials with elements
     void solid_section(const std::string& set, const std::string& material, const std::string& orientation = "");
     void beam_section (const std::string& set, const std::string& material, const std::string& profile, Vec3 orientation);
