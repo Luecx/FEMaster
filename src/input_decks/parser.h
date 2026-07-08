@@ -2,7 +2,7 @@
 
 #include "../core/types_num.h"
 #include "../dsl/registry.h"
-#include "../writer/writer.h"
+#include "../writer/writers.h"
 
 #include <memory>
 #include <string>
@@ -43,8 +43,8 @@ public:
     // Accessors
     model::Model& model();
     const model::Model& model() const;
-    reader::Writer& writer();
-    const reader::Writer& writer() const;
+    reader::ResultWriters& writer();
+    const reader::ResultWriters& writer() const;
     dsl::Registry& registry();
     const dsl::Registry& registry() const;
 
@@ -80,7 +80,7 @@ private:
 private:
     // Runtime state
     std::shared_ptr<model::Model> m_model;
-    reader::Writer                m_writer;   // opened in run()
+    reader::ResultWriters         m_writer;   // opened in run()
     mutable dsl::Registry         m_registry; // re-created when model changes
 
     std::unique_ptr<loadcase::LoadCase> m_active_loadcase;

@@ -19,11 +19,11 @@ struct T3 : StructuralElement {
     T3(ID elem_id, std::array<ID, N> node_ids);
     ~T3() override = default;
 
-    ElDofs dofs                 () override;
-    Dim    dimensions           () override;
-    Dim    n_nodes              () override;
-    Dim    n_integration_points () override;
-    ID*    nodes                () override;
+    ElDofs    dofs() const override;
+    Dim       dimensions() const override;
+    Dim       n_nodes() const override;
+    Dim       n_integration_points() const override;
+    const ID* nodes() const override;
 
     SurfacePtr surface(ID surface_id) override;
 

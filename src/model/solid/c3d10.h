@@ -16,8 +16,8 @@ struct C3D10 : public SolidElement<10>{
 
     SurfacePtr                    surface(ID surface_id) override;
 
-    const quadrature::Quadrature& integration_scheme() override;
+    const quadrature::Quadrature& integration_scheme() const override;
 
-    const quadrature::Quadrature& integration_scheme_mass() override;
+    const quadrature::Quadrature& integration_scheme_mass() const override;
 };
 } }

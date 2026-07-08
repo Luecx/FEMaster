@@ -76,7 +76,7 @@ namespace fem { namespace loadcase {
  * - density    : per-element densities (initialized to 1.0).
  * - orientation: per-element orientation angles (3 per element, initialized to 0).
  */
-LinearStaticTopo::LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model)
+LinearStaticTopo::LinearStaticTopo(ID id, reader::ResultWriters* writer, model::Model* model)
     : LinearStatic(id, writer, model) {
     auto& data = *model->_data;
 }

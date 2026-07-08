@@ -165,7 +165,7 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
  * @brief Buckling analysis entry point (constrained via null-space).
  */
 LinearBuckling::LinearBuckling(ID id,
-                               reader::Writer* writer,
+                               reader::ResultWriters* writer,
                                model::Model* model,
                                int numEigenvalues)
     : LoadCase(id, writer, model)
@@ -389,16 +389,19 @@ void LinearBuckling::run() {
 
     // (11) Write results
     writer->add_loadcase(id);
-    {
-        DynamicVector lambdas(modes.size());
-        for (size_t i = 0; i < modes.size(); ++i) {
-            lambdas(i) = modes[i].lambda;
-            writer->write_field(modes[i].mode_mat,
-                                "BUCKLING_MODE_" + std::to_string(i + 1),
-                                model->_data.get());
-        }
-        writer->write_eigen_matrix(DynamicMatrix(lambdas), "BUCKLING_FACTORS");
+    Index num_modes = static_cast<Index>(modes.size());
+
+    model::Field lambdas{"BUCKLING_FACTORS", model::FieldDomain::UNKNOWN, num_modes, 1};
+
+    for (Index i = 0; i < num_modes; ++i) {
+        lambdas(i) = modes[static_cast<size_t>(i)].lambda;
+
+        writer->write_field(modes[static_cast<size_t>(i)].mode_mat,
+                            "BUCKLING_MODE_" + std::to_string(i + 1),
+                            model->_data.get());
     }
+
+    writer->write_field(lambdas, lambdas.name, nullptr);
 
     // After (4) K assembled
     if (!stiffness_file.empty()) {

@@ -28,23 +28,23 @@ T3::T3(ID elem_id, std::array<ID, N> node_ids_in)
     : StructuralElement(elem_id)
     , node_ids(node_ids_in) {}
 
-ElDofs T3::dofs() {
+ElDofs T3::dofs() const {
     return ElDofs {true, true, true, false, false, false};
 }
 
-Dim T3::dimensions() {
+Dim T3::dimensions() const {
     return 3;
 }
 
-Dim T3::n_nodes() {
+Dim T3::n_nodes() const {
     return N;
 }
 
-Dim T3::n_integration_points() {
+Dim T3::n_integration_points() const {
     return 1;
 }
 
-ID* T3::nodes() {
+const ID* T3::nodes() const {
     return node_ids.data();
 }
 

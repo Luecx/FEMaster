@@ -87,7 +87,7 @@ struct C3D4 : public SolidElement<4> {
      * @return const quadrature::Quadrature& The quadrature rule to be used
      * for integration over the element's domain.
      */
-    const quadrature::Quadrature& integration_scheme() override;
+    const quadrature::Quadrature& integration_scheme() const override;
 
     SurfacePtr                    surface(ID surface_id) override;
 };

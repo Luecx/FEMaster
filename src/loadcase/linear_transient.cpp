@@ -22,7 +22,7 @@ namespace fem { namespace loadcase {
 using fem::constraint::ConstraintTransformer;
 
 Transient::Transient(ID id,
-                     reader::Writer* writer_,
+                     reader::ResultWriters* writer_,
                      model::Model* model_)
     : LoadCase(id, writer_, model_) {}
 

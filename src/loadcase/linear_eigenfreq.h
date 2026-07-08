@@ -42,7 +42,7 @@ struct LinearEigenfrequency : public LoadCase {
      * @param model Pointer to the finite element model.
      * @param numEigenvalues The number of eigenvalues (natural frequencies) to compute.
      */
-    explicit LinearEigenfrequency(ID id, reader::Writer* writer, model::Model* model, int numEigenvalues);
+    explicit LinearEigenfrequency(ID id, reader::ResultWriters* writer, model::Model* model, int numEigenvalues);
 
     //-------------------------------------------------------------------------
     // Data Members

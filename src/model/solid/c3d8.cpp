@@ -94,7 +94,7 @@ SurfacePtr C3D8::surface(ID surface_id) {
         default: return nullptr;    // Invalid surface ID
     }
 }
-const quadrature::Quadrature& C3D8::integration_scheme() {
+const quadrature::Quadrature& C3D8::integration_scheme() const {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUADRATIC};
     return quad;
 }

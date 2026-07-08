@@ -50,7 +50,7 @@ struct LinearBuckling : public LoadCase {
      * @param numEigenvalues  Number of modes to extract.
      */
     explicit LinearBuckling(ID id,
-                            reader::Writer* writer,
+                            reader::ResultWriters* writer,
                             model::Model* model,
                             int numEigenvalues);
 

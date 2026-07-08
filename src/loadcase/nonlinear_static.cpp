@@ -105,7 +105,7 @@ Precision calculate_relative_residual(
 
 } // namespace
 
-NonlinearStatic::NonlinearStatic(ID id, reader::Writer* writer, model::Model* model)
+NonlinearStatic::NonlinearStatic(ID id, reader::ResultWriters* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
 void NonlinearStatic::run() {
@@ -386,13 +386,10 @@ void NonlinearStatic::run() {
             model->_data.get()
         );
 
-        DynamicMatrix lambda_frame(1, 1);
-        lambda_frame(0, 0) = lambda;
+        model::Field lambda_field{"LAMBDA_" + std::to_string(increment), model::FieldDomain::UNKNOWN, 1, 1};
+        lambda_field(0) = lambda;
 
-        writer->write_eigen_matrix(
-            lambda_frame,
-            "LAMBDA_" + std::to_string(increment)
-        );
+        writer->write_field(lambda_field, lambda_field.name, nullptr);
     };
 
     bool        converged      = false;

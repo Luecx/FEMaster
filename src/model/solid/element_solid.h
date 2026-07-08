@@ -26,11 +26,11 @@ public:
 
     ~SolidElement() override = default;
 
-    ElDofs dofs                 () override;
-    Dim    dimensions           () override;
-    Dim    n_nodes              () override;
-    Dim    n_integration_points () override;
-    ID*    nodes                () override;
+    ElDofs    dofs() const override;
+    Dim       dimensions() const override;
+    Dim       n_nodes() const override;
+    Dim       n_integration_points() const override;
+    const ID* nodes() const override;
 
     SurfacePtr surface(ID surface_id) override = 0;
 
@@ -41,8 +41,8 @@ public:
     virtual StaticMatrix<N, 1> shape_function  (Precision r, Precision s, Precision t) = 0;
     virtual StaticMatrix<N, D> shape_derivative(Precision r, Precision s, Precision t) = 0;
 
-    virtual const quadrature::Quadrature& integration_scheme() = 0;
-    virtual const quadrature::Quadrature& integration_scheme_mass() {
+    virtual const quadrature::Quadrature& integration_scheme() const = 0;
+    virtual const quadrature::Quadrature& integration_scheme_mass() const {
         return integration_scheme();
     }
 

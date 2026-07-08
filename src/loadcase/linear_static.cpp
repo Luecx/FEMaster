@@ -46,7 +46,7 @@ namespace {
  */
 } // anonymous namespace
 
-LinearStatic::LinearStatic(ID id, reader::Writer* writer, model::Model* model)
+LinearStatic::LinearStatic(ID id, reader::ResultWriters* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
 /**

@@ -8,7 +8,7 @@
 #include "../loadcase/linear_static_topo.h"
 #include "../loadcase/loadcase.h"
 #include "../model/model.h"
-#include "../writer/writer.h"
+#include "../writer/writers.h"
 
 #include <algorithm>
 #include <iostream>
@@ -158,8 +158,8 @@ const model::Model& Parser::model() const {
     if (!m_model) throw std::runtime_error("Model not initialized.");
     return *m_model;
 }
-reader::Writer& Parser::writer() { return m_writer; }
-const reader::Writer& Parser::writer() const { return m_writer; }
+reader::ResultWriters& Parser::writer() { return m_writer; }
+const reader::ResultWriters& Parser::writer() const { return m_writer; }
 dsl::Registry& Parser::registry() { return m_registry; }
 const dsl::Registry& Parser::registry() const { return m_registry; }
 
@@ -234,6 +234,18 @@ void Parser::allocate_model(const CountData& count) {
 }
 
 void Parser::run_data_stage(const std::string& input_path, const std::string& output_path) {
+    std::string writer_base = output_path.empty() ? input_path : output_path;
+    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
+        if (writer_base.size() >= ext.size() &&
+            writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
+            writer_base.resize(writer_base.size() - ext.size());
+            break;
+        }
+    }
+
+    m_writer = reader::ResultWriters(writer_base);
+    m_writer.write_model_data(*m_model->_data);
+
     dsl::Registry registry;
     register_topology_commands(registry);
     register_analysis_commands(registry);
@@ -245,8 +257,6 @@ void Parser::run_data_stage(const std::string& input_path, const std::string& ou
     registry.set_active_mode("ELSET", dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("SURFACE", dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("SFSET", dsl::ActiveMode::ConsumeOnly);
-
-    m_writer.open(output_path);
 
     dsl::File file(input_path);
     dsl::Engine engine(registry);

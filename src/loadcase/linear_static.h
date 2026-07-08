@@ -47,7 +47,7 @@ struct LinearStatic : public LoadCase {
      * @param writer Writer used for reporting.
      * @param model Model reference.
      */
-    LinearStatic(ID id, reader::Writer* writer, model::Model* model);
+    LinearStatic(ID id, reader::ResultWriters* writer, model::Model* model);
 
     /**
      * @brief Executes the linear static solution procedure.

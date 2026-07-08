@@ -10,11 +10,11 @@ namespace model {
 
 C3D20R::C3D20R(ID p_elem_id, const std::array<ID, 20>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
-const quadrature::Quadrature& C3D20R::integration_scheme() {
+const quadrature::Quadrature& C3D20R::integration_scheme() const {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUADRATIC};
     return quad;
 }
-const quadrature::Quadrature& C3D20R::integration_scheme_mass() {
+const quadrature::Quadrature& C3D20R::integration_scheme_mass() const {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_HEX, quadrature::ORDER_QUARTIC};
     return quad;
 }

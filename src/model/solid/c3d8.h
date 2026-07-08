@@ -16,6 +16,6 @@ struct C3D8 : public SolidElement<8>{
 
     SurfacePtr                    surface(ID surface_id) override;
 
-    const quadrature::Quadrature& integration_scheme() override;
+    const quadrature::Quadrature& integration_scheme() const override;
 };
 } }

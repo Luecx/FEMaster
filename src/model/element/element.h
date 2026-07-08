@@ -35,11 +35,11 @@ struct ElementInterface {
 
     virtual ~ElementInterface() = default;
 
-    virtual ElDofs dofs()                 = 0;
-    virtual Dim    dimensions()           = 0;
-    virtual Dim    n_nodes()              = 0;
-    virtual Dim    n_integration_points() = 0;
-    virtual ID*    nodes()                = 0;
+    virtual ElDofs    dofs() const                 = 0;
+    virtual Dim       dimensions() const           = 0;
+    virtual Dim       n_nodes() const              = 0;
+    virtual Dim       n_integration_points() const = 0;
+    virtual const ID* nodes() const                = 0;
 
     virtual SurfacePtr surface(ID) { return nullptr; }
     virtual LinePtr    line   (ID) { return nullptr; }
@@ -48,8 +48,8 @@ struct ElementInterface {
     virtual std::string type_name() const { return std::string{}; }
 
     /// Iterator access over nodal identifiers.
-    ID* begin() { return nodes(); }
-    ID* end  () { return nodes() + n_nodes(); }
+    const ID* begin() const { return nodes(); }
+    const ID* end  () const { return nodes() + n_nodes(); }
 
     /// Casts the element to a specific derived type, returning `nullptr` on failure.
     template<typename T> T* as() {
@@ -69,7 +69,7 @@ struct ElementInterface {
     }
 
     /// Returns the global position of an element-local node.
-    Vec3 node_position(ID local_id) {
+    Vec3 node_position(ID local_id) const {
         logging::error(_model_data            != nullptr, "no model data assigned to element ", elem_id);
         logging::error(_model_data->positions != nullptr, "positions field not set in model data");
         logging::error(local_id >= 0 && local_id < static_cast<ID>(n_nodes()),

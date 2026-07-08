@@ -19,7 +19,7 @@ namespace fem::model {
 //-----------------------------------------------------------------------------
 template<Index N>
 ElDofs
-SolidElement<N>::dofs() {
+SolidElement<N>::dofs() const {
     return ElDofs {true, true, true, false, false, false};
 }
 
@@ -28,7 +28,7 @@ SolidElement<N>::dofs() {
 //-----------------------------------------------------------------------------
 template<Index N>
 Dim
-SolidElement<N>::dimensions() {
+SolidElement<N>::dimensions() const {
     return D;
 }
 
@@ -37,7 +37,7 @@ SolidElement<N>::dimensions() {
 //-----------------------------------------------------------------------------
 template<Index N>
 Dim
-SolidElement<N>::n_nodes() {
+SolidElement<N>::n_nodes() const {
     return node_ids.size();
 }
 
@@ -45,8 +45,8 @@ SolidElement<N>::n_nodes() {
 // nodes
 //-----------------------------------------------------------------------------
 template<Index N>
-ID*
-SolidElement<N>::nodes() {
+const ID*
+SolidElement<N>::nodes() const {
     return &node_ids[0];
 }
 
@@ -55,7 +55,7 @@ SolidElement<N>::nodes() {
 //-----------------------------------------------------------------------------
 template<Index N>
 Dim
-SolidElement<N>::n_integration_points() {
+SolidElement<N>::n_integration_points() const {
     return integration_scheme().count();
 }
 

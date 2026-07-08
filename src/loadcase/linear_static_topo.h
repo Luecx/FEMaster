@@ -39,7 +39,7 @@ struct LinearStaticTopo : public LinearStatic {
      * @param writer Pointer to a Writer object for output handling.
      * @param model Pointer to the finite element model.
      */
-    explicit LinearStaticTopo(ID id, reader::Writer* writer, model::Model* model);
+    explicit LinearStaticTopo(ID id, reader::ResultWriters* writer, model::Model* model);
 
     //-------------------------------------------------------------------------
     // Data Members

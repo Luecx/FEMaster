@@ -79,10 +79,10 @@ struct ModelData {
     Field::Ptr element_ip_offsets      = nullptr;
 
     // Region registries --------------------------------------------------------
-    Sets<NodeRegion> node_sets{SET_NODE_ALL};
-    Sets<ElementRegion> elem_sets{SET_ELEM_ALL};
+    Sets<NodeRegion   > node_sets   {SET_NODE_ALL};
+    Sets<ElementRegion> elem_sets   {SET_ELEM_ALL};
     Sets<SurfaceRegion> surface_sets{SET_SURF_ALL};
-    Sets<LineRegion> line_sets{SET_LINE_ALL};
+    Sets<LineRegion   > line_sets   {SET_LINE_ALL};
 
     // Named resources ----------------------------------------------------------
     Dict<material::Material> materials;

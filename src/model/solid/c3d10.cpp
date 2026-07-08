@@ -161,11 +161,11 @@ SurfacePtr C3D10::surface(ID surface_id) {
         default: return nullptr;    // Invalid surface ID
     }
 }
-const quadrature::Quadrature& C3D10::integration_scheme() {
+const quadrature::Quadrature& C3D10::integration_scheme() const {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUADRATIC};
     return quad;
 }
-const quadrature::Quadrature& C3D10::integration_scheme_mass() {
+const quadrature::Quadrature& C3D10::integration_scheme_mass() const {
     const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_QUARTIC};
     return quad;
 }

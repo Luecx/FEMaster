@@ -107,20 +107,20 @@ struct ShellElement : StructuralElement {
         return res;
     }
 
-    Dim        n_integration_points() override {
+    Dim        n_integration_points() const override {
         return integration_scheme().count();
     }
 
-    ElDofs     dofs() override {
+    ElDofs     dofs() const override {
         return ElDofs{true, true, true, true, true, true};
     }
-    Dim        dimensions() override {
+    Dim        dimensions() const override {
         return 3;
     }
-    Dim        n_nodes() override {
+    Dim        n_nodes() const override {
         return N;
     }
-    ID*        nodes() override {
+    const ID*  nodes() const override {
         return node_ids.data();
     }
 

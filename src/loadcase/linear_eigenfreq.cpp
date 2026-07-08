@@ -177,26 +177,35 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
  * @brief Write eigenvalues, eigenfrequencies, mode shapes, and participations.
  */
 static void write_results(const std::vector<ModalMode>& modes,
-                          reader::Writer*               writer,
+                          reader::ResultWriters*        writer,
                           int                           loadcase_id,
                           model::Model*                 mdl)
 {
     writer->add_loadcase(loadcase_id);
 
-    DynamicVector eigenvalues(modes.size());
-    DynamicVector eigenfreqs (modes.size());
-    DynamicVector freqs      (modes.size());
+    Index num_modes = static_cast<Index>(modes.size());
 
-    for (size_t i = 0; i < modes.size(); ++i) {
+    model::Field eigenvalues{"EIGENVALUES"     , model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field eigenfreqs {"EIGENFREQUENCIES", model::FieldDomain::UNKNOWN, num_modes, 1};
+    model::Field freqs      {"FREQUENCIES"     , model::FieldDomain::UNKNOWN, num_modes, 1};
+
+    model::Field particip   {"PARTICIPATION"   , model::FieldDomain::UNKNOWN, 6, 1};
+
+    for (size_t i = 0; i < num_modes; ++i) {
         eigenvalues(i) = modes[i].lambda;
         eigenfreqs (i) = modes[i].freq * 2 * pi;
         freqs      (i) = modes[i].freq;
-        writer->write_field       (modes[i].mode_mat,      "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get());
-        writer->write_eigen_matrix(modes[i].participation, "PARTICIPATION_" + std::to_string(i + 1));
+
+        for (Index j = 0; j < 6; ++j) {
+            particip(0, j) = modes[i].participation(j);
+        }
+
+        writer->write_field(modes[i].mode_mat, "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get());
+        writer->write_field(particip         , "PARTICIPATION_" + std::to_string(i + 1), nullptr);
     }
-    writer->write_eigen_matrix(DynamicMatrix(eigenvalues), "EIGENVALUES");
-    writer->write_eigen_matrix(DynamicMatrix(eigenfreqs ), "EIGENFREQUENCIES");
-    writer->write_eigen_matrix(DynamicMatrix(freqs      ), "FREQUENCIES");
+    writer->write_field(eigenvalues, eigenvalues.name, nullptr);
+    writer->write_field(eigenfreqs , eigenfreqs.name , nullptr);
+    writer->write_field(freqs      , freqs.name      , nullptr);
 }
 
 /**
@@ -204,9 +213,9 @@ static void write_results(const std::vector<ModalMode>& modes,
  * @brief Modal analysis entry point (constrained via null-space).
  */
 LinearEigenfrequency::LinearEigenfrequency(ID id,
-                                           reader::Writer* writer,
-                                           model::Model*   model,
-                                           int             numEigenvalues)
+                                           reader::ResultWriters* writer,
+                                           model::Model* model,
+                                           int numEigenvalues)
     : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
 
 /**
