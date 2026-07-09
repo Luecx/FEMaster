@@ -21,7 +21,7 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
         command.keyword(
             fem::dsl::KeywordSpec::make()
                 .key("TYPE")
-                    .required()
+                    .optional("ISO")
                     .doc("Elasticity formulation (ISO/GENERALISED ISOTROPIC/ORTHO/ABD)")
                     .allowed({"ISO", "ISOTROPIC",
                               "GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO",
