@@ -31,6 +31,7 @@ public:
     Dim       n_nodes() const override;
     Dim       n_integration_points() const override;
     const ID* nodes() const override;
+    bool      is_solid () const override {return true;}
 
     SurfacePtr surface(ID surface_id) override = 0;
 

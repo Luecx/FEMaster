@@ -88,9 +88,9 @@ struct ShellElement : StructuralElement {
     SurfacePtr surface(ID surface_id) override = 0;
     Precision  volume() override = 0;
     MapMatrix  stiffness(Precision* buffer) override = 0;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override = 0;
-
+    MapMatrix  stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override = 0;
     MapMatrix  mass(Precision* buffer) override = 0;
+    bool       is_shell() const override {return true;}
 
     virtual const fem::quadrature::Quadrature& integration_scheme() const = 0;
 

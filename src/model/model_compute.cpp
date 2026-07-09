@@ -18,16 +18,6 @@ void check_field_finite(const Field& field, const std::string& label) {
     }
 }
 
-RowMatrix with_through_thickness_coordinate(RowMatrix rst, Precision t) {
-    if (rst.cols() < 3) {
-        return rst;
-    }
-    for (Index i = 0; i < rst.rows(); ++i) {
-        rst(i, 2) = t;
-    }
-    return rst;
-}
-
 } // namespace
 
 std::tuple<Field, Field>
@@ -206,10 +196,11 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
     const auto& nodal_offsets = *_data->element_nodal_offsets;
     const Index total_element_nodes =
         static_cast<Index>(nodal_offsets(static_cast<Index>(_data->max_elems), 0));
+    const Index total_elements      = static_cast<Index>(_data->max_elems);
 
-    Field element_top{"ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_bot{"ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_weights{"STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
+    Field element_top    {"ELEMENT_NODAL_STRESS_TOP"      , FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_bot    {"ELEMENT_NODAL_STRESS_BOT"      , FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_weights{"STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT      , total_elements     , 1};
     element_top.set_zero();
     element_bot.set_zero();
     element_weights.set_zero();
@@ -217,26 +208,23 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
     for (auto el : _data->elements) {
         if (!el) continue;
         if (auto sel = el->as<StructuralElement>()) {
+            // r,s,t values of nodes of the element
             RowMatrix base_rst = sel->stress_strain_nodal_rst();
             if (base_rst.rows() == 0) continue;
-            logging::error(base_rst.rows() == sel->n_nodes(),
-                           "Element ", sel->elem_id, " returned ", base_rst.rows(),
-                           " nodal stress coordinates, expected ", sel->n_nodes());
-            RowMatrix rst_bot = with_through_thickness_coordinate(base_rst, Precision(-1));
-            RowMatrix rst_top = with_through_thickness_coordinate(base_rst, Precision(1));
+
+            const bool is_shell = sel->is_shell();
+            RowMatrix rst_bot = base_rst;
+            RowMatrix rst_top = base_rst;
+            if (is_shell) {
+                for (int i = 0; i < base_rst.rows(); ++i) {
+                    rst_bot(i, 2) = -1;
+                    rst_top(i, 2) =  1;
+                }
+            }
+
             const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
-            sel->compute_stress_strain(nullptr,
-                                       &element_bot,
-                                       displacement,
-                                       rst_bot,
-                                       static_cast<int>(offset),
-                                       use_green_lagrange_nl);
-            sel->compute_stress_strain(nullptr,
-                                       &element_top,
-                                       displacement,
-                                       rst_top,
-                                       static_cast<int>(offset),
-                                       use_green_lagrange_nl);
+            sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl);
+            sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl);
             element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }

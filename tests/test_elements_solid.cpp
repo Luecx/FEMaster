@@ -1,3 +1,5 @@
+#include "../src/material/isotropic_elasticity.h"
+#include "../src/model/model.h"
 #include "../src/model/solid/c3d8.h"
 
 #include <gtest/gtest.h>
@@ -39,3 +41,37 @@ TEST(Elements_C3D8, ShapeDerivativeFD) {
     }
 }
 
+TEST(Elements_C3D8, TopAndBottomStressAreNotFlipped) {
+    model::Model model(8, 1, 0);
+
+    model.set_node(0, 0.0, 0.0, 0.0);
+    model.set_node(1, 1.0, 0.0, 0.0);
+    model.set_node(2, 1.0, 1.0, 0.0);
+    model.set_node(3, 0.0, 1.0, 0.0);
+    model.set_node(4, 0.0, 0.0, 1.0);
+    model.set_node(5, 1.0, 0.0, 1.0);
+    model.set_node(6, 1.0, 1.0, 1.0);
+    model.set_node(7, 0.0, 1.0, 1.0);
+    model.set_element<model::C3D8>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+
+    auto material = model._data->materials.activate("MAT");
+    material->set_elasticity<fem::material::IsotropicElasticity>(1000.0, 0.3);
+    model.solid_section("EALL", "MAT");
+    model.assign_sections();
+
+    fem::model::Field displacement("U", fem::model::FieldDomain::NODE, 8, 6);
+    displacement.set_zero();
+    for (int node = 0; node < 8; ++node) {
+        displacement(node, 0) = (node >= 4) ? 1.0 : 0.0;
+    }
+
+    auto [stress_top, stress_bot] = model.compute_stress_top_bot(displacement, false);
+
+    ASSERT_EQ(stress_top.rows, stress_bot.rows);
+    ASSERT_EQ(stress_top.components, stress_bot.components);
+    for (Index i = 0; i < stress_top.rows; ++i) {
+        for (Index j = 0; j < stress_top.components; ++j) {
+            EXPECT_NEAR(stress_top(i, j), stress_bot(i, j), 1e-12);
+        }
+    }
+}

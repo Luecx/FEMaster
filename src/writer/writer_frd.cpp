@@ -132,7 +132,7 @@ std::vector<FRDComponent> scalar_components(const std::string& prefix,
                                             Index field_components) {
     std::vector<FRDComponent> components;
 
-    for (Index i = 0; i < std::min<Index>(field_components, 6); ++i) {
+    for (Index i = 0; i < std::min<Index>(field_components, 8); ++i) {
         components.push_back(FRDComponent::scalar(prefix + std::to_string(i + 1), static_cast<int>(i + 1))
         );
     }
@@ -446,10 +446,12 @@ void FrdWriter::write_nodal_field(const model::Field& field,
 
     for (ID node_id : frd_node_ids) {
         const Index row = static_cast<Index>(node_id);
-
         file_path << " -1" << std::setw(10) << frd_node_number(node_id);
 
         for (Index component = 0; component < static_cast<Index>(components.size()); ++component) {
+            if (component != 0 && component % 6 == 0) {
+                file_path << '\n' << " -2" << std::string(10, ' ');
+            }
             write_float(file_path, field_value(field, row, component, name));
         }
 
