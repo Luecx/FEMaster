@@ -32,7 +32,7 @@ int frd_frame(const std::string& s) {
     for (unsigned char c : s) {
         if (std::isdigit(c)) out += static_cast<char>(c);
     }
-    return out.empty() ? 0 : std::stoi(out);
+    return out.empty() ? 1 : std::stoi(out);
 }
 
 
@@ -73,6 +73,7 @@ std::string frd_name(const std::string& s) {
             name += static_cast<char>(std::toupper(c));
         }
     }
+
     if (name == "DISPLACEMENT"      ) return "DISP";
     if (name == "MODESHAPE"         ) return "DISP";
     if (name == "BUCKLINGMODE"      ) return "DISP";
@@ -132,9 +133,8 @@ std::vector<FRDComponent> scalar_components(const std::string& prefix,
                                             Index field_components) {
     std::vector<FRDComponent> components;
 
-    for (Index i = 0; i < std::min<Index>(field_components, 8); ++i) {
-        components.push_back(FRDComponent::scalar(prefix + std::to_string(i + 1), static_cast<int>(i + 1))
-        );
+    for (Index i = 0; i < field_components; ++i) {
+        components.push_back(FRDComponent::scalar(prefix + std::to_string(i + 1), static_cast<int>(i + 1)));
     }
 
     return components;
@@ -166,13 +166,13 @@ std::vector<FRDComponent> components_for(const std::string& name,
 }
 
 Precision field_value(const model::Field& field,
-                   Index row,
-                   Index component,
-                   const std::string& name) {
-    if (name == "U" && component == 3) {
-        const Precision u = std::isfinite(field(row, 0)) ? field(row, 0) : 0.0;;
-        const Precision v = std::isfinite(field(row, 1)) ? field(row, 1) : 0.0;;
-        const Precision w = std::isfinite(field(row, 2)) ? field(row, 2) : 0.0;;
+                      Index row,
+                      Index component,
+                      const std::string& name) {
+    if (name == "DISP" && component == 3) {
+        const Precision u = std::isfinite(field(row, 0)) ? field(row, 0) : 0.0;
+        const Precision v = std::isfinite(field(row, 1)) ? field(row, 1) : 0.0;
+        const Precision w = std::isfinite(field(row, 2)) ? field(row, 2) : 0.0;
 
         return std::sqrt(u * u + v * v + w * w);
     }
@@ -192,8 +192,6 @@ void write_float(std::ofstream& file_path,
 }
 
 } // namespace
-
-
 
 FrdWriter::FrdWriter(const std::string& filename) {
     if (!filename.empty()) {
@@ -268,8 +266,17 @@ void FrdWriter::write_field(const model::Field& field,
     if (!file_path.is_open()) {
         return;
     }
+
     if (field.domain != model::FieldDomain::NODE) {
         return;
+    }
+
+    if (!model_data_written) {
+        logging::error(model_data != nullptr,
+                       "FrdWriter: NODE field '", field_name,
+                       "' requires model data because mesh was not written yet");
+
+        write_model_data(*model_data);
     }
 
     write_nodal_field(field, field_name);
@@ -328,9 +335,9 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
                   << std::setw(10)
                   << static_cast<long long>(frd_node_number(node_id));
 
-        write_float(file_path,  positions(row, 0));
-        write_float(file_path,  positions(row, 1));
-        write_float(file_path,  positions(row, 2));
+        write_float(file_path, positions(row, 0));
+        write_float(file_path, positions(row, 1));
+        write_float(file_path, positions(row, 2));
 
         file_path << '\n';
     }
@@ -413,7 +420,7 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     file_path << "    1PSTEP" << std::setw(26) <<       block << std::setw(12) << frame << std::setw(12) << step << '\n';
     file_path << "  100CL  "  << std::setw(3 ) << 100 + block << ' ';
 
-    write_float(file_path, frame, 11);
+    write_float(file_path, static_cast<Precision>(block), 11);
 
     file_path << std::setw  (12)      << frd_node_ids.size()
               << std::string(21, ' ') << 0
@@ -446,12 +453,14 @@ void FrdWriter::write_nodal_field(const model::Field& field,
 
     for (ID node_id : frd_node_ids) {
         const Index row = static_cast<Index>(node_id);
+
+        logging::error(row >= 0 && row < field.rows,
+                       "FrdWriter: node id ", node_id,
+                       " is outside rows of field '", field_name, "'");
+
         file_path << " -1" << std::setw(10) << frd_node_number(node_id);
 
         for (Index component = 0; component < static_cast<Index>(components.size()); ++component) {
-            if (component != 0 && component % 6 == 0) {
-                file_path << '\n' << " -2" << std::string(10, ' ');
-            }
             write_float(file_path, field_value(field, row, component, name));
         }
 

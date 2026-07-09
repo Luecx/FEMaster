@@ -258,6 +258,8 @@ void NonlinearStatic::run() {
     // the accepted path in the result file even if a later increment fails.
     writer->add_loadcase(id);
 
+    Index last_converged_increment = 0;
+
     auto evaluate = [&](const DynamicVector& q,
                         Precision            lambda,
                         DynamicVector&       residual,
@@ -364,6 +366,8 @@ void NonlinearStatic::run() {
     auto on_increment = [&](Index                increment,
                             const DynamicVector& q,
                             Precision            lambda) {
+        last_converged_increment = increment;
+
         q_total     = q;
         load_factor = lambda;
         u_total     = transformer->recover_u(q_total);
@@ -537,14 +541,20 @@ void NonlinearStatic::run() {
         }
     }
 
-    writer->write_field(displacement     , "DISPLACEMENT", model->_data.get());
-    writer->write_field(final_strain     , "STRAIN", model->_data.get());
-    writer->write_field(final_stress     , "STRESS", model->_data.get());
-    writer->write_field(final_stress_top , "STRESS_TOP", model->_data.get());
-    writer->write_field(final_stress_bot , "STRESS_BOT", model->_data.get());
-    writer->write_field(global_load_final, "EXTERNAL_FORCES", model->_data.get());
-    writer->write_field(final_internal   , "INTERNAL_FORCES", model->_data.get());
-    writer->write_field(reaction_masked  , "REACTION_FORCES", model->_data.get());
+    const Index final_frame = last_converged_increment > 0
+        ? last_converged_increment + 1
+        : 1;
+
+    const std::string suffix = "_" + std::to_string(final_frame);
+
+    writer->write_field(displacement     , "DISPLACEMENT"    + suffix, model->_data.get());
+    writer->write_field(final_strain     , "STRAIN"          + suffix, model->_data.get());
+    writer->write_field(final_stress     , "STRESS"          + suffix, model->_data.get());
+    writer->write_field(final_stress_top , "STRESS_TOP"      + suffix, model->_data.get());
+    writer->write_field(final_stress_bot , "STRESS_BOT"      + suffix, model->_data.get());
+    writer->write_field(global_load_final, "EXTERNAL_FORCES" + suffix, model->_data.get());
+    writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get());
+    writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get());
 
     *model->_data->positions = original_positions;
     model->step_end();
