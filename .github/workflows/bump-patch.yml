@@ -1,0 +1,121 @@
+name: Bump patch version
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - ".github/workflows/bump-patch.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-patch-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump-patch:
+    name: Bump VERSION_PATCH
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    env:
+      VERSION_FILE: src/core/version.h
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Check whether version.h was changed manually
+        id: version_changed
+        shell: bash
+        run: |
+          base="${{ github.event.before }}"
+          head="${{ github.sha }}"
+
+          if [[ "$base" =~ ^0+$ ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --name-only "$base" "$head" | grep -qx "$VERSION_FILE"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip automatic bump after manual version change
+        if: steps.version_changed.outputs.changed == 'true'
+        shell: bash
+        run: |
+          echo "Manual version change detected in $VERSION_FILE."
+          echo "Skipping automatic patch bump."
+
+      - name: Bump patch version
+        if: steps.version_changed.outputs.changed == 'false'
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["VERSION_FILE"])
+
+          if not path.exists():
+              raise SystemExit(f"Version file not found: {path}")
+
+          text = path.read_text(encoding="utf-8")
+
+          patterns = {
+              "major": r"(^\s*#\s*define\s+VERSION_MAJOR\s+)(\d+)(\s*(?://.*)?$)",
+              "minor": r"(^\s*#\s*define\s+VERSION_MINOR\s+)(\d+)(\s*(?://.*)?$)",
+              "patch": r"(^\s*#\s*define\s+VERSION_PATCH\s+)(\d+)(\s*(?://.*)?$)",
+          }
+
+          values = {}
+
+          for name, pattern in patterns.items():
+              match = re.search(pattern, text, flags=re.MULTILINE)
+              if not match:
+                  raise SystemExit(f"Could not find VERSION_{name.upper()} in {path}")
+              values[name] = int(match.group(2))
+
+          values["patch"] += 1
+
+          def replace_patch(match: re.Match) -> str:
+              return f"{match.group(1)}{values['patch']}{match.group(3)}"
+
+          text = re.sub(
+              patterns["patch"],
+              replace_patch,
+              text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+
+          path.write_text(text, encoding="utf-8")
+
+          new_version = f"{values['major']}.{values['minor']}.{values['patch']}"
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"NEW_VERSION={new_version}\n")
+
+      - name: Commit patch bump
+        if: steps.version_changed.outputs.changed == 'false'
+        shell: bash
+        run: |
+          if git diff --quiet -- "$VERSION_FILE"; then
+            echo "No version change detected."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "$VERSION_FILE"
+          git commit -m "Bump version to ${NEW_VERSION}"
+          git push
