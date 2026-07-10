@@ -14,7 +14,8 @@
         "CMAKE_BUILD_TYPE": "Release",
         "FEMASTER_BUILD_TESTS": "OFF",
         "FEMASTER_DOUBLE_PRECISION": "ON",
-        "FEMASTER_FAST_EIGEN_COMPILE": "ON"
+        "FEMASTER_FAST_EIGEN_COMPILE": "ON",
+        "FEMASTER_ENABLE_OPENMP": "OFF"
       }
     },
 
@@ -27,15 +28,20 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
-      },
-      "cacheVariables": {
-        "FEMASTER_ENABLE_OPENMP": "ON"
       }
     },
     {
       "name": "linux",
       "displayName": "Linux CPU",
       "inherits": "linux-base"
+    },
+    {
+      "name": "linux-omp",
+      "displayName": "Linux CPU + OpenMP",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "ON"
+      }
     },
     {
       "name": "linux-profile",
@@ -47,21 +53,25 @@
     },
     {
       "name": "linux-mkl",
-      "displayName": "Linux CPU + threaded static oneMKL",
+      "displayName": "Linux CPU + sequential static oneMKL",
       "inherits": "linux-base",
       "cacheVariables": {
         "FEMASTER_ENABLE_MKL": "ON",
-        "FEMASTER_MKL_SEQUENTIAL": "OFF",
+        "FEMASTER_MKL_SEQUENTIAL": "ON",
         "FEMASTER_MKL_STATIC": "ON",
         "FEMASTER_STATIC_RUNTIME": "ON"
       }
     },
     {
-      "name": "linux-mkl-sequential",
-      "displayName": "Linux CPU + sequential static oneMKL",
-      "inherits": "linux-mkl",
+      "name": "linux-mkl-omp",
+      "displayName": "Linux CPU + threaded static oneMKL + OpenMP",
+      "inherits": "linux-base",
       "cacheVariables": {
-        "FEMASTER_MKL_SEQUENTIAL": "ON"
+        "FEMASTER_ENABLE_OPENMP": "ON",
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_SEQUENTIAL": "OFF",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
       }
     },
     {
@@ -73,16 +83,6 @@
       }
     },
     {
-      "name": "linux-cuda-mkl",
-      "displayName": "Linux CUDA + oneMKL",
-      "inherits": "linux-cuda",
-      "cacheVariables": {
-        "FEMASTER_ENABLE_MKL": "ON",
-        "FEMASTER_MKL_STATIC": "ON",
-        "FEMASTER_STATIC_RUNTIME": "ON"
-      }
-    },
-    {
       "name": "linux-cuda-cudss",
       "displayName": "Linux CUDA + cuDSS",
       "inherits": "linux-cuda",
@@ -91,11 +91,36 @@
       }
     },
     {
-      "name": "linux-full",
-      "displayName": "Linux CUDA + cuDSS + oneMKL",
-      "inherits": "linux-cuda-cudss",
+      "name": "linux-cuda-mkl",
+      "displayName": "Linux CUDA + sequential static oneMKL",
+      "inherits": "linux-cuda",
       "cacheVariables": {
         "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_SEQUENTIAL": "ON",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "linux-cuda-mkl-omp",
+      "displayName": "Linux CUDA + threaded static oneMKL + OpenMP",
+      "inherits": "linux-cuda",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "ON",
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_SEQUENTIAL": "OFF",
+        "FEMASTER_MKL_STATIC": "ON",
+        "FEMASTER_STATIC_RUNTIME": "ON"
+      }
+    },
+    {
+      "name": "linux-full",
+      "displayName": "Linux CUDA + cuDSS + threaded static oneMKL + OpenMP",
+      "inherits": "linux-cuda-cudss",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "ON",
+        "FEMASTER_ENABLE_MKL": "ON",
+        "FEMASTER_MKL_SEQUENTIAL": "OFF",
         "FEMASTER_MKL_STATIC": "ON",
         "FEMASTER_STATIC_RUNTIME": "ON"
       }
@@ -111,9 +136,6 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
-      },
-      "cacheVariables": {
-        "FEMASTER_ENABLE_OPENMP": "OFF"
       }
     },
     {
@@ -150,8 +172,7 @@
         "rhs": "Windows"
       },
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "icx-cl",
-        "FEMASTER_ENABLE_OPENMP": "OFF"
+        "CMAKE_CXX_COMPILER": "icx-cl"
       }
     },
     {
@@ -215,6 +236,11 @@
       "jobs": 8
     },
     {
+      "name": "linux-omp",
+      "configurePreset": "linux-omp",
+      "jobs": 8
+    },
+    {
       "name": "linux-profile",
       "configurePreset": "linux-profile",
       "jobs": 8
@@ -225,8 +251,8 @@
       "jobs": 8
     },
     {
-      "name": "linux-mkl-sequential",
-      "configurePreset": "linux-mkl-sequential",
+      "name": "linux-mkl-omp",
+      "configurePreset": "linux-mkl-omp",
       "jobs": 8
     },
     {
@@ -235,13 +261,18 @@
       "jobs": 8
     },
     {
+      "name": "linux-cuda-cudss",
+      "configurePreset": "linux-cuda-cudss",
+      "jobs": 8
+    },
+    {
       "name": "linux-cuda-mkl",
       "configurePreset": "linux-cuda-mkl",
       "jobs": 8
     },
     {
-      "name": "linux-cuda-cudss",
-      "configurePreset": "linux-cuda-cudss",
+      "name": "linux-cuda-mkl-omp",
+      "configurePreset": "linux-cuda-mkl-omp",
       "jobs": 8
     },
     {
