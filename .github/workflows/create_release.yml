@@ -1,0 +1,162 @@
+name: Release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create tag and GitHub release"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+  push:
+    branches:
+      - master
+    paths:
+      - "src/core/version.h"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Read version
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    env:
+      VERSION_FILE: src/core/version.h
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      create_release: ${{ steps.mode.outputs.create_release }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version.h
+        id: version
+        shell: python
+        run: |
+          import os
+          import re
+          from pathlib import Path
+
+          text = Path(os.environ["VERSION_FILE"]).read_text(encoding="utf-8")
+
+          major = re.search(r"#\s*define\s+VERSION_MAJOR\s+(\d+)", text)
+          minor = re.search(r"#\s*define\s+VERSION_MINOR\s+(\d+)", text)
+          patch = re.search(r"#\s*define\s+VERSION_PATCH\s+(\d+)", text)
+
+          if not major or not minor or not patch:
+              raise SystemExit("Could not read version macros.")
+
+          version = f"{major.group(1)}.{minor.group(1)}.{patch.group(1)}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"version={version}\n")
+              f.write(f"tag=v{version}\n")
+
+      - name: Select mode
+        id: mode
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "create_release=${{ inputs.create_release }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "create_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-release
+            os: ubuntu-latest
+            configure_preset: linux-release
+            build_preset: linux-release
+            binary: build/linux-release/bin/FEMaster
+            archive: FEMaster-linux-release.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 3.4.0 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.1.0 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Configure
+        run: >
+          cmake --preset ${{ matrix.configure_preset }}
+          -DFEMASTER_DEPS_INCLUDE_DIR=${{ github.workspace }}/deps/include
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.build_preset }}
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p package
+
+          cp "${{ matrix.binary }}" package/
+          cp LICENSE.txt package/
+          cp THIRD_PARTY_NOTICES.txt package/ || true
+          cp -r licenses package/ || true
+          cp documentation.pdf package/ || true
+
+          tar -czf "${{ matrix.archive }}" -C package .
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+          retention-days: 3
+
+  release:
+    name: Create GitHub release
+    needs:
+      - prepare
+      - build
+
+    if: needs.prepare.outputs.create_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${{ needs.prepare.outputs.tag }}" \
+            release-assets/* \
+            --title "FEMaster ${{ needs.prepare.outputs.version }}" \
+            --generate-notes
