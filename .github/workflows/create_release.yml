@@ -57,12 +57,13 @@ jobs:
               raise SystemExit("Could not read version macros.")
 
           version = f"{major.group(1)}.{minor.group(1)}.{patch.group(1)}"
+          tag = f"v{version}"
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"version={version}\n")
-              f.write(f"tag=v{version}\n")
+              f.write(f"tag={tag}\n")
 
-      - name: Select mode
+      - name: Select release mode
         id: mode
         shell: bash
         run: |
@@ -81,54 +82,118 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: linux-release
+          - name: linux-mkl
             os: ubuntu-latest
-            configure_preset: linux-release
-            build_preset: linux-release
-            binary: build/linux-release/bin/FEMaster
-            archive: FEMaster-linux-release.tar.gz
+            configure_preset: linux-mkl
+            build_preset: linux-mkl
+            binary: build/linux-mkl/bin/FEMaster
+            archive: FEMaster-linux-mkl.tar.gz
+
+          - name: windows-mkl
+            os: windows-latest
+            configure_preset: windows-mkl
+            build_preset: windows-mkl
+            binary: build/windows-mkl/bin/Release/FEMaster.exe
+            archive: FEMaster-windows-mkl.zip
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache header dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: deps-${{ runner.os }}-eigen-5.0.1-spectra-1.0.1-argparse-3.2
+
       - name: Fetch header dependencies
         shell: bash
         run: |
-          mkdir -p deps/include
-      
-          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
-          cp -r deps/eigen/Eigen deps/include/Eigen
-          cp -r deps/eigen/unsupported deps/include/unsupported
-      
-          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
-          cp -r deps/spectra/include/Spectra deps/include/Spectra
-      
-          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
-          cp -r deps/argparse/include/argparse deps/include/argparse
+          if [ ! -d deps/include ]; then
+            mkdir -p deps/include
 
-      - name: Configure
-        run: >
-          cmake --preset ${{ matrix.configure_preset }}
-          -DFEMASTER_DEPS_INCLUDE_DIR=${{ github.workspace }}/deps/include
+            git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+            cp -r deps/eigen/Eigen deps/include/Eigen
+            cp -r deps/eigen/unsupported deps/include/unsupported
 
-      - name: Build
-        run: cmake --build --preset ${{ matrix.build_preset }}
+            git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+            cp -r deps/spectra/include/Spectra deps/include/Spectra
 
-      - name: Package
+            git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+            cp -r deps/argparse/include/argparse deps/include/argparse
+          fi
+
+      - name: Setup Intel oneAPI MKL
+        uses: rscohn2/setup-oneapi@v0.2.0
+        with:
+          components: |
+            mkl
+          cache: true
+          prune: true
+
+      - name: Configure Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --preset ${{ matrix.configure_preset }} \
+            -DFEMASTER_DEPS_INCLUDE_DIR=${{ github.workspace }}/deps/include
+
+      - name: Build Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset ${{ matrix.build_preset }}
+
+      - name: Configure Windows
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          CONFIGURE_PRESET: ${{ matrix.configure_preset }}
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          cmake --preset %CONFIGURE_PRESET% -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          BUILD_PRESET: ${{ matrix.build_preset }}
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          cmake --build --preset %BUILD_PRESET%
+
+      - name: Package Linux
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           mkdir -p package
 
           cp "${{ matrix.binary }}" package/
-          cp LICENSE.txt package/
+          cp LICENSE.txt package/ || true
           cp THIRD_PARTY_NOTICES.txt package/ || true
           cp -r licenses package/ || true
           cp documentation.pdf package/ || true
 
           tar -czf "${{ matrix.archive }}" -C package .
 
-      - name: Upload build artifact
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package
+
+          Copy-Item "${{ matrix.binary }}" package/
+          Copy-Item "build/windows-mkl/bin/Release/libiomp5md.dll" package/ -ErrorAction SilentlyContinue
+          Copy-Item "LICENSE.txt" package/ -ErrorAction SilentlyContinue
+          Copy-Item "THIRD_PARTY_NOTICES.txt" package/ -ErrorAction SilentlyContinue
+          Copy-Item "licenses" package/licenses -Recurse -ErrorAction SilentlyContinue
+          Copy-Item "documentation.pdf" package/ -ErrorAction SilentlyContinue
+
+          Compress-Archive -Path package/* -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload release asset candidate
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.archive }}
@@ -145,11 +210,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download release assets
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Check tag does not exist
+        shell: bash
+        run: |
+          tag="${{ needs.prepare.outputs.tag }}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1; then
+            echo "Tag $tag already exists."
+            exit 1
+          fi
 
       - name: Create release
         env:
@@ -158,5 +236,6 @@ jobs:
         run: |
           gh release create "${{ needs.prepare.outputs.tag }}" \
             release-assets/* \
+            --target "${{ github.sha }}" \
             --title "FEMaster ${{ needs.prepare.outputs.version }}" \
             --generate-notes
