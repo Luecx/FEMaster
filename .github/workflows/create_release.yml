@@ -96,14 +96,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p deps/include
-
-          git clone --depth 1 --branch 3.4.0 https://gitlab.com/libeigen/eigen.git deps/eigen
+      
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
           cp -r deps/eigen/Eigen deps/include/Eigen
           cp -r deps/eigen/unsupported deps/include/unsupported
-
-          git clone --depth 1 --branch v1.1.0 https://github.com/yixuan/spectra.git deps/spectra
+      
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
           cp -r deps/spectra/include/Spectra deps/include/Spectra
-
+      
           git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
           cp -r deps/argparse/include/argparse deps/include/argparse
 
