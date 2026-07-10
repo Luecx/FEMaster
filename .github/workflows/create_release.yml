@@ -82,19 +82,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: linux-mkl
+          - name: linux-mkl-omp
             os: ubuntu-latest
-            configure_preset: linux-mkl
-            build_preset: linux-mkl
-            binary: build/linux-mkl/bin/FEMaster
-            archive: FEMaster-linux-mkl.tar.gz
+            configure_preset: linux-mkl-omp
+            build_preset: linux-mkl-omp
+            binary: build/linux-mkl-omp/bin/FEMaster
+            archive: FEMaster-linux-mkl-omp.tar.gz
 
-          - name: windows-mkl
+          - name: windows-intel-mkl-omp
             os: windows-latest
-            configure_preset: windows-mkl
-            build_preset: windows-mkl
-            binary: build/windows-mkl/bin/Release/FEMaster.exe
-            archive: FEMaster-windows-mkl.zip
+            configure_preset: windows-intel-mkl-omp
+            build_preset: windows-intel-mkl-omp
+            binary: build/windows-intel-mkl-omp/bin/FEMaster.exe
+            archive: FEMaster-windows-intel-mkl-omp.zip
 
     steps:
       - name: Checkout
@@ -132,19 +132,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y intel-oneapi-mkl-devel intel-oneapi-openmp
 
-      - name: Install Intel oneAPI MKL Windows
+      - name: Install Intel oneAPI Base Toolkit Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           winget source update
-          winget install -e --id Intel.oneMKL --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+          winget install -e --id Intel.OneAPI.BaseToolkit --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
 
           if (!(Test-Path "C:\Program Files (x86)\Intel\oneAPI\setvars.bat")) {
             Write-Error "Intel oneAPI setvars.bat was not found."
             exit 1
           }
 
-      - name: Configure Linux MKL
+      - name: Check Intel oneAPI Windows
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          where icx-cl
+          icx-cl --version
+
+      - name: Configure Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -152,14 +160,14 @@ jobs:
           cmake --preset ${{ matrix.configure_preset }} \
             -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
 
-      - name: Build Linux MKL
+      - name: Build Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
         run: |
           source /opt/intel/oneapi/setvars.sh
           cmake --build --preset ${{ matrix.build_preset }}
 
-      - name: Configure Windows MKL
+      - name: Configure Windows Intel MKL OpenMP
         if: runner.os == 'Windows'
         shell: cmd
         env:
@@ -168,7 +176,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           cmake --preset %CONFIGURE_PRESET% -DFEMASTER_DEPS_INCLUDE_DIR=%GITHUB_WORKSPACE%\deps\include
 
-      - name: Build Windows MKL
+      - name: Build Windows Intel MKL OpenMP
         if: runner.os == 'Windows'
         shell: cmd
         env:
@@ -177,7 +185,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           cmake --build --preset %BUILD_PRESET%
 
-      - name: Package Linux MKL
+      - name: Package Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -191,14 +199,14 @@ jobs:
 
           tar -czf "${{ matrix.archive }}" -C package .
 
-      - name: Package Windows MKL
+      - name: Package Windows Intel MKL OpenMP
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force package
 
           Copy-Item "${{ matrix.binary }}" package/
-          Copy-Item "build/windows-mkl/bin/Release/libiomp5md.dll" package/ -ErrorAction SilentlyContinue
+          Copy-Item "build/windows-intel-mkl-omp/bin/libiomp5md.dll" package/ -ErrorAction SilentlyContinue
           Copy-Item "LICENSE.txt" package/ -ErrorAction SilentlyContinue
           Copy-Item "THIRD_PARTY_NOTICES.txt" package/ -ErrorAction SilentlyContinue
           Copy-Item "licenses" package/licenses -Recurse -ErrorAction SilentlyContinue
