@@ -144,11 +144,21 @@ jobs:
             exit 1
           }
 
+      - name: Set up MSVC environment Windows
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Check Intel oneAPI Windows
         if: runner.os == 'Windows'
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+          where cl
+          where link
+          where rc
+          where mt
           where icx-cl
           icx-cl --version
 
