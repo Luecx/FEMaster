@@ -82,12 +82,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: linux-mkl
+          - name: linux-mkl-omp
             os: ubuntu-latest
-            configure_preset: linux-mkl
-            build_preset: linux-mkl
-            binary: build/linux-mkl/bin/FEMaster
-            archive: FEMaster-linux-mkl.tar.gz
+            configure_preset: linux-mkl-omp
+            build_preset: linux-mkl-omp
+            binary: build/linux-mkl-omp/bin/FEMaster
+            archive: FEMaster-linux-mkl-omp.tar.gz
 
           - name: windows-intel-mkl-omp
             os: windows-latest
@@ -152,7 +152,7 @@ jobs:
           where icx-cl
           icx-cl --version
 
-      - name: Configure Linux MKL
+      - name: Configure Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -160,7 +160,7 @@ jobs:
           cmake --preset ${{ matrix.configure_preset }} \
             -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
 
-      - name: Build Linux MKL
+      - name: Build Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -185,7 +185,7 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           cmake --build --preset %BUILD_PRESET%
 
-      - name: Package Linux MKL
+      - name: Package Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
         run: |
