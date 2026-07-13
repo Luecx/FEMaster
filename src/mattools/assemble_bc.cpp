@@ -26,8 +26,8 @@ void assemble_bc(model::Field& target_bc, const model::Field& source_bc, Duplica
     }
 
     // Iterate through each entry of the node field
-    for (int i = 0; i < target_bc.rows; ++i) {
-        for (int j = 0; j < target_bc.components; ++j) {
+    for (Index i = 0; i < target_bc.rows; ++i) {
+        for (Index j = 0; j < target_bc.components; ++j) {
             const auto& source_val = source_bc(i, j);
             auto& target_val = target_bc(i, j);
 

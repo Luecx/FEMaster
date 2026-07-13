@@ -422,7 +422,7 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
     for (ID node_id : frd_node_ids) {
         const Index row = static_cast<Index>(node_id);
 
-        logging::error(row >= 0 && row < positions.rows,
+        logging::error(row < positions.rows,
                        "FrdWriter: node id ", node_id,
                        " is outside positions field rows");
 
@@ -597,7 +597,7 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     for (ID node_id : frd_node_ids) {
         const Index row = static_cast<Index>(node_id);
 
-        logging::error(row >= 0 && row < field.rows,
+        logging::error(row < field.rows,
                        "FrdWriter: node id ", node_id,
                        " is outside rows of field '",
                        field_name, "'");

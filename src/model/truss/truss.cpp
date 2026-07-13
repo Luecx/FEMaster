@@ -91,7 +91,7 @@ material::IsotropicElasticity* T3::get_elasticity() {
 }
 
 Vec3 T3::node_position_reference(Index local_node) const {
-    logging::error(local_node >= 0 && local_node < N,
+    logging::error(local_node < N,
                    "T3: local node index out of range in element ",
                    this->elem_id);
     logging::error(this->_model_data != nullptr,
@@ -105,7 +105,7 @@ Vec3 T3::node_position_reference(Index local_node) const {
 }
 
 Vec3 T3::node_position_current(Index local_node) const {
-    logging::error(local_node >= 0 && local_node < N,
+    logging::error(local_node < N,
                    "T3: local node index out of range in element ",
                    this->elem_id);
     logging::error(this->_model_data != nullptr,

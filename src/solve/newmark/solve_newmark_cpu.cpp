@@ -67,6 +67,13 @@ namespace {
         bool built = false;
         bool ready = false;
 
+        EffectiveSolver(const SparseMatrix& mass,
+                        const SparseMatrix& damping,
+                        const SparseMatrix& stiffness)
+            : M(mass),
+              C(damping),
+              K(stiffness) {}
+
         void build(SolverScalar a0, SolverScalar a1) {
             A = K;
             if (a0 != SolverScalar(0)) A = A + a0 * M;

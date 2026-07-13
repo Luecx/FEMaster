@@ -255,16 +255,18 @@ Field Model::compute_shell_resultants(Field& displacement) {
         }
     }
 
-    for (int i = 0; i < _data->max_nodes; i++) {
+    const Index max_nodes = static_cast<Index>(_data->max_nodes);
+
+    for (Index i = 0; i < max_nodes; i++) {
         if (count(i, 0) != Precision(0)) {
-            for (int j = 0; j < resultants.components; j++) {
+            for (Index j = 0; j < resultants.components; j++) {
                 resultants(i, j) /= count(i, 0);
             }
         }
     }
 
-    for (int i = 0; i < _data->max_nodes; i++) {
-        for (int j = 0; j < resultants.components; j++) {
+    for (Index i = 0; i < max_nodes; i++) {
+        for (Index j = 0; j < resultants.components; j++) {
             const bool invalid = std::isnan(resultants(i, j)) || std::isinf(resultants(i, j));
             logging::error(!invalid, "Node ", i, " has nan or inf shell resultant at col ", j,
                            ". Node Usage=", count(i, 0));

@@ -71,7 +71,7 @@ struct DefaultShellElement : public ShellElement<N> {
     StaticMatrix<N * 6, N * 6> transformation(Mat3& axes) {
         StaticMatrix<N * 6, N * 6> res = StaticMatrix<N * 6, N * 6>::Zero();
 
-        for (int i = 0; i < 2 * N; ++i) {
+        for (Index i = 0; i < 2 * N; ++i) {
             res.template block<3, 3>(3 * i, 3 * i) = axes;
         }
 
@@ -426,7 +426,7 @@ struct DefaultShellElement : public ShellElement<N> {
         StaticMatrix<3, N * 3> res {};
         res.setZero();
 
-        for (int i = 0; i < N; i++) {
+        for (Index i = 0; i < N; i++) {
             res(0, 3 * i)     = 0;
             res(0, 3 * i + 1) = 0;
             res(0, 3 * i + 2) = -dH(0, i);
@@ -454,7 +454,7 @@ struct DefaultShellElement : public ShellElement<N> {
         StaticMatrix<2, 3 * N> res {};
         res.setZero();
 
-        for (int i = 0; i < N; i++) {
+        for (Index i = 0; i < N; i++) {
             res(0, 3 * i)     = dH(1, i);
             res(0, 3 * i + 1) = -H(i);
             res(0, 3 * i + 2) = 0;
@@ -488,7 +488,7 @@ struct DefaultShellElement : public ShellElement<N> {
         StaticMatrix<3, 2 * N> res {};
         res.setZero();
 
-        for (int i = 0; i < N; i++) {
+        for (Index i = 0; i < N; i++) {
             res(0, 2 * i)     = dH(0, i);
             res(0, 2 * i + 1) = 0;
 
@@ -573,7 +573,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Precision k_drill = Precision(1e32);
 
-        for (int i = 0; i < N; i++) {
+        for (Index i = 0; i < N; i++) {
             k_drill = std::min(k_drill, stiff_shear(3 * i + 1, 3 * i + 1));
             k_drill = std::min(k_drill, stiff_shear(3 * i + 2, 3 * i + 2));
         }
@@ -625,7 +625,7 @@ struct DefaultShellElement : public ShellElement<N> {
             }
         }
 
-        for (int i = 0; i < N; i++) {
+        for (Index i = 0; i < N; i++) {
             res(6 * i + 5, 6 * i + 5) = k_drill;
         }
 
@@ -851,7 +851,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         Mat3 axes = get_xyz_axes();
 
-        for (int i = 0; i < N; i++) {
+        for (Index i = 0; i < N; i++) {
             ID node_id = this->nodes()[i];
 
             Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
@@ -895,7 +895,6 @@ struct DefaultShellElement : public ShellElement<N> {
         shear_section_mat *= topo_scale;
 
         LocalCoords     xy_coords  = get_xy_coords(axes);
-        ShapeFunction   shape_func = this->shape_function(r, s);
         ShapeDerivative shape_der  = this->shape_derivative(r, s);
         Jacobian        jac        = this->jacobian(shape_der, xy_coords);
 
@@ -978,7 +977,7 @@ struct DefaultShellElement : public ShellElement<N> {
         disp_bending.setZero();
         disp_shear.setZero();
 
-        for (int a = 0; a < N; ++a) {
+        for (Index a = 0; a < N; ++a) {
             ID node_id = this->nodes()[a];
 
             Vec6 displacement_glob = displacement.row_vec6(static_cast<Index>(node_id));
@@ -1003,7 +1002,7 @@ struct DefaultShellElement : public ShellElement<N> {
         StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
         LocalCoords        xy_coords = get_xy_coords(axes);
 
-        for (int i = 0; i < N; ++i) {
+        for (Index i = 0; i < N; ++i) {
             ID node_id = this->nodes()[i];
 
             Precision r = coords(i, 0);
@@ -1091,11 +1090,11 @@ struct DefaultShellElement : public ShellElement<N> {
                        "ShellElement: stress/strain evaluation coordinates require at least 3 columns");
 
         Field& displacement_mut = const_cast<Field&>(displacement);
-        for (Index i = 0; i < rst.rows(); ++i) {
+        for (Eigen::Index i = 0; i < rst.rows(); ++i) {
             Vec3 local;
             local << rst(i, 0), rst(i, 1), rst(i, 2);
             const Stress stress_value = this->compute_stress_at(displacement_mut, local);
-            const Index row = static_cast<Index>(offset) + i;
+            const Index row = static_cast<Index>(offset + i);
 
             if (strain) {
                 for (Index j = 0; j < strain->components; ++j) {
@@ -1127,8 +1126,6 @@ struct DefaultShellElement : public ShellElement<N> {
     ) {
         Mat3 axes      = get_xyz_axes();
         auto xy_coords = get_xy_coords(axes);
-
-        const Precision h = this->get_section()->thickness_;
 
         auto abd_section = this->get_section()->get_abd();
 

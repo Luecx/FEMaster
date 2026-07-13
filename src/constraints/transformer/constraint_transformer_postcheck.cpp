@@ -102,7 +102,8 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                              true});
 
         const DynamicVector resid = K * u - f;
-        if (cached_lagrange_lambda_valid_ && cached_lagrange_lambda_.size() == set_.m) {
+        if (cached_lagrange_lambda_valid_ &&
+            cached_lagrange_lambda_.size() == static_cast<Eigen::Index>(set_.m)) {
             const DynamicVector& lambda = cached_lagrange_lambda_;
             const DynamicVector scaled_lambda = scale_lagrange_rows(lambda);
             const DynamicVector kkt_u = resid + (set_.C.transpose() * scaled_lambda);
@@ -190,20 +191,18 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                          rel_red <= tol_reduced_rel,
                          true});
 
-    if (nm >= 0) {
-        DynamicVector q0 = DynamicVector::Zero(nm);
-        DynamicVector u_p = recover_u(q0);
-        DynamicVector cup = set().C * u_p - set().d;
-        const Precision abs = cup.norm();
-        const Precision den = std::max<Precision>(1, set().d.size() ? set().d.norm() : 0);
-        const Precision rel = abs / den;
-        items.push_back(Item{"affine consistency (u_p)",
-                             abs,
-                             rel,
-                             tol_constraint_rel,
-                             rel <= tol_constraint_rel,
-                             true});
-    }
+    DynamicVector q0 = DynamicVector::Zero(nm);
+    DynamicVector u_p = recover_u(q0);
+    DynamicVector cup = set().C * u_p - set().d;
+    const Precision abs = cup.norm();
+    const Precision den = std::max<Precision>(1, set().d.size() ? set().d.norm() : 0);
+    const Precision rel = abs / den;
+    items.push_back(Item{"affine consistency (u_p)",
+                         abs,
+                         rel,
+                         tol_constraint_rel,
+                         rel <= tol_constraint_rel,
+                         true});
 
     if (nm > 0) {
         const int samples = 3;

@@ -254,7 +254,7 @@ void LinearStatic::run() {
     for (const auto& eq : groups.supports) {
         for (const auto& e : eq.entries) {
             if (e.node_id >= 0 && e.node_id < support_mask.rows() &&
-                e.dof >= 0 && e.dof < support_mask.cols())
+                e.dof < support_mask.cols())
             {
                 // Only mark if DOF exists in the active numbering
                 if (active_dof_idx_mat(e.node_id, e.dof) != -1) {
@@ -268,8 +268,8 @@ void LinearStatic::run() {
                                  global_react_mat.rows,
                                  global_react_mat.components};
     reaction_masked.fill_nan();
-    for (int i = 0; i < reaction_masked.rows; ++i) {
-        for (int j = 0; j < reaction_masked.components; ++j) {
+    for (Index i = 0; i < reaction_masked.rows; ++i) {
+        for (Index j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
                 reaction_masked(i, j) = global_react_mat(i, j);
             }

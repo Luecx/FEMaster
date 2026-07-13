@@ -193,7 +193,9 @@ template<typename... Args>
 void log_wrapped_with_prefix(const std::string& prefix, Args&&... args) {
     // Build the *content* in a separate stream to keep formatting manipulators applied only there.
     std::ostringstream content_stream;
-    (content_stream << ... << std::forward<Args>(args));
+    if constexpr (sizeof...(Args) > 0) {
+        (content_stream << ... << std::forward<Args>(args));
+    }
     const std::string content = content_stream.str();
 
     const std::string base_prefix = prefix + logging::get_indentation() + " ";

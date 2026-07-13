@@ -110,8 +110,8 @@ Precision evaluate(const DynamicVector& coefficients, const Vec3& position) {
 template<InterpolationFunction F>
 DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const RowMatrix& xyz) {
     DynamicMatrix predicted(xyz.rows(), coefficients.cols());
-    for (Index column = 0; column < coefficients.cols(); ++column) {
-        for (Index row = 0; row < xyz.rows(); ++row) {
+    for (Eigen::Index column = 0; column < coefficients.cols(); ++column) {
+        for (Eigen::Index row = 0; row < xyz.rows(); ++row) {
             predicted(row, column) = evaluate<F>(coefficients.col(column), xyz.row(row));
         }
     }
@@ -123,7 +123,7 @@ DynamicMatrix compute_predicted_values(const DynamicMatrix& coefficients, const 
  */
 DynamicVector compute_r2(const DynamicMatrix& predicted, const RowMatrix& values) {
     DynamicVector r2(values.cols());
-    for (Index column = 0; column < values.cols(); ++column) {
+    for (Eigen::Index column = 0; column < values.cols(); ++column) {
         const Precision mean = values.col(column).mean();
         const Precision ss_tot = (values.col(column).array() - mean).square().sum();
         const Precision ss_res = (values.col(column).array() - predicted.col(column).array()).square().sum();
@@ -142,14 +142,14 @@ DynamicMatrix interpolate(const RowMatrix& xyz,
                           const Vec3& center,
                           DynamicVector* r2_values) {
     RowMatrix adjusted_xyz = xyz;
-    for (Index row = 0; row < adjusted_xyz.rows(); ++row) {
+    for (Eigen::Index row = 0; row < adjusted_xyz.rows(); ++row) {
         adjusted_xyz.row(row) -= center.transpose();
     }
 
     Vec3 adjusted_center = Vec3::Zero();
 
     SemiStaticMatrix<term_count<F>()> lhs{adjusted_xyz.rows(), term_count<F>()};
-    for (Index row = 0; row < adjusted_xyz.rows(); ++row) {
+    for (Eigen::Index row = 0; row < adjusted_xyz.rows(); ++row) {
         if constexpr (F >= CONSTANT) {
             lhs(row, 0) = 1.0;
         }
@@ -197,17 +197,17 @@ DynamicMatrix interpolate(const RowMatrix& xyz,
     DynamicMatrix atb = lhs.transpose() * values;
     DynamicMatrix coefficients{ata.rows(), atb.cols()};
     auto solver = ata.fullPivHouseholderQr();
-    for (Index column = 0; column < values.cols(); ++column) {
+    for (Eigen::Index column = 0; column < values.cols(); ++column) {
         coefficients.col(column) = solver.solve(atb.col(column));
     }
 
     DynamicMatrix results(1, values.cols());
-    for (Index column = 0; column < values.cols(); ++column) {
+    for (Eigen::Index column = 0; column < values.cols(); ++column) {
         results(0, column) = evaluate<F>(coefficients.col(column), adjusted_center);
     }
 
-    for (Index column = 0; column < results.cols(); ++column) {
-        for (Index row = 0; row < results.rows(); ++row) {
+    for (Eigen::Index column = 0; column < results.cols(); ++column) {
+        for (Eigen::Index row = 0; row < results.rows(); ++row) {
             if (std::isnan(results(row, column)) || std::isinf(results(row, column))) {
                 return interpolate<demote_order<F>()>(xyz, values, center, r2_values);
             }

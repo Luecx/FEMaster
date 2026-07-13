@@ -85,7 +85,8 @@ DynamicVector ConstraintTransformer::lagrange_multipliers(const SparseMatrix& K,
         return DynamicVector::Zero(0);
     }
 
-    if (method_ == Method::Lagrange && q.size() == set_.n + set_.m) {
+    if (method_ == Method::Lagrange &&
+        q.size() == static_cast<Eigen::Index>(set_.n + set_.m)) {
         return extract_lambda_from_solution(q);
     }
 
@@ -108,7 +109,7 @@ DynamicVector ConstraintTransformer::accumulate_support_constraint_forces(const 
 
     logging::error(lambda.size() == set_.C.rows(),
                    "[ConstraintTransformer] lambda size mismatch for support reaction assembly");
-    logging::error(static_cast<Index>(set_.kept_row_ids.size()) == set_.C.rows(),
+    logging::error(static_cast<Eigen::Index>(set_.kept_row_ids.size()) == set_.C.rows(),
                    "[ConstraintTransformer] kept_row_ids size mismatch");
 
     for (int col = 0; col < set_.C.outerSize(); ++col) {
@@ -118,7 +119,8 @@ DynamicVector ConstraintTransformer::accumulate_support_constraint_forces(const 
             const auto& eq = set_.equations[static_cast<std::size_t>(eq_idx)];
             if (eq.source == EquationSourceKind::Support) {
                 const Precision row_scale =
-                    (use_scaled_rows && lagrange_row_l2_scale_.size() == set_.m)
+                    (use_scaled_rows &&
+                     lagrange_row_l2_scale_.size() == static_cast<Eigen::Index>(set_.m))
                         ? lagrange_row_l2_scale_[row]
                         : Precision(1);
                 g[col] += row_scale * it.value() * lambda[row];
@@ -138,7 +140,8 @@ DynamicVector ConstraintTransformer::support_reactions(const SparseMatrix& K,
 
     DynamicVector lambda;
     bool use_scaled_rows = false;
-    if (method_ == Method::Lagrange && q.size() == set_.n + set_.m) {
+    if (method_ == Method::Lagrange &&
+        q.size() == static_cast<Eigen::Index>(set_.n + set_.m)) {
         lambda = extract_lambda_from_solution(q);
         use_scaled_rows = true;
     } else {

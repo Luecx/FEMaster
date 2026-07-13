@@ -52,9 +52,11 @@ std::pair<ConstraintMap, ConstraintBuilder::Report> ConstraintBuilder::build(con
     Time t_rank = 0;
     Time t_x = 0;
     Time t_particular = 0;
-    Time t_invar = 0;
     Time t_assemble = 0;
     Time t_partition = 0;
+#ifndef NDEBUG
+    Time t_invar = 0;
+#endif
 
     PreprocessInput pin{set.C,
                         set.d,
@@ -194,7 +196,7 @@ std::pair<ConstraintMap, ConstraintBuilder::Report> ConstraintBuilder::build(con
         }
     });
 
-    int kept_rows = 0;
+    Index kept_rows = 0;
     for (char keep : pre.keep_row) {
         kept_rows += (keep ? 1 : 0);
     }

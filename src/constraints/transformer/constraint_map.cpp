@@ -24,7 +24,7 @@ namespace constraint {
  * @copydoc ConstraintMap::apply_T(const DynamicVector&,DynamicVector&) const
  */
 void ConstraintMap::apply_T(const DynamicVector& q, DynamicVector& u) const {
-    if (q.size() != nm_) {
+    if (q.size() != static_cast<Eigen::Index>(nm_)) {
         logging::warning(false, "[ConstraintMap::apply_T] q.size()=", q.size(), " nm_=", nm_);
     }
     u = u_p_;
@@ -43,7 +43,7 @@ void ConstraintMap::apply_T(const DynamicVector& q, DynamicVector& u) const {
  * @copydoc ConstraintMap::apply_Tt(const DynamicVector&,DynamicVector&) const
  */
 void ConstraintMap::apply_Tt(const DynamicVector& y, DynamicVector& z) const {
-    if (y.size() != n_) {
+    if (y.size() != static_cast<Eigen::Index>(n_)) {
         logging::warning(false, "[ConstraintMap::apply_Tt] y.size()=", y.size(), " n_=", n_);
     }
     z.setZero(nm_);

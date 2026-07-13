@@ -238,8 +238,8 @@ struct B33 : BeamElement<2> {
         const Precision eps = (u_local(6) - u_local(0)) / L;
         const Precision N = E * A * eps;
 
-        for (Index i = 0; i < rst.rows(); ++i) {
-            const Index row = static_cast<Index>(offset) + i;
+        for (Eigen::Index i = 0; i < rst.rows(); ++i) {
+            const Index row = static_cast<Index>(offset + i);
             if (strain) {
                 for (Index j = 0; j < strain->components; ++j) (*strain)(row, j) = Precision(0);
                 (*strain)(row, 0) = eps;

@@ -18,6 +18,30 @@
 
 namespace fem {
 namespace {
+Mat3 inertia_about_point(const Vec3& r) {
+    const Precision x  = r(0);
+    const Precision y  = r(1);
+    const Precision z  = r(2);
+    const Precision xx = x * x;
+    const Precision yy = y * y;
+    const Precision zz = z * z;
+    const Precision xy = x * y;
+    const Precision xz = x * z;
+    const Precision yz = y * z;
+
+    Mat3 inertia = Mat3::Zero();
+    inertia(0, 0) = yy + zz;
+    inertia(1, 1) = xx + zz;
+    inertia(2, 2) = xx + yy;
+    inertia(0, 1) = -xy;
+    inertia(1, 0) = -xy;
+    inertia(0, 2) = -xz;
+    inertia(2, 0) = -xz;
+    inertia(1, 2) = -yz;
+    inertia(2, 1) = -yz;
+    return inertia;
+}
+
 void accumulate_structural_mass_and_center(const model::ModelData& data,
                                            Precision& mass_sum,
                                            Vec3& first_moment) {
@@ -75,8 +99,7 @@ void accumulate_structural_inertia(const model::ModelData& data,
 
         inertia_tensor += se->integrate_tensor_field(true, [center_of_gravity](const Vec3& x) {
             const Vec3 r = x - center_of_gravity;
-            const Precision r2 = r.squaredNorm();
-            return r2 * Mat3::Identity() - (r * r.transpose());
+            return inertia_about_point(r);
         });
     }
 }
@@ -98,8 +121,7 @@ void accumulate_point_mass_inertia(const model::ModelData& data,
 
             const Vec3 x = positions.row_vec3(static_cast<Index>(node_id));
             const Vec3 r = x - center_of_gravity;
-            const Precision r2 = r.squaredNorm();
-            inertia_tensor += pm->mass_ * (r2 * Mat3::Identity() - (r * r.transpose()));
+            inertia_tensor += pm->mass_ * inertia_about_point(r);
 
             // Additional rotary inertia directly attached to node rotational DOFs.
             inertia_tensor.diagonal() += pm->rotary_inertia_;

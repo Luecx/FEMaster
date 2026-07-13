@@ -517,7 +517,6 @@ void NonlinearStatic::run() {
         for (const auto& e : eq.entries) {
             if (e.node_id >= 0 &&
                 e.node_id < support_mask.rows() &&
-                e.dof >= 0 &&
                 e.dof < support_mask.cols() &&
                 active_dof_idx_mat(e.node_id, e.dof) != -1) {
                 support_mask(e.node_id, e.dof) = true;
@@ -533,8 +532,8 @@ void NonlinearStatic::run() {
     };
     reaction_masked.fill_nan();
 
-    for (int i = 0; i < reaction_masked.rows; ++i) {
-        for (int j = 0; j < reaction_masked.components; ++j) {
+    for (Index i = 0; i < reaction_masked.rows; ++i) {
+        for (Index j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
                 reaction_masked(i, j) = reaction_full(i, j);
             }

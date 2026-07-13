@@ -33,11 +33,11 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
     auto local_disp_mat = StaticMatrix<3, N>(local_displacement.transpose());
     auto local_displacement_vec = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
-    for (Index n = 0; n < rst.rows(); ++n) {
+    for (Eigen::Index n = 0; n < rst.rows(); ++n) {
         const Precision r = rst(n, 0);
         const Precision s = rst(n, 1);
         const Precision t = rst(n, 2);
-        const Index row = static_cast<Index>(offset) + n;
+        const Index row = static_cast<Index>(offset + n);
 
         if (!use_green_lagrange_nl) {
             Precision det;

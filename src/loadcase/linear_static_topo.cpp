@@ -77,9 +77,7 @@ namespace fem { namespace loadcase {
  * - orientation: per-element orientation angles (3 per element, initialized to 0).
  */
 LinearStaticTopo::LinearStaticTopo(ID id, reader::ResultWriters* writer, model::Model* model)
-    : LinearStatic(id, writer, model) {
-    auto& data = *model->_data;
-}
+    : LinearStatic(id, writer, model) {}
 
 /**
  * @brief Execute the topology-aware linear static analysis.
@@ -111,7 +109,7 @@ void LinearStaticTopo::run() {
     model::Field::Ptr stiffness = std::make_shared<model::Field>(
         "TOPO_DENSITY_STIFFNESS", model::FieldDomain::ELEMENT, density->rows, 1);
 
-    for (int i = 0; i < stiffness->rows; i++) {
+    for (Index i = 0; i < stiffness->rows; i++) {
         if (!std::isnan((*density)(i)) && std::isfinite((*density)(i)))
             (*stiffness)(i) = std::pow((*density)(i), this->exponent);
     }
@@ -326,7 +324,7 @@ void LinearStaticTopo::run() {
     for (const auto& eq : groups.supports) {
         for (const auto& e : eq.entries) {
             if (e.node_id >= 0 && e.node_id < support_mask.rows() &&
-                e.dof >= 0 && e.dof < support_mask.cols())
+                e.dof < support_mask.cols())
             {
                 if (active_dof_idx_mat(e.node_id, e.dof) != -1) {
                     support_mask(e.node_id, e.dof) = true;
@@ -338,8 +336,8 @@ void LinearStaticTopo::run() {
                                  global_react_mat.rows,
                                  global_react_mat.components};
     reaction_masked.fill_nan();
-    for (int i = 0; i < reaction_masked.rows; ++i) {
-        for (int j = 0; j < reaction_masked.components; ++j) {
+    for (Index i = 0; i < reaction_masked.rows; ++i) {
+        for (Index j = 0; j < reaction_masked.components; ++j) {
             if (support_mask(i, j)) {
                 reaction_masked(i, j) = global_react_mat(i, j);
             }

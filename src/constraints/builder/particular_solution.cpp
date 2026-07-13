@@ -69,12 +69,12 @@ ParticularOutput compute_particular_and_project(const ParticularInput& input,
     output.feasible = (output.residual_norm <= feas_tol);
 
     DynamicVector q_any(map.nm_);
-    for (int j = 0; j < map.nm_; ++j) {
+    for (Index j = 0; j < map.nm_; ++j) {
         q_any[j] = u_any[map.masters_[j]];
     }
 
     DynamicVector Xq = map.X_ * q_any;
-    for (int i = 0; i < map.r_; ++i) {
+    for (Index i = 0; i < map.r_; ++i) {
         const Index gi = map.slaves_[i];
         output.u_p[gi] = u_any[gi] - Xq[i];
     }

@@ -161,8 +161,8 @@ public:
 
 private:
     struct Aabb {
-        Vec3 lo; // lower corner
-        Vec3 hi; // upper corner
+        Vec3 lo = Vec3::Zero(); // lower corner
+        Vec3 hi = Vec3::Zero(); // upper corner
 
         static Aabb invalid() {
             Aabb b;

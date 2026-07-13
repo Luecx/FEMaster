@@ -140,6 +140,16 @@ struct Registry {
                     for (size_t i = 0; i < c.values.size(); ++i) { if (i) os << ", "; os << c.values[i]; }
                     os << " }"; return os.str();
                 }
+                case K::ParentKeyBool: {
+                    std::ostringstream os; os << parent << ".keys[\"" << c.key << "\"] == "
+                                               << (c.bool_value ? "true" : "false");
+                    return os.str();
+                }
+                case K::KeyBool: {
+                    std::ostringstream os; os << self << ".keys[\"" << c.key << "\"] == "
+                                               << (c.bool_value ? "true" : "false");
+                    return os.str();
+                }
                 case K::All: {
                     std::ostringstream os;
                     for (size_t i = 0; i < c.children.size(); ++i) { if (i) os << " AND "; os << recurse(c.children[i], self, parent, recurse); }
@@ -371,6 +381,16 @@ struct Registry {
                     std::ostringstream os; os << self << ".keys[\"" << c.key << "\"] in { ";
                     for (size_t i=0;i<c.values.size();++i) { if (i) os << ", "; os << c.values[i]; }
                     os << " }"; return os.str();
+                }
+                case K::ParentKeyBool: {
+                    std::ostringstream os; os << parent << ".keys[\"" << c.key << "\"] == "
+                                               << (c.bool_value ? "true" : "false");
+                    return os.str();
+                }
+                case K::KeyBool: {
+                    std::ostringstream os; os << self << ".keys[\"" << c.key << "\"] == "
+                                               << (c.bool_value ? "true" : "false");
+                    return os.str();
                 }
                 case K::All: {
                     std::ostringstream os;

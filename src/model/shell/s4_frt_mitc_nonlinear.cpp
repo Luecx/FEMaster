@@ -990,7 +990,6 @@ void S4FRTMITC::compute_raw_strain(
 
     const VectorDerivatives x_a = linear_combination(data.x_nodes, dN_da);
     const VectorDerivatives x_b = linear_combination(data.x_nodes, dN_db);
-    const VectorDerivatives d   = linear_combination(data.d_nodes, N);
     const VectorDerivatives d_a = linear_combination(data.d_nodes, dN_da);
     const VectorDerivatives d_b = linear_combination(data.d_nodes, dN_db);
 
@@ -1947,7 +1946,7 @@ void S4FRTMITC::compute_stress_strain(Field*           strain,
             : compute_eas_alpha_linear(data, q);
     }
 
-    for (Index n = 0; n < rst.rows(); ++n) {
+    for (Eigen::Index n = 0; n < rst.rows(); ++n) {
         Vec6 strain_value;
         Vec6 stress_value;
 

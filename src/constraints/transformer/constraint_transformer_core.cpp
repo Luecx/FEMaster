@@ -155,7 +155,8 @@ SparseMatrix ConstraintTransformer::assemble_A(const SparseMatrix& K) const {
         return map_.assemble_A(K);
     }
 
-    logging::error(K.rows() == set_.n && K.cols() == set_.n,
+    logging::error(K.rows() == static_cast<Eigen::Index>(set_.n) &&
+                   K.cols() == static_cast<Eigen::Index>(set_.n),
                    "[ConstraintTransformer] K size mismatch for LAGRANGE assemble_A");
 
     const Index n = set_.n;
@@ -176,7 +177,9 @@ SparseMatrix ConstraintTransformer::assemble_A(const SparseMatrix& K) const {
             const Index i = it.row();
             const Index j = col;
             const Precision row_scale =
-                (lagrange_row_l2_scale_.size() == m) ? lagrange_row_l2_scale_[i] : Precision(1);
+                (lagrange_row_l2_scale_.size() == static_cast<Eigen::Index>(m))
+                    ? lagrange_row_l2_scale_[i]
+                    : Precision(1);
             const Precision v = row_scale * it.value();
             trips.emplace_back(j, n + i, v); // C^T
             trips.emplace_back(n + i, j, v); // C
@@ -212,7 +215,7 @@ DynamicVector ConstraintTransformer::assemble_b(const SparseMatrix& K, const Dyn
         return map_.assemble_b(K, f);
     }
 
-    logging::error(f.size() == set_.n,
+    logging::error(f.size() == static_cast<Eigen::Index>(set_.n),
                    "[ConstraintTransformer] f size mismatch for LAGRANGE assemble_b");
 
     const Index n = set_.n;
@@ -222,7 +225,7 @@ DynamicVector ConstraintTransformer::assemble_b(const SparseMatrix& K, const Dyn
         b.head(n) = f;
     }
     if (m > 0) {
-        logging::error(set_.d.size() == m,
+        logging::error(set_.d.size() == static_cast<Eigen::Index>(m),
                        "[ConstraintTransformer] d size mismatch while assembling LAGRANGE RHS");
         b.tail(m) = scale_lagrange_rows(set_.d);
     }
@@ -263,11 +266,11 @@ DynamicVector ConstraintTransformer::extract_u_from_solution(const DynamicVector
     const Index n = set_.n;
     const Index m = set_.m;
 
-    if (x.size() == n) {
+    if (x.size() == static_cast<Eigen::Index>(n)) {
         return x;
     }
 
-    if (method_ == Method::Lagrange && x.size() == n + m) {
+    if (method_ == Method::Lagrange && x.size() == static_cast<Eigen::Index>(n + m)) {
         return x.head(n);
     }
 
@@ -275,7 +278,7 @@ DynamicVector ConstraintTransformer::extract_u_from_solution(const DynamicVector
                    "[ConstraintTransformer] Unexpected solution size while extracting displacement");
 
     DynamicVector u = DynamicVector::Zero(n);
-    const Index n_copy = std::min<Index>(n, x.size());
+    const Index n_copy = std::min<Index>(n, static_cast<Index>(x.size()));
     if (n_copy > 0) {
         u.head(n_copy) = x.head(n_copy);
     }
@@ -293,7 +296,7 @@ DynamicVector ConstraintTransformer::extract_lambda_from_solution(const DynamicV
     logging::error(method_ == Method::Lagrange,
                    "[ConstraintTransformer] lambda extraction requested in NULLSPACE mode");
 
-    if (x.size() == n + m) {
+    if (x.size() == static_cast<Eigen::Index>(n + m)) {
         return x.tail(m);
     }
 
@@ -309,7 +312,7 @@ void ConstraintTransformer::cache_lagrange_lambda_from_solution(const DynamicVec
         return;
     }
 
-    if (x.size() == set_.n + set_.m) {
+    if (x.size() == static_cast<Eigen::Index>(set_.n + set_.m)) {
         cached_lagrange_lambda_ = x.tail(set_.m);
         cached_lagrange_lambda_valid_ = true;
     }
