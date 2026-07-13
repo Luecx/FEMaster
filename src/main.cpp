@@ -5,10 +5,14 @@
 #include <argparse/argparse.hpp>
 
 #include "core/config.h"
+#include "core/timer.h"
 #include "core/logging.h"
 #include "input_decks/parser.h"
 
 int main(int argc, char** argv) {
+    auto timer = fem::Timer();
+    timer.start();
+
     argparse::ArgumentParser program("FEM Solver");
 
     // Optional input file (only required if not in doc mode)
@@ -188,6 +192,23 @@ int main(int argc, char** argv) {
         std::cerr << "Parsing failed: " << e.what() << std::endl;
         return 1;
     }
+
+    // output taken time in h, min, sec, ms
+    timer.stop();
+    auto t  = timer.elapsed();
+    auto ms = t % 1000;
+    auto s  = t / 1000 % 60;
+    auto m  = t / 60000 % 60;
+    auto h  = t / 3600000;
+
+    fem::logging::info(
+        true,
+        "Process finished in ",
+        h ? std::to_string(h) + "h " : "",
+        m ? std::to_string(m) + "min " : "",
+        s ? std::to_string(s) + "s " : "",
+        ms, "ms. (", t, " ms total)"
+    );
 
     return 0;
 }
