@@ -538,8 +538,8 @@ struct Surface : public SurfaceInterface {
             // Compute the determinant of the Jacobian, which represents the local-to-global area scaling factor
             Precision detJ = (jac.col(0).cross(jac.col(1))).norm();
 
-            // Multiply the shape function values by the determinant to integrate over the global surface area
-            return shape_func_normal * load * detJ;
+            // Positive pressure acts into the selected surface, opposite to its normal
+            return shape_func_normal * -load * detJ;
         };
 
         auto nodal_contributions = integration_scheme().integrate(integrand);
