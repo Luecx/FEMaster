@@ -41,6 +41,52 @@ namespace constraint {
 
 class BvhAabb {
 public:
+    struct Aabb {
+        Vec3 lo = Vec3::Constant(std::numeric_limits<Precision>::max());    // lower corner
+        Vec3 hi = Vec3::Constant(std::numeric_limits<Precision>::lowest()); // upper corner
+
+        static Aabb invalid() {
+            return Aabb{};
+        }
+
+        void expand_point(const Vec3& p) {
+            for (int k = 0; k < 3; ++k) {
+                if (p(k) < lo(k)) lo(k) = p(k);
+                if (p(k) > hi(k)) hi(k) = p(k);
+            }
+        }
+
+        void expand_aabb(const Aabb& o) {
+            for (int k = 0; k < 3; ++k) {
+                if (o.lo(k) < lo(k)) lo(k) = o.lo(k);
+                if (o.hi(k) > hi(k)) hi(k) = o.hi(k);
+            }
+        }
+
+        Vec3 centroid() const { return (lo + hi) * Precision(0.5); }
+
+        Vec3 extent() const { return (hi - lo); }
+
+        void inflate(Precision r) {
+            for (int k = 0; k < 3; ++k) {
+                lo(k) -= r;
+                hi(k) += r;
+            }
+        }
+
+        bool contains_point(const Vec3& p) const {
+            return (p(0) >= lo(0) && p(0) <= hi(0) &&
+                    p(1) >= lo(1) && p(1) <= hi(1) &&
+                    p(2) >= lo(2) && p(2) <= hi(2));
+        }
+
+        bool intersects(const Aabb& other) const {
+            return (lo(0) <= other.hi(0) && hi(0) >= other.lo(0) &&
+                    lo(1) <= other.hi(1) && hi(1) >= other.lo(1) &&
+                    lo(2) <= other.hi(2) && hi(2) >= other.lo(2));
+        }
+    };
+
     BvhAabb() = default;
 
     explicit BvhAabb(Precision inflate) : inflate_(inflate) {}
@@ -87,6 +133,17 @@ public:
         // Inflate leaf AABB once (broadphase margin)
         e.box.inflate(inflate_);
         e.centroid = e.box.centroid();
+
+        elems_.push_back(e);
+    }
+
+    void add_aabb(ID elem_id, const Aabb& box) {
+        Element e;
+        e.id       = elem_id;
+        e.box      = box;
+        e.centroid = e.box.centroid();
+
+        e.box.inflate(inflate_);
 
         elems_.push_back(e);
     }
@@ -157,52 +214,46 @@ public:
         return result;
     }
 
+    const std::vector<ID>& query_aabb(const Aabb& box, std::vector<ID>* out = nullptr) const {
+        std::vector<ID>& result = out ? *out : scratch_;
+        result.clear();
+
+        if (root_ < 0) {
+            return result;
+        }
+
+        int stack[64];
+        int sp = 0;
+        stack[sp++] = root_;
+
+        while (sp > 0) {
+            const int ni = stack[--sp];
+            const Node& n = nodes_[static_cast<std::size_t>(ni)];
+
+            if (!n.box.intersects(box)) {
+                continue;
+            }
+
+            if (n.is_leaf()) {
+                for (int i = n.begin; i < n.end; ++i) {
+                    const int ei = perm_[static_cast<std::size_t>(i)];
+                    const Element& e = elems_[static_cast<std::size_t>(ei)];
+                    if (e.box.intersects(box)) {
+                        result.push_back(e.id);
+                    }
+                }
+            } else {
+                if (n.left >= 0)  stack[sp++] = n.left;
+                if (n.right >= 0) stack[sp++] = n.right;
+            }
+        }
+
+        return result;
+    }
+
     bool valid() const { return root_ >= 0; }
 
 private:
-    struct Aabb {
-        Vec3 lo; // lower corner
-        Vec3 hi; // upper corner
-
-        static Aabb invalid() {
-            Aabb b;
-            b.lo.setConstant(std::numeric_limits<Precision>::max());
-            b.hi.setConstant(std::numeric_limits<Precision>::lowest());
-            return b;
-        }
-
-        void expand_point(const Vec3& p) {
-            for (int k = 0; k < 3; ++k) {
-                if (p(k) < lo(k)) lo(k) = p(k);
-                if (p(k) > hi(k)) hi(k) = p(k);
-            }
-        }
-
-        void expand_aabb(const Aabb& o) {
-            for (int k = 0; k < 3; ++k) {
-                if (o.lo(k) < lo(k)) lo(k) = o.lo(k);
-                if (o.hi(k) > hi(k)) hi(k) = o.hi(k);
-            }
-        }
-
-        Vec3 centroid() const { return (lo + hi) * Precision(0.5); }
-
-        Vec3 extent() const { return (hi - lo); }
-
-        void inflate(Precision r) {
-            for (int k = 0; k < 3; ++k) {
-                lo(k) -= r;
-                hi(k) += r;
-            }
-        }
-
-        bool contains_point(const Vec3& p) const {
-            return (p(0) >= lo(0) && p(0) <= hi(0) &&
-                    p(1) >= lo(1) && p(1) <= hi(1) &&
-                    p(2) >= lo(2) && p(2) <= hi(2));
-        }
-    };
-
     struct Element {
         ID   id = ID(-1);
         Aabb box;
