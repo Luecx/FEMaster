@@ -486,6 +486,30 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
             connectivity.push_back(node_id);
         }
 
+        if (type == 4 && connectivity.size() == 20) {
+            const std::vector<ID> internal = connectivity;
+            const int order[] = {
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                10, 11, 16, 17, 18, 19, 12, 13, 14, 15
+            };
+
+            for (std::size_t i = 0; i < connectivity.size(); ++i) {
+                connectivity[i] = internal[order[i]];
+            }
+        }
+
+        if (type == 5 && connectivity.size() == 15) {
+            const std::vector<ID> internal = connectivity;
+            const int order[] = {
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
+                13, 14, 9, 10, 11
+            };
+
+            for (std::size_t i = 0; i < connectivity.size(); ++i) {
+                connectivity[i] = internal[order[i]];
+            }
+        }
+
         Dim local = 0;
 
         for (ID node_id : connectivity) {
