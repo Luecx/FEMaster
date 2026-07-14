@@ -227,15 +227,13 @@ void LinearBuckling::run() {
         "reducing load matrix -> active RHS vector f"
     );
 
-    // (6) Build constraint transformer (Set -> Builder -> Map), wrapped for timing
+    // (6) Assemble constraints and build the null-space transformation
     auto CT = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions copt;
-            // Recommended: scale columns of C for robust QR (rank detection, zero-column compression respected).
-            copt.set.scale_columns = true;
+            ConstraintTransformer::Options copt;
             // Optional tolerances (adjust if constraints are ill-conditioned):
-            // copt.builder.rank_tol_rel = 1e-12;
-            // copt.builder.feas_tol_rel = 1e-10;
+            // copt.null_space.rank_tolerance = 1e-12;
+            // copt.null_space.feasibility_tolerance = 1e-10;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,   // system DOF map
@@ -250,10 +248,10 @@ void LinearBuckling::run() {
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", CT->report().m);
-    logging::info(true, "n (cols of C)     : ", CT->report().n);
+    logging::info(true, "m (rows of C)     : ", CT->report().equations);
+    logging::info(true, "n (cols of C)     : ", CT->report().dofs);
     logging::info(true, "rank(C)           : ", CT->rank());
-    logging::info(true, "masters (n-r)     : ", CT->n_master());
+    logging::info(true, "solver unknowns    : ", CT->unknowns());
     logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");
     if (!CT->feasible()) {
@@ -264,11 +262,11 @@ void LinearBuckling::run() {
     // (7) Pre-buckling static solve in reduced space
     //     We form A and b explicitly (direct-solver friendly), then solve for q_pre.
     auto A = Timer::measure(
-        [&]() { return CT->assemble_A(K); },
+        [&]() { return CT->assemble_system_matrix(K); },
         "assembling A = T^T K T (preload)"
     );
     auto b = Timer::measure(
-        [&]() { return CT->assemble_b(K, f); },
+        [&]() { return CT->assemble_system_rhs(K, f); },
         "assembling b = T^T (f - K u_p) (preload)"
     );
 
@@ -277,11 +275,11 @@ void LinearBuckling::run() {
         "solving reduced preload A q = b"
     );
     auto u_pre = Timer::measure(
-        [&]() { return CT->recover_u(q_pre); },
+        [&]() { return CT->recover_displacement(q_pre); },
         "recovering full preload displacement u"
     );
 
-    CT->post_check_static(K, f, u_pre);
+    CT->post_check_static(K, f, q_pre);
 
     // (8) Integration-point stresses from preload -> K_g assembly
     //     Most model APIs expect node-wise displacements (node x 6) for IP recovery.
@@ -301,7 +299,7 @@ void LinearBuckling::run() {
 
     // (9) Reduced buckling operator B = T^T K_g T
     auto B = Timer::measure(
-        [&]() { return CT->assemble_B(Kg); },
+        [&]() { return CT->reduce_secondary_matrix(Kg); },
         "assembling B = T^T K_g T"
     );
 
@@ -378,7 +376,7 @@ void LinearBuckling::run() {
 
     for (auto& m : modes) {
         // Reduced -> full vector with constraints
-        DynamicVector u_mode = CT->recover_u(m.q_mode);
+        DynamicVector u_mode = CT->recover_displacement(m.q_mode);
         // Full -> node x DOF
         auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
         m.mode_mat      = mode_field;

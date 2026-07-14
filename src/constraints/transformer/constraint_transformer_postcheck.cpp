@@ -23,7 +23,7 @@ namespace constraint {
 
 void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                                               const DynamicVector& f,
-                                              const DynamicVector& u,
+                                              const DynamicVector& solution,
                                               Precision tol_constraint_rel,
                                               Precision tol_reduced_rel,
                                               Precision tol_full_rel) const {
@@ -85,9 +85,10 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
         logging::down();
     };
 
-    const DynamicVector Cu_d = set().C * u - set().d;
+    const DynamicVector u    = recover_displacement(solution);
+    const DynamicVector Cu_d = system_.C * u - system_.d;
     const Precision abs_Cu_d = Cu_d.norm();
-    const Precision den_Cu_d = std::max<Precision>(1, set().d.size() ? set().d.norm() : 0);
+    const Precision den_Cu_d = std::max<Precision>(1, system_.d.size() ? system_.d.norm() : 0);
     const Precision rel_Cu_d = abs_Cu_d / (den_Cu_d > 0 ? den_Cu_d : 1);
 
     if (method_ == Method::Lagrange) {
@@ -101,48 +102,45 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                              rel_Cu_d <= tol_constraint_rel,
                              true});
 
-        const DynamicVector resid = K * u - f;
-        if (cached_lagrange_lambda_valid_ &&
-            cached_lagrange_lambda_.size() == static_cast<Eigen::Index>(set_.m)) {
-            const DynamicVector& lambda = cached_lagrange_lambda_;
-            const DynamicVector scaled_lambda = scale_lagrange_rows(lambda);
-            const DynamicVector kkt_u = resid + (set_.C.transpose() * scaled_lambda);
+        const DynamicVector residual           = K * u - f;
+        const DynamicVector multipliers        = extract_lagrange_multipliers(solution);
+        const DynamicVector scaled_multipliers = scale_lagrange_rows(multipliers);
+        const DynamicVector kkt_u              = residual + system_.C.transpose() * scaled_multipliers;
 
-            const Precision abs_kkt_u = kkt_u.norm();
-            const Precision den_kkt_u = std::max<Precision>(1, std::max((K * u).norm(), f.norm()));
-            const Precision rel_kkt_u = abs_kkt_u / den_kkt_u;
+        const Precision abs_kkt_u = kkt_u.norm();
+        const Precision den_kkt_u = std::max<Precision>(1, std::max((K * u).norm(), f.norm()));
+        const Precision rel_kkt_u = abs_kkt_u / den_kkt_u;
 
-            items.push_back(Item{"lagrange equilibrium",
-                                 abs_kkt_u,
-                                 rel_kkt_u,
-                                 tol_reduced_rel,
-                                 rel_kkt_u <= tol_reduced_rel,
-                                 true});
+        items.push_back(Item{"lagrange equilibrium",
+                             abs_kkt_u,
+                             rel_kkt_u,
+                             tol_reduced_rel,
+                             rel_kkt_u <= tol_reduced_rel,
+                             true});
 
-            if (set_.m > 0) {
-                const Precision eps_abs = lagrange_regularization_abs(K);
-                DynamicVector kkt_c = scale_lagrange_rows(set_.C * u - set_.d);
-                if (eps_abs > Precision(0)) {
-                    kkt_c.noalias() -= eps_abs * lambda;
-                }
-
-                const Precision abs_kkt_c = kkt_c.norm();
-                const Precision den_kkt_c = std::max<Precision>(
-                    1,
-                    std::max(scale_lagrange_rows(set_.C * u).norm(), scale_lagrange_rows(set_.d).norm()));
-                const Precision rel_kkt_c = abs_kkt_c / den_kkt_c;
-
-                items.push_back(Item{"lagrange constraints",
-                                     abs_kkt_c,
-                                     rel_kkt_c,
-                                     tol_constraint_rel,
-                                     rel_kkt_c <= tol_constraint_rel,
-                                     true});
+        if (system_.equations > 0) {
+            const Precision regularization = lagrange_regularization(K);
+            DynamicVector kkt_c = scale_lagrange_rows(system_.C * u - system_.d);
+            if (regularization > Precision(0)) {
+                kkt_c.noalias() -= regularization * multipliers;
             }
-        } else {
-            logging::warning(true,
-                             "[ConstraintTransformer] Skipping LAGRANGE equilibrium post-check: "
-                             "no cached multipliers available.");
+
+            const Precision abs_kkt_c = kkt_c.norm();
+            const Precision den_kkt_c = std::max<Precision>(
+                1,
+                std::max(
+                    scale_lagrange_rows(system_.C * u).norm(),
+                    scale_lagrange_rows(system_.d).norm()
+                )
+            );
+            const Precision rel_kkt_c = abs_kkt_c / den_kkt_c;
+
+            items.push_back(Item{"lagrange constraints",
+                                 abs_kkt_c,
+                                 rel_kkt_c,
+                                 tol_constraint_rel,
+                                 rel_kkt_c <= tol_constraint_rel,
+                                 true});
         }
 
         print_items(items);
@@ -154,13 +152,13 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
     const Precision den_full = std::max<Precision>(1, f.size() ? f.norm() : 0);
     const Precision rel_resid = abs_resid / den_full;
 
-    const Index nm = n_master();
+    const Index nm = independent_dofs();
     DynamicVector Ttf(nm);
     DynamicVector TtKu(nm);
     DynamicVector red(nm);
-    apply_Tt(f, Ttf);
-    apply_Tt(K * u, TtKu);
-    apply_Tt(resid, red);
+    project_vector(f, Ttf);
+    project_vector(K * u, TtKu);
+    project_vector(resid, red);
 
     const Precision abs_red = red.norm();
     const Precision den_red = std::max<Precision>(1, std::max(Ttf.norm(), TtKu.norm()));
@@ -192,10 +190,10 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
                          true});
 
     DynamicVector q0 = DynamicVector::Zero(nm);
-    DynamicVector u_p = recover_u(q0);
-    DynamicVector cup = set().C * u_p - set().d;
+    DynamicVector u_p = recover_displacement(q0);
+    DynamicVector cup = system_.C * u_p - system_.d;
     const Precision abs = cup.norm();
-    const Precision den = std::max<Precision>(1, set().d.size() ? set().d.norm() : 0);
+    const Precision den = std::max<Precision>(1, system_.d.size() ? system_.d.norm() : 0);
     const Precision rel = abs / den;
     items.push_back(Item{"affine consistency (u_p)",
                          abs,
@@ -208,14 +206,14 @@ void ConstraintTransformer::post_check_static(const SparseMatrix& K,
         const int samples = 3;
         Precision abs_acc = 0;
         Precision rel_acc = 0;
-        const Precision CnormF = std::max<Precision>(1, set().C.norm());
+        const Precision CnormF = std::max<Precision>(1, system_.C.norm());
 
         for (int s = 0; s < samples; ++s) {
             DynamicVector q = DynamicVector::Random(nm);
             DynamicVector Tq;
-            apply_T(q, Tq);
+            Tq = recover_increment(q);
             const Precision un = std::max<Precision>(Precision(1e-16), Tq.norm());
-            DynamicVector v = set().C * Tq;
+            DynamicVector v = system_.C * Tq;
             const Precision an = v.norm();
             abs_acc += an;
             rel_acc += an / std::max<Precision>(1, CnormF * un);

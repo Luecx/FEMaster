@@ -67,8 +67,7 @@ void Transient::run() {
     // (4) Build constraint transformer (u = u_p + T q)
     auto CT = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions copt;
-            copt.set.scale_columns = true; // robust QR, like buckling
+            ConstraintTransformer::Options copt;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,
@@ -83,20 +82,20 @@ void Transient::run() {
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", CT->report().m);
-    logging::info(true, "n (cols of C)     : ", CT->report().n);
+    logging::info(true, "m (rows of C)     : ", CT->report().equations);
+    logging::info(true, "n (cols of C)     : ", CT->report().dofs);
     logging::info(true, "rank(C)           : ", CT->rank());
-    logging::info(true, "masters (n-r)     : ", CT->n_master());
+    logging::info(true, "solver unknowns    : ", CT->unknowns());
     logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
     logging::down();
 
     // (5) Reduce operators to master space: A = Tᵀ K T, Mr = Tᵀ M T
     auto A = Timer::measure(
-        [&]() { return CT->assemble_A(K); },
+        [&]() { return CT->assemble_system_matrix(K); },
         "assembling reduced stiffness A = T^T K T"
     );
     auto Mr = Timer::measure(
-        [&]() { return CT->assemble_A(M); },
+        [&]() { return CT->assemble_system_matrix(M); },
         "assembling reduced mass Mr = T^T M T"
     );
 
@@ -128,7 +127,7 @@ void Transient::run() {
                            &K](double time) -> DynamicVector {
         auto load_matrix = model->build_load_matrix(this->loads, time);
         auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
-        return CT_ptr->assemble_b(K, f_active);
+        return CT_ptr->assemble_system_rhs(K, f_active);
     };
 
     solver::NewmarkForceBasis reduced_force_basis;
@@ -137,7 +136,7 @@ void Transient::run() {
         reduced_force_basis.reserve(load_basis.size());
         for (auto& [amplitude, load_matrix] : load_basis) {
             auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
-            reduced_force_basis.emplace_back(amplitude, CT->assemble_b(K, f_active));
+            reduced_force_basis.emplace_back(amplitude, CT->assemble_system_rhs(K, f_active));
         }
     }
 
@@ -161,7 +160,7 @@ void Transient::run() {
 
         auto v_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, *initial_velocity);
         // Map to reduced initial velocity qdot0 = T^T v_active
-        qdot0 = CT->map().apply_Tt(v_active);
+        qdot0 = CT->project_vector(v_active);
     }
     solver::NewmarkIC ic{q0, qdot0, DynamicVector()}; // a0 computed internally
 
@@ -185,17 +184,17 @@ void Transient::run() {
             static_cast<Precision>(t_start + static_cast<double>(k) * dt);
 
         // Displacement: u = T q + u_p
-        auto u_full = CT->recover_u(qk);
+        auto u_full = CT->recover_displacement(qk);
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
         writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k), model->_data.get(), frame_time);
 
         // Velocity recovery uses the active constraint backend mapping.
-        auto v_full = CT->recover_v(qvk);
+        auto v_full = CT->recover_velocity(qvk);
         auto V_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
         writer->write_field(V_mat, "VELOCITY_" + std::to_string(k), model->_data.get(), frame_time);
 
         // Acceleration recovery uses the active constraint backend mapping.
-        auto a_full = CT->recover_a(qak);
+        auto a_full = CT->recover_acceleration(qak);
         auto A_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
         writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k), model->_data.get(), frame_time);
     }

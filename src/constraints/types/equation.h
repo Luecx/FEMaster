@@ -7,7 +7,7 @@
  * and ties before being consumed by the solver.
  *
  * @see src/constraints/equation.cpp
- * @see src/constraints/transformer/constraint_set.h
+ * @see src/constraints/transformer/constraint_system.h
  * @author Finn Eggers
  * @date 06.03.2025
  */

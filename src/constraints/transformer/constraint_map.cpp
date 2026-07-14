@@ -1,12 +1,12 @@
 /**
  * @file constraint_map.cpp
- * @brief Implements the null-space map utilities used by constraint handling.
+ * @brief Implements the null-space transformation and reduction utilities.
  *
- * The functions defined here operate on the transformation `u = u_p + T q` that
- * eliminates constrained DOFs from the global system.
+ * The map represents the transformation `u = u_p + T q`, where `u` contains
+ * the full system DOFs and `q` contains the independent reduced DOFs.
  *
  * @see src/constraints/transformer/constraint_map.h
- * @see src/constraints/builder/builder.cpp
+ * @see src/constraints/transformer/null_space.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -15,147 +15,92 @@
 
 #include "../../core/logging.h"
 
-#include <cmath>
-
 namespace fem {
 namespace constraint {
 
-/**
- * @copydoc ConstraintMap::apply_T(const DynamicVector&,DynamicVector&) const
- */
-void ConstraintMap::apply_T(const DynamicVector& q, DynamicVector& u) const {
-    if (q.size() != static_cast<Eigen::Index>(nm_)) {
-        logging::warning(false, "[ConstraintMap::apply_T] q.size()=", q.size(), " nm_=", nm_);
-    }
-    u = u_p_;
+void ConstraintMap::recover(const DynamicVector& reduced, DynamicVector& full) const {
+    logging::warning(
+        reduced.size() == static_cast<Eigen::Index>(n_master()),
+        "[ConstraintMap::recover] reduced.size()=", reduced.size(),
+        " n_master=", n_master()
+    );
 
-    for (int k = 0; k < static_cast<int>(masters_.size()); ++k) {
-        u[masters_[k]] += q[k];
+    // Initialize the full solution with the particular solution
+    full = particular;
+
+    // Insert the independent master DOFs
+    for (Index master_id = 0; master_id < n_master(); ++master_id) {
+        full[masters[static_cast<std::size_t>(master_id)]] += reduced[master_id];
     }
-    for (int j = 0; j < X_.outerSize(); ++j) {
-        for (SparseMatrix::InnerIterator it(X_, j); it; ++it) {
-            u[slaves_[it.row()]] += it.value() * q[j];
+
+    // Recover the dependent slave DOFs
+    for (Index master_id = 0; master_id < static_cast<Index>(X.outerSize()); ++master_id) {
+        for (SparseMatrix::InnerIterator entry(X, master_id); entry; ++entry) {
+            const Index slave_id = static_cast<Index>(entry.row());
+
+            full[slaves[static_cast<std::size_t>(slave_id)]] +=
+                entry.value() * reduced[master_id];
         }
     }
 }
 
-/**
- * @copydoc ConstraintMap::apply_Tt(const DynamicVector&,DynamicVector&) const
- */
-void ConstraintMap::apply_Tt(const DynamicVector& y, DynamicVector& z) const {
-    if (y.size() != static_cast<Eigen::Index>(n_)) {
-        logging::warning(false, "[ConstraintMap::apply_Tt] y.size()=", y.size(), " n_=", n_);
-    }
-    z.setZero(nm_);
+void ConstraintMap::project(const DynamicVector& full, DynamicVector& reduced) const {
+    logging::warning(
+        full.size() == static_cast<Eigen::Index>(full_size),
+        "[ConstraintMap::project] full.size()=", full.size(),
+        " full_size=", full_size
+    );
 
-    for (int k = 0; k < static_cast<int>(masters_.size()); ++k) {
-        z[k] += y[masters_[k]];
+    reduced.setZero(n_master());
+
+    // Project the independent master DOFs
+    for (Index master_id = 0; master_id < n_master(); ++master_id) {
+        reduced[master_id] += full[masters[static_cast<std::size_t>(master_id)]];
     }
-    for (int j = 0; j < X_.outerSize(); ++j) {
-        Precision acc = 0;
-        for (SparseMatrix::InnerIterator it(X_, j); it; ++it) {
-            acc += it.value() * y[slaves_[it.row()]];
+
+    // Add the projected slave contributions
+    for (Index master_id = 0; master_id < static_cast<Index>(X.outerSize()); ++master_id) {
+        Precision contribution = Precision(0);
+
+        for (SparseMatrix::InnerIterator entry(X, master_id); entry; ++entry) {
+            const Index slave_id = static_cast<Index>(entry.row());
+
+            contribution += entry.value()
+                          * full[slaves[static_cast<std::size_t>(slave_id)]];
         }
-        z[j] += acc;
+
+        reduced[master_id] += contribution;
     }
 }
 
-/**
- * @copydoc ConstraintMap::apply_T(const DynamicVector&) const
- */
-DynamicVector ConstraintMap::apply_T(const DynamicVector& q) const {
-    DynamicVector u(n_);
-    apply_T(q, u);
-    return u;
+DynamicVector ConstraintMap::recover(const DynamicVector& reduced) const {
+    DynamicVector full(full_size);
+    recover(reduced, full);
+    return full;
 }
 
-/**
- * @copydoc ConstraintMap::apply_Tt(const DynamicVector&) const
- */
-DynamicVector ConstraintMap::apply_Tt(const DynamicVector& y) const {
-    DynamicVector z(nm_);
-    apply_Tt(y, z);
-    return z;
+DynamicVector ConstraintMap::project(const DynamicVector& full) const {
+    DynamicVector reduced(n_master());
+    project(full, reduced);
+    return reduced;
 }
 
-/**
- * @copydoc ConstraintMap::assemble_A(const SparseMatrix&) const
- */
-SparseMatrix ConstraintMap::assemble_A(const SparseMatrix& K) const {
-    SparseMatrix KT = K * T_;
-    SparseMatrix A = T_.transpose() * KT;
-    A.makeCompressed();
-    return A;
+SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
+    SparseMatrix transformed = matrix * T;
+    SparseMatrix reduced     = T.transpose() * transformed;
+
+    reduced.makeCompressed();
+    return reduced;
 }
 
-/**
- * @copydoc ConstraintMap::assemble_B(const SparseMatrix&) const
- */
-SparseMatrix ConstraintMap::assemble_B(const SparseMatrix& Kg) const {
-    SparseMatrix KgT = Kg * T_;
-    SparseMatrix B = T_.transpose() * KgT;
-    B.makeCompressed();
-    return B;
+DynamicVector ConstraintMap::reduce_rhs(const SparseMatrix&  matrix,
+                                        const DynamicVector& rhs) const {
+    const DynamicVector particular_force = matrix * particular;
+    const DynamicVector effective_rhs     = rhs - particular_force;
+
+    return project(effective_rhs);
 }
 
-/**
- * @copydoc ConstraintMap::assemble_b(const SparseMatrix&,const DynamicVector&) const
- */
-DynamicVector ConstraintMap::assemble_b(const SparseMatrix& K, const DynamicVector& f) const {
-    DynamicVector Ku = K * u_p_;
-    DynamicVector tmp = f - Ku;
-    return apply_Tt(tmp);
-}
-
-/**
- * @copydoc ConstraintMap::OpA::OpA
- */
-ConstraintMap::OpA::OpA(const ConstraintMap& map, const SparseMatrix& K)
-    : map_(map), K_(K),
-      u_full_(DynamicVector::Zero(map.n_)),
-      y_full_(DynamicVector::Zero(map.n_)) {}
-
-/**
- * @copydoc ConstraintMap::OpA::perform_op
- */
-void ConstraintMap::OpA::perform_op(const DynamicVector& x, DynamicVector& y) const {
-    map_.apply_T(x, u_full_);
-    y_full_ = K_ * u_full_;
-    map_.apply_Tt(y_full_, y);
-}
-
-/**
- * @copydoc ConstraintMap::OpB::OpB
- */
-ConstraintMap::OpB::OpB(const ConstraintMap& map, const SparseMatrix& Kg)
-    : map_(map), Kg_(Kg),
-      u_full_(DynamicVector::Zero(map.n_)),
-      y_full_(DynamicVector::Zero(map.n_)) {}
-
-/**
- * @copydoc ConstraintMap::OpB::perform_op
- */
-void ConstraintMap::OpB::perform_op(const DynamicVector& x, DynamicVector& y) const {
-    map_.apply_T(x, u_full_);
-    y_full_ = Kg_ * u_full_;
-    map_.apply_Tt(y_full_, y);
-}
-
-/**
- * @copydoc ConstraintMap::recover_u
- */
-DynamicVector ConstraintMap::recover_u(const DynamicVector& q) const {
-    return apply_T(q);
-}
-
-/**
- * @copydoc ConstraintMap::reactions
- */
-DynamicVector ConstraintMap::reactions(const SparseMatrix& K,
-                                       const DynamicVector& f,
-                                       const DynamicVector& q) const {
-    DynamicVector u = recover_u(q);
-    return K * u - f;
-}
 } // namespace constraint
 } // namespace fem
+

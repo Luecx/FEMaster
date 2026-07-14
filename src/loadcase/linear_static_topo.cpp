@@ -48,8 +48,6 @@
 
 #include "linear_static_topo.h"
 
-#include "../constraints/transformer/constraint_map.h"
-#include "../constraints/transformer/constraint_set.h"
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
@@ -190,19 +188,22 @@ void LinearStaticTopo::run() {
                        "LAGRANGE   | CPU MKL   | Yes          | No\n"
                        "LAGRANGE   | CPU Eigen | Limited      | No\n"
                        "LAGRANGE   | GPU       | No           | No\n"
-                       "LAGRANGE   | GPU cuDSS | Yes          | No");
+                       "LAGRANGE   | GPU cuDSS | Yes          | No\n"
+                       "ELIMINATION| CPU MKL   | Yes          | Yes\n"
+                       "ELIMINATION| CPU Eigen | Yes          | Yes\n"
+                       "ELIMINATION| GPU       | Yes          | Yes\n"
+                       "ELIMINATION| GPU cuDSS | Yes          | Yes");
     }
     const auto direct_matrix_type =
         constraint_method == ConstraintTransformer::Method::Lagrange
             ? solver::DirectSolverMatrixType::General
             : solver::DirectSolverMatrixType::SPD;
 
-    // (5) Build constraint transformer (Set -> Builder -> Map), wrapped for timing
+    // (5) Assemble constraints and build the selected transformation
     auto CT = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions copt;
+            ConstraintTransformer::Options copt;
             copt.method = constraint_method;
-            copt.set.scale_columns = true;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,   // maps (node,dof) -> global index or -1
@@ -217,11 +218,15 @@ void LinearStaticTopo::run() {
     logging::info(true           , "");
     logging::info(true           , "Constraint summary");
     logging::up();
-    logging::info(true           , "m (rows of C)        : ", CT->report().m);
-    logging::info(true           , "n (cols of C)        : ", CT->report().n);
-    logging::info(true           , "rank(C)              : ", CT->rank());
+    logging::info(true           , "m (rows of C)        : ", CT->report().equations);
+    logging::info(true           , "n (cols of C)        : ", CT->report().dofs);
+    if (CT->rank_known()) {
+        logging::info(true, "rank(C)              : ", CT->rank());
+    } else {
+        logging::info(true, "rank(C)              : not computed");
+    }
     logging::info(true           , "method               : ", CT->method_name());
-    logging::info(true           , "masters (n-r)        : ", CT->n_master());
+    logging::info(true           , "solver unknowns       : ", CT->unknowns());
     logging::info(true           , "homogeneous          : ", CT->homogeneous() ? "true" : "false");
     logging::info(true           , "feasible             : ", CT->feasible() ? "true" : "false");
     logging::info(!CT->feasible(), "residual ||C u - d|| : ", CT->report().residual_norm);
@@ -238,12 +243,12 @@ void LinearStaticTopo::run() {
     // (6) Reduced system A q = b  with  A = T^T K T,  b = T^T (f - K u_p)
     // Note: Explicit assembly is suitable for direct solvers.
     auto A = Timer::measure(
-        [&]() { return CT->assemble_A(K); },
-        "assembling A = T^T K T"
+        [&]() { return CT->assemble_system_matrix(K); },
+        "assembling constraint system matrix"
     );
     auto b = Timer::measure(
-        [&]() { return CT->assemble_b(K, f); },
-        "assembling b = T^T (f - K u_p)"
+        [&]() { return CT->assemble_system_rhs(K, f); },
+        "assembling constraint system RHS"
     );
 
     // (6a) Sanity check for NaN/Inf in A and b
@@ -269,7 +274,7 @@ void LinearStaticTopo::run() {
 
     // (7) Recover full displacement u and support reactions from multipliers
     auto u = Timer::measure(
-        [&]() { return CT->recover_u(q); },
+        [&]() { return CT->recover_displacement(q); },
         "recovering full displacement vector u"
     );
     auto r_support = Timer::measure(
@@ -363,7 +368,7 @@ void LinearStaticTopo::run() {
     }
 
     // (13) Diagnostics (optional): projected residual checks
-    CT->post_check_static(K, f, u);
+    CT->post_check_static(K, f, q);
 
     model->_data->element_stiffness_scale = nullptr;
     model->_data->material_orientation    = nullptr;

@@ -14,7 +14,7 @@ inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Par
     registry.command("CONSTRAINTMETHOD", [&](fem::dsl::Command& command) {
         command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
-            "Select constraint backend for LINEARSTATIC/LINEARSTATICTOPO: NULLSPACE or LAGRANGE.\n"
+            "Select constraint backend for LINEARSTATIC/LINEARSTATICTOPO: NULLSPACE, LAGRANGE or ELIMINATION.\n"
             "\n"
             "Constraint | Backend   | DIRECT       | INDIRECT\n"
             "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
@@ -24,12 +24,16 @@ inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Par
             "LAGRANGE   | CPU MKL   | Yes          | No\n"
             "LAGRANGE   | CPU Eigen | Limited      | No\n"
             "LAGRANGE   | GPU       | No           | No\n"
-            "LAGRANGE   | GPU cuDSS | Yes          | No"
+            "LAGRANGE   | GPU cuDSS | Yes          | No\n"
+            "ELIMINATION| CPU MKL   | Yes          | Yes\n"
+            "ELIMINATION| CPU Eigen | Yes          | Yes\n"
+            "ELIMINATION| GPU       | Yes          | Yes\n"
+            "ELIMINATION| GPU cuDSS | Yes          | Yes"
         );
 
         command.keyword(
             fem::dsl::KeywordSpec::make()
-                .key("TYPE").required().allowed({"NULLSPACE", "LAGRANGE"})
+                .key("TYPE").required().allowed({"NULLSPACE", "LAGRANGE", "ELIMINATION"})
         );
 
         command.on_enter([&parser](const fem::dsl::Keys& keys) {
@@ -45,9 +49,12 @@ inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Par
             }
 
             const std::string type = keys.raw("TYPE");
-            const auto method = (type == "LAGRANGE")
-                ? constraint::ConstraintTransformer::Method::Lagrange
-                : constraint::ConstraintTransformer::Method::NullSpace;
+            auto method = constraint::ConstraintTransformer::Method::NullSpace;
+            if (type == "LAGRANGE") {
+                method = constraint::ConstraintTransformer::Method::Lagrange;
+            } else if (type == "ELIMINATION") {
+                method = constraint::ConstraintTransformer::Method::Elimination;
+            }
             if (lc) {
                 lc->constraint_method = method;
                 return;

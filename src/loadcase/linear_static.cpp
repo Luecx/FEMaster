@@ -17,7 +17,6 @@
 
 #include "linear_static.h"
 
-#include "../constraints/builder/builder.h"
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
@@ -128,7 +127,11 @@ void LinearStatic::run() {
                        "LAGRANGE   | CPU MKL   | Yes          | No\n"
                        "LAGRANGE   | CPU Eigen | Limited      | No\n"
                        "LAGRANGE   | GPU       | No           | No\n"
-                       "LAGRANGE   | GPU cuDSS | Yes          | No");
+                       "LAGRANGE   | GPU cuDSS | Yes          | No\n"
+                       "ELIMINATION| CPU MKL   | Yes          | Yes\n"
+                       "ELIMINATION| CPU Eigen | Yes          | Yes\n"
+                       "ELIMINATION| GPU       | Yes          | Yes\n"
+                       "ELIMINATION| GPU cuDSS | Yes          | Yes");
     }
     const auto direct_matrix_type =
         constraint_method == ConstraintTransformer::Method::Lagrange
@@ -137,9 +140,8 @@ void LinearStatic::run() {
 
     auto transformer = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions options;
+            ConstraintTransformer::Options options;
             options.method = constraint_method;
-            options.set.scale_columns = true;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,
@@ -151,11 +153,15 @@ void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", transformer->report().m);
-    logging::info(true, "n (cols of C)     : ", transformer->report().n);
-    logging::info(true, "rank(C)           : ", transformer->rank());
+    logging::info(true, "m (rows of C)     : ", transformer->report().equations);
+    logging::info(true, "n (cols of C)     : ", transformer->report().dofs);
+    if (transformer->rank_known()) {
+        logging::info(true, "rank(C)           : ", transformer->rank());
+    } else {
+        logging::info(true, "rank(C)           : not computed");
+    }
     logging::info(true, "method            : ", transformer->method_name());
-    logging::info(true, "masters (n-r)     : ", transformer->n_master());
+    logging::info(true, "solver unknowns    : ", transformer->unknowns());
     logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");
     if (!transformer->feasible()) {
@@ -172,12 +178,12 @@ void LinearStatic::run() {
     }
 
     auto A = Timer::measure(
-        [&]() { return transformer->assemble_A(K); },
-        "assembling reduced stiffness A = T^T K T");
+        [&]() { return transformer->assemble_system_matrix(K); },
+        "assembling constraint system matrix");
 
     auto b = Timer::measure(
-        [&]() { return transformer->assemble_b(K, f); },
-        "assembling reduced RHS b = T^T (f - K u_p)");
+        [&]() { return transformer->assemble_system_rhs(K, f); },
+        "assembling constraint system RHS");
 
     {
         bool bad_matrix = false;
@@ -198,10 +204,10 @@ void LinearStatic::run() {
 
     auto q = Timer::measure(
         [&]() { return solve(device, method, A, b, direct_matrix_type); },
-        "solving reduced system A q = b");
+        "solving constraint system");
 
     auto u = Timer::measure(
-        [&]() { return transformer->recover_u(q); },
+        [&]() { return transformer->recover_displacement(q); },
         "recovering full displacement vector u");
 
     auto r_internal = Timer::measure(
@@ -290,7 +296,7 @@ void LinearStatic::run() {
         writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
     }
 
-    transformer->post_check_static(K, f, u);
+    transformer->post_check_static(K, f, q);
     model->step_end();
 }
 } // namespace loadcase

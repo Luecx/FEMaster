@@ -196,9 +196,8 @@ void NonlinearStatic::run() {
     // create the constraint transformer
     auto transformer = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions options;
-            options.method            = constraint_method;
-            options.set.scale_columns = true;
+            ConstraintTransformer::Options options;
+            options.method = constraint_method;
 
             return std::make_unique<ConstraintTransformer>(
                 equations,
@@ -213,21 +212,21 @@ void NonlinearStatic::run() {
     logging::info(true                    , "");
     logging::info(true                    , "Constraint summary");
     logging::up();
-    logging::info(true                    , "m (rows of C)     : "   , transformer->report().m);
-    logging::info(true                    , "n (cols of C)     : "   , transformer->report().n);
+    logging::info(true                    , "m (rows of C)     : "   , transformer->report().equations);
+    logging::info(true                    , "n (cols of C)     : "   , transformer->report().dofs);
     logging::info(true                    , "rank(C)           : "   , transformer->rank());
     logging::info(true                    , "method            : "   , transformer->method_name());
-    logging::info(true                    , "masters (n-r)     : "   , transformer->n_master());
+    logging::info(true                    , "solver unknowns    : "   , transformer->unknowns());
     logging::info(true                    , "homogeneous       : "   , transformer->homogeneous() ? "true" : "false");
     logging::info(true                    , "feasible          : "   , transformer->feasible()    ? "true" : "false");
     logging::info(!transformer->feasible(), "residual ||C u - d|| : ", transformer->report().residual_norm);
     logging::down();
 
-    DynamicVector q_total = DynamicVector::Zero(transformer->n_master());
-    DynamicVector u_total = transformer->recover_u(q_total);
+    DynamicVector q_total = DynamicVector::Zero(transformer->unknowns());
+    DynamicVector u_total = transformer->recover_displacement(q_total);
 
     DynamicVector reduced_total_load;
-    transformer->apply_Tt(f_total, reduced_total_load);
+    transformer->project_vector(f_total, reduced_total_load);
 
     model::Field displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
 
@@ -265,7 +264,7 @@ void NonlinearStatic::run() {
                         DynamicVector&       residual,
                         SparseMatrix&        tangent) {
         q_total = q;
-        u_total = transformer->recover_u(q_total);
+        u_total = transformer->recover_displacement(q_total);
         update_positions();
 
         model::NodeData internal_mat{
@@ -294,8 +293,8 @@ void NonlinearStatic::run() {
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
 
-        transformer->apply_Tt(full_residual, residual);
-        tangent        = transformer->assemble_A(Kt);
+        transformer->project_vector(full_residual, residual);
+        tangent = transformer->assemble_system_matrix(Kt);
         final_internal = internal_mat;
 
         logging::error(residual.allFinite(),
@@ -333,7 +332,7 @@ void NonlinearStatic::run() {
                                const DynamicVector& dq) {
         (void) q;
 
-        const DynamicVector du = transformer->map().T() * dq;
+        const DynamicVector du = transformer->recover_increment(dq);
         return du.norm();
     };
 
@@ -370,7 +369,7 @@ void NonlinearStatic::run() {
 
         q_total     = q;
         load_factor = lambda;
-        u_total     = transformer->recover_u(q_total);
+        u_total = transformer->recover_displacement(q_total);
 
         update_positions();
 
@@ -496,7 +495,7 @@ void NonlinearStatic::run() {
             regularise_stiffness(final_Kt, zero_stiffness_regularization_alpha);
         }
 
-        auto final_A = transformer->assemble_A(final_Kt);
+        auto final_A = transformer->assemble_system_matrix(final_Kt);
 
         write_mtx(stiffness_file + "_Kt.mtx", final_Kt);
         write_mtx(stiffness_file + "_A.mtx", final_A);

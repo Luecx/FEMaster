@@ -264,16 +264,14 @@ void LinearEigenfrequency::run() {
         "constructing mass matrix M"
     );
 
-    // (4) Build constraint transformer (Set -> Builder -> Map)
+    // (4) Assemble constraints and build the null-space transformation
     //     Wrapped for timing and to keep the logging style uniform with LinearStatic.
     auto CT = Timer::measure(
         [&]() {
-            ConstraintTransformer::BuildOptions copt;
-            // Recommended: scale columns of C for robust QR (rank detection).
-            copt.set.scale_columns = true;
+            ConstraintTransformer::Options copt;
             // Optional tolerances (keep defaults unless your constraints are ill-conditioned):
-            // copt.builder.rank_tol_rel = 1e-12;
-            // copt.builder.feas_tol_rel = 1e-10;
+            // copt.null_space.rank_tolerance = 1e-12;
+            // copt.null_space.feasibility_tolerance = 1e-10;
             return std::make_unique<ConstraintTransformer>(
                 equations,
                 active_dof_idx_mat,   // system DOF map (node,dof) -> global id or -1
@@ -288,10 +286,10 @@ void LinearEigenfrequency::run() {
     logging::info(true, "");
     logging::info(true, "Constraint summary");
     logging::up();
-    logging::info(true, "m (rows of C)     : ", CT->report().m);
-    logging::info(true, "n (cols of C)     : ", CT->report().n);
+    logging::info(true, "m (rows of C)     : ", CT->report().equations);
+    logging::info(true, "n (cols of C)     : ", CT->report().dofs);
     logging::info(true, "rank(C)           : ", CT->rank());
-    logging::info(true, "masters (n-r)     : ", CT->n_master());
+    logging::info(true, "solver unknowns    : ", CT->unknowns());
     logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", CT->feasible() ? "true" : "false");
     if (!CT->feasible()) {
@@ -302,11 +300,11 @@ void LinearEigenfrequency::run() {
     // (5) Reduced operators A = T^T K T, Mr = T^T M T
     // Note: These assemble explicit matrices (direct solver friendly).
     auto A  = Timer::measure(
-        [&]() { return CT->assemble_A(K);  },
+        [&]() { return CT->assemble_system_matrix(K); },
         "assembling A = T^T K T"
     );
     auto Mr = Timer::measure(
-        [&]() { return CT->assemble_B(M);  },
+        [&]() { return CT->reduce_secondary_matrix(M); },
         "assembling Mr = T^T M T"
     );
 
@@ -335,8 +333,8 @@ void LinearEigenfrequency::run() {
     DynamicMatrix axes_full = build_active_axis_vectors(active_dof_idx_mat); // n x 6
     for (auto& m : modes) {
         // Full vector u
-        DynamicVector u_mode = CT->map().apply_T(m.q_mode);
-        CT->post_check_static(K, DynamicVector::Zero(K.rows()), u_mode,
+        DynamicVector u_mode = CT->recover_displacement(m.q_mode);
+        CT->post_check_static(K, DynamicVector::Zero(K.rows()), m.q_mode,
                       /*tol_constraint_rel*/1e-10,
                       /*tol_reduced_rel   */std::numeric_limits<Precision>::infinity(),
                       /*tol_full_rel      */std::numeric_limits<Precision>::infinity());

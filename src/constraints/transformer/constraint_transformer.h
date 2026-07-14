@@ -1,24 +1,20 @@
 /**
  * @file constraint_transformer.h
- * @brief Declares a facade for building and using constraint maps.
+ * @brief Declares the common interface for constraint transformation methods.
  *
- * The `ConstraintTransformer` bundles the steps required to assemble the
- * constraint set, build the null-space map, and expose convenience helpers for
- * reduced and full-space operations.
- *
- * @see src/constraints/constraint_transformer_core.cpp
- * @see src/constraints/constraint_transformer_lagrange.cpp
- * @see src/constraints/constraint_transformer_postcheck.cpp
- * @see src/constraints/builder/builder.h
+ * @see src/constraints/transformer/constraint_transformer_core.cpp
+ * @see src/constraints/transformer/constraint_transformer_lagrange.cpp
+ * @see src/constraints/transformer/constraint_transformer_postcheck.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
 
 #pragma once
 
-#include "../builder/builder.h"
+#include "constraint_build_report.h"
 #include "constraint_map.h"
-#include "constraint_set.h"
+#include "constraint_system.h"
+#include "null_space.h"
 
 #include <limits>
 
@@ -26,199 +22,132 @@ namespace fem {
 namespace constraint {
 
 /**
- * @class ConstraintTransformer
- * @brief High-level helper that creates and applies constraint maps.
+ * @brief Builds and applies the selected constraint transformation method.
  */
 class ConstraintTransformer {
 public:
     /**
-     * @enum Method
-     * @brief Constraint handling backend used by this transformer.
+     * @brief Available methods for enforcing constraint equations.
      */
     enum class Method {
-        NullSpace, ///< Affine null-space projection: u = u_p + T q.
-        Lagrange   ///< Saddle-point system with Lagrange multipliers.
+        NullSpace,  ///< Null-space reduction using `u = u_p + T q`.
+        Lagrange,   ///< Lagrange multiplier formulation.
+        Elimination ///< Direct elimination of dependent DOFs.
     };
 
     /**
-     * @struct BuildOptions
-     * @brief Aggregates options for constraint set assembly and map building.
+     * @brief Configuration used to construct the constraint transformer.
      */
-    struct BuildOptions {
-        Method method = Method::NullSpace;   ///< Backend used by the transformer.
-        ConstraintSet::Options set;           ///< Options forwarded to `ConstraintSet`.
-        ConstraintBuilder::Options builder;   ///< Options forwarded to the builder.
-        Precision lagrange_regularization_rel = 1e-10; ///< Relative LM regularization factor (0 disables regularization).
+    struct Options {
+        // General constraint settings
+        Method            method{};      ///< Constraint enforcement method.
+        ConstraintOptions constraints{}; ///< Constraint matrix assembly options.
+
+        // Method-specific settings
+        NullSpaceOptions null_space{}; ///< Null-space construction options.
+
+        Precision lagrange_regularization{Precision(1e-10)}; ///< Relative regularization applied to the Lagrange block.
     };
 
-    /**
-     * @brief Constructs the transformer and prepares the constraint map.
-     *
-     * @param eqs Constraint equations to assemble.
-     * @param dofs DOF numbering map providing global IDs.
-     * @param n_dofs Total number of DOFs.
-     */
-    ConstraintTransformer(const Equations& eqs,
+    // Construction
+    ConstraintTransformer(const Equations&     equations,
                           const SystemDofIds& dofs,
-                          Index n_dofs);
+                          Index                n_dofs);
 
-    /**
-     * @brief Constructs the transformer and prepares the constraint map.
-     *
-     * @param eqs Constraint equations to assemble.
-     * @param dofs DOF numbering map providing global IDs.
-     * @param n_dofs Total number of DOFs.
-     * @param opt Build options for set assembly and map creation.
-     */
-    ConstraintTransformer(const Equations& eqs,
+    ConstraintTransformer(const Equations&     equations,
                           const SystemDofIds& dofs,
-                          Index n_dofs,
-                          const BuildOptions& opt);
+                          Index                n_dofs,
+                          const Options&       options);
 
-    /// Provides read-only access to the assembled constraint map.
-    const ConstraintMap& map() const { return map_; }
+    // Method information
+    Method      method() const { return method_; }
+    const char* method_name() const;
 
-    /// Provides read-only access to the assembled constraint set.
-    const ConstraintSet& set() const { return set_; }
+    // Constraint data
+    const ConstraintSystem&      system() const { return system_; }
+    const ConstraintBuildReport& report() const { return report_; }
+    const ConstraintMap&         reduced_map() const;
 
-    /// Provides read-only access to the builder report.
-    const ConstraintBuilder::Report& report() const { return report_; }
+    // Constraint properties
+    bool has_reduced_map() const { return method_ != Method::Lagrange; }
+    bool homogeneous()     const { return report_.homogeneous; }
+    bool feasible()        const { return report_.feasible; }
+    bool rank_known()      const { return report_.rank_known; }
 
-    /// Returns the active backend.
-    Method method() const { return method_; }
-
-    /// Returns a human-readable backend label.
-    const char* method_name() const {
-        return (method_ == Method::NullSpace) ? "NULLSPACE" : "LAGRANGE";
-    }
-
-    /// Indicates whether the constraint system is homogeneous (`d = 0`).
-    bool homogeneous() const { return report_.homogeneous; }
-
-    /// Indicates whether the constraint system was deemed feasible.
-    bool feasible() const { return report_.feasible; }
-
-    /// Reports the numerical rank determined during factorisation.
+    // System dimensions
     Index rank() const { return report_.rank; }
+    Index unknowns() const;
+    Index independent_dofs() const;
 
-    /// Reports the number of master DOFs in the reduced system.
-    Index n_master() const { return map_.n_master(); }
+    // System assembly
+    SparseMatrix  assemble_system_matrix(const SparseMatrix& matrix) const;
+    SparseMatrix  reduce_secondary_matrix(const SparseMatrix& matrix) const;
+    DynamicVector assemble_system_rhs(const SparseMatrix&  matrix,
+                                      const DynamicVector& rhs) const;
 
-    /// Assembles the reduced stiffness matrix `A = T^T K T`.
-    SparseMatrix assemble_A(const SparseMatrix& K) const;
+    // Coordinate transformations
+    void project_vector(const DynamicVector& full,
+                        DynamicVector&       reduced) const;
 
-    /// Assembles the reduced geometric matrix `B = T^T K_g T`.
-    SparseMatrix assemble_B(const SparseMatrix& Kg) const;
+    DynamicVector project_vector      (const DynamicVector& full) const;
+    DynamicVector recover_displacement(const DynamicVector& solution) const;
+    DynamicVector recover_increment   (const DynamicVector& increment) const;
+    DynamicVector recover_velocity    (const DynamicVector& velocity) const;
+    DynamicVector recover_acceleration(const DynamicVector& acceleration) const;
 
-    /// Assembles the reduced right-hand side `b = T^T (f - K u_p)`.
-    DynamicVector assemble_b(const SparseMatrix& K, const DynamicVector& f) const;
+    // Reaction forces
+    DynamicVector reactions(const SparseMatrix&  matrix,
+                            const DynamicVector& rhs,
+                            const DynamicVector& solution) const;
 
-    /// Constructs a matrix-free operator for `A = T^T K T`.
-    ConstraintMap::OpA opA(const SparseMatrix& K) const;
+    DynamicVector support_reactions(const SparseMatrix&  matrix,
+                                    const DynamicVector& rhs,
+                                    const DynamicVector& solution) const;
 
-    /// Constructs a matrix-free operator for `B = T^T K_g T`.
-    ConstraintMap::OpB opB(const SparseMatrix& Kg) const;
-
-    /// Applies the transformation `u = T q + u_p`.
-    void apply_T(const DynamicVector& q, DynamicVector& u) const;
-
-    /// Applies the adjoint transformation `z = T^T y`.
-    void apply_Tt(const DynamicVector& y, DynamicVector& z) const;
-
-    /// Recovers the full solution from reduced coordinates.
-    DynamicVector recover_u(const DynamicVector& q) const;
-
-    /// Recovers full-space velocity from reduced coordinates.
-    DynamicVector recover_v(const DynamicVector& qdot) const;
-
-    /// Recovers full-space acceleration from reduced coordinates.
-    DynamicVector recover_a(const DynamicVector& qddot) const;
-
-    /// Computes reaction forces in the constrained DOFs.
-    DynamicVector reactions(const SparseMatrix& K, const DynamicVector& f, const DynamicVector& q) const;
-
-    /**
-     * @brief Estimates Lagrange multipliers for the active constraints.
-     *
-     * Given a converged static state (u = T q + u_p), this computes a
-     * least-squares solution of C^T λ ≈ f - K u, which corresponds to
-     * enforcing global equilibrium K u - f + C^T λ = 0 in the presence of
-     * eliminated constraints. The returned vector λ has one entry per
-     * assembled constraint row (i.e. matches set().m and set().kept_row_ids).
-     *
-     * @param K Full-space stiffness matrix.
-     * @param f Full-space external load vector.
-     * @param q Reduced coordinates (solution in master space).
-     * @return DynamicVector Lagrange multipliers λ (size = set().m).
-     */
-    DynamicVector lagrange_multipliers(const SparseMatrix& K,
-                                       const DynamicVector& f,
-                                       const DynamicVector& q) const;
-
-    /**
-     * @brief Builds full-space constraint forces g = C^T λ.
-     *
-     * @param lambda Lagrange multipliers (size = set().m).
-     * @return DynamicVector Full-space constraint force vector.
-     */
-    DynamicVector constraint_forces(const DynamicVector& lambda) const;
-
-    /**
-     * @brief Computes support-only reaction forces from constraint multipliers.
-     *
-     * Constructs g_supp = C_supp^T λ_supp by accumulating only rows of C that
-     * originated from supports. This yields non-zero entries exclusively on DOFs
-     * where supports act, even if those DOFs have no element stiffness.
-     *
-     * @param K Full-space stiffness matrix.
-     * @param f Full-space load vector.
-     * @param q Reduced coordinates.
-     * @return DynamicVector Full-space vector with reactions due to supports only
-     *         (sign matches prior convention r = K u - f on supported DOFs).
-     */
-    DynamicVector support_reactions(const SparseMatrix& K,
-                                    const DynamicVector& f,
-                                    const DynamicVector& q) const;
-
-    /**
-     * @brief Performs diagnostic checks on a static equilibrium solution.
-     *
-     * @param K Full-space stiffness matrix.
-     * @param f Full-space load vector.
-     * @param u Full-space displacement vector.
-     * @param tol_constraint_rel Relative tolerance for constraint satisfaction.
-     * @param tol_reduced_rel Relative tolerance for reduced equilibrium.
-     * @param tol_full_rel Relative tolerance for full equilibrium (use `inf` to skip).
-     */
-    void post_check_static(const SparseMatrix& K,
-                           const DynamicVector& f,
-                           const DynamicVector& u,
-                           Precision tol_constraint_rel = 1e-10,
-                           Precision tol_reduced_rel = 1e-8,
-                           Precision tol_full_rel = std::numeric_limits<Precision>::infinity()) const;
+    // Diagnostic checks
+    void post_check_static(
+        const SparseMatrix&  matrix,
+        const DynamicVector& rhs,
+        const DynamicVector& solution,
+        Precision            constraint_tolerance = Precision(1e-10),
+        Precision            reduced_tolerance    = Precision(1e-8),
+        Precision            full_tolerance       = std::numeric_limits<Precision>::infinity()
+    ) const;
 
 private:
-    void initialize_identity_map(Index n);
-    ConstraintBuilder::Report build_lagrange_report() const;
-    DynamicVector extract_u_from_solution(const DynamicVector& x) const;
-    DynamicVector extract_lambda_from_solution(const DynamicVector& x) const;
-    void cache_lagrange_lambda_from_solution(const DynamicVector& x) const;
-    DynamicVector solve_multipliers_from_u(const SparseMatrix& K,
-                                           const DynamicVector& f,
-                                           const DynamicVector& u) const;
-    DynamicVector accumulate_support_constraint_forces(const DynamicVector& lambda,
-                                                       bool use_scaled_rows) const;
-    DynamicVector scale_lagrange_rows(const DynamicVector& v) const;
-    Precision lagrange_regularization_abs(const SparseMatrix& K) const;
+    // Lagrange initialization and assembly
+    void initialize_lagrange();
 
-    Method method_ = Method::NullSpace; ///< Active constraint backend.
-    Precision lagrange_regularization_rel_ = 0; ///< Relative LM regularization (0 disables regularization).
-    DynamicVector lagrange_row_l2_scale_; ///< Per-row L2 normalization scale for Lagrange constraints.
-    mutable bool cached_lagrange_lambda_valid_ = false; ///< True if `cached_lagrange_lambda_` matches the most recent LAGRANGE solution.
-    mutable DynamicVector cached_lagrange_lambda_; ///< Cached λ extracted from solved LAGRANGE state (size m).
-    ConstraintSet set_;               ///< Assembled constraint equations.
-    ConstraintMap map_;               ///< Null-space representation.
-    ConstraintBuilder::Report report_;///< Diagnostics from the builder.
+    SparseMatrix  assemble_lagrange_matrix(const SparseMatrix& matrix) const;
+    DynamicVector assemble_lagrange_rhs   (const DynamicVector& rhs) const;
+
+    // Lagrange solution extraction
+    DynamicVector extract_lagrange_displacement(const DynamicVector& solution) const;
+    DynamicVector extract_lagrange_multipliers (const DynamicVector& solution) const;
+
+    // Reaction recovery
+    DynamicVector solve_multipliers(const SparseMatrix&  matrix,
+                                    const DynamicVector& rhs,
+                                    const DynamicVector& displacement) const;
+
+    DynamicVector support_constraint_forces(const DynamicVector& multipliers,
+                                            bool                 scaled_rows) const;
+
+    // Lagrange scaling and regularization
+    DynamicVector scale_lagrange_rows(const DynamicVector& values) const;
+    Precision     lagrange_regularization(const SparseMatrix& matrix) const;
+
+    // Selected method and settings
+    Method    method_{};
+    Precision lagrange_regularization_{Precision(0)};
+
+    // Assembled constraint data
+    DynamicVector         lagrange_row_scale_{};
+    ConstraintSystem      system_{};
+    ConstraintMap         map_{};
+    ConstraintBuildReport report_{};
 };
+
 } // namespace constraint
 } // namespace fem
+
