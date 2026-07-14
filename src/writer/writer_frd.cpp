@@ -83,6 +83,28 @@ int frd_element_type(const model::ElementInterface& element) {
     return 0;
 }
 
+int frd_increment_type(WriterStepType step_type) {
+    switch (step_type) {
+        case WriterStepType::Dynamic:        return 1;
+        case WriterStepType::Eigenfrequency: return 2;
+        case WriterStepType::Buckling:       return 4;
+        case WriterStepType::Static:         return 0;
+    }
+
+    return 0;
+}
+
+const char* frd_analysis_name(WriterStepType step_type) {
+    switch (step_type) {
+        case WriterStepType::Dynamic:        return "DYNAMIC";
+        case WriterStepType::Eigenfrequency: return "MODAL";
+        case WriterStepType::Buckling:       return "BUCKLING";
+        case WriterStepType::Static:         return "";
+    }
+
+    return "";
+}
+
 const FRDField& frd_field(const std::string& field_name) {
     std::string name;
 
@@ -306,6 +328,10 @@ void FrdWriter::open(const std::string& filename) {
     model_data_written     = false;
     current_step           = 1;
     current_result_block   = 0;
+    current_global_frame   = 0;
+    last_frame_step        = -1;
+    last_frame_id          = -1;
+    current_step_type      = WriterStepType::Static;
     remap_zero_node_ids    = false;
     remap_zero_element_ids = false;
     frd_node_ids.clear();
@@ -321,11 +347,14 @@ void FrdWriter::close() {
     }
 }
 
-void FrdWriter::add_loadcase(int id) {
+void FrdWriter::add_loadcase(int id, WriterStepType step_type) {
     logging::error(file_path.is_open(),
                    "FrdWriter: cannot add loadcase: file is not open");
 
-    current_step = id > 0 ? id : 1;
+    current_step      = id > 0 ? id : 1;
+    current_step_type = step_type;
+    last_frame_step   = -1;
+    last_frame_id     = -1;
 }
 
 void FrdWriter::write_model_data(const model::ModelData& model_data) {
@@ -355,7 +384,8 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
 
 void FrdWriter::write_field(const model::Field& field,
                             const std::string& field_name,
-                            const model::ModelData* model_data) {
+                            const model::ModelData* model_data,
+                            Precision frame_value) {
     if (!file_path.is_open()) {
         return;
     }
@@ -372,7 +402,7 @@ void FrdWriter::write_field(const model::Field& field,
         write_model_data(*model_data);
     }
 
-    write_nodal_field(field, field_name);
+    write_nodal_field(field, field_name, frame_value);
 }
 
 ID FrdWriter::frd_node_number(ID internal_node_id) const {
@@ -533,15 +563,38 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
     file_path << " -3\n";
 }
 void FrdWriter::write_nodal_field(const model::Field& field,
-                                  const std::string& field_name) {
+                                  const std::string& field_name,
+                                  Precision frame_value) {
     logging::error(!frd_node_ids.empty(),
                    "FrdWriter: no FRD nodes available for field '",
                    field_name, "'");
 
     const FRDField& frd = frd_field(field_name);
-    const int frame     = frd_frame(field_name);
+    int frame           = frd_frame(field_name);
     const int step      = current_step > 0 ? current_step : 1;
     const int block     = ++current_result_block;
+
+    if (current_step_type == WriterStepType::Dynamic) {
+        ++frame;
+    }
+
+    if (frame < 1) {
+        frame = 1;
+    }
+
+    const Precision value = std::isfinite(frame_value)
+        ? frame_value
+        : static_cast<Precision>(frame);
+
+    if (last_frame_step != step || last_frame_id != frame) {
+        ++current_global_frame;
+        last_frame_step = step;
+        last_frame_id   = frame;
+    }
+
+    const int global_frame = current_global_frame;
+    const int ictype       = frd_increment_type(current_step_type);
+    const char* analysis   = frd_analysis_name(current_step_type);
 
     file_path << "    1PSTEP"
               << std::setw(26) << block
@@ -549,21 +602,32 @@ void FrdWriter::write_nodal_field(const model::Field& field,
               << std::setw(12) << step
               << '\n';
 
+    if (current_step_type == WriterStepType::Eigenfrequency) {
+        file_path << "    1PMODE"
+                  << std::setw(26) << frame
+                  << '\n';
+    }
+
     file_path << "  100CL  "
-              << std::setw(3) << 100 + block
+              << std::setw(3) << 100 + global_frame
               << ' ';
 
-    write_float(file_path,
-                static_cast<Precision>(block),
-                11);
+    write_float(file_path, value, 11);
 
     file_path << std::setw(12) << frd_node_ids.size()
               << std::string(21, ' ')
-              << 0
-              << std::setw(5) << block
-              << std::string(11, ' ')
-              << 1
-              << '\n';
+              << ictype
+              << std::setw(5) << global_frame;
+
+    if (analysis[0] == '\0') {
+        file_path << std::string(11, ' ');
+    } else {
+        file_path << std::left
+                  << std::setw(11) << analysis
+                  << std::right;
+    }
+
+    file_path << 1 << '\n';
 
     file_path << " -4  "
               << std::left

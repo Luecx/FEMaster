@@ -3,8 +3,10 @@
 #include "../core/core.h"
 #include "../core/logging.h"
 #include "../data/field.h"
+#include "writer_step_type.h"
 
 #include <fstream>
+#include <limits>
 #include <string>
 
 namespace fem {
@@ -38,11 +40,12 @@ class ResWriter {
     void open(const std::string& filename);
     void close();
 
-    void add_loadcase(int id);
+    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
 
     void write_field(const model::Field& field,
                      const std::string& field_name,
-                     const model::ModelData* model_data = nullptr);
+                     const model::ModelData* model_data = nullptr,
+                     Precision frame_value = std::numeric_limits<Precision>::quiet_NaN());
 };
 
 } // namespace reader

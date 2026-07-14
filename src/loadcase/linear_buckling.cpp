@@ -388,7 +388,7 @@ void LinearBuckling::run() {
     print_buckling_summary(modes, eigopt.sigma, k_req);
 
     // (11) Write results
-    writer->add_loadcase(id);
+    writer->add_loadcase(id, reader::WriterStepType::Buckling);
     Index num_modes = static_cast<Index>(modes.size());
 
     model::Field lambdas{"BUCKLING_FACTORS", model::FieldDomain::UNKNOWN, num_modes, 1};
@@ -396,9 +396,7 @@ void LinearBuckling::run() {
     for (Index i = 0; i < num_modes; ++i) {
         lambdas(i) = modes[static_cast<size_t>(i)].lambda;
 
-        writer->write_field(modes[static_cast<size_t>(i)].mode_mat,
-                            "BUCKLING_MODE_" + std::to_string(i + 1),
-                            model->_data.get());
+        writer->write_field(modes[static_cast<size_t>(i)].mode_mat, "BUCKLING_MODE_" + std::to_string(i + 1), model->_data.get(), modes[static_cast<size_t>(i)].lambda);
     }
 
     writer->write_field(lambdas, lambdas.name, nullptr);

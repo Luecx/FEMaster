@@ -58,25 +58,26 @@ void ResultWriters::write_model_data(const model::ModelData& model_data) {
     }
 }
 
-void ResultWriters::add_loadcase(int id) {
+void ResultWriters::add_loadcase(int id, WriterStepType step_type) {
     if (res_writer) {
-        res_writer->add_loadcase(id);
+        res_writer->add_loadcase(id, step_type);
     }
 
     if (frd_writer) {
-        frd_writer->add_loadcase(id);
+        frd_writer->add_loadcase(id, step_type);
     }
 }
 
 void ResultWriters::write_field(const model::Field& field,
                                 const std::string& field_name,
-                                const model::ModelData* model_data) {
+                                const model::ModelData* model_data,
+                                Precision frame_value) {
     if (res_writer) {
-        res_writer->write_field(field, field_name, model_data);
+        res_writer->write_field(field, field_name, model_data, frame_value);
     }
 
     if (frd_writer) {
-        frd_writer->write_field(field, field_name, model_data);
+        frd_writer->write_field(field, field_name, model_data, frame_value);
     }
 }
 

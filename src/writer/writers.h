@@ -3,7 +3,9 @@
 #include "writer_frd.h"
 #include "writer_res.h"
 #include "writer_file_formats.h"
+#include "writer_step_type.h"
 
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -41,11 +43,12 @@ class ResultWriters {
 
     void write_model_data(const model::ModelData& model_data);
 
-    void add_loadcase(int id);
+    void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
 
     void write_field(const model::Field& field,
                      const std::string& field_name,
-                     const model::ModelData* model_data = nullptr);
+                     const model::ModelData* model_data = nullptr,
+                     Precision frame_value = std::numeric_limits<Precision>::quiet_NaN());
 };
 
 } // namespace reader

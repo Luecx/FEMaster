@@ -181,7 +181,7 @@ static void write_results(const std::vector<ModalMode>& modes,
                           int                           loadcase_id,
                           model::Model*                 mdl)
 {
-    writer->add_loadcase(loadcase_id);
+    writer->add_loadcase(loadcase_id, reader::WriterStepType::Eigenfrequency);
 
     Index num_modes = static_cast<Index>(modes.size());
 
@@ -200,7 +200,7 @@ static void write_results(const std::vector<ModalMode>& modes,
             particip(0, j) = modes[i].participation(j);
         }
 
-        writer->write_field(modes[i].mode_mat, "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get());
+        writer->write_field(modes[i].mode_mat, "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get(), modes[i].freq);
         writer->write_field(particip         , "PARTICIPATION_" + std::to_string(i + 1), nullptr);
     }
     writer->write_field(eigenvalues, eigenvalues.name, nullptr);

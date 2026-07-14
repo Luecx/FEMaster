@@ -256,7 +256,7 @@ void NonlinearStatic::run() {
 
     // Stream converged increment frames as they become available. This keeps
     // the accepted path in the result file even if a later increment fails.
-    writer->add_loadcase(id);
+    writer->add_loadcase(id, reader::WriterStepType::Static);
 
     Index last_converged_increment = 0;
 
@@ -377,7 +377,8 @@ void NonlinearStatic::run() {
         writer->write_field(
             displacement,
             "DISPLACEMENT_" + std::to_string(increment),
-            model->_data.get()
+            model->_data.get(),
+            lambda
         );
 
         auto [increment_stress, increment_strain] =
@@ -387,7 +388,8 @@ void NonlinearStatic::run() {
         writer->write_field(
             increment_stress,
             "STRESS_" + std::to_string(increment),
-            model->_data.get()
+            model->_data.get(),
+            lambda
         );
 
         model::Field lambda_field{"LAMBDA_" + std::to_string(increment), model::FieldDomain::UNKNOWN, 1, 1};
@@ -546,14 +548,14 @@ void NonlinearStatic::run() {
 
     const std::string suffix = "_" + std::to_string(final_frame);
 
-    writer->write_field(displacement     , "DISPLACEMENT"    + suffix, model->_data.get());
-    writer->write_field(final_strain     , "STRAIN"          + suffix, model->_data.get());
-    writer->write_field(final_stress     , "STRESS"          + suffix, model->_data.get());
-    writer->write_field(final_stress_top , "STRESS_TOP"      + suffix, model->_data.get());
-    writer->write_field(final_stress_bot , "STRESS_BOT"      + suffix, model->_data.get());
-    writer->write_field(global_load_final, "EXTERNAL_FORCES" + suffix, model->_data.get());
-    writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get());
-    writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get());
+    writer->write_field(displacement     , "DISPLACEMENT"    + suffix, model->_data.get(), load_factor);
+    writer->write_field(final_strain     , "STRAIN"          + suffix, model->_data.get(), load_factor);
+    writer->write_field(final_stress     , "STRESS"          + suffix, model->_data.get(), load_factor);
+    writer->write_field(final_stress_top , "STRESS_TOP"      + suffix, model->_data.get(), load_factor);
+    writer->write_field(final_stress_bot , "STRESS_BOT"      + suffix, model->_data.get(), load_factor);
+    writer->write_field(global_load_final, "EXTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
+    writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
+    writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get(), load_factor);
 
     *model->_data->positions = original_positions;
     model->step_end();

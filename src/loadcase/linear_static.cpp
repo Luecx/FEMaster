@@ -276,7 +276,7 @@ void LinearStatic::run() {
         }
     }
 
-    writer->add_loadcase(id);
+    writer->add_loadcase(id, reader::WriterStepType::Static);
     writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
     writer->write_field(strain          , "STRAIN", model->_data.get());
     writer->write_field(stress          , "STRESS", model->_data.get());

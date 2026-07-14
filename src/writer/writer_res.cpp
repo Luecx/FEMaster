@@ -171,7 +171,9 @@ void ResWriter::close() {
     }
 }
 
-void ResWriter::add_loadcase(int id) {
+void ResWriter::add_loadcase(int id, WriterStepType step_type) {
+    (void) step_type;
+
     logging::error(file_path.is_open(),
                    "ResWriter: cannot add loadcase: file is not open");
 
@@ -180,7 +182,10 @@ void ResWriter::add_loadcase(int id) {
 
 void ResWriter::write_field(const model::Field& field,
                             const std::string& field_name,
-                            const model::ModelData* model_data) {
+                            const model::ModelData* model_data,
+                            Precision frame_value) {
+    (void) frame_value;
+
     logging::error(file_path.is_open(),
                    "ResWriter: cannot write field '", field_name,
                    "': file is not open");

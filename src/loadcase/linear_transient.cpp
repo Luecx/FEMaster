@@ -175,27 +175,29 @@ void Transient::run() {
         write_stride = std::max(1, static_cast<int>(std::round(write_every_time / dt)));
     }
 
-    writer->add_loadcase(id);
+    writer->add_loadcase(id, reader::WriterStepType::Dynamic);
     for (int k = 0; k <= n_steps; ++k) {
         if (k % write_stride != 0 && k != n_steps) continue; // always write last
         const auto& qk  = result.u[static_cast<size_t>(k)];
         const auto& qvk = result.v[static_cast<size_t>(k)];
         const auto& qak = result.a[static_cast<size_t>(k)];
+        const Precision frame_time =
+            static_cast<Precision>(t_start + static_cast<double>(k) * dt);
 
         // Displacement: u = T q + u_p
         auto u_full = CT->recover_u(qk);
         auto U_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, u_full);
-        writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k), model->_data.get());
+        writer->write_field(U_mat, "DISPLACEMENT_" + std::to_string(k), model->_data.get(), frame_time);
 
         // Velocity recovery uses the active constraint backend mapping.
         auto v_full = CT->recover_v(qvk);
         auto V_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, v_full);
-        writer->write_field(V_mat, "VELOCITY_" + std::to_string(k), model->_data.get());
+        writer->write_field(V_mat, "VELOCITY_" + std::to_string(k), model->_data.get(), frame_time);
 
         // Acceleration recovery uses the active constraint backend mapping.
         auto a_full = CT->recover_a(qak);
         auto A_mat  = mattools::expand_vec_to_mat(active_dof_idx_mat, a_full);
-        writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k), model->_data.get());
+        writer->write_field(A_mat, "ACCELERATION_" + std::to_string(k), model->_data.get(), frame_time);
     }
 
     logging::info(true, "Transient analysis completed.");
