@@ -1,42 +1,50 @@
 \chapter{Result Format}
 
-FEMaster writes text-based \file{.res} files. The file is organized into loadcases and fields. Each loadcase starts with a loadcase header followed by any number of field blocks.
+FEMaster writes two result formats by default. The native \file{.res} file is a text format that preserves all fields written by the loadcases. The \file{.frd} file is an ASCII CalculiX/CGX-style result file for mesh and nodal result visualization.
 
-\section{Loadcase blocks}
+Both files use the same job base name. For example, an input deck \file{model.inp} produces \file{model.res} and \file{model.frd} unless \key{--output} changes the base name.
+
+\section{Native \file{.res} files}
+
+The \file{.res} file is organized into loadcases and fields. Each loadcase starts with a loadcase header followed by any number of field blocks.
+
+\subsection{Loadcase blocks}
 
 \begin{syntax}
-LOADCASE <id> <name-or-type>
+LC <id>
 \end{syntax}
 
 The loadcase ID follows execution order. The following field blocks belong to that loadcase until the next loadcase header appears.
 
-\section{Dense fields}
+\subsection{Dense fields}
 
 \begin{syntax}
-FIELD <name> TYPE=<type> ROWS=<rows> COLS=<cols>
+FIELD, NAME=<name>, TYPE=<type>, COLS=<cols>, ROWS=<rows>
 <v11> <v12> ...
+END FIELD
 \end{syntax}
 
 \key{TYPE} is always written and is one of \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, or \val{UNKNOWN}. \key{ROWS} gives the number of rows. \key{COLS} gives the number of values per row. For nodal fields, a row typically corresponds to a node-position row. For element fields, a row corresponds to an element-position row.
 
-\section{Indexed fields}
+\subsection{Indexed fields}
 
 \begin{syntax}
-FIELD <name> TYPE=<type> ROWS=<rows> INDEX_COLS=<i> VALUE_COLS=<v>
+FIELD, NAME=<name>, TYPE=<type>, INDEX_COLS=<i>, VALUE_COLS=<v>, ROWS=<rows>
 <index...> <value...>
+END FIELD
 \end{syntax}
 
-Some result quantities are not simple node or element fields. Indexed fields use index columns to identify element, integration point, section point, or local result location, followed by value columns.
+Some result quantities are not simple node or element fields. Indexed fields use index columns to identify element, integration point, section point, or local result location, followed by value columns. For \val{ELEMENT_NODAL} and \val{ELEMENT_IP} fields, the native writer uses two index columns: the element id and the local result-row number for that element.
 
-\section{Common field names}
+\subsection{Common field names}
 
 \begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
 \toprule
 \textbf{Loadcase} & \textbf{Typical fields} \\
 \midrule
 \endhead
-Linear Static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{EXTERNAL_FORCES}, \val{REACTION_FORCES}, shell and section fields. \\
-Linear Static Topology & Static fields plus \val{COMPLIANCE}, \val{DENS_GRAD}, \val{VOLUME}, \val{DENSITY}, and optional orientation fields. \\
+Linear Static & \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{STRESS_TOP}, \val{STRESS_BOT}, \val{SHELL_RESULTANTS}, \val{EXTERNAL_FORCES}, \val{REACTION_FORCES}, \val{LOCAL_SECTION_FORCES}, and optional \val{SHEAR_FLOW}. \\
+Linear Static Topology & Static fields plus \val{COMPLIANCE}, \val{DENS_GRAD}, \val{VOLUME}, \val{DENSITY}, optional \val{SHEAR_FLOW}, and optional \val{ORIENTATION_GRAD} and \val{ORIENTATION}. \\
 Nonlinear Static & Per accepted increment: \val{DISPLACEMENT_i}, \val{STRESS_i}, \val{LAMBDA_i}. Final state: \val{DISPLACEMENT}, \val{STRAIN}, \val{STRESS}, \val{STRESS_TOP}, \val{STRESS_BOT}, \val{EXTERNAL_FORCES}, \val{INTERNAL_FORCES}, and \val{REACTION_FORCES}. \\
 Eigenfrequency & \val{MODE_SHAPE_i}, \val{PARTICIPATION_i}, \val{EIGENVALUES}, \val{EIGENFREQUENCIES}, \val{FREQUENCIES}. \\
 Linear Buckling & \val{BUCKLING_MODE_i}, \val{BUCKLING_FACTORS}. \\
@@ -45,3 +53,33 @@ Linear Transient & \val{DISPLACEMENT_k}, \val{VELOCITY_k}, \val{ACCELERATION_k} 
 \end{longtable}
 
 A six-component nodal motion field uses \dofvec. A six-component stress or strain field uses the engineering order \(x,y,z,yz,zx,xy\). These conventions must not be confused.
+
+\section{FRD files}
+
+The \file{.frd} writer emits the model mesh once and then writes supported nodal result blocks. It is intended for visualization in CalculiX/CGX-compatible tools. Element-local fields, integration-point fields, participation factors, eigenvalue tables, and scalar history fields remain available in the native \file{.res} file but are not written as FRD result blocks.
+
+FRD node and element numbers are normally the internal ids. If the mesh contains id 0, the FRD writer shifts those ids by one because FRD consumers generally expect positive numbering.
+
+Supported structural elements are written with FRD element type codes for common solid, shell, beam, and truss topologies. Higher-order wedge and hexahedral connectivity is reordered to match the FRD convention before it is written.
+
+\begin{longtable}{@{}p{0.28\linewidth}p{0.24\linewidth}p{0.38\linewidth}@{}}
+\toprule
+\textbf{FEMaster field} & \textbf{FRD block} & \textbf{Components} \\
+\midrule
+\endhead
+\val{DISPLACEMENT}, \val{MODE_SHAPE_i}, \val{BUCKLING_MODE_i} & \val{DISP} & \val{D1}, \val{D2}, \val{D3}, \val{D4}, \val{D5}, \val{D6}, \val{ALL}. \\
+\val{VELOCITY_i} & \val{VELO} & \val{V1}, \val{V2}, \val{V3}, \val{ALL}. \\
+\val{ACCELERATION_i} & \val{ACCE} & \val{A1}, \val{A2}, \val{A3}, \val{ALL}. \\
+\val{REACTION_FORCES} & \val{FORC} & \val{F1}, \val{F2}, \val{F3}, \val{F4}, \val{F5}, \val{F6}, \val{ALL}. \\
+\val{EXTERNAL_FORCES} & \val{EXTFORC} & \val{F1}, \val{F2}, \val{F3}, \val{F4}, \val{F5}, \val{F6}, \val{ALL}. \\
+\val{INTERNAL_FORCES} & \val{INTFORC} & \val{F1}, \val{F2}, \val{F3}, \val{F4}, \val{F5}, \val{F6}, \val{ALL}. \\
+\val{STRESS} & \val{STRESS} & \val{SXX}, \val{SYY}, \val{SZZ}, \val{SYZ}, \val{SZX}, \val{SXY}. \\
+\val{STRAIN} & \val{TOSTRAIN} & \val{EXX}, \val{EYY}, \val{EZZ}, \val{EYZ}, \val{EZX}, \val{EXY}. \\
+\val{MECHANICAL_STRAIN} & \val{MESTRAIN} & \val{MEXX}, \val{MEYY}, \val{MEZZ}, \val{MEYZ}, \val{MEZX}, \val{MEXY}. \\
+\val{STRESS_TOP} & \val{STRPOS} & \val{SXX}, \val{SYY}, \val{SZZ}, \val{SYZ}, \val{SZX}, \val{SXY}. \\
+\val{STRESS_BOT} & \val{STRNEG} & \val{SXX}, \val{SYY}, \val{SZZ}, \val{SYZ}, \val{SZX}, \val{SXY}. \\
+\val{SHELL_RESULTANTS} & \val{SHR} & \val{NXX}, \val{NXY}, \val{NYY}, \val{MXX}, \val{MXY}, \val{MYY}, \val{QX}, \val{QY}. \\
+\bottomrule
+\end{longtable}
+
+For transient results, the frame value written to FRD is the physical time passed by the transient loadcase. For eigenfrequency and buckling results, the frame value is the frequency or buckling factor associated with the written mode.

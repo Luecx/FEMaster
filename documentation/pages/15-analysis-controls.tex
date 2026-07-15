@@ -48,6 +48,11 @@ the matrix \(A\) is factorized and the solution is obtained by triangular solves
 \val{LAGRANGE} & CPU Eigen & Limited & No \\
 \val{LAGRANGE} & GPU & No & No \\
 \val{LAGRANGE} & GPU cuDSS & Yes & No \\
+\midrule
+\val{ELIMINATION} & CPU MKL & Yes & Yes \\
+\val{ELIMINATION} & CPU Eigen & Yes & Yes \\
+\val{ELIMINATION} & GPU & Yes & Yes \\
+\val{ELIMINATION} & GPU cuDSS & Yes & Yes \\
 \bottomrule
 \end{tabular}
 \caption{Supported static solver and constraint combinations.}
@@ -57,14 +62,14 @@ the matrix \(A\) is factorized and the solution is obtained by triangular solves
 \section{Constraint method}
 
 \begin{syntax}
-*CONSTRAINTMETHOD, TYPE=NULLSPACE|LAGRANGE
+*CONSTRAINTMETHOD, TYPE=NULLSPACE|LAGRANGE|ELIMINATION
 \end{syntax}
 
 The active supports and constraints define
 \[
 C u = d .
 \]
-\cmd{CONSTRAINTMETHOD} selects how this equation set is introduced into the analysis equations.
+\cmd{CONSTRAINTMETHOD} selects how this equation set is introduced into the analysis equations. The command is supported inside \val{LINEARSTATIC}, \val{LINEARSTATICTOPO}, and \val{NONLINEARSTATIC} loadcases. The nonlinear static loadcase currently accepts only \val{NULLSPACE}; linear static loadcases may use \val{NULLSPACE}, \val{LAGRANGE}, or \val{ELIMINATION}.
 
 \subsection{Nullspace method}
 
@@ -117,6 +122,20 @@ d
 \(\lambda\) contains the Lagrange multipliers, which can be interpreted as generalized constraint reactions. \(\epsilon\) is a possible small regularization term when configured by the solver path; conceptually, the pure Lagrange system has \(\epsilon=0\).
 
 This formulation is direct and preserves the original displacement variables, but it creates a saddle-point problem. Such systems are indefinite and more demanding numerically. In FEMaster, \val{LAGRANGE} requires the direct linear solver for linear static analysis; see Table~\ref{tab:static-solver-constraint-combinations} for supported backend combinations. Use \val{NULLSPACE} when an indirect solver is desired.
+
+\subsection{Elimination method}
+
+\val{ELIMINATION} directly selects dependent degrees of freedom from the independent constraint rows and expresses them through the remaining master degrees of freedom. The resulting affine map has the same recovered-displacement form
+\[
+u = u_p + T q
+\]
+as the nullspace method, but \(T\) is built by explicit substitution rather than by a numerical nullspace factorization. Each selected slave degree of freedom is written as
+\[
+u_s = u_{p,s} + \sum_j X_{sj} q_j .
+\]
+FEMaster applies substitutions row by row, avoids cyclic dependencies, and treats redundant rows consistently with the reported constraint build diagnostics.
+
+Because the final solve is again performed in the reduced coordinates \(q\), \val{ELIMINATION} keeps the structural system form and is compatible with both direct and indirect static solvers. It is best suited to equation sets where a clear dependent degree of freedom can be selected from each independent row, for example support equations and many direct coupling equations. For dense or strongly coupled equation systems, \val{NULLSPACE} may be the more robust choice.
 
 \section{Inertia relief}
 

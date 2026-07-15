@@ -53,10 +53,11 @@ In static analyses, the load is used as its defined value unless the loadcase ex
 \[
 f_e = \int_{\Gamma_e} N^T t \, d\Gamma ,
 \]
-where \(t\) is the traction vector and \(N\) contains the element shape functions on the loaded surface. \cmd{PLOAD} defines a scalar pressure. A pressure is converted into a traction using the surface normal, so the selected surface side and its normal direction determine the sign convention:
+where \(t\) is the traction vector and \(N\) contains the element shape functions on the loaded surface. \cmd{PLOAD} defines a scalar pressure. A positive pressure acts into the selected surface, opposite to its normal:
 \[
-t = p n .
+t = -p n .
 \]
+The selected surface side and its normal direction therefore determine the pressure sign convention. For shell surfaces, \val{SPOS} and \val{SNEG} select opposite normals on the same geometric midsurface.
 
 Use \cmd{DLOAD} when the traction direction is known as a vector. Use \cmd{PLOAD} when the load should follow the surface normal. Both commands add entries to a load collector and are activated only when that collector is referenced by a loadcase.
 
