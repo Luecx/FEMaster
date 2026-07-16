@@ -1,6 +1,5 @@
-#include "../src/constraints/transformer/constraint_set.h"
-#include "../src/constraints/transformer/constraint_map.h"
-#include "../src/constraints/builder/builder.h"
+#include "../src/constraints/transformer/constraint_system.h"
+#include "../src/constraints/transformer/null_space.h"
 #include "../src/constraints/types/connector.h"
 #include "../src/model/model.h"
 #include "../src/cos/rectangular_system.h"
@@ -19,41 +18,35 @@ static SparseMatrix eye(int n) {
     return A;
 }
 
-// 26–28) ConstraintSet assemble, zero-row drop, scaling defaults
+// 26–28) Constraint system assembly
 TEST(Constraints_Set, AssembleBasics) {
-    constraint::ConstraintSet S;
-    S.equations = {
+    constraint::Equations equations = {
         {{ {0, 0, 1.0} }, 0.0},                 // u0x = 0
         {{ {1, 1, 1.0}, {1, 2, 0.0} }, 5.0},    // u1y = 5
         {{ /* empty */ }, 7.0 },                // empty row
     };
     SystemDofIds dofs(3,6); dofs.setConstant(-1); dofs(0,0)=0; dofs(1,1)=1; // minimal map
-    S.assemble(dofs, 2);
-    EXPECT_EQ(S.m, 3); // kept rows include empty unless drop-tol > 0
-    EXPECT_EQ(S.n, 2);
-    EXPECT_EQ(S.C.rows(), 3);
-    EXPECT_EQ(S.C.cols(), 2);
-    EXPECT_EQ(S.d.size(), 3);
-    // Defaults
-    EXPECT_EQ(S.col_scale.size(), 2);
-    EXPECT_EQ(S.row_scale.size(), 3);
-    for (int i = 0; i < S.col_scale.size(); ++i) EXPECT_NEAR(S.col_scale(i), 1.0, 1e-12);
-    for (int i = 0; i < S.row_scale.size(); ++i) EXPECT_NEAR(S.row_scale(i), 1.0, 1e-12);
+    const auto system = constraint::assemble_constraint_system(equations, dofs, 2);
+    EXPECT_EQ(system.equations, 3); // kept rows include empty unless drop-tol > 0
+    EXPECT_EQ(system.dofs, 2);
+    EXPECT_EQ(system.C.rows(), 3);
+    EXPECT_EQ(system.C.cols(), 2);
+    EXPECT_EQ(system.d.size(), 3);
 }
 
 // 27) Zero-row drop tolerance removes empty equations when enabled
 TEST(Constraints_Set, ZeroRowDrop) {
-    constraint::ConstraintSet S;
-    S.opt.zero_row_drop_tol = 1; // enable dropping empty rows
-    S.equations = {
+    constraint::ConstraintOptions options;
+    options.zero_row_drop_tolerance = 1; // enable dropping empty rows
+    constraint::Equations equations = {
         {{ {0, 0, 1.0} }, 0.0}, // one real equation
         {{ /* empty */ }, 7.0 } // should be dropped
     };
     SystemDofIds dofs(1,6); dofs.setConstant(-1); dofs(0,0)=0;
-    S.assemble(dofs, 1);
-    EXPECT_EQ(S.m, 1);
-    EXPECT_EQ(S.C.rows(), 1);
-    EXPECT_EQ(S.d.size(), 1);
+    const auto system = constraint::assemble_constraint_system(equations, dofs, 1, options);
+    EXPECT_EQ(system.equations, 1);
+    EXPECT_EQ(system.C.rows(), 1);
+    EXPECT_EQ(system.d.size(), 1);
 }
 
 // 29) Connector equations basic
@@ -74,21 +67,20 @@ TEST(Constraints_Connector, TwoNodesSameDir) {
     EXPECT_GE(count, 3);
 }
 
-// 30–33) Builder rank, map transforms, recover_u, apply_Tt roundtrip (homogeneous/no-constraint path)
-TEST(Constraints_Builder_Map, BuildAndTransforms) {
+// 30–33) Null-space rank and map transformations
+TEST(Constraints_NullSpace, BuildAndTransforms) {
     // Empty set (no constraints) to exercise the identity-map path safely
-    constraint::ConstraintSet set;
+    constraint::Equations equations{};
     SystemDofIds dofs(3,6); dofs.setConstant(-1); // 3 dofs total (n)
-    set.equations = {};
-    set.assemble(dofs, /*n_dofs=*/3);
-    auto [map, rep] = constraint::ConstraintBuilder::build(set);
+    const auto system = constraint::assemble_constraint_system(equations, dofs, 3);
+    auto [map, rep] = constraint::build_null_space(system);
     EXPECT_TRUE(rep.feasible);
-    EXPECT_EQ(map.n_full(), 3);
+    EXPECT_EQ(map.full_size, 3);
     // Apply/recover
     DynamicVector q(map.n_master()); q.setLinSpaced(map.n_master(), 1.0, 1.0 + map.n_master() - 1);
-    DynamicVector u = map.recover_u(q);
-    EXPECT_EQ(u.size(), rep.n);
-    DynamicVector y(rep.n); y.setOnes();
-    DynamicVector z = map.apply_Tt(y);
+    DynamicVector u = map.recover(q);
+    EXPECT_EQ(u.size(), rep.dofs);
+    DynamicVector y(rep.dofs); y.setOnes();
+    DynamicVector z = map.project(y);
     EXPECT_EQ(z.size(), map.n_master());
 }

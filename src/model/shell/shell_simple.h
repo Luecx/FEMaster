@@ -5,8 +5,7 @@
 #ifndef SHELL_SIMPLE_H
 #define SHELL_SIMPLE_H
 
-#include "../../material/stress.h"
-#include "../../material/isotropic_elasticity.h"
+#include "../../material/stress/volume_stress_cauchy.h"
 #include "../geometry/surface/surface.h"
 #include "../geometry/surface/surface3.h"
 #include "../geometry/surface/surface4.h"
@@ -185,10 +184,7 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     Mat2 shear_strain_transform(const Mat2& section_to_element) {
-        Mat2 transform;
-        transform << section_to_element(1, 1), section_to_element(0, 1),
-                     section_to_element(1, 0), section_to_element(0, 0);
-        return transform;
+        return section_to_element.transpose();
     }
 
     StaticMatrix<3, 3> transform_plane_stiffness_to_element(
@@ -455,13 +451,11 @@ struct DefaultShellElement : public ShellElement<N> {
         res.setZero();
 
         for (Index i = 0; i < N; i++) {
-            res(0, 3 * i)     = dH(1, i);
-            res(0, 3 * i + 1) = -H(i);
-            res(0, 3 * i + 2) = 0;
+            res(0, 3 * i)     = dH(0, i);
+            res(0, 3 * i + 2) = H(i);
 
-            res(1, 3 * i)     = dH(0, i);
-            res(1, 3 * i + 1) = 0;
-            res(1, 3 * i + 2) = H(i);
+            res(1, 3 * i)     = dH(1, i);
+            res(1, 3 * i + 1) = -H(i);
         }
 
         return res;
@@ -503,9 +497,15 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     StaticMatrix<6 * N, 6 * N> stiffness_abd_shear(LocalCoords& xy_coords) {
-        auto section           = this->get_section();
-        auto mat_abd_section   = section->get_abd();
-        auto mat_shear_section = section->get_shear();
+        auto section = this->get_section();
+
+        ShellGeneralizedStrain zero_strain;
+        ShellStressResultants  zero_resultants;
+        Mat8                   material_tangent;
+        section->evaluate(zero_strain, zero_resultants, material_tangent);
+
+        Mat6 mat_abd_section   = material_tangent.template block<6, 6>(0, 0);
+        Mat2 mat_shear_section = material_tangent.template block<2, 2>(6, 6);
 
         Mat3 axes = get_xyz_axes();
 
@@ -834,7 +834,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return h * A;
     }
 
-    virtual Stress compute_stress_at(Field& displacement, Vec3& xyz) {
+    virtual VolumeStressCauchy compute_stress_at(Field& displacement, Vec3& xyz) {
         const Precision r = xyz(0);
         const Precision s = xyz(1);
         const Precision t = xyz(2);
@@ -875,8 +875,13 @@ struct DefaultShellElement : public ShellElement<N> {
 
         const Precision h = this->get_section()->thickness_;
 
-        auto abd_section       = this->get_section()->get_abd();
-        Mat2 shear_section_mat = this->get_section()->get_shear();
+        ShellGeneralizedStrain zero_strain;
+        ShellStressResultants  zero_resultants;
+        Mat8                   material_tangent;
+        this->get_section()->evaluate(zero_strain, zero_resultants, material_tangent);
+
+        Mat6 abd_section       = material_tangent.template block<6, 6>(0, 0);
+        Mat2 shear_section_mat = material_tangent.template block<2, 2>(6, 6);
 
         Precision topo_scale = Precision(1);
 
@@ -936,13 +941,13 @@ struct DefaultShellElement : public ShellElement<N> {
         res_element(0) = stress_plane_element(0);
         res_element(1) = stress_plane_element(1);
         res_element(2) = Precision(0);
-        res_element(3) = shear_stress_element(0);
-        res_element(4) = shear_stress_element(1);
+        res_element(3) = shear_stress_element(1);
+        res_element(4) = shear_stress_element(0);
         res_element(5) = stress_plane_element(2);
 
         const Mat3 element_basis = this->element_basis_global(axes);
 
-        return Stress(res_element).transformed(element_basis, this->global_basis());
+        return VolumeStressCauchy(res_element).transformed(element_basis, this->global_basis());
     }
 
     bool compute_shell_section_forces(Field& resultants,
@@ -963,8 +968,13 @@ struct DefaultShellElement : public ShellElement<N> {
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
 
-        auto abd_section       = this->get_section()->get_abd();
-        Mat2 shear_section_mat = this->get_section()->get_shear();
+        ShellGeneralizedStrain zero_strain;
+        ShellStressResultants  zero_resultants;
+        Mat8                   material_tangent;
+        this->get_section()->evaluate(zero_strain, zero_resultants, material_tangent);
+
+        Mat6 abd_section       = material_tangent.template block<6, 6>(0, 0);
+        Mat2 shear_section_mat = material_tangent.template block<2, 2>(6, 6);
 
         abd_section       *= topo_scale;
         shear_section_mat *= topo_scale;
@@ -1093,7 +1103,7 @@ struct DefaultShellElement : public ShellElement<N> {
         for (Eigen::Index i = 0; i < rst.rows(); ++i) {
             Vec3 local;
             local << rst(i, 0), rst(i, 1), rst(i, 2);
-            const Stress stress_value = this->compute_stress_at(displacement_mut, local);
+            const VolumeStressCauchy stress_value = this->compute_stress_at(displacement_mut, local);
             const Index row = static_cast<Index>(offset + i);
 
             if (strain) {
@@ -1127,7 +1137,12 @@ struct DefaultShellElement : public ShellElement<N> {
         Mat3 axes      = get_xyz_axes();
         auto xy_coords = get_xy_coords(axes);
 
-        auto abd_section = this->get_section()->get_abd();
+        ShellGeneralizedStrain zero_strain;
+        ShellStressResultants  zero_resultants;
+        Mat8                   material_tangent;
+        this->get_section()->evaluate(zero_strain, zero_resultants, material_tangent);
+
+        Mat6 abd_section = material_tangent.template block<6, 6>(0, 0);
 
         Precision topo_scale = Precision(1);
 

@@ -47,25 +47,26 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
                 continue;
             }
 
-            const Vec6 global_strain = B * local_displacement_vec;
-            Vec6 local_strain;
-            Vec6 local_stress;
-            material_stress_strain(r, s, t, global_strain, local_stress, local_strain);
+            const Vec6                   global_strain_voigt = B * local_displacement_vec;
+            const VolumeStrainLinearized global_strain(global_strain_voigt);
+            VolumeStressCauchy           global_stress;
+            Mat6                         global_tangent;
+            evaluate_material(r, s, t, global_strain, global_stress, global_tangent);
 
             for (Dim j = 0; j < n_strain; ++j) {
-                if (strain) (*strain)(row, j) = local_strain(j);
-                if (stress) (*stress)(row, j) = local_stress(j);
+                if (strain) (*strain)(row, j) = global_strain.voigt()(j);
+                if (stress) (*stress)(row, j) = global_stress.voigt()(j);
             }
             continue;
         }
 
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
 
-        const GreenLagrangeStrain green_lagrange =
-            GreenLagrangeStrain::from_deformation_gradient(F);
-        const Vec6 second_pk_voigt =
-            material_tangent_reference(r, s, t) * green_lagrange.voigt();
-        const PK2Stress second_pk(second_pk_voigt);
+        const VolumeStrainGreenLagrange green_lagrange =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        VolumeStressPK2 second_pk;
+        Mat6            tangent;
+        evaluate_material(r, s, t, green_lagrange, second_pk, tangent);
 
         for (Dim j = 0; j < n_strain; ++j) {
             if (strain) (*strain)(row, j) = green_lagrange.voigt()(j);
@@ -187,6 +188,15 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
     // check for angles
     if (!this->_model_data || !this->_model_data->material_orientation) return;
 
+    auto material = this->material();
+    logging::error(material->has_elasticity(),
+                   "material has no elasticity assigned at element ", elem_id);
+    auto elasticity = material->elasticity();
+    logging::error(elasticity->supports_volume_linearized(),
+                   "material does not support linearized volume evaluation at element ", elem_id);
+    logging::error(elasticity->state_size() == 0,
+                   "SolidElement does not yet provide integration-point material state storage");
+
     auto angles_field = this->_model_data->material_orientation;
     logging::error(angles_field->components == 3,
                    "Field '", angles_field->name, "': material orientation requires 3 components");
@@ -219,10 +229,42 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         const Mat3 dR_d2 = R_section * dR_topo_d2;
         const Mat3 dR_d3 = R_section * dR_topo_d3;
 
-        // derivative of the rotated material matrix with section orientation fixed
-        auto dCd1 = this->material()->elasticity()->template get_transformed_derivative<3>(R, dR_d1);
-        auto dCd2 = this->material()->elasticity()->template get_transformed_derivative<3>(R, dR_d2);
-        auto dCd3 = this->material()->elasticity()->template get_transformed_derivative<3>(R, dR_d3);
+        VolumeStrainLinearized zero_strain;
+        VolumeStressCauchy     zero_stress;
+        Mat6                   local_tangent;
+        elasticity->evaluate(
+            zero_strain,
+            nullptr,
+            nullptr,
+            zero_stress,
+            local_tangent
+        );
+
+        Precision scaling = Precision(1);
+        if (this->_model_data->element_stiffness_scale) {
+            auto scale_field = this->_model_data->element_stiffness_scale;
+            logging::error(scale_field->components == 1,
+                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+            scaling = (*scale_field)(static_cast<Index>(this->elem_id));
+        }
+
+        const Mat6 strain_transform = material_strain_transformation(R);
+        const Mat6 stress_transform = material_stress_transformation(R);
+
+        auto tangent_derivative = [&](const Mat3& basis_derivative) {
+            const Mat6 strain_derivative =
+                material_strain_transformation_derivative(R, basis_derivative);
+            const Mat6 stress_derivative =
+                material_stress_transformation_derivative(R, basis_derivative);
+            return scaling * (
+                stress_derivative * local_tangent * strain_transform
+                + stress_transform * local_tangent * strain_derivative
+            );
+        };
+
+        const Mat6 dCd1 = tangent_derivative(dR_d1);
+        const Mat6 dCd2 = tangent_derivative(dR_d2);
+        const Mat6 dCd3 = tangent_derivative(dR_d3);
 
         derivative(0) += w * strain.dot(dCd1 * strain) * det;
         derivative(1) += w * strain.dot(dCd2 * strain) * det;

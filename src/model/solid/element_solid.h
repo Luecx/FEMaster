@@ -1,6 +1,10 @@
 #pragma once
 
 #include "../../math/interpolate.h"
+#include "../../material/strain/volume_strain_green_lagrange.h"
+#include "../../material/strain/volume_strain_linearized.h"
+#include "../../material/stress/volume_stress_cauchy.h"
+#include "../../material/stress/volume_stress_pk2.h"
 #include "../element/element_structural.h"
 #include "../geometry/surface/surface.h"
 
@@ -54,16 +58,28 @@ public:
     Mat3 section_orientation_basis (Precision r, Precision s, Precision t);
     Mat3 material_orientation_basis(Precision r, Precision s, Precision t);
 
-    StaticMatrix<n_strain, n_strain> material_tangent_reference(Precision r, Precision s, Precision t);
+    Mat6 material_tangent_reference(Precision r, Precision s, Precision t);
 
-    void material_stress_strain(
-        Precision                     r,
-        Precision                     s,
-        Precision                     t,
-        const StaticVector<n_strain>& global_strain,
-        StaticVector<n_strain>&       out_stress,
-        StaticVector<n_strain>&       out_strain
-    );
+    void evaluate_material(Precision                     r,
+                           Precision                     s,
+                           Precision                     t,
+                           const VolumeStrainLinearized& global_strain,
+                           VolumeStressCauchy&           global_stress,
+                           Mat6&                         global_tangent);
+
+    void evaluate_material(Precision                        r,
+                           Precision                        s,
+                           Precision                        t,
+                           const VolumeStrainGreenLagrange& global_strain,
+                           VolumeStressPK2&                 global_stress,
+                           Mat6&                            global_tangent);
+
+    static Mat6 material_strain_transformation(const Mat3& basis);
+    static Mat6 material_stress_transformation(const Mat3& basis);
+    static Mat6 material_strain_transformation_derivative(const Mat3& basis,
+                                                          const Mat3& basis_derivative);
+    static Mat6 material_stress_transformation_derivative(const Mat3& basis,
+                                                          const Mat3& basis_derivative);
 
     template<Dim K>
     StaticVector<K> interpolate(StaticMatrix<N, K> data,

@@ -62,7 +62,6 @@
 #include "../constraints/types/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_vec_to_vec.h"
 
 using fem::constraint::ConstraintTransformer;
 

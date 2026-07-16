@@ -45,7 +45,6 @@
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../mattools/reduce_vec_to_vec.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "../writer/write_mtx.h"
 

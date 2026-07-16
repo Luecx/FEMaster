@@ -14,18 +14,24 @@
 #include <sstream>
 
 namespace fem {
-StaticMatrix<6, 6> ShellSection::get_abd() {
+void ShellSection::evaluate(const ShellGeneralizedStrain& strain,
+                            ShellStressResultants&        resultants,
+                            Mat8&                         tangent) const {
     logging::error(material_ && material_->has_elasticity(),
                    "ShellSection requires a material with elasticity");
+    logging::error(material_->elasticity()->supports_shell_resultants(),
+                   "ShellSection material does not support shell-resultant evaluation");
+    logging::error(material_->elasticity()->state_size() == 0,
+                   "ShellSection does not yet provide integration-point material state storage");
 
-    return material_->elasticity()->get_abd(thickness_);
-}
-
-StaticMatrix<2, 2> ShellSection::get_shear() {
-    logging::error(material_ && material_->has_elasticity(),
-                   "ShellSection requires a material with elasticity");
-
-    return material_->elasticity()->get_shear(thickness_);
+    material_->elasticity()->evaluate(
+        strain,
+        thickness_,
+        nullptr,
+        nullptr,
+        resultants,
+        tangent
+    );
 }
 
 bool ShellSection::has_density() const {

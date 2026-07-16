@@ -13,9 +13,6 @@
 #include "element.h"
 #include <functional>
 
-#include "../../material/stress.h"
-#include "../../material/strain.h"
-
 namespace fem {
 namespace model {
 

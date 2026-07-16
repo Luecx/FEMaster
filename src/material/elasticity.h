@@ -1,16 +1,3 @@
-/**
- * @file elasticity.h
- * @brief Declares the base interface for material elasticity models.
- *
- * Elasticity models provide stiffness matrices for various configurations and
- * offer transformation utilities for rotated coordinate frames.
- *
- * @see src/material/elasticity.cpp
- * @see src/material/material.h
- * @author Finn Eggers
- * @date 06.03.2025
- */
-
 #pragma once
 
 #include "../core/core.h"
@@ -18,104 +5,108 @@
 #include <memory>
 
 namespace fem {
+
+struct AxialStrainLinearized;
+struct AxialStrainGreenLagrange;
+struct VolumeStrainLinearized;
+struct VolumeStrainGreenLagrange;
+struct BeamGeneralizedStrain;
+struct ShellGeneralizedStrain;
+struct ShellMaterialStrainLinearized;
+struct ShellMaterialStrainGreenLagrange;
+
+struct AxialStressCauchy;
+struct AxialStressPK2;
+struct VolumeStressCauchy;
+struct VolumeStressPK2;
+struct BeamStressResultants;
+struct ShellStressResultants;
+struct ShellMaterialStressCauchy;
+struct ShellMaterialStressPK2;
+
 namespace material {
 
-/**
- * @struct Elasticity
- * @brief Abstract base class describing material stiffness behaviour.
- */
 struct Elasticity {
+    using Ptr = std::shared_ptr<Elasticity>;
+
     virtual ~Elasticity() = default;
 
-    /// Returns the in-plane (2D) stiffness matrix.
-    virtual StaticMatrix<3, 3> get_2d() = 0;
+    virtual bool supports_axial_linearized() const;
+    virtual bool supports_axial_green_lagrange() const;
 
-    /// Returns the full 3D stiffness matrix.
-    virtual StaticMatrix<6, 6> get_3d() = 0;
+    virtual bool supports_volume_linearized() const;
+    virtual bool supports_volume_green_lagrange() const;
 
-    /// Returns the shell ABD stiffness matrix for the given section thickness.
-    virtual StaticMatrix<6, 6> get_abd(Precision thickness) {
-        const Mat3 q = get_2d();
-        StaticMatrix<6, 6> abd = StaticMatrix<6, 6>::Zero();
-        abd.template block<3, 3>(0, 0) = q * thickness;
-        abd.template block<3, 3>(3, 3) = q * (thickness * thickness * thickness / Precision(12));
-        return abd;
-    }
+    virtual bool supports_beam_resultants() const;
 
-    /// Returns the transverse shear stiffness matrix for the given section thickness.
-    virtual StaticMatrix<2, 2> get_shear(Precision thickness) {
-        const StaticMatrix<6, 6> c = get_3d();
-        StaticMatrix<2, 2> shear;
-        shear << c(3, 3), c(3, 4),
-                 c(4, 3), c(4, 4);
+    virtual bool supports_shell_resultants() const;
+    virtual bool supports_shell_integration_linearized() const;
+    virtual bool supports_shell_integration_green_lagrange() const;
 
-        const Precision k = Precision(5) / Precision(6);
-        return shear * (thickness * k);
-    }
+    virtual Index state_size() const;
+    virtual void  initialize_state(Precision* state) const;
 
-    virtual StaticMatrix<2, 2> get_transverse_shear(Precision thickness) {
-        return get_shear(thickness);
-    }
+    virtual void evaluate(const AxialStrainLinearized& strain,
+                          const Precision*             state_old,
+                          Precision*                   state_new,
+                          AxialStressCauchy&           stress,
+                          Precision&                   tangent) const;
 
-    /**
-     * @brief Retrieves the stiffness matrix for the specified dimension.
-     *
-     * @tparam D Spatial dimension (2 or 3).
-     * @return StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Stiffness matrix.
-     */
-    template<Dim D>
-    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get();
+    virtual void evaluate(const AxialStrainGreenLagrange& strain,
+                          const Precision*                state_old,
+                          Precision*                      state_new,
+                          AxialStressPK2&                 stress,
+                          Precision&                      tangent) const;
 
-    /**
-     * @brief Builds the 3D transformation matrix for a rotation `R`.
-     *
-     * @param R Rotation matrix.
-     * @return StaticMatrix<6, 6> Transformation matrix.
-     */
-    StaticMatrix<6, 6> transformation(StaticMatrix<3, 3> R);
+    virtual void evaluate(const VolumeStrainLinearized& strain,
+                          const Precision*              state_old,
+                          Precision*                    state_new,
+                          VolumeStressCauchy&           stress,
+                          Mat6&                         tangent) const;
 
-    /**
-     * @brief Computes the derivative of the transformation matrix.
-     *
-     * @param R Rotation matrix.
-     * @param dR Derivative of the rotation matrix.
-     * @return StaticMatrix<6, 6> Derivative of the transformation matrix.
-     */
-    StaticMatrix<6, 6> transformation_der(StaticMatrix<3, 3> R, StaticMatrix<3, 3> dR);
+    virtual void evaluate(const VolumeStrainGreenLagrange& strain,
+                          const Precision*                 state_old,
+                          Precision*                       state_new,
+                          VolumeStressPK2&                 stress,
+                          Mat6&                            tangent) const;
 
-    /**
-     * @brief Transforms the stiffness matrix using a rotation.
-     *
-     * @tparam D Spatial dimension (must be 3 for transformation).
-     * @param R Rotation matrix.
-     * @return StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Transformed stiffness.
-     */
-    template<Dim D>
-    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed(StaticMatrix<D, D> R);
+    virtual void evaluate(const BeamGeneralizedStrain& strain,
+                          const Precision*             state_old,
+                          Precision*                   state_new,
+                          BeamStressResultants&        resultants,
+                          Mat6&                        tangent) const;
 
-    /**
-     * @brief Computes the derivative of the transformed stiffness matrix.
-     *
-     * @tparam D Spatial dimension (must be 3 for transformation).
-     * @param R Rotation matrix.
-     * @param R_der Derivative of the rotation matrix.
-     * @return StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> Derivative of the transformed stiffness.
-     */
-    template<Dim D>
-    StaticMatrix<(D == 3 ? 6 : 3), (D == 3 ? 6 : 3)> get_transformed_derivative(StaticMatrix<D, D> R, StaticMatrix<D, D> R_der);
+    virtual void evaluate(const ShellGeneralizedStrain& strain,
+                          Precision                     thickness,
+                          const Precision*              state_old,
+                          Precision*                    state_new,
+                          ShellStressResultants&        resultants,
+                          Mat8&                         tangent) const;
 
-    /**
-     * @brief Casts the elasticity instance to a concrete type.
-     *
-     * @tparam T Target type deriving from `Elasticity`.
-     * @return T* Pointer to the instance or `nullptr` if the cast fails.
-     */
+    virtual void evaluate(const ShellMaterialStrainLinearized& strain,
+                          const Precision*                     state_old,
+                          Precision*                           state_new,
+                          ShellMaterialStressCauchy&            stress,
+                          Mat5&                                 tangent) const;
+
+    virtual void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+                          const Precision*                        state_old,
+                          Precision*                              state_new,
+                          ShellMaterialStressPK2&                 stress,
+                          Mat5&                                   tangent) const;
+
     template<typename T>
     T* as() {
         return dynamic_cast<T*>(this);
     }
+
+    template<typename T>
+    const T* as() const {
+        return dynamic_cast<const T*>(this);
+    }
 };
 
-using ElasticityPtr = std::shared_ptr<Elasticity>;
+using ElasticityPtr = Elasticity::Ptr;
+
 } // namespace material
 } // namespace fem

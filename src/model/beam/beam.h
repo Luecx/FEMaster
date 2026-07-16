@@ -13,8 +13,8 @@
 #include "../../core/core.h"
 #include "../../section/section_beam.h"
 #include "../element/element_structural.h"
-#include "../../material/stress.h"
 #include "../../material/isotropic_elasticity.h"
+#include "../../material/stress/beam_stress_resultants.h"
 
 #include <array>
 #include <cmath>
@@ -348,12 +348,10 @@ struct BeamElement : StructuralElement {
         const auto q_local  = T_out * f_global; // nodal resultants in base local frame, about the element DOF reference line
 
         for (Index i = 0; i < N; ++i) {
-            Vec6 q_i;
+
             for (Index d = 0; d < 6; ++d) {
-                q_i(d) = q_local(i * 6 + d) * ((i == 1 && N == 2) ? 1 : -1);
-            }
-            for (Index d = 0; d < 6; ++d) {
-                section_forces(static_cast<Index>(offset) + i, d) = q_i(d);
+                section_forces(static_cast<Index>(offset) + i, d)
+                  = q_local(i * 6 + d) * ((i == 1 && N == 2) ? 1 : -1);
             }
         }
 

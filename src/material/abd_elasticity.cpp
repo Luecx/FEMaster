@@ -1,29 +1,32 @@
 #include "abd_elasticity.h"
 
-namespace fem {
-namespace material {
+#include "strain/shell_generalized_strain.h"
+#include "stress/shell_stress_resultants.h"
 
-ABDElasticity::ABDElasticity(const StaticMatrix<6, 6>& abd_in,
-                             const StaticMatrix<2, 2>& shear_in)
-    : abd(abd_in)
-    , shear(shear_in) {}
+namespace fem::material {
 
-StaticMatrix<3, 3> ABDElasticity::get_2d() {
-    return abd.template block<3, 3>(0, 0);
+ABDElasticity::ABDElasticity(const Mat6& abd_in, const Mat2& shear_in)
+    : abd  (abd_in),
+      shear(shear_in) {}
+
+bool ABDElasticity::supports_shell_resultants() const {
+    return true;
 }
 
-StaticMatrix<6, 6> ABDElasticity::get_3d() {
-    return StaticMatrix<6, 6>::Zero();
-}
-
-StaticMatrix<6, 6> ABDElasticity::get_abd(Precision thickness) {
+void ABDElasticity::evaluate(const ShellGeneralizedStrain& strain,
+                             Precision                     thickness,
+                             const Precision*              state_old,
+                             Precision*                    state_new,
+                             ShellStressResultants&        resultants,
+                             Mat8&                         tangent) const {
     (void) thickness;
-    return abd;
+    (void) state_old;
+    (void) state_new;
+
+    tangent.setZero();
+    tangent.template block<6, 6>(0, 0) = abd;
+    tangent.template block<2, 2>(6, 6) = shear;
+    resultants.values() = tangent * strain.values();
 }
 
-StaticMatrix<2, 2> ABDElasticity::get_shear(Precision thickness) {
-    (void) thickness;
-    return shear;
-}
-} // namespace material
-} // namespace fem
+} // namespace fem::material

@@ -100,21 +100,137 @@ auto SolidElement<N>::node_coords_current()
 }
 
 template<Index N>
-void SolidElement<N>::material_stress_strain(Precision r,
-                                             Precision s,
-                                             Precision t,
-                                             const StaticVector<n_strain>& global_strain,
-                                             StaticVector<n_strain>& out_stress,
-                                             StaticVector<n_strain>& out_strain) {
-    if (!has_material_orientation()) {
-        out_strain = global_strain;
-        out_stress = material_tangent_reference(r, s, t) * out_strain;
-        return;
-    }
+Mat6 SolidElement<N>::material_strain_transformation(const Mat3& basis) {
+    return VolumeStrain::get_transformation_matrix(Mat3::Identity(), basis);
+}
 
-    const Mat3 basis = material_orientation_basis(r, s, t);
-    out_strain = material()->elasticity()->transformation(basis) * global_strain;
-    out_stress = material()->elasticity()->template get<D>() * out_strain;
+template<Index N>
+Mat6 SolidElement<N>::material_stress_transformation(const Mat3& basis) {
+    return VolumeStress::get_transformation_matrix(basis, Mat3::Identity());
+}
+
+template<Index N>
+Mat6 SolidElement<N>::material_strain_transformation_derivative(
+    const Mat3& basis,
+    const Mat3& basis_derivative
+) {
+    Mat6 derivative;
+
+    for (Index component = 0; component < n_strain; ++component) {
+        Vec6 unit = Vec6::Zero();
+        unit(component) = Precision(1);
+
+        const Mat3 global_tensor = VolumeStrain(unit).tensor();
+        const Mat3 local_derivative =
+            basis_derivative.transpose() * global_tensor * basis
+            + basis.transpose() * global_tensor * basis_derivative;
+        derivative.col(component) = VolumeStrain(local_derivative).voigt();
+    }
+    return derivative;
+}
+
+template<Index N>
+Mat6 SolidElement<N>::material_stress_transformation_derivative(
+    const Mat3& basis,
+    const Mat3& basis_derivative
+) {
+    Mat6 derivative;
+
+    for (Index component = 0; component < n_strain; ++component) {
+        Vec6 unit = Vec6::Zero();
+        unit(component) = Precision(1);
+
+        const Mat3 local_tensor = VolumeStress(unit).tensor();
+        const Mat3 global_derivative =
+            basis_derivative * local_tensor * basis.transpose()
+            + basis * local_tensor * basis_derivative.transpose();
+        derivative.col(component) = VolumeStress(global_derivative).voigt();
+    }
+    return derivative;
+}
+
+template<Index N>
+void SolidElement<N>::evaluate_material(Precision                     r,
+                                        Precision                     s,
+                                        Precision                     t,
+                                        const VolumeStrainLinearized& global_strain,
+                                        VolumeStressCauchy&           global_stress,
+                                        Mat6&                         global_tangent) {
+    logging::error(material() != nullptr, "no material assigned to element ", elem_id);
+    logging::error(material()->has_elasticity(), "material has no elasticity assigned at element ", elem_id);
+
+    auto elasticity = material()->elasticity();
+    logging::error(elasticity->supports_volume_linearized(),
+                   "material does not support linearized volume evaluation at element ", elem_id);
+    logging::error(elasticity->state_size() == 0,
+                   "SolidElement does not yet provide integration-point material state storage");
+
+    const Mat3 basis = has_material_orientation()
+        ? material_orientation_basis(r, s, t)
+        : Mat3::Identity();
+
+    const VolumeStrainLinearized local_strain =
+        global_strain.transformed(Mat3::Identity(), basis);
+
+    VolumeStressCauchy local_stress;
+    Mat6               local_tangent;
+    elasticity->evaluate(local_strain, nullptr, nullptr, local_stress, local_tangent);
+
+    global_stress = local_stress.transformed(basis, Mat3::Identity());
+    global_tangent = material_stress_transformation(basis)
+        * local_tangent
+        * material_strain_transformation(basis);
+
+    if (this->_model_data && this->_model_data->element_stiffness_scale) {
+        auto scale_field = this->_model_data->element_stiffness_scale;
+        logging::error(scale_field->components == 1,
+                       "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+        const Precision scaling = (*scale_field)(static_cast<Index>(this->elem_id));
+        global_stress.voigt() *= scaling;
+        global_tangent        *= scaling;
+    }
+}
+
+template<Index N>
+void SolidElement<N>::evaluate_material(Precision                        r,
+                                        Precision                        s,
+                                        Precision                        t,
+                                        const VolumeStrainGreenLagrange& global_strain,
+                                        VolumeStressPK2&                 global_stress,
+                                        Mat6&                            global_tangent) {
+    logging::error(material() != nullptr, "no material assigned to element ", elem_id);
+    logging::error(material()->has_elasticity(), "material has no elasticity assigned at element ", elem_id);
+
+    auto elasticity = material()->elasticity();
+    logging::error(elasticity->supports_volume_green_lagrange(),
+                   "material does not support Green-Lagrange volume evaluation at element ", elem_id);
+    logging::error(elasticity->state_size() == 0,
+                   "SolidElement does not yet provide integration-point material state storage");
+
+    const Mat3 basis = has_material_orientation()
+        ? material_orientation_basis(r, s, t)
+        : Mat3::Identity();
+
+    const VolumeStrainGreenLagrange local_strain =
+        global_strain.transformed(Mat3::Identity(), basis);
+
+    VolumeStressPK2 local_stress;
+    Mat6            local_tangent;
+    elasticity->evaluate(local_strain, nullptr, nullptr, local_stress, local_tangent);
+
+    global_stress = local_stress.transformed(basis, Mat3::Identity());
+    global_tangent = material_stress_transformation(basis)
+        * local_tangent
+        * material_strain_transformation(basis);
+
+    if (this->_model_data && this->_model_data->element_stiffness_scale) {
+        auto scale_field = this->_model_data->element_stiffness_scale;
+        logging::error(scale_field->components == 1,
+                       "Field '", scale_field->name, "': element stiffness scale requires 1 component");
+        const Precision scaling = (*scale_field)(static_cast<Index>(this->elem_id));
+        global_stress.voigt() *= scaling;
+        global_tangent        *= scaling;
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -198,23 +314,11 @@ auto SolidElement<N>::green_lagrange_strain_displacement(const StaticMatrix<N, D
 template<Index N>
 auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t)
     -> StaticMatrix<n_strain, n_strain> {
-    logging::error(material() != nullptr, "no _material assigned to element ", elem_id);
-    logging::error(material()->has_elasticity(), "_material has no elasticity components assigned at element ", elem_id);
-
-    Precision scaling = 1;
-    if (this->_model_data && this->_model_data->element_stiffness_scale) {
-        auto scale_field = this->_model_data->element_stiffness_scale;
-        logging::error(scale_field->components == 1,
-                       "Field '", scale_field->name, "': element stiffness scale requires 1 component");
-        scaling = (*scale_field)(static_cast<Index>(this->elem_id));
-    }
-
-    if (has_material_orientation()) {
-        auto result = this->material()->elasticity()->template get_transformed<D>(material_orientation_basis(r, s, t));
-        return scaling * result;
-    } else {
-        return scaling * this->material()->elasticity()->template get<D>();
-    }
+    VolumeStrainGreenLagrange zero_strain;
+    VolumeStressPK2           zero_stress;
+    Mat6                      tangent;
+    evaluate_material(r, s, t, zero_strain, zero_stress, tangent);
+    return tangent;
 }
 
 template<Index N>
@@ -344,7 +448,11 @@ SolidElement<N>::stiffness(Precision* buffer) {
             const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
             const StaticMatrix<n_strain, D * N> B =
                 this->green_lagrange_strain_displacement(dN_dX, F);
-            const StaticMatrix<n_strain, n_strain> C = material_tangent_reference(r, s, t);
+            const VolumeStrainGreenLagrange strain =
+                VolumeStrainGreenLagrange::from_deformation_gradient(F);
+            VolumeStressPK2 stress;
+            Mat6            C;
+            evaluate_material(r, s, t, strain, stress, C);
             StaticMatrix<D * N, D * N> res = B.transpose() * (C * B) * det0;
             return StaticMatrix<D * N, D * N>(res);
         };
@@ -369,7 +477,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int i
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
         const Index ip_row = static_cast<Index>(ip_start_idx) + ip_counter++;
-        const PK2Stress stress{ip_stress.row_vec6(ip_row)};
+        const VolumeStressPK2 stress{ip_stress.row_vec6(ip_row)};
         const Mat3 S = stress.tensor();
 
         Precision det0;

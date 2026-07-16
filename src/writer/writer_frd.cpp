@@ -251,11 +251,11 @@ const FRDField& frd_field(const std::string& field_name) {
             {"SHELLRESULTANTS"}, "SHR",
             {
                 FRDComponent::vector("NXX", 1),
-                FRDComponent::vector("NXY", 2),
-                FRDComponent::vector("NYY", 3),
+                FRDComponent::vector("NYY", 2),
+                FRDComponent::vector("NXY", 3),
                 FRDComponent::vector("MXX", 4),
-                FRDComponent::vector("MXY", 5),
-                FRDComponent::vector("MYY", 6),
+                FRDComponent::vector("MYY", 5),
+                FRDComponent::vector("MXY", 6),
                 FRDComponent::vector("QX", 7),
                 FRDComponent::vector("QY", 8)
             }

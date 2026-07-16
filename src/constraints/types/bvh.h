@@ -45,8 +45,6 @@ public:
 
     explicit BvhAabb(Precision inflate) : inflate_(inflate) {}
 
-    void set_inflate(Precision inflate) { inflate_ = inflate; }
-
     void clear() {
         elems_.clear();
         perm_.clear();

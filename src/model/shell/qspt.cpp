@@ -110,8 +110,13 @@ Precision QSPT::effective_density() {
 }
 
 Precision QSPT::effective_shear_modulus() {
-    const auto memb = this->get_elasticity()->get_2d();
-    const Precision g = memb(2, 2);
+    ShellGeneralizedStrain zero_strain;
+    ShellStressResultants  zero_resultants;
+    Mat8                   tangent;
+    this->get_section()->evaluate(zero_strain, zero_resultants, tangent);
+
+    const Precision thickness = this->get_section()->thickness_;
+    const Precision g         = tangent(2, 2) / thickness;
     logging::error(std::abs(g) > kGeomTol,
                    "QSPT requires a non-zero in-plane shear modulus for element ", this->elem_id);
     return g;

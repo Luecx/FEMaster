@@ -1,27 +1,9 @@
-/**
- * @file orthotropic_elasticity.h
- * @brief Declares the orthotropic elasticity model.
- *
- * Orthotropic materials exhibit different stiffness along three orthogonal
- * axes; this model returns the corresponding stiffness matrices.
- *
- * @see src/material/orthotropic_elasticity.cpp
- * @see src/material/elasticity.h
- * @author Finn Eggers
- * @date 06.03.2025
- */
-
 #pragma once
 
 #include "elasticity.h"
 
-namespace fem {
-namespace material {
+namespace fem::material {
 
-/**
- * @struct OrthotropicElasticity
- * @brief Elasticity model for orthotropic materials.
- */
 struct OrthotropicElasticity : Elasticity {
     Precision Ex;
     Precision Ey;
@@ -33,19 +15,6 @@ struct OrthotropicElasticity : Elasticity {
     Precision vzx;
     Precision vxy;
 
-    /**
-     * @brief Constructs the orthotropic elasticity model.
-     *
-     * @param ex Young's modulus in the X direction.
-     * @param ey Young's modulus in the Y direction.
-     * @param ez Young's modulus in the Z direction.
-     * @param gyz Shear modulus in the YZ plane.
-     * @param gzx Shear modulus in the ZX plane.
-     * @param gxy Shear modulus in the XY plane.
-     * @param vyz Poisson ratio for YZ coupling.
-     * @param vzx Poisson ratio for ZX coupling.
-     * @param vxy Poisson ratio for XY coupling.
-     */
     OrthotropicElasticity(Precision ex,
                           Precision ey,
                           Precision ez,
@@ -56,11 +25,48 @@ struct OrthotropicElasticity : Elasticity {
                           Precision vzx,
                           Precision vxy);
 
-    /// Returns the plane-stress stiffness matrix for orthotropic material.
-    StaticMatrix<3, 3> get_2d() override;
+    bool supports_volume_linearized() const override;
+    bool supports_volume_green_lagrange() const override;
+    bool supports_shell_resultants() const override;
+    bool supports_shell_integration_linearized() const override;
+    bool supports_shell_integration_green_lagrange() const override;
 
-    /// Returns the full 3D stiffness matrix for orthotropic material.
-    StaticMatrix<6, 6> get_3d() override;
+    void evaluate(const VolumeStrainLinearized& strain,
+                  const Precision*              state_old,
+                  Precision*                    state_new,
+                  VolumeStressCauchy&           stress,
+                  Mat6&                         tangent) const override;
+
+    void evaluate(const VolumeStrainGreenLagrange& strain,
+                  const Precision*                 state_old,
+                  Precision*                       state_new,
+                  VolumeStressPK2&                 stress,
+                  Mat6&                            tangent) const override;
+
+    void evaluate(const ShellGeneralizedStrain& strain,
+                  Precision                     thickness,
+                  const Precision*              state_old,
+                  Precision*                    state_new,
+                  ShellStressResultants&        resultants,
+                  Mat8&                         tangent) const override;
+
+    void evaluate(const ShellMaterialStrainLinearized& strain,
+                  const Precision*                     state_old,
+                  Precision*                           state_new,
+                  ShellMaterialStressCauchy&            stress,
+                  Mat5&                                 tangent) const override;
+
+    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+                  const Precision*                        state_old,
+                  Precision*                              state_new,
+                  ShellMaterialStressPK2&                 stress,
+                  Mat5&                                   tangent) const override;
+
+private:
+    [[nodiscard]] Mat3 plane_stress_tangent() const;
+    [[nodiscard]] Mat5 shell_material_tangent() const;
+    [[nodiscard]] Mat6 volume_tangent() const;
+    [[nodiscard]] Mat8 shell_resultant_tangent(Precision thickness) const;
 };
-} // namespace material
-} // namespace fem
+
+} // namespace fem::material

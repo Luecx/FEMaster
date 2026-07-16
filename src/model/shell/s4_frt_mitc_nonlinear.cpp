@@ -1,5 +1,9 @@
 #include "s4_frt_mitc_nonlinear.h"
 
+#include "../../material/strain/volume_strain_green_lagrange.h"
+#include "../../material/stress/volume_stress_cauchy.h"
+#include "../../material/stress/volume_stress_pk2.h"
+
 #include "../../math/so3.h"
 #include "../../math/vec_util.h"
 
@@ -1392,9 +1396,10 @@ void S4FRTMITC::assemble_internal_force(
 Mat8 S4FRTMITC::resultant_stiffness() const {
     ShellSection* section = shell_section();
 
-    Mat8 H = Mat8::Zero();
-    H.template block<6, 6>(0, 0) = section->get_abd();
-    H.template block<2, 2>(6, 6) = section->get_shear();
+    ShellGeneralizedStrain zero_strain;
+    ShellStressResultants  zero_resultants;
+    Mat8                   H;
+    section->evaluate(zero_strain, zero_resultants, H);
 
     Precision topo_scale = Precision(1);
     if (this->_model_data && this->_model_data->element_stiffness_scale) {
@@ -1708,18 +1713,18 @@ void S4FRTMITC::physical_stress_strain_at(
 
     const Mat3 green_lagrange_global =
         reference_basis_matrix
-        * GreenLagrangeStrain(strain_local).tensor()
+        * VolumeStrainGreenLagrange(strain_local).tensor()
         * reference_basis_matrix.transpose();
 
     const Mat3 second_pk_global =
         reference_basis_matrix
-        * PK2Stress(stress_local).tensor()
+        * VolumeStressPK2(stress_local).tensor()
         * reference_basis_matrix.transpose();
 
-    strain_out = GreenLagrangeStrain(green_lagrange_global).voigt();
+    strain_out = VolumeStrainGreenLagrange(green_lagrange_global).voigt();
 
     if (!nonlinear) {
-        stress_out = PK2Stress(second_pk_global).voigt();
+        stress_out = VolumeStressCauchy(second_pk_global).voigt();
         return;
     }
 
@@ -1734,7 +1739,7 @@ void S4FRTMITC::physical_stress_strain_at(
     const Mat3 cauchy_global =
         (F * second_pk_global * F.transpose()) / J;
 
-    stress_out = CauchyStress(cauchy_global).voigt();
+    stress_out = VolumeStressCauchy(cauchy_global).voigt();
 }
 
 

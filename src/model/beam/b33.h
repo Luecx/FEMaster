@@ -11,6 +11,7 @@
 #pragma once
 
 #include "beam.h"
+#include "../../material/strain/beam_generalized_strain.h"
 #include "../geometry/line/line2a.h"
 
 #include <limits>
@@ -235,18 +236,20 @@ struct B33 : BeamElement<2> {
         StaticMatrix<12, 12> T = transformation();
         StaticMatrix<12, 1> u_local = T * u_global;
 
-        const Precision eps = (u_local(6) - u_local(0)) / L;
-        const Precision N = E * A * eps;
+        Vec6 generalized_values = Vec6::Zero();
+        generalized_values(0) = (u_local(6) - u_local(0)) / L;
+        const BeamGeneralizedStrain generalized_strain(generalized_values);
+        const Precision axial_force = E * A * generalized_strain.values()(0);
 
         for (Eigen::Index i = 0; i < rst.rows(); ++i) {
             const Index row = static_cast<Index>(offset + i);
             if (strain) {
                 for (Index j = 0; j < strain->components; ++j) (*strain)(row, j) = Precision(0);
-                (*strain)(row, 0) = eps;
+                (*strain)(row, 0) = generalized_strain.values()(0);
             }
             if (stress) {
                 for (Index j = 0; j < stress->components; ++j) (*stress)(row, j) = Precision(0);
-                (*stress)(row, 0) = N;
+                (*stress)(row, 0) = axial_force;
             }
         }
     }

@@ -1,7 +1,11 @@
 #pragma once
 
 #include "../../core/core.h"
-#include "../../material/isotropic_elasticity.h"
+#include "../../material/elasticity.h"
+#include "../../material/strain/axial_strain_green_lagrange.h"
+#include "../../material/strain/axial_strain_linearized.h"
+#include "../../material/stress/axial_stress_cauchy.h"
+#include "../../material/stress/axial_stress_pk2.h"
 #include "../../section/section_truss.h"
 #include "../element/element_structural.h"
 
@@ -29,9 +33,9 @@ struct T3 : StructuralElement {
 
     std::string type_name() const override;
 
-    TrussSection*                  get_section();
-    material::MaterialPtr          get_material();
-    material::IsotropicElasticity* get_elasticity();
+    TrussSection*         get_section();
+    material::MaterialPtr get_material();
+    material::Elasticity* get_elasticity();
 
     Vec3      node_position_reference(Index local_node) const;
     Vec3      node_position_current  (Index local_node) const;
@@ -40,9 +44,6 @@ struct T3 : StructuralElement {
     Precision stretch               () const;
     Vec3      direction_reference   () const;
     Vec3      direction_current     () const;
-
-    Precision material_tangent_reference();
-    Precision material_tangent_spatial  ();
 
     Precision length();
     Vec3      direction();

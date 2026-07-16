@@ -1,5 +1,7 @@
 #include "../src/input_decks/parser.h"
 #include "../src/material/orthotropic_elasticity.h"
+#include "../src/material/strain/shell_generalized_strain.h"
+#include "../src/material/stress/shell_stress_resultants.h"
 #include "../src/model/model.h"
 
 #include <filesystem>
@@ -75,7 +77,7 @@ TEST(InputDecks_Parser, MapsOrthotropicElasticNu13ToNu31) {
     std::filesystem::remove(output_path);
 }
 
-TEST(Materials_Orthotropic, TransverseShellShearUsesVoigtYzThenZx) {
+TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     material::OrthotropicElasticity ortho(
         100.0, 200.0, 300.0,
         23.0, 13.0, 12.0,
@@ -83,10 +85,15 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesVoigtYzThenZx) {
     );
 
     const Precision k = Precision(5) / Precision(6);
-    const auto shear = ortho.get_shear(1.0);
+    ShellGeneralizedStrain strain;
+    ShellStressResultants  resultants;
+    Mat8                   tangent;
+    ortho.evaluate(strain, Precision(1), nullptr, nullptr, resultants, tangent);
 
-    EXPECT_NEAR(shear(0, 0), 23.0 * k, 1e-12);
-    EXPECT_NEAR(shear(1, 1), 13.0 * k, 1e-12);
+    const Mat2 shear = tangent.template block<2, 2>(6, 6);
+
+    EXPECT_NEAR(shear(0, 0), 13.0 * k, 1e-12);
+    EXPECT_NEAR(shear(1, 1), 23.0 * k, 1e-12);
     EXPECT_NEAR(shear(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(shear(1, 0), 0.0, 1e-12);
 }

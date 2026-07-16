@@ -6,7 +6,7 @@
 
 namespace fem::model {
 
-struct S8MITC
+struct MITC8
     : DefaultShellElement<
           8,
           Surface8,
@@ -28,11 +28,11 @@ struct S8MITC
     using ShearMatrix = StaticMatrix<2, 24>;
     using ShearRow    = StaticMatrix<1, 24>;
 
-    S8MITC(ID p_elem_id, std::array<ID, 8> p_node)
+    MITC8(ID p_elem_id, std::array<ID, 8> p_node)
         : Base(p_elem_id, p_node) {}
 
     std::string type_name() const override {
-        return "S8MITC";
+        return "MITC8";
     }
 
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
@@ -92,7 +92,7 @@ struct S8MITC
 
             logging::error(
                 detJ > Precision(0),
-                "S8MITC element ",
+                "MITC8 element ",
                 this->elem_id,
                 " has a non-positive Jacobian determinant at (",
                 rr,
@@ -194,7 +194,7 @@ struct S8MITC
 
         logging::error(
             detJ_eval > Precision(0),
-            "S8MITC element ",
+            "MITC8 element ",
             this->elem_id,
             " has a non-positive Jacobian determinant at (",
             r,
@@ -207,11 +207,7 @@ struct S8MITC
         const ShearMatrix B_xy =
             J_eval.inverse().transpose() * B_rs;
 
-        ShearMatrix B;
-        B.row(0) = B_xy.row(1);
-        B.row(1) = B_xy.row(0);
-
-        return B;
+        return B_xy;
     }
 };
 

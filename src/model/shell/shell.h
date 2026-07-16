@@ -5,8 +5,6 @@
 #ifndef SHELL_H
 #define SHELL_H
 
-#include "../../material/stress.h"
-#include "../../material/elasticity.h"
 #include "../../core/core.h"
 #include "../element/element_structural.h"
 #include "../../section/section_shell.h"
@@ -52,20 +50,6 @@ struct ShellElement : StructuralElement {
             logging::error(false, "Material not set for element ", this->elem_id);
         }
         return section->material_;
-    }
-    material::Elasticity* get_elasticity() {
-        auto mat_ptr = get_material();
-        if (!mat_ptr->has_elasticity()) {
-            logging::error(false, "Material has no elasticity assigned");
-        }
-        return mat_ptr->elasticity().get();
-    }
-    material::Elasticity* get_elasticity() const {
-        auto mat_ptr = get_material();
-        if (!mat_ptr->has_elasticity()) {
-            logging::error(false, "Material has no elasticity assigned");
-        }
-        return mat_ptr->elasticity().get();
     }
     Precision get_density(bool required = false) {
         ShellSection* section = get_section();

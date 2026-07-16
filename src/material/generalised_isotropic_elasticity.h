@@ -1,45 +1,74 @@
-/**
- * @file generalised_isotropic_elasticity.h
- * @brief Declares a generalised isotropic elasticity model with independent shear modulus.
- *
- * The model keeps the normal-stiffness part parameterised by Young's modulus
- * and Poisson's ratio while using an explicit shear modulus in 2D, 3D, and
- * shell shear/bending terms.
- *
- * @see src/material/generalised_isotropic_elasticity.cpp
- * @see src/material/elasticity.h
- */
-
 #pragma once
 
 #include "elasticity.h"
 
-namespace fem {
-namespace material {
+namespace fem::material {
 
-/**
- * @struct GeneralisedIsotropicElasticity
- * @brief Generalised isotropic elasticity model with independent shear stiffness.
- */
 struct GeneralisedIsotropicElasticity : Elasticity {
-    Precision youngs;  ///< Young's modulus used for normal terms.
-    Precision poisson; ///< Poisson's ratio used for normal coupling terms.
-    Precision shear;   ///< Independently prescribed shear modulus.
+    Precision youngs;
+    Precision poisson;
+    Precision shear;
 
-    /**
-     * @brief Constructs the generalized elasticity model.
-     *
-     * @param youngs_in Young's modulus.
-     * @param poisson_in Poisson ratio.
-     * @param shear_in Shear modulus.
-     */
-    GeneralisedIsotropicElasticity(Precision youngs_in, Precision poisson_in, Precision shear_in);
+    GeneralisedIsotropicElasticity(Precision youngs_in,
+                                   Precision poisson_in,
+                                   Precision shear_in);
 
-    /// Returns the plane-stress stiffness matrix with explicit in-plane shear modulus.
-    StaticMatrix<3, 3> get_2d() override;
+    bool supports_axial_linearized() const override;
+    bool supports_axial_green_lagrange() const override;
+    bool supports_volume_linearized() const override;
+    bool supports_volume_green_lagrange() const override;
+    bool supports_shell_resultants() const override;
+    bool supports_shell_integration_linearized() const override;
+    bool supports_shell_integration_green_lagrange() const override;
 
-    /// Returns a 3D stiffness matrix using Lamé-like normal terms and explicit shear modulus.
-    StaticMatrix<6, 6> get_3d() override;
+    void evaluate(const AxialStrainLinearized& strain,
+                  const Precision*             state_old,
+                  Precision*                   state_new,
+                  AxialStressCauchy&           stress,
+                  Precision&                   tangent) const override;
+
+    void evaluate(const AxialStrainGreenLagrange& strain,
+                  const Precision*                state_old,
+                  Precision*                      state_new,
+                  AxialStressPK2&                 stress,
+                  Precision&                      tangent) const override;
+
+    void evaluate(const VolumeStrainLinearized& strain,
+                  const Precision*              state_old,
+                  Precision*                    state_new,
+                  VolumeStressCauchy&           stress,
+                  Mat6&                         tangent) const override;
+
+    void evaluate(const VolumeStrainGreenLagrange& strain,
+                  const Precision*                 state_old,
+                  Precision*                       state_new,
+                  VolumeStressPK2&                 stress,
+                  Mat6&                            tangent) const override;
+
+    void evaluate(const ShellGeneralizedStrain& strain,
+                  Precision                     thickness,
+                  const Precision*              state_old,
+                  Precision*                    state_new,
+                  ShellStressResultants&        resultants,
+                  Mat8&                         tangent) const override;
+
+    void evaluate(const ShellMaterialStrainLinearized& strain,
+                  const Precision*                     state_old,
+                  Precision*                           state_new,
+                  ShellMaterialStressCauchy&            stress,
+                  Mat5&                                 tangent) const override;
+
+    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+                  const Precision*                        state_old,
+                  Precision*                              state_new,
+                  ShellMaterialStressPK2&                 stress,
+                  Mat5&                                   tangent) const override;
+
+private:
+    [[nodiscard]] Mat3 plane_stress_tangent() const;
+    [[nodiscard]] Mat5 shell_material_tangent() const;
+    [[nodiscard]] Mat6 volume_tangent() const;
+    [[nodiscard]] Mat8 shell_resultant_tangent(Precision thickness) const;
 };
-} // namespace material
-} // namespace fem
+
+} // namespace fem::material

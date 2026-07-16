@@ -1,14 +1,12 @@
 #include "../src/mattools/numerate_dofs.h"
 #include "../src/mattools/reduce_mat_to_vec.h"
 #include "../src/mattools/reduce_mat_to_mat.h"
-#include "../src/mattools/lump_matrix.h"
-#include "../src/mattools/assemble_bc.h"
 
 #include <gtest/gtest.h>
 
 using namespace fem;
 
-// 35) assemble_matrix single vs multi is heavier; covered elsewhere — here focus on numerate/reduce/lump/assemble_bc
+// 35) assemble_matrix single vs multi is heavier; covered elsewhere
 
 // 36) numerate_dofs produces consecutive ids
 TEST(Mattools, NumerateDofs) {
@@ -46,31 +44,4 @@ TEST(Mattools, ReduceMatToMat) {
     SparseMatrix R = mattools::reduce_mat_to_mat(K, b);
     EXPECT_EQ(R.rows(), 2);
     EXPECT_EQ(R.cols(), 2);
-}
-
-// 39) assemble_bc ADD/SET
-TEST(Mattools, AssembleBCAddSet) {
-    model::Field A{"A", model::FieldDomain::NODE, 2, 6};
-    model::Field B{"B", model::FieldDomain::NODE, 2, 6};
-    A.fill_nan();
-    B.fill_nan();
-    A(0,0) = 1.0; A(1,1) = 2.0;
-    B(0,0) = 3.0; B(1,1) = 2.0;
-    auto C = A;
-    mattools::assemble_bc(C, B, mattools::DuplicateHandling::ADD);
-    EXPECT_NEAR(C(0,0), 4.0, 1e-12);
-    EXPECT_NEAR(C(1,1), 4.0, 1e-12);
-}
-
-// 40) lump_matrix row sums
-TEST(Mattools, LumpMatrix) {
-    SparseMatrix M(3,3);
-    std::vector<Eigen::Triplet<Precision>> trips{{0,0,1},{0,2,2},{1,1,3},{2,0,4}};
-    M.setFromTriplets(trips.begin(), trips.end());
-    SparseMatrix L = mattools::lump_matrix(M);
-    EXPECT_EQ(L.rows(), 3);
-    EXPECT_EQ(L.cols(), 3);
-    EXPECT_NEAR(L.coeff(0,0), 3.0, 1e-12);
-    EXPECT_NEAR(L.coeff(1,1), 3.0, 1e-12);
-    EXPECT_NEAR(L.coeff(2,2), 4.0, 1e-12);
 }

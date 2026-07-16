@@ -1,44 +1,72 @@
-/**
- * @file isotropic_elasticity.h
- * @brief Declares the isotropic elasticity model.
- *
- * Computes stiffness matrices for isotropic materials in 2D/3D.
- *
- * @see src/material/isotropic_elasticity.cpp
- * @see src/material/elasticity.h
- * @author Finn Eggers
- * @date 06.03.2025
- */
-
 #pragma once
 
 #include "elasticity.h"
 
-namespace fem {
-namespace material {
+namespace fem::material {
 
-/**
- * @struct IsotropicElasticity
- * @brief Elasticity model for isotropic materials.
- */
 struct IsotropicElasticity : Elasticity {
-    Precision youngs;  ///< Young's modulus (E).
-    Precision poisson; ///< Poisson's ratio (nu).
-    Precision shear;   ///< Shear modulus (G).
+    Precision youngs;
+    Precision poisson;
+    Precision shear;
 
-    /**
-     * @brief Constructs the isotropic elasticity model.
-     *
-     * @param youngs_in Young's modulus.
-     * @param poisson_in Poisson's ratio.
-     */
     IsotropicElasticity(Precision youngs_in, Precision poisson_in);
 
-    /// Returns the plane-stress stiffness matrix.
-    StaticMatrix<3, 3> get_2d() override;
+    bool supports_axial_linearized() const override;
+    bool supports_axial_green_lagrange() const override;
+    bool supports_volume_linearized() const override;
+    bool supports_volume_green_lagrange() const override;
+    bool supports_shell_resultants() const override;
+    bool supports_shell_integration_linearized() const override;
+    bool supports_shell_integration_green_lagrange() const override;
 
-    /// Returns the full 3D stiffness matrix.
-    StaticMatrix<6, 6> get_3d() override;
+    void evaluate(const AxialStrainLinearized& strain,
+                  const Precision*             state_old,
+                  Precision*                   state_new,
+                  AxialStressCauchy&           stress,
+                  Precision&                   tangent) const override;
+
+    void evaluate(const AxialStrainGreenLagrange& strain,
+                  const Precision*                state_old,
+                  Precision*                      state_new,
+                  AxialStressPK2&                 stress,
+                  Precision&                      tangent) const override;
+
+    void evaluate(const VolumeStrainLinearized& strain,
+                  const Precision*              state_old,
+                  Precision*                    state_new,
+                  VolumeStressCauchy&           stress,
+                  Mat6&                         tangent) const override;
+
+    void evaluate(const VolumeStrainGreenLagrange& strain,
+                  const Precision*                 state_old,
+                  Precision*                       state_new,
+                  VolumeStressPK2&                 stress,
+                  Mat6&                            tangent) const override;
+
+    void evaluate(const ShellGeneralizedStrain& strain,
+                  Precision                     thickness,
+                  const Precision*              state_old,
+                  Precision*                    state_new,
+                  ShellStressResultants&        resultants,
+                  Mat8&                         tangent) const override;
+
+    void evaluate(const ShellMaterialStrainLinearized& strain,
+                  const Precision*                     state_old,
+                  Precision*                           state_new,
+                  ShellMaterialStressCauchy&            stress,
+                  Mat5&                                 tangent) const override;
+
+    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+                  const Precision*                        state_old,
+                  Precision*                              state_new,
+                  ShellMaterialStressPK2&                 stress,
+                  Mat5&                                   tangent) const override;
+
+private:
+    [[nodiscard]] Mat3 plane_stress_tangent() const;
+    [[nodiscard]] Mat5 shell_material_tangent() const;
+    [[nodiscard]] Mat6 volume_tangent() const;
+    [[nodiscard]] Mat8 shell_resultant_tangent(Precision thickness) const;
 };
-} // namespace material
-} // namespace fem
+
+} // namespace fem::material

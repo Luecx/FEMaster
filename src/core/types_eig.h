@@ -52,12 +52,16 @@ using DynamicVector = Eigen::Matrix<Precision, Eigen::Dynamic, 1>;
 using Vec2 = StaticVector<2>;
 using Vec3 = StaticVector<3>;
 using Vec4 = StaticVector<4>;
+using Vec5 = StaticVector<5>;
 using Vec6 = StaticVector<6>;
+using Vec8 = StaticVector<8>;
 
 using Mat2 = StaticMatrix<2, 2>;
 using Mat3 = StaticMatrix<3, 3>;
 using Mat4 = StaticMatrix<4, 4>;
+using Mat5 = StaticMatrix<5, 5>;
 using Mat6 = StaticMatrix<6, 6>;
+using Mat8 = StaticMatrix<8, 8>;
 using Mat42 = StaticMatrix<4, 2>;
 using Mat24 = StaticMatrix<2, 4>;
 using Mat32 = StaticMatrix<3, 2>;

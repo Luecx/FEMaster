@@ -77,17 +77,14 @@ material::MaterialPtr T3::get_material() {
     return section->material_;
 }
 
-material::IsotropicElasticity* T3::get_elasticity() {
+material::Elasticity* T3::get_elasticity() {
     auto mat = get_material();
     logging::error(mat->has_elasticity(),
                    "T3: material has no elasticity for element ",
                    this->elem_id);
-
-    auto* elasticity = mat->elasticity()->template as<material::IsotropicElasticity>();
-    logging::error(elasticity != nullptr,
-                   "T3: material elasticity is not isotropic for element ",
-                   this->elem_id);
-    return elasticity;
+    logging::error(mat->elasticity()->state_size() == 0,
+                   "T3 does not yet provide integration-point material state storage");
+    return mat->elasticity().get();
 }
 
 Vec3 T3::node_position_reference(Index local_node) const {
@@ -158,15 +155,6 @@ Vec3 T3::direction_current() const {
     return (node_position_current(1) - node_position_current(0)) / l;
 }
 
-Precision T3::material_tangent_reference() {
-    return get_elasticity()->youngs;
-}
-
-Precision T3::material_tangent_spatial() {
-    const Precision lambda = stretch();
-    return lambda * lambda * lambda * material_tangent_reference();
-}
-
 Precision T3::length() {
     return length_current();
 }
@@ -180,16 +168,28 @@ Precision T3::volume() {
 }
 
 MapMatrix T3::stiffness(Precision* buffer) {
-    const Precision A = get_section()->area_;
-    const Precision l = length_current();
+    const Precision A0     = get_section()->area_;
+    const Precision L0     = length_reference();
+    const Precision lambda = stretch();
 
-    logging::error(l > Precision(0),
-                   "T3: zero current length in stiffness for element ",
+    logging::error(L0 > Precision(0),
+                   "T3: zero reference length in stiffness for element ",
                    this->elem_id);
 
-    const Precision c = material_tangent_spatial();
-    const Vec3      n = direction_current();
-    const Mat3      k = (A * c / l) * (n * n.transpose());
+    const AxialStrainGreenLagrange axial_strain =
+        AxialStrainGreenLagrange::from_stretch(lambda);
+    AxialStressPK2 axial_stress;
+    Precision      material_tangent = Precision(0);
+
+    auto elasticity = get_elasticity();
+    logging::error(elasticity->supports_axial_green_lagrange(),
+                   "T3: material does not support Green-Lagrange axial evaluation for element ",
+                   this->elem_id);
+    elasticity->evaluate(axial_strain, nullptr, nullptr, axial_stress, material_tangent);
+
+    const Vec3 n = direction_current();
+    const Mat3 k = (A0 * material_tangent * lambda * lambda / L0)
+                 * (n * n.transpose());
 
     StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
 
@@ -207,15 +207,15 @@ MapMatrix T3::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_s
     logging::error(ip_stress.components >= 1,
                    "T3: geometric stiffness requires nonlinear IP stress component 0");
 
-    const Precision l = length_current();
+    const Precision L0 = length_reference();
 
-    logging::error(l > Precision(0),
-                   "T3: zero current length in stiffness_geom for element ",
+    logging::error(L0 > Precision(0),
+                   "T3: zero reference length in stiffness_geom for element ",
                    this->elem_id);
 
-    const Precision stress      = ip_stress(static_cast<Index>(ip_start_idx), 0);
-    const Precision axial_force = get_section()->area_ * stress;
-    const Mat3      k           = (axial_force / l) * Mat3::Identity();
+    const Precision second_piola = ip_stress(static_cast<Index>(ip_start_idx), 0);
+    const Mat3      k            = (get_section()->area_ * second_piola / L0)
+                                * Mat3::Identity();
 
     StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
 
@@ -359,15 +359,19 @@ void T3::compute_stress_strain(Field*           strain,
 
     if (use_green_lagrange_nl) {
         const Precision lambda = stretch();
+        const AxialStrainGreenLagrange axial_strain =
+            AxialStrainGreenLagrange::from_stretch(lambda);
+        AxialStressPK2 axial_stress;
+        Precision      tangent = Precision(0);
 
-        strain_value =
-            Precision(0.5)
-            * (lambda * lambda - Precision(1));
+        auto elasticity = get_elasticity();
+        logging::error(elasticity->supports_axial_green_lagrange(),
+                       "T3: material does not support Green-Lagrange axial evaluation for element ",
+                       this->elem_id);
+        elasticity->evaluate(axial_strain, nullptr, nullptr, axial_stress, tangent);
 
-        const Precision second_piola =
-            material_tangent_reference() * strain_value;
-
-        stress_value = lambda * second_piola;
+        strain_value = axial_strain.value();
+        stress_value = axial_stress.value();
     } else {
         const Precision L0 = length_reference();
 
@@ -381,11 +385,20 @@ void T3::compute_stress_strain(Field*           strain,
         const Vec3 u1 =
             displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
-        strain_value =
-            (u1 - u0).dot(direction_reference()) / L0;
+        const AxialStrainLinearized axial_strain(
+            (u1 - u0).dot(direction_reference()) / L0
+        );
+        AxialStressCauchy axial_stress;
+        Precision         tangent = Precision(0);
 
-        stress_value =
-            material_tangent_reference() * strain_value;
+        auto elasticity = get_elasticity();
+        logging::error(elasticity->supports_axial_linearized(),
+                       "T3: material does not support linearized axial evaluation for element ",
+                       this->elem_id);
+        elasticity->evaluate(axial_strain, nullptr, nullptr, axial_stress, tangent);
+
+        strain_value = axial_strain.value();
+        stress_value = axial_stress.value();
     }
 
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
@@ -435,15 +448,10 @@ void T3::compute_internal_force_nonlinear(Field&       node_forces,
     logging::error(ip_stress.components >= 1,
                    "T3: nonlinear internal force requires IP stress component 0");
 
-    const Precision l = length_current();
-
-    logging::error(l > Precision(0),
-                   "T3: zero current length in compute_internal_force_nonlinear for element ",
-                   this->elem_id);
-
-    const Vec3      n      = direction_current();
-    const Precision stress = ip_stress(static_cast<Index>(ip_offset), 0);
-    const Vec3      force  = get_section()->area_ * stress * n;
+    const Precision lambda       = stretch();
+    const Precision second_piola = ip_stress(static_cast<Index>(ip_offset), 0);
+    const Vec3      n            = direction_current();
+    const Vec3      force        = get_section()->area_ * lambda * second_piola * n;
 
     const Index node_0 = static_cast<Index>(node_ids[0]);
     const Index node_1 = static_cast<Index>(node_ids[1]);
@@ -503,13 +511,19 @@ bool T3::compute_beam_section_forces(Field&       section_forces,
                    "T3: zero reference length in compute_beam_section_forces for element ",
                    this->elem_id);
 
-    const Precision axial_strain =
-        (u1 - u0).dot(direction_reference()) / L0;
+    const AxialStrainLinearized axial_strain(
+        (u1 - u0).dot(direction_reference()) / L0
+    );
+    AxialStressCauchy axial_stress;
+    Precision         tangent = Precision(0);
 
-    const Precision axial_force =
-        material_tangent_reference()
-        * get_section()->area_
-        * axial_strain;
+    auto elasticity = get_elasticity();
+    logging::error(elasticity->supports_axial_linearized(),
+                   "T3: material does not support linearized axial evaluation for element ",
+                   this->elem_id);
+    elasticity->evaluate(axial_strain, nullptr, nullptr, axial_stress, tangent);
+
+    const Precision axial_force = get_section()->area_ * axial_stress.value();
 
     for (Index i = 0; i < N; ++i) {
         for (Index d = 0; d < section_forces.components; ++d) {
