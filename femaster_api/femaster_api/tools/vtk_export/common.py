@@ -83,7 +83,7 @@ def shape_of(rows: tuple[tuple[float, ...], ...], components: int) -> tuple[int,
 
 
 def mises(row: tuple[float, ...]) -> float:
-    sxx, syy, szz, sxy, syz, sxz = row[:6]
+    sxx, syy, szz, syz, sxz, sxy = row[:6]
     return sqrt(0.5 * ((sxx - syy) ** 2 + (syy - szz) ** 2 + (szz - sxx) ** 2) + 3.0 * (sxy**2 + syz**2 + sxz**2))
 
 
@@ -143,6 +143,7 @@ def cell_type(vtk, element: Element) -> int:
         ElementTopology.HEX8: vtk.VTK_HEXAHEDRON,
         ElementTopology.TRI6: vtk.VTK_QUADRATIC_TRIANGLE,
         ElementTopology.QUAD8: vtk.VTK_QUADRATIC_QUAD,
+        ElementTopology.MITC8: vtk.VTK_QUADRATIC_QUAD,
         ElementTopology.TET10: vtk.VTK_QUADRATIC_TETRA,
         ElementTopology.WEDGE15: vtk.VTK_QUADRATIC_WEDGE,
         ElementTopology.HEX20: vtk.VTK_QUADRATIC_HEXAHEDRON,

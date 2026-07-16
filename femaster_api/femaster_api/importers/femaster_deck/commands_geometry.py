@@ -32,6 +32,7 @@ ELEMENT_TYPES: dict[str, ElementTopology] = {
     "C2D6": ElementTopology.TRI6,
     "S8": ElementTopology.QUAD8,
     "C2D8": ElementTopology.QUAD8,
+    "MITC8": ElementTopology.MITC8,
 }
 
 

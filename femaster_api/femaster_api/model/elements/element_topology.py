@@ -21,6 +21,7 @@ class ElementTopology(Enum):
     MITC4 = "MITC4"
     TRI6 = "TRI6"
     QUAD8 = "QUAD8"
+    MITC8 = "MITC8"
     QSPT = "QSPT"
 
 
@@ -40,6 +41,7 @@ FEMASTER_ELEMENT_TYPES: dict[ElementTopology, str] = {
     ElementTopology.MITC4: "MITC4",
     ElementTopology.TRI6: "S6",
     ElementTopology.QUAD8: "S8",
+    ElementTopology.MITC8: "MITC8",
     ElementTopology.QSPT: "QSPT",
 }
 
@@ -59,6 +61,7 @@ TOPOLOGY_NODE_COUNTS: dict[ElementTopology, tuple[int, ...]] = {
     ElementTopology.MITC4: (4,),
     ElementTopology.TRI6: (6,),
     ElementTopology.QUAD8: (8,),
+    ElementTopology.MITC8: (8,),
     ElementTopology.QSPT: (4,),
 }
 
@@ -77,4 +80,5 @@ S4 = ElementTopology.QUAD4
 MITC4 = ElementTopology.MITC4
 S6 = ElementTopology.TRI6
 S8 = ElementTopology.QUAD8
+MITC8 = ElementTopology.MITC8
 QSPT = ElementTopology.QSPT

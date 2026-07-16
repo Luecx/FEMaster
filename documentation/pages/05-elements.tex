@@ -35,6 +35,7 @@ Element quality has a direct influence on solution quality. Poorly shaped elemen
 \val{MITC4} & 4 & Four-node quadrilateral shell with MITC-style tied shear interpolation. \\
 \val{S6} & 6 & Six-node quadratic triangular shell. \\
 \val{S8} & 8 & Eight-node quadratic quadrilateral shell. \\
+\val{MITC8} & 8 & Eight-node quadratic quadrilateral shell with MITC-style tied shear interpolation. \\
 \val{QSPT} & 4 & Specialized four-node quadrilateral shear-panel type. \\
 \val{B33} & 2 or 3 & Two-node 3D beam element with optional orientation node. \\
 \val{T33} & 2 & Two-node truss element. \\
@@ -370,6 +371,29 @@ In a high-quality mesh, \val{S8} can represent curvature, displacement gradients
 The disadvantages are cost and sensitivity to element shape. Warped or distorted higher-order quadrilaterals can produce unreliable results, and incorrectly placed midside nodes can damage the geometric mapping. A higher-order element is not automatically better if the mesh quality is poor.
 
 Use \val{S8} when the shell surface is smooth and the mesh generator can produce clean curved quadrilaterals. For rough imported meshes, abrupt topology changes, or strongly irregular panels, a simpler refined low-order mesh may be easier to validate. As with solid higher-order elements, convergence should be checked using global and integrated quantities as well as local stress measures.
+
+\clearpage
+
+\section{\val{MITC8}: 8-node quadratic shell with tied shear interpolation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.80\linewidth]{pages/figures/element_schematics/s8_schematic.png}
+    \caption{Quadratic eight-node topology used by the \val{MITC8} shell element.}
+\end{figure}
+
+\begin{syntax}
+*ELEMENT, TYPE=MITC8, ELSET=<set>
+<id>, <n1>, ..., <n8>
+\end{syntax}
+
+\val{MITC8} combines the quadratic eight-node serendipity topology of \val{S8} with tied transverse-shear interpolation. The two generalized shear components are evaluated at dedicated tying locations, interpolated in the natural element coordinates, and transformed back into the local shell coordinates. Their order is \(\gamma_{13},\gamma_{23}\), energetically conjugate to \(Q_{13},Q_{23}\).
+
+The element is intended for smooth quadratic shell meshes where transverse-shear locking would otherwise affect bending-dominated results. Compared with \val{MITC4}, the midside nodes improve geometric representation and allow quadratic displacement interpolation. Compared with \val{S8}, the modified shear interpolation specifically targets excessive transverse-shear stiffness.
+
+The current \val{MITC8} implementation uses the linear shell formulation. Geometrically nonlinear analyses should use an element with an explicitly supported nonlinear shell path. Mesh quality remains important: warped elements, poor midside-node placement, inconsistent normals, and abrupt element-size changes can still degrade the solution.
+
+Use the same node order as for \val{S8}: four corner nodes followed by the four midside nodes around the perimeter. Validate new models by comparing displacement, reactions, and shell resultants against a refined \val{MITC4}, \val{S8}, or solid reference model.
 
 \clearpage
 
