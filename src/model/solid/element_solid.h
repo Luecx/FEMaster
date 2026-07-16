@@ -55,7 +55,6 @@ public:
     Mat3 material_orientation_basis(Precision r, Precision s, Precision t);
 
     StaticMatrix<n_strain, n_strain> material_tangent_reference(Precision r, Precision s, Precision t);
-    StaticMatrix<n_strain, n_strain> material_tangent_spatial  (Precision r, Precision s, Precision t, const Mat3& F);
 
     void material_stress_strain(
         Precision                     r,
