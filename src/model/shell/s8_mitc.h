@@ -66,18 +66,6 @@ struct MITC8
         Precision          s,
         const LocalCoords& xy
     ) override {
-        auto lagrange_minus = [](Precision q) {
-            return Precision(0.5) * q * (q - Precision(1));
-        };
-
-        auto lagrange_zero = [](Precision q) {
-            return Precision(1) - q * q;
-        };
-
-        auto lagrange_plus = [](Precision q) {
-            return Precision(0.5) * q * (q + Precision(1));
-        };
-
         auto physical_shear_matrix = [&](
             Precision rr,
             Precision ss
@@ -140,45 +128,57 @@ struct MITC8
             return B_rs.row(component);
         };
 
+        const Precision a = Precision(1) / std::sqrt(Precision(3));
+
+        // Interpolate the covariant rz shear component
+        const Precision h_rz_5 = Precision(1) - s * s;
+        const Precision h_rz_1 = Precision(0.25) * (Precision(1) + r / a) * (Precision(1) + s)
+                               - Precision(0.25) * h_rz_5;
+        const Precision h_rz_2 = Precision(0.25) * (Precision(1) - r / a) * (Precision(1) + s)
+                               - Precision(0.25) * h_rz_5;
+        const Precision h_rz_3 = Precision(0.25) * (Precision(1) - r / a) * (Precision(1) - s)
+                               - Precision(0.25) * h_rz_5;
+        const Precision h_rz_4 = Precision(0.25) * (Precision(1) + r / a) * (Precision(1) - s)
+                               - Precision(0.25) * h_rz_5;
+
+        const ShearRow B_rz_1  = covariant_shear_row( a,  Precision(1), 0);
+        const ShearRow B_rz_2  = covariant_shear_row(-a,  Precision(1), 0);
+        const ShearRow B_rz_3  = covariant_shear_row(-a, Precision(-1), 0);
+        const ShearRow B_rz_4  = covariant_shear_row( a, Precision(-1), 0);
+        const ShearRow B_rz_ra = covariant_shear_row(-a, Precision(0), 0);
+        const ShearRow B_rz_rb = covariant_shear_row( a, Precision(0), 0);
+
         const ShearRow B_rz =
-              lagrange_minus(s)
-            * covariant_shear_row(
-                  Precision(0),
-                  Precision(-1),
-                  0
-              )
-            + lagrange_zero(s)
-            * covariant_shear_row(
-                  Precision(0),
-                  Precision(0),
-                  0
-              )
-            + lagrange_plus(s)
-            * covariant_shear_row(
-                  Precision(0),
-                  Precision(+1),
-                  0
-              );
+              h_rz_1 * B_rz_1
+            + h_rz_2 * B_rz_2
+            + h_rz_3 * B_rz_3
+            + h_rz_4 * B_rz_4
+            + h_rz_5 * Precision(0.5) * (B_rz_ra + B_rz_rb);
+
+        // Interpolate the covariant sz shear component
+        const Precision h_sz_5 = Precision(1) - r * r;
+        const Precision h_sz_1 = Precision(0.25) * (Precision(1) + s / a) * (Precision(1) + r)
+                               - Precision(0.25) * h_sz_5;
+        const Precision h_sz_2 = Precision(0.25) * (Precision(1) + s / a) * (Precision(1) - r)
+                               - Precision(0.25) * h_sz_5;
+        const Precision h_sz_3 = Precision(0.25) * (Precision(1) - s / a) * (Precision(1) - r)
+                               - Precision(0.25) * h_sz_5;
+        const Precision h_sz_4 = Precision(0.25) * (Precision(1) - s / a) * (Precision(1) + r)
+                               - Precision(0.25) * h_sz_5;
+
+        const ShearRow B_sz_1  = covariant_shear_row( Precision(1),  a, 1);
+        const ShearRow B_sz_2  = covariant_shear_row(Precision(-1),  a, 1);
+        const ShearRow B_sz_3  = covariant_shear_row(Precision(-1), -a, 1);
+        const ShearRow B_sz_4  = covariant_shear_row( Precision(1), -a, 1);
+        const ShearRow B_sz_sa = covariant_shear_row(Precision(0), -a, 1);
+        const ShearRow B_sz_sb = covariant_shear_row(Precision(0),  a, 1);
 
         const ShearRow B_sz =
-              lagrange_minus(r)
-            * covariant_shear_row(
-                  Precision(-1),
-                  Precision(0),
-                  1
-              )
-            + lagrange_zero(r)
-            * covariant_shear_row(
-                  Precision(0),
-                  Precision(0),
-                  1
-              )
-            + lagrange_plus(r)
-            * covariant_shear_row(
-                  Precision(+1),
-                  Precision(0),
-                  1
-              );
+              h_sz_1 * B_sz_1
+            + h_sz_2 * B_sz_2
+            + h_sz_3 * B_sz_3
+            + h_sz_4 * B_sz_4
+            + h_sz_5 * Precision(0.5) * (B_sz_sa + B_sz_sb);
 
         ShearMatrix B_rs;
         B_rs.row(0) = B_rz;

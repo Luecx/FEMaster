@@ -387,13 +387,33 @@ Use \val{S8} when the shell surface is smooth and the mesh generator can produce
 <id>, <n1>, ..., <n8>
 \end{syntax}
 
-\val{MITC8} combines the quadratic eight-node serendipity topology of \val{S8} with tied transverse-shear interpolation. The two generalized shear components are evaluated at dedicated tying locations, interpolated in the natural element coordinates, and transformed back into the local shell coordinates. Their order is \(\gamma_{13},\gamma_{23}\), energetically conjugate to \(Q_{13},Q_{23}\).
+\val{MITC8} combines the quadratic eight-node serendipity topology of \val{S8} with tied transverse-shear interpolation. For each covariant shear component, four values are evaluated at edge tying points and a fifth value is formed as the mean of two internal tying points. These values are interpolated in the natural element coordinates and transformed back into the local shell coordinates. Their order is \(\gamma_{13},\gamma_{23}\), energetically conjugate to \(Q_{13},Q_{23}\).
 
 The element is intended for smooth quadratic shell meshes where transverse-shear locking would otherwise affect bending-dominated results. Compared with \val{MITC4}, the midside nodes improve geometric representation and allow quadratic displacement interpolation. Compared with \val{S8}, the modified shear interpolation specifically targets excessive transverse-shear stiffness.
 
 The current \val{MITC8} implementation uses the linear shell formulation. Geometrically nonlinear analyses should use an element with an explicitly supported nonlinear shell path. Mesh quality remains important: warped elements, poor midside-node placement, inconsistent normals, and abrupt element-size changes can still degrade the solution.
 
 Use the same node order as for \val{S8}: four corner nodes followed by the four midside nodes around the perimeter. Validate new models by comparing displacement, reactions, and shell resultants against a refined \val{MITC4}, \val{S8}, or solid reference model.
+
+The example decks \texttt{039} through \texttt{043} compare \val{S4}, \val{MITC4}, \val{MITC4FRT}, \val{S8}, and \val{MITC8} on a ten-element cantilever strip. For \(L=1000\,\mathrm{mm}\), \(b=100\,\mathrm{mm}\), \(t=10\,\mathrm{mm}\), \(E=210000\,\mathrm{N/mm^2}\), \(\nu=0\), and \(P=100\,\mathrm{N}\), Timoshenko beam theory predicts a tip displacement magnitude of \(19.0487619\,\mathrm{mm}\). The calculated values are summarized below.
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{@{}lrrr@{}}
+        \toprule
+        \textbf{Element} & \textbf{Tip displacement [mm]} & \textbf{Error [\%]} & \textbf{Tip rotation [rad]} \\
+        \midrule
+        \val{S4}       & 0.446455 & -97.6563 & 0.00066964 \\
+        \val{MITC4}    & 19.001140 & -0.2500 & 0.02857143 \\
+        \val{MITC4FRT} & 19.001140 & -0.2500 & 0.02857143 \\
+        \val{S8}       & 19.006240 & -0.2232 & 0.02857143 \\
+        \val{MITC8}    & 19.048760 & -0.0000 & 0.02857143 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Ten-element shell-strip cantilever compared with Timoshenko beam theory.}
+\end{table}
+
+The comparison exposes severe transverse-shear locking in the coarse \val{S4} mesh. The tied-shear and quadratic formulations closely reproduce the analytical bending response, while \val{MITC8} also recovers the analytical root moment resultant and extreme-fibre stress to the printed result precision. The \val{MITC4FRT} displacement and reactions agree with \val{MITC4}, but its recovered bending resultants and top/bottom bending stresses currently have the opposite sign convention.
 
 \clearpage
 
