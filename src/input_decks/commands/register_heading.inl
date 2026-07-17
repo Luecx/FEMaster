@@ -1,5 +1,6 @@
 // register_heading.inl — DSL registration for *HEADING
 
+#include <array>
 #include <string>
 
 #include "../../dsl/condition.h"
@@ -16,9 +17,9 @@ inline void register_heading(fem::io::dsl::Registry& registry) {
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TEXT").desc("Ignored heading line")
+                    .fixed<std::string, 64>().name("TEXT").desc("Ignored heading line").on_missing(std::string{"_"})
                 )
-                .bind([](const std::string&) {})
+                .bind([](const std::array<std::string, 64>&) {})
             )
         );
     });

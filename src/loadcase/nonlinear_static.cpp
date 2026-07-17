@@ -316,7 +316,13 @@ void NonlinearStatic::run() {
         SparseMatrix matrix = tangent;
 
         logging::disable();
-        DynamicMatrix solution = solver::solve(device, method, matrix, rhs);
+        DynamicMatrix solution = solver::solve(
+            device,
+            method,
+            matrix,
+            rhs,
+            solver::DirectSolverMatrixType::General
+        );
         logging::enable();
         return solution;
     };

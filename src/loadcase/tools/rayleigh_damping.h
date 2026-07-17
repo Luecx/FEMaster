@@ -31,7 +31,8 @@ struct RayleighDamping {
     [[nodiscard]] SparseMatrix
     build(const SparseMatrix& M, const SparseMatrix& K) const {
         // Fast paths to avoid unnecessary ops
-        if (alpha == static_cast<Precision>(0) && beta == static_cast<Precision>(0))
+        if (alpha == static_cast<Precision>(0)
+          && beta == static_cast<Precision>(0))
             return SparseMatrix(M.rows(), M.cols());
 
         if (alpha == static_cast<Precision>(0))

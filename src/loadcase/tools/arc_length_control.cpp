@@ -15,26 +15,6 @@ namespace fem {
 namespace loadcase {
 namespace tools {
 
-namespace {
-
-enum class ArcCorrectionFailure {
-    DegenerateEquation,
-    NegativeDiscriminant
-};
-
-const char* arc_correction_failure_reason(ArcCorrectionFailure failure) {
-    switch (failure) {
-    case ArcCorrectionFailure::DegenerateEquation:
-        return "DEGENERATE_ARC_EQUATION";
-    case ArcCorrectionFailure::NegativeDiscriminant:
-        return "NEGATIVE_ARC_DISCRIMINANT";
-    }
-
-    return "UNKNOWN_ARC_CORRECTION_FAILURE";
-}
-
-} // namespace
-
 bool ArcLengthControl::solve(
     DynamicVector&           q,
     Precision&               lambda,
@@ -176,154 +156,116 @@ bool ArcLengthControl::solve(
         bool        converged              = false;
         const char* attempt_failure_reason = "NONE";
 
-        try {
-            converged = newton_.solve(
-                q,
-                [&](const DynamicVector& current_q,
-                    DynamicVector&       residual,
-                    SparseMatrix&        tangent) {
-                    evaluate(current_q, lambda, residual, tangent);
-                },
-                [&](const SparseMatrix&  tangent,
-                    const DynamicVector& residual) {
-                    DynamicMatrix rhs(tangent.rows(), 2);
-                    rhs.col(0) = residual;
-                    rhs.col(1) = reference_load;
+        converged = newton_.solve(
+            q,
+            [&](const DynamicVector& current_q,
+                DynamicVector&       residual,
+                SparseMatrix&        tangent) {
+                evaluate(current_q, lambda, residual, tangent);
+            },
+            [&](const SparseMatrix&  tangent,
+                const DynamicVector& residual) {
+                const Index n = tangent.rows();
 
-                    const DynamicMatrix solution = matrix_solve(tangent, rhs);
+                logging::error(tangent.rows() == tangent.cols(),
+                    "ArcLengthControl: tangent matrix must be square");
+                logging::error(reference_load.size() == n,
+                    "ArcLengthControl: reference load has invalid size");
 
-                    logging::error(solution.rows() == tangent.rows() &&
-                                   solution.cols() == 2,
-                        "ArcLengthControl: matrix solve returned an invalid shape");
-                    logging::error(solution.allFinite(),
-                        "ArcLengthControl: correction contains NaN/Inf entries");
+                const DynamicVector delta_q      = q - q_accepted_;
+                const Precision     delta_lambda = lambda - lambda_accepted_;
+                const Precision     constraint   =
+                    delta_q.dot(delta_q)
+                  + psi2 * load_scale2_ * delta_lambda * delta_lambda
+                  - arc_radius_ * arc_radius_;
 
-                    const DynamicVector dq_r = solution.col(0);
-                    const DynamicVector dq_f = solution.col(1);
+                SparseMatrix augmented(n + 1, n + 1);
+                TripletList  triplets;
+                triplets.reserve(
+                    static_cast<std::size_t>(tangent.nonZeros())
+                  + static_cast<std::size_t>(2 * n)
+                  + 1
+                );
 
-                    const DynamicVector delta_q     = q - q_accepted_;
-                    const Precision     delta_lambda = lambda - lambda_accepted_;
-
-                    const DynamicVector a = delta_q + dq_r;
-                    const DynamicVector b = dq_f;
-
-                    const Precision qa =
-                        b.dot(b) + psi2 * load_scale2_;
-
-                    const Precision qb = Precision(2) * (
-                        a.dot(b) + psi2 * load_scale2_ * delta_lambda
-                    );
-
-                    const Precision qc =
-                        a.dot(a)
-                      + psi2 * load_scale2_ * delta_lambda * delta_lambda
-                      - arc_radius_ * arc_radius_;
-
-                    if (qa <= std::numeric_limits<Precision>::epsilon()) {
-                        throw ArcCorrectionFailure::DegenerateEquation;
-                    }
-
-                    const Precision discriminant =
-                        qb * qb - Precision(4) * qa * qc;
-
-                    const Precision discriminant_scale = std::max({
-                        std::abs(qb * qb),
-                        std::abs(Precision(4) * qa * qc),
-                        Precision(1)
-                    });
-
-                    const Precision discriminant_tolerance =
-                        Precision(64) *
-                        std::numeric_limits<Precision>::epsilon() *
-                        discriminant_scale;
-
-                    if (discriminant < -discriminant_tolerance) {
-                        throw ArcCorrectionFailure::NegativeDiscriminant;
-                    }
-
-                    const Precision sqrt_discriminant =
-                        std::sqrt(std::max(discriminant, Precision(0)));
-
-                    const Precision dlambda_1 =
-                        (-qb + sqrt_discriminant) / (Precision(2) * qa);
-
-                    const Precision dlambda_2 =
-                        (-qb - sqrt_discriminant) / (Precision(2) * qa);
-
-                    const DynamicVector dq_1 = dq_r + dlambda_1 * dq_f;
-                    const DynamicVector dq_2 = dq_r + dlambda_2 * dq_f;
-
-                    const DynamicVector total_delta_q_1 = delta_q + dq_1;
-                    const DynamicVector total_delta_q_2 = delta_q + dq_2;
-
-                    const Precision total_delta_lambda_1 =
-                        delta_lambda + dlambda_1;
-
-                    const Precision total_delta_lambda_2 =
-                        delta_lambda + dlambda_2;
-
-                    Precision score_1;
-                    Precision score_2;
-
-                    if (accepted_increments_ == 0) {
-                        score_1 = total_delta_lambda_1;
-                        score_2 = total_delta_lambda_2;
-                    } else {
-                        score_1 =
-                            previous_delta_q_.dot(total_delta_q_1)
-                          + psi2 * load_scale2_ * previous_delta_lambda_ * total_delta_lambda_1;
-
-                        score_2 =
-                            previous_delta_q_.dot(total_delta_q_2)
-                          + psi2 * load_scale2_ * previous_delta_lambda_ * total_delta_lambda_2;
-                    }
-
-                    const bool use_first = score_1 >= score_2;
-
-                    lambda += use_first ? dlambda_1 : dlambda_2;
-
-                    return use_first ? dq_1 : dq_2;
-                },
-                [&](const DynamicVector& residual) {
-                    current_equilibrium_norm = residual_norm(residual, lambda);
-
-                    return std::max(
-                        current_equilibrium_norm,
-                        arc_constraint_norm_(q, lambda)
-                    );
-                },
-                correction_norm,
-                [&](Index     iteration,
-                    Precision current_residual_norm,
-                    Precision current_correction_norm,
-                    Precision convergence_order,
-                    Time      assembly_ms,
-                    Time      solve_ms,
-                    bool      iteration_converged) {
-                    (void) current_residual_norm;
-
-                    if (on_iteration) {
-                        on_iteration(
-                            accepted_increments_ + 1,
-                            iteration,
-                            lambda,
-                            current_equilibrium_norm,
-                            current_correction_norm,
-                            convergence_order,
-                            assembly_ms,
-                            solve_ms,
-                            iteration_converged
-                        );
+                for (Index col = 0; col < tangent.outerSize(); ++col) {
+                    for (SparseMatrix::InnerIterator it(tangent, col); it; ++it) {
+                        triplets.emplace_back(it.row(), it.col(), it.value());
                     }
                 }
-            );
 
-            if (!converged) {
-                attempt_failure_reason = newton_.failure_reason();
+                for (Index i = 0; i < n; ++i) {
+                    if (reference_load(i) != Precision(0)) {
+                        triplets.emplace_back(i, n, -reference_load(i));
+                    }
+
+                    if (delta_q(i) != Precision(0)) {
+                        triplets.emplace_back(n, i, Precision(2) * delta_q(i));
+                    }
+                }
+
+                triplets.emplace_back(
+                    n,
+                    n,
+                    Precision(2) * psi2 * load_scale2_ * delta_lambda
+                );
+
+                augmented.setFromTriplets(triplets.begin(), triplets.end());
+
+                DynamicMatrix rhs(n + 1, 1);
+                rhs.col(0).head(n) = residual;
+                rhs(n, 0)          = -constraint;
+
+                const DynamicMatrix solution = matrix_solve(augmented, rhs);
+
+                logging::error(solution.rows() == n + 1 &&
+                               solution.cols() == 1,
+                    "ArcLengthControl: augmented solve returned an invalid shape");
+                logging::error(solution.allFinite(),
+                    "ArcLengthControl: correction contains NaN/Inf entries");
+
+                const DynamicVector dq      = solution.col(0).head(n);
+                const Precision     dlambda = solution(n, 0);
+
+                lambda += dlambda;
+
+                return dq;
+            },
+            [&](const DynamicVector& residual) {
+                current_equilibrium_norm = residual_norm(residual, lambda);
+
+                return std::max(
+                    current_equilibrium_norm,
+                    arc_constraint_norm_(q, lambda)
+                );
+            },
+            correction_norm,
+            [&](Index     iteration,
+                Precision current_residual_norm,
+                Precision current_correction_norm,
+                Precision convergence_order,
+                Time      assembly_ms,
+                Time      solve_ms,
+                bool      iteration_converged) {
+                (void) current_residual_norm;
+
+                if (on_iteration) {
+                    on_iteration(
+                        accepted_increments_ + 1,
+                        iteration,
+                        lambda,
+                        current_equilibrium_norm,
+                        current_correction_norm,
+                        convergence_order,
+                        assembly_ms,
+                        solve_ms,
+                        iteration_converged
+                    );
+                }
             }
-        } catch (ArcCorrectionFailure failure) {
-            converged              = false;
-            attempt_failure_reason = arc_correction_failure_reason(failure);
+        );
+
+        if (!converged) {
+            attempt_failure_reason = newton_.failure_reason();
         }
 
         if (!converged) {
@@ -464,7 +406,7 @@ void ArcLengthControl::reset_state_() {
 void ArcLengthControl::configure_newton_() {
     newton_.maximum_iterations       = maximum_iterations;
     newton_.residual_tolerance       = tolerance;
-    newton_.stagnation_tolerance     = tolerance;
+    newton_.stagnation_tolerance     = Precision(1e-3) * tolerance;
     newton_.check_finite             = true;
     newton_.early_failure_detection  = true;
 }
