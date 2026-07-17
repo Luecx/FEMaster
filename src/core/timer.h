@@ -75,43 +75,25 @@ auto Timer::measure(Func&& func, const std::string& description, bool log_output
         logging::info(true, "Begin of ", std::setw(75), std::left, description);
         logging::up();
     }
-
     timer.start();
+
+    auto log_func = [&]() {
+        if (log_output) {
+            logging::down();
+            logging::info(true, "Finished ",
+                std::setw(75), std::left , description, "[",
+                std::setw(6) , std::right, std::setprecision(4), timer.elapsed(), " ms]");
+        }
+    };
 
     if constexpr (std::is_void_v<std::invoke_result_t<Func&>>) {
         std::forward<Func>(func)();
         timer.stop();
-        if (log_output) {
-            logging::down();
-            logging::info(true,
-                          "Finished ",
-                          std::setw(75),
-                          std::left,
-                          description,
-                          "[",
-                          std::setw(6),
-                          std::right,
-                          std::setprecision(4),
-                          timer.elapsed(),
-                          " ms]");
-        }
+        log_func();
     } else {
         auto result = std::forward<Func>(func)();
         timer.stop();
-        if (log_output) {
-            logging::down();
-            logging::info(true,
-                          "Finished ",
-                          std::setw(75),
-                          std::left,
-                          description,
-                          "[",
-                          std::setw(6),
-                          std::right,
-                          std::setprecision(4),
-                          timer.elapsed(),
-                          " ms]");
-        }
+        log_func();
         return result;
     }
 }

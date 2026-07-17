@@ -19,9 +19,9 @@
  */
 
 #include "loadcase.h"
-#include "../solve/newmark/solve_newmark.h"     // NewmarkOpts, newmark_linear
-#include "../damping/rayleigh.h"   // Rayleigh
-#include "../core/types_eig.h"
+#include "../solve/newmark/solve_newmark.h"   // NewmarkOpts, newmark_linear
+#include "tools/rayleigh_damping.h"           // RayleighDamping
+#include "../../core/types_eig.h"
 #include "../data/field.h"         // model::Field
 
 #include <vector>
@@ -47,7 +47,7 @@ struct Transient : public LoadCase {
     double gamma   = 0.5;   ///< Newmark γ
 
     // Damping (analysis-specific)
-    std::optional<damping::Rayleigh> rayleigh;
+    std::optional<tools::RayleighDamping> rayleigh;
 
     // Writing cadence
     int    write_every_steps = 1;     ///< write every N steps (>=1)
@@ -64,7 +64,7 @@ struct Transient : public LoadCase {
     // Setters (fluent)
     Transient& set_time(double dt_, double t_start_, double t_end_) { dt = dt_; t_end = t_end_; t_start = t_start_; return *this; }
     Transient& set_newmark(double beta_, double gamma_) { beta = beta_; gamma = gamma_; return *this; }
-    Transient& set_damping(const damping::Rayleigh& r) { rayleigh = r; return *this; }
+    Transient& set_damping(const tools::RayleighDamping& r) { rayleigh = r; return *this; }
     Transient& clear_damping() { rayleigh.reset(); return *this; }
     Transient& set_write_every(int steps) { write_every_steps = std::max(1, steps); return *this; }
     Transient& set_write_every_time(double dt_write) { write_every_time = std::max(0.0, dt_write); return *this; }

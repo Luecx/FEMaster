@@ -12,10 +12,9 @@
 #include "../../dsl/keyword.h"
 #include "../../core/logging.h"
 #include "../../core/types_num.h"
-#include "../../core/types_eig.h"
+#include "../../../core/types_eig.h"
 
 #include "../../loadcase/linear_transient.h"
-#include "../../damping/rayleigh.h"
 
 namespace fem::input_decks::commands {
 
@@ -60,7 +59,7 @@ inline void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& 
                             // Only Transient currently supports DAMPING.
                             if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
                                 logging::error(*type == "RAYLEIGH", "DAMPING TYPE must be RAYLEIGH.");
-                                fem::damping::Rayleigh r{ab[0], ab[1]};
+                                fem::loadcase::tools::RayleighDamping r{ab[0], ab[1]};
                                 lc->set_damping(r);
                                 return;
                             }
