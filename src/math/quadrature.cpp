@@ -14,6 +14,7 @@ constructor/queries.
 #include <stdexcept>
 
 namespace fem {
+namespace math {
 namespace quadrature {
 
 SchemeRegistry& quadrature_scheme_registry() {
@@ -43,4 +44,5 @@ Index Quadrature::count() const {
     return static_cast<Index>(scheme.points.size());
 }
 } // namespace quadrature
+} // namespace math
 } // namespace fem

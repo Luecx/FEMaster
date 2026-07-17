@@ -20,6 +20,7 @@
 #include "../core/logging.h"   // fem::logging::info(...)
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 /**
@@ -567,4 +568,5 @@ struct Registry {
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

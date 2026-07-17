@@ -9,12 +9,12 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_elset(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("ELSET", [&](fem::dsl::Command& command) {
+inline void register_elset(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("ELSET", [&](fem::io::dsl::Command& command) {
         command.doc("Define named element sets.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("ELSET")
                     .alternative("NAME")
                     .required()
@@ -23,7 +23,7 @@ inline void register_elset(fem::dsl::Registry& registry, model::Model& model) {
                     .doc("Interpret rows as start,end[,increment] ranges")
         );
 
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             const std::string& name = keys.raw("ELSET");
             model._data->elem_sets.activate(name);
         });
@@ -31,11 +31,11 @@ inline void register_elset(fem::dsl::Registry& registry, model::Model& model) {
         const fem::ID missing_id = std::numeric_limits<fem::ID>::min();
 
         // Variant for *ELSET with boolean-aware GENERATE flag (present & truthy)
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_true("GENERATE"))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_true("GENERATE"))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::ID>().name("START").desc("First element id")
                     .one<fem::ID>().name("END").desc("Last element id")
                     .one<fem::ID>().name("INC").desc("Increment").on_missing(fem::ID{1}).on_empty(fem::ID{1})
@@ -69,14 +69,14 @@ inline void register_elset(fem::dsl::Registry& registry, model::Model& model) {
 
         // Variant for explicit element id lists (up to 32 per line).
         // Matches when GENERATE is missing OR explicitly false.
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::any_of({
-                fem::dsl::Condition::negate(fem::dsl::Condition::key_present("GENERATE")),
-                fem::dsl::Condition::key_false("GENERATE")
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::any_of({
+                fem::io::dsl::Condition::negate(fem::io::dsl::Condition::key_present("GENERATE")),
+                fem::io::dsl::Condition::key_false("GENERATE")
             }))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(0))
-                .pattern(fem::dsl::Pattern::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0))
+                .pattern(fem::io::dsl::Pattern::make()
                     .fixed<fem::ID, 32>().name("ID").desc("Element ids (up to 32 per line)")
                         .on_missing(missing_id)
                         .on_empty(missing_id)

@@ -56,6 +56,7 @@
 #include "keyword.h"
 
 namespace fem {
+namespace io {
 namespace dsl {
 /**
  * @class Command
@@ -189,4 +190,5 @@ struct Command {
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

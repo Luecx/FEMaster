@@ -9,13 +9,13 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_tload(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("TLOAD", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_tload(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("TLOAD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Thermal load referencing a temperature field.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("LOAD_COLLECTOR")
                     .required()
                     .doc("Target load collector that groups the loads")
@@ -27,7 +27,7 @@ inline void register_tload(fem::dsl::Registry& registry, model::Model& model) {
                     .doc("Reference temperature value")
         );
 
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             const std::string& collector = keys.raw("LOAD_COLLECTOR");
             std::string field            = keys.raw("TEMPERATUREFIELD");
             const fem::Precision ref     = keys.get<fem::Precision>("REFERENCETEMPERATURE");
@@ -36,7 +36,7 @@ inline void register_tload(fem::dsl::Registry& registry, model::Model& model) {
             model.add_tload(field, ref);
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

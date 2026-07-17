@@ -76,7 +76,7 @@ struct ShellElement : StructuralElement {
     MapMatrix  mass(Precision* buffer) override = 0;
     bool       is_shell() const override {return true;}
 
-    virtual const fem::quadrature::Quadrature& integration_scheme() const = 0;
+    virtual const fem::math::quadrature::Quadrature& integration_scheme() const = 0;
 
     //
     StaticMatrix<N, 3> node_coords_global() {

@@ -77,9 +77,9 @@ struct Surface8 : public Surface<8> {
     /**
      * @brief Get the integration scheme for a 8-node quadrilateral element.
      *
-     * @return const quadrature::Quadrature& Integration scheme using a quadratic quadrature rule.
+     * @return const math::quadrature::Quadrature& Integration scheme using a quadratic quadrature rule.
      */
-    const quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme() const override;
 
     /**
      * @brief Compute the closest point on the element boundary to a given global point.

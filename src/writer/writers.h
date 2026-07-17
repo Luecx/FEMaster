@@ -15,7 +15,8 @@ struct ModelData;
 struct Field;
 }
 
-namespace reader {
+namespace io {
+namespace writer {
 
 /**
  * @brief Facade for writing multiple result formats at once.
@@ -51,5 +52,6 @@ class ResultWriters {
                      Precision frame_value = std::numeric_limits<Precision>::quiet_NaN());
 };
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

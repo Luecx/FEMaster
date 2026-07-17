@@ -8,6 +8,7 @@
 #include "quadrature.h"
 
 namespace fem {
+namespace math {
 namespace quadrature {
 
 namespace {
@@ -37,5 +38,6 @@ REGISTER_SCHEME(DOMAIN_ISO_WEDGE, ORDER_CONSTANT, wedge_linear);
 REGISTER_SCHEME(DOMAIN_ISO_WEDGE, ORDER_SUPER_LINEAR, wedge_linear);
 REGISTER_SCHEME(DOMAIN_ISO_WEDGE, ORDER_SUPER_QUADRATIC, wedge_quadratic);
 } // namespace quadrature
+} // namespace math
 } // namespace fem
 

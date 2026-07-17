@@ -21,7 +21,7 @@ struct SolidElement : StructuralElement {
     std::array<ID, N> node_ids {};
 
 protected:
-    friend quadrature::Quadrature;
+    friend math::quadrature::Quadrature;
 
 public:
     SolidElement(ID elem_id, std::array<ID, N> node_ids)
@@ -46,8 +46,8 @@ public:
     virtual StaticMatrix<N, 1> shape_function  (Precision r, Precision s, Precision t) = 0;
     virtual StaticMatrix<N, D> shape_derivative(Precision r, Precision s, Precision t) = 0;
 
-    virtual const quadrature::Quadrature& integration_scheme() const = 0;
-    virtual const quadrature::Quadrature& integration_scheme_mass() const {
+    virtual const math::quadrature::Quadrature& integration_scheme() const = 0;
+    virtual const math::quadrature::Quadrature& integration_scheme_mass() const {
         return integration_scheme();
     }
 

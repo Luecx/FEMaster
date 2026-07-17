@@ -105,7 +105,7 @@ Precision calculate_relative_residual(
 
 } // namespace
 
-NonlinearStatic::NonlinearStatic(ID id, reader::ResultWriters* writer, model::Model* model)
+NonlinearStatic::NonlinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
 void NonlinearStatic::run() {
@@ -255,7 +255,7 @@ void NonlinearStatic::run() {
 
     // Stream converged increment frames as they become available. This keeps
     // the accepted path in the result file even if a later increment fails.
-    writer->add_loadcase(id, reader::WriterStepType::Static);
+    writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
     Index last_converged_increment = 0;
 
@@ -497,8 +497,8 @@ void NonlinearStatic::run() {
 
         auto final_A = transformer->assemble_system_matrix(final_Kt);
 
-        write_mtx(stiffness_file + "_Kt.mtx", final_Kt);
-        write_mtx(stiffness_file + "_A.mtx", final_A);
+        io::writer::write_mtx(stiffness_file + "_Kt.mtx", final_Kt);
+        io::writer::write_mtx(stiffness_file + "_A.mtx", final_A);
     }
 
     auto global_load_final = global_load_total;

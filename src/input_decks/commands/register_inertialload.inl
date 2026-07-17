@@ -13,9 +13,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_inertialload(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("INERTIALOAD", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_inertialload(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("INERTIALOAD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Rigid-body inertial load on element sets. Provide CENTER, CENTER_ACC, OMEGA, ALPHA. "
             "TARGET must be an element set. Coriolis term is not included. "
@@ -25,7 +25,7 @@ inline void register_inertialload(fem::dsl::Registry& registry, model::Model& mo
         auto consider_point_masses = std::make_shared<bool>(false);
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("LOAD_COLLECTOR")
                     .doc("Load collector that stores the inertial loads")
                     .required()
@@ -34,16 +34,16 @@ inline void register_inertialload(fem::dsl::Registry& registry, model::Model& mo
                     .optional("0")
         );
 
-        command.on_enter([&model, consider_point_masses](const fem::dsl::Keys& keys) {
+        command.on_enter([&model, consider_point_masses](const fem::io::dsl::Keys& keys) {
             const std::string& collector = keys.raw("LOAD_COLLECTOR");
             model._data->load_cols.activate(collector);
             *consider_point_masses = keys.get<bool>("CONSIDER_POINT_MASSES");
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Element set name")
                     .fixed<fem::Precision, 3>().name("CENTER").desc("Center point x,y,z")
                     .fixed<fem::Precision, 3>().name("CENTER_ACC").desc("Center linear acceleration ax,ay,az")

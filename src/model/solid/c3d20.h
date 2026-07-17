@@ -8,7 +8,7 @@ struct C3D20 : public SolidElement<20>{
     C3D20(ID p_elem_id, const std::array<ID, 20>& p_node_ids);
     std::string type_name() const override { return "C3D20"; }
 
-    const quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme() const override;
 
     SurfacePtr          surface(ID surface_id) override;
 

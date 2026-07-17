@@ -42,9 +42,9 @@ bool same_time(Precision lhs, Precision rhs) {
 std::vector<Amplitude::Sample>::const_iterator lower_sample(const std::vector<Amplitude::Sample>& samples,
                                                             Precision time) {
     return std::lower_bound(samples.begin(), samples.end(), time,
-                            [](const Amplitude::Sample& sample, Precision sample_time) {
-                                return sample.time_ < sample_time;
-                            });
+        [](const Amplitude::Sample& sample, Precision sample_time) {
+            return sample.time_ < sample_time;
+        });
 }
 
 /**

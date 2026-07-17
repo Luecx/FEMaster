@@ -13,9 +13,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("SOLVER", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("SOLVER", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
             "Configure solver options for the active loadcase.\n"
             "\n"
@@ -31,12 +31,12 @@ inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parse
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("DEVICE").optional("CPU").allowed({"CPU", "GPU"})
                 .key("METHOD").optional("DIRECT").allowed({"DIRECT", "INDIRECT"})
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
             logging::error(base != nullptr, "SOLVER must appear inside *LOADCASE");
 
@@ -59,7 +59,7 @@ inline void register_loadcase_solver(fem::dsl::Registry& registry, Parser& parse
             throw std::runtime_error("SOLVER not supported for loadcase type " + parser.active_loadcase_type());
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

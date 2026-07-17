@@ -17,9 +17,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_connector(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("CONNECTOR", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_connector(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("CONNECTOR", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
 
         command.doc(
             "Define a connector between two node sets in a given coordinate system. "
@@ -28,14 +28,14 @@ inline void register_connector(fem::dsl::Registry& registry, model::Model& model
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().doc("Connector type identifier.")
                 .key("NSET1").required().doc("First node set.")
                 .key("NSET2").required().doc("Second node set.")
                 .key("COORDINATESYSTEM").required().doc("Name of a coordinate system.")
         );
 
-        command.on_enter([&](const fem::dsl::Keys& keys) {
+        command.on_enter([&](const fem::io::dsl::Keys& keys) {
             const std::string type_raw = keys.raw("TYPE");   // already uppercase per DSL
             const std::string nset1    = keys.raw("NSET1");
             const std::string nset2    = keys.raw("NSET2");
@@ -70,7 +70,7 @@ inline void register_connector(fem::dsl::Registry& registry, model::Model& model
             model.add_connector(nset1, nset2, coord, ctype);
         });
 
-        command.variant(fem::dsl::Variant::make()); // no data lines
+        command.variant(fem::io::dsl::Variant::make()); // no data lines
     });
 }
 

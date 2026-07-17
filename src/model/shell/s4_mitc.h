@@ -8,12 +8,12 @@ namespace fem::model {
 
 struct MITC4
     : DefaultShellElement<4, Surface4,
-                          quadrature::Domain::DOMAIN_ISO_QUAD,
-                          quadrature::Order::ORDER_CUBIC>
+                          math::quadrature::Domain::DOMAIN_ISO_QUAD,
+                          math::quadrature::Order::ORDER_CUBIC>
 {
     using Base = DefaultShellElement<4, Surface4,
-                                     quadrature::Domain::DOMAIN_ISO_QUAD,
-                                     quadrature::Order::ORDER_CUBIC>;
+                                     math::quadrature::Domain::DOMAIN_ISO_QUAD,
+                                     math::quadrature::Order::ORDER_CUBIC>;
 
     using LocalCoords     = typename Base::LocalCoords;
     using ShapeFunction   = typename Base::ShapeFunction;

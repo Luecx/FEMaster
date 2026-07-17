@@ -164,7 +164,7 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
  * @brief Buckling analysis entry point (constrained via null-space).
  */
 LinearBuckling::LinearBuckling(ID id,
-                               reader::ResultWriters* writer,
+                               io::writer::ResultWriters* writer,
                                model::Model* model,
                                int numEigenvalues)
     : LoadCase(id, writer, model)
@@ -385,7 +385,7 @@ void LinearBuckling::run() {
     print_buckling_summary(modes, eigopt.sigma, k_req);
 
     // (11) Write results
-    writer->add_loadcase(id, reader::WriterStepType::Buckling);
+    writer->add_loadcase(id, io::writer::WriterStepType::Buckling);
     Index num_modes = static_cast<Index>(modes.size());
 
     model::Field lambdas{"BUCKLING_FACTORS", model::FieldDomain::UNKNOWN, num_modes, 1};
@@ -400,14 +400,14 @@ void LinearBuckling::run() {
 
     // After (4) K assembled
     if (!stiffness_file.empty()) {
-        write_mtx(stiffness_file + "_K.mtx", K, 0, 17);
-        write_mtx(stiffness_file + "_A.mtx", A, 0, 17);
+        io::writer::write_mtx(stiffness_file + "_K.mtx", K, 0, 17);
+        io::writer::write_mtx(stiffness_file + "_A.mtx", A, 0, 17);
     }
 
     // After (9) B assembled
     if (!geom_file.empty()) {
-        write_mtx(geom_file + "_Kg.mtx", Kg, 0, 17);
-        write_mtx(geom_file + "_B.mtx", B  , 0, 17);
+        io::writer::write_mtx(geom_file + "_Kg.mtx", Kg, 0, 17);
+        io::writer::write_mtx(geom_file + "_B.mtx", B  , 0, 17);
     }
     logging::info(true, "Buckling analysis completed.");
     model->step_end();

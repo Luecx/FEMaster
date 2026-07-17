@@ -10,9 +10,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_pload(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("PLOAD", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_pload(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("PLOAD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Pressure loads on surfaces. AMPLITUDE may reference a time history that scales the pressure magnitude."
         );
@@ -20,7 +20,7 @@ inline void register_pload(fem::dsl::Registry& registry, model::Model& model) {
         auto amplitude = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("LOAD_COLLECTOR")
                     .doc("Target load collector that groups the loads")
                     .required()
@@ -28,16 +28,16 @@ inline void register_pload(fem::dsl::Registry& registry, model::Model& model) {
                     .doc("Optional time amplitude used to scale the pressure value")
         );
 
-        command.on_enter([&model, amplitude](const fem::dsl::Keys& keys) {
+        command.on_enter([&model, amplitude](const fem::io::dsl::Keys& keys) {
             const std::string& collector = keys.raw("LOAD_COLLECTOR");
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
             model._data->load_cols.activate(collector);
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Surface set or surface id")
                     .one<fem::Precision>().name("P").desc("Pressure value")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})

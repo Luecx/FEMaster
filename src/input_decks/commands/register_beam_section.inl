@@ -21,9 +21,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_beam_section(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("BEAMSECTION", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_beam_section(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("BEAMSECTION", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
 
         // Keep this concise; no explicit “scope/keywords/data” lists here.
         command.doc(
@@ -40,7 +40,7 @@ inline void register_beam_section(fem::dsl::Registry& registry, model::Model& mo
         auto orientation = std::make_shared<fem::Vec3>(fem::Vec3::Zero());
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("MATERIAL").alternative("MAT").required()
                     .doc("Material name (must exist).")
                 .key("ELSET").required()
@@ -49,25 +49,25 @@ inline void register_beam_section(fem::dsl::Registry& registry, model::Model& mo
                     .doc("Section/profile identifier, e.g., IPE80, RECT_20x10, CHS60x3.")
         );
 
-        command.on_enter([material, elset, profile, orientation](const fem::dsl::Keys& keys) {
+        command.on_enter([material, elset, profile, orientation](const fem::io::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
             *profile  = keys.raw("PROFILE");
             orientation->setZero();
         });
 
-        command.on_exit([&model, material, elset, profile, orientation](const fem::dsl::Keys&) {
+        command.on_exit([&model, material, elset, profile, orientation](const fem::io::dsl::Keys&) {
             model.beam_section(*elset, *material, *profile, *orientation);
         });
 
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("Optional data line with the section direction n1 = (N1_x, N1_y, N1_z).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(0).max(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(0).max(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::Precision, 3>()
                                 .name("N1")
                                 .desc("Section orientation vector components: N1_x, N1_y, N1_z.")

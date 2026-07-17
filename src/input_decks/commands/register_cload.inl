@@ -25,9 +25,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_cload(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("CLOAD", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_cload(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("CLOAD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Apply concentrated nodal forces and moments. Each data line supplies six components "
             "(Fx,Fy,Fz,Mx,My,Mz) for a target node or node set. Values accumulate when multiple "
@@ -40,7 +40,7 @@ inline void register_cload(fem::dsl::Registry& registry, model::Model& model) {
         auto amplitude = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("LOAD_COLLECTOR").required()
                     .doc("Name of the active load collector that receives the contributions.")
                 .key("ORIENTATION").optional()
@@ -49,7 +49,7 @@ inline void register_cload(fem::dsl::Registry& registry, model::Model& model) {
                     .doc("Optional time amplitude that scales the load components.")
         );
 
-        command.on_enter([orientation, amplitude, &model](const fem::dsl::Keys& keys) {
+        command.on_enter([orientation, amplitude, &model](const fem::io::dsl::Keys& keys) {
             const std::string& collector = keys.raw("LOAD_COLLECTOR");
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
@@ -57,13 +57,13 @@ inline void register_cload(fem::dsl::Registry& registry, model::Model& model) {
         });
 
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("Each data line defines a target node set/id followed by Fx, Fy, Fz, Mx, My, Mz (local or global depending on ORIENTATION).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1)) // one or more lines
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1)) // one or more lines
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .one<std::string>()
                                     .name("TARGET")
                                     .desc("Node set name or single node id (integer).")

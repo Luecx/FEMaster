@@ -15,21 +15,21 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_supports(fem::dsl::Registry& registry, Parser& parser) {
+inline void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser) {
     const auto append_tokens = [](const std::array<std::string, 16>& tokens, std::vector<std::string>& out) {
         for (const auto& token : tokens) {
             if (!token.empty()) out.push_back(token);
         }
     };
 
-    registry.command("SUPPORTS", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+    registry.command("SUPPORTS", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Assign support collectors to the active loadcase.");
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .fixed<std::string, 16>().name("SUPP").desc("Support collector names")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )

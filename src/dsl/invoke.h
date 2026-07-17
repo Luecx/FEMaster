@@ -36,6 +36,7 @@
 #include <functional>
 
 namespace fem {
+namespace io {
 namespace dsl {
 namespace detail {
 
@@ -195,4 +196,5 @@ struct Invoker {
 };
 } // namespace detail
 } // namespace dsl
+} // namespace io
 } // namespace fem

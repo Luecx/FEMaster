@@ -42,13 +42,13 @@ inline void set_regular_element(model::Model& model, fem::ID id, const std::arra
     set_regular_element_impl<Elem, N>(model, id, nodes, std::make_index_sequence<N>{});
 }
 
-inline void register_element(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("ELEMENT", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_element(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("ELEMENT", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Define finite elements by id and connectivity.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("ELSET")
                     .optional("EALL")
                     .doc("Element set to activate while reading")
@@ -61,16 +61,16 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
                     })
         );
 
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             model._data->elem_sets.activate(keys.raw("ELSET"));
         });
 
 #define FEM_ADD_ELEMENT_VARIANT(KEY, ELEM, COUNT, DESC) \
-        command.variant(fem::dsl::Variant::make() \
-            .when(fem::dsl::Condition::key_equals("TYPE", {KEY})) \
-            .segment(fem::dsl::Segment::make() \
-                .range(fem::dsl::LineRange{}.min(1)) \
-                .pattern(fem::dsl::Pattern::make() \
+        command.variant(fem::io::dsl::Variant::make() \
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {KEY})) \
+            .segment(fem::io::dsl::Segment::make() \
+                .range(fem::io::dsl::LineRange{}.min(1)) \
+                .pattern(fem::io::dsl::Pattern::make() \
                     .allow_multiline() \
                     .one<fem::ID>().name("ID").desc("Element id") \
                     .fixed<fem::ID, COUNT>().name("N").desc(DESC) \
@@ -100,11 +100,11 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
 
 #undef FEM_ADD_ELEMENT_VARIANT
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"B33"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"B33"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::ID>().name("ID").desc("Element id")
                     .fixed<fem::ID, 3>()
                         .name("N")
@@ -118,11 +118,11 @@ inline void register_element(fem::dsl::Registry& registry, model::Model& model) 
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"C3D5"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"C3D5"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .one<fem::ID>().name("ID").desc("Element id")
                     .fixed<fem::ID, 5>().name("N").desc("C3D5 connectivity (5 nodes)")

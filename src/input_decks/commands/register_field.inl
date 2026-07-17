@@ -49,16 +49,16 @@ inline Precision parse_precision_or_throw(const std::string& token) {
 
 } // namespace detail
 
-inline void register_field(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("FIELD", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::any_of({
-            fem::dsl::Condition::parent_is("ROOT"),
-            fem::dsl::Condition::parent_is("LOADCASE")
+inline void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("FIELD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::any_of({
+            fem::io::dsl::Condition::parent_is("ROOT"),
+            fem::io::dsl::Condition::parent_is("LOADCASE")
         }));
         command.doc("Create or populate a generic field (NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP).");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("NAME").required().doc("Field name")
                 .key("TYPE").required().allowed({"NODE","ELEMENT","ELEMENT_NODAL","ELEMENT_IP","IP"}).doc("Field domain")
                 .key("COLS").required().doc("Number of components")
@@ -71,7 +71,7 @@ inline void register_field(fem::dsl::Registry& registry, model::Model& model) {
         };
         auto ctx = std::make_shared<Context>();
 
-        command.on_enter([&model, ctx](const fem::dsl::Keys& keys) {
+        command.on_enter([&model, ctx](const fem::io::dsl::Keys& keys) {
             const std::string name = keys.raw("NAME");
             const std::string type = keys.raw("TYPE");
             const std::string fill = keys.has("FILL") ? keys.raw("FILL") : std::string("ZERO");
@@ -110,10 +110,10 @@ inline void register_field(fem::dsl::Registry& registry, model::Model& model) {
 
         static const std::string kSkipToken = "__SKIP__";
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(0))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::ID>().name("ID").desc("Row id")
                     .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
                         .on_empty(kSkipToken).on_missing(kSkipToken)

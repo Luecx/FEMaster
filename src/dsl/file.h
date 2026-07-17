@@ -19,6 +19,7 @@
 #include "line.h"
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 class File;
@@ -117,4 +118,5 @@ public:
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

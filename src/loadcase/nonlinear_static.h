@@ -203,7 +203,7 @@ struct NonlinearStatic : public LoadCase {
      * @param model FEM model on which the load case operates.
      */
     NonlinearStatic(ID id,
-                    reader::ResultWriters* writer,
+                    io::writer::ResultWriters* writer,
                     model::Model* model);
 
     /**

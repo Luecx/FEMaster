@@ -19,6 +19,7 @@
 #include <utility>
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 struct KeywordSpec {
@@ -149,4 +150,5 @@ private:
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

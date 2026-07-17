@@ -9,23 +9,23 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_rbm(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("RBM", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_rbm(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("RBM", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Add rigid-body-motion suppression equations for an element set. "
             "ELSET defaults to EALL."
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("ELSET")
                     .alternative("SET")
                     .optional("EALL")
                     .doc("Target element set used to build RBM equations")
         );
 
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             if (keys.has("MAX_POINTS")) {
                 throw std::runtime_error("RBM key 'MAX_POINTS' is no longer supported");
             }
@@ -33,7 +33,7 @@ inline void register_rbm(fem::dsl::Registry& registry, model::Model& model) {
             model.add_rbm(elset);
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

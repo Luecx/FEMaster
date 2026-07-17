@@ -88,10 +88,10 @@ StaticMatrix<4, 2> Surface4::node_coords_local() const {
 /**
  * @brief Return the integration scheme for the element.
  *
- * @return const quadrature::Quadrature& Quadrature scheme for the quadrilateral element.
+ * @return const math::quadrature::Quadrature& Quadrature scheme for the quadrilateral element.
  */
-const fem::quadrature::Quadrature& Surface4::integration_scheme() const {
-    static const quadrature::Quadrature quad{quadrature::DOMAIN_ISO_QUAD, quadrature::ORDER_LINEAR};
+const fem::math::quadrature::Quadrature& Surface4::integration_scheme() const {
+    static const math::quadrature::Quadrature quad{math::quadrature::DOMAIN_ISO_QUAD, math::quadrature::ORDER_LINEAR};
     return quad;
 }
 

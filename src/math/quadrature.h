@@ -27,6 +27,7 @@
 #include <vector>
 
 namespace fem {
+namespace math {
 namespace quadrature {
 
 /**
@@ -150,20 +151,20 @@ struct Executor {
 
 /// Registers a scheme by directly passing the point list to the constructor.
 #define REGISTER_SCHEME_IN_PLACE(domain_, order_, ...) \
-    static ::fem::quadrature::Executor executor_##domain_##order_([]() { \
-        ::fem::quadrature::register_scheme( \
+    static ::fem::math::quadrature::Executor executor_##domain_##order_([]() { \
+        ::fem::math::quadrature::register_scheme( \
             domain_, \
             order_, \
-            std::vector<::fem::quadrature::Point>{__VA_ARGS__}); \
+            std::vector<::fem::math::quadrature::Point>{__VA_ARGS__}); \
     })
 
 /// Registers a scheme by forwarding an existing array through `create_vector_from_array`.
 #define REGISTER_SCHEME(domain_, order_, points_) \
-    static ::fem::quadrature::Executor executor_##domain_##order_([]() { \
-        ::fem::quadrature::register_scheme( \
+    static ::fem::math::quadrature::Executor executor_##domain_##order_([]() { \
+        ::fem::math::quadrature::register_scheme( \
             domain_, \
             order_, \
-            ::fem::quadrature::create_vector_from_array(points_)); \
+            ::fem::math::quadrature::create_vector_from_array(points_)); \
     })
 
 /**
@@ -216,4 +217,5 @@ public:
     Index count() const;
 };
 } // namespace quadrature
+} // namespace math
 } // namespace fem

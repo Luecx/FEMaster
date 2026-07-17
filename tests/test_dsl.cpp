@@ -14,28 +14,28 @@ using namespace fem;
 
 // 5) Line classification
 TEST(DSL_Line, Classification) {
-    dsl::Line l;
+    io::dsl::Line l;
     l = std::string("// comment");
-    EXPECT_EQ(l.type(), dsl::COMMENT);
+    EXPECT_EQ(l.type(), io::dsl::COMMENT);
     l = std::string("   # also comment");
-    EXPECT_EQ(l.type(), dsl::COMMENT);
+    EXPECT_EQ(l.type(), io::dsl::COMMENT);
     l = std::string("   ");
-    EXPECT_EQ(l.type(), dsl::EMPTY_LINE);
+    EXPECT_EQ(l.type(), io::dsl::EMPTY_LINE);
     l = std::string("*NODE, NSET=ALL");
-    EXPECT_EQ(l.type(), dsl::KEYWORD_LINE);
+    EXPECT_EQ(l.type(), io::dsl::KEYWORD_LINE);
     EXPECT_EQ(l.command(), std::string("NODE"));
     l = std::string("1, 2, 3");
-    EXPECT_EQ(l.type(), dsl::DATA_LINE);
+    EXPECT_EQ(l.type(), io::dsl::DATA_LINE);
 }
 
 // 6) Keyword parsing and 7) Data tokenization
 TEST(DSL_Line, KeywordAndDataParsing) {
-    dsl::Line l;
+    io::dsl::Line l;
     l = std::string("*ELASTIC, TYPE=iso, E=210e9, FLAG");
-    EXPECT_EQ(l.type(), dsl::KEYWORD_LINE);
+    EXPECT_EQ(l.type(), io::dsl::KEYWORD_LINE);
     EXPECT_EQ(l.command(), std::string("ELASTIC"));
     {
-        auto keys = dsl::Keys::from_keyword_line(l);
+        auto keys = io::dsl::Keys::from_keyword_line(l);
         EXPECT_TRUE(keys.has("TYPE"));
         EXPECT_TRUE(keys.has("E"));
         EXPECT_TRUE(keys.has("FLAG"));
@@ -44,7 +44,7 @@ TEST(DSL_Line, KeywordAndDataParsing) {
     }
 
     l = std::string(" foo,Bar , baz ");
-    ASSERT_EQ(l.type(), dsl::DATA_LINE);
+    ASSERT_EQ(l.type(), io::dsl::DATA_LINE);
     const auto& vals = l.values();
     ASSERT_EQ(vals.size(), 3u);
     EXPECT_EQ(vals[0], std::string("FOO"));
@@ -70,25 +70,25 @@ TEST(DSL_File, Include) {
         os << "4,5,6\n";
     }
 
-    dsl::File f(mainf);
+    io::dsl::File f(mainf);
     auto& l1 = f.next_line();
-    ASSERT_EQ(l1.type(), dsl::DATA_LINE);
+    ASSERT_EQ(l1.type(), io::dsl::DATA_LINE);
     EXPECT_EQ(l1.values().size(), 3u);
     auto& l2 = f.next_line();
-    ASSERT_EQ(l2.type(), dsl::KEYWORD_LINE);
+    ASSERT_EQ(l2.type(), io::dsl::KEYWORD_LINE);
     EXPECT_EQ(l2.command(), std::string("FOO"));
     auto& l3 = f.next_line();
-    ASSERT_EQ(l3.type(), dsl::DATA_LINE);
+    ASSERT_EQ(l3.type(), io::dsl::DATA_LINE);
     EXPECT_EQ(l3.values().size(), 3u);
 }
 
 // 9–10) Keys normalization and boolean semantics; 11–12) Registry basics/printing
 TEST(DSL_Keys_Registry, KeysAndRegistry) {
-    dsl::Line l; l = std::string("*CMD, A=1, B=YES, C=off, FLAG");
-    auto K = dsl::Keys::from_keyword_line(l);
+    io::dsl::Line l; l = std::string("*CMD, A=1, B=YES, C=off, FLAG");
+    auto K = io::dsl::Keys::from_keyword_line(l);
 
     // Build spec with alias + defaults + allowed
-    dsl::KeywordSpec spec = dsl::KeywordSpec::make()
+    io::dsl::KeywordSpec spec = io::dsl::KeywordSpec::make()
         .key("ALPHA").alternative("A").allowed({"1","2"})
         .key("BETA").alternative("B").allowed({"YES","NO"})
         .flag("FLAG")
@@ -106,15 +106,15 @@ TEST(DSL_Keys_Registry, KeysAndRegistry) {
     EXPECT_TRUE(K.get<bool>("FLAG"));
     EXPECT_TRUE(K.get<bool>("BETA"));         // YES → true
     // Introduce an explicit false token
-    dsl::Line l2; l2 = std::string("*CMD, X=OFF, Y=0, Z=N");
-    auto K2 = dsl::Keys::from_keyword_line(l2);
+    io::dsl::Line l2; l2 = std::string("*CMD, X=OFF, Y=0, Z=N");
+    auto K2 = io::dsl::Keys::from_keyword_line(l2);
     EXPECT_FALSE(K2.get<bool>("X"));
     EXPECT_FALSE(K2.get<bool>("Y"));
     EXPECT_FALSE(K2.get<bool>("Z"));
 
     // Registry create/find and print helpers sanity
-    dsl::Registry reg;
-    reg.command("ELASTIC", [](dsl::Command&){ /* no-op */ });
+    io::dsl::Registry reg;
+    reg.command("ELASTIC", [](io::dsl::Command&){ /* no-op */ });
     ASSERT_NE(reg.find("ELASTIC"), nullptr);
     // Smoke test for printing (no throw)
     reg.print_help();
@@ -133,46 +133,46 @@ TEST(DSL_Engine, FailedVariantDoesNotCommitCallbacks) {
     }
 
     std::vector<int> calls;
-    dsl::Registry reg;
-    reg.command("CMD", [&](dsl::Command& command) {
-        command.on_enter([&](const dsl::Keys&) {
+    io::dsl::Registry reg;
+    reg.command("CMD", [&](io::dsl::Command& command) {
+        command.on_enter([&](const io::dsl::Keys&) {
             calls.push_back(10);
         });
 
-        command.variant(dsl::Variant::make()
+        command.variant(io::dsl::Variant::make()
             .rank(10)
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make().one<int>())
+            .segment(io::dsl::Segment::make()
+                .range(io::dsl::LineRange{}.min(1).max(1))
+                .pattern(io::dsl::Pattern::make().one<int>())
                 .bind([&](int) {
                     calls.push_back(100);
                 })
             )
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make().one<int>())
+            .segment(io::dsl::Segment::make()
+                .range(io::dsl::LineRange{}.min(1).max(1))
+                .pattern(io::dsl::Pattern::make().one<int>())
                 .bind([&](int) {
                     calls.push_back(200);
                 })
             )
         );
 
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make().one<int>())
+        command.variant(io::dsl::Variant::make()
+            .segment(io::dsl::Segment::make()
+                .range(io::dsl::LineRange{}.min(1).max(1))
+                .pattern(io::dsl::Pattern::make().one<int>())
                 .bind([&](int value) {
                     calls.push_back(value);
                 })
             )
         );
     });
-    reg.command("NEXT", [](dsl::Command& command) {
-        command.variant(dsl::Variant::make());
+    reg.command("NEXT", [](io::dsl::Command& command) {
+        command.variant(io::dsl::Variant::make());
     });
 
-    dsl::File file(input_path);
-    dsl::Engine engine(reg);
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(reg);
     ASSERT_NO_THROW(engine.run(file));
 
     ASSERT_EQ(calls.size(), 2u);
@@ -195,16 +195,16 @@ TEST(DSL_Engine, OnEnterDoesNotRunWhenNoVariantMatches) {
 
     int enter_count = 0;
     int callback_count = 0;
-    dsl::Registry reg;
-    reg.command("CMD", [&](dsl::Command& command) {
-        command.on_enter([&](const dsl::Keys&) {
+    io::dsl::Registry reg;
+    reg.command("CMD", [&](io::dsl::Command& command) {
+        command.on_enter([&](const io::dsl::Keys&) {
             ++enter_count;
         });
 
-        command.variant(dsl::Variant::make()
-            .segment(dsl::Segment::make()
-                .range(dsl::LineRange{}.min(1).max(1))
-                .pattern(dsl::Pattern::make().one<int>())
+        command.variant(io::dsl::Variant::make()
+            .segment(io::dsl::Segment::make()
+                .range(io::dsl::LineRange{}.min(1).max(1))
+                .pattern(io::dsl::Pattern::make().one<int>())
                 .bind([&](int) {
                     ++callback_count;
                 })
@@ -212,8 +212,8 @@ TEST(DSL_Engine, OnEnterDoesNotRunWhenNoVariantMatches) {
         );
     });
 
-    dsl::File file(input_path);
-    dsl::Engine engine(reg);
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(reg);
     EXPECT_THROW(engine.run(file), std::runtime_error);
 
     EXPECT_EQ(enter_count, 0);

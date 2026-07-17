@@ -29,6 +29,7 @@
 #include <stdexcept>
 
 namespace fem {
+namespace io {
 namespace dsl {
 /**
  * @brief Line classification used by the tokenizer.
@@ -238,4 +239,5 @@ public:
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

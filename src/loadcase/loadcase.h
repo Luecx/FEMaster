@@ -25,7 +25,7 @@ namespace loadcase {
  */
 struct LoadCase {
     const ID id;              ///< Load-case identifier.
-    reader::ResultWriters* writer;   ///< Output writer associated with the load case.
+    io::writer::ResultWriters* writer;   ///< Output writer associated with the load case.
     model::Model* model;      ///< Model on which the load case operates.
     bool report_constraints = false; ///< Flag to print constraint reports.
 
@@ -36,7 +36,7 @@ struct LoadCase {
      * @param writer_in Writer used for logging or output.
      * @param model_in Model instance to operate on.
      */
-    LoadCase(ID case_id, reader::ResultWriters* writer_in, model::Model* model_in);
+    LoadCase(ID case_id, io::writer::ResultWriters* writer_in, model::Model* model_in);
 
     /**
      * @brief Executes the load case.

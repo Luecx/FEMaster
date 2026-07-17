@@ -14,7 +14,7 @@
  *
  * Typical usage with static factories on Condition:
  * @code
- * using fem::dsl::Condition;
+ * using fem::io::dsl::Condition;
  *
  * c.allow_if( Condition::parent_is("MATERIAL") );
  *
@@ -47,7 +47,9 @@
 #include <cstddef>
 #include "keys.h"
 
-namespace fem { namespace dsl {
+namespace fem {
+namespace io {
+namespace dsl {
 
 /**
  * @struct ParentInfo
@@ -358,4 +360,6 @@ struct Condition {
         return c;
     }
 };
-}} // namespace fem::dsl
+} // namespace dsl
+} // namespace io
+} // namespace fem

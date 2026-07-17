@@ -154,7 +154,7 @@ struct Line : LineInterface{
      *          of the derivative of the position vector with respect to the local coordinate r.
      */
     Precision length(const Field& node_coords_system) const {
-        using namespace fem::quadrature;
+        using namespace fem::math::quadrature;
 
         // Select the appropriate domain
         Domain domain = (CR == MINUS_ONE_TO_ONE) ? DOMAIN_ISO_LINE_A : DOMAIN_ISO_LINE_B;

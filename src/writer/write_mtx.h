@@ -7,6 +7,10 @@
 #include <type_traits>
 #include <Eigen/Sparse>
 
+namespace fem {
+namespace io {
+namespace writer {
+
 /**
  * Write an Eigen::SparseMatrix to a Matrix Market .mtx file:
  *
@@ -111,3 +115,7 @@ inline void write_mtx_dense(const std::string& path,
     Eigen::SparseMatrix<Scalar> S = A.sparseView();
     write_mtx(path, S, cutoff_rel, precision);
 }
+
+} // namespace writer
+} // namespace io
+} // namespace fem

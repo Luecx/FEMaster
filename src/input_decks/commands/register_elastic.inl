@@ -13,13 +13,13 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("ELASTIC", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("MATERIAL"));
+inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("ELASTIC", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("MATERIAL"));
         command.doc("Assign elastic properties to the active material.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE")
                     .optional("ISO")
                     .doc("Elasticity formulation (ISO/GENERALISED ISOTROPIC/ORTHO/ABD)")
@@ -29,11 +29,11 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
                               "ABD"})
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"ISO", "ISOTROPIC"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ISO", "ISOTROPIC"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("E").desc("Young's modulus")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                     .one<fem::Precision>().name("NU").desc("Poisson ratio")
@@ -49,11 +49,11 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("E").desc("Young's modulus")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                     .one<fem::Precision>().name("NU").desc("Poisson ratio")
@@ -71,11 +71,11 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"ORTHO", "ORTHOTROPIC"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ORTHO", "ORTHOTROPIC"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("E1").desc("Young's modulus in 1-direction")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                     .one<fem::Precision>().name("E2").desc("Young's modulus in 2-direction")
@@ -115,11 +115,11 @@ inline void register_elastic(fem::dsl::Registry& registry, model::Model& model) 
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"ABD"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(8))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ABD"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(8))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .fixed<fem::Precision, 40>().name("DATA").desc("ABD row-major (36 values), then shear row-major (4 values)")
                 )

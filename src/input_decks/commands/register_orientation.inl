@@ -15,9 +15,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_orientation(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("ORIENTATION", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_orientation(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("ORIENTATION", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Define coordinate systems (rectangular or cylindrical).");
 
         // Persistent per-command state (lives beyond this function)
@@ -25,24 +25,24 @@ inline void register_orientation(fem::dsl::Registry& registry, model::Model& mod
         auto type = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({"RECTANGULAR", "CYLINDRICAL"})
                 .key("DEFINITION").optional().doc("Unused legacy parameter")
                 .key("NAME").required().doc("Coordinate system identifier")
         );
 
         // Capture shared_ptrs BY VALUE so they're safe later
-        command.on_enter([name, type](const fem::dsl::Keys& keys) {
+        command.on_enter([name, type](const fem::io::dsl::Keys& keys) {
             *type = keys.raw("TYPE");
             *name = keys.raw("NAME");
         });
 
         // RECTANGULAR variants -------------------------------------------------
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"RECTANGULAR"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(3))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"RECTANGULAR"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(3))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .fixed<fem::Precision, 9>().name("DATA").desc("Rectangular system vectors")
                 )
@@ -55,11 +55,11 @@ inline void register_orientation(fem::dsl::Registry& registry, model::Model& mod
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"RECTANGULAR"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(2))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"RECTANGULAR"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(2))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .fixed<fem::Precision, 6>().name("DATA").desc("Rectangular system vectors (two vectors)")
                 )
@@ -71,11 +71,11 @@ inline void register_orientation(fem::dsl::Registry& registry, model::Model& mod
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"RECTANGULAR"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"RECTANGULAR"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .fixed<fem::Precision, 3>().name("DATA").desc("Rectangular system vector")
                 )
                 .bind([&model, name](const std::array<fem::Precision, 3>& vals) {
@@ -86,11 +86,11 @@ inline void register_orientation(fem::dsl::Registry& registry, model::Model& mod
         );
 
         // CYLINDRICAL ----------------------------------------------------------
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"CYLINDRICAL"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(3))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"CYLINDRICAL"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(3))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .fixed<fem::Precision, 9>().name("DATA").desc("Cylindrical system vectors")
                 )

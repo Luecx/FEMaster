@@ -11,17 +11,17 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_request_stiffness(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("REQUESTSTIFFNESS", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_request_stiffness(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("REQUESTSTIFFNESS", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Request stiffness matrix output for supported loadcases.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("FILE").optional()
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
             if (!base) {
                 throw std::runtime_error("REQUESTSTIFFNESS must appear inside *LOADCASE");
@@ -45,7 +45,7 @@ inline void register_loadcase_request_stiffness(fem::dsl::Registry& registry, Pa
             throw std::runtime_error("REQUESTSTIFFNESS not supported for loadcase type " + parser.active_loadcase_type());
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

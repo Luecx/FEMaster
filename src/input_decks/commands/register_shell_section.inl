@@ -10,9 +10,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_shell_section(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("SHELLSECTION", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_shell_section(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("SHELLSECTION", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Assign a shell section thickness to an element set.");
 
         // Persistent per-command state
@@ -21,23 +21,23 @@ inline void register_shell_section(fem::dsl::Registry& registry, model::Model& m
         auto orientation = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("MATERIAL").alternative("MAT").required().doc("Material name")
                 .key("ELSET").required().doc("Target element set")
                 .key("ORIENTATION").optional().doc("Optional coordinate system for shell n1/n2 material/resultant axes")
         );
 
         // Capture shared_ptrs BY VALUE so they're valid later
-        command.on_enter([material, elset, orientation](const fem::dsl::Keys& keys) {
+        command.on_enter([material, elset, orientation](const fem::io::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("THICKNESS").desc("Shell thickness")
                         .on_missing(fem::Precision{1}).on_empty(fem::Precision{1})
                 )

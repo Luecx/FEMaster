@@ -9,7 +9,7 @@
 #include "shell_simple.h"
 #include "../geometry/surface/surface8.h"
 namespace fem::model {
-struct S8 : DefaultShellElement<8, Surface8, quadrature::Domain::DOMAIN_ISO_QUAD, quadrature::Order::ORDER_QUINTIC> {
+struct S8 : DefaultShellElement<8, Surface8, math::quadrature::Domain::DOMAIN_ISO_QUAD, math::quadrature::Order::ORDER_QUINTIC> {
     S8(ID p_elem_id, std::array<ID, 8> p_node)
         : DefaultShellElement(p_elem_id, p_node) {}
 

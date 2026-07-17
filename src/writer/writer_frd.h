@@ -16,7 +16,8 @@ struct ModelData;
 struct ElementInterface;
 }
 
-namespace reader {
+namespace io {
+namespace writer {
 
 /**
  * @brief Minimal ASCII CalculiX/CGX .frd writer.
@@ -76,5 +77,6 @@ class FrdWriter {
     ID  frd_element_number(ID internal_element_id) const;
 };
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

@@ -231,8 +231,8 @@ void add_xd_shear_derivatives(
 S4FRTMITC::S4FRTMITC(ID id, std::array<ID, 4> nodes)
     : ShellElement<4>(id, nodes)
     , geometry(nodes)
-    , integration_scheme_(quadrature::Domain::DOMAIN_ISO_QUAD,
-                          quadrature::Order::ORDER_CUBIC) {}
+    , integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_QUAD,
+                          math::quadrature::Order::ORDER_CUBIC) {}
 
 
 void S4FRTMITC::step_begin() {
@@ -358,7 +358,7 @@ std::shared_ptr<SurfaceInterface> S4FRTMITC::surface(int surface_id) {
 }
 
 
-const quadrature::Quadrature& S4FRTMITC::integration_scheme() const {
+const math::quadrature::Quadrature& S4FRTMITC::integration_scheme() const {
     return integration_scheme_;
 }
 
@@ -541,7 +541,7 @@ CurrentState S4FRTMITC::current_state() const {
         const Vec3 x               = positions.template block<1, 3>(i, 0).transpose();
         const Vec3 rotation_vector = positions.template block<1, 3>(i, 3).transpose();
         const Vec3 d0              = ref.d0.row(i).transpose();
-        const Mat3 rotation        = so3::rotation_matrix(rotation_vector);
+        const Mat3 rotation        = math::so3::rotation_matrix(rotation_vector);
 
         state.x.row(i)     = x.transpose();
         state.d.row(i)     = (rotation * d0).transpose();
@@ -580,7 +580,7 @@ CurrentState S4FRTMITC::current_state_from_displacement(
         const Vec3  x       = X.row(i).transpose() + q.template head<3>();
         const Vec3  theta   = q.template tail<3>();
         const Vec3  d0      = ref.d0.row(i).transpose();
-        const Mat3  R       = so3::rotation_matrix(theta);
+        const Mat3  R       = math::so3::rotation_matrix(theta);
 
         state.x.row(i)     = x.transpose();
         state.d.row(i)     = (R * d0).transpose();
@@ -678,7 +678,7 @@ std::array<VectorDerivatives, 4> S4FRTMITC::director_derivatives(
         if (with_second_derivatives) {
             std::array<std::array<Mat3, 3>, 3> second;
 
-            so3::rotation_matrix_second_derivatives(
+            math::so3::rotation_matrix_second_derivatives(
                 rotation_vector,
                 rotation,
                 first,
@@ -704,7 +704,7 @@ std::array<VectorDerivatives, 4> S4FRTMITC::director_derivatives(
             continue;
         }
 
-        so3::rotation_matrix_first_derivatives(
+        math::so3::rotation_matrix_first_derivatives(
             rotation_vector,
             rotation,
             first

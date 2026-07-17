@@ -45,7 +45,7 @@ namespace {
  */
 } // anonymous namespace
 
-LinearStatic::LinearStatic(ID id, reader::ResultWriters* writer, model::Model* model)
+LinearStatic::LinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
 /**
@@ -248,9 +248,9 @@ void LinearStatic::run() {
         "interpolating shell resultants at nodes");
 
     if (!stiffness_file.empty()) {
-        write_mtx(stiffness_file + "_K.mtx", K);
-        write_mtx(stiffness_file + "_A.mtx", A);
-        write_mtx_dense(stiffness_file + "_b.mtx", b);
+        io::writer::write_mtx(stiffness_file + "_K.mtx", K);
+        io::writer::write_mtx(stiffness_file + "_A.mtx", A);
+        io::writer::write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
     // Build a support-only mask for reaction reporting: NaN everywhere except
@@ -282,7 +282,7 @@ void LinearStatic::run() {
         }
     }
 
-    writer->add_loadcase(id, reader::WriterStepType::Static);
+    writer->add_loadcase(id, io::writer::WriterStepType::Static);
     writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
     writer->write_field(strain          , "STRAIN", model->_data.get());
     writer->write_field(stress          , "STRESS", model->_data.get());

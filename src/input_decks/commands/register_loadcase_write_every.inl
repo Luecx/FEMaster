@@ -17,9 +17,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_write_every(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("WRITEEVERY", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_write_every(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("WRITEEVERY", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
             "Control output frequency during transient analysis. "
             "Use TYPE=STEPS with an integer N (write every N steps), or "
@@ -27,23 +27,23 @@ inline void register_loadcase_write_every(fem::dsl::Registry& registry, Parser& 
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").optional("STEPS").allowed({"STEPS","TIME"})
         );
 
         auto type = std::make_shared<std::string>("STEPS");
-        command.on_enter([type](const fem::dsl::Keys& keys) {
+        command.on_enter([type](const fem::io::dsl::Keys& keys) {
             *type = keys.raw("TYPE");
         });
 
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("One data line: either integer steps (TYPE=STEPS) or Δt_write seconds (TYPE=TIME).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1).max(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .one<fem::Precision>()
                                 .name("VALUE")
                                 .desc("N (steps) or Δt_write (seconds), depending on TYPE.")

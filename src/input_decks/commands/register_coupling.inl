@@ -29,9 +29,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_coupling(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("COUPLING", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Create kinematic or structural couplings between a MASTER and a SLAVE (node set) "
             "or SFSET (surface). Provide exactly one of SLAVE or SFSET. DOF entries > 0 enable "
@@ -47,14 +47,14 @@ inline void register_coupling(fem::dsl::Registry& registry, model::Model& model)
         auto type    = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("MASTER").required().doc("Master node set (commonly exactly one node).")
                 .key("TYPE").required().allowed({"KINEMATIC", "STRUCTURAL"})
                 .key("SLAVE").optional().doc("Slave node set.")
                 .key("SFSET").optional().doc("Slave surface set.")
         );
 
-        command.on_enter([&model, master, type, slave, surface](const fem::dsl::Keys& keys) {
+        command.on_enter([&model, master, type, slave, surface](const fem::io::dsl::Keys& keys) {
             *master  = keys.raw("MASTER");
             *type    = keys.raw("TYPE");
             *slave   = keys.has("SLAVE") ? keys.raw("SLAVE") : std::string{};
@@ -84,13 +84,13 @@ inline void register_coupling(fem::dsl::Registry& registry, model::Model& model)
 
 
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("One data line: six DOF flags (1/0) for [Ux, Uy, Uz, Rx, Ry, Rz]. Values > 0 enable coupling.")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1).max(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::Precision, 6>()
                                 .name("DOF")
                                 .desc("Coupled degrees of freedom (1=on, 0=off).")

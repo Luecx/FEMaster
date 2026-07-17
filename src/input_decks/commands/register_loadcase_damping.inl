@@ -19,34 +19,34 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_damping(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("DAMPING", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("DAMPING", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
             "Assign damping for the active loadcase. "
             "Currently supported: Rayleigh proportional damping (C = α M + β K)."
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({"RAYLEIGH"})
                     .doc("Damping model type. Only RAYLEIGH is supported.")
         );
 
         // Capture TYPE and then parse one line: alpha, beta
         auto type = std::make_shared<std::string>();
-        command.on_enter([type](const fem::dsl::Keys& keys) {
+        command.on_enter([type](const fem::io::dsl::Keys& keys) {
             *type = keys.raw("TYPE");
         });
 
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("One data line: α, β coefficients for Rayleigh damping.")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1).max(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::Precision, 2>()
                                 .name("RAYLEIGH")
                                 .desc("α, β (mass- and stiffness-proportional coefficients).")

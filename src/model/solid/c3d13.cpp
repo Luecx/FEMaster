@@ -10,8 +10,8 @@ namespace model {
 C3D13::C3D13(ID p_elem_id, const std::array<ID, 13>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 
-const quadrature::Quadrature& C3D13::integration_scheme() const {
-    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_PYRAMID, quadrature::ORDER_QUARTIC};
+const math::quadrature::Quadrature& C3D13::integration_scheme() const {
+    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_PYRAMID, math::quadrature::ORDER_QUARTIC};
     return quad;
 }
 SurfacePtr C3D13::surface(ID surface_id) {

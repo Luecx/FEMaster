@@ -7,7 +7,7 @@ using namespace fem;
 
 // 20) Quadrature weights sum (heuristic checks for canonical cases)
 TEST(Math_Quadrature, WeightSums) {
-    using namespace quadrature;
+    using namespace math::quadrature;
     {
         Quadrature q(DOMAIN_ISO_LINE_A, ORDER_QUADRATIC); // [-1,1]
         Precision sumw = 0;

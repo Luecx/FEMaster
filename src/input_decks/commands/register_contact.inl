@@ -8,16 +8,16 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_contact(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("CONTACT", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_contact(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("CONTACT", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Define frictionless node-to-surface penalty contact. MASTER must be a surface set; "
             "SLAVE may be a node set or surface set. Contact contributes only in NONLINEARSTATIC."
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("MASTER")   .required()     .doc("Master surface set")
                 .key("SLAVE")    .required()     .doc("Slave node set or slave surface set")
                 .key("DISTANCE") .required()     .doc("Search distance for candidate master surfaces")
@@ -26,7 +26,7 @@ inline void register_contact(fem::dsl::Registry& registry, model::Model& model) 
                 .key("FLIP")     .optional("NO") .doc("Flip master surface normals").allowed({"NO", "YES"})
         );
 
-        command.on_enter([&](const fem::dsl::Keys& keys) {
+        command.on_enter([&](const fem::io::dsl::Keys& keys) {
             const std::string& master = keys.raw("MASTER");
             const std::string& slave  = keys.raw("SLAVE");
             const fem::Precision dist = keys.get<fem::Precision>("DISTANCE");
@@ -37,7 +37,7 @@ inline void register_contact(fem::dsl::Registry& registry, model::Model& model) 
             model.add_contact(master, slave, dist, k, c, flip);
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

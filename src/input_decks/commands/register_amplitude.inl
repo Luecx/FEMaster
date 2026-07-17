@@ -10,9 +10,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_amplitude(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("AMPLITUDE", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_amplitude(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("AMPLITUDE", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Define a reusable scalar time history. Each data line specifies a time-value pair. "
             "The TYPE keyword controls interpolation (STEP, NEAREST, LINEAR). Loads referencing the amplitude "
@@ -23,14 +23,14 @@ inline void register_amplitude(fem::dsl::Registry& registry, model::Model& model
         auto interpolation = std::make_shared<bc::Interpolation>(bc::Interpolation::Linear);
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("NAME").required().doc("Amplitude identifier")
                 .key("TYPE").optional("LINEAR")
                     .doc("Interpolation scheme: STEP, NEAREST, or LINEAR (default)")
                     .allowed({"STEP", "NEAREST", "LINEAR"})
         );
 
-        command.on_enter([name, interpolation, &model](const fem::dsl::Keys& keys) {
+        command.on_enter([name, interpolation, &model](const fem::io::dsl::Keys& keys) {
             *name = keys.raw("NAME");
             const std::string type_token = keys.raw("TYPE");
             if (type_token == "STEP" || type_token == "step" || type_token == "Step") {
@@ -43,10 +43,10 @@ inline void register_amplitude(fem::dsl::Registry& registry, model::Model& model
             model.define_amplitude(*name, *interpolation);
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("TIME").desc("Time coordinate")
                     .one<fem::Precision>().name("VALUE").desc("Amplitude value at TIME")
                 )

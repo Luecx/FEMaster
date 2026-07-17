@@ -83,9 +83,9 @@ struct Surface4 : public Surface<4> {
     /**
      * @brief Get the integration scheme for a quadrilateral element.
      *
-     * @return const quadrature::Quadrature& Integration scheme using a linear quadrature rule.
+     * @return const math::quadrature::Quadrature& Integration scheme using a linear quadrature rule.
      */
-    const quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme() const override;
 
     /**
      * @brief Compute the closest point on the element boundary to a given global point.

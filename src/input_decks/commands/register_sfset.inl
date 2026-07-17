@@ -30,14 +30,14 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_sfset(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("SFSET", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_sfset(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("SFSET", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Create or activate a surface set and add surface IDs (lists or ranges).");
 
         // --- Header keywords ---
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("SFSET").alternative("NAME").optional("SFALL")
                     .doc("Surface set name (default: SFALL).")
                 .flag("GENERATE")
@@ -45,7 +45,7 @@ inline void register_sfset(fem::dsl::Registry& registry, model::Model& model) {
         );
 
         // --- On enter: activate set ---
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             const std::string set_name = keys.get<std::string>("SFSET");
             model._data->surface_sets.activate(set_name);
         });
@@ -57,15 +57,15 @@ inline void register_sfset(fem::dsl::Registry& registry, model::Model& model) {
         // Boolean-aware admission: matches when GENERATE is present and truthy
         // (flag without value OR 1/ON/YES/TRUE per Keys::get<bool> semantics).
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .rank(20)
-                .when(fem::dsl::Condition::key_true("GENERATE"))
+                .when(fem::io::dsl::Condition::key_true("GENERATE"))
                 .doc("Range rows with explicit increment: start, end, inc.")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(0))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(0))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::ID, 3>().name("RANGE3").desc("start, end, inc")
                         )
                         .bind([&model](const std::array<fem::ID, 3>& r) {
@@ -87,15 +87,15 @@ inline void register_sfset(fem::dsl::Registry& registry, model::Model& model) {
         // --- Variant B: GENERATE with 2 values: start,end (inc=1 default) ---
         // Also gated by GENERATE being truthy; lower rank so A is tried first.
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .rank(10)
-                .when(fem::dsl::Condition::key_true("GENERATE"))
+                .when(fem::io::dsl::Condition::key_true("GENERATE"))
                 .doc("Range rows with implicit increment: start, end (inc=1).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(0))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(0))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::ID, 2>().name("RANGE2").desc("start, end (inc=1)")
                         )
                         .bind([&model](const std::array<fem::ID, 2>& r) {
@@ -111,18 +111,18 @@ inline void register_sfset(fem::dsl::Registry& registry, model::Model& model) {
         // --- Variant C: explicit surface IDs (no GENERATE), multiple per line ---
         // Matches when GENERATE is missing OR explicitly false (0/OFF/NO/FALSE).
         command.variant(
-            fem::dsl::Variant::make()
-                .when(fem::dsl::Condition::any_of({
-                    fem::dsl::Condition::negate(fem::dsl::Condition::key_present("GENERATE")),
-                    fem::dsl::Condition::key_false("GENERATE")
+            fem::io::dsl::Variant::make()
+                .when(fem::io::dsl::Condition::any_of({
+                    fem::io::dsl::Condition::negate(fem::io::dsl::Condition::key_present("GENERATE")),
+                    fem::io::dsl::Condition::key_false("GENERATE")
                 }))
                 .doc("Explicit surface IDs (one or more per line).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(0))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(0))
                         .pattern(
                             // Use a bounded-width fixed block with padding so we can accept 0..32 IDs per line.
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::ID, 32>()
                                     .name("IDS")
                                     .desc("Surface IDs (up to 32 per line).")

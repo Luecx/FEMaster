@@ -81,6 +81,7 @@
 #include "keys.h"
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 /**
@@ -554,4 +555,5 @@ private:
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

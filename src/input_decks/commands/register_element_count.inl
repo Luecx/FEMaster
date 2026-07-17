@@ -14,13 +14,13 @@ namespace fem::input_decks::commands {
 
 using ElementCountSink = std::function<void(fem::ID)>;
 
-inline void register_element_count(fem::dsl::Registry& registry, ElementCountSink sink) {
-    registry.command("ELEMENT", [sink = std::move(sink)](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_element_count(fem::io::dsl::Registry& registry, ElementCountSink sink) {
+    registry.command("ELEMENT", [sink = std::move(sink)](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Count element ids.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("ELSET")
                     .optional("EALL")
                     .doc("Element set to activate while reading")
@@ -34,11 +34,11 @@ inline void register_element_count(fem::dsl::Registry& registry, ElementCountSin
         );
 
 #define FEM_ADD_ELEMENT_COUNT_VARIANT(KEY, COUNT, DESC) \
-        command.variant(fem::dsl::Variant::make() \
-            .when(fem::dsl::Condition::key_equals("TYPE", {KEY})) \
-            .segment(fem::dsl::Segment::make() \
-                .range(fem::dsl::LineRange{}.min(1)) \
-                .pattern(fem::dsl::Pattern::make() \
+        command.variant(fem::io::dsl::Variant::make() \
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {KEY})) \
+            .segment(fem::io::dsl::Segment::make() \
+                .range(fem::io::dsl::LineRange{}.min(1)) \
+                .pattern(fem::io::dsl::Pattern::make() \
                     .allow_multiline() \
                     .one<fem::ID>().name("ID").desc("Element id") \
                     .fixed<fem::ID, COUNT>().name("N").desc(DESC) \
@@ -68,11 +68,11 @@ inline void register_element_count(fem::dsl::Registry& registry, ElementCountSin
 
 #undef FEM_ADD_ELEMENT_COUNT_VARIANT
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"B33"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"B33"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::ID>().name("ID").desc("Element id")
                     .fixed<fem::ID, 3>()
                         .name("N")
@@ -85,11 +85,11 @@ inline void register_element_count(fem::dsl::Registry& registry, ElementCountSin
             )
         );
 
-        command.variant(fem::dsl::Variant::make()
-            .when(fem::dsl::Condition::key_equals("TYPE", {"C3D5"}))
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"C3D5"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .one<fem::ID>().name("ID").desc("Element id")
                     .fixed<fem::ID, 5>().name("N").desc("C3D5 connectivity (5 nodes)")

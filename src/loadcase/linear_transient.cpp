@@ -21,7 +21,7 @@ namespace fem { namespace loadcase {
 using fem::constraint::ConstraintTransformer;
 
 Transient::Transient(ID id,
-                     reader::ResultWriters* writer_,
+                     io::writer::ResultWriters* writer_,
                      model::Model* model_)
     : LoadCase(id, writer_, model_) {}
 
@@ -108,15 +108,15 @@ void Transient::run() {
 
     // Optional: dump matrices
     if (!stiffness_file.empty()) {
-        write_mtx(stiffness_file + "_K.mtx", K , 0, 17);
-        write_mtx(stiffness_file + "_A.mtx", A , 0, 17);
+        io::writer::write_mtx(stiffness_file + "_K.mtx", K , 0, 17);
+        io::writer::write_mtx(stiffness_file + "_A.mtx", A , 0, 17);
     }
     if (!mass_file.empty()) {
-        write_mtx(mass_file + "_M.mtx", M  , 0, 17);
-        write_mtx(mass_file + "_Mr.mtx", Mr, 0, 17);
+        io::writer::write_mtx(mass_file + "_M.mtx", M  , 0, 17);
+        io::writer::write_mtx(mass_file + "_Mr.mtx", Mr, 0, 17);
     }
     if (!damping_file.empty()) {
-        write_mtx(damping_file + "_C.mtx", Cr, 0, 17);
+        io::writer::write_mtx(damping_file + "_C.mtx", Cr, 0, 17);
     }
 
     // (7) Build time-dependent reduced force callback for the solver
@@ -173,7 +173,7 @@ void Transient::run() {
         write_stride = std::max(1, static_cast<int>(std::round(write_every_time / dt)));
     }
 
-    writer->add_loadcase(id, reader::WriterStepType::Dynamic);
+    writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
     for (int k = 0; k <= n_steps; ++k) {
         if (k % write_stride != 0 && k != n_steps) continue; // always write last
         const auto& qk  = result.u[static_cast<size_t>(k)];

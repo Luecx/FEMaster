@@ -21,7 +21,7 @@ struct QSPT : ShellElement<4> {
     };
 
     Surface4               geometry;
-    quadrature::Quadrature integration_scheme_;
+    math::quadrature::Quadrature integration_scheme_;
 
     QSPT(ID p_elem_id, std::array<ID, 4> p_node_ids);
 
@@ -32,7 +32,7 @@ struct QSPT : ShellElement<4> {
     MapMatrix  stiffness(Precision* buffer) override;
     MapMatrix  stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
     MapMatrix  mass(Precision* buffer) override;
-    const quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme() const override;
 
     Dim    n_integration_points() const override { return 0; }
     ElDofs dofs() const override { return ElDofs{true, true, true, false, false, false}; }

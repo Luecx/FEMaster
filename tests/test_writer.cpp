@@ -33,7 +33,7 @@ TEST(Reader_Writer, WritesFieldTypeForModelField) {
     field.set_zero();
 
     {
-        reader::Writer writer(output_path);
+        io::writer::Writer writer(output_path);
         writer.write_field(field, "DISPLACEMENT");
     }
 
@@ -51,7 +51,7 @@ TEST(Reader_Writer, WritesInferredTypeForIndexedMatrixField) {
     matrix << 1.0, 2.0, 10.0, 20.0, 30.0;
 
     {
-        reader::Writer writer(output_path);
+        io::writer::Writer writer(output_path);
         writer.write_eigen_matrix(matrix, "LOCAL_SECTION_FORCES", 2);
     }
 
@@ -85,7 +85,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
     fem::model::Field resultants = model.compute_shell_resultants(displacement);
 
     {
-        fem::reader::FrdWriter writer(output_path);
+        fem::io::writer::FrdWriter writer(output_path);
         writer.write_model_data(*model._data);
         writer.write_field(resultants, "SHELLRESULTANTS", model._data.get());
     }

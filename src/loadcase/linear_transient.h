@@ -32,7 +32,7 @@ namespace fem { namespace loadcase {
 
 struct Transient : public LoadCase {
     explicit Transient(ID id,
-                       reader::ResultWriters* writer,
+                       io::writer::ResultWriters* writer,
                        model::Model* model);
 
     // User inputs

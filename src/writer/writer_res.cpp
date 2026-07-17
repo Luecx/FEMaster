@@ -7,7 +7,8 @@
 #include <iomanip>
 
 namespace fem {
-namespace reader {
+namespace io {
+namespace writer {
 
 namespace {
 
@@ -229,5 +230,6 @@ void ResWriter::write_field(const model::Field& field,
     write_dense_field(file_path, field, field_name);
 }
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

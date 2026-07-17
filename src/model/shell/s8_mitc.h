@@ -10,14 +10,14 @@ struct MITC8
     : DefaultShellElement<
           8,
           Surface8,
-          quadrature::Domain::DOMAIN_ISO_QUAD,
-          quadrature::Order::ORDER_QUINTIC
+          math::quadrature::Domain::DOMAIN_ISO_QUAD,
+          math::quadrature::Order::ORDER_QUINTIC
       > {
     using Base = DefaultShellElement<
         8,
         Surface8,
-        quadrature::Domain::DOMAIN_ISO_QUAD,
-        quadrature::Order::ORDER_QUINTIC
+        math::quadrature::Domain::DOMAIN_ISO_QUAD,
+        math::quadrature::Order::ORDER_QUINTIC
     >;
 
     using LocalCoords     = typename Base::LocalCoords;

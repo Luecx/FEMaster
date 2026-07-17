@@ -1,12 +1,14 @@
 #pragma once
 
 namespace fem {
-namespace reader {
+namespace io {
+namespace writer {
 
 struct WriterFileFormats {
     bool res = true;
     bool frd = true;
 };
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

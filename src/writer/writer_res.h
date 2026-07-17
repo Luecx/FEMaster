@@ -14,7 +14,8 @@ namespace model {
 struct ModelData;
 }
 
-namespace reader {
+namespace io {
+namespace writer {
 
 /**
  * @brief FEMaster .res writer.
@@ -48,5 +49,6 @@ class ResWriter {
                      Precision frame_value = std::numeric_limits<Precision>::quiet_NaN());
 };
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

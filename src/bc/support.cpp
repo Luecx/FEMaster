@@ -121,50 +121,39 @@ void Support::apply_to_node(model::ModelData& model_data, constraint::Equations&
 }
 
 std::string Support::str() const {
-    auto region_name = [&]() -> std::string {
-        if (node_region_) {
-            return std::string("NSET ") + node_region_->name + " (" + std::to_string(node_region_->size()) + ")";
-        }
-
-        if (surface_region_) {
-            return std::string("SFSET ") + surface_region_->name + " (" + std::to_string(surface_region_->size()) + ")";
-        }
-
-        if (element_region_) {
-            return std::string("ELSET ") + element_region_->name + " (" + std::to_string(element_region_->size()) + ")";
-        }
-
-        return std::string("(unknown)");
+    const auto region_name = [&]() -> std::string {
+        if (node_region_)
+            return "NSET " + node_region_->name + " (" + std::to_string(node_region_->size()) + ")";
+        if (surface_region_)
+            return "SFSET " + surface_region_->name + " (" + std::to_string(surface_region_->size()) + ")";
+        if (element_region_)
+            return "ELSET " + element_region_->name + " (" + std::to_string(element_region_->size()) + ")";
+        return "(unknown)";
     }();
 
-    static const char* labels[6] = {"Ux", "Uy", "Uz", "Rx", "Ry", "Rz"};
+    static constexpr const char* labels[] = {
+        "Ux", "Uy", "Uz", "Rx", "Ry", "Rz"
+    };
 
     std::ostringstream os;
-    os << "Support: target="
-       << region_name
-       << ", dof=[";
+    os << "Support: target=" << region_name << ", dof=[";
 
     bool first = true;
     for (int i = 0; i < 6; ++i) {
-        if (!std::isnan(values_[i])) {
-            if (!first) {
-                os << ", ";
-            }
+        if (std::isnan(values_[i]))
+            continue;
 
-            os << labels[i]
-               << "="
-               << values_[i];
-            first = false;
-        }
+        if (!first)
+            os << ", ";
+
+        os << labels[i] << '=' << values_[i];
+        first = false;
     }
 
-    if (first) {
-        os << "(none)";
-    }
+    os << ']';
 
-    if (coordinate_system_) {
+    if (coordinate_system_)
         os << ", orientation=" << coordinate_system_->name;
-    }
 
     return os.str();
 }

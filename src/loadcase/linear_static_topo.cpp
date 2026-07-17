@@ -73,7 +73,7 @@ namespace fem { namespace loadcase {
  * - density    : per-element densities (initialized to 1.0).
  * - orientation: per-element orientation angles (3 per element, initialized to 0).
  */
-LinearStaticTopo::LinearStaticTopo(ID id, reader::ResultWriters* writer, model::Model* model)
+LinearStaticTopo::LinearStaticTopo(ID id, io::writer::ResultWriters* writer, model::Model* model)
     : LinearStatic(id, writer, model) {}
 
 /**
@@ -348,7 +348,7 @@ void LinearStaticTopo::run() {
         }
     }
 
-    writer->add_loadcase(id, reader::WriterStepType::Static);
+    writer->add_loadcase(id, io::writer::WriterStepType::Static);
     writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
     writer->write_field(strain          , "STRAIN", model->_data.get());
     writer->write_field(stress          , "STRESS", model->_data.get());

@@ -123,8 +123,8 @@ StaticMatrix<4, 3> C3D4::node_coords_local() {
     return res;
 }
 
-const quadrature::Quadrature& C3D4::integration_scheme() const {
-    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_TET, quadrature::ORDER_LINEAR};
+const math::quadrature::Quadrature& C3D4::integration_scheme() const {
+    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_LINEAR};
     return quad;
 }
 

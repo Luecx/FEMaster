@@ -1,7 +1,8 @@
 #pragma once
 
 namespace fem {
-namespace reader {
+namespace io {
+namespace writer {
 
 enum class WriterStepType {
     Static,
@@ -10,5 +11,6 @@ enum class WriterStepType {
     Buckling
 };
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

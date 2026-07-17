@@ -84,10 +84,10 @@ struct C3D4 : public SolidElement<4> {
      * @brief Returns the quadrature integration scheme for the C3D4 element,
      * which uses a linear tetrahedral quadrature rule.
      *
-     * @return const quadrature::Quadrature& The quadrature rule to be used
+     * @return const math::quadrature::Quadrature& The quadrature rule to be used
      * for integration over the element's domain.
      */
-    const quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme() const override;
 
     SurfacePtr                    surface(ID surface_id) override;
 };

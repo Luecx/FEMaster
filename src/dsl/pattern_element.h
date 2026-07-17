@@ -39,6 +39,7 @@
 #include <cmath>
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 /**
@@ -717,4 +718,5 @@ struct Fixed : PatternElementBase
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

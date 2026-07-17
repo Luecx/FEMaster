@@ -8,6 +8,7 @@
 #include "quadrature.h"
 
 namespace fem {
+namespace math {
 namespace quadrature {
 
 namespace {
@@ -67,5 +68,6 @@ REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_CUBIC, hex_quadratic);
 REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUARTIC, hex_quartic);
 REGISTER_SCHEME(DOMAIN_ISO_HEX, ORDER_QUINTIC, hex_quartic);
 } // namespace quadrature
+} // namespace math
 } // namespace fem
 

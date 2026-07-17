@@ -77,9 +77,9 @@ struct Surface6 : public Surface<6> {
     /**
      * @brief Get the integration scheme for a 6-node triangular element.
      *
-     * @return const quadrature::Quadrature& Integration scheme using a quadratic quadrature rule.
+     * @return const math::quadrature::Quadrature& Integration scheme using a quadratic quadrature rule.
      */
-    const quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme() const override;
 
     /**
      * @brief Compute the closest point on the element boundary to a given global point.

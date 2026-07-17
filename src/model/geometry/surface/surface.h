@@ -476,9 +476,9 @@ struct Surface : public SurfaceInterface {
     /**
      * @brief Provide the integration scheme for the surface element.
      *
-     * @return const quadrature::Quadrature& Reference to the quadrature rule used for integration.
+     * @return const math::quadrature::Quadrature& Reference to the quadrature rule used for integration.
      */
-    virtual const quadrature::Quadrature& integration_scheme() const = 0;
+    virtual const math::quadrature::Quadrature& integration_scheme() const = 0;
 
     /**
      * @brief Get the node IDs associated with the surface element.

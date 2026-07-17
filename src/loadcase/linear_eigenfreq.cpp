@@ -176,11 +176,11 @@ static void display_eigen_summary(const std::vector<ModalMode>& modes) {
  * @brief Write eigenvalues, eigenfrequencies, mode shapes, and participations.
  */
 static void write_results(const std::vector<ModalMode>& modes,
-                          reader::ResultWriters*        writer,
+                          io::writer::ResultWriters*        writer,
                           int                           loadcase_id,
                           model::Model*                 mdl)
 {
-    writer->add_loadcase(loadcase_id, reader::WriterStepType::Eigenfrequency);
+    writer->add_loadcase(loadcase_id, io::writer::WriterStepType::Eigenfrequency);
 
     Index num_modes = static_cast<Index>(modes.size());
 
@@ -212,7 +212,7 @@ static void write_results(const std::vector<ModalMode>& modes,
  * @brief Modal analysis entry point (constrained via null-space).
  */
 LinearEigenfrequency::LinearEigenfrequency(ID id,
-                                           reader::ResultWriters* writer,
+                                           io::writer::ResultWriters* writer,
                                            model::Model* model,
                                            int numEigenvalues)
     : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}

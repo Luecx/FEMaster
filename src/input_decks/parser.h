@@ -9,7 +9,7 @@
 
 namespace fem {
 namespace loadcase { struct LoadCase; }
-namespace dsl      { class File; struct Line; }
+namespace io { namespace dsl { class File; struct Line; } }
 namespace model    { struct Model; }
 
 namespace input_decks {
@@ -43,10 +43,10 @@ public:
     // Accessors
     model::Model& model();
     const model::Model& model() const;
-    reader::ResultWriters& writer();
-    const reader::ResultWriters& writer() const;
-    dsl::Registry& registry();
-    const dsl::Registry& registry() const;
+    io::writer::ResultWriters& writer();
+    const io::writer::ResultWriters& writer() const;
+    io::dsl::Registry& registry();
+    const io::dsl::Registry& registry() const;
 
     // Loadcase helpers used by command registrations
     int next_loadcase_id();
@@ -71,17 +71,17 @@ private:
     void run_data_stage(const std::string& input_path, const std::string& output_path);
 
     void allocate_model(const CountData& count);
-    void register_count_commands(dsl::Registry& registry, CountData& count);
-    void register_set_commands(dsl::Registry& registry);
-    void register_topology_commands(dsl::Registry& registry);
-    void register_analysis_commands(dsl::Registry& registry);
+    void register_count_commands(io::dsl::Registry& registry, CountData& count);
+    void register_set_commands(io::dsl::Registry& registry);
+    void register_topology_commands(io::dsl::Registry& registry);
+    void register_analysis_commands(io::dsl::Registry& registry);
     void register_documentation_commands();
 
 private:
     // Runtime state
     std::shared_ptr<model::Model> m_model;
-    reader::ResultWriters         m_writer;   // opened in run()
-    mutable dsl::Registry         m_registry; // re-created when model changes
+    io::writer::ResultWriters         m_writer;   // opened in run()
+    mutable io::dsl::Registry         m_registry; // re-created when model changes
 
     std::unique_ptr<loadcase::LoadCase> m_active_loadcase;
     std::string                         m_active_loadcase_type;

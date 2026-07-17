@@ -4,11 +4,11 @@
 
 #include <cmath>
 
-namespace fem::so3 {
+namespace fem::math::so3 {
 
 namespace {
 
-using math::skew;
+using fem::math::skew;
 
 struct RotationCoefficients {
     Precision a     = Precision(0);
@@ -221,4 +221,4 @@ void rotation_matrix_second_derivatives(
     }
 }
 
-} // namespace fem::so3
+} // namespace fem::math::so3

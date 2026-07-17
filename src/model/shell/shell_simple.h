@@ -22,10 +22,10 @@
 
 namespace fem::model {
 
-template<Index N, typename SFType, quadrature::Domain INT_D, quadrature::Order INT_O>
+template<Index N, typename SFType, math::quadrature::Domain INT_D, math::quadrature::Order INT_O>
 struct DefaultShellElement : public ShellElement<N> {
     SFType                 geometry;
-    quadrature::Quadrature integration_scheme_;
+    math::quadrature::Quadrature integration_scheme_;
 
     using Axes            = Mat3;
     using NodeCoords      = StaticMatrix<N, 3>;
@@ -632,7 +632,7 @@ struct DefaultShellElement : public ShellElement<N> {
         return res;
     }
 
-    const quadrature::Quadrature& integration_scheme() const override {
+    const math::quadrature::Quadrature& integration_scheme() const override {
         return integration_scheme_;
     }
 

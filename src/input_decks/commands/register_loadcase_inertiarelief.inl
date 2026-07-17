@@ -9,20 +9,20 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_inertiarelief(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("INERTIARELIEF", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_inertiarelief(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("INERTIARELIEF", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Enable inertia relief for the active linear static load case. "
                     "CONSIDER_POINT_MASSES controls whether POINTMASS features are included.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("CONSIDER_POINT_MASSES")
                     .doc("If true, inertia relief includes all POINTMASS features")
                     .optional("1")
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
             if (!base) {
                 throw std::runtime_error("INERTIARELIEF must appear inside *LOADCASE");
@@ -35,7 +35,7 @@ inline void register_loadcase_inertiarelief(fem::dsl::Registry& registry, Parser
             throw std::runtime_error("INERTIARELIEF is only supported for LINEARSTATIC load cases");
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

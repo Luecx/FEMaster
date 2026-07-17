@@ -12,26 +12,26 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_point_mass(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("POINTMASS", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_point_mass(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("POINTMASS", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Assign point-mass feature to a node set.");
 
         auto nset = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("NSET").required().doc("Target node set")
         );
 
-        command.on_enter([nset](const fem::dsl::Keys& keys) {
+        command.on_enter([nset](const fem::io::dsl::Keys& keys) {
             *nset = keys.raw("NSET");
         });
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
                     .one<fem::Precision>().name("MASS").desc("Point mass")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})

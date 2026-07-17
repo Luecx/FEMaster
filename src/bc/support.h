@@ -36,7 +36,7 @@ namespace bc {
  * being converted into algebraic equations.
  */
 struct Support : public fem::Printable {
-    using NodeRegionPtr = model::NodeRegion::Ptr;       ///< Alias for node-region pointer.
+    using NodeRegionPtr    = model::NodeRegion::Ptr;    ///< Alias for node-region pointer.
     using ElementRegionPtr = model::ElementRegion::Ptr; ///< Alias for element-region pointer.
     using SurfaceRegionPtr = model::SurfaceRegion::Ptr; ///< Alias for surface-region pointer.
 

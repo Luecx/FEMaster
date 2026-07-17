@@ -9,18 +9,18 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_topodensity(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("TOPODENSITY", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_topodensity(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("TOPODENSITY", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Select the element density field for LINEARSTATICTOPO loadcases.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("FIELD").required().doc("Density field name (ELEMENT, 1 component)")
                 .alternative("NAME")
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* lc = parser.active_loadcase_as<loadcase::LinearStaticTopo>();
             if (!lc) {
                 throw std::runtime_error("TOPODENSITY only valid for LINEARSTATICTOPO loadcases");
@@ -38,7 +38,7 @@ inline void register_loadcase_topodensity(fem::dsl::Registry& registry, Parser& 
         });
 
         // Keyword-only command: no data segment needed
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

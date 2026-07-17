@@ -32,9 +32,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_surface(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("SURFACE", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_surface(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("SURFACE", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
             "Define surfaces from element faces (by element id) or entire element sets.\n"
             "TYPE must be ELEMENT. Use SFSET/NAME to select the active surface set."
@@ -42,14 +42,14 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
 
         // --- Header keywords ---
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("SFSET").alternative("NAME").optional("SFALL")
                     .doc("Set name to activate/create (default: SFALL).\n"
                          "Elements with 2D faces contribute surfaces; beam elements contribute 1D lines under the same set name.")
         );
 
         // --- On enter: validate + activate sfset ---
-        command.on_enter([&model](const fem::dsl::Keys& keys) {
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             const std::string& sfset = keys.get<std::string>("SFSET"); // resolves NAME alias
             // Activate both surface and line sets under the same name so beam elements
             // can contribute their 1D geometry to a parallel line-set with identical key.
@@ -74,13 +74,13 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
 
         // --- Variant 1: ID, ELEM_ID, SIDE ---
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("Three fields per line: ID, ELEM_ID, SIDE (SIDE accepts 'S#' or integer).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .one<fem::ID>().name("ID").desc("Surface id")
                                 .one<fem::ID>().name("ELEM_ID").desc("Element id")
                                 .one<std::string>().name("SIDE").desc("Face id, e.g. S1 or 1")
@@ -94,13 +94,13 @@ inline void register_surface(fem::dsl::Registry& registry, model::Model& model) 
 
         // --- Variant 2: TARGET, SIDE (id := -1 if TARGET is elem id) ---
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("Two fields per line: TARGET, SIDE (TARGET = ELSET name or single element id).")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .one<std::string>().name("TARGET").desc("ELSET name or element id (int)")
                                 .one<std::string>().name("SIDE").desc("Face id, e.g. S1 or 1")
                         )

@@ -1,6 +1,7 @@
 #pragma once
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 enum class ActiveMode {
@@ -10,4 +11,5 @@ enum class ActiveMode {
 };
 
 } // namespace dsl
+} // namespace io
 } // namespace fem

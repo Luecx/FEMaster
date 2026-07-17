@@ -12,7 +12,8 @@
 #include <vector>
 
 namespace fem {
-namespace reader {
+namespace io {
+namespace writer {
 
 namespace {
 
@@ -688,5 +689,6 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     file_path << " -3\n";
 }
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

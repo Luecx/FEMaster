@@ -15,20 +15,20 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("LOADCASE", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("LOADCASE", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Begin a load case definition block.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
                     "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
                     "NONLINEARSTATIC"})
                 .key("NAME").optional()
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             if (parser.active_loadcase()) {
                 throw std::runtime_error("Nested *LOADCASE blocks are not supported");
             }
@@ -59,7 +59,7 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
         });
 
         // When the LOADCASE scope exits, run and clear it.
-        command.on_exit([&parser](const fem::dsl::Keys&) {
+        command.on_exit([&parser](const fem::io::dsl::Keys&) {
             auto* lc = parser.active_loadcase();
             if (!lc) {
                 // Nothing to do (either already cleared, or mis-scoped END).
@@ -73,7 +73,7 @@ inline void register_loadcase_begin(fem::dsl::Registry& registry, Parser& parser
             parser.clear_active_loadcase();
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

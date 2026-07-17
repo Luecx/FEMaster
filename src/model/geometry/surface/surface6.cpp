@@ -122,10 +122,10 @@ StaticMatrix<6, 2> Surface6::node_coords_local() const {
 /**
  * @brief Return the integration scheme for the element.
  *
- * @return const quadrature::Quadrature& Quadrature scheme for the 6-node triangular element.
+ * @return const math::quadrature::Quadrature& Quadrature scheme for the 6-node triangular element.
  */
-const fem::quadrature::Quadrature& Surface6::integration_scheme() const {
-    static const quadrature::Quadrature quad{quadrature::DOMAIN_ISO_TRI, quadrature::ORDER_QUADRATIC};
+const fem::math::quadrature::Quadrature& Surface6::integration_scheme() const {
+    static const math::quadrature::Quadrature quad{math::quadrature::DOMAIN_ISO_TRI, math::quadrature::ORDER_QUADRATIC};
     return quad;
 }
 

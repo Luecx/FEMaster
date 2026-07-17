@@ -20,7 +20,7 @@ inline Precision leverage_to_edge(const Vec3& origin,
 QSPT::QSPT(ID p_elem_id, std::array<ID, 4> p_node_ids)
     : ShellElement<4>(p_elem_id, p_node_ids)
     , geometry(p_node_ids)
-    , integration_scheme_(quadrature::DOMAIN_ISO_QUAD, quadrature::ORDER_CUBIC) {}
+    , integration_scheme_(math::quadrature::DOMAIN_ISO_QUAD, math::quadrature::ORDER_CUBIC) {}
 
 SurfacePtr QSPT::surface(ID surface_id) {
     return std::make_shared<Surface4>(
@@ -29,7 +29,7 @@ SurfacePtr QSPT::surface(ID surface_id) {
             : std::array<ID, 4>{this->nodes()[3], this->nodes()[2], this->nodes()[1], this->nodes()[0]});
 }
 
-const quadrature::Quadrature& QSPT::integration_scheme() const {
+const math::quadrature::Quadrature& QSPT::integration_scheme() const {
     return integration_scheme_;
 }
 

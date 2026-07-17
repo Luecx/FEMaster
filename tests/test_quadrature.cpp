@@ -6,7 +6,7 @@
 
 using namespace fem;
 using namespace fem::math;
-using namespace fem::quadrature;
+using namespace fem::math::quadrature;
 
 using Function       = std::function<Precision(Precision, Precision, Precision)>;
 using FunctionList   = std::vector<Function>;

@@ -49,6 +49,7 @@
 #include "invoke.h"
 
 namespace fem {
+namespace io {
 namespace dsl {
 /**
  * @class Segment
@@ -130,4 +131,5 @@ private:
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

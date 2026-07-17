@@ -8,13 +8,13 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_rebalance(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("REBALANCELOADS", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_rebalance(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("REBALANCELOADS", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Enable rigid-body rebalancing of external loads (sum F=M=0) for the active linear static load case.");
 
         // Toggle only; no additional keywords
-        command.on_enter([&parser](const fem::dsl::Keys&) {
+        command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto* base = parser.active_loadcase();
             if (!base) {
                 throw std::runtime_error("REBALANCELOADS must appear inside *LOADCASE");
@@ -26,7 +26,7 @@ inline void register_loadcase_rebalance(fem::dsl::Registry& registry, Parser& pa
             throw std::runtime_error("REBALANCELOADS is only supported for linear static load cases");
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

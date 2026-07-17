@@ -16,17 +16,17 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_initialvelocity(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("INITIALVELOCITY", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_initialvelocity(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("INITIALVELOCITY", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Set initial velocity for transient analysis from a node FIELD. Usage: *INITIALVELOCITY, FIELD=NAME");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("FIELD").required().doc("Name of a node field with 6 components (ux,uy,uz,rx,ry,rz)")
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
             logging::error(base != nullptr, "INITIALVELOCITY must appear inside *LOADCASE.");
 
@@ -47,7 +47,7 @@ inline void register_loadcase_initialvelocity(fem::dsl::Registry& registry, Pars
         });
 
         // No data lines for this command
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

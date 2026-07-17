@@ -46,6 +46,7 @@
 #include "condition.h"
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 /**
@@ -172,4 +173,5 @@ struct Variant {
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

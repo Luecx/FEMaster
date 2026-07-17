@@ -25,6 +25,7 @@
 #include <limits>
 
 namespace fem {
+namespace io {
 namespace dsl {
 
 /**
@@ -59,4 +60,5 @@ struct LineRange {
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

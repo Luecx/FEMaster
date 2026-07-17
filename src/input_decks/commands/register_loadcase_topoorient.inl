@@ -8,18 +8,18 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_topoorient(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("TOPOORIENT", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_topoorient(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("TOPOORIENT", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Select the orientation field for LINEARSTATICTOPO loadcases.");
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("FIELD").required().doc("Orientation field name (ELEMENT, 3 components)")
                 .alternative("NAME")
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* lc = parser.active_loadcase_as<loadcase::LinearStaticTopo>();
             if (!lc) {
                 throw std::runtime_error("TOPOORIENT only valid for LINEARSTATICTOPO loadcases");
@@ -37,7 +37,7 @@ inline void register_loadcase_topoorient(fem::dsl::Registry& registry, Parser& p
         });
 
         // Keyword-only command: no data segment needed
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

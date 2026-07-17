@@ -43,6 +43,7 @@
 #include "keyword.h"
 
 namespace fem {
+namespace io {
 namespace dsl {
 /**
  * @struct Keys
@@ -250,4 +251,5 @@ struct Keys {
     }
 };
 } // namespace dsl
+} // namespace io
 } // namespace fem

@@ -8,15 +8,15 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_topoexponent(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("TOPOEXPONENT", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_topoexponent(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("TOPOEXPONENT", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Set penalization exponent for LINEARSTATICTOPO loadcases.");
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("EXPONENT").desc("Penalization exponent")
                 )
                 .bind([&parser](fem::Precision exponent) {

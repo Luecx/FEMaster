@@ -13,8 +13,8 @@ namespace model {
 C3D6::C3D6(ID p_elem_id, const std::array<ID, 6>& p_node_ids)
     : SolidElement(p_elem_id, p_node_ids) {}
 
-const quadrature::Quadrature& C3D6::integration_scheme() const {
-    const static quadrature::Quadrature quad {quadrature::DOMAIN_ISO_WEDGE, quadrature::ORDER_SUPER_LINEAR};
+const math::quadrature::Quadrature& C3D6::integration_scheme() const {
+    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_WEDGE, math::quadrature::ORDER_SUPER_LINEAR};
     return quad;
 }
 SurfacePtr C3D6::surface(ID surface_id) {

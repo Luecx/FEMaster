@@ -6,7 +6,8 @@
 #include <utility>
 
 namespace fem {
-namespace reader {
+namespace io {
+namespace writer {
 
 ResultWriters::ResultWriters(const std::string& job_base_name,
                              const WriterFileFormats& options) {
@@ -81,5 +82,6 @@ void ResultWriters::write_field(const model::Field& field,
     }
 }
 
-} // namespace reader
+} // namespace writer
+} // namespace io
 } // namespace fem

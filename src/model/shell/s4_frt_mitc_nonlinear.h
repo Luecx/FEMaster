@@ -235,7 +235,7 @@
         };
 
         Surface4                        geometry;
-        quadrature::Quadrature          integration_scheme_;
+        math::quadrature::Quadrature          integration_scheme_;
         std::unique_ptr<ReferenceData>  reference_data_;
 
         S4FRTMITC(ID id, std::array<ID, 4> nodes);
@@ -252,7 +252,7 @@
 
         std::shared_ptr<SurfaceInterface> surface(int surface_id) override;
 
-        const quadrature::Quadrature& integration_scheme() const override;
+        const math::quadrature::Quadrature& integration_scheme() const override;
 
         StaticVector<4> shape_function(Precision r, Precision s) const;
 

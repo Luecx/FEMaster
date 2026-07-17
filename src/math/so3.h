@@ -12,7 +12,7 @@
 
 #include <array>
 
-namespace fem::so3 {
+namespace fem::math::so3 {
 
 Mat3 rotation_matrix(const Vec3& rotation_vector);
 
@@ -29,4 +29,4 @@ void rotation_matrix_second_derivatives(
     std::array<std::array<Mat3, 3>, 3>& second_derivatives
 );
 
-} // namespace fem::so3
+} // namespace fem::math::so3

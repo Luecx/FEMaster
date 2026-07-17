@@ -10,9 +10,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("CONSTRAINTMETHOD", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("CONSTRAINTMETHOD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
             "Select constraint backend for LINEARSTATIC/LINEARSTATICTOPO: NULLSPACE, LAGRANGE or ELIMINATION.\n"
             "\n"
@@ -32,11 +32,11 @@ inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Par
         );
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({"NULLSPACE", "LAGRANGE", "ELIMINATION"})
         );
 
-        command.on_enter([&parser](const fem::dsl::Keys& keys) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
             if (!base) {
                 throw std::runtime_error("CONSTRAINTMETHOD must appear inside *LOADCASE");
@@ -62,7 +62,7 @@ inline void register_loadcase_constraintmethod(fem::dsl::Registry& registry, Par
             nlc->constraint_method = method;
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

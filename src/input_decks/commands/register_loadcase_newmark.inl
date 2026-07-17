@@ -16,19 +16,19 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_newmark(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("NEWMARK", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("NEWMARK", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Set Newmark-β integration parameters (β, γ). Defaults are 0.25, 0.5.");
 
         command.variant(
-            fem::dsl::Variant::make()
+            fem::io::dsl::Variant::make()
                 .doc("One data line: β, γ")
                 .segment(
-                    fem::dsl::Segment::make()
-                        .range(fem::dsl::LineRange{}.min(1).max(1))
+                    fem::io::dsl::Segment::make()
+                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
                         .pattern(
-                            fem::dsl::Pattern::make()
+                            fem::io::dsl::Pattern::make()
                                 .fixed<fem::Precision, 2>()
                                 .name("NEWMARK")
                                 .desc("β, γ parameters for Newmark-β.")

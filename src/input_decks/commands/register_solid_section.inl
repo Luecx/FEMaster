@@ -9,9 +9,9 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_solid_section(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("SOLIDSECTION", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("ROOT"));
+inline void register_solid_section(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("SOLIDSECTION", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Assign a material to a solid element set.");
 
         auto material = std::make_shared<std::string>();
@@ -19,7 +19,7 @@ inline void register_solid_section(fem::dsl::Registry& registry, model::Model& m
         auto orientation = std::make_shared<std::string>();
 
         command.keyword(
-            fem::dsl::KeywordSpec::make()
+            fem::io::dsl::KeywordSpec::make()
                 .key("MATERIAL")
                     .alternative("MAT")
                     .required()
@@ -32,14 +32,14 @@ inline void register_solid_section(fem::dsl::Registry& registry, model::Model& m
                     .doc("Optional coordinate system for solid material axes")
         );
 
-        command.on_enter([&model, material, elset, orientation](const fem::dsl::Keys& keys) {
+        command.on_enter([&model, material, elset, orientation](const fem::io::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset = keys.raw("ELSET");
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             model.solid_section(*elset, *material, *orientation);
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

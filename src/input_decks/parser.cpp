@@ -159,10 +159,10 @@ const model::Model& Parser::model() const {
     if (!m_model) throw std::runtime_error("Model not initialized.");
     return *m_model;
 }
-reader::ResultWriters& Parser::writer() { return m_writer; }
-const reader::ResultWriters& Parser::writer() const { return m_writer; }
-dsl::Registry& Parser::registry() { return m_registry; }
-const dsl::Registry& Parser::registry() const { return m_registry; }
+io::writer::ResultWriters& Parser::writer() { return m_writer; }
+const io::writer::ResultWriters& Parser::writer() const { return m_writer; }
+io::dsl::Registry& Parser::registry() { return m_registry; }
+const io::dsl::Registry& Parser::registry() const { return m_registry; }
 
 // ----------------- Loadcase bookkeeping -----------------
 
@@ -184,38 +184,38 @@ const std::string& Parser::active_loadcase_type() const {
 
 Parser::CountData Parser::run_count_stage(const std::string& input_path) {
     CountData count;
-    dsl::Registry registry;
+    io::dsl::Registry registry;
     register_count_commands(registry, count);
     register_set_commands(registry);
     register_analysis_commands(registry);
 
-    registry.set_active_mode(dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE", dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE", dsl::ActiveMode::Active);
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
 
-    dsl::File file(input_path);
-    dsl::Engine engine(registry);
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(registry);
     engine.run(file);
 
     return count;
 }
 
 void Parser::run_topology_stage(const std::string& input_path) {
-    dsl::Registry registry;
+    io::dsl::Registry registry;
     register_topology_commands(registry);
     register_analysis_commands(registry);
 
-    registry.set_active_mode(dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE", dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", dsl::ActiveMode::Active);
-    registry.set_active_mode("NSET", dsl::ActiveMode::Active);
-    registry.set_active_mode("ELSET", dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE", dsl::ActiveMode::Active);
-    registry.set_active_mode("SFSET", dsl::ActiveMode::Active);
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NSET", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELSET", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SFSET", io::dsl::ActiveMode::Active);
 
-    dsl::File file(input_path);
-    dsl::Engine engine(registry);
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(registry);
     engine.run(file);
 }
 
@@ -244,36 +244,36 @@ void Parser::run_data_stage(const std::string& input_path, const std::string& ou
         }
     }
 
-    m_writer = reader::ResultWriters(writer_base);
+    m_writer = io::writer::ResultWriters(writer_base);
     m_writer.write_model_data(*m_model->_data);
 
-    dsl::Registry registry;
+    io::dsl::Registry registry;
     register_topology_commands(registry);
     register_analysis_commands(registry);
 
-    registry.set_active_mode(dsl::ActiveMode::Active);
-    registry.set_active_mode("NODE", dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELEMENT", dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NSET", dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELSET", dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SURFACE", dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SFSET", dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode(io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NODE", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NSET", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELSET", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SFSET", io::dsl::ActiveMode::ConsumeOnly);
 
-    dsl::File file(input_path);
-    dsl::Engine engine(registry);
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(registry);
     engine.run(file);
 
     m_writer.close();
 }
 
 void Parser::register_documentation_commands() {
-    m_registry = dsl::Registry{};
+    m_registry = io::dsl::Registry{};
     register_topology_commands(m_registry);
     register_analysis_commands(m_registry);
-    m_registry.set_active_mode(dsl::ActiveMode::Active);
+    m_registry.set_active_mode(io::dsl::ActiveMode::Active);
 }
 
-void Parser::register_count_commands(dsl::Registry& reg, CountData& count) {
+void Parser::register_count_commands(io::dsl::Registry& reg, CountData& count) {
     commands::register_node_count(reg, [&count](ID id) {
         count.highest_node_id = std::max(count.highest_node_id, static_cast<int>(id));
     });
@@ -285,7 +285,7 @@ void Parser::register_count_commands(dsl::Registry& reg, CountData& count) {
     });
 }
 
-void Parser::register_set_commands(dsl::Registry& reg) {
+void Parser::register_set_commands(io::dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
 
     auto& mdl = *m_model;
@@ -294,7 +294,7 @@ void Parser::register_set_commands(dsl::Registry& reg) {
     commands::register_sfset(reg, mdl);
 }
 
-void Parser::register_topology_commands(dsl::Registry& reg) {
+void Parser::register_topology_commands(io::dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
 
     auto& mdl = *m_model;
@@ -306,7 +306,7 @@ void Parser::register_topology_commands(dsl::Registry& reg) {
     commands::register_sfset(reg, mdl);
 }
 
-void Parser::register_analysis_commands(dsl::Registry& reg) {
+void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
 
     auto& mdl = *m_model;

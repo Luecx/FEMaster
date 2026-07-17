@@ -7,15 +7,15 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_thermal_expansion(fem::dsl::Registry& registry, model::Model& model) {
-    registry.command("THERMALEXPANSION", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("MATERIAL"));
+inline void register_thermal_expansion(fem::io::dsl::Registry& registry, model::Model& model) {
+    registry.command("THERMALEXPANSION", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("MATERIAL"));
         command.doc("Assign thermal expansion coefficient to the active material.");
 
-        command.variant(fem::dsl::Variant::make()
-            .segment(fem::dsl::Segment::make()
-                .range(fem::dsl::LineRange{}.min(1).max(1))
-                .pattern(fem::dsl::Pattern::make()
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
                     .one<fem::Precision>().name("ALPHA").desc("Thermal expansion coefficient")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )

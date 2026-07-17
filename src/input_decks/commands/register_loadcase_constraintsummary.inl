@@ -6,12 +6,12 @@
 
 namespace fem::input_decks::commands {
 
-inline void register_loadcase_constraintsummary(fem::dsl::Registry& registry, Parser& parser) {
-    registry.command("CONSTRAINTSUMMARY", [&](fem::dsl::Command& command) {
-        command.allow_if(fem::dsl::Condition::parent_is("LOADCASE"));
+inline void register_loadcase_constraintsummary(fem::io::dsl::Registry& registry, Parser& parser) {
+    registry.command("CONSTRAINTSUMMARY", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc("Enable constraint summary output for the active loadcase.");
 
-        command.on_enter([&parser](const fem::dsl::Keys&) {
+        command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto* lc = parser.active_loadcase();
             if (!lc) {
                 throw std::runtime_error("CONSTRAINTSUMMARY must appear inside *LOADCASE");
@@ -19,7 +19,7 @@ inline void register_loadcase_constraintsummary(fem::dsl::Registry& registry, Pa
             lc->report_constraints = true;
         });
 
-        command.variant(fem::dsl::Variant::make());
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 
