@@ -14,6 +14,8 @@
 
 #include "../core/types_eig.h"
 
+#include <memory>
+
 namespace fem {
 namespace feature {
 /**
