@@ -97,8 +97,9 @@ void Parser::run(const std::string& input_path, const std::string& output_path) 
     // 2) Rebuild model with correct capacities, reset state
     allocate_model(count);
 
-    // 3) Parse topology and sets before fields exist.
+    // 3) Parse topology and sections before element offsets are built
     run_topology_stage(input_path);
+    m_model->assign_sections();
     m_model->_data->initialize_element_enumeration();
 
     // 4) Parse all non-topology input and field data.
@@ -213,6 +214,11 @@ void Parser::run_topology_stage(const std::string& input_path) {
     registry.set_active_mode("ELSET", io::dsl::ActiveMode::Active);
     registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
     registry.set_active_mode("SFSET", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
 
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
@@ -258,6 +264,11 @@ void Parser::run_data_stage(const std::string& input_path, const std::string& ou
     registry.set_active_mode("ELSET", io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("SURFACE", io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("SFSET", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
 
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
