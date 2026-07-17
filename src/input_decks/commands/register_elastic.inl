@@ -9,6 +9,7 @@
 #include "../../material/abd_elasticity.h"
 #include "../../material/generalised_isotropic_elasticity.h"
 #include "../../material/isotropic_elasticity.h"
+#include "../../material/neo_hooke_elasticity.h"
 #include "../../material/orthotropic_elasticity.h"
 
 namespace fem::input_decks::commands {
@@ -22,8 +23,9 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
             fem::io::dsl::KeywordSpec::make()
                 .key("TYPE")
                     .optional("ISO")
-                    .doc("Elasticity formulation (ISO/GENERALISED ISOTROPIC/ORTHO/ABD)")
+                    .doc("Elasticity formulation (ISO/NEO_HOOKE/GENERALISED ISOTROPIC/ORTHO/ABD)")
                     .allowed({"ISO", "ISOTROPIC",
+                              "NEOHOOKE", "NEO_HOOKE", "NEO-HOOKE", "NEOHOOKEAN", "NEO_HOOKEAN",
                               "GENERALISEDISOTROPIC", "GENERALISED_ISOTROPIC", "GENISO",
                               "ORTHO", "ORTHOTROPIC",
                               "ABD"})
@@ -45,6 +47,26 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                         throw std::runtime_error("ELASTIC requires an active material context");
                     }
                     material->set_elasticity<fem::material::IsotropicElasticity>(E, nu);
+                })
+            )
+        );
+
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"NEOHOOKE", "NEO_HOOKE", "NEO-HOOKE", "NEOHOOKEAN", "NEO_HOOKEAN"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<fem::Precision>().name("E").desc("Young's modulus")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                    .one<fem::Precision>().name("NU").desc("Poisson ratio")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                )
+                .bind([&model](fem::Precision E, fem::Precision nu) {
+                    auto material = model._data->materials.get();
+                    if (!material) {
+                        throw std::runtime_error("ELASTIC requires an active material context");
+                    }
+                    material->set_elasticity<fem::material::NeoHookeElasticity>(E, nu);
                 })
             )
         );
