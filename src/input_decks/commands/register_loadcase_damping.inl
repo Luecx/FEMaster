@@ -15,6 +15,7 @@
 #include "../../core/types_eig.h"
 
 #include "../../loadcase/linear_transient.h"
+#include "../../loadcase/tools/rayleigh_damping.h"
 
 namespace fem::input_decks::commands {
 
