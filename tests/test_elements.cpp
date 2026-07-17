@@ -1,4 +1,3 @@
-#include "../src/material/abd_elasticity.h"
 #include "../src/cos/rectangular_system.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
@@ -97,9 +96,7 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
 
     fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Identity();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
-    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
-
-    model.shell_section("EALL", "MAT", 0.1);
+    model.shell_section_abd("EALL", "MAT", 0.1, abd, shear);
     model.assign_sections();
 
     auto* elem = model._data->elements[0]->as<fem::model::S4>();
@@ -137,12 +134,11 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
         fem::Vec3(0.0, 0.0, -1.0)
     );
 
-    auto material = model._data->materials.activate("MAT");
+    model._data->materials.activate("MAT");
     fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Identity();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
-    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
 
-    model.shell_section("EALL", "MAT", 1.0, "ORI");
+    model.shell_section_abd("EALL", "MAT", 1.0, abd, shear, "ORI");
     model.assign_sections();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
@@ -169,14 +165,13 @@ TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
     model.set_node(3, 0.0, 1.0, 0.0);
     model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
 
-    auto material = model._data->materials.activate("MAT");
+    model._data->materials.activate("MAT");
     fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Zero();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Zero();
     shear(0, 0) = 2.0;
     shear(1, 1) = 3.0;
-    material->set_elasticity<fem::material::ABDElasticity>(abd, shear);
 
-    model.shell_section("EALL", "MAT", 1.0);
+    model.shell_section_abd("EALL", "MAT", 1.0, abd, shear);
     model.assign_sections();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};

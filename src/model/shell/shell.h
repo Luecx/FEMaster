@@ -91,8 +91,11 @@ struct ShellElement : StructuralElement {
         return res;
     }
 
-    Dim        n_integration_points() const override {
+    Dim        num_ip() const override {
         return integration_scheme().count();
+    }
+    Index      num_mp_per_ip() const override {
+        return get_section()->num_mp_per_ip();
     }
 
     ElDofs     dofs() const override {

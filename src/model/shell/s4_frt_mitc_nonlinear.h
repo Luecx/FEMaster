@@ -149,6 +149,7 @@
             std::array<Mat8x24,   4> ip_B;
             std::array<Vec24Mat,  4> ip_G;
             std::array<Vec8,      4> ip_resultants;
+            std::array<Mat8,      4> ip_tangent;
             std::array<Precision, 4> ip_weight;
 
             // -----------------------------------------------------------------
@@ -198,10 +199,10 @@
             // points above.
             // -----------------------------------------------------------------
 
-            static constexpr Index num_integration_points = 4;
+            static constexpr Index num_ip                 = 4;
             static constexpr Index num_tying_points       = 4;
-            static constexpr Index tying_start            = num_integration_points;
-            static constexpr Index num_ref_points         = num_integration_points
+            static constexpr Index tying_start            = num_ip;
+            static constexpr Index num_ref_points         = num_ip
                                                            + num_tying_points;
 
             StaticVector<num_ref_points> r    = StaticVector<num_ref_points>::Zero();
@@ -395,6 +396,7 @@
         // Material/resultant matrices and EAS
         // ---------------------------------------------------------------------
 
+        Precision topology_stiffness_scale() const;
         Mat8 resultant_stiffness() const;
 
         StaticMatrix<num_strains, eas_parameters> eas_matrix(Precision r, Precision s) const;

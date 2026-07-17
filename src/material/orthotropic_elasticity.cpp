@@ -1,13 +1,11 @@
 #include "orthotropic_elasticity.h"
 
-#include "strain/shell_generalized_strain.h"
 #include "strain/shell_material_strain_green_lagrange.h"
 #include "strain/shell_material_strain_linearized.h"
 #include "strain/volume_strain_green_lagrange.h"
 #include "strain/volume_strain_linearized.h"
 #include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
-#include "stress/shell_stress_resultants.h"
 #include "stress/volume_stress_cauchy.h"
 #include "stress/volume_stress_pk2.h"
 
@@ -39,10 +37,6 @@ bool OrthotropicElasticity::supports_volume_linearized() const {
 }
 
 bool OrthotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool OrthotropicElasticity::supports_shell_resultants() const {
     return true;
 }
 
@@ -89,19 +83,6 @@ Mat6 OrthotropicElasticity::volume_tangent() const {
     return compliance.inverse();
 }
 
-Mat8 OrthotropicElasticity::shell_resultant_tangent(Precision thickness) const {
-    const Mat3 q = plane_stress_tangent();
-    const Precision bending_scale = thickness * thickness * thickness / Precision(12);
-    const Precision shear_scale   = Precision(5) * thickness / Precision(6);
-
-    Mat8 tangent = Mat8::Zero();
-    tangent.template block<3, 3>(0, 0) = thickness * q;
-    tangent.template block<3, 3>(3, 3) = bending_scale * q;
-    tangent(6, 6) = shear_scale * Gzx;
-    tangent(7, 7) = shear_scale * Gyz;
-    return tangent;
-}
-
 void OrthotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
                                      const Precision*              state_old,
                                      Precision*                    state_new,
@@ -122,18 +103,6 @@ void OrthotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
     (void) state_new;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
-}
-
-void OrthotropicElasticity::evaluate(const ShellGeneralizedStrain& strain,
-                                     Precision                     thickness,
-                                     const Precision*              state_old,
-                                     Precision*                    state_new,
-                                     ShellStressResultants&        resultants,
-                                     Mat8&                         tangent) const {
-    (void) state_old;
-    (void) state_new;
-    tangent             = shell_resultant_tangent(thickness);
-    resultants.values() = tangent * strain.values();
 }
 
 void OrthotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,

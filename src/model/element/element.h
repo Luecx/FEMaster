@@ -26,6 +26,7 @@ struct ElementInterface {
     const ID elem_id           = 0; ///< Unique element identifier.
     ID       elem_nodal_offset = 0; ///< Offset into element-nodal result fields.
     ID       elem_ip_offset    = 0; ///< Offset into integration-point result fields.
+    ID       elem_mp_offset    = 0; ///< Offset into material-point result fields.
 
     Section::Ptr _section    = nullptr; ///< Associated section definition.
     ModelDataPtr _model_data = nullptr; ///< Back-reference to the owning model data.
@@ -38,8 +39,10 @@ struct ElementInterface {
     virtual ElDofs    dofs() const                 = 0;
     virtual Dim       dimensions() const           = 0;
     virtual Dim       n_nodes() const              = 0;
-    virtual Dim       n_integration_points() const = 0;
+    virtual Dim       num_ip() const               = 0;
     virtual const ID* nodes() const                = 0;
+
+    virtual Index num_mp_per_ip() const { return 1; }
 
     virtual SurfacePtr surface(ID) { return nullptr; }
     virtual LinePtr    line   (ID) { return nullptr; }
@@ -50,6 +53,16 @@ struct ElementInterface {
     /// Iterator access over nodal identifiers.
     const ID* begin() const { return nodes(); }
     const ID* end  () const { return nodes() + n_nodes(); }
+
+    Index ip_index(Index local_ip) const {
+        return static_cast<Index>(elem_ip_offset) + local_ip;
+    }
+
+    Index mp_index(Index local_ip, Index local_mp = 0) const {
+        return static_cast<Index>(elem_mp_offset)
+             + local_ip * num_mp_per_ip()
+             + local_mp;
+    }
 
     /// Casts the element to a specific derived type, returning `nullptr` on failure.
     template<typename T> T* as() {

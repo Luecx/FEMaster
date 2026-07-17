@@ -10,7 +10,7 @@ namespace fem::model {
 MapMatrix StructuralElement::stiffness_tangent(Precision* buffer,
                                                NodeData& nodal_forces,
                                                const Field& displacement) {
-    const Index nip = static_cast<Index>(n_integration_points());
+    const Index nip = static_cast<Index>(num_ip());
     logging::error(nip > 0,
                    "Element ", elem_id,
                    ": tangent stiffness requires at least one integration point");
@@ -34,4 +34,3 @@ MapMatrix StructuralElement::stiffness_tangent(Precision* buffer,
 }
 
 } // namespace fem::model
-

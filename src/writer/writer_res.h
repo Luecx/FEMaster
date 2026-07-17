@@ -21,7 +21,7 @@ namespace writer {
  * @brief FEMaster .res writer.
  *
  * Writes all model::Field instances to the native FEMaster result format.
- * The field domain is taken from field.domain. ELEMENT_NODAL and ELEMENT_IP
+ * The field domain is taken from field.domain. ELEMENT_NODAL, ELEMENT_IP and ELEMENT_MP
  * fields require ModelData so that element/local-location indices can be written.
  */
 class ResWriter {

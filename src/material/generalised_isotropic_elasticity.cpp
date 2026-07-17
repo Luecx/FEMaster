@@ -2,7 +2,6 @@
 
 #include "strain/axial_strain_green_lagrange.h"
 #include "strain/axial_strain_linearized.h"
-#include "strain/shell_generalized_strain.h"
 #include "strain/shell_material_strain_green_lagrange.h"
 #include "strain/shell_material_strain_linearized.h"
 #include "strain/volume_strain_green_lagrange.h"
@@ -11,7 +10,6 @@
 #include "stress/axial_stress_pk2.h"
 #include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
-#include "stress/shell_stress_resultants.h"
 #include "stress/volume_stress_cauchy.h"
 #include "stress/volume_stress_pk2.h"
 
@@ -37,10 +35,6 @@ bool GeneralisedIsotropicElasticity::supports_volume_linearized() const {
 }
 
 bool GeneralisedIsotropicElasticity::supports_volume_green_lagrange() const {
-    return true;
-}
-
-bool GeneralisedIsotropicElasticity::supports_shell_resultants() const {
     return true;
 }
 
@@ -86,19 +80,6 @@ Mat6 GeneralisedIsotropicElasticity::volume_tangent() const {
     return tangent;
 }
 
-Mat8 GeneralisedIsotropicElasticity::shell_resultant_tangent(Precision thickness) const {
-    const Mat3 q = plane_stress_tangent();
-    const Precision bending_scale = thickness * thickness * thickness / Precision(12);
-    const Precision shear_scale   = Precision(5) * thickness / Precision(6);
-
-    Mat8 tangent = Mat8::Zero();
-    tangent.template block<3, 3>(0, 0) = thickness * q;
-    tangent.template block<3, 3>(3, 3) = bending_scale * q;
-    tangent(6, 6) = shear_scale * shear;
-    tangent(7, 7) = shear_scale * shear;
-    return tangent;
-}
-
 void GeneralisedIsotropicElasticity::evaluate(const AxialStrainLinearized& strain,
                                               const Precision*             state_old,
                                               Precision*                   state_new,
@@ -141,18 +122,6 @@ void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& s
     (void) state_new;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
-}
-
-void GeneralisedIsotropicElasticity::evaluate(const ShellGeneralizedStrain& strain,
-                                              Precision                     thickness,
-                                              const Precision*              state_old,
-                                              Precision*                    state_new,
-                                              ShellStressResultants&        resultants,
-                                              Mat8&                         tangent) const {
-    (void) state_old;
-    (void) state_new;
-    tangent             = shell_resultant_tangent(thickness);
-    resultants.values() = tangent * strain.values();
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,

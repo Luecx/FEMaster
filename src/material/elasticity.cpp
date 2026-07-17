@@ -3,7 +3,6 @@
 #include "strain/axial_strain_green_lagrange.h"
 #include "strain/axial_strain_linearized.h"
 #include "strain/beam_generalized_strain.h"
-#include "strain/shell_generalized_strain.h"
 #include "strain/shell_material_strain_green_lagrange.h"
 #include "strain/shell_material_strain_linearized.h"
 #include "strain/volume_strain_green_lagrange.h"
@@ -13,7 +12,6 @@
 #include "stress/beam_stress_resultants.h"
 #include "stress/shell_material_stress_cauchy.h"
 #include "stress/shell_material_stress_pk2.h"
-#include "stress/shell_stress_resultants.h"
 #include "stress/volume_stress_cauchy.h"
 #include "stress/volume_stress_pk2.h"
 
@@ -36,10 +34,6 @@ bool Elasticity::supports_volume_green_lagrange() const {
 }
 
 bool Elasticity::supports_beam_resultants() const {
-    return false;
-}
-
-bool Elasticity::supports_shell_resultants() const {
     return false;
 }
 
@@ -122,21 +116,6 @@ void Elasticity::evaluate(const BeamGeneralizedStrain& strain,
     (void) resultants;
     (void) tangent;
     logging::error(false, "Elasticity model does not support beam-resultant evaluation");
-}
-
-void Elasticity::evaluate(const ShellGeneralizedStrain& strain,
-                          Precision                     thickness,
-                          const Precision*              state_old,
-                          Precision*                    state_new,
-                          ShellStressResultants&        resultants,
-                          Mat8&                         tangent) const {
-    (void) strain;
-    (void) thickness;
-    (void) state_old;
-    (void) state_new;
-    (void) resultants;
-    (void) tangent;
-    logging::error(false, "Elasticity model does not support shell-resultant evaluation");
 }
 
 void Elasticity::evaluate(const ShellMaterialStrainLinearized& strain,

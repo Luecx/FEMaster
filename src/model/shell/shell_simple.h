@@ -502,7 +502,7 @@ struct DefaultShellElement : public ShellElement<N> {
         ShellGeneralizedStrain zero_strain;
         ShellStressResultants  zero_resultants;
         Mat8                   material_tangent;
-        section->evaluate(zero_strain, zero_resultants, material_tangent);
+        section->evaluate(zero_strain, false, zero_resultants, material_tangent);
 
         Mat6 mat_abd_section   = material_tangent.template block<6, 6>(0, 0);
         Mat2 mat_shear_section = material_tangent.template block<2, 2>(6, 6);
@@ -878,7 +878,7 @@ struct DefaultShellElement : public ShellElement<N> {
         ShellGeneralizedStrain zero_strain;
         ShellStressResultants  zero_resultants;
         Mat8                   material_tangent;
-        this->get_section()->evaluate(zero_strain, zero_resultants, material_tangent);
+        this->get_section()->evaluate(zero_strain, false, zero_resultants, material_tangent);
 
         Mat6 abd_section       = material_tangent.template block<6, 6>(0, 0);
         Mat2 shear_section_mat = material_tangent.template block<2, 2>(6, 6);
@@ -971,7 +971,7 @@ struct DefaultShellElement : public ShellElement<N> {
         ShellGeneralizedStrain zero_strain;
         ShellStressResultants  zero_resultants;
         Mat8                   material_tangent;
-        this->get_section()->evaluate(zero_strain, zero_resultants, material_tangent);
+        this->get_section()->evaluate(zero_strain, false, zero_resultants, material_tangent);
 
         Mat6 abd_section       = material_tangent.template block<6, 6>(0, 0);
         Mat2 shear_section_mat = material_tangent.template block<2, 2>(6, 6);
@@ -1140,7 +1140,7 @@ struct DefaultShellElement : public ShellElement<N> {
         ShellGeneralizedStrain zero_strain;
         ShellStressResultants  zero_resultants;
         Mat8                   material_tangent;
-        this->get_section()->evaluate(zero_strain, zero_resultants, material_tangent);
+        this->get_section()->evaluate(zero_strain, false, zero_resultants, material_tangent);
 
         Mat6 abd_section = material_tangent.template block<6, 6>(0, 0);
 

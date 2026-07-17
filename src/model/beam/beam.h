@@ -321,7 +321,7 @@ struct BeamElement : StructuralElement {
     ElDofs    dofs() const override { return ElDofs{true, true, true, true, true, true}; }
     Dim       dimensions() const override { return 3; }
     Dim       n_nodes() const override { return N; }
-    Dim       n_integration_points() const override { return 1; }
+    Dim       num_ip() const override { return 1; }
     const ID* nodes() const override { return node_ids.data(); }
     SurfacePtr surface(ID surface_id) override {
         (void)surface_id;

@@ -823,6 +823,9 @@ S4FRTMITC::EvaluationData::EvaluationData() {
     for (auto& value : ip_resultants) {
         value.setZero();
     }
+    for (auto& value : ip_tangent) {
+        value.setZero();
+    }
     for (auto& value : ip_weight) {
         value = Precision(0);
     }
@@ -867,6 +870,10 @@ EvaluationData S4FRTMITC::init_evaluation(
     data.state           = state;
     data.H               = resultant_stiffness();
     data.drill_k         = drill_stiffness_per_node(data.H);
+
+    for (auto& tangent : data.ip_tangent) {
+        tangent = data.H;
+    }
 
     if (with_B || with_G) {
         data.x_nodes = x_derivatives(state);
@@ -1310,6 +1317,9 @@ void S4FRTMITC::compute_material_resultants(EvaluationData& data) const {
     logging::error(data.with_strain,
                    "S4FRTMITC: material resultants require strain evaluation");
 
+    ShellSection*   section    = shell_section();
+    const Precision topo_scale = topology_stiffness_scale();
+
     const auto& ref = reference_data();
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
         Vec8 eps = data.ip_strain[ip];
@@ -1320,7 +1330,14 @@ void S4FRTMITC::compute_material_resultants(EvaluationData& data) const {
             }
         }
 
-        data.ip_resultants[ip] = data.H * eps;
+        ShellGeneralizedStrain strain(eps);
+        ShellStressResultants  resultants;
+        Mat8                   tangent;
+
+        section->evaluate(strain, true, resultants, tangent);
+
+        data.ip_resultants[ip] = topo_scale * resultants.values();
+        data.ip_tangent[ip]    = topo_scale * tangent;
     }
 }
 
@@ -1336,7 +1353,7 @@ void S4FRTMITC::assemble_material_stiffness(
 
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
         Kmat += data.ip_weight[ip]
-              * (data.ip_B[ip].transpose() * data.H * data.ip_B[ip]);
+              * (data.ip_B[ip].transpose() * data.ip_tangent[ip] * data.ip_B[ip]);
     }
 
     if constexpr (eas_parameters > 0) {
@@ -1393,14 +1410,7 @@ void S4FRTMITC::assemble_internal_force(
 // Material/resultant matrices and EAS
 // ---------------------------------------------------------------------
 
-Mat8 S4FRTMITC::resultant_stiffness() const {
-    ShellSection* section = shell_section();
-
-    ShellGeneralizedStrain zero_strain;
-    ShellStressResultants  zero_resultants;
-    Mat8                   H;
-    section->evaluate(zero_strain, zero_resultants, H);
-
+Precision S4FRTMITC::topology_stiffness_scale() const {
     Precision topo_scale = Precision(1);
     if (this->_model_data && this->_model_data->element_stiffness_scale) {
         auto scale_field = this->_model_data->element_stiffness_scale;
@@ -1408,7 +1418,19 @@ Mat8 S4FRTMITC::resultant_stiffness() const {
                        "Field '", scale_field->name, "': element stiffness scale requires 1 component");
         topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
     }
-    return topo_scale * H;
+    return topo_scale;
+}
+
+
+Mat8 S4FRTMITC::resultant_stiffness() const {
+    ShellSection* section = shell_section();
+
+    ShellGeneralizedStrain zero_strain;
+    ShellStressResultants  zero_resultants;
+    Mat8                   H;
+    section->evaluate(zero_strain, false, zero_resultants, H);
+
+    return topology_stiffness_scale() * H;
 }
 
 
@@ -1554,6 +1576,17 @@ Vec8 S4FRTMITC::generalized_resultant_at(
     if (strain_out) {
         *strain_out = eps;
     }
+
+    if (nonlinear) {
+        ShellGeneralizedStrain strain(eps);
+        ShellStressResultants  resultants;
+        Mat8                   tangent;
+
+        shell_section()->evaluate(strain, true, resultants, tangent);
+
+        return topology_stiffness_scale() * resultants.values();
+    }
+
     return data.H * eps;
 }
 

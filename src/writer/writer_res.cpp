@@ -24,6 +24,8 @@ const char* field_domain_to_string(model::FieldDomain domain) {
             return "ELEMENT_NODAL";
         case model::FieldDomain::ELEMENT_IP:
             return "ELEMENT_IP";
+        case model::FieldDomain::ELEMENT_MP:
+            return "ELEMENT_MP";
     }
 
     return "UNKNOWN";
@@ -224,6 +226,24 @@ void ResWriter::write_field(const model::Field& field,
                                      *model_data,
                                      *model_data->element_ip_offsets,
                                      "element IP offsets");
+        return;
+    }
+
+    if (field.domain == model::FieldDomain::ELEMENT_MP) {
+        logging::error(model_data != nullptr,
+                       "ResWriter: ELEMENT_MP field '", field_name,
+                       "' requires model data");
+
+        logging::error(model_data->element_mp_offsets != nullptr,
+                       "ResWriter: element MP offsets are not initialized for field '",
+                       field_name, "'");
+
+        write_element_location_field(file_path,
+                                     field,
+                                     field_name,
+                                     *model_data,
+                                     *model_data->element_mp_offsets,
+                                     "element MP offsets");
         return;
     }
 

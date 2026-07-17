@@ -11,7 +11,6 @@ struct AxialStrainGreenLagrange;
 struct VolumeStrainLinearized;
 struct VolumeStrainGreenLagrange;
 struct BeamGeneralizedStrain;
-struct ShellGeneralizedStrain;
 struct ShellMaterialStrainLinearized;
 struct ShellMaterialStrainGreenLagrange;
 
@@ -20,7 +19,6 @@ struct AxialStressPK2;
 struct VolumeStressCauchy;
 struct VolumeStressPK2;
 struct BeamStressResultants;
-struct ShellStressResultants;
 struct ShellMaterialStressCauchy;
 struct ShellMaterialStressPK2;
 
@@ -39,7 +37,6 @@ struct Elasticity {
 
     virtual bool supports_beam_resultants() const;
 
-    virtual bool supports_shell_resultants() const;
     virtual bool supports_shell_integration_linearized() const;
     virtual bool supports_shell_integration_green_lagrange() const;
 
@@ -75,13 +72,6 @@ struct Elasticity {
                           Precision*                   state_new,
                           BeamStressResultants&        resultants,
                           Mat6&                        tangent) const;
-
-    virtual void evaluate(const ShellGeneralizedStrain& strain,
-                          Precision                     thickness,
-                          const Precision*              state_old,
-                          Precision*                    state_new,
-                          ShellStressResultants&        resultants,
-                          Mat8&                         tangent) const;
 
     virtual void evaluate(const ShellMaterialStrainLinearized& strain,
                           const Precision*                     state_old,

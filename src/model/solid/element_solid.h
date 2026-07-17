@@ -33,7 +33,7 @@ public:
     ElDofs    dofs() const override;
     Dim       dimensions() const override;
     Dim       n_nodes() const override;
-    Dim       n_integration_points() const override;
+    Dim       num_ip() const override;
     const ID* nodes() const override;
     bool      is_solid () const override {return true;}
 

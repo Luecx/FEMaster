@@ -113,7 +113,7 @@ Precision QSPT::effective_shear_modulus() {
     ShellGeneralizedStrain zero_strain;
     ShellStressResultants  zero_resultants;
     Mat8                   tangent;
-    this->get_section()->evaluate(zero_strain, zero_resultants, tangent);
+    this->get_section()->evaluate(zero_strain, false, zero_resultants, tangent);
 
     const Precision thickness = this->get_section()->thickness_;
     const Precision g         = tangent(2, 2) / thickness;

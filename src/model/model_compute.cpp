@@ -51,9 +51,9 @@ Model::compute_stress_ip(Field& displacement, bool use_green_lagrange_nl) {
                            "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
 
             RowMatrix rst = sel->stress_strain_ip_rst();
-            logging::error(rst.rows() == sel->n_integration_points(),
+            logging::error(rst.rows() == sel->num_ip(),
                            "Element ", eid, " returned ", rst.rows(),
-                           " stress IP coordinates, expected ", sel->n_integration_points());
+                           " stress IP coordinates, expected ", sel->num_ip());
             if (rst.rows() == 0) continue;
             sel->compute_stress_strain(&ip_strain,
                                        &ip_stress,

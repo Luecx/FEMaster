@@ -51,11 +51,11 @@ SolidElement<N>::nodes() const {
 }
 
 //-----------------------------------------------------------------------------
-// n_integration_points
+// num_ip
 //-----------------------------------------------------------------------------
 template<Index N>
 Dim
-SolidElement<N>::n_integration_points() const {
+SolidElement<N>::num_ip() const {
     return integration_scheme().count();
 }
 

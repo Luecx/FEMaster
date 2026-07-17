@@ -27,6 +27,8 @@ struct NeoHookeElasticity : Elasticity {
     bool supports_axial_green_lagrange() const override;
     bool supports_volume_linearized() const override;
     bool supports_volume_green_lagrange() const override;
+    bool supports_shell_integration_linearized() const override;
+    bool supports_shell_integration_green_lagrange() const override;
 
     void evaluate(const AxialStrainLinearized& strain,
                   const Precision*             state_old,
@@ -52,8 +54,21 @@ struct NeoHookeElasticity : Elasticity {
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override;
 
+    void evaluate(const ShellMaterialStrainLinearized& strain,
+                  const Precision*                     state_old,
+                  Precision*                           state_new,
+                  ShellMaterialStressCauchy&            stress,
+                  Mat5&                                 tangent) const override;
+
+    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+                  const Precision*                        state_old,
+                  Precision*                              state_new,
+                  ShellMaterialStressPK2&                 stress,
+                  Mat5&                                   tangent) const override;
+
 private:
     [[nodiscard]] Mat6 linear_tangent() const;
+    [[nodiscard]] Mat5 linear_shell_tangent() const;
 };
 
 } // namespace fem::material

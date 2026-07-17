@@ -27,9 +27,12 @@ struct ShellSection : Section {
     Precision                  thickness_   = 1.0;     ///< Shell thickness.
     cos::CoordinateSystem::Ptr orientation_ = nullptr; ///< Optional section/material orientation.
 
-    void evaluate(const ShellGeneralizedStrain& strain,
-                  ShellStressResultants&        resultants,
-                  Mat8&                         tangent) const;
+    virtual void evaluate(const ShellGeneralizedStrain& strain,
+                          bool                          use_green_lagrange,
+                          ShellStressResultants&        resultants,
+                          Mat8&                         tangent) const = 0;
+
+    virtual Index num_mp_per_ip() const { return 1; }
 
     /**
      * @brief Checks whether the section material defines density.
@@ -55,6 +58,34 @@ struct ShellSection : Section {
      *
      * @return std::string Material, region, density, orientation and thickness.
      */
+    std::string str() const override;
+};
+
+struct IntegratedShellSection : ShellSection {
+    using Ptr = std::shared_ptr<IntegratedShellSection>;
+
+    Index num_mp_per_ip() const override { return 5; }
+
+    void evaluate(const ShellGeneralizedStrain& strain,
+                  bool                          use_green_lagrange,
+                  ShellStressResultants&        resultants,
+                  Mat8&                         tangent) const override;
+};
+
+struct ABDShellSection : ShellSection {
+    using Ptr = std::shared_ptr<ABDShellSection>;
+
+    Mat6 abd_   = Mat6::Zero();
+    Mat2 shear_ = Mat2::Zero();
+
+    Index num_mp_per_ip() const override { return 0; }
+
+    void evaluate(const ShellGeneralizedStrain& strain,
+                  bool                          use_green_lagrange,
+                  ShellStressResultants&        resultants,
+                  Mat8&                         tangent) const override;
+
+    void info() override;
     std::string str() const override;
 };
 } // namespace fem

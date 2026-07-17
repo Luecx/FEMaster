@@ -434,11 +434,35 @@ void Model::shell_section(const std::string& set, const std::string& material, P
     if (!orientation.empty()) {
         logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
     }
-    ShellSection::Ptr sec = std::make_shared<ShellSection>();
+    IntegratedShellSection::Ptr sec = std::make_shared<IntegratedShellSection>();
     sec->material_    = _data->materials.get(material);
     sec->region_      = _data->elem_sets.get(set);
     sec->thickness_   = thickness;
     sec->orientation_ = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
+    this->_data->sections.push_back(sec);
+}
+
+void Model::shell_section_abd(const std::string& set,
+                              const std::string& material,
+                              Precision          thickness,
+                              const Mat6&        abd,
+                              const Mat2&        shear,
+                              const std::string& orientation) {
+    logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
+    if (!material.empty()) {
+        logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
+    }
+    if (!orientation.empty()) {
+        logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
+    }
+
+    ABDShellSection::Ptr sec = std::make_shared<ABDShellSection>();
+    sec->material_           = material.empty() ? nullptr : _data->materials.get(material);
+    sec->region_             = _data->elem_sets.get(set);
+    sec->thickness_          = thickness;
+    sec->orientation_        = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
+    sec->abd_                = abd;
+    sec->shear_              = shear;
     this->_data->sections.push_back(sec);
 }
 

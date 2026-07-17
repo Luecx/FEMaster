@@ -40,7 +40,7 @@ Dim T3::n_nodes() const {
     return N;
 }
 
-Dim T3::n_integration_points() const {
+Dim T3::num_ip() const {
     return 1;
 }
 

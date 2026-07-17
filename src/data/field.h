@@ -30,7 +30,8 @@ enum class FieldDomain : std::uint8_t {
     NODE,
     ELEMENT,
     ELEMENT_NODAL,
-    ELEMENT_IP
+    ELEMENT_IP,
+    ELEMENT_MP
 };
 
 // ------------------------------------------------------------

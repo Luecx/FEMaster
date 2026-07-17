@@ -26,7 +26,7 @@ struct T3 : StructuralElement {
     ElDofs    dofs() const override;
     Dim       dimensions() const override;
     Dim       n_nodes() const override;
-    Dim       n_integration_points() const override;
+    Dim       num_ip() const override;
     const ID* nodes() const override;
 
     SurfacePtr surface(ID surface_id) override;

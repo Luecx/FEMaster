@@ -54,6 +54,7 @@ struct ModelData {
     ID max_elems;
     ID max_surfaces;
     ID max_integration_points = 0;
+    ID max_material_points    = 0;
 
     // Geometric entities -------------------------------------------------------
     std::vector<ElementPtr> elements;
@@ -77,6 +78,7 @@ struct ModelData {
     Field::Ptr material_orientation    = nullptr;
     Field::Ptr element_nodal_offsets   = nullptr;
     Field::Ptr element_ip_offsets      = nullptr;
+    Field::Ptr element_mp_offsets      = nullptr;
 
     // Region registries --------------------------------------------------------
     Sets<NodeRegion   > node_sets   {SET_NODE_ALL};
@@ -108,12 +110,14 @@ struct ModelData {
         : max_nodes(max_nodes),
           max_elems(max_elems),
           max_surfaces(max_surfaces),
-          max_integration_points(max_integration_points) {
+          max_integration_points(max_integration_points),
+          max_material_points(max_integration_points) {
         elements.resize(max_elems);
         surfaces.resize(max_surfaces);
 
         element_nodal_offsets = nullptr;
-        element_ip_offsets = nullptr;
+        element_ip_offsets    = nullptr;
+        element_mp_offsets    = nullptr;
     }
 
     // Field management --------------------------------------------------------
@@ -121,7 +125,7 @@ struct ModelData {
     /// Returns the row count associated with a field domain.
     Index field_rows(FieldDomain domain);
 
-    /// Builds flat element-nodal and element-IP prefix offsets after topology has been read.
+    /// Builds flat element-nodal, element-IP and element-MP prefix offsets after topology has been read.
     void initialize_element_enumeration();
 
     /// Checks whether a named field exists.
