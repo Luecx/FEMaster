@@ -12,7 +12,7 @@
 #include "../../dsl/keyword.h"
 #include "../../core/logging.h"
 #include "../../core/types_num.h"
-#include "../../../core/types_eig.h"
+#include "../../core/types_eig.h"
 
 #include "../../loadcase/linear_transient.h"
 
