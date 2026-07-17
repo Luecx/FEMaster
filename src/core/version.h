@@ -29,13 +29,13 @@ namespace fem {
 *
 * This number increments when backward-compatible functionality is added.
 */
-#define VERSION_MINOR 2
+#define VERSION_MINOR 3
 
 /**
 * @brief The patch version number for the FEMaster solver.
 *
 * This number increments for backward-compatible bug fixes.
 */
-#define VERSION_PATCH 15
+#define VERSION_PATCH 0
 } // namespace fem
 
