@@ -32,6 +32,10 @@ struct Model {
         _data->positions_reference = positions_reference;
     }
 
+    Model(const Model&)            = delete;
+    Model& operator=(const Model&) = delete;
+    Model(Model&&) noexcept        = default;
+
     // adding nodes and elements
     inline void set_node(ID id, Precision x, Precision y, Precision z = 0);
     template<typename T, typename... Args>
