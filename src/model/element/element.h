@@ -29,7 +29,7 @@ struct ElementInterface {
     ID       elem_mp_offset    = 0; ///< Offset into material-point result fields.
 
     Section::Ptr _section    = nullptr; ///< Associated section definition.
-    ModelDataPtr _model_data = nullptr; ///< Back-reference to the owning model data.
+    ModelData*   _model_data = nullptr; ///< Non-owning back-reference to the owning model data.
 
     explicit ElementInterface(ID elem_id_in)
         : elem_id(elem_id_in) {}

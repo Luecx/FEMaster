@@ -32,7 +32,7 @@ inline void Model::set_element(ID id, Args&&... args) {
     if (element_dims == 0) {
         element_dims = el->dimensions();
     }
-    el->_model_data = _data;
+    el->_model_data = _data.get();
     logging::error(element_dims == el->dimensions(), "different number of dimensions across elements of model; element with id=",
                    id, " has ", el->dimensions(), " while all other elements have ", element_dims, " dimensions");
 
@@ -50,7 +50,7 @@ inline void Model::set_beam_element(ID id, ID orientation_node, Args&&... args) 
     if (element_dims == 0) {
         element_dims = el->dimensions();
     }
-    el->_model_data = _data;
+    el->_model_data = _data.get();
     logging::error(element_dims == el->dimensions(), "different number of dimensions across elements of model; element with id=",
                    id, " has ", el->dimensions(), " while all other elements have ", element_dims, " dimensions");
 
