@@ -56,6 +56,11 @@ struct ShellSection : Section {
     std::string str() const override;
 
 protected:
+    ShellSection(material::Material::Ptr    material,
+                 model::ElementRegion::Ptr  region,
+                 Precision                  thickness,
+                 cos::CoordinateSystem::Ptr orientation);
+
     virtual void evaluate_material(const ShellGeneralizedStrain& strain,
                                    bool                          use_green_lagrange,
                                    ShellStressResultants&        resultants,
@@ -64,6 +69,11 @@ protected:
 
 struct IntegratedShellSection : ShellSection {
     using Ptr = std::shared_ptr<IntegratedShellSection>;
+
+    IntegratedShellSection(material::Material::Ptr    material,
+                           model::ElementRegion::Ptr  region,
+                           Precision                  thickness,
+                           cos::CoordinateSystem::Ptr orientation);
 
     Index num_mp_per_ip() const override { return 5; }
 
@@ -79,6 +89,13 @@ struct ABDShellSection : ShellSection {
 
     Mat6 abd_   = Mat6::Zero();
     Mat2 shear_ = Mat2::Zero();
+
+    ABDShellSection(material::Material::Ptr    material,
+                    model::ElementRegion::Ptr  region,
+                    Precision                  thickness,
+                    const Mat6&                abd,
+                    const Mat2&                shear,
+                    cos::CoordinateSystem::Ptr orientation);
 
     Index num_mp_per_ip() const override { return 0; }
 

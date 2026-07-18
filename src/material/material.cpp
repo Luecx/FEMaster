@@ -40,6 +40,11 @@ ElasticityPtr Material::elasticity() const {
     return m_elastic;
 }
 
+void Material::set_density(Precision value) {
+    logging::error(value >= Precision(0), "Material density must be non-negative");
+    m_density = value;
+}
+
 /**
  * @copydoc Material::info
  */

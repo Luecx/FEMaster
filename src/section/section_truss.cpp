@@ -12,8 +12,19 @@
 #include "../core/logging.h"
 
 #include <sstream>
+#include <utility>
 
 namespace fem {
+TrussSection::TrussSection(material::Material::Ptr   material,
+                           model::ElementRegion::Ptr region,
+                           Precision                 area)
+    : area_(area) {
+    logging::error(area_ > Precision(0), "TrussSection: cross-section area must be positive");
+
+    material_ = std::move(material);
+    region_   = std::move(region);
+}
+
 void TrussSection::info() {
     logging::info(true, "TrussSection:");
     logging::info(true, "   Material: ", (material_ ? material_->name : "-"));

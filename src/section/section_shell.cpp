@@ -15,12 +15,55 @@
 #include "../material/stress/shell_material_stress_cauchy.h"
 #include "../material/stress/shell_material_stress_pk2.h"
 
+#include <Eigen/Cholesky>
 #include <Eigen/Geometry>
 
 #include <array>
 #include <sstream>
+#include <utility>
 
 namespace fem {
+
+ShellSection::ShellSection(material::Material::Ptr    material,
+                           model::ElementRegion::Ptr  region,
+                           Precision                  thickness,
+                           cos::CoordinateSystem::Ptr orientation)
+    : thickness_  (thickness),
+      orientation_(std::move(orientation)) {
+    logging::error(thickness_ > Precision(0), "ShellSection: thickness must be positive");
+
+    material_ = std::move(material);
+    region_   = std::move(region);
+}
+
+IntegratedShellSection::IntegratedShellSection(material::Material::Ptr    material,
+                                               model::ElementRegion::Ptr  region,
+                                               Precision                  thickness,
+                                               cos::CoordinateSystem::Ptr orientation)
+    : ShellSection(std::move(material), std::move(region), thickness, std::move(orientation)) {}
+
+ABDShellSection::ABDShellSection(material::Material::Ptr    material,
+                                 model::ElementRegion::Ptr  region,
+                                 Precision                  thickness,
+                                 const Mat6&                abd,
+                                 const Mat2&                shear,
+                                 cos::CoordinateSystem::Ptr orientation)
+    : ShellSection(std::move(material), std::move(region), thickness, std::move(orientation)),
+      abd_         (abd),
+      shear_       (shear) {
+    logging::error(abd_.allFinite(), "ABDShellSection: ABD matrix must contain only finite values");
+    logging::error(shear_.allFinite(), "ABDShellSection: shear matrix must contain only finite values");
+    logging::error(abd_.isApprox(abd_.transpose()), "ABDShellSection: ABD matrix must be symmetric");
+    logging::error(shear_.isApprox(shear_.transpose()), "ABDShellSection: shear matrix must be symmetric");
+
+    const Eigen::LLT<Mat6> abd_factorization(abd_);
+    const Eigen::LLT<Mat2> shear_factorization(shear_);
+
+    logging::error(abd_factorization.info() == Eigen::Success,
+                   "ABDShellSection: ABD matrix must be positive definite");
+    logging::error(shear_factorization.info() == Eigen::Success,
+                   "ABDShellSection: shear matrix must be positive definite");
+}
 
 void ShellSection::evaluate(const Vec3&                   position_reference,
                             const Mat3&                   shell_basis_global,

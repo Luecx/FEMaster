@@ -1,5 +1,6 @@
 #include "isotropic_elasticity.h"
 
+#include "../core/logging.h"
 #include "strain/axial_strain_green_lagrange.h"
 #include "strain/axial_strain_linearized.h"
 #include "strain/shell_material_strain_green_lagrange.h"
@@ -18,7 +19,12 @@ namespace fem::material {
 IsotropicElasticity::IsotropicElasticity(Precision youngs_in, Precision poisson_in)
     : youngs (youngs_in),
       poisson(poisson_in),
-      shear  (youngs_in / (Precision(2) * (Precision(1) + poisson_in))) {}
+      shear  (youngs_in / (Precision(2) * (Precision(1) + poisson_in))) {
+    logging::error(youngs > Precision(0),
+                   "ISOTROPIC: Young's modulus must be positive");
+    logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
+                   "ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
+}
 
 bool IsotropicElasticity::supports_axial_linearized() const {
     return true;

@@ -80,7 +80,7 @@ struct Material : public Namable {
     bool has_density() const { return m_density >= Precision(0); }
 
     /// Assigns the density value.
-    void set_density(Precision value) { m_density = value; }
+    void set_density(Precision value);
 
     /// Retrieves the density.
     Precision get_density() const { return m_density; }

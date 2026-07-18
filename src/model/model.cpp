@@ -421,10 +421,12 @@ void Model::beam_section(const std::string& set, const std::string& material,  c
 void Model::truss_section(const std::string& set, const std::string& material, Precision area) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
-    TrussSection::Ptr sec = std::make_shared<TrussSection>();
-    sec->material_ = _data->materials.get(material);
-    sec->region_   = _data->elem_sets.get(set);
-    sec->area_     = area;
+
+    TrussSection::Ptr sec = std::make_shared<TrussSection>(
+        _data->materials.get(material),
+        _data->elem_sets.get(set),
+        area
+    );
     this->_data->sections.push_back(sec);
 }
 
@@ -434,11 +436,13 @@ void Model::shell_section(const std::string& set, const std::string& material, P
     if (!orientation.empty()) {
         logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
     }
-    IntegratedShellSection::Ptr sec = std::make_shared<IntegratedShellSection>();
-    sec->material_    = _data->materials.get(material);
-    sec->region_      = _data->elem_sets.get(set);
-    sec->thickness_   = thickness;
-    sec->orientation_ = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
+
+    IntegratedShellSection::Ptr sec = std::make_shared<IntegratedShellSection>(
+        _data->materials.get(material),
+        _data->elem_sets.get(set),
+        thickness,
+        orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation)
+    );
     this->_data->sections.push_back(sec);
 }
 
@@ -456,13 +460,14 @@ void Model::shell_section_abd(const std::string& set,
         logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
     }
 
-    ABDShellSection::Ptr sec = std::make_shared<ABDShellSection>();
-    sec->material_           = material.empty() ? nullptr : _data->materials.get(material);
-    sec->region_             = _data->elem_sets.get(set);
-    sec->thickness_          = thickness;
-    sec->orientation_        = orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation);
-    sec->abd_                = abd;
-    sec->shear_              = shear;
+    ABDShellSection::Ptr sec = std::make_shared<ABDShellSection>(
+        material.empty() ? nullptr : _data->materials.get(material),
+        _data->elem_sets.get(set),
+        thickness,
+        abd,
+        shear,
+        orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation)
+    );
     this->_data->sections.push_back(sec);
 }
 

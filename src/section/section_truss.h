@@ -21,6 +21,10 @@ struct TrussSection : Section {
 
     Precision area_ = Precision(0); ///< Cross-section area.
 
+    TrussSection(material::Material::Ptr   material,
+                 model::ElementRegion::Ptr region,
+                 Precision                 area);
+
     /**
      * @brief Outputs truss section details through the logger.
      */

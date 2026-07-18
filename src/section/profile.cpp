@@ -31,7 +31,18 @@ Profile::Profile(const std::string& name,
       offset_y_(offset_y),
       offset_z_(offset_z),
       reference_y_(reference_y),
-      reference_z_(reference_z) {}
+      reference_z_(reference_z) {
+    logging::error(area_            > Precision(0),
+        "PROFILE: cross-section area must be positive");
+    logging::error(inertia_y_       > Precision(0),
+        "PROFILE: inertia Iy must be positive");
+    logging::error(inertia_z_       > Precision(0),
+        "PROFILE: inertia Iz must be positive");
+    logging::error(torsion_inertia_ > Precision(0),
+        "PROFILE: torsional inertia must be positive");
+    logging::error(inertia_y_ * inertia_z_ - product_inertia_yz_ * product_inertia_yz_ > Precision(0),
+        "PROFILE: bending inertia matrix must be positive definite");
+}
 
 void Profile::info() {
     logging::info(true, "Profile: ", name);

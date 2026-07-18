@@ -1,5 +1,6 @@
 #include "generalised_isotropic_elasticity.h"
 
+#include "../core/logging.h"
 #include "strain/axial_strain_green_lagrange.h"
 #include "strain/axial_strain_linearized.h"
 #include "strain/shell_material_strain_green_lagrange.h"
@@ -20,7 +21,14 @@ GeneralisedIsotropicElasticity::GeneralisedIsotropicElasticity(Precision youngs_
                                                                Precision shear_in)
     : youngs (youngs_in),
       poisson(poisson_in),
-      shear  (shear_in) {}
+      shear  (shear_in) {
+    logging::error(youngs > Precision(0),
+                   "GENERALISED_ISOTROPIC: Young's modulus must be positive");
+    logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
+                   "GENERALISED_ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
+    logging::error(shear > Precision(0),
+                   "GENERALISED_ISOTROPIC: shear modulus must be positive");
+}
 
 bool GeneralisedIsotropicElasticity::supports_axial_linearized() const {
     return true;
