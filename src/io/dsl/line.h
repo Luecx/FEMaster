@@ -17,6 +17,8 @@
  */
 
 #pragma once
+#include <cstddef>
+#include <memory>
 #include <ostream>
 #include <regex>
 #include <sstream>
@@ -27,10 +29,22 @@
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
+#include <utility>
 
 namespace fem {
 namespace io {
 namespace dsl {
+
+/** Source file and one-based line number of a parsed DSL line. */
+struct SourceLocation {
+    std::shared_ptr<const std::string> source{};
+    std::size_t                        line = 0;
+
+    std::string str() const {
+        return source ? *source + ":" + std::to_string(line) : std::string{};
+    }
+};
+
 /**
  * @brief Line classification used by the tokenizer.
  */
@@ -63,6 +77,7 @@ private:
     std::unordered_map<std::string, std::string> _keys; ///< Keys for keyword lines.
     std::string _command;                               ///< Keyword command (without '*').
     LineType _type = EMPTY_LINE;                        ///< Classification.
+    SourceLocation _location;                           ///< Source file and one-based line number.
 
     template <typename T>
     T convert_to(const std::string& s) const {
@@ -87,6 +102,7 @@ public:
         _keys.clear();
         _command.clear();
         _type = END_OF_FILE;
+        _location = {};
 
         // trim left
         _line.erase(_line.begin(), std::find_if(_line.begin(), _line.end(),
@@ -144,6 +160,12 @@ public:
      * @brief Returns the normalized line buffer.
      */
     const std::string& line() const { return _line; }
+
+    void set_location(std::shared_ptr<const std::string> source, std::size_t line) {
+        _location = SourceLocation{std::move(source), line};
+    }
+
+    const SourceLocation& location() const { return _location; }
 
     /**
      * @brief Returns the data tokens (for `DATA_LINE`).

@@ -35,9 +35,11 @@ using FilePtr = std::unique_ptr<File>;
  */
 class File {
 private:
-    Line _line;                 ///< Last parsed/returned line (normalized).
-    FilePtr _sub_file;          ///< Active sub-file for `*INCLUDE`.
-    std::ifstream _stream;      ///< Underlying file stream.
+    Line                               _line;          ///< Last parsed/returned line (normalized).
+    FilePtr                            _sub_file;      ///< Active sub-file for `*INCLUDE`.
+    std::ifstream                      _stream;        ///< Underlying file stream.
+    std::shared_ptr<const std::string> _source;        ///< Shared source path for returned lines.
+    std::size_t                        _line_number{}; ///< Current one-based source line number.
 
     /**
      * @brief Opens a sub-file for nested include processing.
@@ -56,8 +58,9 @@ public:
      *
      * @throws std::runtime_error If the file cannot be opened.
      */
-    explicit File(const std::string& file) {
-        _stream.open(file);
+    explicit File(const std::string& file)
+        : _stream(file),
+          _source(std::make_shared<const std::string>(file)) {
         if (!_stream.is_open())
             throw std::runtime_error("cannot open file: " + file);
     }
@@ -82,8 +85,14 @@ public:
         }
 
         std::string str;
-        if (std::getline(_stream, str)) _line = str;
-        else { _line = ""; _line.eof(); }
+        if (std::getline(_stream, str)) {
+            _line = str;
+            _line.set_location(_source, ++_line_number);
+        } else {
+            _line = "";
+            _line.eof();
+            _line.set_location(_source, _line_number + 1);
+        }
 
         // Handle *INCLUDE,SRC=...
         if (_line.type() == KEYWORD_LINE && _line.command() == "INCLUDE") {

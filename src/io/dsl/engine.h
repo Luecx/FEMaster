@@ -10,7 +10,7 @@
  * ## Responsibilities
  *  - Maintain a scope stack of `(command, keys)` describing the current parent context.
  *  - For each encountered keyword line:
- *      * If the command is **not** registered: treat it as a structural parent and push it.
+ *      * If the command is **not** registered: report it as an unknown keyword.
  *      * If the command **is** registered:
  *          - Attempt to **admit** it against the current scope (climb upwards until allowed).
  *          - Choose the **highest-ranked fitting variant**.
@@ -103,9 +103,15 @@ struct Engine {
 
 private:
     struct PendingInvocation {
-        const Segment* segment = nullptr;
+        const Segment*            segment = nullptr;
         std::vector<std::string> tokens;
+        SourceLocation            location;
     };
+
+    [[noreturn]] static void throw_at(const SourceLocation& location, const std::string& message) {
+        const std::string source = location.str();
+        throw std::runtime_error(source.empty() ? message : source + ": " + message);
+    }
 
 public:
 
@@ -116,7 +122,7 @@ public:
      *  1. Initialize scope with a synthetic `ROOT` parent (empty keys).
      *  2. Read normalized lines until `END_OF_FILE`.
      *  3. For each keyword line:
-     *      a. If command is unregistered → push as structural parent and continue.
+     *      a. If command is unregistered → report an unknown keyword.
      *      b. If registered → climb scope upwards until the command is admitted.
      *      c. Try fitting variants in descending rank with backtracking.
      *      d. Execute its segments and push the processed command as the new parent.
@@ -133,10 +139,10 @@ public:
         std::vector<ParentInfo> scope;
         scope.push_back( ParentInfo{ "ROOT", Keys{} } );
 
-        // To support on_exit without changing ParentInfo, keep a parallel stack of Command specs.
-        // Each entry mirrors `scope[i]`. Unregistered (structural) parents use nullptr.
+        // Keep command specifications and source locations parallel to the parent scope
         std::vector<const Command*> scope_specs;
         scope_specs.push_back(nullptr); // ROOT has no Command*
+        std::vector<SourceLocation> scope_locations(1);
 
         // Helper to pop scope to target size, firing on_exit hooks as needed.
         auto pop_scope_to = [&](std::size_t new_size) {
@@ -144,8 +150,13 @@ public:
                 const Command* spec_ptr = scope_specs.back();
                 if (spec_ptr && spec_ptr->active_ == ActiveMode::Active && spec_ptr->on_exit_) {
                     // Pass the Keys captured at on_enter time for this scope entry.
-                    spec_ptr->on_exit_(scope.back().keys);
+                    try {
+                        spec_ptr->on_exit_(scope.back().keys);
+                    } catch (const std::exception& e) {
+                        throw_at(scope_locations.back(), e.what());
+                    }
                 }
+                scope_locations.pop_back();
                 scope_specs.pop_back();
                 scope.pop_back();
             }
@@ -179,7 +190,7 @@ public:
                 break;
 
             if (ln.type() == LT::DATA_LINE) {
-                throw std::runtime_error("Unexpected DATA line without an active command context");
+                throw_at(ln.location(), "Unexpected DATA line without an active command context");
             }
 
             if (ln.type() != LT::KEYWORD_LINE)
@@ -192,27 +203,29 @@ public:
             // Lookup command
             const Command* spec = _reg.find(cmd);
 
-            // Not registered → structural node. Push and continue.
+            // Reject unknown commands immediately
             if (!spec) {
-                scope.push_back( ParentInfo{ cmd, self_keys } );
-                scope_specs.push_back(nullptr);
-                continue;
+                throw_at(ln.location(), "Unknown keyword '*" + cmd + "'");
             }
 
             if (spec->active_ == ActiveMode::Disabled) {
-                throw std::runtime_error("Command '" + cmd + "' is disabled in this parser stage");
+                throw_at(ln.location(), "Command '" + cmd + "' is disabled in this parser stage");
             }
             const bool consume_only = spec->active_ == ActiveMode::ConsumeOnly;
 
             // Apply keyword spec normalization/validation if present
             if (spec->has_keyword_spec_) {
-                self_keys.apply_spec(spec->keyword_spec_, cmd);
+                try {
+                    self_keys.apply_spec(spec->keyword_spec_, cmd);
+                } catch (const std::exception& e) {
+                    throw_at(ln.location(), e.what());
+                }
             }
 
             // Admission: climb scope upwards until allowed
             int chosen_parent_index = admit_command(*spec, scope, self_keys);
             if (chosen_parent_index < 0) {
-                throw_unadmitted(cmd, scope);
+                throw_unadmitted(ln, scope);
             }
 
             // Pop scopes that are deeper than the chosen parent — fire on_exit for each
@@ -260,7 +273,7 @@ public:
 
                 try {
                     execute_variant(
-                        cmd,
+                        ln,
                         *vptr,
                         attempt_pull,
                         attempt_kw,
@@ -291,7 +304,7 @@ public:
                 std::ostringstream os;
                 os << "No variant of '" << cmd << "' fits the upcoming data";
                 if (!last_err.empty()) os << ". Closest attempt failed with: " << last_err;
-                throw std::runtime_error(os.str());
+                throw_at(ln.location(), os.str());
             }
 
             if (!consume_only) {
@@ -299,12 +312,20 @@ public:
 
                 // on_enter runs only after a variant was selected, but before segment callbacks.
                 if (spec->on_enter_) {
-                    spec->on_enter_(self_keys);
+                    try {
+                        spec->on_enter_(self_keys);
+                    } catch (const std::exception& e) {
+                        throw_at(ln.location(), e.what());
+                    }
                 }
 
                 for (const PendingInvocation& pending : pending_invocations) {
                     if (pending.segment && pending.segment->_invoke) {
-                        pending.segment->_invoke(pending.tokens);
+                        try {
+                            pending.segment->_invoke(pending.tokens);
+                        } catch (const std::exception& e) {
+                            throw_at(pending.location, e.what());
+                        }
                     }
                 }
             }
@@ -312,6 +333,7 @@ public:
             // After successful processing, this keyword becomes the new parent (scope descends)
             scope.push_back( ParentInfo{ cmd, self_keys } );
             scope_specs.push_back(spec);
+            scope_locations.push_back(ln.location());
         }
 
         // ---- EOF reached: fire on_exit for any scopes still open (except ROOT) ----
@@ -327,16 +349,16 @@ private:
      *
      * @throws std::runtime_error Always throws with a composed message.
      */
-    [[noreturn]] void throw_unadmitted(const std::string& cmd,
+    [[noreturn]] void throw_unadmitted(const Line& line,
                                        const std::vector<ParentInfo>& scope) const {
         std::ostringstream os;
-        os << "Command '" << cmd << "' not admitted in current scope (stack: ";
+        os << "Command '" << line.command() << "' not admitted in current scope (stack: ";
         for (std::size_t i = 0; i < scope.size(); ++i) {
             if (i) os << " > ";
             os << scope[i].command;
         }
         os << ")";
-        throw std::runtime_error(os.str());
+        throw_at(line.location(), os.str());
     }
 
     /**
@@ -367,20 +389,22 @@ private:
      *  - Multiline record aggregation with completion via on_missing if needed.
      *
      * @tparam PullFn     Callable that yields a `Line`, honoring the outer replay buffer.
-     * @param cmd         Command name (for diagnostics).
+     * @param command_line Keyword line and source location for diagnostics.
      * @param var         Variant to execute.
      * @param pull_line   Line puller bound to the current file/buffers.
      * @param kw_out      Output slot for a stashed upcoming keyword (lookahead).
      * @param have_kw_out Output flag: true if `kw_out` is valid.
      */
     template<class PullFn>
-    void execute_variant(const std::string& cmd,
+    void execute_variant(const Line& command_line,
                          const Variant& var,
                          PullFn& pull_line,
                          Line& kw_out,
                          bool& have_kw_out,
                          std::vector<PendingInvocation>* pending_invocations) const {
         using LT = LineType;
+
+        const std::string& cmd = command_line.command();
 
         for (const auto& seg : var._segments) {
             const bool multiline = seg._pattern.is_multiline();
@@ -399,7 +423,7 @@ private:
 
                     if (dl.type() == LT::END_OF_FILE) {
                         if (records >= min_records) break;
-                        throw std::runtime_error("Unexpected EOF while reading single-line segment for " + cmd);
+                        throw_at(dl.location(), "Unexpected EOF while reading single-line segment for " + cmd);
                     }
 
                     if (dl.type() == LT::KEYWORD_LINE) {
@@ -408,7 +432,10 @@ private:
                             have_kw_out = true;
                             break;
                         }
-                        throw std::runtime_error("Encountered next command while below minimum lines for segment of " + cmd);
+                        throw_at(
+                            dl.location(),
+                            "Encountered next command while below minimum lines for segment of " + cmd
+                        );
                     }
 
                     if (dl.type() == LT::DATA_LINE) {
@@ -420,14 +447,14 @@ private:
                             std::ostringstream os;
                             os << "Too many tokens for single-line segment of " << cmd
                                << " (" << tokens.size() << " > " << need_tokens << ")";
-                            throw std::runtime_error(os.str());
+                            throw_at(dl.location(), os.str());
                         }
 
                         // Apply on_empty/on_missing normalization & completion
                         std::string err;
                         if (!seg._pattern.normalize_and_complete_tokens(tokens, err)) {
                             if (err.empty()) err = "Token normalization failed for single-line segment";
-                            throw std::runtime_error(err + " of " + cmd);
+                            throw_at(dl.location(), err + " of " + cmd);
                         }
 
                         // After normalization, we must have exactly need_tokens
@@ -435,11 +462,11 @@ private:
                             std::ostringstream os;
                             os << "Incomplete tokens for single-line segment of " << cmd
                                << " (" << tokens.size() << " != " << need_tokens << ")";
-                            throw std::runtime_error(os.str());
+                            throw_at(dl.location(), os.str());
                         }
 
                         if (pending_invocations && seg._invoke) {
-                            pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
+                            pending_invocations->push_back(PendingInvocation{&seg, std::move(tokens), dl.location()});
                         }
                         ++records;
                         continue;
@@ -453,7 +480,8 @@ private:
 
                 while (true) {
                     std::vector<std::string> tokens;
-                    std::size_t lines_in_record = 0;
+                    std::size_t              lines_in_record = 0;
+                    SourceLocation           record_location;
 
                     // fill one record
                     while (tokens.size() < need_tokens) {
@@ -461,7 +489,7 @@ private:
                             std::ostringstream os;
                             os << "Exceeded maximum lines (" << max_lines_per_record
                                << ") before fulfilling multiline pattern for " << cmd;
-                            throw std::runtime_error(os.str());
+                            throw_at(record_location.source ? record_location : command_line.location(), os.str());
                         }
 
                         Line dl = pull_line(false);
@@ -475,15 +503,17 @@ private:
                             std::string err;
                             if (!seg._pattern.normalize_and_complete_tokens(tokens, err)) {
                                 if (err.empty()) err = "Unexpected EOF while filling multiline record";
-                                throw std::runtime_error(err + " for " + cmd);
+                                throw_at(record_location, err + " for " + cmd);
                             }
                             if (tokens.size() != need_tokens) {
                                 std::ostringstream os;
                                 os << "Unexpected EOF with incomplete multiline record for " << cmd;
-                                throw std::runtime_error(os.str());
+                                throw_at(record_location, os.str());
                             }
                             if (pending_invocations && seg._invoke) {
-                                pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
+                                pending_invocations->push_back(
+                                    PendingInvocation{&seg, std::move(tokens), record_location}
+                                );
                             }
                             return;
                         }
@@ -499,15 +529,17 @@ private:
                             std::string err;
                             if (!seg._pattern.normalize_and_complete_tokens(tokens, err)) {
                                 if (err.empty()) err = "Encountered next command before fulfilling multiline record";
-                                throw std::runtime_error(err + " for " + cmd);
+                                throw_at(record_location, err + " for " + cmd);
                             }
                             if (tokens.size() != need_tokens) {
                                 std::ostringstream os;
                                 os << "Next command arrived with incomplete multiline record for " << cmd;
-                                throw std::runtime_error(os.str());
+                                throw_at(record_location, os.str());
                             }
                             if (pending_invocations && seg._invoke) {
-                                pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
+                                pending_invocations->push_back(
+                                    PendingInvocation{&seg, std::move(tokens), record_location}
+                                );
                             }
                             kw_out = dl;
                             have_kw_out = true;
@@ -515,6 +547,7 @@ private:
                         }
 
                         if (dl.type() == LT::DATA_LINE) {
+                            if (lines_in_record == 0) record_location = dl.location();
                             dl.append_values(tokens);
                             ++lines_in_record;
                             continue;
@@ -528,25 +561,27 @@ private:
                         std::ostringstream os;
                         os << "Too many tokens for multiline record of " << cmd
                            << " (" << tokens.size() << " > " << need_tokens << ")";
-                        throw std::runtime_error(os.str());
+                        throw_at(record_location, os.str());
                     }
 
                     // Normalize is still applied to honor on_empty (empties within lines)
                     std::string err;
                     if (!seg._pattern.normalize_and_complete_tokens(tokens, err)) {
                         if (err.empty()) err = "Token normalization failed for multiline record";
-                        throw std::runtime_error(err + " of " + cmd);
+                        throw_at(record_location, err + " of " + cmd);
                     }
 
                     if (tokens.size() != need_tokens) {
                         std::ostringstream os;
                         os << "Incomplete tokens for multiline record of " << cmd
                            << " (" << tokens.size() << " != " << need_tokens << ")";
-                        throw std::runtime_error(os.str());
+                        throw_at(record_location, os.str());
                     }
 
                     if (pending_invocations && seg._invoke) {
-                        pending_invocations->push_back(PendingInvocation{ &seg, std::move(tokens) });
+                        pending_invocations->push_back(
+                            PendingInvocation{&seg, std::move(tokens), record_location}
+                        );
                     }
                     // loop to try another record; a boundary will be detected at the top
                 }

@@ -322,6 +322,19 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
 
     auto& mdl = *m_model;
 
+    // Structural commands
+    reg.command("MODEL", [](io::dsl::Command& command) {
+        command.allow_if(io::dsl::Condition::parent_is("ROOT"));
+        command.doc("Begin a model definition.");
+        command.keyword(io::dsl::KeywordSpec::make().key("NAME").optional());
+        command.variant(io::dsl::Variant::make());
+    });
+    reg.command("END", [](io::dsl::Command& command) {
+        command.allow_if(io::dsl::Condition::parent_is("LOADCASE"));
+        command.doc("End the current load case definition.");
+        command.variant(io::dsl::Variant::make());
+    });
+
     // Base model/sections/materials
     commands::register_heading(reg);
     commands::register_field(reg, mdl);
