@@ -119,67 +119,67 @@ const FRDField& frd_field(const std::string& field_name) {
         {
             {"DISPLACEMENT", "DISP", "MODESHAPE", "BUCKLINGMODE"}, "DISP",
             {
-                FRDComponent::vcnorm("ALL"),
                 FRDComponent::vector("D1" , 1),
                 FRDComponent::vector("D2" , 2),
                 FRDComponent::vector("D3" , 3),
                 FRDComponent::scalar("D4" , 4),
                 FRDComponent::scalar("D5" , 5),
                 FRDComponent::scalar("D6" , 6),
+                FRDComponent::vcnorm("ALL")
             }
         },
         {
             {"VELOCITY", "VELO"}, "VELO",
             {
-                FRDComponent::vcnorm("ALL"),
                 FRDComponent::vector("V1" , 1),
                 FRDComponent::vector("V2" , 2),
                 FRDComponent::vector("V3" , 3),
+                FRDComponent::vcnorm("ALL")
             }
         },
         {
             {"ACCELERATION", "ACCE"}, "ACCE",
             {
-                FRDComponent::vcnorm("ALL"),
                 FRDComponent::vector("A1" , 1),
                 FRDComponent::vector("A2" , 2),
                 FRDComponent::vector("A3" , 3),
+                FRDComponent::vcnorm("ALL")
             }
         },
         {
             {"REACTIONFORCES", "FORC"}, "FORC",
             {
-                FRDComponent::vcnorm("ALL"),
                 FRDComponent::vector("F1" , 1),
                 FRDComponent::vector("F2" , 2),
                 FRDComponent::vector("F3" , 3),
                 FRDComponent::scalar("F4" , 4),
                 FRDComponent::scalar("F5" , 5),
                 FRDComponent::scalar("F6" , 6),
+                FRDComponent::vcnorm("ALL")
             }
         },
         {
             {"EXTERNALFORCES", "EXTFORC"}, "EXTFORC",
             {
-                FRDComponent::vcnorm("ALL"),
                 FRDComponent::vector("F1" , 1),
                 FRDComponent::vector("F2" , 2),
                 FRDComponent::vector("F3" , 3),
                 FRDComponent::scalar("F4" , 4),
                 FRDComponent::scalar("F5" , 5),
                 FRDComponent::scalar("F6" , 6),
+                FRDComponent::vcnorm("ALL")
             }
         },
         {
             {"INTERNALFORCES", "INTFORC"}, "INTFORC",
             {
-                FRDComponent::vcnorm("ALL"),
                 FRDComponent::vector("F1" , 1),
                 FRDComponent::vector("F2" , 2),
                 FRDComponent::vector("F3" , 3),
                 FRDComponent::scalar("F4" , 4),
                 FRDComponent::scalar("F5" , 5),
                 FRDComponent::scalar("F6" , 6),
+                FRDComponent::vcnorm("ALL")
             }
         },
         {
