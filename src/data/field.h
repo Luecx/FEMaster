@@ -49,10 +49,12 @@ public:
     [[nodiscard]] Index cols() const { return _cols; }
 
     Precision& operator()(Index r, Index c) {
+        logging::error(r < _rows && c < _cols, "FieldMatrix: index (", r, ", ", c, ") is outside ", _rows, "x", _cols);
         return _data[static_cast<size_t>(r) * static_cast<size_t>(_cols) + static_cast<size_t>(c)];
     }
 
     Precision operator()(Index r, Index c) const {
+        logging::error(r < _rows && c < _cols, "FieldMatrix: index (", r, ", ", c, ") is outside ", _rows, "x", _cols);
         return _data[static_cast<size_t>(r) * static_cast<size_t>(_cols) + static_cast<size_t>(c)];
     }
 
