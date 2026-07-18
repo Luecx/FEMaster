@@ -196,7 +196,7 @@ static void write_results(const std::vector<ModalMode>& modes,
         freqs      (i) = modes[i].freq;
 
         for (Index j = 0; j < 6; ++j) {
-            particip(0, j) = modes[i].participation(j);
+            particip(j, 0) = modes[i].participation(j);
         }
 
         writer->write_field(modes[i].mode_mat, "MODE_SHAPE_"    + std::to_string(i + 1), mdl->_data.get(), modes[i].freq);
