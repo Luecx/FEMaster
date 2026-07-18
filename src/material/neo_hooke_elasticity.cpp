@@ -232,12 +232,35 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
     logging::error(det_in_plane > Precision(0),
                    "NEO_HOOKE: non-positive shell in-plane right Cauchy-Green determinant");
 
-    const Precision min_c33 = (shear_column.transpose() * in_plane.inverse() * shear_column)(0, 0);
-    Precision c33 = Precision(1) - Precision(2) * poisson * (strain.values()(0) + strain.values()(1));
+    const Precision min_c33          = (shear_column.transpose() * in_plane.inverse() * shear_column)(0, 0);
+    const Precision log_det_in_plane = std::log(det_in_plane);
 
-    if (c33 <= min_c33) {
-        c33 = min_c33 + Precision(1e-10);
+    Precision log_d                  = -poisson * log_det_in_plane;
+    bool      plane_stress_converged = false;
+
+    for (Index i = 0; i < 30; ++i) {
+        const Precision d        = std::exp(log_d);
+        const Precision residual = mu * (d - Precision(1))
+                                 + Precision(0.5) * lame_lambda * (log_det_in_plane + log_d);
+        const Precision slope    = mu * d + Precision(0.5) * lame_lambda;
+        const Precision delta    = -residual / slope;
+
+        log_d += delta;
+
+        if (std::abs(delta) < Precision(1e-12)) {
+            plane_stress_converged = true;
+            break;
+        }
     }
+
+    const Precision d        = std::exp(log_d);
+    const Precision residual = mu * (d - Precision(1))
+                             + Precision(0.5) * lame_lambda * (log_det_in_plane + log_d);
+    const Precision c33      = min_c33 + d;
+
+    logging::error(plane_stress_converged &&
+                   std::abs(residual) <= Precision(1e-10) * (mu + lame_lambda),
+                   "NEO_HOOKE: shell plane-stress thickness iteration did not converge");
 
     auto evaluate_full = [&](const Mat3& c, Mat3& full_stress, Mat6& full_tangent) {
         const Precision det_c = c.determinant();
@@ -281,29 +304,6 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
 
     Mat3 full_stress;
     Mat6 full_tangent;
-
-    for (Index i = 0; i < 30; ++i) {
-        C(2, 2) = c33;
-        evaluate_full(C, full_stress, full_tangent);
-
-        const Precision residual = full_stress(2, 2);
-        const Precision slope    = Precision(0.5) * full_tangent(2, 2);
-
-        logging::error(std::abs(slope) > Precision(1e-20),
-                       "NEO_HOOKE: singular shell plane-stress thickness iteration");
-
-        Precision dc33 = -residual / slope;
-        c33 += dc33;
-
-        if (c33 <= min_c33) {
-            c33 = Precision(0.5) * (C(2, 2) + min_c33 + Precision(1e-10));
-            dc33 = c33 - C(2, 2);
-        }
-
-        if (std::abs(dc33) < Precision(1e-12)) {
-            break;
-        }
-    }
 
     C(2, 2) = c33;
     evaluate_full(C, full_stress, full_tangent);
