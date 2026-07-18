@@ -64,8 +64,9 @@ struct Load : public BoundaryCondition, public fem::Printable {
      * @param model_data Model data that provides geometry and topology.
      * @param bc Boundary-condition storage where load contributions are added.
      * @param time Current analysis time used for amplitude scaling.
+     * @param ignore_amplitude Whether amplitude scaling should be skipped.
      */
-    virtual void apply(model::ModelData& model_data, model::Field& bc, Precision time) = 0;
+    virtual void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) = 0;
 
     /**
      * @brief Builds a compact one-line description of the load.

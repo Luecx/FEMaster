@@ -47,8 +47,9 @@ struct CLoad : public Load {
      * @param model_data Model data used for node positions and local orientation lookup.
      * @param bc Boundary-condition field receiving force and moment components.
      * @param time Current analysis time for amplitude scaling.
+     * @param ignore_amplitude Whether amplitude scaling should be skipped.
      */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
 
     /**
      * @brief Returns a compact description of the concentrated load.

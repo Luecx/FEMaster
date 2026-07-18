@@ -84,8 +84,9 @@ void apply_point_mass_inertial_contribution(model::ModelData& model_data,
 /**
  * @copydoc InertialLoad::apply
  */
-void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
     (void)time;
+    (void)ignore_amplitude;
     logging::error(region_ != nullptr, "InertialLoad: region not set");
 
     for (const ID el_id : *region_) {

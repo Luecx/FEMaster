@@ -50,8 +50,9 @@ struct InertialLoad : public Load {
      * @param model_data Model data used for elements, nodes and optional point masses.
      * @param bc Boundary-condition field receiving equivalent nodal forces.
      * @param time Current analysis time. Inertial loads currently ignore it.
+     * @param ignore_amplitude Whether amplitude scaling should be skipped.
      */
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time) override;
+    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
 
     /**
      * @brief Returns a compact description of the inertial load.

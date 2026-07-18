@@ -46,7 +46,7 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
 /**
  * @copydoc VLoad::apply
  */
-void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     logging::error(region_ != nullptr, "VLoad: target element region not set");
 
@@ -55,7 +55,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         return;
     }
 
-    const Precision scale = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
+    const Precision scale = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
     local_values *= scale;
 
     for (const ID el_id : *region_) {

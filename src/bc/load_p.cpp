@@ -19,14 +19,14 @@ namespace bc {
 /**
  * @copydoc PLoad::apply
  */
-void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     logging::error(region_ != nullptr, "PLoad: target surface region not set");
     const auto& node_positions = *model_data.positions;
 
     // Pressure is scalar, so amplitude scaling can be applied once before the
     // geometry-specific surface integration distributes it to nodes.
-    const Precision scale           = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
+    const Precision scale           = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
     const Precision scaled_pressure = pressure_ * scale;
 
     for (const ID surf_id : *region_) {

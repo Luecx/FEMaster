@@ -112,9 +112,7 @@ Model::build_load_basis(std::vector<std::string> load_sets) {
             auto amplitude = load->amplitude_;
             auto& load_matrix = field_for(amplitude);
 
-            load->amplitude_ = nullptr;
-            load->apply(*_data, load_matrix, Precision(0));
-            load->amplitude_ = amplitude;
+            load->apply(*_data, load_matrix, Precision(0), true);
         }
     }
 

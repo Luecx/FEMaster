@@ -20,8 +20,9 @@ namespace bc {
 /**
  * @copydoc TLoad::apply
  */
-void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
     (void)time;
+    (void)ignore_amplitude;
 
     logging::error(temp_field_ != nullptr, "Temperature field not set on TLOAD");
     logging::error(temp_field_->domain == model::FieldDomain::NODE,

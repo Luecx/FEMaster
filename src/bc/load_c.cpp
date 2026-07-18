@@ -45,12 +45,12 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
 /**
  * @copydoc CLoad::apply
  */
-void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     logging::error(region_ != nullptr, "CLoad: target node region not set");
     const auto& node_positions = *model_data.positions;
 
-    const Precision scale = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
+    const Precision scale = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
 
     for (const ID node_id : *region_) {
         const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));

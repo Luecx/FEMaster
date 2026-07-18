@@ -45,7 +45,7 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
 /**
  * @copydoc DLoad::apply
  */
-void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
+void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
     logging::error(region_ != nullptr, "DLoad: target surface region not set");
     const auto& node_positions = *model_data.positions;
@@ -55,7 +55,7 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         return;
     }
 
-    const Precision scale = amplitude_ ? amplitude_->evaluate(time) : Precision(1);
+    const Precision scale = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
     local_values *= scale;
 
     for (const ID surf_id : *region_) {
