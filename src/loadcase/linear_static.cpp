@@ -24,7 +24,7 @@
 #include "../model/element/element_structural.h"
 #include "../model/model.h"
 #include "../solve/eigval/solve_eigval.h"
-#include "../writer/write_mtx.h"
+#include "../io/writer/write_mtx.h"
 #include "tools/inertia_relief.h"
 #include "tools/rebalance_loads.h"
 

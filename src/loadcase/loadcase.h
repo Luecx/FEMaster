@@ -14,7 +14,7 @@
 
 #include "../constraints/constraint_groups.h"
 #include "../model/model.h"
-#include "../writer/writers.h"
+#include "../io/writer/writers.h"
 
 namespace fem {
 namespace loadcase {

@@ -7,7 +7,7 @@
 #include "core/config.h"
 #include "core/timer.h"
 #include "core/logging.h"
-#include "input_decks/parser.h"
+#include "io/reader/parser.h"
 
 int main(int argc, char** argv) {
     auto timer = fem::Timer();
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
     fem::global_config.max_threads = ncpus;
 
     // Single parser instance; ctor registers commands for doc mode immediately.
-    fem::input_decks::Parser parser;
+    fem::io::reader::Parser parser;
 
     if (doc_mode) {
         // Enforce exactly one action
@@ -104,19 +104,19 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        fem::input_decks::DocOptions opts;
+        fem::io::reader::DocOptions opts;
 
         // Map format
         const auto fmt = program.get<std::string>("--doc-format");
-        if      (fmt == "md")   opts.format = fem::input_decks::DocOptions::Format::Markdown;
-        else if (fmt == "json") opts.format = fem::input_decks::DocOptions::Format::Json;
-        else                    opts.format = fem::input_decks::DocOptions::Format::Text;
+        if      (fmt == "md")   opts.format = fem::io::reader::DocOptions::Format::Markdown;
+        else if (fmt == "json") opts.format = fem::io::reader::DocOptions::Format::Json;
+        else                    opts.format = fem::io::reader::DocOptions::Format::Text;
 
         // Map verbosity
         const auto verb = program.get<std::string>("--doc-verbosity");
-        if      (verb == "index")   opts.verbosity = fem::input_decks::DocOptions::Verbosity::Index;
-        else if (verb == "compact") opts.verbosity = fem::input_decks::DocOptions::Verbosity::Compact;
-        else                        opts.verbosity = fem::input_decks::DocOptions::Verbosity::Full;
+        if      (verb == "index")   opts.verbosity = fem::io::reader::DocOptions::Verbosity::Index;
+        else if (verb == "compact") opts.verbosity = fem::io::reader::DocOptions::Verbosity::Compact;
+        else                        opts.verbosity = fem::io::reader::DocOptions::Verbosity::Full;
 
         // Wrap
         opts.wrap_width = program.get<int>("--doc-width");
@@ -128,24 +128,24 @@ int main(int argc, char** argv) {
 
         // Action + payload
         if (program.get<bool>("--doc-list")) {
-            opts.action = fem::input_decks::DocOptions::Action::List;
+            opts.action = fem::io::reader::DocOptions::Action::List;
         } else if (program.is_used("--doc-show")) {
-            opts.action = fem::input_decks::DocOptions::Action::Show;
+            opts.action = fem::io::reader::DocOptions::Action::Show;
             opts.cmd    = program.get<std::string>("--doc-show");
         } else if (program.is_used("--doc-tokens")) {
-            opts.action = fem::input_decks::DocOptions::Action::Tokens;
+            opts.action = fem::io::reader::DocOptions::Action::Tokens;
             opts.cmd    = program.get<std::string>("--doc-tokens");
         } else if (program.is_used("--doc-variants")) {
-            opts.action = fem::input_decks::DocOptions::Action::Variants;
+            opts.action = fem::io::reader::DocOptions::Action::Variants;
             opts.cmd    = program.get<std::string>("--doc-variants");
         } else if (program.is_used("--doc-search")) {
-            opts.action = fem::input_decks::DocOptions::Action::Search;
+            opts.action = fem::io::reader::DocOptions::Action::Search;
             opts.query  = program.get<std::string>("--doc-search");
         } else if (program.is_used("--doc-where-token")) {
-            opts.action = fem::input_decks::DocOptions::Action::WhereToken;
+            opts.action = fem::io::reader::DocOptions::Action::WhereToken;
             opts.query  = program.get<std::string>("--doc-where-token");
         } else if (program.get<bool>("--doc-all")) {
-            opts.action = fem::input_decks::DocOptions::Action::All;
+            opts.action = fem::io::reader::DocOptions::Action::All;
         }
 
         try {

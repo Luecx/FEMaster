@@ -11,7 +11,7 @@
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 #include "../solve/get_solver_name.h"
-#include "../writer/write_mtx.h"
+#include "../io/writer/write_mtx.h"
 #include "tools/arc_length_control.h"
 #include "tools/load_control.h"
 #include "tools/regularise_stiffness.h"

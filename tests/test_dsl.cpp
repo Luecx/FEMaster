@@ -1,8 +1,8 @@
-#include "../src/dsl/line.h"
-#include "../src/dsl/file.h"
-#include "../src/dsl/keys.h"
-#include "../src/dsl/registry.h"
-#include "../src/dsl/engine.h"
+#include "../src/io/dsl/line.h"
+#include "../src/io/dsl/file.h"
+#include "../src/io/dsl/keys.h"
+#include "../src/io/dsl/registry.h"
+#include "../src/io/dsl/engine.h"
 
 #include <gtest/gtest.h>
 #include <fstream>

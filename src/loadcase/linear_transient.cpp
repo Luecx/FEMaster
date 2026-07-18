@@ -10,7 +10,7 @@
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
-#include "../writer/write_mtx.h"
+#include "../io/writer/write_mtx.h"
 
 #include <algorithm>
 #include <cmath>

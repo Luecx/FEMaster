@@ -2,7 +2,7 @@
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/s4.h"
-#include "../src/writer/writer_frd.h"
+#include "../src/io/writer/writer_frd.h"
 #include "../src/reader/writer.h"
 
 #include <filesystem>
