@@ -1,10 +1,23 @@
+/**
+ * @file volume_strain.cpp
+ * @brief Implements three-dimensional strain storage and tensor transformations.
+ *
+ * This file defines the engineering-shear Voigt convention, symmetric tensor
+ * conversion and the strain transformation matrix used when solid material
+ * directions differ from element coordinates.
+ *
+ * @see volume_strain.h
+ */
+
 #include "volume_strain.h"
 
 namespace fem {
 
+// Store a strain vector that already follows the engineering-shear convention
 VolumeStrain::VolumeStrain(const Vec6& voigt)
     : voigt_(voigt) {}
 
+// Convert tensor shear components into engineering shear strains
 VolumeStrain::VolumeStrain(const Mat3& tensor) {
     voigt_ << tensor(0, 0),
               tensor(1, 1),
@@ -14,6 +27,7 @@ VolumeStrain::VolumeStrain(const Mat3& tensor) {
               Precision(2) * tensor(0, 1);
 }
 
+// Map named components onto the underlying Voigt vector
 Precision& VolumeStrain::operator[](Component component) {
     return voigt_(static_cast<int>(component));
 }
@@ -22,32 +36,7 @@ Precision VolumeStrain::operator[](Component component) const {
     return voigt_(static_cast<int>(component));
 }
 
-Precision VolumeStrain::operator[](TensorComponent component) const {
-    switch (component) {
-        case TensorComponent::YZ:
-            return Precision(0.5) * voigt_(3);
-        case TensorComponent::XZ:
-            return Precision(0.5) * voigt_(4);
-        case TensorComponent::XY:
-            return Precision(0.5) * voigt_(5);
-    }
-    return Precision(0);
-}
-
-void VolumeStrain::set(TensorComponent component, Precision value) {
-    switch (component) {
-        case TensorComponent::YZ:
-            voigt_(3) = Precision(2) * value;
-            return;
-        case TensorComponent::XZ:
-            voigt_(4) = Precision(2) * value;
-            return;
-        case TensorComponent::XY:
-            voigt_(5) = Precision(2) * value;
-            return;
-    }
-}
-
+// Expose the complete Voigt representation for material evaluation
 const Vec6& VolumeStrain::voigt() const {
     return voigt_;
 }
@@ -56,6 +45,7 @@ Vec6& VolumeStrain::voigt() {
     return voigt_;
 }
 
+// Recover tensor shear components by removing the engineering factor of two
 Mat3 VolumeStrain::tensor() const {
     Mat3 tensor;
     tensor << voigt_(0),                  Precision(0.5) * voigt_(5), Precision(0.5) * voigt_(4),
@@ -64,12 +54,14 @@ Mat3 VolumeStrain::tensor() const {
     return tensor;
 }
 
+// Rotate the strain representation between orthonormal bases
 VolumeStrain VolumeStrain::transformed(const cos::Basis& from_basis,
                                        const cos::Basis& to_basis) const {
     const Vec6 transformed = get_transformation_matrix(from_basis, to_basis) * voigt_;
     return VolumeStrain(transformed);
 }
 
+// Build the Voigt transformation for engineering shear strains
 Mat6 VolumeStrain::get_transformation_matrix(const cos::Basis& from_basis,
                                              const cos::Basis& to_basis) {
     const Mat3 R = to_basis.transpose() * from_basis;

@@ -1,10 +1,23 @@
+/**
+ * @file volume_stress.cpp
+ * @brief Implements three-dimensional stress storage and tensor transformations.
+ *
+ * This file defines the physical-shear Voigt convention, symmetric tensor
+ * conversion and stress transformation matrix used by solid materials and
+ * stress-output paths.
+ *
+ * @see volume_stress.h
+ */
+
 #include "volume_stress.h"
 
 namespace fem {
 
+// Store a stress vector that already follows the physical-shear convention
 VolumeStress::VolumeStress(const Vec6& voigt)
     : voigt_(voigt) {}
 
+// Extract the six independent components of a symmetric stress tensor
 VolumeStress::VolumeStress(const Mat3& tensor) {
     voigt_ << tensor(0, 0),
               tensor(1, 1),
@@ -14,6 +27,7 @@ VolumeStress::VolumeStress(const Mat3& tensor) {
               tensor(0, 1);
 }
 
+// Map named components onto the underlying Voigt vector
 Precision& VolumeStress::operator[](Component component) {
     return voigt_(static_cast<int>(component));
 }
@@ -22,6 +36,7 @@ Precision VolumeStress::operator[](Component component) const {
     return voigt_(static_cast<int>(component));
 }
 
+// Expose the complete Voigt representation for material and output paths
 const Vec6& VolumeStress::voigt() const {
     return voigt_;
 }
@@ -30,6 +45,7 @@ Vec6& VolumeStress::voigt() {
     return voigt_;
 }
 
+// Reconstruct the symmetric tensor without engineering-shear scaling
 Mat3 VolumeStress::tensor() const {
     Mat3 tensor;
     tensor << voigt_(0), voigt_(5), voigt_(4),
@@ -38,12 +54,14 @@ Mat3 VolumeStress::tensor() const {
     return tensor;
 }
 
+// Rotate the stress representation between orthonormal bases
 VolumeStress VolumeStress::transformed(const cos::Basis& from_basis,
                                        const cos::Basis& to_basis) const {
     const Vec6 transformed = get_transformation_matrix(from_basis, to_basis) * voigt_;
     return VolumeStress(transformed);
 }
 
+// Build the Voigt transformation for physical shear stresses
 Mat6 VolumeStress::get_transformation_matrix(const cos::Basis& from_basis,
                                              const cos::Basis& to_basis) {
     const Mat3 R = to_basis.transpose() * from_basis;
