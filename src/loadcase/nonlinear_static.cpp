@@ -228,7 +228,7 @@ void NonlinearStatic::run() {
     logging::error(control != NonlinearControl::ArcLength || transformer->homogeneous(),
         "NONLINEARSTATIC ARC LENGTH does not support prescribed displacements");
 
-    auto recover_total_displacement = [&](const DynamicVector& q, Precision lambda) {
+    auto recover_total_displacement = [&](const DynamicVector& q, Precision lambda) -> DynamicVector {
         return lambda * u_particular + transformer->recover_increment(q);
     };
 
