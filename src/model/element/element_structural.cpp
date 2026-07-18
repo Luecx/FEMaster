@@ -8,16 +8,16 @@
 namespace fem::model {
 
 MapMatrix StructuralElement::stiffness_tangent(Precision* buffer,
-                                               NodeData& nodal_forces,
+                                               Field&       ip_stress_state,
+                                               NodeData&    nodal_forces,
                                                const Field& displacement) {
-    const Index nip = static_cast<Index>(num_ip());
+    const Index nip       = static_cast<Index>(num_ip());
+    const int   ip_offset = static_cast<int>(ip_index(0));
     logging::error(nip > 0,
                    "Element ", elem_id,
                    ": tangent stiffness requires at least one integration point");
 
-    Field stress_state{"ELEMENT_STRESS_STATE", FieldDomain::ELEMENT_IP, nip, 8};
-    stress_state.set_zero();
-    compute_stress_state(stress_state, displacement, 0, true);
+    compute_stress_state(ip_stress_state, displacement, ip_offset, true);
 
     MapMatrix tangent = stiffness(buffer);
 
@@ -25,10 +25,14 @@ MapMatrix StructuralElement::stiffness_tangent(Precision* buffer,
         static_cast<size_t>(tangent.rows()) * static_cast<size_t>(tangent.cols()),
         Precision(0)
     );
-    MapMatrix geometric = stiffness_geom(geometric_storage.data(), stress_state, 0);
+    MapMatrix geometric = stiffness_geom(
+        geometric_storage.data(),
+        ip_stress_state,
+        ip_offset
+    );
     tangent += geometric;
 
-    compute_internal_force_nonlinear(nodal_forces, stress_state, 0);
+    compute_internal_force_nonlinear(nodal_forces, ip_stress_state);
 
     return tangent;
 }

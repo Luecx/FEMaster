@@ -439,8 +439,7 @@ void T3::compute_stress_state(Field&       stress_state,
 }
 
 void T3::compute_internal_force_nonlinear(Field&       node_forces,
-                                          const Field& ip_stress,
-                                          int          ip_offset) {
+                                          const Field& ip_stress) {
     logging::error(node_forces.domain == FieldDomain::NODE,
                    "T3: nonlinear internal force output must use NODE domain");
     logging::error(node_forces.components >= 3,
@@ -449,7 +448,7 @@ void T3::compute_internal_force_nonlinear(Field&       node_forces,
                    "T3: nonlinear internal force requires IP stress component 0");
 
     const Precision lambda       = stretch();
-    const Precision second_piola = ip_stress(static_cast<Index>(ip_offset), 0);
+    const Precision second_piola = ip_stress(ip_index(0), 0);
     const Vec3      n            = direction_current();
     const Vec3      force        = get_section()->area_ * lambda * second_piola * n;
 

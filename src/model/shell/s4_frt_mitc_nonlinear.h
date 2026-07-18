@@ -471,7 +471,8 @@
                                  int          ip_start_idx) override;
 
         MapMatrix stiffness_tangent(Precision* buffer,
-                                    NodeData& nodal_forces,
+                                    Field&       ip_stress_state,
+                                    NodeData&    nodal_forces,
                                     const Field& displacement) override;
 
         RowMatrix stress_strain_ip_rst() override;
@@ -518,8 +519,7 @@
         ) override;
         void compute_internal_force_nonlinear(
             Field&       node_forces,
-            const Field& ip_stress,
-            int          ip_offset
+            const Field& ip_stress
         ) override;
         void compute_compliance(
             Field& displacement,

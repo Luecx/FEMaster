@@ -254,17 +254,23 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
                                                    const Field& displacement,
                                                    const Field* stiffness_scalar) {
     logging::error(nodal_forces.domain == FieldDomain::NODE,
-                   "tangent internal force output must use NODE domain");
+        "tangent internal force output must use NODE domain");
     logging::error(nodal_forces.rows == static_cast<Index>(_data->max_nodes),
-                   "tangent internal force output has wrong node count");
+        "tangent internal force output has wrong node count");
     logging::error(nodal_forces.components >= 6,
-                   "tangent internal force output requires at least 6 components");
+        "tangent internal force output requires at least 6 components");
 
     nodal_forces.set_zero();
 
-    const int global_size = indices.maxCoeff() + 1;
+    const int   global_size = indices.maxCoeff() + 1;
+    const Index max_ip      = this->_data->max_integration_points;
     TripletList triplets;
     SparseMatrix global_matrix(global_size, global_size);
+
+    // create a stress state which is optional to be used by the elements and can hold up
+    // to 8 entries
+    Field ip_stress_state{ "IP_STRESS_STATE", FieldDomain::ELEMENT_IP, max_ip, 8};
+    ip_stress_state.set_zero();
 
     for (const auto& element : _data->elements) {
         if (!element) {
@@ -279,8 +285,12 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
         constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
         alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
 
-        MapMatrix tangent =
-            structural->stiffness_tangent(local_matrix_storage, nodal_forces, displacement);
+        MapMatrix tangent = structural->stiffness_tangent(
+            local_matrix_storage,
+            ip_stress_state,
+            nodal_forces,
+            displacement
+        );
 
         if (stiffness_scalar) {
             logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,

@@ -84,8 +84,7 @@ struct T3 : StructuralElement {
     ) override;
     void compute_internal_force_nonlinear(
         Field&       node_forces,
-        const Field& ip_stress,
-        int          ip_offset
+        const Field& ip_stress
     ) override;
     void compute_compliance(
         Field& displacement,

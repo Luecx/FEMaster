@@ -89,27 +89,29 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
 
 template<Index N>
 void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
-                                                       const Field& ip_stress,
-                                                       int ip_offset) {
+                                                       const Field& ip_stress) {
     auto reference_coords = this->node_coords_reference();
-    auto current_coords = this->node_coords_current();
-    auto scheme = this->integration_scheme();
+    auto current_coords   = this->node_coords_current();
+    auto scheme           = this->integration_scheme();
 
     for (Index n = 0; n < scheme.count(); n++) {
         const Precision r = scheme.get_point(n).r;
         const Precision s = scheme.get_point(n).s;
         const Precision t = scheme.get_point(n).t;
         const Precision w = scheme.get_point(n).w;
-        const Index row = static_cast<Index>(ip_offset) + n;
+        const Index row = this->ip_index(n);
 
         Precision det0;
-        const StaticMatrix<N, D> dN_dX =
-            this->shape_derivatives_reference(reference_coords, r, s, t, det0);
-        const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
-        const StaticMatrix<n_strain, D * N> B =
-            this->green_lagrange_strain_displacement(dN_dX, F);
-        const Vec6 S_voigt = ip_stress.row_vec6(row);
-        const StaticVector<D * N> local_force = B.transpose() * S_voigt * (det0 * w);
+        // derivative of shape function w.r.t reference coordinates XYZ (N x 3)
+        const auto dN_dX       = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+        // deformation gradient at current position (3 x 3)
+        const auto F           = this->deformation_gradient(reference_coords, current_coords, r, s, t);
+        // strain displacement relationship (6 x 3N)
+        const auto B           = this->green_lagrange_strain_displacement(dN_dX, F);
+        // getting the current 2nd piola kirchhoff stress
+        const auto S_voigt     = ip_stress.row_vec6(row);
+        // getting local force of a volume element (B^T S)
+        const auto local_force = B.transpose() * S_voigt * (det0 * w);
 
         for (Index a = 0; a < N; ++a) {
             const Index node_id = static_cast<Index>(node_ids[a]);
@@ -166,110 +168,93 @@ SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     result(elem_id, 0) = strain_energy;
 }
 
+/**
+ * Goal is to compute the derivative of the compliance from a linear solution w.r.t the three angles which classify
+ * the additional rotation going into the section. The derivation with ()' = del () / del (alpha_i)
+ * Using:
+ *              K u = f
+ *      K' u + K u' = 0 (chain rule)
+ *
+ * And the definition of compliance:
+ *              J  = f^T u
+ *              J' = f^T u'                  (inserting u' from above)
+ *                 = f^T (-K^-1 K' u)        (inserting f^T = (Ku)^T = u^T K^T = u^T K (since K = K^T)
+ *                 = - u^T K K^-1 K' u       (K K^-1 = I)
+ *                 = - u^T K' u
+ *
+ * Using the definition of stiffness:
+ *              K  = ∫B^T C_tan B dV
+ *
+ *              J' = - u^T ∫B^T C'_tan B dV u
+ *                 = - ∫ u^T B^T C'_tan B u dV
+ *                 = - ∫ eps^T C'_tan eps dV
+*/
 template<Index N>
 void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, Field& result) {
-    // the equation for the compliance is:
-    // C = u^T * K * u
-    // C = u^T * (B^T * E * B) * u
-    // C = u^T * B^T * R^T * E * R * B * u
-    // C = (B * u)^T * R^T * E * R * (B * u)
-    // C = e^T * R^T * E * R * e        where e = B * u
-    // C = e^T (D) e
-    // where D = R^T * E * R
-    // it follows
-    // dC/dtheta = de^T/dtheta * D * e + e^T * D * de/dtheta
-
-    // Evaluating this must be done using integration over the element since K comes from an integration
-
-    // compute the u-vector
-    auto local_disp_mat = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
-    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-
-    // check for angles
-    if (!this->_model_data || !this->_model_data->material_orientation) return;
-
-    auto material = this->material();
-    logging::error(material->has_elasticity(),
-                   "material has no elasticity assigned at element ", elem_id);
-    auto elasticity = material->elasticity();
-    logging::error(elasticity->supports_volume_linearized(),
-                   "material does not support linearized volume evaluation at element ", elem_id);
-    logging::error(elasticity->state_size() == 0,
-                   "SolidElement does not yet provide integration-point material state storage");
+    if (!this->_model_data || !this->_model_data->material_orientation) {
+        return;
+    }
 
     auto angles_field = this->_model_data->material_orientation;
     logging::error(angles_field->components == 3,
-                   "Field '", angles_field->name, "': material orientation requires 3 components");
-    const Index row = static_cast<Index>(this->elem_id);
-    Vec3 angles = angles_field->row_vec3(row);
-    auto R_topo = cos::RectangularSystem::euler(angles(0), angles(1), angles(2)).get_axes(Vec3(0,0,0));
-    auto dR_topo_d1 = cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2));
-    auto dR_topo_d2 = cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2));
-    auto dR_topo_d3 = cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2));
+        "Field '", angles_field->name, "': material orientation requires 3 components");
 
-    Vec3 derivative = Vec3::Zero();
+    const Index row    = static_cast<Index>(this->elem_id);
+    const Vec3  angles = angles_field->row_vec3(row);
 
-    // go through each integration point
-    for (Index n = 0; n < this->integration_scheme().count(); n++) {
-        Precision r = this->integration_scheme().get_point(n).r;
-        Precision s = this->integration_scheme().get_point(n).s;
-        Precision t = this->integration_scheme().get_point(n).t;
-        Precision w = this->integration_scheme().get_point(n).w;
+    const Mat3 additional_rotation = cos::RectangularSystem::euler(
+        angles(0),
+        angles(1),
+        angles(2)
+    ).get_axes(Vec3::Zero());
+
+    const std::array<Mat3, 3> additional_rotation_derivatives {
+        cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2)),
+        cos::RectangularSystem::derivative_rot_y(angles(0), angles(1), angles(2)),
+        cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2))
+    };
+
+    // Initialize element state
+    auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
+    auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+
+    const auto reference_coords = this->node_coords_reference();
+    const auto current_coords   = this->node_coords_current();
+    const auto& scheme          = this->integration_scheme();
+
+    const Precision scaling    = element_stiffness_scale();
+    Vec3            derivative = Vec3::Zero();
+
+    // Integrate compliance derivatives
+    for (Index n = 0; n < scheme.count(); ++n) {
+        const Precision r = scheme.get_point(n).r;
+        const Precision s = scheme.get_point(n).s;
+        const Precision t = scheme.get_point(n).t;
+        const Precision w = scheme.get_point(n).w;
         Precision det;
 
-        // compute the B matrix
-        StaticMatrix<n_strain, D * N> B = this->strain_displacements(this->node_coords_current(), r, s, t, det);
+        // compute strain displacement matrix B
+        const StaticMatrix<n_strain, D * N> B = this->strain_displacements( current_coords, r, s, t, det);
+        // compute (small) strains
+        const StaticVector<n_strain> strain   = B * local_displacement;
 
-        // compute the strain vector
-        StaticVector<n_strain> strain = B * local_displacement;
+        // get the position of the point in reference coordinates, needed for the transformation
+        // inside the sections coordinate system
+        const Vec3 position_reference = this->interpolate<D>(reference_coords, r, s, t);
 
-        const Mat3 R_section = section_orientation_basis(r, s, t);
-        const Mat3 R = R_section * R_topo;
-        const Mat3 dR_d1 = R_section * dR_topo_d1;
-        const Mat3 dR_d2 = R_section * dR_topo_d2;
-        const Mat3 dR_d3 = R_section * dR_topo_d3;
-
-        VolumeStrainLinearized zero_strain;
-        VolumeStressCauchy     zero_stress;
-        Mat6                   local_tangent;
-        elasticity->evaluate(
-            zero_strain,
-            nullptr,
-            nullptr,
-            zero_stress,
-            local_tangent
+        // get the tangent rotation derivatives dC/d_alpha
+        const auto tangent_derivatives = get_section()->tangent_rotation_derivatives(
+            position_reference,
+            additional_rotation,
+            additional_rotation_derivatives
         );
 
-        Precision scaling = Precision(1);
-        if (this->_model_data->element_stiffness_scale) {
-            auto scale_field = this->_model_data->element_stiffness_scale;
-            logging::error(scale_field->components == 1,
-                           "Field '", scale_field->name, "': element stiffness scale requires 1 component");
-            scaling = (*scale_field)(static_cast<Index>(this->elem_id));
+        // store in the final derivative
+        for (Index i = 0; i < 3; ++i) {
+            derivative(i) += scaling * w * strain.dot(tangent_derivatives[i] * strain) * det;
         }
-
-        const Mat6 strain_transform = material_strain_transformation(R);
-        const Mat6 stress_transform = material_stress_transformation(R);
-
-        auto tangent_derivative = [&](const Mat3& basis_derivative) {
-            const Mat6 strain_derivative =
-                material_strain_transformation_derivative(R, basis_derivative);
-            const Mat6 stress_derivative =
-                material_stress_transformation_derivative(R, basis_derivative);
-            return scaling * (
-                stress_derivative * local_tangent * strain_transform
-                + stress_transform * local_tangent * strain_derivative
-            );
-        };
-
-        const Mat6 dCd1 = tangent_derivative(dR_d1);
-        const Mat6 dCd2 = tangent_derivative(dR_d2);
-        const Mat6 dCd3 = tangent_derivative(dR_d3);
-
-        derivative(0) += w * strain.dot(dCd1 * strain) * det;
-        derivative(1) += w * strain.dot(dCd2 * strain) * det;
-        derivative(2) += w * strain.dot(dCd3 * strain) * det;
     }
+
     result(elem_id, 0) = derivative(0);
     result(elem_id, 1) = derivative(1);
     result(elem_id, 2) = derivative(2);

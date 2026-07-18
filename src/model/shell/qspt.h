@@ -38,8 +38,7 @@ struct QSPT : ShellElement<4> {
     ElDofs dofs() const override { return ElDofs{true, true, true, false, false, false}; }
 
     void compute_internal_force_nonlinear(Field& node_forces,
-                                          const Field& ip_stress,
-                                          int ip_offset) override;
+                                          const Field& ip_stress) override;
 
     bool compute_shear_flow(Field& shear_flow,
                             const Field& displacement,

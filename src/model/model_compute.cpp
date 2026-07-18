@@ -116,25 +116,21 @@ Field Model::compute_ip_stress_nonlinear(Field& displacement) {
 
 Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
     logging::error(ip_stress.domain == FieldDomain::ELEMENT_IP,
-                   "nonlinear internal force assembly requires ELEMENT_IP stress field");
-    logging::error(_data->element_ip_offsets != nullptr,
-                   "element IP offset field has not been initialized");
-    const auto& ip_enum = *_data->element_ip_offsets;
+        "nonlinear internal force assembly requires ELEMENT_IP stress field");
 
+    // final field to be filled by each element
     Field internal{"INTERNAL_FORCES", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
     internal.set_zero();
 
+    // iterate over all elements
     for (auto el : _data->elements) {
         if (!el) continue;
         if (auto sel = el->as<StructuralElement>()) {
-            const ID eid = sel->elem_id;
-            logging::error(eid >= 0 && eid < _data->max_elems,
-                           "Element id out of range in build_internal_force_nonlinear: ", eid);
-            const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
-            sel->compute_internal_force_nonlinear(internal, ip_stress, ip_offset);
+            sel->compute_internal_force_nonlinear(internal, ip_stress);
         }
     }
 
+    // check for any invalid entries 
     for (Index i = 0; i < internal.rows; ++i) {
         for (Index j = 0; j < internal.components; ++j) {
             const bool bad = std::isnan(internal(i, j)) || std::isinf(internal(i, j));
@@ -152,8 +148,8 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
     const Index total_element_nodes =
         static_cast<Index>(nodal_offsets(static_cast<Index>(_data->max_elems), 0));
 
-    Field element_stress{"ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_strain{"ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_stress {"ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_strain {"ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
     Field element_weights{"STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, static_cast<Index>(_data->max_elems), 1};
     element_stress.set_zero();
     element_strain.set_zero();

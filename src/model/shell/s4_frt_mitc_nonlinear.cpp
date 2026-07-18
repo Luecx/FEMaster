@@ -1873,9 +1873,12 @@ MapMatrix S4FRTMITC::stiffness_geom(
 
 MapMatrix S4FRTMITC::stiffness_tangent(
     Precision*   buffer,
+    Field&       ip_stress_state,
     NodeData&    nodal_forces,
     const Field& displacement
 ) {
+    (void) ip_stress_state;
+
     const CurrentState state = current_state_from_displacement(displacement);
 
     const EvaluationData data  = init_evaluation(
@@ -1918,8 +1921,7 @@ MapMatrix S4FRTMITC::stiffness_tangent(
 
 void S4FRTMITC::compute_internal_force_nonlinear(
     Field&       node_forces,
-    const Field& ip_stress,
-    int          ip_offset
+    const Field& ip_stress
 ) {
     const CurrentState   state = current_state();
     const EvaluationData data  = init_evaluation(
@@ -1930,7 +1932,7 @@ void S4FRTMITC::compute_internal_force_nonlinear(
         true,
         false,
         &ip_stress,
-        ip_offset
+        static_cast<int>(ip_index(0))
     );
 
     Vec24 internal_force;

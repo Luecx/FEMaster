@@ -4,3 +4,12 @@
 - `111_topology_solid_mbb_beam_c3d8.inp`
 - `112_topology_plate_density_shell_mitc4.inp`
 - `113_topology_orientation_orthotropic_solid.inp`
+- `optimize_c3d8_orientation.py` generates and optimizes a single orthotropic C3D8 tension model.
+
+Run the orientation example with:
+
+```bash
+python3 examples/11_topology/optimize_c3d8_orientation.py
+```
+
+Use `--exe PATH` when FEMaster is not available at `build/linux-mkl-omp/bin/FEMaster`.

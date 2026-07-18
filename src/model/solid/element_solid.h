@@ -53,10 +53,9 @@ public:
 
     SolidSection* get_section();
 
-    bool has_material_orientation() const;
-
-    Mat3 section_orientation_basis (Precision r, Precision s, Precision t);
-    Mat3 material_orientation_basis(Precision r, Precision s, Precision t);
+    Mat3      additional_material_rotation() const;
+    Precision element_stiffness_scale      () const;
+    Vec3      material_position_reference  (Precision r, Precision s, Precision t);
 
     Mat6 material_tangent_reference(Precision r, Precision s, Precision t);
 
@@ -73,13 +72,6 @@ public:
                            const VolumeStrainGreenLagrange& global_strain,
                            VolumeStressPK2&                 global_stress,
                            Mat6&                            global_tangent);
-
-    static Mat6 material_strain_transformation(const Mat3& basis);
-    static Mat6 material_stress_transformation(const Mat3& basis);
-    static Mat6 material_strain_transformation_derivative(const Mat3& basis,
-                                                          const Mat3& basis_derivative);
-    static Mat6 material_stress_transformation_derivative(const Mat3& basis,
-                                                          const Mat3& basis_derivative);
 
     template<Dim K>
     StaticVector<K> interpolate(StaticMatrix<N, K> data,
@@ -164,8 +156,7 @@ public:
     ) override;
     void compute_internal_force_nonlinear(
         Field&       node_forces,
-        const Field& ip_stress,
-        int          ip_offset
+        const Field& ip_stress
     ) override;
     void compute_compliance(
         Field& displacement,

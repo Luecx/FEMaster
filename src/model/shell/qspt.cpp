@@ -206,11 +206,9 @@ MapMatrix QSPT::mass(Precision* buffer) {
 }
 
 void QSPT::compute_internal_force_nonlinear(Field& node_forces,
-                                            const Field& ip_stress,
-                                            int ip_offset) {
+                                            const Field& ip_stress) {
     (void) node_forces;
     (void) ip_stress;
-    (void) ip_offset;
     logging::error(false, "QSPT: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
 }
 
