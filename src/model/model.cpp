@@ -3,7 +3,8 @@
 #include "../section/section.h"
 #include "../section/section_beam.h"
 #include "../section/section_solid.h"
-#include "../section/section_shell.h"
+#include "../section/section_shell_abd.h"
+#include "../section/section_shell_integrated.h"
 #include "../section/section_truss.h"
 #include "../feature/point_mass.h"
 

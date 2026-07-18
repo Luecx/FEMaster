@@ -67,45 +67,4 @@ protected:
                                    Mat8&                         tangent) const = 0;
 };
 
-struct IntegratedShellSection : ShellSection {
-    using Ptr = std::shared_ptr<IntegratedShellSection>;
-
-    IntegratedShellSection(material::Material::Ptr    material,
-                           model::ElementRegion::Ptr  region,
-                           Precision                  thickness,
-                           cos::CoordinateSystem::Ptr orientation);
-
-    Index num_mp_per_ip() const override { return 5; }
-
-protected:
-    void evaluate_material(const ShellGeneralizedStrain& strain,
-                           bool                          use_green_lagrange,
-                           ShellStressResultants&        resultants,
-                           Mat8&                         tangent) const override;
-};
-
-struct ABDShellSection : ShellSection {
-    using Ptr = std::shared_ptr<ABDShellSection>;
-
-    Mat6 abd_   = Mat6::Zero();
-    Mat2 shear_ = Mat2::Zero();
-
-    ABDShellSection(material::Material::Ptr    material,
-                    model::ElementRegion::Ptr  region,
-                    Precision                  thickness,
-                    const Mat6&                abd,
-                    const Mat2&                shear,
-                    cos::CoordinateSystem::Ptr orientation);
-
-    Index num_mp_per_ip() const override { return 0; }
-
-    void info() override;
-    std::string str() const override;
-
-protected:
-    void evaluate_material(const ShellGeneralizedStrain& strain,
-                           bool                          use_green_lagrange,
-                           ShellStressResultants&        resultants,
-                           Mat8&                         tangent) const override;
-};
 } // namespace fem
