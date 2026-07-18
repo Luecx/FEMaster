@@ -222,8 +222,17 @@ void NonlinearStatic::run() {
     logging::info(!transformer->feasible(), "residual ||C u - d|| : ", transformer->report().residual_norm);
     logging::down();
 
-    DynamicVector q_total = DynamicVector::Zero(transformer->unknowns());
-    DynamicVector u_total = transformer->recover_displacement(q_total);
+    DynamicVector       q_total      = DynamicVector::Zero(transformer->unknowns());
+    const DynamicVector u_particular = transformer->recover_displacement(q_total);
+
+    logging::error(control != NonlinearControl::ArcLength || transformer->homogeneous(),
+        "NONLINEARSTATIC ARC LENGTH does not support prescribed displacements");
+
+    auto recover_total_displacement = [&](const DynamicVector& q, Precision lambda) {
+        return lambda * u_particular + transformer->recover_increment(q);
+    };
+
+    DynamicVector u_total = recover_total_displacement(q_total, Precision(0));
 
     DynamicVector reduced_total_load;
     transformer->project_vector(f_total, reduced_total_load);
@@ -264,7 +273,7 @@ void NonlinearStatic::run() {
                         DynamicVector&       residual,
                         SparseMatrix&        tangent) {
         q_total = q;
-        u_total = transformer->recover_displacement(q_total);
+        u_total = recover_total_displacement(q_total, lambda);
         update_positions();
 
         model::NodeData internal_mat{
@@ -375,7 +384,7 @@ void NonlinearStatic::run() {
 
         q_total     = q;
         load_factor = lambda;
-        u_total = transformer->recover_displacement(q_total);
+        u_total     = recover_total_displacement(q_total, lambda);
 
         update_positions();
 
