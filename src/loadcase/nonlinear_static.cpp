@@ -507,7 +507,7 @@ void NonlinearStatic::run() {
         io::writer::write_mtx(stiffness_file + "_A.mtx", final_A);
     }
 
-    auto global_load_final = global_load_total;
+    auto global_load_final = global_load_total * load_factor;
     auto reaction_full     = subtract_field(
         final_internal,
         global_load_final,
