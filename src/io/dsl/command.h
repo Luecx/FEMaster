@@ -1,0 +1,194 @@
+/**
+ * @file command.h
+ * @brief Declares `Command`, the top-level specification for a DSL keyword.
+ *
+ * A `Command` represents a registered keyword (e.g. `"ELASTIC"`, `"NUMEIGENVALUES"`).
+ * Each command may:
+ *
+ *  - define an optional **admission condition** (`allow_if(...)`) that decides whether
+ *    the command is allowed under the current parent scope (evaluated against
+ *    `ParentInfo` and the command's own `Keys`);
+ *  - provide one or more **variants** (`variant(...)`). The engine selects the first
+ *    variant whose condition evaluates to true (or that has no condition) and then
+ *    executes its segments;
+ *  - register **entry** and **exit hooks** (`on_enter(...)`, `on_exit(...)`) that are
+ *    executed when the command is entered or left in the parsing scope hierarchy.
+ *
+ * Typical usage:
+ * @code
+ * reg.command("ELASTIC", [](Command& c) {
+ *     c.allow_if( parent_is("MATERIAL") );
+ *     c.on_enter([](const Keys& k) { ... }); // before segments
+ *     c.on_exit([](const Keys& k) { ... });  // after scope exits
+ *     c.variant( Variant::make()
+ *         .segment( Segment::make()
+ *             .range(LineRange{}.min(1).max(1))
+ *             .pattern(Pattern::make().fixed<double,1>().fixed<double,1>())
+ *             .bind([](double E, double nu) { ... })
+ *         )
+ *     );
+ * });
+ * @endcode
+ *
+ * Semantics:
+ *  - If no admission condition is set (`allow_if` never called), `admit_` defaults to
+ *    `Condition{}` which is the `Always` condition (i.e., admissible under any parent).
+ *  - Variants are checked in the order they were added; the first matching one is used.
+ *  - `on_enter` is executed before segments of the variant run.
+ *  - `on_exit` is executed when the command scope leaves (e.g. next command climbs up
+ *    the scope stack or at end-of-file if still active).
+ *
+ * @see variant.h
+ * @see condition.h
+ * @see keyword.h
+ * @date 14.10.2025
+ */
+
+#pragma once
+#include <functional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "active.h"
+#include "condition.h"
+#include "variant.h"
+#include "keyword.h"
+
+namespace fem {
+namespace io {
+namespace dsl {
+/**
+ * @class Command
+ * @brief Top-level specification for a registered DSL keyword.
+ */
+struct Command {
+    /** Command name as it appears in the input (normalized, e.g. `"ELASTIC"`). */
+    std::string name_;
+
+    /** Admission rule for this command; defaults to `Always`. */
+    Condition admit_ = Condition{};
+
+    /** Ordered list of variants; the engine picks the first matching one. */
+    std::vector<Variant> variants_;
+
+    /** Optional short description used by documentation printers. */
+    std::string doc_;
+
+    /** Stage-local execution mode. */
+    ActiveMode active_ = ActiveMode::Active;
+
+    /** Optional hook executed once when the command is entered (before segments run). */
+    std::function<void(const Keys&)> on_enter_;
+
+    /** Optional hook executed when the command's scope is exited. */
+    std::function<void(const Keys&)> on_exit_;
+
+    /** Optional keyword-argument specification for normalization and validation. */
+    KeywordSpec keyword_spec_;
+    bool has_keyword_spec_ = false;
+
+    /**
+     * @brief Constructs a command with the given name.
+     */
+    explicit Command(std::string n) : name_(std::move(n)) {}
+
+    /**
+     * @brief Sets the admission condition for this command.
+     *
+     * When set, the engine evaluates the condition against the current parent context
+     * and the command's own keys. If the condition returns false, the engine climbs
+     * the scope upwards until an ancestor admits the command or the scope is exhausted.
+     *
+     * @param c Condition tree to store by value (use helpers from `condition.h`).
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& allow_if(Condition c) {
+        admit_ = std::move(c);
+        return *this;
+    }
+
+    /**
+     * @brief Appends a variant definition to this command.
+     *
+     * Variants are evaluated in descending `rank()` order; ties keep the insertion
+     * sequence. The first variant in that ordering whose condition holds (or has no
+     * condition) is selected and executed.
+     *
+     * @param v Variant to add (moved in).
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& variant(Variant v) {
+        variants_.push_back(std::move(v));
+        return *this;
+    }
+
+    /**
+     * @brief Sets a human-readable description for this command (shown in help output).
+     * @param d Short description text.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& doc(std::string d) {
+        doc_ = std::move(d);
+        return *this;
+    }
+
+    /**
+     * @brief Sets whether this command executes, only consumes input, or is disabled.
+     */
+    Command& active(ActiveMode mode) {
+        active_ = mode;
+        return *this;
+    }
+
+    /**
+     * @brief Registers a hook invoked once per keyword before any variant segments.
+     *
+     * Typical use-cases: activate target sets, allocate per-command context, etc.
+     * The hook receives the keyword-line keys (parsed via `Keys::from_keyword_line`).
+     *
+     * @param fn Callback taking the command's keyword keys.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& on_enter(std::function<void(const Keys&)> fn) {
+        on_enter_ = std::move(fn);
+        return *this;
+    }
+
+    /**
+     * @brief Registers a hook invoked when the command's scope exits.
+     *
+     * This is useful for cleanup or finalization actions such as closing blocks
+     * (e.g. `END`), committing accumulated data, or restoring global state.
+     * The hook receives the same `Keys` that were passed to `on_enter`.
+     *
+     * Note: The engine must explicitly trigger `on_exit_` when a command's
+     * scope is popped from the scope stack (for example, when another command
+     * is encountered that is not admitted under the same parent).
+     *
+     * @param fn Callback taking the command's keyword keys.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& on_exit(std::function<void(const Keys&)> fn) {
+        on_exit_ = std::move(fn);
+        return *this;
+    }
+
+    /**
+     * @brief Declares the keyword argument specification for this command.
+     *
+     * The engine uses the specification to normalize aliases (e.g. `NAME` → `NSET`),
+     * inject defaults, and validate value domains before variants execute.
+     *
+     * @param spec Keyword argument specification (moved in).
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& keyword(KeywordSpec spec) {
+        keyword_spec_ = std::move(spec);
+        has_keyword_spec_ = true;
+        return *this;
+    }
+};
+} // namespace dsl
+} // namespace io
+} // namespace fem
