@@ -110,10 +110,29 @@ Precision QSPT::effective_density() {
 }
 
 Precision QSPT::effective_shear_modulus() {
+    const NodeCoords coords = this->node_coords_reference();
+    const Vec3       center = coords.colwise().mean().transpose();
+
+    const Vec3 e1 = (row_as_vec3(coords, 1) - row_as_vec3(coords, 0)).normalized();
+    const Vec3 e3 = e1.cross(row_as_vec3(coords, 3) - row_as_vec3(coords, 0)).normalized();
+    const Vec3 e2 = e3.cross(e1).normalized();
+
+    Mat3 shell_basis;
+    shell_basis.col(0) = e1;
+    shell_basis.col(1) = e2;
+    shell_basis.col(2) = e3;
+
     ShellGeneralizedStrain zero_strain;
     ShellStressResultants  zero_resultants;
     Mat8                   tangent;
-    this->get_section()->evaluate(zero_strain, false, zero_resultants, tangent);
+    this->get_section()->evaluate(
+        center,
+        shell_basis,
+        zero_strain,
+        false,
+        zero_resultants,
+        tangent
+    );
 
     const Precision thickness = this->get_section()->thickness_;
     const Precision g         = tangent(2, 2) / thickness;

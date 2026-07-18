@@ -616,6 +616,18 @@ Mat3 S4FRTMITC::reference_basis_global() const {
 }
 
 
+Vec3 S4FRTMITC::reference_position(Precision r, Precision s) const {
+    const StaticVector<4> N = shape_function(r, s);
+    const auto&           X = reference_data().X;
+
+    Vec3 position = Vec3::Zero();
+    for (Index i = 0; i < num_nodes; ++i) {
+        position += N(i) * X.row(i).transpose();
+    }
+    return position;
+}
+
+
 void S4FRTMITC::shape_gradients_physical(const StaticMatrix<4, 2>& dN_rs,
                               StaticVector<4>&          dN_da,
                               StaticVector<4>&          dN_db,
@@ -871,8 +883,9 @@ EvaluationData S4FRTMITC::init_evaluation(
     data.H               = resultant_stiffness();
     data.drill_k         = drill_stiffness_per_node(data.H);
 
-    for (auto& tangent : data.ip_tangent) {
-        tangent = data.H;
+    const auto& ref = reference_data();
+    for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
+        data.ip_tangent[ip] = resultant_stiffness(ref.r(ip), ref.s(ip));
     }
 
     if (with_B || with_G) {
@@ -886,8 +899,6 @@ EvaluationData S4FRTMITC::init_evaluation(
     }
 
     if (with_strain) {
-        const auto& ref = reference_data();
-
         for (Index tying = 0; tying < ReferenceData::num_tying_points; ++tying) {
             evaluate_tying_point(data, tying, ref, ReferenceData::tying_start + tying);
         }
@@ -921,6 +932,15 @@ void S4FRTMITC::compute_raw_strain(
     Mat8x24*              B,
     Vec24Mat*             G
 ) const {
+    using StrainComponent = ShellGeneralizedStrain::Component;
+
+    constexpr Index epsilon_xx = static_cast<Index>(StrainComponent::EpsilonXX);
+    constexpr Index epsilon_yy = static_cast<Index>(StrainComponent::EpsilonYY);
+    constexpr Index gamma_xy   = static_cast<Index>(StrainComponent::GammaXY);
+    constexpr Index kappa_xx   = static_cast<Index>(StrainComponent::KappaXX);
+    constexpr Index kappa_yy   = static_cast<Index>(StrainComponent::KappaYY);
+    constexpr Index kappa_xy   = static_cast<Index>(StrainComponent::KappaXY);
+
     strain.setZero();
     if (B) {
         B->setZero();
@@ -953,49 +973,37 @@ void S4FRTMITC::compute_raw_strain(
             d_b += dN_db(i) * data.d_nodes[i].value;
         }
 
-        strain(0) = Precision(0.5) * x_a.dot(x_a)
-                  - Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
-        strain(1) = Precision(0.5) * x_b.dot(x_b)
-                  - Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
-        strain(2) = x_a.dot(x_b)
-                  - ref.X_a[ref_id].dot(ref.X_b[ref_id]);
-        strain(3) = x_a.dot(d_a)
-                  - ref.X_a[ref_id].dot(ref.D_a[ref_id]);
-        strain(4) = x_b.dot(d_b)
-                  - ref.X_b[ref_id].dot(ref.D_b[ref_id]);
-        strain(5) = x_a.dot(d_b) + x_b.dot(d_a)
-                  - ref.X_a[ref_id].dot(ref.D_b[ref_id])
-                  - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
-        // we dont need these since mitc overwrites them anyway
-        // strain(6) = x_a.dot(d)
-        //           - ref.X_a[ref_id].dot(ref.D[ref_id]);
-        // strain(7) = x_b.dot(d)
-        //           - ref.X_b[ref_id].dot(ref.D[ref_id]);
+        strain(epsilon_xx) = Precision(0.5) * x_a.dot(x_a)
+                           - Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
+        strain(epsilon_yy) = Precision(0.5) * x_b.dot(x_b)
+                           - Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
+        strain(gamma_xy)   = x_a.dot(x_b)
+                           - ref.X_a[ref_id].dot(ref.X_b[ref_id]);
+        strain(kappa_xx)   = x_a.dot(d_a)
+                           - ref.X_a[ref_id].dot(ref.D_a[ref_id]);
+        strain(kappa_yy)   = x_b.dot(d_b)
+                           - ref.X_b[ref_id].dot(ref.D_b[ref_id]);
+        strain(kappa_xy)   = x_a.dot(d_b) + x_b.dot(d_a)
+                           - ref.X_a[ref_id].dot(ref.D_b[ref_id])
+                           - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
         return;
     }
 
     if (with_G) {
-        add_xx_derivatives(data.x_nodes, dN_da, dN_da, Precision(0.5), 0, strain, B, G);
-        add_xx_derivatives(data.x_nodes, dN_db, dN_db, Precision(0.5), 1, strain, B, G);
-        add_xx_derivatives(data.x_nodes, dN_da, dN_db, Precision(1),   2, strain, B, G);
-        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, dN_da, Precision(1), 3, strain, B, G);
-        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, dN_db, Precision(1), 4, strain, B, G);
-        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, dN_db, Precision(1), 5, strain, B, G);
-        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, dN_da, Precision(1), 5, strain, B, G);
-        // we dont need these since mitc overwrites them anyway
-        // add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, N,     Precision(1), 6, strain, B, G);
-        // add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, N,     Precision(1), 7, strain, B, G);
-
-        strain(0) -= Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
-        strain(1) -= Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
-        strain(2) -= ref.X_a[ref_id].dot(ref.X_b[ref_id]);
-        strain(3) -= ref.X_a[ref_id].dot(ref.D_a[ref_id]);
-        strain(4) -= ref.X_b[ref_id].dot(ref.D_b[ref_id]);
-        strain(5) -= ref.X_a[ref_id].dot(ref.D_b[ref_id])
-                   + ref.X_b[ref_id].dot(ref.D_a[ref_id]);
-        // we dont need these since mitc overwrites them anyway
-        // strain(6) -= ref.X_a[ref_id].dot(ref.D[ref_id]);
-        // strain(7) -= ref.X_b[ref_id].dot(ref.D[ref_id]);
+        add_xx_derivatives(data.x_nodes, dN_da, dN_da, Precision(0.5), epsilon_xx, strain, B, G);
+        add_xx_derivatives(data.x_nodes, dN_db, dN_db, Precision(0.5), epsilon_yy, strain, B, G);
+        add_xx_derivatives(data.x_nodes, dN_da, dN_db, Precision(1),   gamma_xy,   strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, dN_da, Precision(1), kappa_xx, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, dN_db, Precision(1), kappa_yy, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_da, dN_db, Precision(1), kappa_xy, strain, B, G);
+        add_xd_derivatives(data.x_nodes, data.d_nodes, dN_db, dN_da, Precision(1), kappa_xy, strain, B, G);
+        strain(epsilon_xx) -= Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
+        strain(epsilon_yy) -= Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
+        strain(gamma_xy)   -= ref.X_a[ref_id].dot(ref.X_b[ref_id]);
+        strain(kappa_xx)   -= ref.X_a[ref_id].dot(ref.D_a[ref_id]);
+        strain(kappa_yy)   -= ref.X_b[ref_id].dot(ref.D_b[ref_id]);
+        strain(kappa_xy)   -= ref.X_a[ref_id].dot(ref.D_b[ref_id])
+                            + ref.X_b[ref_id].dot(ref.D_a[ref_id]);
         return;
     }
 
@@ -1006,34 +1014,31 @@ void S4FRTMITC::compute_raw_strain(
 
     std::array<ScalarDerivatives, num_strains> items;
 
-    items[0] = scaled(dot_value_B(x_a, x_a), Precision(0.5));
-    items[1] = scaled(dot_value_B(x_b, x_b), Precision(0.5));
-    items[2] = dot_value_B(x_a, x_b);
-    items[3] = dot_value_B(x_a, d_a);
-    items[4] = dot_value_B(x_b, d_b);
+    items[epsilon_xx] = scaled(dot_value_B(x_a, x_a), Precision(0.5));
+    items[epsilon_yy] = scaled(dot_value_B(x_b, x_b), Precision(0.5));
+    items[gamma_xy]   = dot_value_B(x_a, x_b);
+    items[kappa_xx]   = dot_value_B(x_a, d_a);
+    items[kappa_yy]   = dot_value_B(x_b, d_b);
 
     const ScalarDerivatives xa_db = dot_value_B(x_a, d_b);
     const ScalarDerivatives xb_da = dot_value_B(x_b, d_a);
 
-    items[5].value = xa_db.value + xb_da.value;
-    items[5].d1    = xa_db.d1    + xb_da.d1;
+    items[kappa_xy].value = xa_db.value + xb_da.value;
+    items[kappa_xy].d1    = xa_db.d1    + xb_da.d1;
 
-    // we dont need these since mitc overwrites them anyway
-    // items[6] = dot_value_B(x_a, d);
-    // items[7] = dot_value_B(x_b, d);
-
-    strain(0) = items[0].value - Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
-    strain(1) = items[1].value - Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
-    strain(2) = items[2].value - ref.X_a[ref_id].dot(ref.X_b[ref_id]);
-    strain(3) = items[3].value - ref.X_a[ref_id].dot(ref.D_a[ref_id]);
-    strain(4) = items[4].value - ref.X_b[ref_id].dot(ref.D_b[ref_id]);
-    strain(5) = items[5].value
-              - ref.X_a[ref_id].dot(ref.D_b[ref_id])
-              - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
-    // we dont need these since mitc overwrites them anyway
-    // strain(6) = items[6].value - ref.X_a[ref_id].dot(ref.D[ref_id]);
-    // strain(7) = items[7].value - ref.X_b[ref_id].dot(ref.D[ref_id]);
-
+    strain(epsilon_xx) = items[epsilon_xx].value
+                       - Precision(0.5) * ref.X_a[ref_id].dot(ref.X_a[ref_id]);
+    strain(epsilon_yy) = items[epsilon_yy].value
+                       - Precision(0.5) * ref.X_b[ref_id].dot(ref.X_b[ref_id]);
+    strain(gamma_xy)   = items[gamma_xy].value
+                       - ref.X_a[ref_id].dot(ref.X_b[ref_id]);
+    strain(kappa_xx)   = items[kappa_xx].value
+                       - ref.X_a[ref_id].dot(ref.D_a[ref_id]);
+    strain(kappa_yy)   = items[kappa_yy].value
+                       - ref.X_b[ref_id].dot(ref.D_b[ref_id]);
+    strain(kappa_xy)   = items[kappa_xy].value
+                       - ref.X_a[ref_id].dot(ref.D_b[ref_id])
+                       - ref.X_b[ref_id].dot(ref.D_a[ref_id]);
     if (B) {
         for (Index a = 0; a < num_strains; ++a) {
             B->row(a) = items[a].d1.transpose();
@@ -1222,6 +1227,9 @@ void S4FRTMITC::evaluate_integration_point(
     const ReferenceData& ref,
     Index                ref_id
 ) const {
+    constexpr Index gamma_xz = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
+    constexpr Index gamma_yz = static_cast<Index>(ShellGeneralizedStrain::Component::GammaYZ);
+
     data.ip_weight[ip] = ref.w(ref_id) * ref.detJ(ref_id);
 
     compute_raw_strain(
@@ -1246,17 +1254,17 @@ void S4FRTMITC::evaluate_integration_point(
         data.with_G ? &G_shear : nullptr
     );
 
-    data.ip_strain[ip](6) = shear(0);
-    data.ip_strain[ip](7) = shear(1);
+    data.ip_strain[ip](gamma_xz) = shear(0);
+    data.ip_strain[ip](gamma_yz) = shear(1);
 
     if (data.with_B) {
-        data.ip_B[ip].row(6) = B_shear.row(0);
-        data.ip_B[ip].row(7) = B_shear.row(1);
+        data.ip_B[ip].row(gamma_xz) = B_shear.row(0);
+        data.ip_B[ip].row(gamma_yz) = B_shear.row(1);
     }
 
     if (data.with_G) {
-        data.ip_G[ip][6] = G_shear[0];
-        data.ip_G[ip][7] = G_shear[1];
+        data.ip_G[ip][gamma_xz] = G_shear[0];
+        data.ip_G[ip][gamma_yz] = G_shear[1];
     }
 }
 
@@ -1293,7 +1301,7 @@ void S4FRTMITC::compute_eas_data(EvaluationData& data) const {
         const auto& ref = reference_data();
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
             const auto M   = eas_matrix(ref.r(ip), ref.s(ip));
-            const auto MTH = M.transpose() * data.H;
+            const auto MTH = M.transpose() * data.ip_tangent[ip];
             const auto fac = data.ip_weight[ip];
 
             data.eas_Kaa += fac * (MTH * M);
@@ -1319,6 +1327,7 @@ void S4FRTMITC::compute_material_resultants(EvaluationData& data) const {
 
     ShellSection*   section    = shell_section();
     const Precision topo_scale = topology_stiffness_scale();
+    const Mat3      shell_basis = reference_basis_global();
 
     const auto& ref = reference_data();
     for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
@@ -1334,7 +1343,14 @@ void S4FRTMITC::compute_material_resultants(EvaluationData& data) const {
         ShellStressResultants  resultants;
         Mat8                   tangent;
 
-        section->evaluate(strain, true, resultants, tangent);
+        section->evaluate(
+            reference_position(ref.r(ip), ref.s(ip)),
+            shell_basis,
+            strain,
+            true,
+            resultants,
+            tangent
+        );
 
         data.ip_resultants[ip] = topo_scale * resultants.values();
         data.ip_tangent[ip]    = topo_scale * tangent;
@@ -1422,13 +1438,20 @@ Precision S4FRTMITC::topology_stiffness_scale() const {
 }
 
 
-Mat8 S4FRTMITC::resultant_stiffness() const {
+Mat8 S4FRTMITC::resultant_stiffness(Precision r, Precision s) const {
     ShellSection* section = shell_section();
 
     ShellGeneralizedStrain zero_strain;
     ShellStressResultants  zero_resultants;
     Mat8                   H;
-    section->evaluate(zero_strain, false, zero_resultants, H);
+    section->evaluate(
+        reference_position(r, s),
+        reference_basis_global(),
+        zero_strain,
+        false,
+        zero_resultants,
+        H
+    );
 
     return topology_stiffness_scale() * H;
 }
@@ -1454,24 +1477,6 @@ StaticMatrix<S4FRTMITC::num_strains, S4FRTMITC::eas_parameters> S4FRTMITC::eas_m
 }
 
 
-StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha(
-    const CurrentState& state,
-    const Mat8&         H
-) const {
-    (void) H;
-
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        false,
-        false,
-        false,
-        true
-    );
-    return data.eas_alpha;
-}
-
-
 StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha_linear(
     const EvaluationData& data,
     const Vec24&          q
@@ -1492,7 +1497,7 @@ StaticVector<S4FRTMITC::eas_parameters> S4FRTMITC::compute_eas_alpha_linear(
         const auto& ref = reference_data();
         for (Index ip = 0; ip < integration_scheme_.count(); ++ip) {
             const auto M   = eas_matrix(ref.r(ip), ref.s(ip));
-            const auto MTH = M.transpose() * data.H;
+            const auto MTH = M.transpose() * data.ip_tangent[ip];
             const Vec8 eps = data.ip_B[ip] * q;
             const auto fac = data.ip_weight[ip];
 
@@ -1514,6 +1519,9 @@ Vec8 S4FRTMITC::generalized_strain_at(
     Precision                           s,
     bool                                nonlinear
 ) const {
+    constexpr Index gamma_xz = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
+    constexpr Index gamma_yz = static_cast<Index>(ShellGeneralizedStrain::Component::GammaYZ);
+
     auto make_output_ref = [&]() {
         ReferenceData out = reference_data();
         init_ref_point_data(out, 0, r, s, Precision(0));
@@ -1530,8 +1538,8 @@ Vec8 S4FRTMITC::generalized_strain_at(
         Vec2 shear;
         compute_raw_strain(data, output_ref, ref_id, eps);
         compute_mitc4_shear(data, output_ref, ref_id, shear);
-        eps(6) = shear(0);
-        eps(7) = shear(1);
+        eps(gamma_xz) = shear(0);
+        eps(gamma_yz) = shear(1);
 
         if constexpr (eas_parameters > 0) {
             eps += eas_matrix(r, s) * alpha;
@@ -1550,8 +1558,8 @@ Vec8 S4FRTMITC::generalized_strain_at(
     compute_raw_strain(data, output_ref, ref_id, dummy, &B);
     compute_mitc4_shear(data, output_ref, ref_id, shear, &B_shear);
 
-    B.row(6) = B_shear.row(0);
-    B.row(7) = B_shear.row(1);
+    B.row(gamma_xz) = B_shear.row(0);
+    B.row(gamma_yz) = B_shear.row(1);
 
     Vec8 eps = B * q;
 
@@ -1582,12 +1590,19 @@ Vec8 S4FRTMITC::generalized_resultant_at(
         ShellStressResultants  resultants;
         Mat8                   tangent;
 
-        shell_section()->evaluate(strain, true, resultants, tangent);
+        shell_section()->evaluate(
+            reference_position(r, s),
+            reference_basis_global(),
+            strain,
+            true,
+            resultants,
+            tangent
+        );
 
         return topology_stiffness_scale() * resultants.values();
     }
 
-    return data.H * eps;
+    return resultant_stiffness(r, s) * eps;
 }
 
 
@@ -1713,45 +1728,50 @@ void S4FRTMITC::physical_stress_strain_at(
     const Precision h = this->get_section()->thickness_;
     const Precision z = Precision(0.5) * h * zeta;
 
+    const Index membrane_strain_start = static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
+    const Index curvature_start       = static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX);
+    const Index shear_strain_start    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
+    const Index membrane_stress_start = static_cast<Index>(ShellStressResultants::Component::NXX);
+    const Index moment_start          = static_cast<Index>(ShellStressResultants::Component::MXX);
+    const Index shear_stress_start    = static_cast<Index>(ShellStressResultants::Component::QX);
+
     const Vec3 plane_strain =
-        generalized_strain.template segment<3>(0)
-        + z * generalized_strain.template segment<3>(3);
+        generalized_strain.template segment<3>(membrane_strain_start)
+        + z * generalized_strain.template segment<3>(curvature_start);
 
     const Vec3 plane_stress =
-        resultants.template segment<3>(0) / h
+        resultants.template segment<3>(membrane_stress_start) / h
         + z * (Precision(12) / (h * h * h))
-        * resultants.template segment<3>(3);
+        * resultants.template segment<3>(moment_start);
 
-    const Vec2 shear_strain = generalized_strain.template segment<2>(6);
-    const Vec2 shear_stress = resultants.template segment<2>(6) / h;
+    const Vec2 shear_strain = generalized_strain.template segment<2>(shear_strain_start);
+    const Vec2 shear_stress = resultants.template segment<2>(shear_stress_start) / h;
 
-    Vec6 strain_local = Vec6::Zero();
-    Vec6 stress_local = Vec6::Zero();
+    VolumeStrainGreenLagrange strain_local;
+    VolumeStressPK2           stress_local;
 
-    // Solver Voigt ordering:
-    // [11, 22, 33, 23, 13, 12].
-    strain_local(0) = plane_strain(0);
-    strain_local(1) = plane_strain(1);
-    strain_local(3) = shear_strain(1);
-    strain_local(4) = shear_strain(0);
-    strain_local(5) = plane_strain(2);
+    strain_local[VolumeStrain::Component::XX]      = plane_strain(0);
+    strain_local[VolumeStrain::Component::YY]      = plane_strain(1);
+    strain_local[VolumeStrain::Component::GammaYZ] = shear_strain(1);
+    strain_local[VolumeStrain::Component::GammaXZ] = shear_strain(0);
+    strain_local[VolumeStrain::Component::GammaXY] = plane_strain(2);
 
-    stress_local(0) = plane_stress(0);
-    stress_local(1) = plane_stress(1);
-    stress_local(3) = shear_stress(1);
-    stress_local(4) = shear_stress(0);
-    stress_local(5) = plane_stress(2);
+    stress_local[VolumeStress::Component::XX] = plane_stress(0);
+    stress_local[VolumeStress::Component::YY] = plane_stress(1);
+    stress_local[VolumeStress::Component::YZ] = shear_stress(1);
+    stress_local[VolumeStress::Component::XZ] = shear_stress(0);
+    stress_local[VolumeStress::Component::XY] = plane_stress(2);
 
     const Mat3 reference_basis_matrix = reference_basis_global();
 
     const Mat3 green_lagrange_global =
         reference_basis_matrix
-        * VolumeStrainGreenLagrange(strain_local).tensor()
+        * strain_local.tensor()
         * reference_basis_matrix.transpose();
 
     const Mat3 second_pk_global =
         reference_basis_matrix
-        * VolumeStressPK2(stress_local).tensor()
+        * stress_local.tensor()
         * reference_basis_matrix.transpose();
 
     strain_out = VolumeStrainGreenLagrange(green_lagrange_global).voigt();
@@ -2077,7 +2097,7 @@ void S4FRTMITC::compute_stress_state(
             eps += eas_matrix(ref.r(ip), ref.s(ip)) * alpha;
         }
 
-        const Vec8  values = data.H * eps;
+        const Vec8  values = data.ip_tangent[ip] * eps;
         const Index row    = static_cast<Index>(offset) + ip;
 
         for (Index component = 0; component < stress_state.components; ++component) {

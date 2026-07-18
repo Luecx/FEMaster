@@ -41,10 +41,6 @@ struct DefaultShellElement : public ShellElement<N> {
 
     ~DefaultShellElement() override = default;
 
-    Mat3 global_basis() const {
-        return Mat3::Identity();
-    }
-
     Axes get_xyz_axes() {
         NodeCoords node_coords = this->node_coords_global();
 
@@ -97,9 +93,9 @@ struct DefaultShellElement : public ShellElement<N> {
         return xy_coords;
     }
 
-    Vec3 global_point(Precision r, Precision s) {
+    Vec3 reference_point(Precision r, Precision s) {
         ShapeFunction H           = this->shape_function(r, s);
-        NodeCoords    node_coords = this->node_coords_global();
+        NodeCoords    node_coords = this->node_coords_reference();
 
         Vec3 point = Vec3::Zero();
 
@@ -108,113 +104,6 @@ struct DefaultShellElement : public ShellElement<N> {
         }
 
         return point;
-    }
-
-    Mat3 element_basis_global(Mat3& axes) {
-        Mat3 basis;
-
-        basis.col(0) = axes.row(0).transpose();
-        basis.col(1) = axes.row(1).transpose();
-        basis.col(2) = axes.row(2).transpose();
-
-        return basis;
-    }
-
-    Mat3 section_basis_global(Precision r, Precision s, Mat3& axes) {
-        auto section = this->get_section();
-
-        if (!section->orientation_) {
-            return element_basis_global(axes);
-        }
-
-        const Vec3 point_global     = global_point(r, s);
-        const Vec3 point_local      = section->orientation_->to_local(point_global);
-        const Mat3 orientation_axes = section->orientation_->get_axes(point_local);
-
-        const Vec3 normal = axes.row(2).transpose().normalized();
-
-        Vec3 n1 = orientation_axes.col(2);
-        n1 -= normal * n1.dot(normal);
-
-        if (n1.squaredNorm() < Precision(1e-24)) {
-            n1 = axes.row(0).transpose();
-        }
-
-        n1.normalize();
-
-        Vec3 n2 = normal.cross(n1).normalized();
-
-        Mat3 basis;
-        basis.col(0) = n1;
-        basis.col(1) = n2;
-        basis.col(2) = normal;
-
-        return basis;
-    }
-
-    Mat2 section_to_element_2d(Precision r, Precision s, Mat3& axes) {
-        const Mat3 section_basis = section_basis_global(r, s, axes);
-
-        const Vec3 ex = axes.row(0).transpose();
-        const Vec3 ey = axes.row(1).transpose();
-
-        Mat2 A;
-
-        A(0, 0) = ex.dot(section_basis.col(0));
-        A(1, 0) = ey.dot(section_basis.col(0));
-        A(0, 1) = ex.dot(section_basis.col(1));
-        A(1, 1) = ey.dot(section_basis.col(1));
-
-        return A;
-    }
-
-    StaticMatrix<3, 3> plane_strain_transform(const Mat2& section_to_element) {
-        const Precision a1 = section_to_element(0, 0);
-        const Precision a2 = section_to_element(1, 0);
-        const Precision b1 = section_to_element(0, 1);
-        const Precision b2 = section_to_element(1, 1);
-
-        StaticMatrix<3, 3> T;
-
-        T << a1 * a1,     a2 * a2,     a1 * a2,
-             b1 * b1,     b2 * b2,     b1 * b2,
-             2 * a1 * b1, 2 * a2 * b2, a1 * b2 + a2 * b1;
-
-        return T;
-    }
-
-    Mat2 shear_strain_transform(const Mat2& section_to_element) {
-        return section_to_element.transpose();
-    }
-
-    StaticMatrix<3, 3> transform_plane_stiffness_to_element(
-        const StaticMatrix<3, 3>& section_stiffness,
-        const Mat2&              section_to_element
-    ) {
-        const auto T = plane_strain_transform(section_to_element);
-        return T.transpose() * section_stiffness * T;
-    }
-
-    Mat2 transform_shear_stiffness_to_element(
-        const Mat2& section_stiffness,
-        const Mat2& section_to_element
-    ) {
-        const auto T = shear_strain_transform(section_to_element);
-        return T.transpose() * section_stiffness * T;
-    }
-
-    StaticMatrix<6, 6> transform_abd_stiffness_to_element(
-        const StaticMatrix<6, 6>& section_abd,
-        const Mat2&              section_to_element
-    ) {
-        const auto T_plane = plane_strain_transform(section_to_element);
-
-        StaticMatrix<6, 6> T = StaticMatrix<6, 6>::Zero();
-
-        T.template block<3, 3>(0, 0) = T_plane;
-        T.template block<3, 3>(3, 3) = T_plane;
-
-        return T.transpose() * section_abd * T;
     }
 
     ShapeFunction shape_function(Precision r, Precision s) {
@@ -498,16 +387,8 @@ struct DefaultShellElement : public ShellElement<N> {
 
     StaticMatrix<6 * N, 6 * N> stiffness_abd_shear(LocalCoords& xy_coords) {
         auto section = this->get_section();
-
-        ShellGeneralizedStrain zero_strain;
-        ShellStressResultants  zero_resultants;
-        Mat8                   material_tangent;
-        section->evaluate(zero_strain, false, zero_resultants, material_tangent);
-
-        Mat6 mat_abd_section   = material_tangent.template block<6, 6>(0, 0);
-        Mat2 mat_shear_section = material_tangent.template block<2, 2>(6, 6);
-
-        Mat3 axes = get_xyz_axes();
+        Mat3 axes        = get_xyz_axes();
+        Mat3 shell_basis = axes.transpose();
 
         Precision topo_scale = Precision(1);
 
@@ -522,11 +403,8 @@ struct DefaultShellElement : public ShellElement<N> {
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
 
-        mat_abd_section   *= topo_scale;
-        mat_shear_section *= topo_scale;
-
         std::function<StaticMatrix<5 * N, 5 * N>(Precision, Precision, Precision)> func_abd =
-            [this, &mat_abd_section, &xy_coords, &axes](
+            [this, section, topo_scale, &xy_coords, &shell_basis](
                 Precision r,
                 Precision s,
                 Precision /*t*/
@@ -538,8 +416,19 @@ struct DefaultShellElement : public ShellElement<N> {
                 auto Bm = this->strain_disp_membrane(shape_der, jac);
                 auto Bb = this->strain_disp_bending(shape_der, jac);
 
-                const Mat2 A = this->section_to_element_2d(r, s, axes);
-                auto       E = this->transform_abd_stiffness_to_element(mat_abd_section, A);
+                ShellGeneralizedStrain zero_strain;
+                ShellStressResultants  zero_resultants;
+                Mat8                   tangent;
+                section->evaluate(
+                    this->reference_point(r, s),
+                    shell_basis,
+                    zero_strain,
+                    false,
+                    zero_resultants,
+                    tangent
+                );
+
+                const Mat6 E = topo_scale * tangent.template block<6, 6>(0, 0);
 
                 StaticMatrix<6, 5 * N> B;
                 B.setZero();
@@ -551,7 +440,7 @@ struct DefaultShellElement : public ShellElement<N> {
             };
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
-            [this, &mat_shear_section, &xy_coords, &axes](
+            [this, section, topo_scale, &xy_coords, &shell_basis](
                 Precision r,
                 Precision s,
                 Precision /*t*/
@@ -562,8 +451,19 @@ struct DefaultShellElement : public ShellElement<N> {
                 Jacobian        J    = this->jacobian(dH, xy_coords);
                 Precision       detJ = J.determinant();
 
-                const Mat2 A = this->section_to_element_2d(r, s, axes);
-                auto       E = this->transform_shear_stiffness_to_element(mat_shear_section, A);
+                ShellGeneralizedStrain zero_strain;
+                ShellStressResultants  zero_resultants;
+                Mat8                   tangent;
+                section->evaluate(
+                    this->reference_point(r, s),
+                    shell_basis,
+                    zero_strain,
+                    false,
+                    zero_resultants,
+                    tangent
+                );
+
+                const Mat2 E = topo_scale * tangent.template block<2, 2>(6, 6);
 
                 return Bs.transpose() * (E * Bs) * detJ;
             };
@@ -583,13 +483,7 @@ struct DefaultShellElement : public ShellElement<N> {
         StaticMatrix<6 * N, 6 * N> res;
         res.setZero();
 
-        int abd_dof_map[] {
-            0,
-            1,
-            2,
-            3,
-            4,
-        };
+        int abd_dof_map[] { 0, 1, 2, 3, 4,};
 
         for (Index i = 0; i < 5 * N; i++) {
             for (Index j = 0; j < 5 * N; j++) {
@@ -605,11 +499,7 @@ struct DefaultShellElement : public ShellElement<N> {
             }
         }
 
-        int shear_dof_map[] {
-            2,
-            3,
-            4,
-        };
+        int shear_dof_map[] {2,3,4};
 
         for (Index i = 0; i < 3 * N; i++) {
             for (Index j = 0; j < 3 * N; j++) {
@@ -835,21 +725,33 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     virtual VolumeStressCauchy compute_stress_at(Field& displacement, Vec3& xyz) {
+        // local coordinates extracted
         const Precision r = xyz(0);
         const Precision s = xyz(1);
         const Precision t = xyz(2);
 
-        Vec6 res_element = Vec6::Zero();
+        // axes of the current element
+        Mat3            axes        = get_xyz_axes();
+        Mat3            shell_basis = axes.transpose();
+        LocalCoords     xy_coords   = get_xy_coords(axes);
+        ShapeDerivative shape_der   = this->shape_derivative(r, s);
+        Jacobian        jac         = this->jacobian(shape_der, xy_coords);
 
+        // extract thickness
+        const Precision h = this->get_section()->thickness_;
+
+        // predeclare the volume stress cauchy which we compute later for the given point
+        VolumeStressCauchy stress_element;
+
+        // for ever node, we need to store the in-plane dispalacement (u,v), bending components (w,phi1, phi2) and the
+        // shear components (w,phi1,phi2)
         StaticVector<2 * N> disp_membrane;
         StaticVector<3 * N> disp_bending;
         StaticVector<3 * N> disp_shear;
 
         disp_membrane.setZero();
-        disp_bending.setZero();
-        disp_shear.setZero();
-
-        Mat3 axes = get_xyz_axes();
+        disp_bending .setZero();
+        disp_shear   .setZero();
 
         for (Index i = 0; i < N; i++) {
             ID node_id = this->nodes()[i];
@@ -861,76 +763,62 @@ struct DefaultShellElement : public ShellElement<N> {
             disp_xyz = axes * disp_xyz;
             disp_rot = axes * disp_rot;
 
+            // membrane part
             disp_membrane(2 * i)     = disp_xyz(0);
             disp_membrane(2 * i + 1) = disp_xyz(1);
 
+            // bending dofs
             disp_bending(3 * i)      = disp_xyz(2);
             disp_bending(3 * i + 1)  = disp_rot(0);
             disp_bending(3 * i + 2)  = disp_rot(1);
 
+            // shear dofs
             disp_shear(3 * i)        = disp_xyz(2);
             disp_shear(3 * i + 1)    = disp_rot(0);
             disp_shear(3 * i + 2)    = disp_rot(1);
         }
 
-        const Precision h = this->get_section()->thickness_;
-
-        ShellGeneralizedStrain zero_strain;
-        ShellStressResultants  zero_resultants;
-        Mat8                   material_tangent;
-        this->get_section()->evaluate(zero_strain, false, zero_resultants, material_tangent);
-
-        Mat6 abd_section       = material_tangent.template block<6, 6>(0, 0);
-        Mat2 shear_section_mat = material_tangent.template block<2, 2>(6, 6);
-
+        // in case of topology optimization, this elements stiffness may be scaled
         Precision topo_scale = Precision(1);
-
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
             auto scale_field = this->_model_data->element_stiffness_scale;
-
-            logging::error(
-                scale_field->components == 1,
-                "Field '", scale_field->name, "': element stiffness scale requires 1 component"
-            );
-
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
 
-        abd_section       *= topo_scale;
-        shear_section_mat *= topo_scale;
-
-        LocalCoords     xy_coords  = get_xy_coords(axes);
-        ShapeDerivative shape_der  = this->shape_derivative(r, s);
-        Jacobian        jac        = this->jacobian(shape_der, xy_coords);
-
+        // get the B matrices for membrane, bending and shear
         auto B_membrane = this->strain_disp_membrane(shape_der, jac);
         auto B_bending  = this->strain_disp_bending(shape_der, jac);
         auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
 
-        const Mat2 A       = this->section_to_element_2d(r, s, axes);
-        const auto T_plane = this->plane_strain_transform(A);
-        const auto T_shear = this->shear_strain_transform(A);
-
+        // compute the actual generalised strain values
         Vec3 eps_element   = B_membrane * disp_membrane;
         Vec3 kappa_element = B_bending  * disp_bending;
         Vec2 gamma_element = B_shear    * disp_shear;
 
-        Vec3 eps_section   = T_plane * eps_element;
-        Vec3 kappa_section = T_plane * kappa_element;
-        Vec2 gamma_section = T_shear * gamma_element;
+        // store them inside a ShellGeneralizedStrain object
+        constexpr Index membrane_start =
+            static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
+        constexpr Index curvature_start =
+            static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX);
+        constexpr Index shear_start =
+            static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
 
-        Vec6 generalized_strain_section;
-        generalized_strain_section << eps_section, kappa_section;
+        ShellGeneralizedStrain generalized_strain;
+        generalized_strain.values().template segment<3>(membrane_start)  = eps_element;
+        generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
+        generalized_strain.values().template segment<2>(shear_start)     = gamma_element;
 
-        Vec6 generalized_resultant_section = abd_section * generalized_strain_section;
+        // get the results and tangent (unused here)
+        ShellStressResultants  generalized_resultants;
+        Mat8                   tangent;
+        // compute the generalized results in linear theory
+        this->get_section()->evaluate(
+            reference_point(r, s), shell_basis, generalized_strain, false, generalized_resultants, tangent
+        );
 
-        Vec3 membrane_force_section = generalized_resultant_section.template segment<3>(0);
-        Vec3 bending_moment_section = generalized_resultant_section.template segment<3>(3);
-        Vec2 shear_stress_section   = (shear_section_mat / h) * gamma_section;
-
-        Vec3 membrane_force_element = T_plane.transpose() * membrane_force_section;
-        Vec3 bending_moment_element = T_plane.transpose() * bending_moment_section;
-        Vec2 shear_stress_element   = T_shear.transpose()  * shear_stress_section;
+        const Vec3 membrane_force_element = topo_scale * generalized_resultants.membrane();
+        const Vec3 bending_moment_element = topo_scale * generalized_resultants.moments();
+        const Vec2 shear_stress_element   = topo_scale * generalized_resultants.transverse_shear() / h;
 
         const Precision z = t * h / Precision(2);
 
@@ -938,46 +826,29 @@ struct DefaultShellElement : public ShellElement<N> {
             membrane_force_element / h
             + z * (Precision(12) / (h * h * h)) * bending_moment_element;
 
-        res_element(0) = stress_plane_element(0);
-        res_element(1) = stress_plane_element(1);
-        res_element(2) = Precision(0);
-        res_element(3) = shear_stress_element(1);
-        res_element(4) = shear_stress_element(0);
-        res_element(5) = stress_plane_element(2);
+        stress_element[VolumeStress::Component::XX] = stress_plane_element(0);
+        stress_element[VolumeStress::Component::YY] = stress_plane_element(1);
+        stress_element[VolumeStress::Component::ZZ] = Precision(0);
+        stress_element[VolumeStress::Component::YZ] = shear_stress_element(1);
+        stress_element[VolumeStress::Component::XZ] = shear_stress_element(0);
+        stress_element[VolumeStress::Component::XY] = stress_plane_element(2);
 
-        const Mat3 element_basis = this->element_basis_global(axes);
-
-        return VolumeStressCauchy(res_element).transformed(element_basis, this->global_basis());
+        return stress_element.transformed(shell_basis, Mat3::Identity());
     }
 
     bool compute_shell_section_forces(Field& resultants,
                                       Field& contribution_count,
                                       const Field& displacement) override {
-        Mat3 axes = get_xyz_axes();
+        // get local axes
+        Mat3 axes        = get_xyz_axes();
+        Mat3 shell_basis = axes.transpose();
 
         Precision topo_scale = Precision(1);
 
         if (this->_model_data && this->_model_data->element_stiffness_scale) {
             auto scale_field = this->_model_data->element_stiffness_scale;
-
-            logging::error(
-                scale_field->components == 1,
-                "Field '", scale_field->name, "': element stiffness scale requires 1 component"
-            );
-
-            topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
+            topo_scale       = (*scale_field)(static_cast<Index>(this->elem_id));
         }
-
-        ShellGeneralizedStrain zero_strain;
-        ShellStressResultants  zero_resultants;
-        Mat8                   material_tangent;
-        this->get_section()->evaluate(zero_strain, false, zero_resultants, material_tangent);
-
-        Mat6 abd_section       = material_tangent.template block<6, 6>(0, 0);
-        Mat2 shear_section_mat = material_tangent.template block<2, 2>(6, 6);
-
-        abd_section       *= topo_scale;
-        shear_section_mat *= topo_scale;
 
         StaticVector<2 * N> disp_membrane;
         StaticVector<3 * N> disp_bending;
@@ -1025,37 +896,39 @@ struct DefaultShellElement : public ShellElement<N> {
             auto B_bending  = this->strain_disp_bending(shape_der, jac);
             auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
 
-            const Mat2 A       = this->section_to_element_2d(r, s, axes);
-            const auto T_plane = this->plane_strain_transform(A);
-            const auto T_shear = this->shear_strain_transform(A);
-
             Vec3 eps_element   = B_membrane * disp_membrane;
             Vec3 kappa_element = B_bending  * disp_bending;
             Vec2 gamma_element = B_shear    * disp_shear;
 
-            Vec3 eps_section   = T_plane * eps_element;
-            Vec3 kappa_section = T_plane * kappa_element;
-            Vec2 gamma_section = T_shear * gamma_element;
+            constexpr Index membrane_start =
+                static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
+            constexpr Index curvature_start =
+                static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX);
+            constexpr Index shear_start =
+                static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
 
-            Vec6 generalized_strain_section;
-            generalized_strain_section << eps_section, kappa_section;
+            ShellGeneralizedStrain generalized_strain;
+            generalized_strain.values().template segment<3>(membrane_start) = eps_element;
+            generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
+            generalized_strain.values().template segment<2>(shear_start) = gamma_element;
+            ShellStressResultants  generalized_resultants;
+            Mat8                   tangent;
+            this->get_section()->evaluate(
+                reference_point(r, s),
+                shell_basis,
+                generalized_strain,
+                false,
+                generalized_resultants,
+                tangent
+            );
 
-            Vec6 generalized_resultant_section = abd_section * generalized_strain_section;
-
-            Vec3 membrane_force_section = generalized_resultant_section.template segment<3>(0);
-            Vec3 bending_moment_section = generalized_resultant_section.template segment<3>(3);
-            Vec2 shear_force_section    = shear_section_mat * gamma_section;
+            const Vec8 values = topo_scale * generalized_resultants.values();
 
             const Index node_idx = static_cast<Index>(node_id);
 
-            resultants(node_idx, 0) += membrane_force_section(0);
-            resultants(node_idx, 1) += membrane_force_section(1);
-            resultants(node_idx, 2) += membrane_force_section(2);
-            resultants(node_idx, 3) += bending_moment_section(0);
-            resultants(node_idx, 4) += bending_moment_section(1);
-            resultants(node_idx, 5) += bending_moment_section(2);
-            resultants(node_idx, 6) += shear_force_section(0);
-            resultants(node_idx, 7) += shear_force_section(1);
+            for (Index component = 0; component < 8; ++component) {
+                resultants(node_idx, component) += values(component);
+            }
             contribution_count(node_idx, 0) += Precision(1);
         }
         return true;
@@ -1092,12 +965,11 @@ struct DefaultShellElement : public ShellElement<N> {
                                int offset,
                                bool use_green_lagrange_nl) override {
         logging::error(!use_green_lagrange_nl,
-                       "ShellElement: nonlinear stress/strain evaluation is not implemented yet for element ",
-                       this->elem_id);
+            "ShellElement: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
         logging::error(strain != nullptr || stress_out != nullptr,
-                       "ShellElement: compute_stress_strain requires at least one output field");
+            "ShellElement: compute_stress_strain requires at least one output field");
         logging::error(rst.cols() >= 3,
-                       "ShellElement: stress/strain evaluation coordinates require at least 3 columns");
+            "ShellElement: stress/strain evaluation coordinates require at least 3 columns");
 
         Field& displacement_mut = const_cast<Field&>(displacement);
         for (Eigen::Index i = 0; i < rst.rows(); ++i) {
@@ -1124,8 +996,7 @@ struct DefaultShellElement : public ShellElement<N> {
                               int offset,
                               bool use_green_lagrange_nl) override {
         logging::error(!use_green_lagrange_nl,
-                       "ShellElement: nonlinear stress state is not implemented yet for element ",
-                       this->elem_id);
+            "ShellElement: nonlinear stress state is not implemented yet for element ", this->elem_id);
         compute_membrane_stress_state(stress_state, displacement, offset);
     }
 
@@ -1134,15 +1005,9 @@ struct DefaultShellElement : public ShellElement<N> {
         const Field& displacement,
         int    ip_offset
     ) {
-        Mat3 axes      = get_xyz_axes();
-        auto xy_coords = get_xy_coords(axes);
-
-        ShellGeneralizedStrain zero_strain;
-        ShellStressResultants  zero_resultants;
-        Mat8                   material_tangent;
-        this->get_section()->evaluate(zero_strain, false, zero_resultants, material_tangent);
-
-        Mat6 abd_section = material_tangent.template block<6, 6>(0, 0);
+        Mat3 axes        = get_xyz_axes();
+        Mat3 shell_basis = axes.transpose();
+        auto xy_coords   = get_xy_coords(axes);
 
         Precision topo_scale = Precision(1);
 
@@ -1156,8 +1021,6 @@ struct DefaultShellElement : public ShellElement<N> {
 
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
-
-        abd_section *= topo_scale;
 
         StaticVector<2 * N> u_mem;
         u_mem.setZero();
@@ -1183,19 +1046,20 @@ struct DefaultShellElement : public ShellElement<N> {
 
             StaticMatrix<3, 2 * N> Bm = this->strain_disp_membrane(dH_rs, J);
 
-            const Mat2 A       = this->section_to_element_2d(r, s, axes);
-            const auto T_plane = this->plane_strain_transform(A);
-
             Vec3 eps_element = Bm * u_mem;
-            Vec3 eps_section = T_plane * eps_element;
 
-            Vec6 generalized_strain_section = Vec6::Zero();
-            generalized_strain_section.template segment<3>(0) = eps_section;
+            constexpr Index membrane_start =
+                static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
 
-            Vec6 generalized_resultant_section = abd_section * generalized_strain_section;
-            Vec3 membrane_force_section        = generalized_resultant_section.template segment<3>(0);
+            ShellGeneralizedStrain generalized_strain;
+            generalized_strain.values().template segment<3>(membrane_start) = eps_element;
+            ShellStressResultants  generalized_resultants;
+            Mat8                   tangent;
+            this->get_section()->evaluate(
+                reference_point(r, s),shell_basis,generalized_strain,false,generalized_resultants,tangent
+            );
 
-            Vec3 membrane_force_element = T_plane.transpose() * membrane_force_section;
+            const Vec3 membrane_force_element = topo_scale * generalized_resultants.membrane();
 
             const Precision nxx = membrane_force_element(0);
             const Precision nyy = membrane_force_element(1);

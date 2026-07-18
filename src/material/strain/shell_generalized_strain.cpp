@@ -27,15 +27,15 @@ Precision ShellGeneralizedStrain::operator[](Component component) const {
 
 // Extract the three section-kinematic blocks
 Vec3 ShellGeneralizedStrain::membrane() const {
-    return values_.template segment<3>(0);
+    return values_.template segment<3>(static_cast<int>(Component::EpsilonXX));
 }
 
 Vec3 ShellGeneralizedStrain::curvature() const {
-    return values_.template segment<3>(3);
+    return values_.template segment<3>(static_cast<int>(Component::KappaXX));
 }
 
 Vec2 ShellGeneralizedStrain::transverse_shear() const {
-    return values_.template segment<2>(6);
+    return values_.template segment<2>(static_cast<int>(Component::GammaXZ));
 }
 
 // Expose the complete state for ShellSection evaluation

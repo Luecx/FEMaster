@@ -17,11 +17,27 @@ namespace fem {
 
 // Generalized shell forces and moments per unit reference length
 struct ShellStressResultants {
+    // Component order used by the internal eight-entry vector
+    enum class Component : int {
+        NXX = 0,
+        NYY = 1,
+        NXY = 2,
+        MXX = 3,
+        MYY = 4,
+        MXY = 5,
+        QX  = 6,
+        QY  = 7
+    };
+
     // Constructs zero shell stress resultants
     ShellStressResultants() = default;
 
     // Constructs resultants in the documented eight-component order
     explicit ShellStressResultants(const Vec8& values);
+
+    // Returns a named resultant component by mutable or constant access
+    Precision& operator[](Component component);
+    Precision  operator[](Component component) const;
 
     // Returns [Nxx, Nyy, Nxy]
     [[nodiscard]] Vec3 membrane() const;

@@ -51,21 +51,17 @@ struct ShellElement : StructuralElement {
         }
         return section->material_;
     }
-    Precision get_density(bool required = false) {
-        ShellSection* section = get_section();
-        if (required) {
-            logging::error(section->has_density(),
-                           "ShellElement: density is required for element ", this->elem_id);
-        }
-        return section->get_density();
-    }
     Precision get_density(bool required = false) const {
-        const ShellSection* section = get_section();
+        const ShellSection* section           = get_section();
+        const auto&         material          = section->material_;
+        const bool          density_available = material && material->has_density();
+
         if (required) {
-            logging::error(section->has_density(),
+            logging::error(density_available,
                            "ShellElement: density is required for element ", this->elem_id);
         }
-        return section->get_density();
+
+        return density_available ? material->get_density() : Precision(0);
     }
 
     // left out for childs
@@ -85,6 +81,21 @@ struct ShellElement : StructuralElement {
         const auto& positions = *this->_model_data->positions;
         StaticMatrix<N, 3> res {};
         for (Index i = 0; i < N; i++) {
+            const Index row = static_cast<Index>(this->node_ids[i]);
+            res.row(i) = positions.row_vec3(row).transpose();
+        }
+        return res;
+    }
+
+    StaticMatrix<N, 3> node_coords_reference() const {
+        logging::error(this->_model_data                      != nullptr,
+                       "no model data assigned to element ", this->elem_id);
+        logging::error(this->_model_data->positions_reference != nullptr,
+                       "reference positions field not set in model data");
+
+        const auto& positions = *this->_model_data->positions_reference;
+        StaticMatrix<N, 3> res {};
+        for (Index i = 0; i < N; ++i) {
             const Index row = static_cast<Index>(this->node_ids[i]);
             res.row(i) = positions.row_vec3(row).transpose();
         }

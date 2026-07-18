@@ -27,26 +27,21 @@ struct ShellSection : Section {
     Precision                  thickness_   = 1.0;     ///< Shell thickness.
     cos::CoordinateSystem::Ptr orientation_ = nullptr; ///< Optional section/material orientation.
 
-    virtual void evaluate(const ShellGeneralizedStrain& strain,
-                          bool                          use_green_lagrange,
-                          ShellStressResultants&        resultants,
-                          Mat8&                         tangent) const = 0;
+    /**
+     * @brief Evaluates a shell response in the supplied orthonormal shell basis.
+     *
+     * The generalized strain is expressed in `shell_basis_global`. Resultants
+     * and tangent are returned in the same basis. An optional section
+     * orientation is projected into the plane normal to the third basis axis.
+     */
+    void evaluate(const Vec3&                   position_reference,
+                  const Mat3&                   shell_basis_global,
+                  const ShellGeneralizedStrain& strain,
+                  bool                          use_green_lagrange,
+                  ShellStressResultants&        resultants,
+                  Mat8&                         tangent) const;
 
     virtual Index num_mp_per_ip() const { return 1; }
-
-    /**
-     * @brief Checks whether the section material defines density.
-     *
-     * @return bool True when material density is available.
-     */
-    bool has_density() const;
-
-    /**
-     * @brief Returns material density or zero when missing.
-     *
-     * @return Precision Density value.
-     */
-    Precision get_density() const;
 
     /**
      * @brief Outputs shell section details through the logger.
@@ -59,6 +54,12 @@ struct ShellSection : Section {
      * @return std::string Material, region, density, orientation and thickness.
      */
     std::string str() const override;
+
+protected:
+    virtual void evaluate_material(const ShellGeneralizedStrain& strain,
+                                   bool                          use_green_lagrange,
+                                   ShellStressResultants&        resultants,
+                                   Mat8&                         tangent) const = 0;
 };
 
 struct IntegratedShellSection : ShellSection {
@@ -66,10 +67,11 @@ struct IntegratedShellSection : ShellSection {
 
     Index num_mp_per_ip() const override { return 5; }
 
-    void evaluate(const ShellGeneralizedStrain& strain,
-                  bool                          use_green_lagrange,
-                  ShellStressResultants&        resultants,
-                  Mat8&                         tangent) const override;
+protected:
+    void evaluate_material(const ShellGeneralizedStrain& strain,
+                           bool                          use_green_lagrange,
+                           ShellStressResultants&        resultants,
+                           Mat8&                         tangent) const override;
 };
 
 struct ABDShellSection : ShellSection {
@@ -80,12 +82,13 @@ struct ABDShellSection : ShellSection {
 
     Index num_mp_per_ip() const override { return 0; }
 
-    void evaluate(const ShellGeneralizedStrain& strain,
-                  bool                          use_green_lagrange,
-                  ShellStressResultants&        resultants,
-                  Mat8&                         tangent) const override;
-
     void info() override;
     std::string str() const override;
+
+protected:
+    void evaluate_material(const ShellGeneralizedStrain& strain,
+                           bool                          use_green_lagrange,
+                           ShellStressResultants&        resultants,
+                           Mat8&                         tangent) const override;
 };
 } // namespace fem

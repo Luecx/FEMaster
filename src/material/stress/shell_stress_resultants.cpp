@@ -16,17 +16,26 @@ namespace fem {
 ShellStressResultants::ShellStressResultants(const Vec8& values)
     : values_(values) {}
 
+// Map named components onto the underlying vector
+Precision& ShellStressResultants::operator[](Component component) {
+    return values_(static_cast<int>(component));
+}
+
+Precision ShellStressResultants::operator[](Component component) const {
+    return values_(static_cast<int>(component));
+}
+
 // Extract the three physical resultant blocks
 Vec3 ShellStressResultants::membrane() const {
-    return values_.template segment<3>(0);
+    return values_.template segment<3>(static_cast<int>(Component::NXX));
 }
 
 Vec3 ShellStressResultants::moments() const {
-    return values_.template segment<3>(3);
+    return values_.template segment<3>(static_cast<int>(Component::MXX));
 }
 
 Vec2 ShellStressResultants::transverse_shear() const {
-    return values_.template segment<2>(6);
+    return values_.template segment<2>(static_cast<int>(Component::QX));
 }
 
 // Expose the complete state for shell element assembly
