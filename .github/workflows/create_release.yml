@@ -243,6 +243,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download release assets
         uses: actions/download-artifact@v4
@@ -254,11 +256,66 @@ jobs:
         shell: bash
         run: |
           tag="${{ needs.prepare.outputs.tag }}"
-
+          
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1; then
             echo "Tag $tag already exists."
             exit 1
           fi
+
+      - name: Generate release notes from commits
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          previous_tag="$(
+            git describe \
+              --tags \
+              --abbrev=0 \
+              --match 'v[0-9]*' \
+              "$TARGET_SHA" \
+              2>/dev/null || true
+          )"
+          
+          if [[ -n "$previous_tag" ]]; then
+            commit_range="$previous_tag..$TARGET_SHA"
+          else
+            commit_range="$TARGET_SHA"
+          fi
+          
+          {
+            echo "## Changes"
+            echo
+          
+            count=0
+          
+            while IFS=$'\t' read -r hash author author_email committer committer_email subject; do
+              # Ignore commits created by bots.
+              if [[ "$author" == *"[bot]" ]] ||
+                 [[ "$author_email" == *"[bot]@users.noreply.github.com" ]] ||
+                 [[ "$committer" == *"[bot]" ]] ||
+                 [[ "$committer_email" == *"[bot]@users.noreply.github.com" ]]; then
+                continue
+              fi
+          
+              printf -- '- %s (`%s`)\n' "$subject" "${hash:0:7}"
+              count=$((count + 1))
+            done < <(
+              git log "$commit_range" \
+                --no-merges \
+                --format='%H%x09%an%x09%ae%x09%cn%x09%ce%x09%s'
+            )
+          
+            if (( count == 0 )); then
+              echo "- No user-facing changes."
+            fi
+          
+            if [[ -n "$previous_tag" ]]; then
+              echo
+              echo "**Full Changelog:** https://github.com/${{ github.repository }}/compare/$previous_tag...${{ needs.prepare.outputs.tag }}"
+            fi
+          } > release-notes.md
+          
+          cat release-notes.md
 
       - name: Create release
         env:
@@ -269,4 +326,4 @@ jobs:
             release-assets/* \
             --target "${{ github.sha }}" \
             --title "FEMaster ${{ needs.prepare.outputs.version }}" \
-            --generate-notes
+            --notes-file release-notes.md
