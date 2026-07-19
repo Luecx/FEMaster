@@ -370,8 +370,11 @@ void T3::compute_stress_strain(Field*           strain,
                        this->elem_id);
         elasticity->evaluate(axial_strain, nullptr, nullptr, axial_stress, tangent);
 
+        // Push PK2 forward using the current stretch and constant section area
+        const AxialStressCauchy cauchy(lambda * axial_stress.value());
+
         strain_value = axial_strain.value();
-        stress_value = axial_stress.value();
+        stress_value = cauchy.value();
     } else {
         const Precision L0 = length_reference();
 
@@ -426,7 +429,35 @@ void T3::compute_stress_state(Field&       stress_state,
                               const Field& displacement,
                               int          offset,
                               bool         use_green_lagrange_nl) {
-    RowMatrix rst = stress_strain_ip_rst();
+    if (use_green_lagrange_nl) {
+        // Total-Lagrange internal forces and geometric stiffness require PK2
+        const Precision lambda = stretch();
+        const AxialStrainGreenLagrange axial_strain =
+            AxialStrainGreenLagrange::from_stretch(lambda);
+        AxialStressPK2 axial_stress;
+        Precision      tangent = Precision(0);
+
+        auto elasticity = get_elasticity();
+        logging::error(elasticity->supports_axial_green_lagrange(),
+                       "T3: material does not support Green-Lagrange axial evaluation for element ",
+                       this->elem_id);
+        elasticity->evaluate(axial_strain, nullptr, nullptr, axial_stress, tangent);
+
+        const RowMatrix rst = stress_strain_ip_rst();
+
+        for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
+            const Index row = static_cast<Index>(offset) + i;
+
+            for (Index component = 0; component < stress_state.components; ++component) {
+                stress_state(row, component) = Precision(0);
+            }
+
+            stress_state(row, 0) = axial_stress.value();
+        }
+        return;
+    }
+
+    const RowMatrix rst = stress_strain_ip_rst();
 
     compute_stress_strain(
         nullptr,
