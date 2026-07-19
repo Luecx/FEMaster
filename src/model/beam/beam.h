@@ -1,459 +1,203 @@
 /**
  * @file beam.h
- * @brief Declares the templated base class for structural beam elements.
+ * @brief Declares the common templated base for structural beam elements.
  *
- * `BeamElement<N>` factors out common geometry and section/material handling for
- * concrete beam implementations while deriving from `StructuralElement`.
+ * `BeamElement<N>` stores fixed-size beam connectivity and provides the shared
+ * interface used by concrete three-dimensional beam formulations. The class
+ * centralizes access to beam sections, profiles and isotropic material data,
+ * constructs the local section frames, handles rigid section offsets and
+ * adapts element-specific stiffness and mass matrices to the generic
+ * `StructuralElement` interface.
  *
- * @see src/model/beam/b33.h
+ * The template definitions are implemented in `beam.inl`, which is included at
+ * the end of this header so that every specialization remains available at the
+ * point of instantiation.
+ *
+ * @tparam N Number of nodes in the beam element.
+ *
+ * @see StructuralElement
+ * @see BeamSection
+ * @see beam.inl
+ * @see b33.h
  */
 
 #pragma once
 
 #include "../../core/core.h"
-#include "../../section/section_beam.h"
-#include "../element/element_structural.h"
 #include "../../material/isotropic_elasticity.h"
 #include "../../material/stress/beam_stress_resultants.h"
+#include "../../section/section_beam.h"
+#include "../element/element_structural.h"
 
 #include <array>
 #include <cmath>
 
 namespace fem {
 namespace model {
+
 /**
- * @struct BeamElement
- * @brief Provides shared functionality for beam formulations with `N` nodes.
+ * @brief Common base class for structural beam elements with fixed connectivity.
+ *
+ * `BeamElement<N>` derives from `StructuralElement` and implements the geometry,
+ * section access, coordinate transformations and generic result interfaces
+ * shared by concrete beam formulations. Derived element types provide their
+ * formulation-specific elastic stiffness, geometric stiffness and mass
+ * matrices through the three formulation-specific implementation hooks exposed here.
+ *
+ * Each beam node carries three translational and three rotational degrees of
+ * freedom. Local element matrices are expressed either in the original section
+ * frame or in the principal bending frame and are transformed to the global
+ * coordinate system before assembly.
+ *
+ * @tparam N Number of nodes in the beam element.
  */
 template<Index N>
 struct BeamElement : StructuralElement {
-    std::array<ID, N> node_ids{}; ///< Connectivity of the beam element.
-    ID orientation_node_id_ = static_cast<ID>(-1); ///< Optional node encoding the n1 direction.
+    // Global identifiers of the beam nodes in element-local interpolation
+    // order. Geometry evaluation, degree-of-freedom gathering and load
+    // distribution consistently use this fixed-size connectivity.
+    std::array<ID, N> node_ids{};
 
-    BeamElement(ID elem_id, std::array<ID, N> node_ids_in, ID orientation_node_id = static_cast<ID>(-1))
-        : StructuralElement(elem_id)
-        , node_ids(node_ids_in)
-        , orientation_node_id_(orientation_node_id) {}
+    // Optional global node identifier used to define the section n1 direction.
+    // A negative value selects the orientation vector stored in the assigned
+    // beam section instead.
+    ID orientation_node_id_ = static_cast<ID>(-1);
 
-    ~BeamElement() override = default;
+    // Construction from the element identifier, ordered connectivity and an
+    // optional orientation node. The structural base stores the element ID;
+    // this class retains the topology and orientation definition.
+    BeamElement(
+        ID                elem_id,
+        std::array<ID, N> node_ids_in,
+        ID                orientation_node_id = static_cast<ID>(-1)
+    );
 
-    BeamSection* get_section() {
-        if (!this->_section) {
-            logging::error(false, "Section not set for element ", this->elem_id);
-        }
-        if (!this->_section->template as<BeamSection>()) {
-            logging::error(false, "Section is not a beam section for element ", this->elem_id);
-        }
-        return this->_section->template as<BeamSection>();
-    }
+    // Polymorphic destruction through the structural-element interface.
+    ~BeamElement() override;
 
-    Profile* get_profile() { return get_section()->profile_.get(); }
+    // Access to the assigned beam section, its geometric profile, its material
+    // and the isotropic elastic law required by the current beam formulations.
+    // Each accessor validates the corresponding model assignment before
+    // returning the typed object.
+    BeamSection*                   get_section();
+    Profile*                       get_profile();
+    material::MaterialPtr          get_material();
+    material::IsotropicElasticity* get_elasticity();
 
-    material::MaterialPtr get_material() {
-        BeamSection* section = get_section();
-        if (!section->material_) {
-            logging::error(false, "Material not set for element ", this->elem_id);
-        }
-        return section->material_;
-    }
+    // Orientation metadata and normalized section n1 direction. An explicit
+    // orientation node takes precedence over the direction stored in the beam
+    // section; at least one valid non-zero definition must be available.
+    ID   orientation_node() const;
+    bool has_orientation_node() const;
+    Vec3 orientation_direction();
 
-    material::IsotropicElasticity* get_elasticity() {
-        BeamSection* section = get_section();
-        if (!section->material_) {
-            logging::error(false, "Material not set for element ", this->elem_id);
-        }
-        if (!section->material_->has_elasticity()) {
-            logging::error(false, "Material has no elasticity assigned");
-        }
-        if (!section->material_->elasticity()->template as<material::IsotropicElasticity>()) {
-            logging::error(false, "Material is not isotropic for element ", this->elem_id);
-        }
-        return section->material_->elasticity()->template as<material::IsotropicElasticity>();
-    }
+    // Geometric measures evaluated from the current model coordinates. Length
+    // is accumulated over consecutive beam nodes and volume is obtained from
+    // this centerline length and the assigned section area.
+    Precision length();
+    Precision volume() override;
 
-    ID orientation_node() const { return orientation_node_id_; }
+    // Local section frames. The base frame follows the beam axis and supplied
+    // n1 direction. The principal frame additionally rotates its local y-z
+    // basis according to the section inertia tensor. `rotation_matrix()` keeps
+    // the established internal alias for the principal frame.
+    Mat3      base_rotation_matrix();
+    Precision principal_angle();
+    Mat3      principal_rotation_matrix();
+    Mat3      rotation_matrix();
 
-    bool has_orientation_node() const { return orientation_node_id_ >= 0; }
+    // Rigid-offset operators for translating beam kinematics between parallel
+    // reference axes in the local section frame. The single-node operator acts
+    // on [u, theta], while the element operator repeats it for all N nodes.
+    static StaticMatrix<6, 6>         rigid_offset_6(Precision dy, Precision dz);
+    static StaticMatrix<N * 6, N * 6> rigid_offset_N(Precision dy, Precision dz);
 
-    Vec3 orientation_direction() {
-        constexpr Precision kOrientationEps = static_cast<Precision>(1e-12);
-        BeamSection* section = get_section();
-        const bool section_has_direction = section && section->direction_.norm() > kOrientationEps;
-        const bool element_has_node = has_orientation_node();
+    // Rotate a local y-z offset from the base section frame into the principal
+    // bending frame using the same angle employed by the section rotation.
+    static void rotate_yz_to_principal(Precision phi, Precision& y, Precision& z);
 
-        logging::error(element_has_node || section_has_direction,
-                       "Beam element ", this->elem_id,
-                       " requires either an orientation node or a section-defined n1 vector");
-
-        Vec3 n1_vec = Vec3::Zero();
-        if (element_has_node) {
-            logging::error(this->_model_data            != nullptr, "no model data assigned to element ", this->elem_id);
-            logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
-            n1_vec = this->_model_data->positions->row_vec3(static_cast<Index>(orientation_node_id_));
-        } else {
-            n1_vec = section->direction_;
-        }
-
-        logging::error(n1_vec.norm() > kOrientationEps,
-                       "Orientation vector for element ", this->elem_id, " must be non-zero");
-        return n1_vec.normalized();
-    }
-
-    Precision length() {
-        Precision l = 0;
-        for (Index i = 0; i < N - 1; i++) {
-            const Vec3 x0 = this->node_position(static_cast<ID>(i));
-            const Vec3 x1 = this->node_position(static_cast<ID>(i + 1));
-            l += (x0 - x1).norm();
-        }
-        return l;
-    }
-
-    Precision volume() override { return get_profile()->area_ * length(); }
-
-    // Base rotation (provided section frame; no principal rotation)
-    Mat3 base_rotation_matrix() {
-        Vec3 x = (this->node_position(1) - this->node_position(0)).normalized();
-        Vec3 y = orientation_direction();
-        Vec3 z = x.cross(y).normalized();
-        y = z.cross(x).normalized();
-
-        Mat3 mat{};
-        mat(0, 0) = x(0); mat(0, 1) = x(1); mat(0, 2) = x(2);
-        mat(1, 0) = y(0); mat(1, 1) = y(1); mat(1, 2) = y(2);
-        mat(2, 0) = z(0); mat(2, 1) = z(1); mat(2, 2) = z(2);
-        return mat;
-    }
-
-    // Compute principal rotation angle about local x from section inertias
-    Precision principal_angle() {
-        Profile* pr = get_profile();
-        const Precision Iy  = pr->inertia_y_;
-        const Precision Iz  = pr->inertia_z_;
-        const Precision Iyz = pr->product_inertia_yz_;
-
-        const Precision scale = std::max<Precision>(Precision(1), std::abs(Iy) + std::abs(Iz));
-        if (std::abs(Iyz) <= scale * Precision(1e-14)) return Precision(0);
-        return Precision(0.5) * std::atan2(Precision(2) * Iyz, Iz - Iy);
-    }
-
-    // Rotation aligning y/z to principal bending axes
-    Mat3 principal_rotation_matrix() {
-        Mat3 Rb = base_rotation_matrix();
-        const Precision phi = principal_angle();
-        if (phi == Precision(0)) return Rb;
-
-        Eigen::Matrix<Precision, 1, 3> rx = Rb.row(0);
-        Eigen::Matrix<Precision, 1, 3> ry = Rb.row(1);
-        Eigen::Matrix<Precision, 1, 3> rz = Rb.row(2);
-
-        const Precision c = std::cos(phi);
-        const Precision s = std::sin(phi);
-
-        Eigen::Matrix<Precision, 1, 3> ry_p =  c * ry + s * rz;
-        Eigen::Matrix<Precision, 1, 3> rz_p = -s * ry + c * rz;
-
-        Mat3 Rp = Rb;
-        Rp.row(0) = rx;
-        Rp.row(1) = ry_p;
-        Rp.row(2) = rz_p;
-        return Rp;
-    }
-
-    // Backward-compatible alias used by internal computations
-    Mat3 rotation_matrix() { return principal_rotation_matrix(); }
-
-    // --- Kinematic rigid-offset (local y/z offsets) -------------------------
-
-    /**
-     * @brief Builds the 6x6 kinematic rigid-offset matrix B for a point shift d=(0,dy,dz) in local coordinates.
-     *
-     * For u = [ux,uy,uz, rx,ry,rz]^T:
-     *   u_A = B(dy,dz) * u_R  with  u_A = u_R + theta x d
-     */
-    static StaticMatrix<6, 6> rigid_offset_6(Precision dy, Precision dz) {
-        StaticMatrix<6, 6> B = StaticMatrix<6, 6>::Identity();
-
-        // u += theta x d, with d=(0,dy,dz)
-        // [ux] +=  ry*dz - rz*dy
-        // [uy] += -rx*dz
-        // [uz] +=  rx*dy
-        B(0, 4) =  dz;
-        B(0, 5) = -dy;
-
-        B(1, 3) = -dz;
-        B(2, 3) =  dy;
-
-        return B;
-    }
-
-    /**
-     * @brief Builds the Nx6 by Nx6 block-diagonal rigid-offset matrix for all element nodes.
-     */
-    static StaticMatrix<N * 6, N * 6> rigid_offset_N(Precision dy, Precision dz) {
-        StaticMatrix<N * 6, N * 6> B = StaticMatrix<N * 6, N * 6>::Identity();
-        const StaticMatrix<6, 6> Bi = rigid_offset_6(dy, dz);
-        for (Index a = 0; a < N; ++a) {
-            B.template block<6, 6>(a * 6, a * 6) = Bi;
-        }
-        return B;
-    }
-
-    /**
-     * @brief Rotate a (y,z) offset expressed in the base section frame into the principal frame used by rotation_matrix().
-     *
-     * This uses the same angle phi as the principal axis rotation:
-     *   y_p =  c*y + s*z
-     *   z_p = -s*y + c*z
-     */
-    static void rotate_yz_to_principal(Precision phi, Precision& y, Precision& z) {
-        if (phi == Precision(0)) return;
-        const Precision c = std::cos(phi);
-        const Precision s = std::sin(phi);
-        const Precision y_p =  c * y + s * z;
-        const Precision z_p = -s * y + c * z;
-        y = y_p;
-        z = z_p;
-    }
-
-    // --- FEM interface ------------------------------------------------------
-
+    // Formulation-specific local-to-global element operators implemented by
+    // concrete beam types. All matrices contain six degrees of freedom per
+    // node and are returned in the global element ordering expected by the
+    // structural assembly interface.
     virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
     virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(const Field& ip_stress, int offset) = 0;
     virtual StaticMatrix<N * 6, N * 6> mass_impl() = 0;
 
-    StaticMatrix<N * 6, N * 6> transformation() {
-        StaticMatrix<N * 6, N * 6> T;
-        T.setZero();
-        Mat3 R = rotation_matrix();
+    // Block-diagonal degree-of-freedom transformations from global coordinates
+    // to the principal section frame and to the original base section frame.
+    // Each node receives identical 3x3 rotations for translations and rotations.
+    StaticMatrix<N * 6, N * 6> transformation();
+    StaticMatrix<N * 6, N * 6> transformation_base();
 
-        for (Index i = 0; i < N; i++) {
-            for (Dim j = 0; j < 3; j++) {
-                for (Dim k = 0; k < 3; k++) {
-                    T(i * 6 + j,     i * 6 + k)     = R(j, k);
-                    T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
-                }
-            }
-        }
-        return T;
-    }
+    // Generic matrix assembly adapters. The returned maps reference the caller-
+    // supplied storage and are populated from the formulation-specific matrix
+    // implementations above.
+    MapMatrix stiffness(Precision* buffer) override;
+    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
+    MapMatrix mass(Precision* buffer) override;
 
-    // Transformation using original section frame (no principal rotation)
-    StaticMatrix<N * 6, N * 6> transformation_base() {
-        StaticMatrix<N * 6, N * 6> T;
-        T.setZero();
-        Mat3 R = base_rotation_matrix();
+    // Nonlinear internal-force and stress-state interfaces. The base class does
+    // not provide a nonlinear force formulation; stress-state evaluation uses
+    // the integration points and recovery implementation of the concrete beam.
+    void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override;
+    void compute_stress_state(
+        Field&          stress_state,
+        const Field&    displacement,
+        int             offset,
+        bool            use_green_lagrange_nl
+    ) override;
 
-        for (Index i = 0; i < N; i++) {
-            for (Dim j = 0; j < 3; j++) {
-                for (Dim k = 0; k < 3; k++) {
-                    T(i * 6 + j,     i * 6 + k)     = R(j, k);
-                    T(i * 6 + j + 3, i * 6 + k + 3) = R(j, k);
-                }
-            }
-        }
-        return T;
-    }
+    // Optional structural-element operations that currently have no generic
+    // beam implementation. They deliberately preserve the neutral behavior of
+    // the previous inline definitions.
+    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
+    void compute_compliance(Field& displacement, Field& result) override;
+    void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
+    bool compute_shear_flow(Field& shear_flow, const Field& displacement, int offset) override;
 
-    MapMatrix stiffness(Precision* buffer) override {
-        MapMatrix result(buffer, N * 6, N * 6);
-        result = stiffness_impl();
-        return result;
-    }
+    // Fixed topology and degree-of-freedom metadata required by the common
+    // element interface, together with direct connectivity access. Beam
+    // elements expose no surface representation through this base class.
+    ElDofs     dofs() const override;
+    Dim        dimensions() const override;
+    Dim        n_nodes() const override;
+    Dim        num_ip() const override;
+    const ID*  nodes() const override;
+    SurfacePtr surface(ID surface_id) override;
 
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
-        MapMatrix result(buffer, N * 6, N * 6);
-        result = stiffness_geom_impl(ip_stress, ip_start_idx);
-        return result;
-    }
+    // Recover nodal beam resultants in the original section frame. Shell force
+    // recovery remains unsupported for beam elements and returns false.
+    bool compute_beam_section_forces(
+        Field&       section_forces,
+        const Field& displacement,
+        int          offset
+    ) override;
+    bool compute_shell_section_forces(
+        Field&       section_forces,
+        Field&       contribution_count,
+        const Field& displacement
+    ) override;
 
-    MapMatrix mass(Precision* buffer) override {
-        MapMatrix result(buffer, N * 6, N * 6);
-        result = mass_impl();
-        return result;
-    }
-
-    void compute_internal_force_nonlinear(Field& node_forces,
-                                          const Field& ip_stress) override {
-        (void)node_forces;
-        (void)ip_stress;
-        logging::error(false, "BeamElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
-    }
-
-    void compute_stress_state(Field& stress_state,
-                              const Field& displacement,
-                              int offset,
-                              bool use_green_lagrange_nl) override {
-        RowMatrix rst = stress_strain_ip_rst();
-        if (rst.rows() == 0) {
-            return;
-        }
-        compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
-    }
-
-    void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
-        (void)node_loads;
-        (void)node_temp;
-        (void)ref_temp;
-    }
-
-    void compute_compliance(Field& displacement, Field& result) override {
-        (void)displacement;
-        (void)result;
-    }
-
-    void compute_compliance_angle_derivative(Field& displacement, Field& result) override {
-        (void)displacement;
-        (void)result;
-    }
-
-    bool compute_shear_flow(Field& shear_flow,
-                            const Field& displacement,
-                            int offset) override {
-        (void)shear_flow;
-        (void)displacement;
-        (void)offset;
-        return false;
-    }
-
-    ElDofs    dofs() const override { return ElDofs{true, true, true, true, true, true}; }
-    Dim       dimensions() const override { return 3; }
-    Dim       n_nodes() const override { return N; }
-    Dim       num_ip() const override { return 1; }
-    const ID* nodes() const override { return node_ids.data(); }
-    SurfacePtr surface(ID surface_id) override {
-        (void)surface_id;
-        return nullptr;
-    }
-
-    bool compute_beam_section_forces(Field& section_forces,
-                                     const Field& displacement,
-                                     int offset) override {
-        Eigen::Matrix<Precision, N * 6, 1> u_global;
-        for (Index i = 0; i < N; ++i) {
-            const ID nid = node_ids[i];
-            const Vec6 row = displacement.row_vec6(static_cast<Index>(nid)); // [ux, uy, uz, rx, ry, rz]
-            for (Index d = 0; d < 6; ++d) {
-                u_global(i * 6 + d) = row(d);
-            }
-        }
-
-        // global stiffness and local frame for output
-        const auto K_global = stiffness_impl();
-        const auto T_out    = transformation_base(); // output in base section frame
-
-        const auto f_global = K_global * u_global;
-        const auto q_local  = T_out * f_global; // nodal resultants in base local frame, about the element DOF reference line
-
-        for (Index i = 0; i < N; ++i) {
-
-            for (Index d = 0; d < 6; ++d) {
-                section_forces(static_cast<Index>(offset) + i, d)
-                  = q_local(i * 6 + d) * ((i == 1 && N == 2) ? 1 : -1);
-            }
-        }
-
-        return true;
-    }
-
-    bool compute_shell_section_forces(Field& section_forces,
-                                      Field& contribution_count,
-                                      const Field& displacement) override {
-        (void)section_forces;
-        (void)contribution_count;
-        (void)displacement;
-        return false;
-    }
-
-    Precision integrate_scalar_field(bool scale_by_density,
-                                     const ScalarField& field) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return Precision(0);
-
-        Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-        x_mid /= static_cast<Precision>(N);
-
-        Precision rho = 1.0;
-        if (scale_by_density) {
-            auto mat = get_material();
-            logging::error(mat && mat->has_density(),
-                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
-        }
-        return field(x_mid) * (rho * A * L);
-    }
-
-    Vec3 integrate_vector_field(bool scale_by_density,
-                                const VecField& field) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return Vec3::Zero();
-
-        Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-        x_mid /= static_cast<Precision>(N);
-
-        Precision rho = 1.0;
-        if (scale_by_density) {
-            auto mat = get_material();
-            logging::error(mat && mat->has_density(),
-                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
-        }
-        return field(x_mid) * (rho * A * L);
-    }
-
-    // Integrate vector field via simple 1-point mid-span sampling and equal distribution
-    void integrate_vector_field(Field& node_loads,
-                                bool scale_by_density,
-                                const VecField& field) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return;
-
-        Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-        x_mid /= static_cast<Precision>(N);
-
-        Precision rho = 1.0;
-        if (scale_by_density) {
-            auto mat = get_material();
-            logging::error(mat && mat->has_density(),
-                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
-        }
-
-        const Vec3 F = field(x_mid) * (rho * A * L);
-        const Precision share = Precision(1) / static_cast<Precision>(N);
-        for (Index i = 0; i < N; ++i) {
-            const ID n_id = node_ids[i];
-            node_loads(n_id, 0) += share * F(0);
-            node_loads(n_id, 1) += share * F(1);
-            node_loads(n_id, 2) += share * F(2);
-        }
-    }
-
-    Mat3 integrate_tensor_field(bool scale_by_density,
-                                const TenField& field) override {
-        const Precision L = length();
-        const Precision A = get_profile()->area_;
-        if (L <= Precision(0) || A <= Precision(0)) return Mat3::Zero();
-
-        Vec3 x_mid = Vec3::Zero();
-        for (Index i = 0; i < N; ++i) x_mid += this->node_position(static_cast<ID>(i));
-        x_mid /= static_cast<Precision>(N);
-
-        Precision rho = 1.0;
-        if (scale_by_density) {
-            auto mat = get_material();
-            logging::error(mat && mat->has_density(),
-                           "BeamElement: material density is required when scale_by_density=true for element ", this->elem_id);
-            rho = mat->get_density();
-        }
-        return field(x_mid) * (rho * A * L);
-    }
+    // One-point midpoint integration of scalar, vector and tensor fields over
+    // the beam volume. Density scaling is optional; the nodal vector overload
+    // distributes the integrated resultant equally across all beam nodes.
+    Precision integrate_scalar_field(
+        bool scale_by_density,
+        const ScalarField& field) override;
+    Vec3 integrate_vector_field(
+        bool scale_by_density,
+        const VecField& field) override;
+    void integrate_vector_field(
+        Field& node_loads,
+        bool scale_by_density,
+        const VecField& field) override;
+    Mat3 integrate_tensor_field(
+        bool scale_by_density,
+        const TenField& field) override;
 };
+
 } // namespace model
 } // namespace fem
+
+#include "beam.inl"

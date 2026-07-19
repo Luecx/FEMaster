@@ -1,6 +1,14 @@
 /**
- * @file surface_integrate.h
- * @brief Implements field integration for finite-element surfaces.
+ * @file surface_integrate.inl
+ * @brief Implements numerical integration of fields over finite-element surfaces.
+ *
+ * Scalar, vector and tensor fields are evaluated at quadrature points in
+ * natural coordinates and weighted with the physical surface Jacobian. The
+ * polygon-restricted routine additionally clips the natural integration domain
+ * and integrates the overlap by a triangle fan.
+ *
+ * @see Surface
+ * @see SurfacePolygon
  */
 
 #pragma once
@@ -12,52 +20,88 @@
 
 namespace fem::model {
 
+/**
+ * Computes the physical area of the surface.
+ *
+ * The area is obtained by integrating the constant scalar field one over the
+ * complete natural element domain. The integration routine applies the
+ * physical surface Jacobian at each quadrature point.
+ *
+ * @param node_coords Global nodal coordinate field.
+ *
+ * @return Physical surface area.
+ */
 template<Index N>
 Precision Surface<N>::area(const Field& node_coords) const {
-    // the surface area is obtained by integrating the constant scalar field one
-    // over the complete physical surface
+    // Integrate the constant unit field over the complete physical surface
     return integrate_scalar_field(node_coords, [](const Vec3&) {
         return Precision(1);
     });
 }
 
+/**
+ * Integrates a scalar field over the complete physical surface.
+ *
+ * The quadrature rule is defined in natural coordinates. At every quadrature
+ * point, the scalar field is evaluated at the interpolated global position and
+ * multiplied by the norm of the cross product of the two physical tangent
+ * vectors. This converts the natural-coordinate measure into physical area.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param field Scalar field evaluated at global positions.
+ *
+ * @return Integral of the scalar field over the physical surface.
+ */
 template<Index N>
 Precision Surface<N>::integrate_scalar_field(
     const Field&       node_coords,
     const ScalarField& field
 ) const {
-    // collect the global coordinates of all nodes belonging to this surface
+    // Gather the global coordinates once because they are reused at every
+    // quadrature point
     const auto coordinates = node_coords_global(node_coords);
 
-    // the quadrature scheme integrates in the natural coordinate system of the
-    // element. therefore the field value has to be multiplied by the physical
-    // surface jacobian at every integration point.
+    // Convert the natural-coordinate quadrature measure to physical surface
+    // area at every integration point
     std::function<Precision(Precision, Precision, Precision)> integrand =
         [&](Precision r, Precision s, Precision) {
             const auto jac      = jacobian(coordinates, r, s);
             const auto position = interpolate(coordinates, r, s);
 
-            // the cross product of both surface tangent vectors transforms an
-            // infinitesimal natural-coordinate area into physical surface area
+            // The cross product of the surface tangents supplies the physical
+            // area scaling of the isoparametric mapping
             const Precision surface_jacobian = jac.col(0).cross(jac.col(1)).norm();
 
             return surface_jacobian * field(position);
         };
 
-    // apply the integration points and weights of the complete surface element
+    // Apply the quadrature rule over the complete surface element
     return integration_scheme().integrate(integrand);
 }
 
+/**
+ * Integrates a vector field over the complete physical surface.
+ *
+ * The vector field is evaluated at the interpolated global position of each
+ * quadrature point. Its value is multiplied by the physical surface Jacobian
+ * before the element quadrature rule accumulates the result.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param field Vector field evaluated at global positions.
+ *
+ * @return Integral of the vector field over the physical surface.
+ */
 template<Index N>
 Vec3 Surface<N>::integrate_vector_field(
     const Field&    node_coords,
     const VecField& field
 ) const {
-    // collect the global coordinates of all nodes belonging to this surface
+    // Gather the global coordinates once because they are reused at every
+    // quadrature point
     const auto coordinates = node_coords_global(node_coords);
 
-    // vector-valued integration uses the same geometric area transformation as
-    // scalar integration; only the returned field value differs
+    // Use the same physical area transformation as scalar integration while
+    // retaining the vector-valued field result
     std::function<Vec3(Precision, Precision, Precision)> integrand =
         [&](Precision r, Precision s, Precision) {
             const auto jac      = jacobian(coordinates, r, s);
@@ -71,20 +115,32 @@ Vec3 Surface<N>::integrate_vector_field(
     return integration_scheme().integrate(integrand);
 }
 
+/**
+ * Integrates a vector field and assembles its consistent nodal contribution.
+ *
+ * At each quadrature point, the vector field is evaluated in global
+ * coordinates and distributed to the surface nodes with the shape functions.
+ * The contribution includes both the physical surface Jacobian and the
+ * quadrature weight, so the target field receives the complete physical
+ * integral.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param target Mutable global field receiving the nodal contributions.
+ * @param field Vector field evaluated at global positions.
+ */
 template<Index N>
 void Surface<N>::integrate_vector_field(
     const Field&    node_coords,
     Field&          target,
     const VecField& field
 ) const {
-    // collect the global coordinates once because they are reused at every
+    // Gather the global coordinates once because they are reused at every
     // integration point
     const auto coordinates = node_coords_global(node_coords);
     const auto& scheme      = integration_scheme();
 
-    // this overload does not return the total vector integral. instead it
-    // distributes the integrated field consistently onto the surface nodes
-    // using the shape functions.
+    // Distribute the integrated field consistently onto the surface nodes
+    // instead of returning one total vector integral
     for (Index local_ip = 0; local_ip < scheme.count(); ++local_ip) {
         const auto point = scheme.get_point(local_ip);
 
@@ -92,21 +148,21 @@ void Surface<N>::integrate_vector_field(
         const Precision s = point.s;
         const Precision w = point.w;
 
-        // the shape functions distribute the contribution at the current
-        // integration point onto the individual surface nodes
+        // Evaluate the shape functions used to distribute the current
+        // integration-point contribution onto the surface nodes
         const StaticMatrix<N, 1> shape = shape_function(r, s);
 
-        // evaluate the physical position and the local surface area scaling
+        // Evaluate the physical position and local surface area scaling
         const auto jac      = jacobian(coordinates, r, s);
         const auto position = interpolate(coordinates, r, s);
 
-        // include the quadrature weight directly in the differential area
+        // Include the quadrature weight in the differential physical area
         const Precision weighted_area = jac.col(0).cross(jac.col(1)).norm() * w;
 
-        // evaluate the prescribed vector field in physical coordinates
+        // Evaluate the prescribed vector field in physical coordinates
         const Vec3 value = field(position);
 
-        // assemble the consistent nodal contribution
+        // Assemble the consistent nodal contribution
         // f_i += N_i(r,s) * field(x(r,s)) * dA
         for (Index local_id = 0; local_id < N; ++local_id) {
             for (Dim dof = 0; dof < 3; ++dof) {
@@ -117,16 +173,29 @@ void Surface<N>::integrate_vector_field(
     }
 }
 
+/**
+ * Integrates a tensor field over the complete physical surface.
+ *
+ * Tensor values are evaluated at interpolated global positions and weighted
+ * with the physical surface Jacobian before applying the element quadrature
+ * rule.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param field Tensor field evaluated at global positions.
+ *
+ * @return Integral of the tensor field over the physical surface.
+ */
 template<Index N>
 Mat3 Surface<N>::integrate_tensor_field(
     const Field&    node_coords,
     const TenField& field
 ) const {
-    // collect the global coordinates of all nodes belonging to this surface
+    // Gather the global coordinates once because they are reused at every
+    // quadrature point
     const auto coordinates = node_coords_global(node_coords);
 
-    // tensor-valued integration follows the same local-to-global area
-    // transformation as scalar and vector integration
+    // Apply the same natural-to-physical area transformation as scalar and
+    // vector integration
     std::function<Mat3(Precision, Precision, Precision)> integrand =
         [&](Precision r, Precision s, Precision) {
             const auto jac      = jacobian(coordinates, r, s);
@@ -140,6 +209,24 @@ Mat3 Surface<N>::integrate_tensor_field(
     return integration_scheme().integrate(integrand);
 }
 
+/**
+ * Integrates the overlap of a polygon with the natural surface domain.
+ *
+ * The supplied polygon is clipped against the natural element domain. The
+ * valid overlap is decomposed into a triangle fan, and the supplied
+ * triangular quadrature rule is applied to every fan triangle. Each callback
+ * receives the natural coordinates, global coordinates and complete physical
+ * integration weight. That weight combines the quadrature weight, the
+ * natural-triangle mapping and the physical surface Jacobian.
+ *
+ * Degenerate intersections and zero-area fan triangles are ignored.
+ *
+ * @param node_coords Global nodal coordinate field.
+ * @param polygon Integration polygon in natural surface coordinates.
+ * @param scheme Triangular quadrature rule on the reference triangle.
+ * @param integrand Callback receiving natural coordinates, global coordinates
+ *                  and the complete physical integration weight.
+ */
 template<Index N>
 void Surface<N>::integrate_triangular(
     const Field&                                                    node_coords,
@@ -147,47 +234,45 @@ void Surface<N>::integrate_triangular(
     const math::quadrature::Quadrature&                             scheme,
     const std::function<void(const Vec2&, const Vec3&, Precision)>& integrand
 ) const {
-    // the supplied polygon may extend beyond the natural coordinate domain of
-    // the surface. clip it first so that only the valid overlap is integrated.
+    // Clip the supplied polygon against the valid natural-coordinate domain
     const auto intersection = polygon.intersection(this->local_domain_polygon());
 
-    // fewer than three points cannot form a finite integration region
+    // Reject polygons that cannot form a finite integration region
     if (intersection.size() < 3) {
         return;
     }
 
-    // an intersection may contain several points while still being numerically
-    // degenerate due to coincident or nearly collinear vertices
+    // Reject numerically degenerate intersections with coincident or nearly
+    // collinear vertices
     if (intersection.area() <= Precision(1e-12)) {
         return;
     }
 
-    // collect the global nodal coordinates once for all generated triangles
-    // and quadrature points
+    // Gather the global nodal coordinates once for all triangles and
+    // quadrature points
     const auto coordinates = node_coords_global(node_coords);
 
-    // the convex intersection polygon is divided into triangles that all share
-    // the first polygon point
+    // Decompose the convex intersection polygon into triangles sharing its
+    // first point
     const Vec2 origin = intersection[0];
 
-    // triangulate the intersection polygon using the triangle fan
-    // (p0,p1,p2), (p0,p2,p3), ..., (p0,p[n-2],p[n-1])
+    // Apply the triangle-fan decomposition
     for (std::size_t i = 1; i + 1 < intersection.size(); ++i) {
         const Vec2 edge_r = intersection[i]     - origin;
         const Vec2 edge_s = intersection[i + 1] - origin;
 
-        // the determinant is the area scaling from the reference triangle onto
-        // the current triangle in the natural coordinates of the surface
+        // Compute the area scaling from the reference triangle to the current
+        // triangle in natural coordinates
         const Precision triangle_jacobian =
             std::abs(edge_r(0) * edge_s(1) - edge_r(1) * edge_s(0));
 
-        // duplicate or collinear fan points create a zero-area triangle and
-        // therefore do not contribute to the integral
+        // Ignore zero-area fan triangles caused by duplicate or collinear
+        // points
         if (triangle_jacobian <= Precision(1e-12)) {
             continue;
         }
 
-        // apply the supplied triangular quadrature rule to the current triangle
+        // Apply the supplied triangular quadrature rule to the current triangle
         for (Index q = 0; q < scheme.count(); ++q) {
             const auto point = scheme.get_point(q);
 
@@ -195,23 +280,23 @@ void Surface<N>::integrate_triangular(
             const Precision s = point.s;
             const Precision w = point.w;
 
-            // map the quadrature point from the reference triangle onto the
-            // current triangle in the natural coordinate system of the surface
+            // Map the quadrature point from the reference triangle into the
+            // current triangle in natural coordinates
             const Vec2 local = origin + r * edge_r + s * edge_s;
 
-            // map the natural surface coordinates further into physical space
+            // Map the natural surface coordinates into physical space
             const Vec3 global = interpolate(coordinates, local(0), local(1));
 
-            // the finite-element surface may be curved, so its physical area
-            // scaling has to be evaluated at every quadrature point
+            // Evaluate the physical area scaling at the current point because
+            // the finite-element surface may be curved
             const auto jac = jacobian(coordinates, local(0), local(1));
             const Precision surface_jacobian = jac.col(0).cross(jac.col(1)).norm();
 
-            // combine the quadrature weight, the reference-to-local triangle
-            // mapping and the local-to-global surface mapping
+            // Combine the quadrature weight, the natural triangle mapping and
+            // the physical surface mapping
             const Precision weight = w * triangle_jacobian * surface_jacobian;
 
-            // provide the local position, physical position and complete
+            // Pass the natural position, physical position and complete
             // physical integration weight to the caller
             integrand(local, global, weight);
         }

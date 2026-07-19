@@ -38,13 +38,13 @@ Surface8::Surface8(const std::array<ID, 8>& node_ids)
 StaticMatrix<8, 1> Surface8::shape_function(Precision r, Precision s) const {
     StaticMatrix<8, 1> shape;
 
-    // corner shape functions
+    // Corner shape functions
     shape(0) = Precision(0.25) * (Precision(1) - r) * (Precision(1) - s) * (-Precision(1) - r - s);
     shape(1) = Precision(0.25) * (Precision(1) + r) * (Precision(1) - s) * (-Precision(1) + r - s);
     shape(2) = Precision(0.25) * (Precision(1) + r) * (Precision(1) + s) * (-Precision(1) + r + s);
     shape(3) = Precision(0.25) * (Precision(1) - r) * (Precision(1) + s) * (-Precision(1) - r + s);
 
-    // midside shape functions
+    // Midside shape functions
     shape(4) = Precision(0.5) * (Precision(1) - r * r) * (Precision(1) - s);
     shape(5) = Precision(0.5) * (Precision(1) + r) * (Precision(1) - s * s);
     shape(6) = Precision(0.5) * (Precision(1) - r * r) * (Precision(1) + s);
@@ -67,7 +67,7 @@ StaticMatrix<8, 1> Surface8::shape_function(Precision r, Precision s) const {
 StaticMatrix<8, 2> Surface8::shape_derivative(Precision r, Precision s) const {
     StaticMatrix<8, 2> derivative;
 
-    // derivatives of the four corner shape functions
+    // Derivatives of the four corner shape functions
     derivative(0, 0) = Precision(0.25) * (-Precision(2) * r - s) * (s - Precision(1));
     derivative(0, 1) = Precision(0.25) * (-r - Precision(2) * s) * (r - Precision(1));
 
@@ -80,7 +80,7 @@ StaticMatrix<8, 2> Surface8::shape_derivative(Precision r, Precision s) const {
     derivative(3, 0) = Precision(0.25) * (Precision(2) * r - s) * (s + Precision(1));
     derivative(3, 1) = Precision(0.25) * (r - Precision(1)) * (r - Precision(2) * s);
 
-    // derivatives of the four midside shape functions
+    // Derivatives of the four midside shape functions
     derivative(4, 0) = r * (s - Precision(1));
     derivative(4, 1) = Precision(0.5) * (r * r - Precision(1));
 
@@ -110,7 +110,7 @@ StaticMatrix<8, 2> Surface8::shape_derivative(Precision r, Precision s) const {
 StaticMatrix<8, 3> Surface8::shape_second_derivative(Precision r, Precision s) const {
     StaticMatrix<8, 3> second_derivative;
 
-    // second derivatives of the four corner shape functions
+    // Second derivatives of the four corner shape functions
     second_derivative(0, 0) = Precision(0.5) - Precision(0.5) * s;
     second_derivative(0, 1) = Precision(0.5) - Precision(0.5) * r;
     second_derivative(0, 2) = -Precision(0.5) * r - Precision(0.5) * s + Precision(0.25);
@@ -127,7 +127,7 @@ StaticMatrix<8, 3> Surface8::shape_second_derivative(Precision r, Precision s) c
     second_derivative(3, 1) = Precision(0.5) - Precision(0.5) * r;
     second_derivative(3, 2) = Precision(0.5) * r - Precision(0.5) * s - Precision(0.25);
 
-    // second derivatives of the four midside shape functions
+    // Second derivatives of the four midside shape functions
     second_derivative(4, 0) = s - Precision(1);
     second_derivative(4, 1) = Precision(0);
     second_derivative(4, 2) = r;
@@ -158,7 +158,7 @@ StaticMatrix<8, 3> Surface8::shape_second_derivative(Precision r, Precision s) c
 StaticMatrix<8, 2> Surface8::node_coords_local() const {
     StaticMatrix<8, 2> local_coords;
 
-    // the row order has to match the node and shape-function ordering
+    // The row order has to match the node and shape-function ordering
     local_coords << Precision(-1), Precision(-1),  // corner node 1
                     Precision( 1), Precision(-1),  // corner node 2
                     Precision( 1), Precision( 1),  // corner node 3
@@ -185,15 +185,15 @@ StaticMatrix<8, 2> Surface8::node_coords_local() const {
  */
 Vec2 Surface8::closest_point_on_boundary(const Vec3&               global,
                                          const StaticMatrix<8, 3>& node_coords) const {
-    // represent the four quadratic quadrilateral edges using both corner nodes
-    // and the corresponding midside node
+    // Represent the four quadratic quadrilateral edges using both corner nodes
+    // And the corresponding midside node
     Line3A edge_01({0, 1, 4});
     Line3A edge_12({1, 2, 5});
     Line3A edge_23({2, 3, 6});
     Line3A edge_30({3, 0, 7});
 
-    // the line-element interface operates on Field storage, so transfer the
-    // supplied fixed-size coordinate matrix into a temporary nodal field
+    // The line-element interface operates on Field storage, so transfer the
+    // Supplied fixed-size coordinate matrix into a temporary nodal field
     Field node_field("SURFACE8_BOUNDARY", FieldDomain::NODE, 8, 3);
 
     for (Index local_id = 0; local_id < 8; ++local_id) {
@@ -202,42 +202,42 @@ Vec2 Surface8::closest_point_on_boundary(const Vec3&               global,
         }
     }
 
-    // project the global point independently onto every curved edge
+    // Project the global point independently onto every curved edge
     const Precision edge_01_local = edge_01.global_to_local(global, node_field);
     const Precision edge_12_local = edge_12.global_to_local(global, node_field);
     const Precision edge_23_local = edge_23.global_to_local(global, node_field);
     const Precision edge_30_local = edge_30.global_to_local(global, node_field);
 
-    // map the edge-local projections back into physical coordinates so their
-    // distances to the requested global point can be compared
+    // Map the edge-local projections back into physical coordinates so their
+    // Distances to the requested global point can be compared
     const Vec3 point_01 = edge_01.local_to_global(edge_01_local, node_field);
     const Vec3 point_12 = edge_12.local_to_global(edge_12_local, node_field);
     const Vec3 point_23 = edge_23.local_to_global(edge_23_local, node_field);
     const Vec3 point_30 = edge_30.local_to_global(edge_30_local, node_field);
 
-    // squared distances are sufficient for comparison and avoid unnecessary
-    // square-root evaluations
+    // Squared distances are sufficient for comparison and avoid unnecessary
+    // Square-root evaluations
     const Precision distance_01 = (point_01 - global).squaredNorm();
     const Precision distance_12 = (point_12 - global).squaredNorm();
     const Precision distance_23 = (point_23 - global).squaredNorm();
     const Precision distance_30 = (point_30 - global).squaredNorm();
 
-    // edge 0-1 follows (r,s) = (p,-1)
+    // Edge 0-1 follows (r,s) = (p,-1)
     if (distance_01 <= distance_12 && distance_01 <= distance_23 && distance_01 <= distance_30) {
         return {edge_01_local, Precision(-1)};
     }
 
-    // edge 1-2 follows (r,s) = (1,p)
+    // Edge 1-2 follows (r,s) = (1,p)
     if (distance_12 <= distance_01 && distance_12 <= distance_23 && distance_12 <= distance_30) {
         return {Precision(1), edge_12_local};
     }
 
-    // edge 2-3 runs from r=1 to r=-1 and therefore follows (r,s) = (-p,1)
+    // Edge 2-3 runs from r=1 to r=-1 and therefore follows (r,s) = (-p,1)
     if (distance_23 <= distance_01 && distance_23 <= distance_12 && distance_23 <= distance_30) {
         return {-edge_23_local, Precision(1)};
     }
 
-    // edge 3-0 runs from s=1 to s=-1 and therefore follows (r,s) = (-1,-p)
+    // Edge 3-0 runs from s=1 to s=-1 and therefore follows (r,s) = (-1,-p)
     return {Precision(-1), -edge_30_local};
 }
 

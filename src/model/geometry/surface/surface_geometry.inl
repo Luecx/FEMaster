@@ -2,7 +2,12 @@
  * @file surface_geometry.inl
  * @brief Implements interpolation, geometry and connectivity for finite-element surfaces.
  *
- * @see surface.h
+ * These routines provide the topology-independent parts of the isoparametric
+ * surface description. They gather nodal coordinates, evaluate mappings and
+ * Jacobians, and expose the natural domain used by projection and integration.
+ *
+ * @see Surface
+ * @see SurfaceInterface
  */
 
 #pragma once
@@ -164,7 +169,7 @@ template<Index N>
 StaticMatrix<N, 3> Surface<N>::node_coords_global(const Field& node_coords) const {
     StaticMatrix<N, 3> coordinates{};
 
-    // copy the global coordinate row belonging to every local surface node
+    // Gather the global coordinate row belonging to every local surface node
     for (Index local_id = 0; local_id < N; ++local_id) {
         const Index node_id = static_cast<Index>(nodeIds[local_id]);
         coordinates.row(local_id) = node_coords.row_vec3(node_id).transpose();

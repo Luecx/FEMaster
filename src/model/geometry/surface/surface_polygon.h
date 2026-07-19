@@ -3,11 +3,14 @@
  * @brief Declares a fixed-capacity polygon for surface operations in 2D.
  *
  * `SurfacePolygon` stores a small number of two-dimensional points without
- * dynamic memory allocation. It provides polygon area evaluation and convex
- * polygon intersection using the Sutherland-Hodgman clipping algorithm.
+ * dynamic memory allocation. It provides signed and unsigned area evaluation,
+ * a vertex-average point, orientation handling and convex polygon intersection
+ * using the Sutherland-Hodgman clipping algorithm.
  *
  * Polygon vertices used for intersection must be ordered counter-clockwise.
  * The clipping polygon and subject polygon are assumed to be convex.
+ * The template capacity is fixed at compile time; intersection results use a
+ * capacity equal to the sum of the two input capacities.
  *
  * @see surface_polygon.inl
  */
@@ -30,37 +33,45 @@ namespace fem {
  */
 template<std::size_t MP>
 class SurfacePolygon {
-    // points and current amount of points actually stored/used
+    // Fixed-capacity vertex storage and number of active vertices
     std::array<Vec2, MP> points_{};
     std::size_t          size_ = 0;
 public:
-    // constructions
+    // Construction
     SurfacePolygon() = default;
     SurfacePolygon(std::initializer_list<Vec2> points);
 
-    // basic functions for size
+    // Number of active vertices currently stored in the fixed-capacity array.
+    // Unused array entries do not belong to the polygon and are ignored by all
+    // geometric operations.
     [[nodiscard]] std::size_t size() const;
 
-    // accessor functions
+    // Checked access to vertices in their boundary order. The mutable overload
+    // allows callers to update coordinates without changing the polygon size.
     [[nodiscard]] const Vec2& operator[](std::size_t index) const;
     [[nodiscard]] Vec2&       operator[](std::size_t index);
-    // add a new point
+
+    // Append a vertex while preserving the existing boundary order. The
+    // compile-time capacity is enforced by the implementation.
     void push_back(const Vec2& point);
 
-    // reverse the polygon orientation while retaining the first point
+    // Reverse the boundary orientation while retaining the first vertex as a
+    // deterministic anchor for subsequent clipping and triangulation.
     void flip();
 
-    // area functions, area2 is just twice the area and has a sign convention and may be negative if not ccw
+    // Signed and unsigned polygon area together with the arithmetic mean of
+    // the active vertices. `area2()` also provides the orientation sign.
     [[nodiscard]] Precision area2() const;
     [[nodiscard]] Precision area() const;
 
-    // mid points of the polygon
-    [[nodiscard]] Vec2      mid() const;
+    [[nodiscard]] Vec2 mid() const;
 
-    // check if its counter clock wise, if
+    // Determine whether the signed area indicates counter-clockwise vertex
+    // ordering, as required by the clipping algorithm.
     [[nodiscard]] bool is_ccw() const;
 
-    // intersection method
+    // Intersect two convex polygons using fixed-capacity Sutherland-Hodgman
+    // clipping. The result capacity is the sum of both input capacities.
     template<std::size_t MPO>
     [[nodiscard]] SurfacePolygon<MP + MPO> intersection(const SurfacePolygon<MPO>& clip_polygon) const;
 

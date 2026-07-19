@@ -10,7 +10,8 @@
 #include "../../feature/point_mass.h"
 #include "../../bc/load_inertial.h"
 
-#include <Eigen/Cholesky>
+#include <Eigen/Geometry>
+#include <Eigen/Eigenvalues>
 #include <cmath>
 #include <iomanip>
 #include <utility>

@@ -2,6 +2,19 @@
  * @file surface.h
  * @brief Defines the common base template for finite-element surfaces.
  *
+ * The surface abstraction stores the connectivity of one triangular or
+ * quadrilateral finite element and provides the topology-independent
+ * operations needed by geometry, projection and surface integration.
+ * Concrete surface types supply the shape functions, their derivatives, the
+ * natural nodal coordinates, the boundary projection and the quadrature rule.
+ *
+ * The implementation covers interpolation, mappings between natural and
+ * global coordinates, differential geometry, polygon clipping and integration
+ * of scalar, vector and tensor fields over the physical surface.
+ *
+ * @see SurfaceInterface
+ * @see SurfacePolygon
+ *
  * @author Finn Eggers
  * @date 27.09.2024
  */
@@ -13,10 +26,23 @@
 #include <array>
 #include <functional>
 
+#include <Eigen/Geometry>
+
 namespace fem::model {
 
 /**
  * @brief Common base class for triangular and quadrilateral surface elements.
+ *
+ * `N = 3` and `N = 6` represent linear and quadratic triangles. `N = 4` and
+ * `N = 8` represent bilinear and serendipity quadrilaterals. The natural
+ * coordinate domain is therefore topology-dependent, while all physical
+ * geometry is obtained from the isoparametric mapping defined by the derived
+ * shape functions.
+ *
+ * The class owns the global node identifiers and uses them to gather nodal
+ * coordinates from a model field. Derived classes must implement the
+ * element-specific interpolation data and the closest-point search on the
+ * element boundary.
  *
  * @tparam N Number of surface nodes.
  */
@@ -29,7 +55,7 @@ struct Surface : public SurfaceInterface {
     static constexpr Index num_nodes          = N;
     static constexpr Index num_nodes_per_edge = N > 4 ? 3 : 2;
 
-    // Global node identifiers
+    // Global node identifiers of the surface
     std::array<ID, N> nodeIds{};
 
     // Construction
@@ -42,16 +68,16 @@ struct Surface : public SurfaceInterface {
     virtual StaticMatrix<N, 2> shape_derivative       (Precision r, Precision s) const = 0;
     virtual StaticMatrix<N, 3> shape_second_derivative(Precision r, Precision s) const = 0;
 
-    // evaluate the shape functions using dynamic storage
+    // Evaluate the shape functions through the dynamic interface
     DynamicVector shape_function(const Vec2& local) const override;
 
-    // local values of node coordinates in natural coordinates
+    // Natural coordinates of the surface nodes
     virtual StaticMatrix<N, 2> node_coords_local() const = 0;
 
-    // global coordinates of the attached nodes
+    // Gather global coordinates of the attached nodes
     StaticMatrix<N, 3> node_coords_global(const Field& node_coords) const;
 
-    // get pointer to first node
+    // Return contiguous mutable connectivity storage
     ID* nodes() override;
 
     // Boundary projection delegated to the concrete surface implementation
@@ -67,7 +93,7 @@ struct Surface : public SurfaceInterface {
     StaticVector<M> interpolate(const StaticMatrix<N, M>& nodal_values, Precision r, Precision s) const;
     StaticMatrix<3, 2> jacobian(const StaticMatrix<N, 3>& node_coords , Precision r, Precision s) const;
 
-    // polygon of the element corners in local / natural coordinates
+    // Return the polygon of the element domain in natural coordinates
     Polygon local_domain_polygon() const override;
 
     // Coordinate transformations

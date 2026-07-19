@@ -38,14 +38,14 @@ Surface6::Surface6(const std::array<ID, 6>& node_ids)
  * @return Shape-function vector evaluated at `(r,s)`.
  */
 StaticMatrix<6, 1> Surface6::shape_function(Precision r, Precision s) const {
-    // define the first barycentric coordinate once because it occurs in
-    // several corner and midside shape functions
+    // Define the first barycentric coordinate once because it occurs in
+    // Several corner and midside shape functions
     const Precision t = Precision(1) - r - s;
 
     StaticMatrix<6, 1> shape;
 
-    // the first three entries interpolate the corner nodes while the final
-    // three entries interpolate the midside nodes
+    // The first three entries interpolate the corner nodes while the final
+    // Three entries interpolate the midside nodes
     shape << t * (Precision(2) * t - Precision(1)),
              r * (Precision(2) * r - Precision(1)),
              s * (Precision(2) * s - Precision(1)),
@@ -70,8 +70,8 @@ StaticMatrix<6, 1> Surface6::shape_function(Precision r, Precision s) const {
 StaticMatrix<6, 2> Surface6::shape_derivative(Precision r, Precision s) const {
     StaticMatrix<6, 2> derivative;
 
-    // each row belongs to one quadratic shape function while the columns
-    // contain differentiation with respect to r and s
+    // Each row belongs to one quadratic shape function while the columns
+    // Contain differentiation with respect to r and s
     derivative(0, 0) = -Precision(3) + Precision(4) * (r + s);
     derivative(0, 1) = -Precision(3) + Precision(4) * (r + s);
 
@@ -108,15 +108,15 @@ StaticMatrix<6, 2> Surface6::shape_derivative(Precision r, Precision s) const {
  * @return Matrix containing the second shape-function derivatives.
  */
 StaticMatrix<6, 3> Surface6::shape_second_derivative(Precision r, Precision s) const {
-    // the second derivatives are constant, but the coordinates remain part of
-    // the common surface interface
+    // The second derivatives are constant, but the coordinates remain part of
+    // The common surface interface
     (void) r;
     (void) s;
 
     StaticMatrix<6, 3> second_derivative;
 
-    // each row contains the two pure and the mixed second derivative of one
-    // quadratic triangular shape function
+    // Each row contains the two pure and the mixed second derivative of one
+    // Quadratic triangular shape function
     second_derivative <<  Precision(4),  Precision(4),  Precision(4),
                           Precision(4),  Precision(0),  Precision(0),
                           Precision(0),  Precision(4),  Precision(0),
@@ -138,7 +138,7 @@ StaticMatrix<6, 3> Surface6::shape_second_derivative(Precision r, Precision s) c
 StaticMatrix<6, 2> Surface6::node_coords_local() const {
     StaticMatrix<6, 2> local_coords;
 
-    // the row order has to match the node and shape-function ordering
+    // The row order has to match the node and shape-function ordering
     local_coords << Precision(0.0), Precision(0.0),  // corner node 1
                     Precision(1.0), Precision(0.0),  // corner node 2
                     Precision(0.0), Precision(1.0),  // corner node 3
@@ -163,14 +163,14 @@ StaticMatrix<6, 2> Surface6::node_coords_local() const {
  */
 Vec2 Surface6::closest_point_on_boundary(const Vec3&               global,
                                          const StaticMatrix<6, 3>& node_coords) const {
-    // represent the three quadratic triangle edges using both corner nodes and
-    // the corresponding midside node
+    // Represent the three quadratic triangle edges using both corner nodes and
+    // The corresponding midside node
     Line3B edge_01({0, 1, 3});
     Line3B edge_12({1, 2, 4});
     Line3B edge_20({2, 0, 5});
 
-    // the line-element interface operates on Field storage, so transfer the
-    // supplied fixed-size coordinate matrix into a temporary nodal field
+    // The line-element interface operates on Field storage, so transfer the
+    // Supplied fixed-size coordinate matrix into a temporary nodal field
     Field node_field("SURFACE6_BOUNDARY", FieldDomain::NODE, 6, 3);
 
     for (Index local_id = 0; local_id < 6; ++local_id) {
@@ -179,35 +179,35 @@ Vec2 Surface6::closest_point_on_boundary(const Vec3&               global,
         }
     }
 
-    // project the global point independently onto every curved triangle edge
+    // Project the global point independently onto every curved triangle edge
     const Precision edge_01_local = edge_01.global_to_local(global, node_field);
     const Precision edge_12_local = edge_12.global_to_local(global, node_field);
     const Precision edge_20_local = edge_20.global_to_local(global, node_field);
 
-    // map the edge-local projections back into physical coordinates so their
-    // distances to the requested global point can be compared
+    // Map the edge-local projections back into physical coordinates so their
+    // Distances to the requested global point can be compared
     const Vec3 point_01 = edge_01.local_to_global(edge_01_local, node_field);
     const Vec3 point_12 = edge_12.local_to_global(edge_12_local, node_field);
     const Vec3 point_20 = edge_20.local_to_global(edge_20_local, node_field);
 
-    // squared distances are sufficient for comparison and avoid unnecessary
-    // square-root evaluations
+    // Squared distances are sufficient for comparison and avoid unnecessary
+    // Square-root evaluations
     const Precision distance_01 = (point_01 - global).squaredNorm();
     const Precision distance_12 = (point_12 - global).squaredNorm();
     const Precision distance_20 = (point_20 - global).squaredNorm();
 
-    // edge 0-1 follows (r,s) = (p,0)
+    // Edge 0-1 follows (r,s) = (p,0)
     if (distance_01 <= distance_12 && distance_01 <= distance_20) {
         return {edge_01_local, Precision(0)};
     }
 
-    // edge 2-0 follows (r,s) = (0,1-p) because its line orientation starts at
-    // node 2 and ends at node 0
+    // Edge 2-0 follows (r,s) = (0,1-p) because its line orientation starts at
+    // Node 2 and ends at node 0
     if (distance_20 <= distance_01 && distance_20 <= distance_12) {
         return {Precision(0), Precision(1) - edge_20_local};
     }
 
-    // edge 1-2 follows (r,s) = (1-p,p)
+    // Edge 1-2 follows (r,s) = (1-p,p)
     return {Precision(1) - edge_12_local, edge_12_local};
 }
 

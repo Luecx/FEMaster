@@ -14,6 +14,8 @@
 #include "../model/element/element_structural.h"
 #include "../model/model_data.h"
 
+#include <Eigen/Geometry>
+
 #include <sstream>
 
 namespace fem {

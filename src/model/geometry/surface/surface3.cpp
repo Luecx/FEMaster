@@ -37,8 +37,8 @@ Surface3::Surface3(const std::array<ID, 3>& node_ids)
 StaticMatrix<3, 1> Surface3::shape_function(Precision r, Precision s) const {
     StaticMatrix<3, 1> shape;
 
-    // the linear shape functions are identical to the barycentric coordinates
-    // of the three-node reference triangle
+    // The linear shape functions are identical to the barycentric coordinates
+    // Of the three-node reference triangle
     shape << Precision(1) - r - s,
              r,
              s;
@@ -60,15 +60,15 @@ StaticMatrix<3, 1> Surface3::shape_function(Precision r, Precision s) const {
  * @return Matrix containing the first shape-function derivatives.
  */
 StaticMatrix<3, 2> Surface3::shape_derivative(Precision r, Precision s) const {
-    // the derivatives are constant, but the coordinates remain part of the
-    // common surface interface
+    // The derivatives are constant, but the coordinates remain part of the
+    // Common surface interface
     (void) r;
     (void) s;
 
     StaticMatrix<3, 2> derivative;
 
-    // each row belongs to one shape function while the columns contain
-    // differentiation with respect to r and s
+    // Each row belongs to one shape function while the columns contain
+    // Differentiation with respect to r and s
     derivative << Precision(-1), Precision(-1),
                    Precision( 1), Precision( 0),
                    Precision( 0), Precision( 1);
@@ -88,8 +88,8 @@ StaticMatrix<3, 2> Surface3::shape_derivative(Precision r, Precision s) const {
  * @return Zero matrix containing the second shape-function derivatives.
  */
 StaticMatrix<3, 3> Surface3::shape_second_derivative(Precision r, Precision s) const {
-    // the second derivatives are constant zeros, but the coordinates remain
-    // part of the common surface interface
+    // The second derivatives are constant zeros, but the coordinates remain
+    // Part of the common surface interface
     (void) r;
     (void) s;
 
@@ -107,7 +107,7 @@ StaticMatrix<3, 3> Surface3::shape_second_derivative(Precision r, Precision s) c
 StaticMatrix<3, 2> Surface3::node_coords_local() const {
     StaticMatrix<3, 2> local_coords;
 
-    // the row order has to match the node and shape-function ordering
+    // The row order has to match the node and shape-function ordering
     local_coords << Precision(0), Precision(0),  // node 1
                     Precision(1), Precision(0),  // node 2
                     Precision(0), Precision(1);  // node 3
@@ -129,14 +129,14 @@ StaticMatrix<3, 2> Surface3::node_coords_local() const {
  */
 Vec2 Surface3::closest_point_on_boundary(const Vec3&               global,
                                          const StaticMatrix<3, 3>& node_coords) const {
-    // represent the three triangle edges by line elements following the
-    // surface node ordering
+    // Represent the three triangle edges by line elements following the
+    // Surface node ordering
     Line2B edge_01({0, 1});
     Line2B edge_12({1, 2});
     Line2B edge_20({2, 0});
 
-    // the line-element interface operates on Field storage, so transfer the
-    // supplied fixed-size coordinate matrix into a temporary nodal field
+    // The line-element interface operates on Field storage, so transfer the
+    // Supplied fixed-size coordinate matrix into a temporary nodal field
     Field node_field("SURFACE3_BOUNDARY", FieldDomain::NODE, 3, 3);
 
     for (Index local_id = 0; local_id < 3; ++local_id) {
@@ -145,35 +145,35 @@ Vec2 Surface3::closest_point_on_boundary(const Vec3&               global,
         }
     }
 
-    // project the global point independently onto every triangle edge
+    // Project the global point independently onto every triangle edge
     const Precision edge_01_local = edge_01.global_to_local(global, node_field);
     const Precision edge_12_local = edge_12.global_to_local(global, node_field);
     const Precision edge_20_local = edge_20.global_to_local(global, node_field);
 
-    // map the edge-local projections back into physical coordinates so their
-    // distances to the requested global point can be compared
+    // Map the edge-local projections back into physical coordinates so their
+    // Distances to the requested global point can be compared
     const Vec3 point_01 = edge_01.local_to_global(edge_01_local, node_field);
     const Vec3 point_12 = edge_12.local_to_global(edge_12_local, node_field);
     const Vec3 point_20 = edge_20.local_to_global(edge_20_local, node_field);
 
-    // squared distances are sufficient for comparison and avoid unnecessary
-    // square-root evaluations
+    // Squared distances are sufficient for comparison and avoid unnecessary
+    // Square-root evaluations
     const Precision distance_01 = (point_01 - global).squaredNorm();
     const Precision distance_12 = (point_12 - global).squaredNorm();
     const Precision distance_20 = (point_20 - global).squaredNorm();
 
-    // edge 0-1 follows (r,s) = (p,0)
+    // Edge 0-1 follows (r,s) = (p,0)
     if (distance_01 <= distance_12 && distance_01 <= distance_20) {
         return {edge_01_local, Precision(0)};
     }
 
-    // edge 2-0 follows (r,s) = (0,1-p) because its line orientation starts at
-    // node 2 and ends at node 0
+    // Edge 2-0 follows (r,s) = (0,1-p) because its line orientation starts at
+    // Node 2 and ends at node 0
     if (distance_20 <= distance_01 && distance_20 <= distance_12) {
         return {Precision(0), Precision(1) - edge_20_local};
     }
 
-    // edge 1-2 follows (r,s) = (1-p,p)
+    // Edge 1-2 follows (r,s) = (1-p,p)
     return {
         Precision(1) - edge_12_local,
         edge_12_local
