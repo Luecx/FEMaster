@@ -1,30 +1,32 @@
 /**
  * @file field.h
- * @brief Declares a lightweight dense field container used for model data.
+ * @brief Declares lightweight dense storage for model fields.
  *
- * Fields are intentionally untyped: they only store their name, domain, size,
- * and values. Semantics are handled by higher-level model utilities.
+ * `Field` stores named scalar or vector-valued model data on nodes, elements,
+ * integration points and other model domains. Values are stored contiguously
+ * in row-major order as `rows x components`.
  *
+ * Field semantics remain intentionally external. The container only manages
+ * metadata, dense storage and basic element-wise operations.
+ *
+ * @see field.cpp
  * @see src/model/model_data.h
  */
 
 #pragma once
 
-#include "../core/logging.h"
 #include "../core/types_eig.h"
 
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace fem {
 namespace model {
 
+// Identifies the model entity associated with each field row
 enum class FieldDomain : std::uint8_t {
     UNKNOWN,
     NODE,
@@ -34,229 +36,115 @@ enum class FieldDomain : std::uint8_t {
     ELEMENT_MP
 };
 
-// ------------------------------------------------------------
-// Dense storage (row-major): data[r*cols + c]
-// ------------------------------------------------------------
+// Dense row-major storage with index layout row * cols + col
 class FieldMatrix {
 public:
+    // Constructs an empty matrix
     FieldMatrix() = default;
 
-    FieldMatrix(Index rows, Index cols)
-        : _rows(rows), _cols(cols),
-          _data(static_cast<size_t>(rows) * static_cast<size_t>(cols)) {}
+    // Constructs a zero-initialized matrix with the given dimensions
+    FieldMatrix(Index rows, Index cols);
 
-    [[nodiscard]] Index rows() const { return _rows; }
-    [[nodiscard]] Index cols() const { return _cols; }
+    // Returns the matrix dimensions
+    [[nodiscard]] Index rows() const;
+    [[nodiscard]] Index cols() const;
 
-    Precision& operator()(Index r, Index c) {
-        logging::error(r < _rows && c < _cols, "FieldMatrix: index (", r, ", ", c, ") is outside ", _rows, "x", _cols);
-        return _data[static_cast<size_t>(r) * static_cast<size_t>(_cols) + static_cast<size_t>(c)];
-    }
+    // Returns the total number of stored scalar values
+    [[nodiscard]] std::size_t size() const;
 
-    Precision operator()(Index r, Index c) const {
-        logging::error(r < _rows && c < _cols, "FieldMatrix: index (", r, ", ", c, ") is outside ", _rows, "x", _cols);
-        return _data[static_cast<size_t>(r) * static_cast<size_t>(_cols) + static_cast<size_t>(c)];
-    }
+    // Returns a matrix entry by mutable or constant access
+    Precision& operator()(Index row, Index col);
+    Precision  operator()(Index row, Index col) const;
 
-    Precision* data() { return _data.data(); }
-    const Precision* data() const { return _data.data(); }
+    // Returns the contiguous row-major storage
+    [[nodiscard]] Precision*       data();
+    [[nodiscard]] const Precision* data() const;
 
-    void set_zero() {
-        for (auto& v : _data) v = Precision(0);
-    }
+    // Initializes all stored values
+    void set_zero();
+    void set_ones();
+    void fill_nan();
 
-    void set_ones() {
-        for (auto& v : _data) v = Precision(1);
-    }
-
-    void fill_nan() {
-        const Precision nan = std::numeric_limits<Precision>::quiet_NaN();
-        for (auto& v : _data) v = nan;
-    }
-
-    [[nodiscard]] bool has_any_finite() const {
-        for (const auto& v : _data) {
-            if (std::isfinite(static_cast<double>(v))) return true;
-        }
-        return false;
-    }
+    // Returns whether at least one stored value is finite
+    [[nodiscard]] bool has_any_finite() const;
 
 private:
-    Index _rows = 0;
-    Index _cols = 0;
-    std::vector<Precision> _data{};
+    // Converts a checked matrix index into a flat storage index
+    [[nodiscard]] std::size_t offset(Index row, Index col) const;
+
+    Index                  rows_{};
+    Index                  cols_{};
+    std::vector<Precision> data_{};
 };
 
-// ------------------------------------------------------------
-// Field: name + domain + allocated sizes + dense data
-// ------------------------------------------------------------
+// Named dense field associated with a model domain
 struct Field {
     using Ptr = std::shared_ptr<Field>;
 
-    std::string name;
-    FieldDomain domain;
+    std::string name{};
+    FieldDomain domain{FieldDomain::UNKNOWN};
 
-    Index rows;
-    Index components;
+    Index rows{};
+    Index components{};
 
-    FieldMatrix values;
+    FieldMatrix values{};
 
-    // Default-constructible so types embedding Field can declare members
-    // and assign later (e.g., mode containers). Creates an empty 0x0 field.
-    Field() : name(), domain(FieldDomain::UNKNOWN), rows(0), components(0), values() {}
+    // Constructs an empty field
+    Field() = default;
 
-    Field(std::string p_name, FieldDomain p_domain, Index p_rows, Index p_components)
-        : name(std::move(p_name)),
-          domain(p_domain),
-          rows(p_rows),
-          components(p_components),
-          values(rows, components) {
-        logging::error(rows > 0, "Field '", name, "': rows == 0 (domain not configured?)");
-        logging::error(components > 0, "Field '", name, "': components == 0");
-    }
+    // Constructs an allocated field with the given metadata
+    Field(std::string field_name,
+          FieldDomain field_domain,
+          Index       row_count,
+          Index       component_count);
 
-    // ---- basic access ----
-    Precision& operator()(Index r, Index c) { return values(r, c); }
-    Precision  operator()(Index r, Index c) const { return values(r, c); }
+    // Returns a field component by mutable or constant access
+    Precision& operator()(Index row, Index component);
+    Precision  operator()(Index row, Index component) const;
 
-    // convenience for scalar fields (components==1)
-    Precision& operator()(Index r) {
-        logging::error(components == 1, "Field '", name, "': scalar access requires components==1");
-        return values(r, 0);
-    }
-    Precision operator()(Index r) const {
-        logging::error(components == 1, "Field '", name, "': scalar access requires components==1");
-        return values(r, 0);
-    }
+    // Returns a scalar field value
+    Precision& operator()(Index row);
+    Precision  operator()(Index row) const;
 
-    Precision* data() { return values.data(); }
-    const Precision* data() const { return values.data(); }
+    // Returns the contiguous row-major storage
+    [[nodiscard]] Precision*       data();
+    [[nodiscard]] const Precision* data() const;
 
-    // ---- init helpers ----
-    void fill_nan() { values.fill_nan(); }
-    void set_zero() { values.set_zero(); }
-    void set_ones() { values.set_ones(); }
+    // Initializes all field values
+    void set_zero();
+    void set_ones();
+    void fill_nan();
 
-    // ---- validity helpers ----
-    [[nodiscard]] bool has_any_finite() const { return values.has_any_finite(); }
+    // Returns whether at least one field value is finite
+    [[nodiscard]] bool has_any_finite() const;
 
-    [[nodiscard]] bool is_nan(Index r, Index c) const {
-        const Precision v = values(r, c);
-        return !std::isfinite(static_cast<double>(v));
-    }
+    // Returns whether a field component is not finite
+    [[nodiscard]] bool is_nan(Index row, Index component) const;
 
-    // ---- row helpers ----
-    Vec3 row_vec3(Index r) const {
-        logging::error(components >= 3, "Field '", name, "': row_vec3 requires components>=3");
-        return Vec3(values(r, 0), values(r, 1), values(r, 2));
-    }
+    // Returns the first three components of a row
+    [[nodiscard]] Vec3 row_vec3(Index row) const;
 
-    Vec6 row_vec6(Index r) const {
-        logging::error(components >= 6, "Field '", name, "': row_vec6 requires components>=6");
-        return Vec6(values(r, 0), values(r, 1), values(r, 2),
-                    values(r, 3), values(r, 4), values(r, 5));
-    }
+    // Returns the first six components of a row
+    [[nodiscard]] Vec6 row_vec6(Index row) const;
 
-    // ---- in-place operators (no new field creation) ----
-    // Scalar compound operations
-    Field& operator+=(Precision s) {
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) += s;
-            }
-        }
-        return *this;
-    }
+    // Applies scalar compound operations
+    Field& operator+=(Precision scalar);
+    Field& operator-=(Precision scalar);
+    Field& operator*=(Precision scalar);
+    Field& operator/=(Precision scalar);
 
-    Field& operator-=(Precision s) {
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) -= s;
-            }
-        }
-        return *this;
-    }
+    // Applies element-wise compound operations
+    Field& operator+=(const Field& other);
+    Field& operator-=(const Field& other);
+    Field& operator*=(const Field& other);
+    Field& operator/=(const Field& other);
 
-    Field& operator*=(Precision s) {
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) *= s;
-            }
-        }
-        return *this;
-    }
-
-    Field& operator/=(Precision s) {
-        logging::error(s != Precision(0), "Field '", name, "': division by zero in scalar '/=' operation");
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) /= s;
-            }
-        }
-        return *this;
-    }
-
-    // Element-wise compound operations with another Field
-    Field& operator+=(const Field& other) {
-        logging::error(domain == other.domain,
-                       "Field '", name, "': domain mismatch in '+=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
-        logging::error(rows == other.rows && components == other.components,
-                       "Field '", name, "': size mismatch in '+=' (", rows, "x", components,
-                       " vs ", other.rows, "x", other.components, ")");
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) += other(r, c);
-            }
-        }
-        return *this;
-    }
-
-    Field& operator-=(const Field& other) {
-        logging::error(domain == other.domain,
-                       "Field '", name, "': domain mismatch in '-=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
-        logging::error(rows == other.rows && components == other.components,
-                       "Field '", name, "': size mismatch in '-=' (", rows, "x", components,
-                       " vs ", other.rows, "x", other.components, ")");
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) -= other(r, c);
-            }
-        }
-        return *this;
-    }
-
-    Field& operator*=(const Field& other) {
-        logging::error(domain == other.domain,
-                       "Field '", name, "': domain mismatch in '*=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
-        logging::error(rows == other.rows && components == other.components,
-                       "Field '", name, "': size mismatch in '*=' (", rows, "x", components,
-                       " vs ", other.rows, "x", other.components, ")");
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                values(r, c) *= other(r, c);
-            }
-        }
-        return *this;
-    }
-
-    Field& operator/=(const Field& other) {
-        logging::error(domain == other.domain,
-                       "Field '", name, "': domain mismatch in '/=' (", static_cast<int>(domain), " vs ", static_cast<int>(other.domain), ")");
-        logging::error(rows == other.rows && components == other.components,
-                       "Field '", name, "': size mismatch in '/=' (", rows, "x", components,
-                       " vs ", other.rows, "x", other.components, ")");
-        for (Index r = 0; r < rows; ++r) {
-            for (Index c = 0; c < components; ++c) {
-                const Precision denom = other(r, c);
-                logging::error(denom != Precision(0),
-                               "Field '", name, "': division by zero at (", r, ",", c, ") in field '/=' with '", other.name, "'");
-                values(r, c) /= denom;
-            }
-        }
-        return *this;
-    }
+private:
+    // Validates domain and dimensions for an element-wise operation
+    void validate_compatible(const Field& other, const char* operation) const;
 };
 
 using NodeData = Field;
+
 } // namespace model
 } // namespace fem
