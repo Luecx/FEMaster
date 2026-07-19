@@ -1,154 +1,238 @@
 /**
  * @file surface4.cpp
- * @brief Implementation file for the Surface4 class.
+ * @brief Implements the four-node bilinear quadrilateral surface element.
  *
- * @details Contains the definitions of member functions for the `Surface4` class,
- *          which represents a quadrilateral surface element with four nodes. This
- *          file includes methods for shape function evaluation, shape function
- *          derivatives, and element boundary projections.
- *
- * @date Created on 27.09.2024 by Finn Eggers
+ * @author Finn Eggers
+ * @date 27.09.2024
  */
 
 #include "surface4.h"
 
+#include "../line/line2a.h"
+
 namespace fem::model {
-/**
- * @brief Constructor for the Surface4 class (quadrilateral surface element with 4 nodes).
- *
- * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
- */
-Surface4::Surface4(const std::array<ID, 4>& pNodeIds)
-    : Surface<4>(pNodeIds) {}
 
 /**
- * @brief Compute the shape functions for the quadrilateral element.
+ * @brief Constructs a four-node quadrilateral surface.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<4, 1> Vector of shape function values.
+ * The node identifiers follow the natural corner ordering
+ * `(-1,-1)`, `(1,-1)`, `(1,1)`, and `(-1,1)`.
+ *
+ * @param node_ids Global identifiers of the four surface nodes.
+ */
+Surface4::Surface4(const std::array<ID, 4>& node_ids)
+    : Surface<4>(node_ids) {}
+
+/**
+ * @brief Evaluates the bilinear quadrilateral shape functions.
+ *
+ * Each shape function is one at its associated corner and zero at the
+ * remaining three corners of the natural element domain.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Shape-function vector evaluated at `(r,s)`.
  */
 StaticMatrix<4, 1> Surface4::shape_function(Precision r, Precision s) const {
-    StaticMatrix<4, 1> N;
-    N(0, 0) = 0.25 * (1 - r) * (1 - s);  // Shape function for node 1
-    N(1, 0) = 0.25 * (1 + r) * (1 - s);  // Shape function for node 2
-    N(2, 0) = 0.25 * (1 + r) * (1 + s);  // Shape function for node 3
-    N(3, 0) = 0.25 * (1 - r) * (1 + s);  // Shape function for node 4
-    return N;
+    StaticMatrix<4, 1> shape;
+
+    // evaluate the four bilinear corner shape functions following the node
+    // ordering around the natural quadrilateral domain
+    shape << Precision(0.25) * (Precision(1) - r) * (Precision(1) - s),
+             Precision(0.25) * (Precision(1) + r) * (Precision(1) - s),
+             Precision(0.25) * (Precision(1) + r) * (Precision(1) + s),
+             Precision(0.25) * (Precision(1) - r) * (Precision(1) + s);
+
+    return shape;
 }
 
 /**
- * @brief Compute the first derivatives of the shape functions.
+ * @brief Evaluates the first derivatives of the shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<4, 2> Matrix of shape function derivatives.
+ * The first and second matrix columns contain `dN/dr` and `dN/ds`,
+ * respectively.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Matrix containing the first shape-function derivatives.
  */
 StaticMatrix<4, 2> Surface4::shape_derivative(Precision r, Precision s) const {
-    StaticMatrix<4, 2> dN;
-    dN(0, 0) = -0.25 * (1 - s);  dN(0, 1) = -0.25 * (1 - r);  // dN1/dr, dN1/ds
-    dN(1, 0) =  0.25 * (1 - s);  dN(1, 1) = -0.25 * (1 + r);  // dN2/dr, dN2/ds
-    dN(2, 0) =  0.25 * (1 + s);  dN(2, 1) =  0.25 * (1 + r);  // dN3/dr, dN3/ds
-    dN(3, 0) = -0.25 * (1 + s);  dN(3, 1) =  0.25 * (1 - r);  // dN4/dr, dN4/ds
-    return dN;
+    StaticMatrix<4, 2> derivative;
+
+    // each row belongs to one shape function while both columns contain its
+    // derivatives with respect to r and s
+    derivative(0, 0) = -Precision(0.25) * (Precision(1) - s);
+    derivative(0, 1) = -Precision(0.25) * (Precision(1) - r);
+
+    derivative(1, 0) =  Precision(0.25) * (Precision(1) - s);
+    derivative(1, 1) = -Precision(0.25) * (Precision(1) + r);
+
+    derivative(2, 0) =  Precision(0.25) * (Precision(1) + s);
+    derivative(2, 1) =  Precision(0.25) * (Precision(1) + r);
+
+    derivative(3, 0) = -Precision(0.25) * (Precision(1) + s);
+    derivative(3, 1) =  Precision(0.25) * (Precision(1) - r);
+
+    return derivative;
 }
 
 /**
- * @brief Compute the second derivatives of the shape functions.
+ * @brief Evaluates the second derivatives of the shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<4, 3> Matrix of second-order shape function derivatives.
+ * Bilinear shape functions have no pure quadratic terms in either natural
+ * coordinate. Therefore, `d²N/dr²` and `d²N/ds²` vanish while the mixed
+ * derivatives `d²N/(dr ds)` remain constant.
+ *
+ * The three matrix columns contain `d²N/dr²`, `d²N/ds²`, and
+ * `d²N/(dr ds)`, respectively.
+ *
+ * @param r First natural coordinate; unused because the derivatives are constant.
+ * @param s Second natural coordinate; unused because the derivatives are constant.
+ *
+ * @return Matrix containing the second shape-function derivatives.
  */
 StaticMatrix<4, 3> Surface4::shape_second_derivative(Precision r, Precision s) const {
+    // the second derivatives are constant, but the coordinates remain part of
+    // the common surface interface
     (void) r;
     (void) s;
-    StaticMatrix<4, 3> ddN;
-    ddN << 0, 0,  0.25,  // d²N1/dr², d²N1/ds², d²N1/(drds)
-           0, 0, -0.25,  // d²N2/dr², d²N2/ds², d²N2/(drds)
-           0, 0,  0.25,  // d²N3/dr², d²N3/ds², d²N3/(drds)
-           0, 0, -0.25;  // d²N4/dr², d²N4/ds², d²N4/(drds)
-    return ddN;
+
+    StaticMatrix<4, 3> second_derivative;
+
+    // only the mixed derivatives are non-zero for bilinear interpolation
+    second_derivative << Precision(0), Precision(0),  Precision(0.25),
+                         Precision(0), Precision(0), -Precision(0.25),
+                         Precision(0), Precision(0),  Precision(0.25),
+                         Precision(0), Precision(0), -Precision(0.25);
+
+    return second_derivative;
 }
 
 /**
- * @brief Retrieve the local coordinates of the nodes for the quadrilateral element.
+ * @brief Returns the node positions in the natural coordinate system.
  *
- * @return StaticMatrix<4, 2> Local coordinates of the nodes.
+ * The four nodes are placed at the corners of the square natural domain
+ * `[-1,1] x [-1,1]`.
+ *
+ * @return Matrix containing one local `(r,s)` coordinate per node.
  */
 StaticMatrix<4, 2> Surface4::node_coords_local() const {
     StaticMatrix<4, 2> local_coords;
-    local_coords << -1.0, -1.0,  // Node 1
-                     1.0, -1.0,  // Node 2
-                     1.0,  1.0,  // Node 3
-                    -1.0,  1.0;  // Node 4
+
+    // the row order has to match the node and shape-function ordering
+    local_coords << Precision(-1), Precision(-1),  // node 1
+                    Precision( 1), Precision(-1),  // node 2
+                    Precision( 1), Precision( 1),  // node 3
+                    Precision(-1), Precision( 1);  // node 4
+
     return local_coords;
 }
 
 /**
- * @brief Return the integration scheme for the element.
+ * @brief Computes the closest point on the quadrilateral boundary.
  *
- * @return const math::quadrature::Quadrature& Quadrature scheme for the quadrilateral element.
- */
-const fem::math::quadrature::Quadrature& Surface4::integration_scheme() const {
-    static const math::quadrature::Quadrature quad{math::quadrature::DOMAIN_ISO_QUAD, math::quadrature::ORDER_LINEAR};
-    return quad;
-}
-
-/**
- * @brief Compute the closest point on the boundary to a given global point.
+ * The four element edges are represented by linear line elements. The global
+ * point is projected onto every edge, after which the closest projection is
+ * transformed back into the natural coordinates of the quadrilateral.
  *
- * @param global Global coordinates of the point.
- * @param node_coords Coordinates of the element nodes.
- * @return Vec2 Local coordinates of the closest boundary point.
+ * @param global Global point to project onto the element boundary.
+ * @param node_coords Global coordinates of the four quadrilateral nodes.
+ *
+ * @return Natural quadrilateral coordinates of the closest boundary point.
  */
-Vec2 Surface4::closest_point_on_boundary(const Vec3& global, const StaticMatrix<4, 3>& node_coords) const {
-    // Boundary checks using line elements defined between nodes
-    Line2A line1({0, 1});  // Line from node 1 to node 2
-    Line2A line2({1, 2});  // Line from node 2 to node 3
-    Line2A line3({2, 3});  // Line from node 3 to node 4
-    Line2A line4({3, 0});  // Line from node 4 to node 1
+Vec2 Surface4::closest_point_on_boundary(const Vec3&               global,
+                                         const StaticMatrix<4, 3>& node_coords) const {
+    // represent all four quadrilateral edges by line elements following the
+    // counter-clockwise surface node ordering
+    Line2A edge_01({0, 1});
+    Line2A edge_12({1, 2});
+    Line2A edge_23({2, 3});
+    Line2A edge_30({3, 0});
 
+    // the line-element interface operates on Field storage, so transfer the
+    // supplied fixed-size coordinate matrix into a temporary nodal field
     Field node_field("SURFACE4_BOUNDARY", FieldDomain::NODE, 4, 3);
-    for (Index i = 0; i < 4; ++i) {
-        for (Index j = 0; j < 3; ++j) {
-            node_field(i, j) = node_coords(i, j);
+
+    for (Index local_id = 0; local_id < 4; ++local_id) {
+        for (Dim component = 0; component < 3; ++component) {
+            node_field(local_id, component) = node_coords(local_id, component);
         }
     }
 
-    // Compute projections onto the four boundary lines
-    Precision line1_p = line1.global_to_local(global, node_field);
-    Precision line2_p = line2.global_to_local(global, node_field);
-    Precision line3_p = line3.global_to_local(global, node_field);
-    Precision line4_p = line4.global_to_local(global, node_field);
+    // project the global point independently onto every quadrilateral edge
+    const Precision edge_01_local = edge_01.global_to_local(global, node_field);
+    const Precision edge_12_local = edge_12.global_to_local(global, node_field);
+    const Precision edge_23_local = edge_23.global_to_local(global, node_field);
+    const Precision edge_30_local = edge_30.global_to_local(global, node_field);
 
-    // Convert local line parameters to global points
-    Vec3 p1 = line1.local_to_global(line1_p, node_field);
-    Vec3 p2 = line2.local_to_global(line2_p, node_field);
-    Vec3 p3 = line3.local_to_global(line3_p, node_field);
-    Vec3 p4 = line4.local_to_global(line4_p, node_field);
+    // map the edge-local projections back into physical coordinates so their
+    // distances to the requested global point can be compared
+    const Vec3 point_01 = edge_01.local_to_global(edge_01_local, node_field);
+    const Vec3 point_12 = edge_12.local_to_global(edge_12_local, node_field);
+    const Vec3 point_23 = edge_23.local_to_global(edge_23_local, node_field);
+    const Vec3 point_30 = edge_30.local_to_global(edge_30_local, node_field);
 
-    // Calculate squared distances
-    Precision d1 = (p1 - global).squaredNorm();
-    Precision d2 = (p2 - global).squaredNorm();
-    Precision d3 = (p3 - global).squaredNorm();
-    Precision d4 = (p4 - global).squaredNorm();
+    // squared distances are sufficient for comparison and avoid unnecessary
+    // square-root evaluations
+    const Precision distance_01 = (point_01 - global).squaredNorm();
+    const Precision distance_12 = (point_12 - global).squaredNorm();
+    const Precision distance_23 = (point_23 - global).squaredNorm();
+    const Precision distance_30 = (point_30 - global).squaredNorm();
 
-    // Return the local coordinates of the closest boundary point
-    if (d1 <= d2 && d1 <= d3 && d1 <= d4) return {line1_p, -1};
-    if (d2 <= d1 && d2 <= d3 && d2 <= d4) return {1, line2_p};
-    if (d3 <= d1 && d3 <= d2 && d3 <= d4) return {-line3_p, 1};
-    return {-1, -line4_p};
+    // edge 0-1 follows (r,s) = (p,-1)
+    if (distance_01 <= distance_12 && distance_01 <= distance_23 && distance_01 <= distance_30) {
+        return {edge_01_local, Precision(-1)};
+    }
+
+    // edge 1-2 follows (r,s) = (1,p)
+    if (distance_12 <= distance_01 && distance_12 <= distance_23 && distance_12 <= distance_30) {
+        return {Precision(1), edge_12_local};
+    }
+
+    // edge 2-3 runs from r=1 to r=-1 and therefore follows (r,s) = (-p,1)
+    if (distance_23 <= distance_01 && distance_23 <= distance_12 && distance_23 <= distance_30) {
+        return {-edge_23_local, Precision(1)};
+    }
+
+    // edge 3-0 runs from s=1 to s=-1 and therefore follows (r,s) = (-1,-p)
+    return {Precision(-1), -edge_30_local};
 }
 
 /**
- * @brief Check if a local point is within the bounds of the quadrilateral element.
+ * @brief Checks whether natural coordinates lie inside the reference square.
  *
- * @param local Local coordinates (r, s).
- * @return bool True if the point is within bounds, false otherwise.
+ * A point belongs to the quadrilateral domain when both natural coordinates
+ * lie in the closed interval `[-1,1]`.
+ *
+ * @param local Natural coordinates `(r,s)` to test.
+ *
+ * @return `true` when the point lies inside or on the element boundary.
  */
 bool Surface4::in_bounds(const Vec2& local) const {
-    return local(0) >= -1 && local(0) <= 1 && local(1) >= -1 && local(1) <= 1;
-}
-}  // namespace fem::model
+    const Precision r = local(0);
+    const Precision s = local(1);
 
+    return r >= Precision(-1) && r <= Precision(1) &&
+           s >= Precision(-1) && s <= Precision(1);
+}
+
+/**
+ * @brief Returns the quadrature rule used for the bilinear quadrilateral.
+ *
+ * The static quadrature object is constructed only once and reused for all
+ * element evaluations.
+ *
+ * @return Linear-order quadrature rule on the isoparametric square domain.
+ */
+const math::quadrature::Quadrature& Surface4::integration_scheme() const {
+    static const math::quadrature::Quadrature scheme{
+        math::quadrature::DOMAIN_ISO_QUAD,
+        math::quadrature::ORDER_LINEAR
+    };
+
+    return scheme;
+}
+
+} // namespace fem::model

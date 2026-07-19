@@ -1,175 +1,280 @@
 /**
  * @file surface8.cpp
- * @brief Implements the functions for the Surface8 class.
+ * @brief Implements the eight-node quadratic quadrilateral surface element.
  *
- * @details This file contains the implementation of shape functions, shape
- *          derivatives, local to global coordinate mappings, and surface
- *          integration schemes for the 8-node quadrilateral surface element.
- *
- * @date Created on 01.10.2024 by Finn Eggers
+ * @author Finn Eggers
+ * @date 01.10.2024
  */
 
 #include "surface8.h"
+
 #include "../line/line3a.h"
 
 namespace fem::model {
 
 /**
- * @brief Constructor for the Surface8 class (quadrilateral surface element with 8 nodes).
+ * @brief Constructs an eight-node quadratic quadrilateral surface.
  *
- * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
+ * The first four node identifiers correspond to the quadrilateral corners.
+ * The remaining identifiers correspond to the midside nodes on edges `0-1`,
+ * `1-2`, `2-3`, and `3-0`.
+ *
+ * @param node_ids Global identifiers of the eight surface nodes.
  */
-fem::model::Surface8::Surface8(const std::array<ID, 8>& pNodeIds)
-    : Surface<8>(pNodeIds) {}
+Surface8::Surface8(const std::array<ID, 8>& node_ids)
+    : Surface<8>(node_ids) {}
 
 /**
- * @brief Compute the shape functions for the 8-node quadrilateral element.
+ * @brief Evaluates the eight-node serendipity shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<8, 1> Vector of shape function values.
+ * The first four functions interpolate the corner nodes, while the remaining
+ * four functions interpolate the midside nodes of the natural square domain.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Shape-function vector evaluated at `(r,s)`.
  */
 StaticMatrix<8, 1> Surface8::shape_function(Precision r, Precision s) const {
-    StaticMatrix<8, 1> N;
-    N(0, 0) = 0.25 * (1 - r) * (1 - s) * (-1 - r - s);   // Node 1
-    N(1, 0) = 0.25 * (1 + r) * (1 - s) * (-1 + r - s);   // Node 2
-    N(2, 0) = 0.25 * (1 + r) * (1 + s) * (-1 + r + s);   // Node 3
-    N(3, 0) = 0.25 * (1 - r) * (1 + s) * (-1 - r + s);   // Node 4
-    N(4, 0) = 0.5 * (1 - r*r) * (1 - s);                 // Node 5 (mid-edge)
-    N(5, 0) = 0.5 * (1 + r) * (1 - s*s);                 // Node 6 (mid-edge)
-    N(6, 0) = 0.5 * (1 - r*r) * (1 + s);                 // Node 7 (mid-edge)
-    N(7, 0) = 0.5 * (1 - r) * (1 - s*s);                 // Node 8 (mid-edge)
-    return N;
+    StaticMatrix<8, 1> shape;
+
+    // corner shape functions
+    shape(0) = Precision(0.25) * (Precision(1) - r) * (Precision(1) - s) * (-Precision(1) - r - s);
+    shape(1) = Precision(0.25) * (Precision(1) + r) * (Precision(1) - s) * (-Precision(1) + r - s);
+    shape(2) = Precision(0.25) * (Precision(1) + r) * (Precision(1) + s) * (-Precision(1) + r + s);
+    shape(3) = Precision(0.25) * (Precision(1) - r) * (Precision(1) + s) * (-Precision(1) - r + s);
+
+    // midside shape functions
+    shape(4) = Precision(0.5) * (Precision(1) - r * r) * (Precision(1) - s);
+    shape(5) = Precision(0.5) * (Precision(1) + r) * (Precision(1) - s * s);
+    shape(6) = Precision(0.5) * (Precision(1) - r * r) * (Precision(1) + s);
+    shape(7) = Precision(0.5) * (Precision(1) - r) * (Precision(1) - s * s);
+
+    return shape;
 }
 
 /**
- * @brief Compute the first derivatives of the shape functions.
+ * @brief Evaluates the first derivatives of the shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<8, 2> Matrix of shape function derivatives.
+ * The first and second matrix columns contain `dN/dr` and `dN/ds`,
+ * respectively.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Matrix containing the first shape-function derivatives.
  */
 StaticMatrix<8, 2> Surface8::shape_derivative(Precision r, Precision s) const {
-    StaticMatrix<8, 2> dN;
+    StaticMatrix<8, 2> derivative;
 
-    // Derivatives of the shape functions with respect to r and s
-    dN(0, 0) =  0.25 * (-2*r - s) * (s - 1);  dN(0, 1) =  0.25 * (-r - 2*s) * (r - 1);  // dN1/dr, dN1/ds
-    dN(1, 0) =  0.25 * (-2*r + s) * (s - 1);  dN(1, 1) =  0.25 * (-r + 2*s) * (r + 1);  // dN2/dr, dN2/ds
-    dN(2, 0) =  0.25 * ( 2*r + s) * (s + 1);  dN(2, 1) =  0.25 * (r + 1) * (r + 2*s);   // dN3/dr, dN3/ds
-    dN(3, 0) =  0.25 * ( 2*r - s) * (s + 1);  dN(3, 1) =  0.25 * (r - 1) * (r - 2*s);   // dN4/dr, dN4/ds
-    dN(4, 0) =  r * (s - 1);                  dN(4, 1) =  0.5 * (r*r - 1);              // dN5/dr, dN5/ds
-    dN(5, 0) =  0.5 * (1 - s*s);              dN(5, 1) = -1.0 * s * (r + 1);            // dN6/dr, dN6/ds
-    dN(6, 0) = -r * (1 + s);                  dN(6, 1) =  0.5 * (1 - r*r);              // dN7/dr, dN7/ds
-    dN(7, 0) =  0.5 * (s*s - 1);              dN(7, 1) =  1.0 * s * (r - 1);            // dN8/dr, dN8/ds
+    // derivatives of the four corner shape functions
+    derivative(0, 0) = Precision(0.25) * (-Precision(2) * r - s) * (s - Precision(1));
+    derivative(0, 1) = Precision(0.25) * (-r - Precision(2) * s) * (r - Precision(1));
 
+    derivative(1, 0) = Precision(0.25) * (-Precision(2) * r + s) * (s - Precision(1));
+    derivative(1, 1) = Precision(0.25) * (-r + Precision(2) * s) * (r + Precision(1));
 
-    return dN;
+    derivative(2, 0) = Precision(0.25) * (Precision(2) * r + s) * (s + Precision(1));
+    derivative(2, 1) = Precision(0.25) * (r + Precision(1)) * (r + Precision(2) * s);
+
+    derivative(3, 0) = Precision(0.25) * (Precision(2) * r - s) * (s + Precision(1));
+    derivative(3, 1) = Precision(0.25) * (r - Precision(1)) * (r - Precision(2) * s);
+
+    // derivatives of the four midside shape functions
+    derivative(4, 0) = r * (s - Precision(1));
+    derivative(4, 1) = Precision(0.5) * (r * r - Precision(1));
+
+    derivative(5, 0) = Precision(0.5) * (Precision(1) - s * s);
+    derivative(5, 1) = -s * (r + Precision(1));
+
+    derivative(6, 0) = -r * (Precision(1) + s);
+    derivative(6, 1) = Precision(0.5) * (Precision(1) - r * r);
+
+    derivative(7, 0) = Precision(0.5) * (s * s - Precision(1));
+    derivative(7, 1) = s * (r - Precision(1));
+
+    return derivative;
 }
 
 /**
- * @brief Compute the second derivatives of the shape functions.
+ * @brief Evaluates the second derivatives of the shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<8, 3> Matrix of second-order shape function derivatives.
+ * The three matrix columns contain `d²N/dr²`, `d²N/ds²`, and
+ * `d²N/(dr ds)`, respectively.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Matrix containing the second shape-function derivatives.
  */
 StaticMatrix<8, 3> Surface8::shape_second_derivative(Precision r, Precision s) const {
-    StaticMatrix<8, 3> ddN;
+    StaticMatrix<8, 3> second_derivative;
 
-    // Second derivatives of the shape functions
-    ddN(0, 0) =  0.5 - 0.5 * s; ddN(0, 1) =  0.5 - 0.5 * r; ddN(0, 2) = -0.5 * r - 0.5 * s + 0.25;  // d²N1/dr², d²N1/ds², d²N1/(drds)
-    ddN(1, 0) =  0.5 - 0.5 * s; ddN(1, 1) =  0.5 * r + 0.5; ddN(1, 2) = -0.5 * r + 0.5 * s - 0.25;  // d²N2/dr², d²N2/ds², d²N2/(drds)
-    ddN(2, 0) =  0.5 * s + 0.5; ddN(2, 1) =  0.5 * r + 0.5; ddN(2, 2) =  0.5 * r + 0.5 * s + 0.25;  // d²N3/dr², d²N3/ds², d²N3/(drds)
-    ddN(3, 0) =  0.5 * s + 0.5; ddN(3, 1) =  0.5 - 0.5 * r; ddN(3, 2) =  0.5 * r - 0.5 * s - 0.25;  // d²N4/dr², d²N4/ds², d²N4/(drds)
-    ddN(4, 0) =  1.0 * s - 1.0; ddN(4, 1) =  0.0;           ddN(4, 2) =  1.0 * r;                   // d²N5/dr², d²N5/ds², d²N5/(drds)
-    ddN(5, 0) =  0.0;           ddN(5, 1) = -1.0 * r - 1.0; ddN(5, 2) = -1.0 * s;                   // d²N6/dr², d²N6/ds², d²N6/(drds)
-    ddN(6, 0) = -1.0 * s - 1.0; ddN(6, 1) =  0.0;           ddN(6, 2) = -1.0 * r;                   // d²N7/dr², d²N7/ds², d²N7/(drds)
-    ddN(7, 0) =  0.0;           ddN(7, 1) =  1.0 * r - 1.0; ddN(7, 2) =  1.0 * s;                   // d²N8/dr², d²N8/ds², d²N8/(drds)
+    // second derivatives of the four corner shape functions
+    second_derivative(0, 0) = Precision(0.5) - Precision(0.5) * s;
+    second_derivative(0, 1) = Precision(0.5) - Precision(0.5) * r;
+    second_derivative(0, 2) = -Precision(0.5) * r - Precision(0.5) * s + Precision(0.25);
 
-    return ddN;
+    second_derivative(1, 0) = Precision(0.5) - Precision(0.5) * s;
+    second_derivative(1, 1) = Precision(0.5) * r + Precision(0.5);
+    second_derivative(1, 2) = -Precision(0.5) * r + Precision(0.5) * s - Precision(0.25);
+
+    second_derivative(2, 0) = Precision(0.5) * s + Precision(0.5);
+    second_derivative(2, 1) = Precision(0.5) * r + Precision(0.5);
+    second_derivative(2, 2) = Precision(0.5) * r + Precision(0.5) * s + Precision(0.25);
+
+    second_derivative(3, 0) = Precision(0.5) * s + Precision(0.5);
+    second_derivative(3, 1) = Precision(0.5) - Precision(0.5) * r;
+    second_derivative(3, 2) = Precision(0.5) * r - Precision(0.5) * s - Precision(0.25);
+
+    // second derivatives of the four midside shape functions
+    second_derivative(4, 0) = s - Precision(1);
+    second_derivative(4, 1) = Precision(0);
+    second_derivative(4, 2) = r;
+
+    second_derivative(5, 0) = Precision(0);
+    second_derivative(5, 1) = -r - Precision(1);
+    second_derivative(5, 2) = -s;
+
+    second_derivative(6, 0) = -s - Precision(1);
+    second_derivative(6, 1) = Precision(0);
+    second_derivative(6, 2) = -r;
+
+    second_derivative(7, 0) = Precision(0);
+    second_derivative(7, 1) = r - Precision(1);
+    second_derivative(7, 2) = s;
+
+    return second_derivative;
 }
 
 /**
- * @brief Retrieve the local coordinates of the nodes for the 8-node quadrilateral element.
+ * @brief Returns the node positions in the natural coordinate system.
  *
- * @return StaticMatrix<8, 2> Local coordinates of the nodes.
+ * The first four rows contain the corner coordinates. The remaining rows
+ * contain the midside coordinates of edges `0-1`, `1-2`, `2-3`, and `3-0`.
+ *
+ * @return Matrix containing one local `(r,s)` coordinate per node.
  */
 StaticMatrix<8, 2> Surface8::node_coords_local() const {
     StaticMatrix<8, 2> local_coords;
-    local_coords << -1.0, -1.0,   // Node 1
-                     1.0, -1.0,   // Node 2
-                     1.0,  1.0,   // Node 3
-                    -1.0,  1.0,   // Node 4
-                     0.0, -1.0,   // Node 5 (mid-edge)
-                     1.0,  0.0,   // Node 6 (mid-edge)
-                     0.0,  1.0,   // Node 7 (mid-edge)
-                    -1.0,  0.0;   // Node 8 (mid-edge)
+
+    // the row order has to match the node and shape-function ordering
+    local_coords << Precision(-1), Precision(-1),  // corner node 1
+                    Precision( 1), Precision(-1),  // corner node 2
+                    Precision( 1), Precision( 1),  // corner node 3
+                    Precision(-1), Precision( 1),  // corner node 4
+                    Precision( 0), Precision(-1),  // midside node 5
+                    Precision( 1), Precision( 0),  // midside node 6
+                    Precision( 0), Precision( 1),  // midside node 7
+                    Precision(-1), Precision( 0);  // midside node 8
+
     return local_coords;
 }
 
 /**
- * @brief Return the integration scheme for the 8-node quadrilateral element.
+ * @brief Computes the closest point on the quadratic quadrilateral boundary.
  *
- * @return const math::quadrature::Quadrature& Quadrature scheme for the 8-node element.
- */
-const fem::math::quadrature::Quadrature& Surface8::integration_scheme() const {
-    static const math::quadrature::Quadrature quad{math::quadrature::DOMAIN_ISO_QUAD, math::quadrature::ORDER_QUADRATIC};
-    return quad;
-}
-
-/**
- * @brief Compute the closest point on the boundary to a given global point.
+ * The four curved edges are represented by quadratic line elements. The
+ * global point is projected onto every edge, after which the closest projection
+ * is transformed back into the natural coordinates of the quadrilateral.
  *
- * @param global Global coordinates of the point.
- * @param node_coords Coordinates of the element nodes.
- * @return Vec2 Local coordinates of the closest boundary point.
+ * @param global Global point to project onto the element boundary.
+ * @param node_coords Global coordinates of the eight quadrilateral nodes.
+ *
+ * @return Natural quadrilateral coordinates of the closest boundary point.
  */
-Vec2 Surface8::closest_point_on_boundary(const Vec3& global, const StaticMatrix<8, 3>& node_coords) const {
-    // Boundary checks using line elements defined between nodes
-    Line3A line1({0, 1, 4});  // Line from node 1 to node 2
-    Line3A line2({1, 2, 5});  // Line from node 2 to node 3
-    Line3A line3({2, 3, 6});  // Line from node 3 to node 4
-    Line3A line4({3, 0, 7});  // Line from node 4 to node 1
+Vec2 Surface8::closest_point_on_boundary(const Vec3&               global,
+                                         const StaticMatrix<8, 3>& node_coords) const {
+    // represent the four quadratic quadrilateral edges using both corner nodes
+    // and the corresponding midside node
+    Line3A edge_01({0, 1, 4});
+    Line3A edge_12({1, 2, 5});
+    Line3A edge_23({2, 3, 6});
+    Line3A edge_30({3, 0, 7});
 
+    // the line-element interface operates on Field storage, so transfer the
+    // supplied fixed-size coordinate matrix into a temporary nodal field
     Field node_field("SURFACE8_BOUNDARY", FieldDomain::NODE, 8, 3);
-    for (Index i = 0; i < 8; ++i) {
-        for (Index j = 0; j < 3; ++j) {
-            node_field(i, j) = node_coords(i, j);
+
+    for (Index local_id = 0; local_id < 8; ++local_id) {
+        for (Dim component = 0; component < 3; ++component) {
+            node_field(local_id, component) = node_coords(local_id, component);
         }
     }
 
-    // Compute projections onto the four boundary lines
-    Precision line1_p = line1.global_to_local(global, node_field);
-    Precision line2_p = line2.global_to_local(global, node_field);
-    Precision line3_p = line3.global_to_local(global, node_field);
-    Precision line4_p = line4.global_to_local(global, node_field);
+    // project the global point independently onto every curved edge
+    const Precision edge_01_local = edge_01.global_to_local(global, node_field);
+    const Precision edge_12_local = edge_12.global_to_local(global, node_field);
+    const Precision edge_23_local = edge_23.global_to_local(global, node_field);
+    const Precision edge_30_local = edge_30.global_to_local(global, node_field);
 
-    // Convert local line parameters to global points
-    Vec3 p1 = line1.local_to_global(line1_p, node_field);
-    Vec3 p2 = line2.local_to_global(line2_p, node_field);
-    Vec3 p3 = line3.local_to_global(line3_p, node_field);
-    Vec3 p4 = line4.local_to_global(line4_p, node_field);
+    // map the edge-local projections back into physical coordinates so their
+    // distances to the requested global point can be compared
+    const Vec3 point_01 = edge_01.local_to_global(edge_01_local, node_field);
+    const Vec3 point_12 = edge_12.local_to_global(edge_12_local, node_field);
+    const Vec3 point_23 = edge_23.local_to_global(edge_23_local, node_field);
+    const Vec3 point_30 = edge_30.local_to_global(edge_30_local, node_field);
 
-    // Calculate squared distances
-    Precision d1 = (p1 - global).squaredNorm();
-    Precision d2 = (p2 - global).squaredNorm();
-    Precision d3 = (p3 - global).squaredNorm();
-    Precision d4 = (p4 - global).squaredNorm();
+    // squared distances are sufficient for comparison and avoid unnecessary
+    // square-root evaluations
+    const Precision distance_01 = (point_01 - global).squaredNorm();
+    const Precision distance_12 = (point_12 - global).squaredNorm();
+    const Precision distance_23 = (point_23 - global).squaredNorm();
+    const Precision distance_30 = (point_30 - global).squaredNorm();
 
-    // Return the local coordinates of the closest boundary point
-    if (d1 <= d2 && d1 <= d3 && d1 <= d4) return {line1_p, -1};
-    if (d2 <= d1 && d2 <= d3 && d2 <= d4) return {1, line2_p};
-    if (d3 <= d1 && d3 <= d2 && d3 <= d4) return {-line3_p, 1};
-    return {-1, -line4_p};
+    // edge 0-1 follows (r,s) = (p,-1)
+    if (distance_01 <= distance_12 && distance_01 <= distance_23 && distance_01 <= distance_30) {
+        return {edge_01_local, Precision(-1)};
+    }
+
+    // edge 1-2 follows (r,s) = (1,p)
+    if (distance_12 <= distance_01 && distance_12 <= distance_23 && distance_12 <= distance_30) {
+        return {Precision(1), edge_12_local};
+    }
+
+    // edge 2-3 runs from r=1 to r=-1 and therefore follows (r,s) = (-p,1)
+    if (distance_23 <= distance_01 && distance_23 <= distance_12 && distance_23 <= distance_30) {
+        return {-edge_23_local, Precision(1)};
+    }
+
+    // edge 3-0 runs from s=1 to s=-1 and therefore follows (r,s) = (-1,-p)
+    return {Precision(-1), -edge_30_local};
 }
 
 /**
- * @brief Check if a local point is within the bounds of the quadrilateral element.
+ * @brief Checks whether natural coordinates lie inside the reference square.
  *
- * @param local Local coordinates (r, s).
- * @return bool True if the point is within bounds, false otherwise.
+ * A point belongs to the quadrilateral domain when both natural coordinates
+ * lie in the closed interval `[-1,1]`.
+ *
+ * @param local Natural coordinates `(r,s)` to test.
+ *
+ * @return `true` when the point lies inside or on the element boundary.
  */
 bool Surface8::in_bounds(const Vec2& local) const {
-    return local(0) >= -1 && local(0) <= 1 && local(1) >= -1 && local(1) <= 1;
+    const Precision r = local(0);
+    const Precision s = local(1);
+
+    return r >= Precision(-1) && r <= Precision(1) &&
+           s >= Precision(-1) && s <= Precision(1);
 }
-}  // namespace fem::model
+
+/**
+ * @brief Returns the quadrature rule used for the quadratic quadrilateral.
+ *
+ * The quadratic rule accounts for the higher interpolation order of the
+ * eight-node surface. The static object is constructed only once and reused
+ * for all evaluations.
+ *
+ * @return Quadratic-order quadrature rule on the isoparametric square domain.
+ */
+const math::quadrature::Quadrature& Surface8::integration_scheme() const {
+    static const math::quadrature::Quadrature scheme{
+        math::quadrature::DOMAIN_ISO_QUAD,
+        math::quadrature::ORDER_QUADRATIC
+    };
+
+    return scheme;
+}
+
+} // namespace fem::model

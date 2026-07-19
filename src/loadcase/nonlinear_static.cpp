@@ -216,7 +216,7 @@ void NonlinearStatic::run() {
     logging::info(true                    , "n (cols of C)     : "   , transformer->report().dofs);
     logging::info(true                    , "rank(C)           : "   , transformer->rank());
     logging::info(true                    , "method            : "   , transformer->method_name());
-    logging::info(true                    , "solver unknowns    : "   , transformer->unknowns());
+    logging::info(true                    , "solver unknowns   : "   , transformer->unknowns());
     logging::info(true                    , "homogeneous       : "   , transformer->homogeneous() ? "true" : "false");
     logging::info(true                    , "feasible          : "   , transformer->feasible()    ? "true" : "false");
     logging::info(!transformer->feasible(), "residual ||C u - d|| : ", transformer->report().residual_norm);

@@ -1,183 +1,251 @@
 /**
  * @file surface6.cpp
- * @brief Implements the functions for the Surface6 class.
+ * @brief Implements the six-node quadratic triangular surface element.
  *
- * @details This file contains the implementation of shape functions, shape
- *          derivatives, local to global coordinate mappings, and surface
- *          integration schemes for the 6-node triangular surface element.
- *
- * @date Created on 01.10.2024 by Finn Eggers
+ * @author Finn Eggers
+ * @date 01.10.2024
  */
 
 #include "surface6.h"
+
 #include "../line/line3b.h"
 
 namespace fem::model {
 
 /**
- * @brief Constructor for the Surface6 class (quadrilateral surface element with 6 nodes).
+ * @brief Constructs a six-node quadratic triangular surface.
  *
- * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
+ * The first three node identifiers correspond to the triangle corners. The
+ * remaining identifiers correspond to the midside nodes on edges `0-1`,
+ * `1-2`, and `2-0`.
+ *
+ * @param node_ids Global identifiers of the six surface nodes.
  */
-fem::model::Surface6::Surface6(const std::array<ID, 6>& pNodeIds)
-    : Surface<6>(pNodeIds) {}
+Surface6::Surface6(const std::array<ID, 6>& node_ids)
+    : Surface<6>(node_ids) {}
 
 /**
- * @brief Compute the shape functions for the 6-node triangular element.
+ * @brief Evaluates the quadratic triangular shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<6, 1> Vector of shape function values.
+ * The interpolation uses the barycentric coordinates
+ * `L1 = 1 - r - s`, `L2 = r`, and `L3 = s`. The first three shape
+ * functions belong to the corner nodes, while the remaining functions belong
+ * to the midside nodes.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Shape-function vector evaluated at `(r,s)`.
  */
 StaticMatrix<6, 1> Surface6::shape_function(Precision r, Precision s) const {
-    StaticMatrix<6, 1> N;
-    N(0, 0) = 1 - 3*(r + s) + 2*(r + s)*(r + s);  // Shape function for node 1
-    N(1, 0) = r * (2*r - 1);                       // Shape function for node 2
-    N(2, 0) = s * (2*s - 1);                       // Shape function for node 3
-    N(3, 0) = 4 * r * (1 - r - s);                 // Shape function for node 4
-    N(4, 0) = 4 * r * s;                           // Shape function for node 5
-    N(5, 0) = 4 * s * (1 - r - s);                 // Shape function for node 6
-    return N;
+    // define the first barycentric coordinate once because it occurs in
+    // several corner and midside shape functions
+    const Precision t = Precision(1) - r - s;
+
+    StaticMatrix<6, 1> shape;
+
+    // the first three entries interpolate the corner nodes while the final
+    // three entries interpolate the midside nodes
+    shape << t * (Precision(2) * t - Precision(1)),
+             r * (Precision(2) * r - Precision(1)),
+             s * (Precision(2) * s - Precision(1)),
+             Precision(4) * r * t,
+             Precision(4) * r * s,
+             Precision(4) * s * t;
+
+    return shape;
 }
 
 /**
- * @brief Compute the first derivatives of the shape functions.
+ * @brief Evaluates the first derivatives of the shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<6, 2> Matrix of shape function derivatives.
+ * The first and second matrix columns contain `dN/dr` and `dN/ds`,
+ * respectively.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ *
+ * @return Matrix containing the first shape-function derivatives.
  */
 StaticMatrix<6, 2> Surface6::shape_derivative(Precision r, Precision s) const {
-    StaticMatrix<6, 2> dN;
-    dN(0, 0) = -3 + 4*(r + s); dN(0, 1) = -3 + 4*(r + s);
-    dN(1, 0) = 4*r - 1;        dN(1, 1) = 0;
-    dN(2, 0) = 0;              dN(2, 1) = 4*s - 1;
-    dN(3, 0) = 4 - 8*r - 4*s;  dN(3, 1) = -4*r;
-    dN(4, 0) = 4*s;            dN(4, 1) = 4*r;
-    dN(5, 0) = -4*s;           dN(5, 1) = 4 - 4*r - 8*s;
-    return dN;
+    StaticMatrix<6, 2> derivative;
+
+    // each row belongs to one quadratic shape function while the columns
+    // contain differentiation with respect to r and s
+    derivative(0, 0) = -Precision(3) + Precision(4) * (r + s);
+    derivative(0, 1) = -Precision(3) + Precision(4) * (r + s);
+
+    derivative(1, 0) = Precision(4) * r - Precision(1);
+    derivative(1, 1) = Precision(0);
+
+    derivative(2, 0) = Precision(0);
+    derivative(2, 1) = Precision(4) * s - Precision(1);
+
+    derivative(3, 0) = Precision(4) - Precision(8) * r - Precision(4) * s;
+    derivative(3, 1) = -Precision(4) * r;
+
+    derivative(4, 0) = Precision(4) * s;
+    derivative(4, 1) = Precision(4) * r;
+
+    derivative(5, 0) = -Precision(4) * s;
+    derivative(5, 1) = Precision(4) - Precision(4) * r - Precision(8) * s;
+
+    return derivative;
 }
 
 /**
- * @brief Compute the second derivatives of the shape functions.
+ * @brief Evaluates the second derivatives of the shape functions.
  *
- * @param r Local coordinate in the parametric space.
- * @param s Local coordinate in the parametric space.
- * @return StaticMatrix<6, 3> Matrix of second-order shape function derivatives.
+ * Because all shape functions are quadratic, their second derivatives are
+ * constant throughout the natural element domain.
+ *
+ * The three matrix columns contain `d²N/dr²`, `d²N/ds²`, and
+ * `d²N/(dr ds)`, respectively.
+ *
+ * @param r First natural coordinate; unused because the derivatives are constant.
+ * @param s Second natural coordinate; unused because the derivatives are constant.
+ *
+ * @return Matrix containing the second shape-function derivatives.
  */
 StaticMatrix<6, 3> Surface6::shape_second_derivative(Precision r, Precision s) const {
+    // the second derivatives are constant, but the coordinates remain part of
+    // the common surface interface
     (void) r;
     (void) s;
 
-    StaticMatrix<6, 3> ddN;
+    StaticMatrix<6, 3> second_derivative;
 
-    // N1 = 1 - 3(r + s) + 2(r + s)^2
-    ddN(0, 0) = 4;              // ∂²N1/∂r²
-    ddN(0, 1) = 4;              // ∂²N1/∂s²
-    ddN(0, 2) = 4;              // ∂²N1/∂(rs)
+    // each row contains the two pure and the mixed second derivative of one
+    // quadratic triangular shape function
+    second_derivative <<  Precision(4),  Precision(4),  Precision(4),
+                          Precision(4),  Precision(0),  Precision(0),
+                          Precision(0),  Precision(4),  Precision(0),
+                         -Precision(8),  Precision(0), -Precision(4),
+                          Precision(0),  Precision(0),  Precision(4),
+                          Precision(0), -Precision(8), -Precision(4);
 
-    // N2 = r(2r - 1)
-    ddN(1, 0) = 4;              // ∂²N2/∂r²
-    ddN(1, 1) = 0;              // ∂²N2/∂s²
-    ddN(1, 2) = 0;              // ∂²N2/∂(rs)
-
-    // N3 = s(2s - 1)
-    ddN(2, 0) = 0;              // ∂²N3/∂r²
-    ddN(2, 1) = 4;              // ∂²N3/∂s²
-    ddN(2, 2) = 0;              // ∂²N3/∂(rs)
-
-    // N4 = 4r(1 - r - s)
-    ddN(3, 0) = -8;             // ∂²N4/∂r²
-    ddN(3, 1) = 0;              // ∂²N4/∂s²
-    ddN(3, 2) = -4;             // ∂²N4/∂(rs)
-
-    // N5 = 4rs
-    ddN(4, 0) = 0;              // ∂²N5/∂r²
-    ddN(4, 1) = 0;              // ∂²N5/∂s²
-    ddN(4, 2) = 4;              // ∂²N5/∂(rs)
-
-    // N6 = 4s(1 - r - s)
-    ddN(5, 0) = 0;              // ∂²N6/∂r²
-    ddN(5, 1) = -8;             // ∂²N6/∂s²
-    ddN(5, 2) = -4;             // ∂²N6/∂(rs)
-
-    return ddN;
+    return second_derivative;
 }
+
 /**
- * @brief Retrieve the local coordinates of the nodes for the 6-node triangular element.
+ * @brief Returns the node positions in the natural coordinate system.
  *
- * @return StaticMatrix<6, 2> Local coordinates of the nodes.
+ * The first three rows contain the triangle corners. The remaining rows
+ * contain the midside positions of edges `0-1`, `1-2`, and `2-0`.
+ *
+ * @return Matrix containing one local `(r,s)` coordinate per node.
  */
 StaticMatrix<6, 2> Surface6::node_coords_local() const {
     StaticMatrix<6, 2> local_coords;
-    local_coords << 0, 0,
-                    1, 0,
-                    0, 1,
-                    0.5, 0,
-                    0.5, 0.5,
-                    0, 0.5;
+
+    // the row order has to match the node and shape-function ordering
+    local_coords << Precision(0.0), Precision(0.0),  // corner node 1
+                    Precision(1.0), Precision(0.0),  // corner node 2
+                    Precision(0.0), Precision(1.0),  // corner node 3
+                    Precision(0.5), Precision(0.0),  // midside node 4
+                    Precision(0.5), Precision(0.5),  // midside node 5
+                    Precision(0.0), Precision(0.5);  // midside node 6
+
     return local_coords;
 }
 
 /**
- * @brief Return the integration scheme for the element.
+ * @brief Computes the closest point on the quadratic triangular boundary.
  *
- * @return const math::quadrature::Quadrature& Quadrature scheme for the 6-node triangular element.
- */
-const fem::math::quadrature::Quadrature& Surface6::integration_scheme() const {
-    static const math::quadrature::Quadrature quad{math::quadrature::DOMAIN_ISO_TRI, math::quadrature::ORDER_QUADRATIC};
-    return quad;
-}
-
-/**
- * @brief Compute the closest point on the boundary to a given global point.
+ * The three curved triangle edges are represented by quadratic line elements.
+ * The global point is projected onto every edge, after which the closest
+ * projection is transformed back into the natural coordinates of the triangle.
  *
- * @param global Global coordinates of the point.
- * @param node_coords Coordinates of the element nodes.
- * @return Vec2 Local coordinates of the closest boundary point.
+ * @param global Global point to project onto the element boundary.
+ * @param node_coords Global coordinates of the six triangle nodes.
+ *
+ * @return Natural triangle coordinates of the closest boundary point.
  */
-Vec2 Surface6::closest_point_on_boundary(const Vec3& global, const StaticMatrix<6, 3>& node_coords) const {
-    // Implement boundary projections using line elements
-    // Line elements are defined between nodes
-    Line3B line1({0, 1, 3});
-    Line3B line2({1, 2, 4});
-    Line3B line3({2, 0, 5});
+Vec2 Surface6::closest_point_on_boundary(const Vec3&               global,
+                                         const StaticMatrix<6, 3>& node_coords) const {
+    // represent the three quadratic triangle edges using both corner nodes and
+    // the corresponding midside node
+    Line3B edge_01({0, 1, 3});
+    Line3B edge_12({1, 2, 4});
+    Line3B edge_20({2, 0, 5});
 
+    // the line-element interface operates on Field storage, so transfer the
+    // supplied fixed-size coordinate matrix into a temporary nodal field
     Field node_field("SURFACE6_BOUNDARY", FieldDomain::NODE, 6, 3);
-    for (Index i = 0; i < 6; ++i) {
-        for (Index j = 0; j < 3; ++j) {
-            node_field(i, j) = node_coords(i, j);
+
+    for (Index local_id = 0; local_id < 6; ++local_id) {
+        for (Dim component = 0; component < 3; ++component) {
+            node_field(local_id, component) = node_coords(local_id, component);
         }
     }
 
-    // Compute projections onto the three boundary lines
-    Precision line1_p = line1.global_to_local(global, node_field);
-    Precision line2_p = line2.global_to_local(global, node_field);
-    Precision line3_p = line3.global_to_local(global, node_field);
+    // project the global point independently onto every curved triangle edge
+    const Precision edge_01_local = edge_01.global_to_local(global, node_field);
+    const Precision edge_12_local = edge_12.global_to_local(global, node_field);
+    const Precision edge_20_local = edge_20.global_to_local(global, node_field);
 
-    // Convert local line parameters to global points
-    StaticVector<3> p1 = line1.local_to_global(line1_p, node_field);
-    StaticVector<3> p2 = line2.local_to_global(line2_p, node_field);
-    StaticVector<3> p3 = line3.local_to_global(line3_p, node_field);
+    // map the edge-local projections back into physical coordinates so their
+    // distances to the requested global point can be compared
+    const Vec3 point_01 = edge_01.local_to_global(edge_01_local, node_field);
+    const Vec3 point_12 = edge_12.local_to_global(edge_12_local, node_field);
+    const Vec3 point_20 = edge_20.local_to_global(edge_20_local, node_field);
 
-    // Calculate squared distances
-    Precision d1 = (p1 - global).squaredNorm();
-    Precision d2 = (p2 - global).squaredNorm();
-    Precision d3 = (p3 - global).squaredNorm();
+    // squared distances are sufficient for comparison and avoid unnecessary
+    // square-root evaluations
+    const Precision distance_01 = (point_01 - global).squaredNorm();
+    const Precision distance_12 = (point_12 - global).squaredNorm();
+    const Precision distance_20 = (point_20 - global).squaredNorm();
 
-    // Return the local coordinates of the closest boundary point
-    if (d1 <= d2 && d1 <= d3) return {line1_p, 0};
-    if (d3 <= d1 && d3 <= d2) return {0, 1-line3_p};
-    return {1 - line2_p, line2_p};
+    // edge 0-1 follows (r,s) = (p,0)
+    if (distance_01 <= distance_12 && distance_01 <= distance_20) {
+        return {edge_01_local, Precision(0)};
+    }
+
+    // edge 2-0 follows (r,s) = (0,1-p) because its line orientation starts at
+    // node 2 and ends at node 0
+    if (distance_20 <= distance_01 && distance_20 <= distance_12) {
+        return {Precision(0), Precision(1) - edge_20_local};
+    }
+
+    // edge 1-2 follows (r,s) = (1-p,p)
+    return {Precision(1) - edge_12_local, edge_12_local};
 }
 
 /**
- * @brief Check if a local point is within the bounds of the triangular element.
+ * @brief Checks whether natural coordinates lie inside the reference triangle.
  *
- * @param local Local coordinates (r, s).
- * @return bool True if the point is within bounds, false otherwise.
+ * A point belongs to the triangular domain when both coordinates are
+ * non-negative and their sum does not exceed one.
+ *
+ * @param local Natural coordinates `(r,s)` to test.
+ *
+ * @return `true` when the point lies inside or on the triangle boundary.
  */
 bool Surface6::in_bounds(const Vec2& local) const {
-    return local(0) >= 0 && local(1) >= 0 && local(0) + local(1) <= 1;
+    const Precision r = local(0);
+    const Precision s = local(1);
+
+    return r >= Precision(0) &&
+           s >= Precision(0) &&
+           r + s <= Precision(1);
 }
-}  // namespace fem::model
+
+/**
+ * @brief Returns the quadrature rule used for the quadratic triangle.
+ *
+ * The quadratic rule accounts for the higher interpolation order of the
+ * six-node surface. The static object is constructed only once and reused for
+ * all evaluations.
+ *
+ * @return Quadratic-order quadrature rule on the isoparametric triangle.
+ */
+const math::quadrature::Quadrature& Surface6::integration_scheme() const {
+    static const math::quadrature::Quadrature scheme{
+        math::quadrature::DOMAIN_ISO_TRI,
+        math::quadrature::ORDER_QUADRATIC
+    };
+
+    return scheme;
+}
+
+} // namespace fem::model

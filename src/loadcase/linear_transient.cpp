@@ -84,7 +84,7 @@ void Transient::run() {
     logging::info(true, "m (rows of C)     : ", CT->report().equations);
     logging::info(true, "n (cols of C)     : ", CT->report().dofs);
     logging::info(true, "rank(C)           : ", CT->rank());
-    logging::info(true, "solver unknowns    : ", CT->unknowns());
+    logging::info(true, "solver unknowns   : ", CT->unknowns());
     logging::info(true, "homogeneous       : ", CT->homogeneous() ? "true" : "false");
     logging::down();
 

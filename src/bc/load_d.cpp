@@ -65,27 +65,26 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         }
 
         if (!orientation_) {
-            surface->apply_dload(node_positions, bc, local_values);
+            surface->integrate_vector_field(
+                node_positions,
+                bc,
+                [&](const Vec3&) -> Vec3 {
+                    return local_values;
+                }
+            );
             continue;
         }
 
-        // For oriented tractions the local basis can vary over the surface.
-        // Therefore every nodal contribution is rotated at its own node
-        // position before it is added to the global RHS.
-        const auto contributions = surface->shape_function_integral(node_positions);
-        int        local_idx     = 0;
-        for (auto node_it = surface->begin(); node_it != surface->end(); ++node_it, ++local_idx) {
-            const ID node_id = *node_it;
-
-            const Vec3 position = node_positions.row_vec3(static_cast<Index>(node_id));
-            const Vec3 local_point = orientation_->to_local(position);
-            const auto axes = orientation_->get_axes(local_point);
-            const Vec3 global_values = axes * local_values;
-
-            bc(node_id, 0) += contributions(local_idx) * global_values[0];
-            bc(node_id, 1) += contributions(local_idx) * global_values[1];
-            bc(node_id, 2) += contributions(local_idx) * global_values[2];
-        }
+        // Rotate oriented tractions at each integration point
+        surface->integrate_vector_field(
+            node_positions,
+            bc,
+            [&](const Vec3& position) -> Vec3 {
+                const Vec3 local_point = orientation_->to_local(position);
+                const auto axes        = orientation_->get_axes(local_point);
+                return axes * local_values;
+            }
+        );
     }
 }
 

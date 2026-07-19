@@ -161,7 +161,7 @@ void LinearStatic::run() {
         logging::info(true, "rank(C)           : not computed");
     }
     logging::info(true, "method            : ", transformer->method_name());
-    logging::info(true, "solver unknowns    : ", transformer->unknowns());
+    logging::info(true, "solver unknowns   : ", transformer->unknowns());
     logging::info(true, "homogeneous       : ", transformer->homogeneous() ? "true" : "false");
     logging::info(true, "feasible          : ", transformer->feasible() ? "true" : "false");
     if (!transformer->feasible()) {

@@ -1,107 +1,49 @@
 /**
- * @file surface3.h
- * @brief Derived class for a triangular surface element with 3 nodes (S3D3).
+* @file surface3.h
+ * @brief Declares the three-node linear triangular surface element.
  *
- * @details This file defines the `Surface3` class, which inherits from the
- *          `Surface<3>` base class. It represents a triangular
- *          surface element with three nodes, used primarily for surface
- *          integrals and projecting points onto surfaces. It provides
- *          shape functions, shape function derivatives, and surface
- *          integration schemes tailored for triangular elements.
- *
- *          This class is used in surface element interactions, such as
- *          tie constraints and boundary condition enforcement.
- *
- * @date Created on 27.09.2024 by Finn Eggers
+ * @author Finn Eggers
+ * @date 27.09.2024
  */
 
 #pragma once
 
-#include "../line/line2b.h"
 #include "surface.h"
 
 #include <array>
-#include <tuple>
 
 namespace fem::model {
 
 /**
- * @class Surface3
- * @brief Represents a triangular surface element with 3 nodes (S3D3).
+ * @brief Three-node linear triangular finite-element surface.
  *
- * @details This derived class provides shape function definitions, integration
- *          schemes, and boundary checks for a simple triangular surface element.
- *          It supports common surface operations such as projection to the
- *          element, finding local coordinates, and computing surface areas.
+ * The element uses the natural triangular domain
+ * `r >= 0`, `s >= 0`, and `r + s <= 1`.
  */
 struct Surface3 : public Surface<3> {
-    using Surface<3>::num_nodes;
     using Surface<3>::num_edges;
+    using Surface<3>::num_nodes;
     using Surface<3>::num_nodes_per_edge;
 
-    /**
-     * @brief Constructor for the Surface3 class.
-     *
-     * @param pNodeIds Array of node IDs corresponding to the surface element nodes.
-     */
-    Surface3(const std::array<ID, 3>& pNodeIds);
+    // Construction
+    explicit Surface3(const std::array<ID, 3>& node_ids);
 
-    /**
-     * @brief Compute shape functions at a given local coordinate (r, s).
-     *
-     * @param r Local coordinate in the parametric space of the surface element.
-     * @param s Local coordinate in the parametric space of the surface element.
-     * @return StaticMatrix<3, 1> Vector of shape function values at (r, s).
-     */
-    StaticMatrix<3, 1> shape_function(Precision r, Precision s) const override;
-
-    /**
-     * @brief Compute shape function derivatives at a given local coordinate (r, s).
-     *
-     * @param r Local coordinate in the parametric space of the surface element.
-     * @param s Local coordinate in the parametric space of the surface element.
-     * @return StaticMatrix<3, 2> Matrix of shape function derivatives at (r, s).
-     */
-    StaticMatrix<3, 2> shape_derivative(Precision r, Precision s) const override;
-
-    /**
-     * @brief Compute second-order derivatives of shape functions at a given local coordinate (r, s).
-     *
-     * @param r Local coordinate in the parametric space of the surface element.
-     * @param s Local coordinate in the parametric space of the surface element.
-     * @return StaticMatrix<3, 3> Matrix of second-order shape function derivatives.
-     */
+    // Shape functions
+    StaticMatrix<3, 1> shape_function         (Precision r, Precision s) const override;
+    StaticMatrix<3, 2> shape_derivative       (Precision r, Precision s) const override;
     StaticMatrix<3, 3> shape_second_derivative(Precision r, Precision s) const override;
 
-    /**
-     * @brief Retrieve the local coordinates of the nodes for the triangular element.
-     *
-     * @return StaticMatrix<3, 2> Local coordinates of the nodes.
-     */
+    // local values of node coordinates in natural coordinates
     StaticMatrix<3, 2> node_coords_local() const override;
 
-    /**
-     * @brief Get the integration scheme for a triangular element.
-     *
-     * @return const math::quadrature::Quadrature& Integration scheme using a linear quadrature rule.
-     */
-    const math::quadrature::Quadrature& integration_scheme() const override;
-
-    /**
-     * @brief Compute the closest point on the element boundary to a given point.
-     *
-     * @param global Global coordinates of the point.
-     * @param node_coords Coordinates of the nodes in the global system.
-     * @return Vec2 Local coordinates of the closest boundary point.
-     */
+    // Boundary projection and local domain
     Vec2 closest_point_on_boundary(const Vec3& global, const StaticMatrix<3, 3>& node_coords) const override;
 
-    /**
-     * @brief Check if a given local coordinate is within the bounds of the element.
-     *
-     * @param local The local coordinates (r, s) to check.
-     * @return bool True if the point is within bounds, false otherwise.
-     */
+    // check if a local value (r,s) is inside or not.
     bool in_bounds(const Vec2& local) const override;
+
+    // Numerical integration
+    const math::quadrature::Quadrature& integration_scheme() const override;
 };
-}    // namespace fem::model
+
+} // namespace fem::model

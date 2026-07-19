@@ -183,7 +183,7 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
             return triangles;
         }
 
-        const std::vector<Vec2> domain = surface->local_domain_polygon();
+        const auto domain = surface->local_domain_polygon();
 
         if (domain.size() < 3) {
             return triangles;
@@ -267,9 +267,9 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
         return equations;
     }
 
-    const quadrature::Quadrature triangle_quadrature{
-        quadrature::DOMAIN_ISO_TRI,
-        quadrature::ORDER_QUARTIC
+    const math::quadrature::Quadrature triangle_quadrature{
+        math::quadrature::DOMAIN_ISO_TRI,
+        math::quadrature::ORDER_QUARTIC
     };
 
     std::vector<ID> candidate_patch_ids{};
@@ -292,9 +292,13 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
         Precision slave_area = Precision(0);
 
         for (const auto& local_triangle : local_triangles(slave)) {
-            slave->integrate_local_triangle(
-                local_triangle,
+            slave->integrate_triangular(
                 node_coords,
+                model::SurfaceInterface::Polygon{
+                    local_triangle[0],
+                    local_triangle[1],
+                    local_triangle[2]
+                },
                 triangle_quadrature,
                 [&](const Vec2&, const Vec3&, Precision weight) {
                     slave_area += weight;
@@ -375,9 +379,13 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
                 continue;
             }
 
-            slave->integrate_local_triangle(
-                slave_local,
+            slave->integrate_triangular(
                 node_coords,
+                model::SurfaceInterface::Polygon{
+                    slave_local[0],
+                    slave_local[1],
+                    slave_local[2]
+                },
                 triangle_quadrature,
                 [&](const Vec2& local, const Vec3& global, Precision weight) {
                     const Vec3 lambda = barycentric(local, slave_local);

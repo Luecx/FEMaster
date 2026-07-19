@@ -30,7 +30,19 @@ void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
     const Precision scaled_pressure = pressure_ * scale;
 
     for (const ID surf_id : *region_) {
-        model_data.surfaces[surf_id]->apply_pload(node_positions, bc, scaled_pressure);
+        auto surface = model_data.surfaces[surf_id];
+        if (!surface) {
+            continue;
+        }
+
+        surface->integrate_vector_field(
+            node_positions,
+            bc,
+            [&](const Vec3& position) {
+                const Vec2 local = surface->global_to_local(position, node_positions);
+                return -scaled_pressure * surface->normal(node_positions, local);
+            }
+        );
     }
 }
 

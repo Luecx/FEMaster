@@ -225,7 +225,7 @@ void LinearStaticTopo::run() {
         logging::info(true, "rank(C)              : not computed");
     }
     logging::info(true           , "method               : ", CT->method_name());
-    logging::info(true           , "solver unknowns       : ", CT->unknowns());
+    logging::info(true           , "solver unknowns      : ", CT->unknowns());
     logging::info(true           , "homogeneous          : ", CT->homogeneous() ? "true" : "false");
     logging::info(true           , "feasible             : ", CT->feasible() ? "true" : "false");
     logging::info(!CT->feasible(), "residual ||C u - d|| : ", CT->report().residual_norm);
