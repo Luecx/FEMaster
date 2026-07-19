@@ -21,16 +21,17 @@
 
 namespace fem::material {
 
-NeoHookeElasticity::NeoHookeElasticity(Precision youngs_in, Precision poisson_in)
-    : youngs     (youngs_in),
-      poisson    (poisson_in),
-      lame_lambda(youngs_in * poisson_in /
-                  ((Precision(1) + poisson_in) * (Precision(1) - Precision(2) * poisson_in))),
-      mu         (youngs_in / (Precision(2) * (Precision(1) + poisson_in))) {
-    logging::error(youngs > Precision(0),
-                   "NEO_HOOKE: Young's modulus must be positive");
-    logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
-                   "NEO_HOOKE: Poisson ratio must be in (-1, 0.5)");
+NeoHookeElasticity::NeoHookeElasticity(Precision c10_in, Precision d1_in)
+    : c10(c10_in),
+      d1 (d1_in) {
+    logging::error(c10 > Precision(0),
+                   "NEO_HOOKE: C10 must be positive");
+    logging::error(d1 > Precision(0),
+                   "NEO_HOOKE: D1 must be positive");
+
+    mu          = Precision(2) * c10;
+    bulk        = Precision(2) / d1;
+    lame_lambda = bulk - Precision(2) * mu / Precision(3);
 }
 
 bool NeoHookeElasticity::supports_axial_linearized() const {
@@ -59,7 +60,7 @@ bool NeoHookeElasticity::supports_shell_integration_green_lagrange() const {
 
 Mat6 NeoHookeElasticity::linear_tangent() const {
     Mat6 tangent;
-    Precision C11 = lame_lambda + Precision(2) * mu;
+    const Precision C11 = lame_lambda + Precision(2) * mu;
     tangent <<
         C11         , lame_lambda , lame_lambda , Precision(0), Precision(0), Precision(0),
         lame_lambda , C11         , lame_lambda , Precision(0), Precision(0), Precision(0),
@@ -71,7 +72,10 @@ Mat6 NeoHookeElasticity::linear_tangent() const {
 }
 
 Mat5 NeoHookeElasticity::linear_shell_tangent() const {
-    const Precision scalar = youngs / (Precision(1) - poisson * poisson);
+    const Precision youngs  = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
+    const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
+                            / (Precision(2) * (Precision(3) * bulk + mu));
+    const Precision scalar  = youngs / (Precision(1) - poisson * poisson);
 
     Mat5 tangent = Mat5::Zero();
     tangent(0, 0) = scalar;
@@ -92,6 +96,7 @@ void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
     (void) state_old;
     (void) state_new;
 
+    const Precision youngs = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
     tangent        = youngs;
     stress.value() = tangent * strain.value();
 }
@@ -104,32 +109,61 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
     (void) state_old;
     (void) state_new;
 
-    const Precision c = Precision(1) + Precision(2) * strain.value();
+    const Precision c       = Precision(1) + Precision(2) * strain.value();
+    const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
+                            / (Precision(2) * (Precision(3) * bulk + mu));
 
     logging::error(c > Precision(0),
                    "NEO_HOOKE: non-positive axial right Cauchy-Green component");
 
-    Precision y = -poisson * std::log(c);
+    Precision log_x                  = -poisson * std::log(c);
+    bool      plane_stress_converged = false;
 
-    for (Index i = 0; i < 20; ++i) {
-        const Precision x  = std::exp(y);
-        const Precision r  = mu * (x - Precision(1))
-                           + lame_lambda * (Precision(0.5) * std::log(c) + y);
-        const Precision dy = -r / (mu * x + lame_lambda);
+    Mat3 full_stress;
+    Mat6 full_tangent;
 
-        y += dy;
+    for (Index i = 0; i < 30; ++i) {
+        const Precision x = std::exp(log_x);
+        Mat3 C            = Mat3::Zero();
+        C(0, 0)           = c;
+        C(1, 1)           = x;
+        C(2, 2)           = x;
 
-        if (std::abs(dy) < Precision(1e-12)) {
+        evaluate_full(C, full_stress, full_tangent);
+
+        const Precision residual = full_stress(1, 1);
+        const Precision slope    = Precision(0.5) * x
+                                 * (full_tangent(1, 1) + full_tangent(1, 2));
+        const Precision delta    = -residual / slope;
+
+        log_x += delta;
+
+        if (std::abs(delta) < Precision(1e-12)) {
+            plane_stress_converged = true;
             break;
         }
     }
 
-    const Precision x = std::exp(y);
+    const Precision x = std::exp(log_x);
+    Mat3 C            = Mat3::Zero();
+    C(0, 0)           = c;
+    C(1, 1)           = x;
+    C(2, 2)           = x;
+    evaluate_full(C, full_stress, full_tangent);
 
-    stress.value() = mu * (Precision(1) - x / c);
-    tangent        = mu * x / (c * c)
-                   * (Precision(2) * mu * x + Precision(3) * lame_lambda)
-                   / (mu * x + lame_lambda);
+    logging::error(plane_stress_converged &&
+                   std::abs(full_stress(1, 1)) <= Precision(1e-10) * (mu + bulk),
+                   "NEO_HOOKE: axial plane-stress iteration did not converge");
+
+    const Mat2 lateral_tangent = full_tangent.template block<2, 2>(1, 1);
+    const Vec2 axial_to_lateral(full_tangent(1, 0), full_tangent(2, 0));
+    const Vec2 lateral_to_axial(full_tangent(0, 1), full_tangent(0, 2));
+
+    stress.value() = full_stress(0, 0);
+    tangent        = full_tangent(0, 0)
+                   - (lateral_to_axial.transpose()
+                   * lateral_tangent.inverse()
+                   * axial_to_lateral)(0, 0);
 }
 
 void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
@@ -152,47 +186,11 @@ void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
     (void) state_old;
     (void) state_new;
 
-    const Mat3 E    = strain.tensor();
-    const Mat3 C    = Mat3::Identity() + Precision(2) * E;
-    const Precision det_c = C.determinant();
+    const Mat3 C = Mat3::Identity() + Precision(2) * strain.tensor();
+    Mat3       full_stress;
 
-    logging::error(det_c > Precision(0),
-                   "NEO_HOOKE: non-positive right Cauchy-Green determinant");
-
-    const Mat3      C_inv = C.inverse();
-    const Precision log_j = Precision(0.5) * std::log(det_c);
-
-    const Mat3 S =
-        mu * (Mat3::Identity() - C_inv)
-      + lame_lambda * log_j * C_inv;
-
-    stress = VolumeStressPK2(S);
-
-    const Precision q = mu - lame_lambda * log_j;
-
-    tangent.setZero();
-    for (Index col = 0; col < 6; ++col) {
-        Mat3 dE = Mat3::Zero();
-
-        if (col < 3) {
-            dE(col, col) = Precision(1);
-        } else if (col == 3) {
-            dE(1, 2) = Precision(0.5);
-            dE(2, 1) = Precision(0.5);
-        } else if (col == 4) {
-            dE(0, 2) = Precision(0.5);
-            dE(2, 0) = Precision(0.5);
-        } else {
-            dE(0, 1) = Precision(0.5);
-            dE(1, 0) = Precision(0.5);
-        }
-
-        const Mat3 dS =
-            lame_lambda * (C_inv * dE).trace() * C_inv
-          + Precision(2) * q * C_inv * dE * C_inv;
-
-        tangent.col(col) = VolumeStressPK2(dS).voigt();
-    }
+    evaluate_full(C, full_stress, tangent);
+    stress = VolumeStressPK2(full_stress);
 }
 
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
@@ -232,17 +230,23 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
     logging::error(det_in_plane > Precision(0),
                    "NEO_HOOKE: non-positive shell in-plane right Cauchy-Green determinant");
 
-    const Precision min_c33          = (shear_column.transpose() * in_plane.inverse() * shear_column)(0, 0);
-    const Precision log_det_in_plane = std::log(det_in_plane);
+    const Precision min_c33 = (shear_column.transpose() * in_plane.inverse() * shear_column)(0, 0);
+    const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
+                            / (Precision(2) * (Precision(3) * bulk + mu));
 
-    Precision log_d                  = -poisson * log_det_in_plane;
+    Precision log_d                  = -poisson / (Precision(1) - poisson) * std::log(det_in_plane);
     bool      plane_stress_converged = false;
 
+    Mat3 full_stress;
+    Mat6 full_tangent;
+
     for (Index i = 0; i < 30; ++i) {
-        const Precision d        = std::exp(log_d);
-        const Precision residual = mu * (d - Precision(1))
-                                 + Precision(0.5) * lame_lambda * (log_det_in_plane + log_d);
-        const Precision slope    = mu * d + Precision(0.5) * lame_lambda;
+        const Precision d = std::exp(log_d);
+        C(2, 2)           = min_c33 + d;
+        evaluate_full(C, full_stress, full_tangent);
+
+        const Precision residual = full_stress(2, 2);
+        const Precision slope    = Precision(0.5) * d * full_tangent(2, 2);
         const Precision delta    = -residual / slope;
 
         log_d += delta;
@@ -253,60 +257,15 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
         }
     }
 
-    const Precision d        = std::exp(log_d);
-    const Precision residual = mu * (d - Precision(1))
-                             + Precision(0.5) * lame_lambda * (log_det_in_plane + log_d);
-    const Precision c33      = min_c33 + d;
-
-    logging::error(plane_stress_converged &&
-                   std::abs(residual) <= Precision(1e-10) * (mu + lame_lambda),
-                   "NEO_HOOKE: shell plane-stress thickness iteration did not converge");
-
-    auto evaluate_full = [&](const Mat3& c, Mat3& full_stress, Mat6& full_tangent) {
-        const Precision det_c = c.determinant();
-
-        logging::error(det_c > Precision(0),
-                       "NEO_HOOKE: non-positive shell right Cauchy-Green determinant");
-
-        const Mat3      c_inv = c.inverse();
-        const Precision log_j = Precision(0.5) * std::log(det_c);
-
-        full_stress =
-            mu * (Mat3::Identity() - c_inv)
-          + lame_lambda * log_j * c_inv;
-
-        const Precision q = mu - lame_lambda * log_j;
-
-        full_tangent.setZero();
-        for (Index col = 0; col < 6; ++col) {
-            Mat3 dE = Mat3::Zero();
-
-            if (col < 3) {
-                dE(col, col) = Precision(1);
-            } else if (col == 3) {
-                dE(1, 2) = Precision(0.5);
-                dE(2, 1) = Precision(0.5);
-            } else if (col == 4) {
-                dE(0, 2) = Precision(0.5);
-                dE(2, 0) = Precision(0.5);
-            } else {
-                dE(0, 1) = Precision(0.5);
-                dE(1, 0) = Precision(0.5);
-            }
-
-            const Mat3 dS =
-                lame_lambda * (c_inv * dE).trace() * c_inv
-              + Precision(2) * q * c_inv * dE * c_inv;
-
-            full_tangent.col(col) = VolumeStressPK2(dS).voigt();
-        }
-    };
-
-    Mat3 full_stress;
-    Mat6 full_tangent;
+    const Precision d   = std::exp(log_d);
+    const Precision c33 = min_c33 + d;
 
     C(2, 2) = c33;
     evaluate_full(C, full_stress, full_tangent);
+
+    logging::error(plane_stress_converged &&
+                   std::abs(full_stress(2, 2)) <= Precision(1e-10) * (mu + bulk),
+                   "NEO_HOOKE: shell plane-stress thickness iteration did not converge");
 
     stress.values() << full_stress(0, 0),
                        full_stress(1, 1),
@@ -326,6 +285,61 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
               * full_tangent(2, shell_cols[col])
               / full_tangent(2, 2);
         }
+    }
+}
+
+void NeoHookeElasticity::evaluate_full(const Mat3& C, Mat3& stress, Mat6& tangent) const {
+    const Precision det_c = C.determinant();
+
+    logging::error(det_c > Precision(0),
+                   "NEO_HOOKE: non-positive right Cauchy-Green determinant");
+
+    const Precision J                = std::sqrt(det_c);
+    const Precision first_invariant  = C.trace();
+    const Precision mean_invariant   = first_invariant / Precision(3);
+    const Precision deviatoric_scale = Precision(2) * c10 * std::pow(J, Precision(-2) / Precision(3));
+    const Precision volumetric_scale = Precision(2) * J * (J - Precision(1)) / d1;
+    const Mat3      C_inv             = C.inverse();
+
+    stress = deviatoric_scale * (Mat3::Identity() - mean_invariant * C_inv)
+           + volumetric_scale * C_inv;
+
+    tangent.setZero();
+    for (Index col = 0; col < 6; ++col) {
+        Mat3 dE = Mat3::Zero();
+
+        if (col < 3) {
+            dE(col, col) = Precision(1);
+        } else if (col == 3) {
+            dE(1, 2) = Precision(0.5);
+            dE(2, 1) = Precision(0.5);
+        } else if (col == 4) {
+            dE(0, 2) = Precision(0.5);
+            dE(2, 0) = Precision(0.5);
+        } else {
+            dE(0, 1) = Precision(0.5);
+            dE(1, 0) = Precision(0.5);
+        }
+
+        const Precision inverse_contraction = (C_inv * dE).trace();
+        const Precision strain_trace        = dE.trace();
+        const Mat3      inverse_derivative  = C_inv * dE * C_inv;
+
+        const Mat3 deviatoric_derivative = deviatoric_scale * (
+            -Precision(2) / Precision(3) * inverse_contraction
+                * (Mat3::Identity() - mean_invariant * C_inv)
+            -Precision(2) / Precision(3) * strain_trace * C_inv
+            +Precision(2) * mean_invariant * inverse_derivative
+        );
+
+        const Precision volumetric_derivative = Precision(2) * J
+                                              * (Precision(2) * J - Precision(1))
+                                              / d1 * inverse_contraction;
+        const Mat3 dS = deviatoric_derivative
+                      + volumetric_derivative * C_inv
+                      - Precision(2) * volumetric_scale * inverse_derivative;
+
+        tangent.col(col) = VolumeStressPK2(dS).voigt();
     }
 }
 

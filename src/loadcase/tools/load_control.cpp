@@ -21,7 +21,8 @@ bool LoadControl::solve(
     const ResidualNorm&      residual_norm,
     const CorrectionNorm&    correction_norm,
     const IterationCallback& on_iteration,
-    const IncrementCallback& on_increment
+    const IncrementCallback& on_increment,
+    const Predictor&         predictor
 ) {
     logging::error(maximum_increments > 0,
         "LoadControl requires maximum_increments > 0");
@@ -76,6 +77,10 @@ bool LoadControl::solve(
         const Precision     target_lambda   = lambda + increment_;
 
         configure_newton_();
+
+        if (predictor) {
+            predictor(q, lambda_accepted, target_lambda);
+        }
 
         const bool converged = newton_.solve(
             q,

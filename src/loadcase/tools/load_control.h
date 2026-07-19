@@ -37,6 +37,12 @@ public:
         const DynamicVector& dq
     )>;
 
+    using Predictor = std::function<void(
+        DynamicVector& q,
+        Precision      lambda,
+        Precision      target_lambda
+    )>;
+
     using IterationCallback = std::function<void(
         Index     increment,
         Index     iteration,
@@ -66,7 +72,8 @@ public:
         const ResidualNorm&      residual_norm,
         const CorrectionNorm&    correction_norm,
         const IterationCallback& on_iteration = {},
-        const IncrementCallback& on_increment = {}
+        const IncrementCallback& on_increment = {},
+        const Predictor&         predictor = {}
     );
 
     Index       accepted_increments() const;

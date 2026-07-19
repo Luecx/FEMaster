@@ -268,6 +268,15 @@ void NonlinearStatic::run() {
 
     Index last_converged_increment = 0;
 
+    // Initialize the load-control predictor history
+    DynamicVector q_previous = q_total;
+    DynamicVector q_accepted = q_total;
+
+    Precision lambda_previous = Precision(0);
+    Precision lambda_accepted = Precision(0);
+
+    bool secant_available = false;
+
     auto evaluate = [&](const DynamicVector& q,
                         Precision            lambda,
                         DynamicVector&       residual,
@@ -318,6 +327,23 @@ void NonlinearStatic::run() {
         DynamicVector solution = solver::solve(device, method, matrix, rhs);
         logging::enable();
         return solution;
+    };
+
+    auto predictor = [&](DynamicVector& q,
+                         Precision      lambda,
+                         Precision      target_lambda) {
+        if (!secant_available) {
+            return;
+        }
+
+        // Extrapolate the last converged reduced increment
+        const Precision previous_increment = lambda - lambda_previous;
+        const Precision target_increment   = target_lambda - lambda;
+
+        logging::error(previous_increment > Precision(0),
+            "NONLINEARSTATIC predictor requires a positive previous increment");
+
+        q = q_accepted + target_increment / previous_increment * (q_accepted - q_previous);
     };
 
     auto matrix_solve = [&](const SparseMatrix&  tangent,
@@ -382,6 +408,12 @@ void NonlinearStatic::run() {
                             Precision            lambda) {
         last_converged_increment = increment;
 
+        q_previous       = q_accepted;
+        q_accepted       = q;
+        lambda_previous  = lambda_accepted;
+        lambda_accepted  = lambda;
+        secant_available = true;
+
         q_total     = q;
         load_factor = lambda;
         u_total     = recover_total_displacement(q_total, lambda);
@@ -439,7 +471,8 @@ void NonlinearStatic::run() {
             residual_norm,
             correction_norm,
             on_iteration,
-            on_increment
+            on_increment,
+            predictor
         );
 
         failure_reason = load_control.failure_reason();

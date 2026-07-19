@@ -28,6 +28,7 @@
 #include "commands/register_sfset.inl"
 #include "commands/register_material.inl"
 #include "commands/register_elastic.inl"
+#include "commands/register_hyperelastic.inl"
 #include "commands/register_density.inl"
 #include "commands/register_thermalexpansion.inl"
 #include "commands/register_cload.inl"
@@ -340,6 +341,7 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     commands::register_field(reg, mdl);
     commands::register_material(reg, mdl);
     commands::register_elastic(reg, mdl);
+    commands::register_hyperelastic(reg, mdl);
     commands::register_density(reg, mdl);
     commands::register_thermal_expansion(reg, mdl);
 

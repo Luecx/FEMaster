@@ -5,23 +5,22 @@
 namespace fem::material {
 
 /**
- * Compressible isotropic Neo-Hookean elasticity.
+ * Compressible isotropic Neo-Hookean elasticity using the Abaqus potential.
  *
- * Solid:
- *   W = mu/2 (I1 - 3) - mu log(J)
- *       + lambda/2 log(J)^2
+ *   W = C10 (I1_bar - 3) + (J - 1)^2 / D1
  *
  * Truss:
  *   Three-dimensional model reduced under
  *   traction-free lateral surfaces.
  */
 struct NeoHookeElasticity : Elasticity {
-    Precision youngs;
-    Precision poisson;
-    Precision lame_lambda;
-    Precision mu;
+    Precision c10;
+    Precision d1;
+    Precision mu{};
+    Precision bulk{};
+    Precision lame_lambda{};
 
-    NeoHookeElasticity(Precision youngs_in, Precision poisson_in);
+    NeoHookeElasticity(Precision c10_in, Precision d1_in);
 
     bool supports_axial_linearized() const override;
     bool supports_axial_green_lagrange() const override;
@@ -67,6 +66,7 @@ struct NeoHookeElasticity : Elasticity {
                   Mat5&                                   tangent) const override;
 
 private:
+    void               evaluate_full(const Mat3& right_cauchy_green, Mat3& stress, Mat6& tangent) const;
     [[nodiscard]] Mat6 linear_tangent() const;
     [[nodiscard]] Mat5 linear_shell_tangent() const;
 };
