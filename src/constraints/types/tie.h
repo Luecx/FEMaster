@@ -42,6 +42,9 @@ class Tie {
     Precision distance; ///< Maximum search distance for projection.
     bool adjust;        ///< Whether to move slave nodes onto the master geometry.
 
+    Equations get_surface_surface_equations(SystemDofIds& system_nodal_dofs,
+                                            model::ModelData& model_data);
+
 public:
     // -------------------------------------------------------------------------
     // Constructors (master surfaces)
