@@ -68,9 +68,11 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
         Mat6            tangent;
         evaluate_material(r, s, t, green_lagrange, second_pk, tangent);
 
+        const VolumeStressCauchy cauchy = second_pk.to_cauchy(F);
+
         for (Dim j = 0; j < n_strain; ++j) {
             if (strain) (*strain)(row, j) = green_lagrange.voigt()(j);
-            if (stress) (*stress)(row, j) = second_pk.voigt()(j);
+            if (stress) (*stress)(row, j) = cauchy.voigt()(j);
         }
     }
 }
@@ -80,11 +82,57 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
                                            const Field& displacement,
                                            int offset,
                                            bool use_green_lagrange_nl) {
-    RowMatrix rst = stress_strain_ip_rst();
+    const RowMatrix rst = stress_strain_ip_rst();
     if (rst.rows() == 0) {
         return;
     }
-    compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
+
+    const auto reference_coords       = this->node_coords_reference();
+    const auto current_coords         = this->node_coords_current();
+    const auto local_displacement     = this->nodal_data<3>(displacement);
+    const auto local_disp_mat         = StaticMatrix<3, N>(local_displacement.transpose());
+    const auto local_displacement_vec =
+        Eigen::Map<const StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+
+    for (Eigen::Index n = 0; n < rst.rows(); ++n) {
+        const Precision r   = rst(n, 0);
+        const Precision s   = rst(n, 1);
+        const Precision t   = rst(n, 2);
+        const Index     row = static_cast<Index>(offset + n);
+
+        if (!use_green_lagrange_nl) {
+            Precision det = Precision(0);
+            const StaticMatrix<n_strain, D * N> B =
+                this->strain_displacements(reference_coords, r, s, t, det, false);
+
+            if (det <= Precision(0) || !std::isfinite(det)) {
+                continue;
+            }
+
+            const Vec6                   strain_voigt = B * local_displacement_vec;
+            const VolumeStrainLinearized strain(strain_voigt);
+            VolumeStressCauchy           cauchy;
+            Mat6                         tangent;
+            evaluate_material(r, s, t, strain, cauchy, tangent);
+
+            for (Dim component = 0; component < n_strain; ++component) {
+                stress_state(row, component) = cauchy.voigt()(component);
+            }
+            continue;
+        }
+
+        const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
+        const VolumeStrainGreenLagrange green_lagrange =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+        VolumeStressPK2 second_pk;
+        Mat6            tangent;
+        evaluate_material(r, s, t, green_lagrange, second_pk, tangent);
+
+        // Total-Lagrange internal forces and geometric stiffness require PK2
+        for (Dim component = 0; component < n_strain; ++component) {
+            stress_state(row, component) = second_pk.voigt()(component);
+        }
+    }
 }
 
 template<Index N>
