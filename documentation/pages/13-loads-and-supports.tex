@@ -22,6 +22,8 @@ e_i^T u = \bar u_i ,
 \]
 where \(e_i\) selects the constrained degree of freedom and \(\bar u_i\) is the prescribed value from the support line. Multiple support entries in the same collector are assembled into one set of equations.
 
+In \val{LINEARSTATIC}, the full prescribed value is applied. In \val{NONLINEARSTATIC} load control, a nonzero prescribed value is ramped proportionally with the load factor: it is zero at \(\lambda=0\) and reaches the entered value at \(\lambda=1\). Arc-length control currently supports only homogeneous constraints and therefore rejects nonzero prescribed displacements or rotations.
+
 \section{Concentrated loads}
 
 \begin{syntax}

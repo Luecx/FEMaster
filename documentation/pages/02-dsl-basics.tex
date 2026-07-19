@@ -13,9 +13,9 @@ Command names and keywords are normalized by the parser. Case is not significant
 
 \section{Scopes}
 
-Some commands open an active context. \cmd{MATERIAL} activates a material; subsequent material subcommands such as \cmd{ELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to it. \cmd{LOADCASE} activates an analysis context; commands such as \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, and \cmd{CONSTRAINTMETHOD} configure that loadcase.
+Some commands open an active context. \cmd{MATERIAL} activates a material; subsequent material subcommands such as \cmd{ELASTIC}, \cmd{HYPERELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to it. \cmd{LOADCASE} activates an analysis context; commands such as \cmd{SUPPORTS}, \cmd{LOADS}, \cmd{SOLVER}, and \cmd{CONSTRAINTMETHOD} configure that loadcase.
 
-No explicit end command is required. A context ends when a following command no longer belongs to it or when the file ends.
+\cmd{MODEL, NAME=<name>} may be used as an explicit top-level model marker. \cmd{END} is accepted inside a loadcase as an explicit closing marker. Neither marker is required: a context also ends when a following command no longer belongs to it or when the file ends.
 
 \section{Aliases, defaults, and flags}
 
@@ -30,3 +30,7 @@ Mechanical nodal vectors use \dofvec. The first three values are translations. T
 \section{Targets}
 
 A target can often be a set name or a single numeric ID. If a matching set name exists, the set is used. Otherwise FEMaster attempts to interpret the token as one ID.
+
+\section{Parser diagnostics}
+
+Input errors report the source path and one-based line number of the command or data record that caused the failure. This applies to unknown commands, invalid keywords, commands used in the wrong scope, malformed data, incomplete multiline records, and errors raised while binding parsed values to the model. If the failing line came from an included file, the diagnostic names that included file rather than only the main deck. Unknown commands are rejected instead of being treated as implicit structural scopes.

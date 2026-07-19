@@ -276,6 +276,21 @@ f_\mathrm{ext}=\lambda f_\mathrm{ref},
 \]
 The Newton iterations enforce equilibrium at the prescribed \(\lambda_{i+1}\). The last step is shortened so that the analysis ends at \(\lambda=1\), provided the remaining step does not fall below \key{MINIMUM_INCREMENT}. Load control is appropriate while the equilibrium path remains representable as a single-valued function of the load factor. It generally cannot pass a limit point at which increasing displacement requires a decreasing load factor.
 
+After two accepted states are available, the initial reduced displacement for a new attempt is predicted by linear secant extrapolation:
+\[
+q_{i+1}^{(0)}
+=q_i
++\frac{\lambda_{i+1}-\lambda_i}{\lambda_i-\lambda_{i-1}}
+(q_i-q_{i-1}).
+\]
+The load factor itself is not predicted; it remains the prescribed target \(\lambda_{i+1}\). The first increment starts from the accepted initial state. Rejected attempts restore the last accepted state, leave the secant history unchanged, and form a new predictor for the reduced target increment after cutback.
+
+For inhomogeneous constraints, load control recovers the full displacement as
+\[
+u(\lambda)=\lambda u_p+Tq.
+\]
+Prescribed support values therefore ramp proportionally from zero to their entered value and are satisfied exactly at every target load factor.
+
 \subsection{Arc-length control}
 
 With \key{CONTROL=ARC_LENGTH}, displacement and load factor are corrected together. For one increment FEMaster enforces
@@ -299,7 +314,7 @@ r=T^T(\lambda f_\mathrm{ref}-f_\mathrm{int})
 and compares its RMS value with the larger of the reduced external-force RMS, reduced internal-force RMS, and 1. Under arc-length control, the convergence measure is the larger of this relative equilibrium residual and the normalized arc-constraint error. The displacement-correction norm printed in the solver log is diagnostic; equilibrium convergence is controlled by \key{TOL}.
 
 \begin{warningbox}[Current restrictions]
-\val{NONLINEARSTATIC} currently requires \key{METHOD=DIRECT} and \key{TYPE=NULLSPACE}. Zero-row regularization changes the tangent and should be enabled only when its numerical stabilization is intended. It is not a physical stiffness contribution.
+\val{NONLINEARSTATIC} currently requires \key{METHOD=DIRECT} and \key{TYPE=NULLSPACE}. Arc-length control additionally requires homogeneous constraints and rejects nonzero prescribed displacements or rotations. Zero-row regularization changes the tangent and should be enabled only when its numerical stabilization is intended. It is not a physical stiffness contribution.
 \end{warningbox}
 
 \section{Transient-specific controls}

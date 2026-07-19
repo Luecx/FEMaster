@@ -117,8 +117,10 @@ T^T K_T T\,\Delta q
 =
 T^T\!\left(\lambda f_\mathrm{ref}-f_\mathrm{int}(u)\right),
 \qquad
-u=u_p+Tq.
+u(\lambda)=\lambda u_p+Tq.
 \]
+This affine recovery applies to load control and ramps inhomogeneous prescribed displacements with the load factor. Arc-length control treats \(q\) and \(\lambda\) as coupled unknowns but currently requires homogeneous constraints, so \(u_p=0\) for that method.
+
 The model positions are updated from the current displacement during nonlinear assembly. After the loadcase finishes, the original model positions are restored so that later loadcases start from the original geometry.
 
 Load control prescribes \(\lambda\) incrementally. Arc-length control treats \(q\) and \(\lambda\) as coupled unknowns and adds a path constraint, allowing the solver to pass load limit points. Both methods and all \cmd{NONLINEAR} options are described in Section~\ref{sec:nonlinear-controls}.

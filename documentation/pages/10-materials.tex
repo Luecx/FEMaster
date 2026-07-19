@@ -1,7 +1,7 @@
 \chapter{Material Models}
 \label{chap:materials}
 
-Material definitions provide density, thermal expansion, and elastic constitutive behaviour. Sections reference materials by name; elements receive their actual stiffness and mass only after their section has been assigned. A material can therefore be defined once and reused by several shell, solid, beam, or truss sections.
+Material definitions provide density, thermal expansion, and elastic or hyperelastic constitutive behaviour. Sections reference materials by name; elements receive their actual stiffness and mass only after their section has been assigned. A material can therefore be defined once and reused by several shell, solid, beam, or truss sections.
 
 \section{Material context: \cmd{MATERIAL}}
 
@@ -9,13 +9,15 @@ Material definitions provide density, thermal expansion, and elastic constitutiv
 *MATERIAL, NAME=<material>
   *ELASTIC, TYPE=<model>
   ...
+  *HYPERELASTIC, NEO HOOKE
+  ...
   *DENSITY
   ...
   *THERMALEXPANSION
   ...
 \end{syntax}
 
-\cmd{MATERIAL} activates or creates a named material entry. The material name is supplied through \key{MATERIAL} or the alias \key{NAME}. Subcommands such as \cmd{ELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to the currently active material.
+\cmd{MATERIAL} activates or creates a named material entry. The material name is supplied through \key{MATERIAL} or the alias \key{NAME}. Subcommands such as \cmd{ELASTIC}, \cmd{HYPERELASTIC}, \cmd{DENSITY}, and \cmd{THERMALEXPANSION} apply to the currently active material. \cmd{ELASTIC} and \cmd{HYPERELASTIC} are alternative constitutive-model assignments; a material definition normally uses one of them.
 
 \section{Density: \cmd{DENSITY}}
 
@@ -24,7 +26,7 @@ Material definitions provide density, thermal expansion, and elastic constitutiv
 <rho>
 \end{syntax}
 
-\cmd{DENSITY} sets the mass density \(\rho\). Density is used when FEMaster builds mass matrices, lumped masses from continuum or structural elements, inertia loads, inertia relief mass properties, and dynamic equations. In a consistent unit system, \(\rho\) must match the length, force, and time units used in the deck. For example, if length is in meters and force in Newtons, density is normally given in kg/m\(^3\).
+\cmd{DENSITY} sets the nonnegative mass density \(\rho\). Density is used when FEMaster builds mass matrices, lumped masses from continuum or structural elements, inertia loads, inertia relief mass properties, and dynamic equations. In a consistent unit system, \(\rho\) must match the length, force, and time units used in the deck. For example, if length is in meters and force in Newtons, density is normally given in kg/m\(^3\).
 
 For a continuum element, the mass contribution is based on
 \[
@@ -61,6 +63,7 @@ Accepted type values are \val{ISO} and \val{ISOTROPIC}. The data line contains Y
 \[
 G = \frac{E}{2(1+\nu)} .
 \]
+FEMaster requires \(E>0\) and \(-1<\nu<0.5\).
 
 For three-dimensional stress states, FEMaster uses the isotropic stiffness matrix
 \[
@@ -97,12 +100,40 @@ Accepted type values are \val{GENERALISEDISOTROPIC}, \val{GENERALISED_ISOTROPIC}
 \[
 D_{44}=D_{55}=D_{66}=G .
 \]
+FEMaster requires \(E>0\), \(-1<\nu<0.5\), and \(G>0\).
 In the 2D matrix, the shear entry is also set directly:
 \[
 D_{2D,33}=G .
 \]
 
 This material is intentionally not a physically general isotropic law when \(G \ne E/(2(1+\nu))\). It breaks the isotropic relationship between Young's modulus, Poisson's ratio, and shear modulus. That can be useful deliberately, especially for shell studies where the user wants to tune, reduce, or effectively ignore shear stiffness while keeping isotropic membrane and bending terms. It should not be used as a physical isotropic material unless the supplied \(G\) satisfies the isotropic relation.
+
+\section{Neo-Hooke hyperelasticity}
+
+\begin{syntax}
+*HYPERELASTIC, NEO HOOKE
+<C10>, <D1>
+\end{syntax}
+
+\cmd{HYPERELASTIC} assigns the compressible Abaqus-style Neo-Hooke model to the active material. The accepted model flags normalize to \val{NEOHOOKE}; \val{NEO_HOOKE} and \val{NEO-HOOKE} are equivalent spellings. The model is a standalone material subcommand: use \cmd{HYPERELASTIC, NEO HOOKE}, not the former \cmd{ELASTIC, TYPE=NEOHOOKE} syntax.
+
+The strain-energy density is
+\[
+W=C_{10}(\bar I_1-3)+\frac{(J-1)^2}{D_1}.
+\]
+\(C_{10}\) has stress units, \(D_1\) has inverse-stress units, and both parameters must be positive. The corresponding small-strain shear and bulk moduli are
+\[
+\mu=2C_{10},
+\qquad
+K=\frac{2}{D_1}.
+\]
+The material supplies linearized and Green--Lagrange response paths for axial, solid, and integrated-shell formulations. In nonlinear axial evaluation the lateral stretches are solved so that the lateral surfaces are traction-free. In nonlinear shell evaluation the thickness strain is iterated to enforce plane stress and the material tangent is condensed consistently.
+
+\begin{exampledeck}
+*MATERIAL, NAME=RUBBER
+*HYPERELASTIC, NEO HOOKE
+0.35, 0.02
+\end{exampledeck}
 
 \section{Orthotropic elasticity}
 
@@ -181,6 +212,8 @@ S
 \end{bmatrix}.
 \]
 Thus the complete generalized shell law consists of the \(6\times6\) ABD matrix and the separate \(2\times2\) matrix \(S\). FEMaster uses the transverse-shear component order \((xz,yz)\), so the four values following the 36 ABD entries map exactly to \(s_{11},s_{12},s_{21},s_{22}\). For \val{TYPE=ABD}, these are already section stiffnesses: FEMaster does not multiply the supplied ABD or \(S\) matrix by shell thickness and does not apply an additional shear-correction factor.
+
+Both matrices must contain finite values, be symmetric, and be positive definite. These conditions are checked when the ABD shell section is constructed.
 
 \begin{exampledeck}
 *MATERIAL, NAME=STEEL

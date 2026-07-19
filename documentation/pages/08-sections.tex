@@ -13,7 +13,7 @@ Section definitions are normally applied to element sets through \key{ELSET}. Th
 *SOLIDSECTION, ELSET=<elset>, MATERIAL=<material>, ORIENTATION=<orientation>
 \end{syntax}
 
-A solid section assigns material behaviour to a set of three-dimensional continuum elements. It is used with the solid element family, such as \val{C3D4}, \val{C3D8}, \val{C3D10}, \val{C3D20}, and related transition elements. The section does not define a thickness or area because those quantities are already represented by the volume mesh. The physical volume, element shape, and integration rules provide the geometric contribution; the section supplies the constitutive interpretation.
+A solid section assigns material behaviour to a set of three-dimensional continuum elements. It is used with the solid element family, such as \val{C3D4}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D20}, and related transition elements. The section does not define a thickness or area because those quantities are already represented by the volume mesh. The physical volume, element shape, and integration rules provide the geometric contribution; the section supplies the constitutive interpretation.
 
 \key{MATERIAL} is the central parameter. It references a material definition that provides elastic stiffness, density, or other material data used by the selected analysis type. The material assigned through the solid section affects stiffness assembly, mass assembly where density is available, stress recovery, and any loadcase that depends on material response.
 
@@ -39,7 +39,7 @@ Solid sections are usually simple, but they are easy to misuse in large models. 
 
 A shell section assigns material and thickness data to a set of shell elements. Shell elements represent a thin structure through a two-dimensional surface mesh, so the section carries information that would otherwise be present in a full three-dimensional solid mesh. The most important of these quantities is \key{THICKNESS}. It affects membrane stiffness, bending stiffness, transverse shear behaviour, mass, stress recovery, and shell resultants.
 
-Thickness is not just a display property. In a shell formulation, membrane stiffness generally scales with thickness, while bending stiffness is much more sensitive because it depends on the thickness cubed in classical plate behaviour. A small thickness error can therefore have a large effect on bending response. The thickness value must be expressed in the same length unit as the node coordinates and the rest of the model.
+Thickness is not just a display property. In a shell formulation, membrane stiffness generally scales with thickness, while bending stiffness is much more sensitive because it depends on the thickness cubed in classical plate behaviour. A small thickness error can therefore have a large effect on bending response. The thickness value must be positive and expressed in the same length unit as the node coordinates and the rest of the model.
 
 \key{MATERIAL} references the material used by the shell section. For isotropic shells, the material and thickness together define the main stiffness behaviour. For orthotropic materials or ABD-type material descriptions, the shell orientation becomes part of the physical definition. It controls how material axes, laminate axes, or directional stiffness terms are aligned with the shell surface.
 
@@ -72,7 +72,10 @@ The coordinates \(y_0\) and \(z_0\), where used, describe section reference offs
 
 The profile definition is intentionally independent from the beam element set. This allows a single profile to be reused by multiple beam sections, possibly with different materials or orientations. It also makes it possible to audit cross-section data separately from mesh topology. In larger decks, profile names should be descriptive enough to distinguish units and physical meaning; a profile named only \val{P1} is easy to confuse once several member types exist.
 
-Profile constants must be in the unit system of the model. If length is measured in millimetres, area is in square millimetres and second moments of area are in fourth powers of millimetres. Unit mistakes in beam profiles are common because the exponents differ between area, bending inertia, and torsion. A section can appear connected and stable while still being wrong by orders of magnitude.
+Profile constants must be in the unit system of the model. If length is measured in millimetres, area is in square millimetres and second moments of area are in fourth powers of millimetres. Unit mistakes in beam profiles are common because the exponents differ between area, bending inertia, and torsion. A section can appear connected and stable while still being wrong by orders of magnitude. FEMaster requires \(A>0\), \(I_y>0\), \(I_z>0\), and \(J>0\). The bending inertia matrix must also be positive definite, which requires
+\[
+I_y I_z-I_{yz}^2>0.
+\]
 
 \begin{exampledeck}
 *PROFILE, NAME=RECT_20_40
@@ -113,7 +116,7 @@ A truss section assigns material and cross-sectional area to truss elements. Tru
 
 The simplicity is useful, but it is also the main modelling constraint. A truss section does not define bending inertia, torsional stiffness, offsets, or rotational behaviour. If a physical member transfers moment, resists bending, or has important connection eccentricity, a truss section cannot represent that behaviour. In those cases a beam, shell, or solid idealization is more appropriate.
 
-Area must be chosen consistently with the model unit system and with the intended structural idealization. For a rod-like member, it may correspond to the actual cross-sectional area. For an idealized brace, link, or equivalent stiffness member, it may represent an effective area chosen to match axial stiffness. In either case, the interpretation should be clear because truss stresses are based directly on axial force divided by area.
+Area must be positive and chosen consistently with the model unit system and with the intended structural idealization. For a rod-like member, it may correspond to the actual cross-sectional area. For an idealized brace, link, or equivalent stiffness member, it may represent an effective area chosen to match axial stiffness. In either case, the interpretation should be clear because truss stresses are based directly on axial force divided by area.
 
 Truss sections should be assigned to element sets that are intended to behave as pin-jointed axial members. The surrounding support and connection model must provide stability. A collection of truss elements can easily form a mechanism if the geometry or constraints do not prevent rigid-body or hinge-like motion. When debugging truss models, check global stability, reaction balance, and axial force signs before focusing on local stresses.
 

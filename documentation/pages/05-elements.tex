@@ -25,6 +25,7 @@ Element quality has a direct influence on solution quality. Poorly shaped elemen
 \val{C3D5} & 5 & Pyramid input mapped to a degenerated hexahedral solid. \\
 \val{C3D6} & 6 & Linear wedge solid. \\
 \val{C3D8} & 8 & Linear hexahedral solid. \\
+\val{C3D8R} & 8 & Reduced-integration linear hexahedral solid with hourglass stabilization. \\
 \val{C3D10} & 10 & Quadratic tetrahedral solid. \\
 \val{C3D13} & 13 & Quadratic pyramid solid. \\
 \val{C3D15} & 15 & Quadratic wedge solid. \\
@@ -133,6 +134,33 @@ The element is a good default for regular solid meshes. It performs well when th
 The main limitation is still the linear displacement interpolation. A coarse \val{C3D8} mesh can be too stiff in bending, and one element through thickness is rarely enough for credible stress results in a bending-dominated solid model. Curved boundaries are represented only by straight element edges, so geometric approximation error can also become significant unless the mesh is refined or a higher-order hexahedral element is used.
 
 Element distortion matters. Warped faces, skewed edges, inverted Jacobians, and extreme aspect ratios reduce the reliability of stiffness and stress recovery. A distorted hexahedron can be worse than a cleaner tetrahedral mesh. Use \val{C3D8} when the mesh can remain structured and reasonably regular; for complex geometry where a high-quality hex mesh is not practical, a quadratic tetrahedral mesh may produce more predictable stress behaviour.
+
+\clearpage
+
+\section{\val{C3D8R}: reduced-integration 8-node hexahedral solid}
+
+\begin{syntax}
+*ELEMENT, TYPE=C3D8R, ELSET=<set>
+<id>, <n1>, <n2>, <n3>, <n4>, <n5>, <n6>, <n7>, <n8>
+\end{syntax}
+
+\val{C3D8R} uses the same interpolation, connectivity, faces, sections, loads, and material models as \val{C3D8}, but evaluates its continuum contribution at the element centre with weight 8. Reduced integration lowers the element cost and avoids some of the excessive bending stiffness of a fully integrated low-order hexahedron. The one-point continuum stiffness alone has four scalar zero-energy hourglass modes in each translational direction, so FEMaster adds reference-configuration hourglass stabilization.
+
+The four hourglass modes are projected against translations and affine deformation by using volume-averaged reference gradients from a full \(2\times2\times2\) geometry integration. The stabilization scale is
+\[
+k_\mathrm{hg}
+=0.005\,\max(C_{11},C_{22},C_{33})\,V_0\,
+\sum_a \lVert\overline{\nabla N_a}\rVert^2,
+\]
+where \(C\) is the reference material tangent at the element centre and \(V_0\) is the reference volume. The resulting tangent and internal force use the consistent pair
+\[
+K_\mathrm{hg}=k_\mathrm{hg}(G G^T\otimes I_3),
+\qquad
+f_\mathrm{hg}=K_\mathrm{hg}u_e.
+\]
+The central integration-point stress and strain are repeated to all eight nodes for nodal result output.
+
+The stabilization is reference-based. It is symmetric and Newton-consistent, but it is not fully objective under very large rigid-body rotations. Highly distorted elements can also make a fixed hourglass coefficient inappropriate, so deformation patterns and hourglass-sensitive bending modes should be checked by mesh refinement or comparison with \val{C3D8}. The current element also uses its one-point rule for mass integration; for eigenfrequency or transient work, prefer \val{C3D8} unless that reduced mass representation has been assessed deliberately.
 
 \clearpage
 

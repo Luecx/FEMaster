@@ -1,6 +1,6 @@
 \chapter{Overview}
 
-FEMaster is a finite-element solver for linear mechanical analyses. Models are described with an input-deck language in which commands start with an asterisk, command options are written as keywords, and numerical data follows on subsequent lines.
+FEMaster is a finite-element solver for linear and nonlinear mechanical analyses. Models are described with an input-deck language in which commands start with an asterisk, command options are written as keywords, and numerical data follows on subsequent lines.
 
 The manual is organized as a user reference. Command tables summarize the available DSL commands; the later chapters explain how model entities are connected, how collectors are activated in loadcases, and how analysis controls affect the solved equations.
 
@@ -21,6 +21,7 @@ Loads and supports are stored in named collectors. A loadcase decides which coll
 \endhead
 \val{LINEARSTATIC} & Small-displacement static equilibrium with linear material behaviour. \\
 \val{LINEARSTATICTOPO} & Static analysis with element-wise topology fields such as density, orientation, and penalization exponent. \\
+\val{NONLINEARSTATIC} & Incremental static equilibrium with geometric and material nonlinearity, load control, or arc-length path following. \\
 \val{EIGENFREQ} & Natural-frequency analysis of the linear constrained system. \\
 \val{LINEARBUCKLING} & Linear buckling analysis from a static preload and the resulting geometric stiffness. \\
 \val{LINEARTRANSIENT} & Linear time integration with Newmark parameters, optional Rayleigh damping, and controlled result cadence. \\

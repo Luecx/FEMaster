@@ -27,6 +27,7 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \endhead
 \cmd{MATERIAL} & Create or activate a material. \\
 \cmd{ELASTIC} & Assign elastic material behaviour. \\
+\cmd{HYPERELASTIC} & Assign Abaqus-style Neo-Hooke hyperelastic behaviour. \\
 \cmd{DENSITY} & Assign mass density. \\
 \cmd{THERMALEXPANSION} & Assign thermal expansion coefficient. \\
 \cmd{SOLIDSECTION} & Assign material and optional orientation to solid elements. \\
@@ -70,6 +71,8 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \midrule
 \endhead
 \cmd{LOADCASE} & Start an analysis block. \\
+\cmd{MODEL} & Optionally start an explicit top-level model block. \\
+\cmd{END} & Optionally mark the end of a loadcase. \\
 \cmd{SUPPORTS} & Activate support collectors. \\
 \cmd{LOADS} & Activate load collectors. \\
 \cmd{SOLVER} & Select device and linear solution method. \\
