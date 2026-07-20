@@ -1,9 +1,15 @@
 /**
  * @file load_t.h
- * @brief Declares the thermal load boundary condition.
+ * @brief Declares thermal loading driven by a nodal temperature field.
  *
- * @see src/bc/load_t.cpp
- * @see src/bc/load.h
+ * `TLoad` does not prescribe equivalent nodal forces directly. Instead, it
+ * validates a scalar nodal temperature field and delegates thermal-strain
+ * evaluation and force assembly to every structural element, together with the
+ * reference temperature that defines the stress-free state.
+ *
+ * @see TLoad
+ * @see Load
+ * @see load_t.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -14,44 +20,40 @@
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct TLoad
- * @brief Thermal load derived from a temperature field.
+ * @brief Applies element-specific thermal expansion loads to the model.
  *
- * Generates equivalent nodal forces by feeding a temperature field to each
- * structural element.
+ * The temperature input must be a one-component nodal field. Each structural
+ * element gathers the temperatures of its own nodes, computes the temperature
+ * difference relative to `ref_temp_` and assembles the corresponding equivalent
+ * nodal force according to its material and kinematic formulation.
  */
 struct TLoad : public Load {
-    using Ptr = std::shared_ptr<TLoad>; ///< Shared pointer alias for thermal loads.
+    // Shared ownership type for direct references to thermal loads.
+    using Ptr = std::shared_ptr<TLoad>;
 
-    SPtr<model::Field> temp_field_ = nullptr; ///< Temperature field reference.
-    Precision          ref_temp_   = NAN;     ///< Reference temperature for zero load.
+    // Scalar nodal temperature field consumed by structural elements during
+    // thermal-load assembly.
+    SPtr<model::Field> temp_field_ = nullptr;
 
-    /**
-     * @brief Default constructor for delayed field assignment by collectors.
-     */
+    // Temperature at which the element is considered free of thermal strain.
+    Precision ref_temp_ = NAN;
+
+    // Construct an unconfigured thermal load for later collector assignment.
     TLoad() = default;
 
-    /**
-     * @brief Defaulted virtual destructor.
-     */
+    // Enable polymorphic destruction through `Load`.
     ~TLoad() override = default;
 
-    /**
-     * @brief Applies thermal expansion loads to all structural elements.
-     *
-     * @param model_data Model data that provides the structural elements.
-     * @param bc Boundary-condition field receiving equivalent nodal forces.
-     * @param time Current analysis time. Thermal loads currently ignore it.
-     * @param ignore_amplitude Whether amplitude scaling should be skipped.
-     */
+    // Validate `temp_field_` and invoke `apply_tload()` on every structural
+    // element. The current implementation does not use time or amplitude
+    // scaling because the complete temperature history is represented by the
+    // supplied field.
     void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
 
-    /**
-     * @brief Returns a compact description of the thermal load.
-     *
-     * @return std::string Temperature field name and reference temperature.
-     */
+    // Return the temperature-field name and reference temperature used by this
+    // load definition.
     std::string str() const override;
 };
 } // namespace bc

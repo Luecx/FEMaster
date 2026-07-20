@@ -1,18 +1,18 @@
 /**
  * @file load.h
- * @brief Declares the abstract base interface for load boundary conditions.
+ * @brief Declares the polymorphic interface shared by all load types.
  *
- * Concrete load types are declared in dedicated headers:
- * - `load_c.h`
- * - `load_d.h`
- * - `load_p.h`
- * - `load_v.h`
- * - `load_t.h`
- * - `load_inertial.h`
+ * A `Load` converts a physical loading definition into contributions to a
+ * model field. Concrete implementations target nodes, surfaces, elements or
+ * all structural elements and may optionally interpret their components in a
+ * spatial coordinate system or scale them through a time-dependent amplitude.
+ * The individual load formulations are declared in their dedicated headers,
+ * which are included at the end of this umbrella header for convenient access.
  *
- * This file only contains the polymorphic `Load` base class.
- *
- * @see src/bc/load_collector.h
+ * @see Load
+ * @see LoadCollector
+ * @see amplitude.h
+ * @see load_collector.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -39,46 +39,50 @@ class ModelData;
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct Load
- * @brief Base interface for load boundary conditions.
+ * @brief Defines the common assembly interface for physical load conditions.
  *
- * Derived load types must implement the `apply` method to scatter their values
- * into the boundary-condition data for all entities referenced by their target
- * region.
+ * Derived classes implement `apply()` to integrate or scatter their physical
+ * load into the supplied boundary-condition field. The base class stores the
+ * two optional modifiers common to several formulations: a coordinate system
+ * for interpreting vector components and an amplitude for temporal scaling.
+ * Each load also provides a compact printable representation for diagnostics
+ * and model summaries.
  */
 struct Load : public BoundaryCondition, public fem::Printable {
-    using Ptr = std::shared_ptr<Load>; ///< Shared pointer alias for load storage.
+    // Shared ownership type used by `LoadCollector` to hold heterogeneous load
+    // implementations in one contiguous collection of pointers.
+    using Ptr = std::shared_ptr<Load>;
 
-    cos::CoordinateSystem::Ptr orientation_ = nullptr; ///< Optional local orientation.
-    Amplitude::Ptr            amplitude_   = nullptr; ///< Optional time-dependent scaling.
+    // Optional coordinate system in which vector-valued load components are
+    // defined. A null pointer means that the stored components are already in
+    // the global model basis.
+    cos::CoordinateSystem::Ptr orientation_ = nullptr;
 
-    /**
-     * @brief Virtual defaulted destructor to enable polymorphic deletion.
-     */
+    // Optional scalar time history. A null pointer leaves the nominal load
+    // unchanged; concrete implementations may also explicitly bypass scaling.
+    Amplitude::Ptr amplitude_ = nullptr;
+
+    // Enable destruction through a `Load` pointer without requiring each
+    // collector to know the concrete load type.
     virtual ~Load() = default;
 
-    /**
-     * @brief Applies the load to the given model.
-     *
-     * @param model_data Model data that provides geometry and topology.
-     * @param bc Boundary-condition storage where load contributions are added.
-     * @param time Current analysis time used for amplitude scaling.
-     * @param ignore_amplitude Whether amplitude scaling should be skipped.
-     */
+    // Assemble this load into `bc` using geometry and topology from
+    // `model_data`. `time` is passed to the optional amplitude, while
+    // `ignore_amplitude` requests assembly of the unscaled nominal load.
     virtual void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) = 0;
 
-    /**
-     * @brief Builds a compact one-line description of the load.
-     *
-     * @return std::string Load type, target and relevant parameters.
-     */
+    // Return a compact one-line description containing the concrete load type,
+    // target region and the parameters relevant for diagnostics.
     std::string str() const override = 0;
 };
 } // namespace bc
 } // namespace fem
 
-// Convenience umbrella includes for concrete load types.
+// Expose all concrete load declarations through the common load header. The
+// concrete headers include this file themselves, relying on `#pragma once` to
+// terminate the cyclic umbrella inclusion after the base interface is known.
 #include "load_c.h"
 #include "load_d.h"
 #include "load_p.h"

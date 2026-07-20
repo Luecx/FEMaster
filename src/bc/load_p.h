@@ -1,9 +1,15 @@
 /**
  * @file load_p.h
- * @brief Declares the uniform surface pressure load.
+ * @brief Declares scalar pressure loading on surface regions.
  *
- * @see src/bc/load_p.cpp
- * @see src/bc/load.h
+ * `PLoad` applies a uniform scalar pressure normal to every selected surface.
+ * The surface geometry supplies the position-dependent normal and performs the
+ * consistent integration into nodal forces. An optional amplitude scales the
+ * pressure magnitude at the current analysis time.
+ *
+ * @see PLoad
+ * @see Load
+ * @see load_p.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -16,44 +22,38 @@
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct PLoad
- * @brief Uniform surface pressure load.
+ * @brief Integrates a uniform follower direction based on surface normals.
  *
- * Distributes a scalar pressure to the nodes of each surface in the associated
- * region.
+ * The stored pressure is multiplied by the optional amplitude and applied in
+ * the negative direction of the surface normal returned at each integration
+ * point. Consequently, the vector direction follows the geometric orientation
+ * of each individual surface while the scalar magnitude remains uniform.
  */
 struct PLoad : public Load {
-    using Ptr = std::shared_ptr<PLoad>; ///< Shared pointer alias for pressure loads.
+    // Shared ownership type for direct references to pressure loads.
+    using Ptr = std::shared_ptr<PLoad>;
 
-    Precision                  pressure_ = NAN; ///< Magnitude of the applied pressure.
-    SPtr<model::SurfaceRegion> region_   = nullptr; ///< Target surface region.
+    // Nominal scalar pressure magnitude. The implementation multiplies this
+    // value by the optional amplitude before surface integration.
+    Precision pressure_ = NAN;
 
-    /**
-     * @brief Default constructor for delayed field assignment by collectors.
-     */
+    // Surface region receiving the pressure. Each valid surface is integrated
+    // independently into the common nodal load field.
+    SPtr<model::SurfaceRegion> region_ = nullptr;
+
+    // Construct an unconfigured pressure load for later population.
     PLoad() = default;
 
-    /**
-     * @brief Defaulted virtual destructor.
-     */
+    // Enable polymorphic destruction through `Load`.
     ~PLoad() override = default;
 
-    /**
-     * @brief Integrates pressure over every target surface.
-     *
-     * @param model_data Model data used for positions and surface lookup.
-     * @param bc Boundary-condition field receiving nodal forces.
-     * @param time Current analysis time for amplitude scaling.
-     * @param ignore_amplitude Whether amplitude scaling should be skipped.
-     */
+    // Evaluate the optional amplitude, obtain the local surface normal at every
+    // integration point and accumulate the resulting consistent nodal forces.
     void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
 
-    /**
-     * @brief Returns a compact description of the pressure load.
-     *
-     * @return std::string Target region, pressure and amplitude.
-     */
+    // Describe the target surface set, nominal pressure and optional amplitude.
     std::string str() const override;
 };
 } // namespace bc

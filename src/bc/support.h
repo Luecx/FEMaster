@@ -1,12 +1,18 @@
 /**
  * @file support.h
- * @brief Declares structural supports that constrain degrees of freedom.
+ * @brief Declares prescribed structural degrees of freedom over model regions.
  *
- * Supports impose kinematic constraints on selected model entities, producing
- * constraint equations that are later assembled into the solver system.
+ * A `Support` translates displacement and rotation prescriptions into algebraic
+ * constraint equations. It can target nodes directly or expand element and
+ * surface regions to their connected nodes. Prescriptions may be expressed in
+ * the global basis or in a position-dependent coordinate system, in which case
+ * one local constraint becomes a linear combination of global degrees of
+ * freedom. Region traversal and equation construction are implemented in
+ * `support.cpp`.
  *
- * @see src/bc/support.cpp
- * @see src/constraints/types/equation.h
+ * @see Support
+ * @see constraint::Equation
+ * @see support.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -27,84 +33,77 @@ class ModelData;
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct Support
- * @brief Represents a kinematic boundary condition over model regions.
+ * @brief Converts regional kinematic prescriptions into solver equations.
  *
- * A support may target node, element, or surface regions. If a local coordinate
- * system is provided, constraint directions are transformed accordingly before
- * being converted into algebraic equations.
+ * Exactly one of the node, element or surface region pointers identifies the
+ * support target. The six entries of `values_` correspond to three translations
+ * followed by three rotations; `NaN` marks a free degree of freedom. In a local
+ * coordinate system, the selected local axis is expanded into its three global
+ * directional coefficients before the equation is appended.
  */
 struct Support : public fem::Printable {
-    using NodeRegionPtr    = model::NodeRegion::Ptr;    ///< Alias for node-region pointer.
-    using ElementRegionPtr = model::ElementRegion::Ptr; ///< Alias for element-region pointer.
-    using SurfaceRegionPtr = model::SurfaceRegion::Ptr; ///< Alias for surface-region pointer.
+    // Pointer aliases keep the three supported region variants concise in the
+    // public constructors and internal state.
+    using NodeRegionPtr    = model::NodeRegion::Ptr;
+    using ElementRegionPtr = model::ElementRegion::Ptr;
+    using SurfaceRegionPtr = model::SurfaceRegion::Ptr;
 
-    /**
-     * @brief Default constructor.
-     */
+    // Construct an empty support. This is primarily useful for containers and
+    // serializers that assign the target and values later.
     Support() = default;
 
-    /**
-     * @brief Creates a support acting on a node region.
-     *
-     * @param node_region Region of nodes receiving the constraint.
-     * @param values Generalized displacement/rotation specification.
-     * @param coordinate_system Optional local coordinate system.
-     */
+    // Construct a support that acts directly on every node in `node_region`.
     Support(NodeRegionPtr node_region,
             const Vec6& values,
             cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Creates a support acting on an element region.
-     *
-     * @param element_region Region of elements whose nodes are constrained.
-     * @param values Generalized displacement/rotation specification.
-     * @param coordinate_system Optional local coordinate system.
-     */
+    // Construct a support that expands each selected element to its connected
+    // nodes before generating equations.
     Support(ElementRegionPtr element_region,
             const Vec6& values,
             cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Creates a support acting on a surface region.
-     *
-     * @param surface_region Region of surfaces whose nodes are constrained.
-     * @param values Generalized displacement/rotation specification.
-     * @param coordinate_system Optional local coordinate system.
-     */
+    // Construct a support that expands each selected surface to its connected
+    // nodes before generating equations.
     Support(SurfaceRegionPtr surface_region,
             const Vec6& values,
             cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Applies the support and generates constraint equations.
-     *
-     * @param model_data FEM model data with geometry and topology.
-     * @param equations Container receiving the generated constraint equations.
-     */
+    // Traverse the active target region and append all resulting constraint
+    // equations to `equations`. Repeated nodes are processed as encountered by
+    // the region topology.
     void apply(model::ModelData& model_data, constraint::Equations& equations);
 
-    /**
-     * @brief One-line description with target and DOF spec.
-     */
+    // Return a compact representation of the active target, prescribed degrees
+    // of freedom and optional coordinate system.
     std::string str() const override;
 
 private:
-    NodeRegionPtr             node_region_        = nullptr;                         ///< Targeted node region.
-    ElementRegionPtr          element_region_     = nullptr;                         ///< Targeted element region.
-    SurfaceRegionPtr          surface_region_     = nullptr;                         ///< Targeted surface region.
-    Vec6                      values_             = {NAN, NAN, NAN, NAN, NAN, NAN}; ///< Constraint specification per DOF.
-    cos::CoordinateSystem::Ptr coordinate_system_ = nullptr;                         ///< Optional local coordinate frame.
+    // Optional direct node target. When set, no topology expansion is required.
+    NodeRegionPtr node_region_ = nullptr;
 
-    /**
-     * @brief Applies the support to a single node and generates equations.
-     *
-     * @param model_data FEM model data with geometry and topology.
-     * @param equations Container receiving the generated constraint equations.
-     * @param node_id Identifier of the node to constrain.
-     */
+    // Optional element target. Every node connected to each valid selected
+    // element receives the support prescription.
+    ElementRegionPtr element_region_ = nullptr;
+
+    // Optional surface target. Every node connected to each valid selected
+    // surface receives the support prescription.
+    SurfaceRegionPtr surface_region_ = nullptr;
+
+    // Prescribed generalized displacements ordered as
+    // `[Ux, Uy, Uz, Rx, Ry, Rz]`. `NaN` leaves the corresponding degree of
+    // freedom unconstrained.
+    Vec6 values_ = {NAN, NAN, NAN, NAN, NAN, NAN};
+
+    // Optional basis in which `values_` is interpreted. A null pointer selects
+    // direct constraints in the global coordinate system.
+    cos::CoordinateSystem::Ptr coordinate_system_ = nullptr;
+
+    // Generate every active translational or rotational constraint for one
+    // node. Global prescriptions produce a single-entry equation; local
+    // prescriptions produce three global coefficients for the selected axis.
     void apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id);
 };
 } // namespace bc

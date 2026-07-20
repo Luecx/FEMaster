@@ -1,12 +1,17 @@
 /**
  * @file amplitude.h
- * @brief Declares time-dependent amplitude series for boundary conditions.
+ * @brief Declares reusable scalar amplitude histories for boundary conditions.
  *
- * Amplitudes provide reusable scalar time histories that can be assigned to
- * loads or other boundary conditions. They evaluate to a scalar multiplier at a
- * requested time based on the configured interpolation method.
+ * An `Amplitude` stores a named, time-ordered sequence of scalar support points
+ * and evaluates the corresponding multiplier at an arbitrary analysis time.
+ * Loads can reference the same amplitude object to share a prescribed temporal
+ * evolution without duplicating interpolation or storage logic. The concrete
+ * interpolation algorithms, sorted insertion and endpoint handling are
+ * implemented in `amplitude.cpp`.
  *
- * @see src/bc/amplitude.cpp
+ * @see Amplitude
+ * @see Interpolation
+ * @see amplitude.cpp
  * @author Finn Eggers
  * @date 28.04.2026
  */
@@ -22,86 +27,87 @@
 
 namespace fem {
 namespace bc {
+
 /**
- * @enum Interpolation
- * @brief Enumerates interpolation schemes for amplitude evaluation.
+ * @brief Selects how an amplitude is evaluated between stored support points.
+ *
+ * All interpolation modes clamp queries outside the sampled time range to the
+ * nearest endpoint value. They differ only in how an interior query is mapped
+ * to the neighboring samples.
  */
 enum class Interpolation {
-    Step,    ///< Holds the previous sample until the next sample is reached.
-    Nearest, ///< Selects the sample closest to the query time.
-    Linear   ///< Linear interpolation between adjacent samples.
+    // Hold the value of the preceding sample until the next sample time is
+    // reached. At an exact sample time the new sample value becomes active.
+    Step,
+
+    // Select the temporally closest sample. Equal distances are resolved in
+    // favor of the preceding sample to keep the result deterministic.
+    Nearest,
+
+    // Interpolate affinely between the samples directly below and above the
+    // query time.
+    Linear
 };
 
 /**
- * @struct Amplitude
- * @brief Stores a time-value series with configurable interpolation.
+ * @brief Stores and evaluates a named scalar time history.
+ *
+ * Samples are maintained in ascending time order. Adding a sample at an
+ * already represented time replaces the existing value instead of introducing
+ * a duplicate support point. An empty amplitude evaluates to the neutral
+ * multiplier `1.0`, allowing optional amplitudes to be used without special
+ * handling in every load implementation.
  */
 struct Amplitude : Namable {
-    using Ptr = std::shared_ptr<Amplitude>; ///< Shared pointer alias for storage.
+    // Shared ownership type used by loads and input-data collectors. Multiple
+    // boundary conditions may intentionally reference the same time history.
+    using Ptr = std::shared_ptr<Amplitude>;
 
     /**
-     * @struct Sample
-     * @brief Stores one amplitude support point.
+     * @brief Represents one scalar support point of the amplitude history.
+     *
+     * The pair is kept intentionally lightweight because amplitude evaluation
+     * searches a contiguous vector of samples.
      */
     struct Sample {
-        Precision time_  = 0; ///< Sample time coordinate.
-        Precision value_ = 0; ///< Sample value at the given time.
+        // Analysis-time coordinate at which the stored value is prescribed.
+        Precision time_  = 0;
+
+        // Scalar amplitude value associated with `time_`.
+        Precision value_ = 0;
     };
 
-    /**
-     * @brief Creates an amplitude with a name and interpolation mode.
-     *
-     * @param name Amplitude identifier.
-     * @param interpolation Interpolation used between stored samples.
-     */
+    // Construct a named amplitude with the requested interpolation rule. The
+    // sample sequence initially remains empty and therefore evaluates to 1.0.
     explicit Amplitude(const std::string& name = "",
                        Interpolation interpolation = Interpolation::Linear);
 
-    /**
-     * @brief Changes how values between samples are evaluated.
-     *
-     * @param interpolation New interpolation mode.
-     */
+    // Replace the interpolation rule used by subsequent evaluations without
+    // modifying or reordering the stored support points.
     void set_interpolation(Interpolation interpolation);
 
-    /**
-     * @brief Returns the active interpolation mode.
-     *
-     * @return Interpolation Current interpolation mode.
-     */
+    // Return the interpolation rule currently selected for this amplitude.
     [[nodiscard]] Interpolation interpolation() const;
 
-    /**
-     * @brief Removes all stored samples.
-     *
-     * Used when an existing named amplitude is redefined.
-     */
+    // Remove all support points while preserving the amplitude name and the
+    // selected interpolation rule. This is used when redefining named input.
     void clear_samples();
 
-    /**
-     * @brief Adds or replaces a time-value sample.
-     *
-     * Samples are kept sorted by time. A new sample with an already existing
-     * time replaces the old value.
-     *
-     * @param time Sample time coordinate.
-     * @param value Sample value.
-     */
+    // Insert a support point into the sorted sequence. A time that matches an
+    // existing sample within the implementation tolerance updates that sample's
+    // value instead of creating a second entry.
     void add_sample(Precision time, Precision value);
 
-    /**
-     * @brief Evaluates the amplitude at the requested time.
-     *
-     * Empty amplitudes evaluate to `1.0`, so a missing scale history behaves
-     * like a neutral load multiplier.
-     *
-     * @param time Query time.
-     * @return Precision Interpolated scalar multiplier.
-     */
+    // Evaluate the scalar multiplier at `time`. Queries outside the sampled
+    // interval are clamped to the nearest endpoint; an empty history returns
+    // the neutral value 1.0.
     [[nodiscard]] Precision evaluate(Precision time) const;
 
 private:
-    Interpolation       interpolation_;
+    // Active interpolation rule used for interior time queries.
+    Interpolation interpolation_;
+
+    // Sorted support-point storage maintained by `add_sample()`.
     std::vector<Sample> samples_;
 };
 } // namespace bc

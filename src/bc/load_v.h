@@ -1,9 +1,17 @@
 /**
  * @file load_v.h
- * @brief Declares the volumetric element load.
+ * @brief Declares distributed body-force loading on element regions.
  *
- * @see src/bc/load_v.cpp
- * @see src/bc/load.h
+ * `VLoad` describes a vector field that is integrated over the volume, area or
+ * line measure represented by each selected structural element. The element
+ * formulation multiplies the supplied vector by material density, its shape
+ * functions and the appropriate geometric measure before scattering equivalent
+ * nodal forces. Optional orientation and amplitude objects modify the nominal
+ * vector without changing the element-specific integration logic.
+ *
+ * @see VLoad
+ * @see Load
+ * @see load_v.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -16,45 +24,39 @@
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct VLoad
- * @brief Volumetric load applied to structural elements.
+ * @brief Applies a density-scaled body-force vector to structural elements.
  *
- * Applies a body-force vector to each structural element in the associated
- * element region. For oriented loads the vector is taken in local coordinates
- * and rotated at the element centroid before being scattered to the nodes.
+ * `NaN` components are treated as omitted and converted to zero. In the global
+ * case the resulting vector field is spatially constant. With an orientation,
+ * the nominal local vector is rotated at each integration point so coordinate
+ * systems with position-dependent axes are supported.
  */
 struct VLoad : public Load {
-    using Ptr = std::shared_ptr<VLoad>; ///< Shared pointer alias for volumetric loads.
+    // Shared ownership type for concrete volumetric-load references.
+    using Ptr = std::shared_ptr<VLoad>;
 
-    Vec3                       values_ = {NAN, NAN, NAN}; ///< Body-force components.
-    SPtr<model::ElementRegion> region_ = nullptr;          ///< Target element region.
+    // Nominal body-force or acceleration-like vector. The structural element
+    // integrator additionally scales it by material density.
+    Vec3 values_ = {NAN, NAN, NAN};
 
-    /**
-     * @brief Default constructor for delayed field assignment by collectors.
-     */
+    // Element region whose structural elements receive the distributed load.
+    SPtr<model::ElementRegion> region_ = nullptr;
+
+    // Construct an empty body load for subsequent collector assignment.
     VLoad() = default;
 
-    /**
-     * @brief Defaulted virtual destructor.
-     */
+    // Enable polymorphic destruction through `Load`.
     ~VLoad() override = default;
 
-    /**
-     * @brief Integrates the body-force vector over every structural element.
-     *
-     * @param model_data Model data used for element and position lookup.
-     * @param bc Boundary-condition field receiving nodal forces.
-     * @param time Current analysis time for amplitude scaling.
-     * @param ignore_amplitude Whether amplitude scaling should be skipped.
-     */
+    // Build the global vector field, optionally rotate it at each integration
+    // point and delegate density-weighted consistent integration to each valid
+    // structural element in `region_`.
     void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
 
-    /**
-     * @brief Returns a compact description of the volumetric load.
-     *
-     * @return std::string Target region, values, orientation and amplitude.
-     */
+    // Return the target element set, nominal components and any orientation or
+    // amplitude in a compact diagnostic representation.
     std::string str() const override;
 };
 } // namespace bc

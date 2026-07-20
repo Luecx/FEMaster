@@ -1,12 +1,15 @@
 /**
  * @file support_collector.h
- * @brief Declares the collector that manages support boundary conditions.
+ * @brief Declares the named collection of structural support definitions.
  *
- * The `SupportCollector` aggregates support definitions over multiple regions
- * and converts them into constraint equations on demand.
+ * `SupportCollector` stores supports by value and offers overloads for node,
+ * element and surface targets. When requested, it traverses every stored
+ * support and combines their generated algebraic constraints into one equation
+ * collection for subsequent solver preprocessing.
  *
- * @see src/bc/support_collector.cpp
- * @see src/bc/support.h
+ * @see SupportCollector
+ * @see Support
+ * @see support_collector.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -25,64 +28,44 @@ class ModelData;
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct SupportCollector
- * @brief Stores supports and assembles their constraint equations.
+ * @brief Stores support definitions and assembles their constraint equations.
  *
- * Supports are stored by value for cache locality. When queried the collector
- * iterates every entry and generates the corresponding constraint equations.
+ * Supports are held directly in the inherited collection rather than through
+ * polymorphic pointers because all target variants share the same concrete
+ * `Support` type. The overloaded insertion functions select the corresponding
+ * region constructor, while `get_equations()` performs the complete expansion
+ * into node-level solver constraints.
  */
 struct SupportCollector : model::Collection<Support> {
-    using Ptr = std::shared_ptr<SupportCollector>; ///< Shared pointer alias for collectors.
+    // Shared ownership type used by model and load-case registries.
+    using Ptr = std::shared_ptr<SupportCollector>;
 
-    /**
-     * @brief Constructs a collector with the specified name.
-     *
-     * @param name Identifier for the collector within the model context.
-     */
+    // Construct a named support collection with the ordering and uniqueness
+    // behavior configured by the generic base constructor.
     explicit SupportCollector(const std::string& name);
 
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
+    // Destroy the value-stored support entries together with the collection.
     ~SupportCollector() = default;
 
-    /**
-     * @brief Assembles constraint equations for all stored supports.
-     *
-     * @param model_data FEM model data used to resolve regions and coordinates.
-     * @return constraint::Equations Collection of constraint equations.
-     */
+    // Apply all stored supports to a fresh equation container and return the
+    // combined constraints by value.
     constraint::Equations get_equations(model::ModelData& model_data);
 
-    /// Read-only access to stored supports
+    // Provide read-only access to the support definitions in their insertion
+    // order.
     const std::vector<Support>& entries() const { return this->_data; }
 
-    /**
-     * @brief Adds a node-region support to the collector.
-     *
-     * @param region Node region receiving the support.
-     * @param values Constraint specification per generalized DOF.
-     * @param coordinate_system Optional local coordinate frame.
-     */
+    // Add a support acting directly on all nodes of `region`.
     void add_supp(model::NodeRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Adds an element-region support to the collector.
-     *
-     * @param region Element region receiving the support.
-     * @param values Constraint specification per generalized DOF.
-     * @param coordinate_system Optional local coordinate frame.
-     */
+    // Add a support that constrains the nodes connected to every element in
+    // `region`.
     void add_supp(model::ElementRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 
-    /**
-     * @brief Adds a surface-region support to the collector.
-     *
-     * @param region Surface region receiving the support.
-     * @param values Constraint specification per generalized DOF.
-     * @param coordinate_system Optional local coordinate frame.
-     */
+    // Add a support that constrains the nodes connected to every surface in
+    // `region`.
     void add_supp(model::SurfaceRegion::Ptr region, Vec6 values, cos::CoordinateSystem::Ptr coordinate_system = nullptr);
 };
 } // namespace bc

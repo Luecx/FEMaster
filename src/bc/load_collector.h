@@ -1,12 +1,17 @@
 /**
  * @file load_collector.h
- * @brief Declares the collector for aggregating load boundary conditions.
+ * @brief Declares the named collection used to construct and apply load sets.
  *
- * The `LoadCollector` extends the generic `model::Collection` to maintain a
- * polymorphic set of loads that can be applied collectively to an FEM model.
+ * `LoadCollector` owns a heterogeneous sequence of `Load` objects through
+ * shared pointers. It provides convenience functions that create each concrete
+ * load type from parser-level parameters and a single `apply()` operation that
+ * assembles the complete load set into a model field at the current analysis
+ * time. The construction and dispatch logic is implemented in
+ * `load_collector.cpp`.
  *
- * @see src/bc/load_collector.cpp
- * @see src/bc/load.h
+ * @see LoadCollector
+ * @see Load
+ * @see load_collector.cpp
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -25,100 +30,71 @@ class ModelData;
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct LoadCollector
- * @brief Container that manages and applies polymorphic loads.
+ * @brief Stores and assembles a named heterogeneous load set.
  *
- * By storing `Load` instances via shared pointers the collector enables users
- * to register various load types and apply all contributions in one pass.
+ * The inherited `model::Collection` supplies naming and storage, while this
+ * class adds strongly typed factory-style insertion methods for the supported
+ * boundary-condition formulations. Application remains polymorphic: each
+ * stored load receives the same model, target field and analysis time and is
+ * responsible for its own region traversal and integration.
  */
 struct LoadCollector : model::Collection<Load::Ptr> {
-    using Ptr = std::shared_ptr<LoadCollector>; ///< Shared pointer alias for collectors.
+    // Shared ownership type used when load sets are referenced by load cases or
+    // model-level registries.
+    using Ptr = std::shared_ptr<LoadCollector>;
 
-    /**
-     * @brief Constructs a collector with the supplied name.
-     *
-     * @param name Identifier for the collector within the owning model.
-     */
+    // Construct a named collection using the storage semantics of the generic
+    // `model::Collection<Load::Ptr>` base.
     explicit LoadCollector(const std::string& name);
 
-    /**
-     * @brief Defaulted virtual destructor for polymorphic cleanup.
-     */
+    // Destroy the collection and release its shared references to all stored
+    // loads.
     ~LoadCollector() = default;
 
-    /**
-     * @brief Applies every stored load to the given model data.
-     *
-     * @param model_data FEM model data that provides geometry and topology.
-     * @param bc Boundary-condition storage receiving all load contributions.
-     */
+    // Apply every non-null load in insertion order. Contributions are
+    // accumulated in `bc`, so overlapping loads naturally superimpose.
     void apply(model::ModelData& model_data, model::Field& bc, Precision time);
 
-    /**
-     * @brief Adds a concentrated nodal load to the collector.
-     *
-     * @param region Node region receiving the load.
-     * @param values Generalized load vector (Fx,Fy,Fz,Mx,My,Mz).
-     * @param orientation Optional orientation system for interpreting the components.
-     */
+    // Create and store a concentrated nodal load. The generalized vector is
+    // ordered as `[Fx, Fy, Fz, Mx, My, Mz]`; optional orientation and amplitude
+    // objects are transferred into the new load.
     void add_cload(model::NodeRegion::Ptr region,
                    Vec6 values,
                    cos::CoordinateSystem::Ptr orientation = nullptr,
                    Amplitude::Ptr amplitude = nullptr);
 
-    /**
-     * @brief Adds a distributed surface load to the collector.
-     *
-     * @param region Surface region receiving the traction.
-     * @param values Surface traction vector.
-     * @param orientation Optional orientation system for the traction components.
-     */
+    // Create and store a distributed surface traction. `values` is interpreted
+    // globally unless `orientation` supplies a local basis, and `amplitude`
+    // optionally scales the vector at application time.
     void add_dload(model::SurfaceRegion::Ptr region,
                    Vec3 values,
                    cos::CoordinateSystem::Ptr orientation = nullptr,
                    Amplitude::Ptr amplitude = nullptr);
 
-    /**
-     * @brief Adds a uniform pressure load to the collector.
-     *
-     * @param region Surface region receiving the pressure.
-     * @param pressure Magnitude of the pressure.
-     */
+    // Create and store a scalar pressure load acting normal to every surface in
+    // `region`. The optional amplitude scales the nominal pressure.
     void add_pload(model::SurfaceRegion::Ptr region,
                    Precision pressure,
                    Amplitude::Ptr amplitude = nullptr);
 
-    /**
-     * @brief Adds a volumetric load to the collector.
-     *
-     * @param region Element region receiving the body forces.
-     * @param values Body-force components.
-     * @param orientation Optional orientation system for the body-force vector.
-     */
+    // Create and store a density-scaled distributed body load over structural
+    // elements. An optional coordinate system may rotate the vector separately
+    // at each integration point.
     void add_vload(model::ElementRegion::Ptr region,
                    Vec3 values,
                    cos::CoordinateSystem::Ptr orientation = nullptr,
                    Amplitude::Ptr amplitude = nullptr);
 
-    /**
-     * @brief Adds a thermal load to the collector.
-     *
-     * @param temp_field Temperature field that drives the thermal load.
-     * @param ref_temp Reference temperature used as the unloaded state.
-     */
+    // Create and store a thermal load driven by a scalar nodal temperature
+    // field and a stress-free reference temperature.
     void add_tload(model::Field::Ptr temp_field, Precision ref_temp);
 
-    /**
-     * @brief Adds an inertial load (rigid-body acceleration field) to the collector.
-     *
-     * @param region Element region receiving the equivalent inertia forces.
-     * @param center Center point about which angular terms are defined.
-     * @param center_acc Linear acceleration of the center.
-     * @param omega Angular velocity vector.
-     * @param alpha Angular acceleration vector.
-     * @param consider_point_masses If true, include all POINTMASS features in this inertial load.
-     */
+    // Create and store an equivalent inertia load for the rigid-body
+    // acceleration field defined by translation, angular velocity and angular
+    // acceleration about `center`. Point-mass features are included only when
+    // explicitly requested.
     void add_inertialload(model::ElementRegion::Ptr region,
                           Vec3 center,
                           Vec3 center_acc,
@@ -126,7 +102,9 @@ struct LoadCollector : model::Collection<Load::Ptr> {
                           Vec3 alpha,
                           bool consider_point_masses = false);
 
-    /// Read-only access to stored loads
+    // Expose the stored polymorphic loads without allowing callers to replace
+    // the collection itself. Individual pointed-to loads remain mutable through
+    // their shared pointers.
     const std::vector<Load::Ptr>& entries() const { return this->_data; }
 };
 } // namespace bc

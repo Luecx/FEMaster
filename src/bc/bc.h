@@ -1,12 +1,15 @@
 /**
  * @file bc.h
- * @brief Declares the common base type for all boundary conditions.
+ * @brief Declares the common root type for boundary-condition objects.
  *
- * The `BoundaryCondition` struct provides a shared interface for all boundary
- * condition types in the boundary-condition (BC) module. It is primarily a
- * symbolic base used for polymorphic ownership and future extensibility.
+ * The boundary-condition module contains loads, supports and their associated
+ * collectors. `BoundaryCondition` provides the minimal polymorphic ownership
+ * type shared by these objects without imposing assembly semantics on derived
+ * classes. More specialized interfaces, such as `Load`, add the operations
+ * required by their respective solver pipelines.
  *
- * @see src/bc/load.h
+ * @see BoundaryCondition
+ * @see load.h
  * @author Finn Eggers
  * @date 06.03.2025
  */
@@ -17,16 +20,19 @@
 
 namespace fem {
 namespace bc {
+
 /**
- * @struct BoundaryCondition
- * @brief Serves as the abstract root for BC polymorphism.
+ * @brief Serves as the common ownership root of boundary-condition types.
  *
- * This base struct currently stores only the shared-pointer alias that is used
- * by collectors. Concrete boundary condition implementations derive from this
- * type.
+ * The type deliberately contains no state and currently exposes only a shared
+ * pointer alias. It establishes a stable extension point for functionality that
+ * is common to every boundary condition while allowing specialized classes to
+ * define their own application interfaces.
  */
 struct BoundaryCondition {
-    using Ptr = std::shared_ptr<BoundaryCondition>; ///< Shared pointer alias for BC ownership.
+    // Shared ownership type used when boundary conditions are stored
+    // polymorphically by model and load-case data structures.
+    using Ptr = std::shared_ptr<BoundaryCondition>;
 };
 } // namespace bc
 } // namespace fem
