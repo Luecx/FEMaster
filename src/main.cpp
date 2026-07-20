@@ -29,6 +29,14 @@ int main(int argc, char** argv) {
         .default_value(std::string{})
         .help("Override output filename (default: input with .res extension)");
 
+    program.add_argument("--no-res")
+        .flag()
+        .help("Disable native FEMaster .res result output.");
+
+    program.add_argument("--no-frd")
+        .flag()
+        .help("Disable CalculiX/CGX .frd result output.");
+
     // ---- Documentation mode flags (flat, no nested parser) ----
     program.add_argument("--document")
         .flag()
@@ -80,6 +88,10 @@ int main(int argc, char** argv) {
     std::string input_file  = program.get<std::string>("input_file");
     std::string output_file = program.get<std::string>("--output");
     const bool doc_mode     = program.get<bool>("--document");
+
+    fem::io::writer::WriterFileFormats writer_formats;
+    writer_formats.res = !program.get<bool>("--no-res");
+    writer_formats.frd = !program.get<bool>("--no-frd");
 
     fem::global_config.max_threads = ncpus;
 
@@ -184,10 +196,12 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "Input file : ", input_path.string());
     fem::logging::info(true, "Output file: ", output_file);
     fem::logging::info(true, "CPU(s)     : ", ncpus);
+    fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
+    fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
     fem::logging::info(true, "");
 
     try {
-        parser.run(input_path.string(), output_file);
+        parser.run(input_path.string(), output_file, writer_formats);
     } catch (const std::exception& e) {
         std::cerr << "Parsing failed: " << e.what() << std::endl;
         return 1;

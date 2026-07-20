@@ -168,13 +168,26 @@ DynamicVector ConstraintMap::project(const DynamicVector& full) const {
 // This preserves the virtual work and quadratic-form representation of the
 // original operator in the admissible homogeneous coordinate space.
 SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
+    // Work with compressed sparse operands because Eigen's sparse products are
+    // sensitive to the storage state of the input matrices. The transformation
+    // transpose is materialized once so the left product does not rebuild it
+    // implicitly during the multiplication.
+    SparseMatrix matrix_compressed = matrix;
+    SparseMatrix T_compressed      = T;
+    matrix_compressed.makeCompressed();
+    T_compressed.makeCompressed();
+
+    SparseMatrix T_transpose = T_compressed.transpose();
+    T_transpose.makeCompressed();
+
     // Form the right product first. Keeping the intermediate sparse avoids
     // constructing a dense matrix and allows Eigen to exploit the sparsity of
     // both the full operator and the transformation.
-    SparseMatrix transformed = matrix * T;
+    SparseMatrix transformed = matrix_compressed * T_compressed;
+    transformed.makeCompressed();
 
     // Premultiply by T^T to map the full-system rows into reduced coordinates.
-    SparseMatrix reduced     = T.transpose() * transformed;
+    SparseMatrix reduced     = T_transpose * transformed;
 
     // Convert the result into Eigen's compressed sparse representation before
     // returning it to subsequent assembly or solver operations.

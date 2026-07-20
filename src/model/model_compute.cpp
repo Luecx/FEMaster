@@ -6,6 +6,10 @@
 #include "model.h"
 #include "shell/s8.h"
 
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
+
 namespace fem { namespace model{
 namespace {
 
@@ -155,11 +159,29 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
     element_strain.set_zero();
     element_weights.set_zero();
 
-    for (auto el : _data->elements) {
-        if (!el) continue;
+    // Compute element-nodal stress and strain independently. Each element
+    // writes into its own offset range, so the loop can be distributed without
+    // synchronization between elements.
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < static_cast<Index>(_data->elements.size()); ++elem_idx) {
+        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+        if (!el) {
+            continue;
+        }
+
         if (auto sel = el->as<StructuralElement>()) {
             RowMatrix rst = sel->stress_strain_nodal_rst();
-            if (rst.rows() == 0) continue;
+            if (rst.rows() == 0) {
+                continue;
+            }
+
             logging::error(rst.rows() == sel->n_nodes(),
                            "Element ", sel->elem_id, " returned ", rst.rows(),
                            " nodal stress coordinates, expected ", sel->n_nodes());
@@ -173,6 +195,11 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
             element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }
+
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
 
     Field stress = _data->element_nodal_to_nodal(element_stress, element_weights, "STRESS");
     Field strain = _data->element_nodal_to_nodal(element_strain, element_weights, "STRAIN");
@@ -201,12 +228,30 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
     element_bot.set_zero();
     element_weights.set_zero();
 
-    for (auto el : _data->elements) {
-        if (!el) continue;
+    // Compute top and bottom element-nodal stresses independently. The output
+    // ranges are element-local, so no nodal accumulation occurs inside this
+    // loop.
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < static_cast<Index>(_data->elements.size()); ++elem_idx) {
+        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+        if (!el) {
+            continue;
+        }
+
         if (auto sel = el->as<StructuralElement>()) {
-            // r,s,t values of nodes of the element
+            // Build natural coordinates for the bottom and top surface of shell
+            // elements. Solid and beam elements keep their base coordinates.
             RowMatrix base_rst = sel->stress_strain_nodal_rst();
-            if (base_rst.rows() == 0) continue;
+            if (base_rst.rows() == 0) {
+                continue;
+            }
 
             const bool is_shell = sel->is_shell();
             RowMatrix rst_bot = base_rst;
@@ -224,6 +269,11 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
             element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }
+
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
 
     Field stress_top = _data->element_nodal_to_nodal(element_top, element_weights, "STRESS_TOP");
     Field stress_bot = _data->element_nodal_to_nodal(element_bot, element_weights, "STRESS_BOT");
@@ -324,14 +374,32 @@ Model::compute_section_forces(Field& displacement) {
     Field beam_forces{"BEAM_SECTION_FORCES", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
     beam_forces.set_zero();
 
-    for (auto el : _data->elements) {
-        if (!el) continue;
+    // Beam section forces are stored in element-nodal offset ranges, which
+    // makes the element loop independent.
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < static_cast<Index>(_data->elements.size()); ++elem_idx) {
+        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+        if (!el) {
+            continue;
+        }
 
         if (auto sel = el->as<StructuralElement>()) {
             const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
             sel->compute_beam_section_forces(beam_forces, displacement, static_cast<int>(offset));
         }
     }
+
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
 
     return beam_forces;
 }
@@ -347,14 +415,32 @@ Model::compute_shear_flow(Field& displacement) {
     Field shear_flow{"SHEAR_FLOW", FieldDomain::ELEMENT_NODAL, total_element_nodes, 1};
     shear_flow.set_zero();
 
-    for (auto el : _data->elements) {
-        if (!el) continue;
+    // Shear-flow output is written into element-nodal offset ranges and can be
+    // evaluated independently for every element.
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < static_cast<Index>(_data->elements.size()); ++elem_idx) {
+        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+        if (!el) {
+            continue;
+        }
 
         if (auto sel = el->as<StructuralElement>()) {
             const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
             sel->compute_shear_flow(shear_flow, displacement, static_cast<int>(offset));
         }
     }
+
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
 
     return shear_flow;
 }

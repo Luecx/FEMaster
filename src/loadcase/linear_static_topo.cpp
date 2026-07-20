@@ -51,14 +51,14 @@
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
 #include "../core/logging.h"
-#include "../mattools/assemble.tpp"
+#include "../mattools/assemble.h"
 #include "../mattools/reduce_mat_to_vec.h"
 #include "../solve/eigval/solve_eigval.h"
 #include "tools/inertia_relief.h"
 #include "tools/rebalance_loads.h"
 
-#include <limits>
 #include <cmath>
+#include <limits>
 
 using fem::constraint::ConstraintTransformer;
 

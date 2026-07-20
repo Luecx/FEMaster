@@ -8,10 +8,10 @@
 #include "model.h"
 #include "solid/element_solid.h"
 
-#include <iterator>
-#include <utility>
-#include <string>
 #include <cmath>
+#include <iterator>
+#include <string>
+#include <utility>
 
 namespace fem {
 namespace model {

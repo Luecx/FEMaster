@@ -91,7 +91,9 @@ Parser::~Parser() = default;
 
 // ----------------- Public API -----------------
 
-void Parser::run(const std::string& input_path, const std::string& output_path) {
+void Parser::run(const std::string&                  input_path,
+                 const std::string&                  output_path,
+                 const io::writer::WriterFileFormats& writer_formats) {
     // 1) Count ids needed for ModelData allocation.
     CountData count = run_count_stage(input_path);
 
@@ -104,7 +106,7 @@ void Parser::run(const std::string& input_path, const std::string& output_path) 
     m_model->_data->initialize_element_enumeration();
 
     // 4) Parse all non-topology input and field data.
-    run_data_stage(input_path, output_path);
+    run_data_stage(input_path, output_path, writer_formats);
 }
 
 void Parser::document(const DocOptions& opts) const {
@@ -241,7 +243,9 @@ void Parser::allocate_model(const CountData& count) {
     m_next_loadcase_id = 1;
 }
 
-void Parser::run_data_stage(const std::string& input_path, const std::string& output_path) {
+void Parser::run_data_stage(const std::string&                  input_path,
+                            const std::string&                  output_path,
+                            const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
     for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
         if (writer_base.size() >= ext.size() &&
@@ -251,7 +255,7 @@ void Parser::run_data_stage(const std::string& input_path, const std::string& ou
         }
     }
 
-    m_writer = io::writer::ResultWriters(writer_base);
+    m_writer = io::writer::ResultWriters(writer_base, writer_formats);
     m_writer.write_model_data(*m_model->_data);
 
     io::dsl::Registry registry;

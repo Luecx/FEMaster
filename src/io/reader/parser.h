@@ -37,7 +37,9 @@ public:
     ~Parser();
 
     // High-level modes
-    void run(const std::string& input_path, const std::string& output_path);
+    void run(const std::string&                  input_path,
+             const std::string&                  output_path,
+             const io::writer::WriterFileFormats& writer_formats = io::writer::WriterFileFormats());
     void document(const DocOptions& opts) const;
 
     // Accessors
@@ -68,7 +70,9 @@ private:
     // Pipeline steps
     CountData run_count_stage(const std::string& input_path);
     void run_topology_stage(const std::string& input_path);
-    void run_data_stage(const std::string& input_path, const std::string& output_path);
+    void run_data_stage(const std::string&                  input_path,
+                        const std::string&                  output_path,
+                        const io::writer::WriterFileFormats& writer_formats);
 
     void allocate_model(const CountData& count);
     void register_count_commands(io::dsl::Registry& registry, CountData& count);

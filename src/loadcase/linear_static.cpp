@@ -282,19 +282,23 @@ void LinearStatic::run() {
         }
     }
 
-    writer->add_loadcase(id, io::writer::WriterStepType::Static);
-    writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
-    writer->write_field(strain          , "STRAIN", model->_data.get());
-    writer->write_field(stress          , "STRESS", model->_data.get());
-    writer->write_field(stress_top      , "STRESS_TOP", model->_data.get());
-    writer->write_field(stress_bot      , "STRESS_BOT", model->_data.get());
-    writer->write_field(shell_resultants, "SHELL_RESULTANTS", model->_data.get());
-    writer->write_field(global_load_mat , "EXTERNAL_FORCES", model->_data.get());
-    writer->write_field(reaction_masked , "REACTION_FORCES", model->_data.get());
-    writer->write_field(section_forces  , "LOCAL_SECTION_FORCES", model->_data.get());
-    if (shear_flow.rows > 0) {
-        writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
-    }
+    Timer::measure(
+        [&]() {
+            writer->add_loadcase(id, io::writer::WriterStepType::Static);
+            writer->write_field(global_disp_mat , "DISPLACEMENT", model->_data.get());
+            writer->write_field(strain          , "STRAIN", model->_data.get());
+            writer->write_field(stress          , "STRESS", model->_data.get());
+            writer->write_field(stress_top      , "STRESS_TOP", model->_data.get());
+            writer->write_field(stress_bot      , "STRESS_BOT", model->_data.get());
+            writer->write_field(shell_resultants, "SHELL_RESULTANTS", model->_data.get());
+            writer->write_field(global_load_mat , "EXTERNAL_FORCES", model->_data.get());
+            writer->write_field(reaction_masked , "REACTION_FORCES", model->_data.get());
+            writer->write_field(section_forces  , "LOCAL_SECTION_FORCES", model->_data.get());
+            if (shear_flow.rows > 0) {
+                writer->write_field(shear_flow, "SHEAR_FLOW", model->_data.get());
+            }
+        },
+        "writing result fields");
 
     transformer->post_check_static(K, f, q);
     model->step_end();
