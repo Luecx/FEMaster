@@ -70,6 +70,7 @@ struct Surface : public SurfaceInterface {
 
     // Evaluate the shape functions through the dynamic interface
     DynamicVector shape_function(const Vec2& local) const override;
+    DynamicMatrix node_coords_natural() const override;
 
     // Natural coordinates of the surface nodes
     virtual StaticMatrix<N, 2> node_coords_local() const = 0;

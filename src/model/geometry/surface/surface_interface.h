@@ -101,7 +101,10 @@ struct SurfaceInterface {
     // Evaluate the element shape functions at one natural-coordinate point.
     // The dynamic return type allows generic surface algorithms to consume
     // different interpolation orders through the common interface.
-    virtual DynamicVector shape_function         (const Vec2& local) const             = 0;
+    virtual DynamicVector shape_function(const Vec2& local) const = 0;
+
+    // Natural coordinates of the surface nodes in shape-function order.
+    virtual DynamicMatrix node_coords_natural() const = 0;
 
     // Integrate scalar, vector and tensor fields over the physical surface.
     // Field callbacks receive interpolated global positions, and the concrete

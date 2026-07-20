@@ -136,6 +136,21 @@ Vec3 Surface<N>::local_to_global(const Vec2& local, const Field& node_coords) co
 }
 
 /**
+ * @brief Returns the natural coordinates of all surface nodes dynamically.
+ *
+ * The concrete surface provides the fixed-size natural nodal coordinates used
+ * by its shape functions. This wrapper exposes the same data through the
+ * polymorphic surface interface for algorithms that operate on arbitrary
+ * triangular and quadrilateral shell topologies.
+ *
+ * @return Dynamic matrix with one `(r,s)` coordinate row per surface node.
+ */
+template<Index N>
+DynamicMatrix Surface<N>::node_coords_natural() const {
+    return node_coords_local();
+}
+
+/**
  * @brief Computes the normalized physical surface normal.
  *
  * The cross product of the two Jacobian columns gives a vector perpendicular

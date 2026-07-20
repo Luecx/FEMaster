@@ -296,7 +296,24 @@ void S4FRTMITC::init_reference_basis(ReferenceData& ref) const {
     ref.e2 = normalized(ref.e3.cross(ref.e1));
 
     for (Index i = 0; i < num_nodes; ++i) {
-        ref.d0.row(i) = ref.e3.transpose();
+        Vec3 d0 = ref.e3;
+
+        if (this->_model_data != nullptr && this->_model_data->shell_element_nodal_normals != nullptr) {
+            const Field& normals = *this->_model_data->shell_element_nodal_normals;
+            const Index  row     = static_cast<Index>(this->elem_nodal_offset) + i;
+
+            d0 = normals.row_vec3(row);
+            logging::error(d0.allFinite() && d0.norm() > Precision(0),
+                           "S4FRTMITC: invalid shell element normal for element ",
+                           this->elem_id);
+
+            d0.normalize();
+            if (d0.dot(ref.e3) < Precision(0)) {
+                d0 = -d0;
+            }
+        }
+
+        ref.d0.row(i) = d0.transpose();
     }
 
     Vec3 x0 = Vec3::Zero();

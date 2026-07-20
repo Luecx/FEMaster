@@ -76,6 +76,7 @@ struct ModelData {
     Field::Ptr positions_reference     = nullptr;
     Field::Ptr element_stiffness_scale = nullptr;
     Field::Ptr material_orientation    = nullptr;
+    Field::Ptr shell_element_nodal_normals = nullptr;
     Field::Ptr element_nodal_offsets   = nullptr;
     Field::Ptr element_ip_offsets      = nullptr;
     Field::Ptr element_mp_offsets      = nullptr;

@@ -47,7 +47,7 @@ struct S4FRTMITC : ShellElement<4> {
     using Base = ShellElement<4>;
 
     static constexpr Index num_nodes      = 4;
-    static constexpr Index dofs_per_node = 6;
+    static constexpr Index dofs_per_node  = 6;
     static constexpr Index num_dofs       = num_nodes * dofs_per_node;
     static constexpr Index num_strains    = 8;
 

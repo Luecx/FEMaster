@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <iterator>
+#include <vector>
 #include <string>
 #include <utility>
 
@@ -23,6 +24,124 @@ void Model::assign_sections() {
             }
         }
     }
+}
+
+/**
+ * Builds an element-nodal reference normal field for shell elements.
+ *
+ * Each shell element first contributes the physical reference normal evaluated
+ * at its natural nodes. Contributions that meet at the same global node are
+ * then grouped by angular compatibility. Normals inside one group are
+ * equalised by averaging, while groups separated by more than the supplied
+ * angle remain element-local. This preserves sharp shell folds but provides a
+ * smooth director field on gently curved shell patches.
+ *
+ * @param equalize_angle_degrees Maximum angle for equalising adjacent shell
+ *                               normals at one global node.
+ */
+void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
+    logging::error(_data->positions_reference != nullptr,
+                   "Model: POSITION_REFERENCE field is not set");
+    logging::error(_data->element_nodal_offsets != nullptr,
+                   "Model: element nodal offsets are not initialized");
+
+    const Precision pi             = std::acos(Precision(-1));
+    const Precision equalize_angle = equalize_angle_degrees * pi / Precision(180);
+    const Precision cos_equalize   = std::cos(equalize_angle);
+
+    auto normals = _data->create_field(
+        "SHELL_ELEMENT_NODAL_NORMALS", FieldDomain::ELEMENT_NODAL, 3, false);
+    normals->set_zero();
+
+    std::vector<std::vector<Index>> node_rows(static_cast<std::size_t>(_data->max_nodes));
+    std::vector<Vec3>               row_normals(static_cast<std::size_t>(normals->rows), Vec3::Zero());
+
+    // Evaluate the raw shell normal owned by each element-node pair.
+    for (const ElementPtr& element: _data->elements) {
+        if (element == nullptr) {
+            continue;
+        }
+
+        const auto structural = element->as<StructuralElement>();
+        if (structural == nullptr || !structural->is_shell()) {
+            continue;
+        }
+
+        const auto surface = structural->surface(1);
+        logging::error(surface != nullptr,
+                       "Model: shell element ", structural->elem_id,
+                       " does not provide a reference surface");
+
+        const Index offset  = static_cast<Index>(structural->elem_nodal_offset);
+        const Index n_nodes = static_cast<Index>(structural->n_nodes());
+
+        const DynamicMatrix natural_coords = surface->node_coords_natural();
+        logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes &&
+                       static_cast<Index>(natural_coords.cols()) == 2,
+                       "Model: natural surface node coordinates do not match shell element ",
+                       structural->elem_id);
+
+        for (Index local_node = 0; local_node < n_nodes; ++local_node) {
+            const ID    node_id = structural->nodes()[local_node];
+            const Index row     = offset + local_node;
+            const Vec2  local   = natural_coords.row(local_node).transpose();
+            Vec3        normal  = surface->normal(*_data->positions_reference,
+                                                  local);
+
+            logging::error(normal.allFinite() && normal.norm() > Precision(0),
+                           "Model: invalid shell normal in element ", structural->elem_id);
+
+            normal.normalize();
+
+            row_normals[static_cast<std::size_t>(row)] = normal;
+            node_rows[static_cast<std::size_t>(node_id)].push_back(row);
+        }
+    }
+
+    // Equalise compatible normals at each global node. A node may produce
+    // several clusters when it lies on a fold sharper than the threshold.
+    for (const auto& rows: node_rows) {
+        std::vector<Vec3>          cluster_normals;
+        std::vector<Precision>     cluster_weights;
+        std::vector<std::vector<Index>> cluster_rows;
+
+        for (Index row: rows) {
+            const Vec3 normal = row_normals[static_cast<std::size_t>(row)];
+            bool       added  = false;
+
+            for (Index cluster = 0; cluster < static_cast<Index>(cluster_normals.size()); ++cluster) {
+                if (normal.dot(cluster_normals[static_cast<std::size_t>(cluster)]) < cos_equalize) {
+                    continue;
+                }
+
+                Vec3&     cluster_normal = cluster_normals[static_cast<std::size_t>(cluster)];
+                Precision& weight        = cluster_weights[static_cast<std::size_t>(cluster)];
+
+                cluster_normal = (weight * cluster_normal + normal).normalized();
+                weight += Precision(1);
+                cluster_rows[static_cast<std::size_t>(cluster)].push_back(row);
+                added = true;
+                break;
+            }
+
+            if (!added) {
+                cluster_normals.push_back(normal);
+                cluster_weights.push_back(Precision(1));
+                cluster_rows.push_back({row});
+            }
+        }
+
+        for (Index cluster = 0; cluster < static_cast<Index>(cluster_normals.size()); ++cluster) {
+            const Vec3 normal = cluster_normals[static_cast<std::size_t>(cluster)];
+            for (Index row: cluster_rows[static_cast<std::size_t>(cluster)]) {
+                (*normals)(row, 0) = normal(0);
+                (*normals)(row, 1) = normal(1);
+                (*normals)(row, 2) = normal(2);
+            }
+        }
+    }
+
+    _data->shell_element_nodal_normals = normals;
 }
 
 SystemDofIds Model::build_unconstrained_index_matrix() {

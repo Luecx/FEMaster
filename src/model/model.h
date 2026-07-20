@@ -118,6 +118,9 @@ struct Model {
     // assigns sections to each element
     void assign_sections();
 
+    // Builds smoothed element-nodal reference normals for shell directors.
+    void build_shell_element_normals(Precision equalize_angle_degrees = Precision(20));
+
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();
 

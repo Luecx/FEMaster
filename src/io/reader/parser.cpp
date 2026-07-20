@@ -104,6 +104,7 @@ void Parser::run(const std::string&                  input_path,
     run_topology_stage(input_path);
     m_model->assign_sections();
     m_model->_data->initialize_element_enumeration();
+    m_model->build_shell_element_normals();
 
     // 4) Parse all non-topology input and field data.
     run_data_stage(input_path, output_path, writer_formats);
