@@ -11,9 +11,12 @@
 #include "../../../model/beam/b33.h"
 #include "../../../model/model.h"
 #include "../../../model/shell/qspt.h"
+#include "../../../model/shell/frt_shell_s3.h"
+#include "../../../model/shell/frt_shell_s4.h"
+#include "../../../model/shell/frt_shell_s6.h"
+#include "../../../model/shell/frt_shell_s8.h"
 #include "../../../model/shell/s3.h"
 #include "../../../model/shell/s4.h"
-#include "../../../model/shell/s4_frt_mitc_nonlinear.h"
 #include "../../../model/shell/s4_mitc.h"
 #include "../../../model/shell/s6.h"
 #include "../../../model/shell/s8.h"
@@ -58,7 +61,9 @@ inline void register_element(fem::io::dsl::Registry& registry, model::Model& mod
                     .doc("Element topology/type")
                     .allowed({
                         "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                        "B33", "T3", "S3", "S4", "MITC4", "MITC4FRT", "S6", "S8", "MITC8", "QSPT"
+                        "B33", "T3",
+                        "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
+                        "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT"
                     })
         );
 
@@ -95,7 +100,10 @@ inline void register_element(fem::io::dsl::Registry& registry, model::Model& mod
         FEM_ADD_ELEMENT_VARIANT("S4", S4, 4, "S4 connectivity (4 nodes)");
         FEM_ADD_ELEMENT_VARIANT("QSPT", QSPT, 4, "QSPT connectivity (4 nodes)");
         FEM_ADD_ELEMENT_VARIANT("MITC4", MITC4, 4, "MITC4 connectivity (4 nodes)");
-        FEM_ADD_ELEMENT_VARIANT("MITC4FRT", S4FRTMITC, 4, "MITC4FRT connectivity (4 nodes)");
+        FEM_ADD_ELEMENT_VARIANT("MITC3FRT", FRTShellS3, 3, "MITC3FRT connectivity (3 nodes)");
+        FEM_ADD_ELEMENT_VARIANT("MITC4FRT", FRTShellS4, 4, "MITC4FRT connectivity (4 nodes)");
+        FEM_ADD_ELEMENT_VARIANT("MITC6FRT", FRTShellS6, 6, "MITC6FRT connectivity (6 nodes)");
+        FEM_ADD_ELEMENT_VARIANT("MITC8FRT", FRTShellS8, 8, "MITC8FRT connectivity (8 nodes)");
         FEM_ADD_ELEMENT_VARIANT("S6", S6, 6, "S6 connectivity (6 nodes)");
         FEM_ADD_ELEMENT_VARIANT("S8", S8, 8, "S8 connectivity (8 nodes)");
         FEM_ADD_ELEMENT_VARIANT("MITC8", MITC8, 8, "MITC8 connectivity (8 nodes)");

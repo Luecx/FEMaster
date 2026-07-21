@@ -29,7 +29,9 @@ inline void register_element_count(fem::io::dsl::Registry& registry, ElementCoun
                     .doc("Element topology/type")
                     .allowed({
                         "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                        "B33", "T3", "S3", "S4", "MITC4", "MITC4FRT", "S6", "S8", "MITC8", "QSPT"
+                        "B33", "T3",
+                        "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
+                        "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT"
                     })
         );
 
@@ -62,7 +64,10 @@ inline void register_element_count(fem::io::dsl::Registry& registry, ElementCoun
         FEM_ADD_ELEMENT_COUNT_VARIANT("S4", 4, "S4 connectivity (4 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("QSPT", 4, "QSPT connectivity (4 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("MITC4", 4, "MITC4 connectivity (4 nodes)");
+        FEM_ADD_ELEMENT_COUNT_VARIANT("MITC3FRT", 3, "MITC3FRT connectivity (3 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("MITC4FRT", 4, "MITC4FRT connectivity (4 nodes)");
+        FEM_ADD_ELEMENT_COUNT_VARIANT("MITC6FRT", 6, "MITC6FRT connectivity (6 nodes)");
+        FEM_ADD_ELEMENT_COUNT_VARIANT("MITC8FRT", 8, "MITC8FRT connectivity (8 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("S6", 6, "S6 connectivity (6 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("S8", 8, "S8 connectivity (8 nodes)");
         FEM_ADD_ELEMENT_COUNT_VARIANT("MITC8", 8, "MITC8 connectivity (8 nodes)");
