@@ -452,14 +452,14 @@ void FRTShell<N>::compute_natural_strain(
 
     // Subtract the complete reference metric, curvature and shear values so the
     // undeformed curved shell has exactly zero generalized strain
-    strain_nat(epsilon_rr) -= Precision(0.5) * point.X_r.dot(point.X_r);
-    strain_nat(epsilon_ss) -= Precision(0.5) * point.X_s.dot(point.X_s);
-    strain_nat(gamma_rs)   -= point.X_r.dot(point.X_s);
-    strain_nat(kappa_rr)   -= point.X_r.dot(point.D_r);
-    strain_nat(kappa_ss)   -= point.X_s.dot(point.D_s);
-    strain_nat(kappa_rs)   -= point.X_r.dot(point.D_s) + point.X_s.dot(point.D_r);
-    strain_nat(gamma_r3)   -= point.X_r.dot(point.D);
-    strain_nat(gamma_s3)   -= point.X_s.dot(point.D);
+    strain_nat(epsilon_rr) -= Precision(0.5) * point.X_rs.col(0).dot(point.X_rs.col(0));
+    strain_nat(epsilon_ss) -= Precision(0.5) * point.X_rs.col(1).dot(point.X_rs.col(1));
+    strain_nat(gamma_rs)   -= point.X_rs.col(0).dot(point.X_rs.col(1));
+    strain_nat(kappa_rr)   -= point.X_rs.col(0).dot(point.D_r);
+    strain_nat(kappa_ss)   -= point.X_rs.col(1).dot(point.D_s);
+    strain_nat(kappa_rs)   -= point.X_rs.col(0).dot(point.D_s) + point.X_rs.col(1).dot(point.D_r);
+    strain_nat(gamma_r3)   -= point.X_rs.col(0).dot(point.D);
+    strain_nat(gamma_s3)   -= point.X_rs.col(1).dot(point.D);
 }
 
 /**
@@ -480,10 +480,10 @@ void FRTShell<N>::transform_strain_to_local(
     Vec8&                 strain,
     Mat8x6N*              B
 ) const {
-    const Precision t00 = point.invA(0, 0);
-    const Precision t01 = point.invA(0, 1);
-    const Precision t10 = point.invA(1, 0);
-    const Precision t11 = point.invA(1, 1);
+    const Precision t00 = point.invJ(0, 0);
+    const Precision t01 = point.invJ(0, 1);
+    const Precision t10 = point.invJ(1, 0);
+    const Precision t11 = point.invJ(1, 1);
 
     StaticMatrix<3, 3> in_plane;
     in_plane << t00 * t00,               t01 * t01,               t00 * t01,
@@ -496,11 +496,11 @@ void FRTShell<N>::transform_strain_to_local(
 
     // Transform the covariant transverse-shear vector and the same B rows
     const Vec2 shear_nat = strain.template segment<2>(6);
-    strain.template segment<2>(6) = point.invA * shear_nat;
+    strain.template segment<2>(6) = point.invJ * shear_nat;
 
     if (B) {
         const Mat2x6N shear_B = B->template block<2, num_dofs>(6, 0);
-        B->template block<2, num_dofs>(6, 0) = point.invA * shear_B;
+        B->template block<2, num_dofs>(6, 0) = point.invJ * shear_B;
     }
 }
 

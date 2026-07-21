@@ -463,10 +463,10 @@ void FRTShell<N>::assemble_geometric_stiffness(
         // Apply the transpose of the pointwise natural-to-local strain map
         // directly here because this pull-back is used only by geometric
         // assembly and does not justify a separate one-call helper.
-        const Precision t00 = points[id].invA(0, 0);
-        const Precision t01 = points[id].invA(0, 1);
-        const Precision t10 = points[id].invA(1, 0);
-        const Precision t11 = points[id].invA(1, 1);
+        const Precision t00 = points[id].invJ(0, 0);
+        const Precision t01 = points[id].invJ(0, 1);
+        const Precision t10 = points[id].invJ(1, 0);
+        const Precision t11 = points[id].invJ(1, 1);
 
         StaticMatrix<3, 3> in_plane;
         in_plane << t00 * t00,               t01 * t01,               t00 * t01,
@@ -480,7 +480,7 @@ void FRTShell<N>::assemble_geometric_stiffness(
         natural_resultants.template segment<3>(3) =
             in_plane.transpose() * local_resultants.template segment<3>(3);
         natural_resultants.template segment<2>(6) =
-            points[id].invA.transpose() * local_resultants.template segment<2>(6);
+            points[id].invJ.transpose() * local_resultants.template segment<2>(6);
 
         Vec8 compatible_weights = Vec8::Zero();
         for (Vec8& tying_weight : data.geometric_tying_weights) {
@@ -620,8 +620,8 @@ void FRTShell<N>::assemble_drill_stabilization(
         // rotated reference tangent vectors
         for (Index node = 0; node < num_nodes; ++node) {
             const Vec3 x_i = data.state.x.row(node).transpose();
-            x_a += point.dshape_a(node) * x_i;
-            x_b += point.dshape_b(node) * x_i;
+            x_a += point.dshape_ab.col(0)(node) * x_i;
+            x_b += point.dshape_ab.col(1)(node) * x_i;
             a1  += point.shape(node) * rotations[node].value * point.e1;
             a2  += point.shape(node) * rotations[node].value * point.e2;
         }
@@ -636,8 +636,8 @@ void FRTShell<N>::assemble_drill_stabilization(
         for (Index node = 0; node < num_nodes; ++node) {
             const Index base = dofs_per_node * node;
             const Vec3 derivative = Precision(0.5)
-                                  * (point.dshape_b(node) * a1
-                                   - point.dshape_a(node) * a2);
+                                  * (point.dshape_ab.col(1)(node) * a1
+                                   - point.dshape_ab.col(0)(node) * a2);
             B_d.template segment<3>(base) = derivative;
         }
 
@@ -692,8 +692,8 @@ void FRTShell<N>::assemble_drill_stabilization(
                 for (Index x_node = 0; x_node < num_nodes; ++x_node) {
                     const Index x_base = dofs_per_node * x_node;
                     const Vec3 mixed = Precision(0.5)
-                                     * (point.dshape_b(x_node) * da1
-                                      - point.dshape_a(x_node) * da2);
+                                     * (point.dshape_ab.col(1)(x_node) * da1
+                                      - point.dshape_ab.col(0)(x_node) * da2);
 
                     stiffness_matrix->template block<3, 1>(
                         x_base,

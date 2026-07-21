@@ -187,16 +187,15 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(
             const Precision s = natural_nodes(node, 1);
             const MatN2 dshape = shape_derivative(r, s);
 
-            Vec3 X_r = Vec3::Zero();
-            Vec3 X_s = Vec3::Zero();
+            Mat32 X_rs = Vec3::Zero();
 
             for (Index i = 0; i < num_nodes; ++i) {
                 const Vec3 X_i = X.row(i).transpose();
-                X_r += dshape(i, 0) * X_i;
-                X_s += dshape(i, 1) * X_i;
+                X_rs.col(0) += dshape(i, 0) * X_i;
+                X_rs.col(1) += dshape(i, 1) * X_i;
             }
 
-            director = X_r.cross(X_s);
+            director = X_rs.col(0).cross(X_rs.col(1));
             logging::error(
                 director.allFinite() && director.norm() > Precision(1e-14),
                 "FRTShell: singular reference geometry at node ",
@@ -254,72 +253,60 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
     // Interpolate the actual isoparametric reference tangents
     for (Index node = 0; node < num_nodes; ++node) {
         const Vec3 X_i = ref.X.row(node).transpose();
-        point.X_r += point.dshape_rs(node, 0) * X_i;
-        point.X_s += point.dshape_rs(node, 1) * X_i;
+        point.X_rs.col(0) += point.dshape_rs(node, 0) * X_i;
+        point.X_rs.col(1) += point.dshape_rs(node, 1) * X_i;
     }
 
-    const Vec3 normal = point.X_r.cross(point.X_s);
+    const Vec3 normal = point.X_rs.col(0).cross(point.X_rs.col(1));
     point.detJ = normal.norm();
 
-    logging::error(
-        point.detJ > Precision(1e-14) && std::isfinite(point.detJ),
-        "FRTShell: singular reference surface Jacobian in element ",
-        this->elem_id,
-        " at (",
-        r,
-        ", ",
-        s,
-        ")"
+    logging::error(point.detJ > Precision(1e-14) && std::isfinite(point.detJ),
+        "FRTShell: singular reference surface Jacobian in element ",this->elem_id,
+        " at (", r, ", ", s, ")"
     );
 
     // Construct the pointwise orthonormal basis on the curved reference surface
-    point.e1 = normalized(point.X_r);
+    point.e1 = normalized(point.X_rs.col(0));
     point.e3 = normal / point.detJ;
     point.e2 = normalized(point.e3.cross(point.e1));
     point.e1 = normalized(point.e2.cross(point.e3));
 
     // Express the two natural tangents in the local orthonormal tangent basis
-    point.A << point.X_r.dot(point.e1), point.X_r.dot(point.e2),
-               point.X_s.dot(point.e1), point.X_s.dot(point.e2);
+    point.J << point.X_rs.col(0).dot(point.e1), point.X_rs.col(0).dot(point.e2),
+               point.X_rs.col(1).dot(point.e1), point.X_rs.col(1).dot(point.e2);
 
-    const Precision detA = point.A.determinant();
-    logging::error(
-        std::abs(detA) > Precision(1e-14),
-        "FRTShell: singular local reference mapping in element ",
-        this->elem_id,
-        " at (",
-        r,
-        ", ",
-        s,
-        ")"
+    const Precision detJ = point.J.determinant();
+    logging::error(std::abs(detJ) > Precision(1e-14),
+        "FRTShell: singular local reference mapping in element ", this->elem_id,
+        " at (", r, ", ", s,")"
     );
 
-    point.invA = point.A.inverse();
+    point.invJ = point.J.inverse();
 
     // Transform every shape gradient into the orthonormal tangent coordinates
     for (Index node = 0; node < num_nodes; ++node) {
         const Vec2 derivative_nat = point.dshape_rs.row(node).transpose();
-        const Vec2 derivative_loc = point.invA * derivative_nat;
+        const Vec2 derivative_loc = point.invJ * derivative_nat;
 
-        point.dshape_a(node) = derivative_loc(0);
-        point.dshape_b(node) = derivative_loc(1);
+        point.dshape_ab.col(0)(node) = derivative_loc(0);
+        point.dshape_ab.col(1)(node) = derivative_loc(1);
     }
 
     // The reference derivatives with respect to the orthonormal coordinates are
     // exactly the local basis vectors by construction
-    point.X_a = point.e1;
-    point.X_b = point.e2;
+    point.X_ab.col(0) = point.e1;
+    point.X_ab.col(1) = point.e2;
 
     // Interpolate the nodal reference director field and all natural and local
     // tangent derivatives required by the shell curvature and shear measures
     for (Index node = 0; node < num_nodes; ++node) {
         const Vec3 D_i = ref.d0.row(node).transpose();
 
-        point.D   += point.shape(node)        * D_i;
-        point.D_r += point.dshape_rs(node, 0) * D_i;
-        point.D_s += point.dshape_rs(node, 1) * D_i;
-        point.D_a += point.dshape_a(node)     * D_i;
-        point.D_b += point.dshape_b(node)     * D_i;
+        point.D   += point.shape(node)            * D_i;
+        point.D_r += point.dshape_rs(node, 0)     * D_i;
+        point.D_s += point.dshape_rs(node, 1)     * D_i;
+        point.D_a += point.dshape_ab.col(0)(node) * D_i;
+        point.D_b += point.dshape_ab.col(1)(node) * D_i;
     }
 
     return point;

@@ -88,7 +88,7 @@ struct FRTShell : ShellElement<N> {
     using Base = ShellElement<N>;
 
     static_assert(N == 3 || N == 4 || N == 6 || N == 8,
-                  "FRTShell supports only S3, S4, S6 and S8 topologies");
+        "FRTShell supports only S3, S4, S6 and S8 topologies");
 
     // Number of midsurface interpolation nodes belonging to this topology.
     static constexpr Index num_nodes = N;
@@ -114,38 +114,20 @@ struct FRTShell : ShellElement<N> {
     // the correct rotational mass dimension kg*m^2.
     static constexpr Precision drill_inertia_scale = Precision(1e-6);
 
-    // Fixed-size generalized strain or resultant vector.
-    using Vec8 = StaticVector<num_strains>;
-
-    // Fixed-size element vector in nodal degree-of-freedom ordering.
-    using Vec6N = StaticVector<num_dofs>;
-
-    // Fixed-size generalized shell-section tangent matrix.
-    using Mat8 = StaticMatrix<num_strains, num_strains>;
-
-    // Fixed-size element stiffness or mass matrix.
-    using Mat6N = StaticMatrix<num_dofs, num_dofs>;
-
-    // Fixed-size generalized strain-displacement matrix.
+    // predeclare vectors commonly used
+    // vectors first
+    using Vec8    = StaticVector<num_strains>;
+    using VecN    = StaticVector<num_nodes>;
+    using Vec6N   = StaticVector<num_dofs>;
+    // matrices
+    using Mat6N   = StaticMatrix<num_dofs   , num_dofs>;
+    using Mat2x6N = StaticMatrix<2          , num_dofs>;
+    using Mat3x6N = StaticMatrix<3          , num_dofs>;
     using Mat8x6N = StaticMatrix<num_strains, num_dofs>;
-
-    // Two-row matrix used for transverse-shear transformations.
-    using Mat2x6N = StaticMatrix<2, num_dofs>;
-
-    // Three-row matrix used for vector-valued element derivatives.
-    using Mat3x6N = StaticMatrix<3, num_dofs>;
-
-    // Nodal three-dimensional vector field stored row-wise.
-    using MatN3 = StaticMatrix<num_nodes, 3>;
-
-    // Nodal natural-coordinate field stored row-wise.
-    using MatN2 = StaticMatrix<num_nodes, 2>;
-
-    // Nodal six-component position and rotation field stored row-wise.
-    using MatN6 = StaticMatrix<num_nodes, 6>;
-
-    // Fixed-size vector containing one scalar coefficient per element node.
-    using VecN = StaticVector<num_nodes>;
+    using MatN2   = StaticMatrix<num_nodes  , 2>;
+    using MatN3   = StaticMatrix<num_nodes  , 3>;
+    using MatN6   = StaticMatrix<num_nodes  , 6>;
+    using Mat8    = StaticMatrix<num_strains, num_strains>;
 
     /**
      * @brief Compact value and derivatives of one nodal SO(3) rotation.
@@ -167,11 +149,11 @@ struct FRTShell : ShellElement<N> {
         Mat3 value;
 
         // First derivatives of R with respect to the three nodal axis-angle
-        // coordinates.
+        // coordinates r1, r2, r3
         std::array<Mat3, 3> d1;
 
         // Second derivatives of R with respect to pairs of nodal axis-angle
-        // coordinates.
+        // coordinates r1, r2, r3
         std::array<std::array<Mat3, 3>, 3> d2;
     };
 
@@ -191,6 +173,13 @@ struct FRTShell : ShellElement<N> {
         MatN3 d = MatN3::Zero();
 
         // Current total global axis-angle vector at every element node.
+        // so basically:
+        // r11, r12, r13
+        // r21, r22, r23
+        // r31, r32, r33
+        // r41, r42, r43
+        // ...
+        // the derivatives w.r.t to theta are for example the rotation derivatives above
         MatN3 theta = MatN3::Zero();
     };
 
@@ -199,50 +188,36 @@ struct FRTShell : ShellElement<N> {
      *
      * The point stores the shape functions, actual curved reference tangents,
      * surface Jacobian, local orthonormal basis and interpolated reference
-     * director field. `A` maps local tangent derivatives `(a,b)` to natural
-     * derivatives `(r,s)`:
+     * director field. `J` maps local tangent derivatives `(a,b)` to natural
+     * derivatives `(r,s)`. We do this so its easier to access them and its a nice little speedup
      *
-     *     [N_,r, N_,s]^T = A [N_,a, N_,b]^T.
      */
     struct ReferencePoint {
-        // First natural coordinate of the point.
+        // Natural coordinates and weights of the reference point in reference space
         Precision r = Precision(0);
-
-        // Second natural coordinate of the point.
         Precision s = Precision(0);
-
-        // Numerical quadrature weight; zero for tying and arbitrary output
-        // points.
         Precision w = Precision(0);
 
-        // Physical reference-surface Jacobian |X_,r x X_,s|.
+        // Mapping from local tangent derivatives (a,b) to natural derivatives (r,s) and vice versa
+        // [N_,r, N_,s]^T = J    * [N_,a, N_,b]^T
+        // [N_,a, N_,b]^T = invJ * [N_,r, N_,s]^T
+        // integration is performed over r,s space so we need detJ to scale during integration
+        Mat2      J    = Mat2::Zero();
+        Mat2      invJ = Mat2::Zero();
         Precision detJ = Precision(0);
 
         // Shape-function values at the point.
         VecN shape = VecN::Zero();
 
-        // Natural shape-function derivatives [N_,r, N_,s].
+        // Natural shape-function derivatives [N_,r, N_,s] and
+        // shape function derivatives in orthonormal basis [N_,a, n_,b]
         MatN2 dshape_rs = MatN2::Zero();
+        MatN2 dshape_ab = MatN2::Zero();
 
-        // Shape-function derivatives along the first orthonormal reference
-        // tangent.
-        VecN dshape_a = VecN::Zero();
-
-        // Shape-function derivatives along the second orthonormal reference
-        // tangent.
-        VecN dshape_b = VecN::Zero();
-
-        // First natural reference midsurface tangent X_,r.
-        Vec3 X_r = Vec3::Zero();
-
-        // Second natural reference midsurface tangent X_,s.
-        Vec3 X_s = Vec3::Zero();
-
-        // First orthonormal reference tangent X_,a = e1.
-        Vec3 X_a = Vec3::Zero();
-
-        // Second orthonormal reference tangent X_,b = e2.
-        Vec3 X_b = Vec3::Zero();
+        // natural reference midsurface tangent [X_,r, X_,s] in natural coordinates and
+        // natural reference midsurface tangent [X_,a, X_,b] in orthonormal basis
+        Mat32 X_rs = Vec3::Zero();
+        Mat32 X_ab = Vec3::Zero();
 
         // Interpolated nodal reference director field.
         Vec3 D = Vec3::Zero();
@@ -267,12 +242,6 @@ struct FRTShell : ShellElement<N> {
 
         // Pointwise reference surface normal.
         Vec3 e3 = Vec3::Zero();
-
-        // Mapping from local tangent derivatives to natural derivatives.
-        Mat2 A = Mat2::Zero();
-
-        // Mapping from natural derivatives to local tangent derivatives.
-        Mat2 invA = Mat2::Zero();
 
         // Unscaled objective drilling stiffness per unit reference area. The
         // value equals drill_scale times the zero-strain in-plane shear

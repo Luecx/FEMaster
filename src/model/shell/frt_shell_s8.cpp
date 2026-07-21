@@ -279,8 +279,8 @@ void FRTShellS8::apply_mitc_natural(
     // coordinates of one reference point
     const auto dual_vectors = [](const ReferencePoint& sample) {
         std::array<Vec3, 2> dual;
-        dual[0] = sample.invA(0, 0) * sample.e1 + sample.invA(1, 0) * sample.e2;
-        dual[1] = sample.invA(0, 1) * sample.e1 + sample.invA(1, 1) * sample.e2;
+        dual[0] = sample.invJ(0, 0) * sample.e1 + sample.invJ(1, 0) * sample.e2;
+        dual[1] = sample.invJ(0, 1) * sample.e1 + sample.invJ(1, 1) * sample.e2;
         return dual;
     };
 
@@ -362,13 +362,13 @@ void FRTShellS8::apply_mitc_natural(
             Vec3 basis_2;
 
             if (keep_ss) {
-                const Precision alpha = middle.X_r.dot(middle.X_s) / middle.X_s.squaredNorm();
-                basis_1 = middle.X_r - alpha * middle.X_s;
-                basis_2 = middle.X_s;
+                const Precision alpha = middle.X_rs.col(0).dot(middle.X_rs.col(1)) / middle.X_rs.col(1).squaredNorm();
+                basis_1 = middle.X_rs.col(0) - alpha * middle.X_rs.col(1);
+                basis_2 = middle.X_rs.col(1);
             } else {
-                const Precision beta = middle.X_r.dot(middle.X_s) / middle.X_r.squaredNorm();
-                basis_1 = middle.X_r;
-                basis_2 = middle.X_s - beta * middle.X_r;
+                const Precision beta = middle.X_rs.col(0).dot(middle.X_rs.col(1)) / middle.X_rs.col(0).squaredNorm();
+                basis_1 = middle.X_rs.col(0);
+                basis_2 = middle.X_rs.col(1) - beta * middle.X_rs.col(0);
             }
 
             const StaticMatrix<3, 3> corner_1_to_basis =
@@ -447,13 +447,13 @@ void FRTShellS8::apply_mitc_natural(
                 Vec3 basis_2;
 
                 if (keep_ss) {
-                    const Precision alpha = middle.X_r.dot(middle.X_s) / middle.X_s.squaredNorm();
-                    basis_1 = middle.X_r - alpha * middle.X_s;
-                    basis_2 = middle.X_s;
+                    const Precision alpha = middle.X_rs.col(0).dot(middle.X_rs.col(1)) / middle.X_rs.col(1).squaredNorm();
+                    basis_1 = middle.X_rs.col(0) - alpha * middle.X_rs.col(1);
+                    basis_2 = middle.X_rs.col(1);
                 } else {
-                    const Precision beta = middle.X_r.dot(middle.X_s) / middle.X_r.squaredNorm();
-                    basis_1 = middle.X_r;
-                    basis_2 = middle.X_s - beta * middle.X_r;
+                    const Precision beta = middle.X_rs.col(0).dot(middle.X_rs.col(1)) / middle.X_rs.col(0).squaredNorm();
+                    basis_1 = middle.X_rs.col(0);
+                    basis_2 = middle.X_rs.col(1) - beta * middle.X_rs.col(0);
                 }
 
                 const StaticMatrix<3, 3> corner_1_to_basis =
@@ -610,8 +610,8 @@ void FRTShellS8::pull_back_mitc_resultants(
 
     const auto dual_vectors = [](const ReferencePoint& sample) {
         std::array<Vec3, 2> dual;
-        dual[0] = sample.invA(0, 0) * sample.e1 + sample.invA(1, 0) * sample.e2;
-        dual[1] = sample.invA(0, 1) * sample.e1 + sample.invA(1, 1) * sample.e2;
+        dual[0] = sample.invJ(0, 0) * sample.e1 + sample.invJ(1, 0) * sample.e2;
+        dual[1] = sample.invJ(0, 1) * sample.e1 + sample.invJ(1, 1) * sample.e2;
         return dual;
     };
 
@@ -696,13 +696,13 @@ void FRTShellS8::pull_back_mitc_resultants(
             Vec3 basis_2;
 
             if (keep_ss) {
-                const Precision alpha = middle.X_r.dot(middle.X_s) / middle.X_s.squaredNorm();
-                basis_1 = middle.X_r - alpha * middle.X_s;
-                basis_2 = middle.X_s;
+                const Precision alpha = middle.X_rs.col(0).dot(middle.X_rs.col(1)) / middle.X_rs.col(1).squaredNorm();
+                basis_1 = middle.X_rs.col(0) - alpha * middle.X_rs.col(1);
+                basis_2 = middle.X_rs.col(1);
             } else {
-                const Precision beta = middle.X_r.dot(middle.X_s) / middle.X_r.squaredNorm();
-                basis_1 = middle.X_r;
-                basis_2 = middle.X_s - beta * middle.X_r;
+                const Precision beta = middle.X_rs.col(0).dot(middle.X_rs.col(1)) / middle.X_rs.col(0).squaredNorm();
+                basis_1 = middle.X_rs.col(0);
+                basis_2 = middle.X_rs.col(1) - beta * middle.X_rs.col(0);
             }
 
             const StaticMatrix<3, 3> corner_1_to_basis =
