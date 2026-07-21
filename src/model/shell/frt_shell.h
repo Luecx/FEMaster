@@ -636,11 +636,9 @@ struct FRTShell : ShellElement<N> {
     // Basic geometric integration and mass interface.
     // These functions expose scalar geometric properties used outside the
     // nonlinear shell tangent path. They integrate over the curved reference
-    // midsurface, assemble consistent translational and rotational mass terms,
-    // and evaluate the current midsurface location for loads or post-processing.
+    // midsurface and assemble consistent translational and rotational mass terms.
     Precision volume() override;
     MapMatrix mass(Precision* buffer) override;
-    Vec3 global_point_current(Precision r, Precision s) const;
 
     // Volume field integration interface.
     // These callbacks integrate user-supplied scalar, vector and tensor fields

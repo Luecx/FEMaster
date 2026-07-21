@@ -100,29 +100,6 @@ MapMatrix FRTShell<N>::mass(Precision* buffer) {
 }
 
 /**
- * Interpolates the current physical midsurface position at one natural point.
- *
- * @param r First natural coordinate.
- * @param s Second natural coordinate.
- * @return Current global midsurface position.
- */
-template<Index N>
-Vec3 FRTShell<N>::global_point_current(Precision r, Precision s) const {
-    const VecN  shape     = shape_function(r, s);
-    const MatN6 positions = node_coords_current_6();
-
-    Vec3 point = Vec3::Zero();
-
-    // Interpolate only the three translational position components
-    for (Index node = 0; node < num_nodes; ++node) {
-        point += shape(node)
-               * positions.template block<1, 3>(node, 0).transpose();
-    }
-
-    return point;
-}
-
-/**
  * Integrates a scalar field through the shell reference volume.
  *
  * Current nodal positions are gathered once and reused at every integration
