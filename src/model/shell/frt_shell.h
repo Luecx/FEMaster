@@ -31,9 +31,9 @@
  *     K_geo = integral_A0 sum_a n[a] G[a] dA0.
  *
  * EAS and follower-load contributions intentionally do not belong to this
- * implementation. The concrete MITC elements only replace the selected
- * compatible strain components and apply exactly the same linear interpolation
- * to their values, B rows and G matrices.
+ * implementation. The concrete MITC elements replace the selected compatible
+ * strain components, apply the same linear interpolation to B rows, and expose
+ * the transposed interpolation for direct geometric-tangent assembly.
  *
  * @see FRTShellS3
  * @see FRTShellS4
@@ -231,12 +231,14 @@ struct FRTShell : ShellElement<N> {
      * The compatible natural strains are evaluated at every tying point. The
      * concrete element then interpolates its assumed strain field at each
      * integration point. The resulting local generalized strains, B matrices,
-     * G matrices, section resultants and tangents are stored per integration
-     * point.
+     * section resultants and tangents are stored per integration point. Dense
+     * strain Hessians are deliberately not part of the persistent evaluation
+     * data; the geometric tangent contracts resultants with the compatible
+     * Hessian blocks directly during assembly.
      */
     struct EvaluationData {
-        // Requested evaluation content. Computing G implies B and strain;
-        // computing B implies strain.
+        // Requested evaluation content. B implies strain. with_G requests the
+        // second director derivatives needed by direct geometric assembly.
         bool with_strain     = false;
         bool with_B          = false;
         bool with_G          = false;
@@ -252,16 +254,13 @@ struct FRTShell : ShellElement<N> {
 
         // Compatible generalized strains at MITC tying points in natural
         // coordinates [r,s]. Engineering shear components are used.
-        std::vector<Vec8>     tying_strain_nat;
-        std::vector<Mat8x6N>  tying_B_nat;
-        std::vector<Vec6NMat> tying_G_nat;
+        std::vector<Vec8>    tying_strain_nat;
+        std::vector<Mat8x6N> tying_B_nat;
 
         // Generalized integration-point kinematics in the local orthonormal
-        // reference basis. ip_B = d(ip_strain)/d(q) and
-        // ip_G[a] = d²(ip_strain[a])/d(q)².
-        std::vector<Vec8>     ip_strain;
-        std::vector<Mat8x6N>  ip_B;
-        std::vector<Vec6NMat> ip_G;
+        // reference basis. ip_B = d(ip_strain)/d(q).
+        std::vector<Vec8>    ip_strain;
+        std::vector<Mat8x6N> ip_B;
 
         // Integration-point section response. ip_tangent is the local section
         // tangent H = d(ip_resultants)/d(ip_strain), not the element tangent.
@@ -271,10 +270,24 @@ struct FRTShell : ShellElement<N> {
         // Complete reference-area quadrature weights w * detJ
         std::vector<Precision> ip_weight;
 
-        // Consistent drilling stabilization stiffness per node
-        Precision drill_k = Precision(0);
+        EvaluationData(Index num_ip,
+                       Index num_tying,
+                       bool  with_strain,
+                       bool  with_B,
+                       bool  with_G,
+                       bool  with_resultants);
+    };
 
-        EvaluationData(Index num_ip, Index num_tying);
+    /**
+     * @brief Resultant weights pulled back through local-basis and MITC maps.
+     *
+     * `compatible` weights the compatible natural strain Hessian at the
+     * integration point itself. `tying[p]` weights the compatible natural
+     * Hessian evaluated at tying point `p`.
+     */
+    struct GeometricStrainWeights {
+        Vec8              compatible = Vec8::Zero();
+        std::vector<Vec8> tying;
     };
 
     // Persistent reference state initialized for the current analysis step
@@ -296,14 +309,19 @@ struct FRTShell : ShellElement<N> {
 
     // The concrete MITC implementation receives compatible generalized strains
     // in natural coordinates and replaces only the components belonging to its
-    // assumed-strain space. Values, B rows and G matrices must be interpolated
-    // with identical coefficients.
+    // assumed-strain space. Values and B rows use identical coefficients.
     virtual void apply_mitc_natural(
         const EvaluationData& data,
         const ReferencePoint& point,
         Vec8&                 strain_nat,
-        Mat8x6N*              B_nat,
-        Vec6NMat*             G_nat
+        Mat8x6N*              B_nat
+    ) const = 0;
+
+    virtual void pull_back_mitc_resultants(
+        const ReferencePoint& point,
+        const Vec8&           assumed_weights,
+        Vec8&                 compatible_weights,
+        std::vector<Vec8>&    tying_weights
     ) const = 0;
 
     // Reference configuration and pointwise curved-surface geometry
@@ -350,7 +368,7 @@ struct FRTShell : ShellElement<N> {
 
     // Linear reference-geometry transformations from natural covariant strain
     // components to the local orthonormal tangent basis. The same maps are
-    // applied to values, B rows and G matrices.
+    // applied to values, B rows and optional compatible G matrices.
     void transform_strain_to_local(
         const ReferencePoint& point,
         Vec8&                 strain,
@@ -387,6 +405,23 @@ struct FRTShell : ShellElement<N> {
     void assemble_material_stiffness(const EvaluationData& data, Mat6N& Kmat) const;
     void assemble_geometric_stiffness(const EvaluationData& data, Mat6N& Kgeo) const;
     void assemble_internal_force    (const EvaluationData& data, Vec6N& internal_force) const;
+
+    Vec8 pull_back_local_resultants(
+        const ReferencePoint& point,
+        const Vec8&           local_resultants
+    ) const;
+
+    GeometricStrainWeights geometric_strain_weights(
+        const ReferencePoint& point,
+        const Vec8&           local_resultants
+    ) const;
+
+    void add_weighted_natural_hessian(
+        const EvaluationData& data,
+        const ReferencePoint& point,
+        const Vec8&           weights,
+        Mat6N&                Kgeo
+    ) const;
 
     // Generalized and physical result recovery at arbitrary natural points
     Vec8 generalized_strain_at(const EvaluationData& data,

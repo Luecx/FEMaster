@@ -4,8 +4,8 @@
  *
  * The MITC4 interpolation is performed in natural covariant components before
  * the common shell kernel transforms the strains into the pointwise local
- * reference basis. Values, B rows and G matrices use exactly the same tying
- * coefficients.
+ * reference basis. Values and B rows use exactly the same tying coefficients;
+ * geometric-tangent weights use the transposed interpolation.
  *
  * @see FRTShellS4
  *
@@ -119,8 +119,7 @@ void FRTShellS4::apply_mitc_natural(
     const EvaluationData& data,
     const ReferencePoint& point,
     Vec8&                 strain_nat,
-    Mat8x6N*              B_nat,
-    Vec6NMat*             G_nat
+    Mat8x6N*              B_nat
 ) const {
     constexpr Index gamma_r3 = 6;
     constexpr Index gamma_s3 = 7;
@@ -141,13 +140,28 @@ void FRTShellS4::apply_mitc_natural(
         B_nat->row(gamma_s3) = left   * data.tying_B_nat[2].row(gamma_s3)
                              + right  * data.tying_B_nat[3].row(gamma_s3);
     }
+}
 
-    if (G_nat) {
-        (*G_nat)[gamma_r3] = bottom * data.tying_G_nat[0][gamma_r3]
-                           + top    * data.tying_G_nat[1][gamma_r3];
-        (*G_nat)[gamma_s3] = left   * data.tying_G_nat[2][gamma_s3]
-                           + right  * data.tying_G_nat[3][gamma_s3];
-    }
+void FRTShellS4::pull_back_mitc_resultants(
+    const ReferencePoint& point,
+    const Vec8&           assumed_weights,
+    Vec8&                 compatible_weights,
+    std::vector<Vec8>&    tying_weights
+) const {
+    constexpr Index gamma_r3 = 6;
+    constexpr Index gamma_s3 = 7;
+
+    const Precision bottom = Precision(0.5) * (Precision(1) - point.s);
+    const Precision top    = Precision(0.5) * (Precision(1) + point.s);
+    const Precision left   = Precision(0.5) * (Precision(1) - point.r);
+    const Precision right  = Precision(0.5) * (Precision(1) + point.r);
+
+    compatible_weights.template segment<6>(0) += assumed_weights.template segment<6>(0);
+
+    tying_weights[0](gamma_r3) += bottom * assumed_weights(gamma_r3);
+    tying_weights[1](gamma_r3) += top    * assumed_weights(gamma_r3);
+    tying_weights[2](gamma_s3) += left   * assumed_weights(gamma_s3);
+    tying_weights[3](gamma_s3) += right  * assumed_weights(gamma_s3);
 }
 
 } // namespace fem::model

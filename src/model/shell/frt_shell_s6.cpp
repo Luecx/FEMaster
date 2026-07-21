@@ -162,15 +162,14 @@ std::vector<Vec2> FRTShellS6::tying_point_coordinates() const {
  * shear follows from `gamma_rs = e_rr + e_ss - 2 e_qq`.
  *
  * The transverse-shear field is linear inside the triangle and uses two tying
- * values on each edge. Values, B rows and G matrices follow exactly the same
- * coefficient construction.
+ * values on each edge. Values, B rows and transposed geometric weights follow
+ * exactly the same coefficient construction.
  */
 void FRTShellS6::apply_mitc_natural(
     const EvaluationData& data,
     const ReferencePoint& point,
     Vec8&                 strain_nat,
-    Mat8x6N*              B_nat,
-    Vec6NMat*             G_nat
+    Mat8x6N*              B_nat
 ) const {
     const Precision sqrt3 = std::sqrt(Precision(3));
     const Precision r1    = Precision(0.5) - Precision(0.5) / sqrt3;
@@ -288,60 +287,6 @@ void FRTShellS6::apply_mitc_natural(
         interpolate_in_plane_B(3);
     }
 
-    if (G_nat) {
-        auto interpolate_in_plane_G = [&](Index start) {
-            const auto q_matrix = [&](Index tying) {
-                const Mat6N result = Precision(0.5)
-                    * (data.tying_G_nat[tying][start + 0]
-                     + data.tying_G_nat[tying][start + 1]
-                     - data.tying_G_nat[tying][start + 2]);
-                return result;
-            };
-
-            const Mat6N m_rr = Precision(0.5)
-                             * (data.tying_G_nat[0][start + 0]
-                              + data.tying_G_nat[1][start + 0]);
-            const Mat6N l_rr = Precision(0.5) * sqrt3
-                             * (data.tying_G_nat[1][start + 0]
-                              - data.tying_G_nat[0][start + 0]);
-
-            const Mat6N m_ss = Precision(0.5)
-                             * (data.tying_G_nat[3][start + 1]
-                              + data.tying_G_nat[4][start + 1]);
-            const Mat6N l_ss = Precision(0.5) * sqrt3
-                             * (data.tying_G_nat[4][start + 1]
-                              - data.tying_G_nat[3][start + 1]);
-
-            const Mat6N m_qq = Precision(0.5) * (q_matrix(6) + q_matrix(7));
-            const Mat6N l_qq = Precision(0.5) * sqrt3 * (q_matrix(7) - q_matrix(6));
-
-            const Mat6N a1 = m_rr - l_rr;
-            const Mat6N b1 = Precision(2) * l_rr;
-            const Mat6N c1 = sqrt3
-                           * (data.tying_G_nat[2][start + 0] - a1 - b1 * r1);
-
-            const Mat6N a2 = m_ss - l_ss;
-            const Mat6N c2 = Precision(2) * l_ss;
-            const Mat6N b2 = sqrt3
-                           * (data.tying_G_nat[5][start + 1] - a2 - c2 * r1);
-
-            const Mat6N a3 = m_qq + l_qq;
-            const Mat6N b3 = -Precision(2) * l_qq;
-            const Mat6N c3 = sqrt3 * (q_matrix(8) - a3 - b3 * r1);
-
-            const Mat6N e_rr = a1 + b1 * r + c1 * s;
-            const Mat6N e_ss = a2 + b2 * r + c2 * s;
-            const Mat6N e_qq = a3 + b3 * r + c3 * (Precision(1) - r - s);
-
-            (*G_nat)[start + 0] = e_rr;
-            (*G_nat)[start + 1] = e_ss;
-            (*G_nat)[start + 2] = e_rr + e_ss - Precision(2) * e_qq;
-        };
-
-        interpolate_in_plane_G(0);
-        interpolate_in_plane_G(3);
-    }
-
     // MITC6-b transverse-shear interpolation
     constexpr Index gamma_r3 = 6;
     constexpr Index gamma_s3 = 7;
@@ -429,43 +374,128 @@ void FRTShellS6::apply_mitc_natural(
         B_nat->row(gamma_s3) = A2 + B2 * r + C2 * s;
     }
 
-    if (G_nat) {
-        const auto mean_matrix = [](const Mat6N& a, const Mat6N& b) {
-            const Mat6N result = Precision(0.5) * (a + b);
-            return result;
-        };
-        const auto slope_matrix = [sqrt3](const Mat6N& a, const Mat6N& b) {
-            const Mat6N result = Precision(0.5) * sqrt3 * (b - a);
-            return result;
-        };
+}
 
-        const Mat6N m_rt1 = mean_matrix(data.tying_G_nat[9][gamma_r3],
-                                        data.tying_G_nat[10][gamma_r3]);
-        const Mat6N l_rt1 = slope_matrix(data.tying_G_nat[9][gamma_r3],
-                                         data.tying_G_nat[10][gamma_r3]);
-        const Mat6N m_st2 = mean_matrix(data.tying_G_nat[11][gamma_s3],
-                                        data.tying_G_nat[12][gamma_s3]);
-        const Mat6N l_st2 = slope_matrix(data.tying_G_nat[11][gamma_s3],
-                                         data.tying_G_nat[12][gamma_s3]);
-        const Mat6N m_rt3 = mean_matrix(data.tying_G_nat[13][gamma_r3],
-                                        data.tying_G_nat[14][gamma_r3]);
-        const Mat6N l_rt3 = slope_matrix(data.tying_G_nat[13][gamma_r3],
-                                         data.tying_G_nat[14][gamma_r3]);
-        const Mat6N m_st3 = mean_matrix(data.tying_G_nat[13][gamma_s3],
-                                        data.tying_G_nat[14][gamma_s3]);
-        const Mat6N l_st3 = slope_matrix(data.tying_G_nat[13][gamma_s3],
-                                         data.tying_G_nat[14][gamma_s3]);
+void FRTShellS6::pull_back_mitc_resultants(
+    const ReferencePoint& point,
+    const Vec8&           assumed_weights,
+    Vec8&                 compatible_weights,
+    std::vector<Vec8>&    tying_weights
+) const {
+    (void) compatible_weights;
 
-        const Mat6N A1 = m_rt1 - l_rt1;
-        const Mat6N B1 = Precision(2) * l_rt1;
-        const Mat6N A2 = m_st2 - l_st2;
-        const Mat6N C2 = Precision(2) * l_st2;
-        const Mat6N C1 = (A2 + C2 - A1) - (m_st3 + l_st3 - m_rt3 - l_rt3);
-        const Mat6N B2 = (A1 + B1 - A2) + (m_st3 - l_st3 - m_rt3 + l_rt3);
+    const Precision sqrt3 = std::sqrt(Precision(3));
+    const Precision r1    = Precision(0.5) - Precision(0.5) / sqrt3;
+    const Precision r     = point.r;
+    const Precision s     = point.s;
 
-        (*G_nat)[gamma_r3] = A1 + B1 * r + C1 * s;
-        (*G_nat)[gamma_s3] = A2 + B2 * r + C2 * s;
-    }
+    const auto add_q_weight = [&](Index tying, Index start, Precision weight) {
+        tying_weights[static_cast<std::size_t>(tying)](start + 0) += Precision(0.5) * weight;
+        tying_weights[static_cast<std::size_t>(tying)](start + 1) += Precision(0.5) * weight;
+        tying_weights[static_cast<std::size_t>(tying)](start + 2) -= Precision(0.5) * weight;
+    };
+
+    const auto add_mean_slope = [&](Index tying_1,
+                                    Index tying_2,
+                                    Index component,
+                                    Precision mean_weight,
+                                    Precision slope_weight) {
+        tying_weights[static_cast<std::size_t>(tying_1)](component) +=
+            Precision(0.5) * mean_weight - Precision(0.5) * sqrt3 * slope_weight;
+        tying_weights[static_cast<std::size_t>(tying_2)](component) +=
+            Precision(0.5) * mean_weight + Precision(0.5) * sqrt3 * slope_weight;
+    };
+
+    const auto pull_back_in_plane = [&](Index start) {
+        Precision e_rr_weight = assumed_weights(start + 0) + assumed_weights(start + 2);
+        Precision e_ss_weight = assumed_weights(start + 1) + assumed_weights(start + 2);
+        Precision e_qq_weight = -Precision(2) * assumed_weights(start + 2);
+
+        Precision a1_weight = e_rr_weight;
+        Precision b1_weight = r * e_rr_weight;
+        Precision c1_weight = s * e_rr_weight;
+
+        Precision a2_weight = e_ss_weight;
+        Precision b2_weight = r * e_ss_weight;
+        Precision c2_weight = s * e_ss_weight;
+
+        Precision a3_weight = e_qq_weight;
+        Precision b3_weight = r * e_qq_weight;
+        Precision c3_weight = (Precision(1) - r - s) * e_qq_weight;
+
+        add_q_weight(8, start, sqrt3 * c3_weight);
+        a3_weight -= sqrt3 * c3_weight;
+        b3_weight -= sqrt3 * r1 * c3_weight;
+
+        Precision m_qq_weight = a3_weight;
+        Precision l_qq_weight = a3_weight;
+        l_qq_weight -= Precision(2) * b3_weight;
+
+        add_q_weight(6, start, Precision(0.5) * m_qq_weight
+                             - Precision(0.5) * sqrt3 * l_qq_weight);
+        add_q_weight(7, start, Precision(0.5) * m_qq_weight
+                             + Precision(0.5) * sqrt3 * l_qq_weight);
+
+        tying_weights[2](start + 0) += sqrt3 * c1_weight;
+        a1_weight -= sqrt3 * c1_weight;
+        b1_weight -= sqrt3 * r1 * c1_weight;
+
+        Precision m_rr_weight = a1_weight;
+        Precision l_rr_weight = -a1_weight;
+        l_rr_weight += Precision(2) * b1_weight;
+
+        add_mean_slope(0, 1, start + 0, m_rr_weight, l_rr_weight);
+
+        tying_weights[5](start + 1) += sqrt3 * b2_weight;
+        a2_weight -= sqrt3 * b2_weight;
+        c2_weight -= sqrt3 * r1 * b2_weight;
+
+        Precision m_ss_weight = a2_weight;
+        Precision l_ss_weight = -a2_weight;
+        l_ss_weight += Precision(2) * c2_weight;
+
+        add_mean_slope(3, 4, start + 1, m_ss_weight, l_ss_weight);
+    };
+
+    pull_back_in_plane(0);
+    pull_back_in_plane(3);
+
+    constexpr Index gamma_r3 = 6;
+    constexpr Index gamma_s3 = 7;
+
+    Precision A1_weight = assumed_weights(gamma_r3);
+    Precision B1_weight = r * assumed_weights(gamma_r3);
+    Precision C1_weight = s * assumed_weights(gamma_r3);
+
+    Precision A2_weight = assumed_weights(gamma_s3);
+    Precision B2_weight = r * assumed_weights(gamma_s3);
+    Precision C2_weight = s * assumed_weights(gamma_s3);
+
+    A1_weight += B2_weight;
+    B1_weight += B2_weight;
+    A2_weight -= B2_weight;
+    Precision m_st3_weight = B2_weight;
+    Precision l_st3_weight = -B2_weight;
+    Precision m_rt3_weight = -B2_weight;
+    Precision l_rt3_weight = B2_weight;
+
+    A2_weight += C1_weight;
+    C2_weight += C1_weight;
+    A1_weight -= C1_weight;
+    m_st3_weight -= C1_weight;
+    l_st3_weight -= C1_weight;
+    m_rt3_weight += C1_weight;
+    l_rt3_weight += C1_weight;
+
+    Precision m_rt1_weight = A1_weight;
+    Precision l_rt1_weight = -A1_weight + Precision(2) * B1_weight;
+    Precision m_st2_weight = A2_weight;
+    Precision l_st2_weight = -A2_weight + Precision(2) * C2_weight;
+
+    add_mean_slope(9, 10, gamma_r3, m_rt1_weight, l_rt1_weight);
+    add_mean_slope(11, 12, gamma_s3, m_st2_weight, l_st2_weight);
+    add_mean_slope(13, 14, gamma_r3, m_rt3_weight, l_rt3_weight);
+    add_mean_slope(13, 14, gamma_s3, m_st3_weight, l_st3_weight);
 }
 
 } // namespace fem::model

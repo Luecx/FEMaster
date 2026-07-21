@@ -12,7 +12,8 @@
  * The two covariant transverse-shear fields use four boundary sampling values
  * and one internal function. The fifth coefficient is the mean of the two
  * associated interior sampling values. Every assumed-strain interpolation is
- * applied identically to the strain values, B rows and G matrices.
+ * applied identically to the strain values and B rows. Geometric-tangent
+ * weights use the corresponding transposed interpolation.
  *
  * @see FRTShellS8
  *
@@ -202,8 +203,7 @@ void FRTShellS8::apply_mitc_natural(
     const EvaluationData& data,
     const ReferencePoint& point,
     Vec8&                 strain_nat,
-    Mat8x6N*              B_nat,
-    Vec6NMat*             G_nat
+    Mat8x6N*              B_nat
 ) const {
     logging::error(data.tying_strain_nat.size() == 20,
                    "FRTShellS8: expected 20 MITC8 tying points");
@@ -272,25 +272,6 @@ void FRTShellS8::apply_mitc_natural(
                           v_1*v_1,              v_2*v_2,              v_1*v_2,
                           Precision(2)*u_1*v_1, Precision(2)*u_2*v_2, u_1*v_2 + u_2*v_1;
         return transformation;
-    };
-
-    // Transform three strain Hessians with one engineering tensor map
-    const auto transform_G = [](const StaticMatrix<3, 3>& transformation,
-                                const Vec6NMat&           source,
-                                Index                     start) {
-        std::array<Mat6N, 3> result;
-
-        for (auto& value : result) {
-            value.setZero();
-        }
-
-        for (Index target = 0; target < 3; ++target) {
-            for (Index component = 0; component < 3; ++component) {
-                result[target] += transformation(target, component) * source[start + component];
-            }
-        }
-
-        return result;
     };
 
     // Construct the eight physical in-layer sampling tensors in the local
@@ -466,125 +447,6 @@ void FRTShellS8::apply_mitc_natural(
         interpolate_in_layer_B(kappa_start);
     }
 
-    if (G_nat) {
-        auto interpolate_in_layer_G = [&](Index start) {
-            std::array<std::array<Mat6N, 3>, 8> sampled;
-
-            for (Index corner = 0; corner < 4; ++corner) {
-                const ReferencePoint& sample = tying_points[static_cast<std::size_t>(corner)];
-                const StaticMatrix<3, 3> transformation =
-                    natural_to_directions(sample, point.e1, point.e2);
-
-                sampled[corner] = transform_G(
-                    transformation,
-                    data.tying_G_nat[static_cast<std::size_t>(corner)],
-                    start
-                );
-            }
-
-            const auto build_midside = [&](Index midside,
-                                           Index corner_1,
-                                           Index corner_2,
-                                           bool  keep_ss) {
-                const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
-
-                Vec3 basis_1;
-                Vec3 basis_2;
-
-                if (keep_ss) {
-                    const Precision alpha = middle.X_r.dot(middle.X_s) / middle.X_s.squaredNorm();
-                    basis_1 = middle.X_r - alpha * middle.X_s;
-                    basis_2 = middle.X_s;
-                } else {
-                    const Precision beta = middle.X_r.dot(middle.X_s) / middle.X_r.squaredNorm();
-                    basis_1 = middle.X_r;
-                    basis_2 = middle.X_s - beta * middle.X_r;
-                }
-
-                const StaticMatrix<3, 3> corner_1_to_basis =
-                    natural_to_directions(tying_points[static_cast<std::size_t>(corner_1)], basis_1, basis_2);
-                const StaticMatrix<3, 3> corner_2_to_basis =
-                    natural_to_directions(tying_points[static_cast<std::size_t>(corner_2)], basis_1, basis_2);
-                const StaticMatrix<3, 3> middle_to_basis =
-                    natural_to_directions(middle, basis_1, basis_2);
-
-                const auto corner_1_G = transform_G(
-                    corner_1_to_basis,
-                    data.tying_G_nat[static_cast<std::size_t>(corner_1)],
-                    start
-                );
-                const auto corner_2_G = transform_G(
-                    corner_2_to_basis,
-                    data.tying_G_nat[static_cast<std::size_t>(corner_2)],
-                    start
-                );
-                const auto middle_G = transform_G(
-                    middle_to_basis,
-                    data.tying_G_nat[static_cast<std::size_t>(midside)],
-                    start
-                );
-
-                std::array<Mat6N, 3> components;
-                components[0] = keep_ss
-                    ? Precision(0.5) * (corner_1_G[0] + corner_2_G[0])
-                    : middle_G[0];
-                components[1] = keep_ss
-                    ? middle_G[1]
-                    : Precision(0.5) * (corner_1_G[1] + corner_2_G[1]);
-                components[2] = Precision(0.5) * (corner_1_G[2] + corner_2_G[2]);
-
-                const StaticMatrix<3, 3> to_target =
-                    basis_to_directions(basis_1, basis_2, point.e1, point.e2);
-                std::array<Mat6N, 3> result;
-
-                for (auto& value : result) {
-                    value.setZero();
-                }
-
-                for (Index target = 0; target < 3; ++target) {
-                    for (Index component = 0; component < 3; ++component) {
-                        result[target] += to_target(target, component) * components[component];
-                    }
-                }
-
-                return result;
-            };
-
-            sampled[4] = build_midside(4, 0, 1, true);
-            sampled[5] = build_midside(5, 1, 2, false);
-            sampled[6] = build_midside(6, 3, 2, true);
-            sampled[7] = build_midside(7, 0, 3, false);
-
-            const VecN weights = shape_function(point.r / a, point.s / a);
-            std::array<Mat6N, 3> local;
-
-            for (auto& value : local) {
-                value.setZero();
-            }
-
-            for (Index sample = 0; sample < 8; ++sample) {
-                for (Index component = 0; component < 3; ++component) {
-                    local[component] += weights(sample) * sampled[sample][component];
-                }
-            }
-
-            const StaticMatrix<3, 3> local_to_natural =
-                natural_to_directions(point, point.e1, point.e2).inverse();
-
-            for (Index target = 0; target < 3; ++target) {
-                (*G_nat)[start + target].setZero();
-
-                for (Index component = 0; component < 3; ++component) {
-                    (*G_nat)[start + target] +=
-                        local_to_natural(target, component) * local[component];
-                }
-            }
-        };
-
-        interpolate_in_layer_G(epsilon_start);
-        interpolate_in_layer_G(kappa_start);
-    }
-
     // Interpolate the covariant rt shear component. The four boundary
     // functions and the fifth internal function follow the classical MITC8
     // construction. The fifth coefficient is the mean of the RA/RB values.
@@ -655,29 +517,195 @@ void FRTShellS8::apply_mitc_natural(
             + h_st_5 * st_B_mean;
     }
 
-    if (G_nat) {
-        const Mat6N rt_G_mean = Precision(0.5)
-                              * (data.tying_G_nat[12][gamma_r3]
-                               + data.tying_G_nat[13][gamma_r3]);
-        const Mat6N st_G_mean = Precision(0.5)
-                              * (data.tying_G_nat[18][gamma_s3]
-                               + data.tying_G_nat[19][gamma_s3]);
+}
 
-        (*G_nat)[gamma_r3] =
-              h_rt_1 * data.tying_G_nat[ 8][gamma_r3]
-            + h_rt_2 * data.tying_G_nat[ 9][gamma_r3]
-            + h_rt_3 * data.tying_G_nat[10][gamma_r3]
-            + h_rt_4 * data.tying_G_nat[11][gamma_r3]
-            + h_rt_5 * rt_G_mean;
+void FRTShellS8::pull_back_mitc_resultants(
+    const ReferencePoint& point,
+    const Vec8&           assumed_weights,
+    Vec8&                 compatible_weights,
+    std::vector<Vec8>&    tying_weights
+) const {
+    (void) compatible_weights;
 
-        (*G_nat)[gamma_s3] =
-              h_st_1 * data.tying_G_nat[14][gamma_s3]
-            + h_st_2 * data.tying_G_nat[17][gamma_s3]
-            + h_st_3 * data.tying_G_nat[16][gamma_s3]
-            + h_st_4 * data.tying_G_nat[15][gamma_s3]
-            + h_st_5 * st_G_mean;
-    }
+    constexpr Index epsilon_start = 0;
+    constexpr Index kappa_start   = 3;
+    constexpr Index gamma_r3      = 6;
+    constexpr Index gamma_s3      = 7;
 
+    const auto& tying_points = reference_data().tying_points;
+    const Precision a        = Precision(1) / std::sqrt(Precision(3));
+
+    const auto dual_vectors = [](const ReferencePoint& sample) {
+        std::array<Vec3, 2> dual;
+        dual[0] = sample.invA(0, 0) * sample.e1 + sample.invA(1, 0) * sample.e2;
+        dual[1] = sample.invA(0, 1) * sample.e1 + sample.invA(1, 1) * sample.e2;
+        return dual;
+    };
+
+    const auto natural_to_directions = [&](const ReferencePoint& sample,
+                                           const Vec3&           direction_1,
+                                           const Vec3&           direction_2) {
+        const auto dual = dual_vectors(sample);
+
+        const Precision u_r = direction_1.dot(dual[0]);
+        const Precision u_s = direction_1.dot(dual[1]);
+        const Precision v_r = direction_2.dot(dual[0]);
+        const Precision v_s = direction_2.dot(dual[1]);
+
+        StaticMatrix<3, 3> transformation;
+        transformation << u_r*u_r,              u_s*u_s,              u_r*u_s,
+                          v_r*v_r,              v_s*v_s,              v_r*v_s,
+                          Precision(2)*u_r*v_r, Precision(2)*u_s*v_s, u_r*v_s + u_s*v_r;
+        return transformation;
+    };
+
+    const auto basis_to_directions = [](const Vec3& basis_1,
+                                        const Vec3& basis_2,
+                                        const Vec3& direction_1,
+                                        const Vec3& direction_2) {
+        Mat2 metric;
+        metric << basis_1.dot(basis_1), basis_1.dot(basis_2),
+                  basis_2.dot(basis_1), basis_2.dot(basis_2);
+
+        const Precision determinant = metric.determinant();
+        logging::error(std::abs(determinant) > Precision(1e-14),
+                       "FRTShellS8: singular auxiliary MITC8 tangent basis");
+
+        const Mat2 inverse = metric.inverse();
+        const Vec3 dual_1  = inverse(0, 0) * basis_1 + inverse(1, 0) * basis_2;
+        const Vec3 dual_2  = inverse(0, 1) * basis_1 + inverse(1, 1) * basis_2;
+
+        const Precision u_1 = direction_1.dot(dual_1);
+        const Precision u_2 = direction_1.dot(dual_2);
+        const Precision v_1 = direction_2.dot(dual_1);
+        const Precision v_2 = direction_2.dot(dual_2);
+
+        StaticMatrix<3, 3> transformation;
+        transformation << u_1*u_1,              u_2*u_2,              u_1*u_2,
+                          v_1*v_1,              v_2*v_2,              v_1*v_2,
+                          Precision(2)*u_1*v_1, Precision(2)*u_2*v_2, u_1*v_2 + u_2*v_1;
+        return transformation;
+    };
+
+    const auto pull_back_in_layer = [&](Index start) {
+        std::array<StaticVector<3>, 8> sampled_weights;
+
+        for (auto& value : sampled_weights) {
+            value.setZero();
+        }
+
+        const StaticMatrix<3, 3> local_to_natural =
+            natural_to_directions(point, point.e1, point.e2).inverse();
+        const StaticVector<3> local_weight =
+            local_to_natural.transpose() * assumed_weights.template segment<3>(start);
+        const VecN weights = shape_function(point.r / a, point.s / a);
+
+        for (Index sample = 0; sample < 8; ++sample) {
+            sampled_weights[sample] += weights(sample) * local_weight;
+        }
+
+        for (Index corner = 0; corner < 4; ++corner) {
+            const ReferencePoint& sample = tying_points[static_cast<std::size_t>(corner)];
+            const StaticMatrix<3, 3> transformation =
+                natural_to_directions(sample, point.e1, point.e2);
+
+            tying_weights[static_cast<std::size_t>(corner)].template segment<3>(start) +=
+                transformation.transpose() * sampled_weights[corner];
+        }
+
+        const auto pull_back_midside = [&](Index midside,
+                                           Index corner_1,
+                                           Index corner_2,
+                                           bool  keep_ss) {
+            const ReferencePoint& middle = tying_points[static_cast<std::size_t>(midside)];
+
+            Vec3 basis_1;
+            Vec3 basis_2;
+
+            if (keep_ss) {
+                const Precision alpha = middle.X_r.dot(middle.X_s) / middle.X_s.squaredNorm();
+                basis_1 = middle.X_r - alpha * middle.X_s;
+                basis_2 = middle.X_s;
+            } else {
+                const Precision beta = middle.X_r.dot(middle.X_s) / middle.X_r.squaredNorm();
+                basis_1 = middle.X_r;
+                basis_2 = middle.X_s - beta * middle.X_r;
+            }
+
+            const StaticMatrix<3, 3> corner_1_to_basis =
+                natural_to_directions(tying_points[static_cast<std::size_t>(corner_1)], basis_1, basis_2);
+            const StaticMatrix<3, 3> corner_2_to_basis =
+                natural_to_directions(tying_points[static_cast<std::size_t>(corner_2)], basis_1, basis_2);
+            const StaticMatrix<3, 3> middle_to_basis =
+                natural_to_directions(middle, basis_1, basis_2);
+            const StaticMatrix<3, 3> to_target =
+                basis_to_directions(basis_1, basis_2, point.e1, point.e2);
+
+            const StaticVector<3> component_weights =
+                to_target.transpose() * sampled_weights[midside];
+            StaticVector<3> average_weights = StaticVector<3>::Zero();
+            StaticVector<3> direct_weights  = StaticVector<3>::Zero();
+
+            if (keep_ss) {
+                average_weights(0) += component_weights(0);
+                direct_weights (1) += component_weights(1);
+                average_weights(2) += component_weights(2);
+            } else {
+                direct_weights (0) += component_weights(0);
+                average_weights(1) += component_weights(1);
+                average_weights(2) += component_weights(2);
+            }
+
+            tying_weights[static_cast<std::size_t>(corner_1)].template segment<3>(start) +=
+                Precision(0.5) * corner_1_to_basis.transpose() * average_weights;
+            tying_weights[static_cast<std::size_t>(corner_2)].template segment<3>(start) +=
+                Precision(0.5) * corner_2_to_basis.transpose() * average_weights;
+            tying_weights[static_cast<std::size_t>(midside)].template segment<3>(start) +=
+                middle_to_basis.transpose() * direct_weights;
+        };
+
+        pull_back_midside(4, 0, 1, true);
+        pull_back_midside(5, 1, 2, false);
+        pull_back_midside(6, 3, 2, true);
+        pull_back_midside(7, 0, 3, false);
+    };
+
+    pull_back_in_layer(epsilon_start);
+    pull_back_in_layer(kappa_start);
+
+    const Precision h_rt_5 = Precision(1) - point.s * point.s;
+    const Precision h_rt_1 = Precision(0.25) * (Precision(1) + point.r / a)
+                           * (Precision(1) + point.s) - Precision(0.25) * h_rt_5;
+    const Precision h_rt_2 = Precision(0.25) * (Precision(1) - point.r / a)
+                           * (Precision(1) + point.s) - Precision(0.25) * h_rt_5;
+    const Precision h_rt_3 = Precision(0.25) * (Precision(1) - point.r / a)
+                           * (Precision(1) - point.s) - Precision(0.25) * h_rt_5;
+    const Precision h_rt_4 = Precision(0.25) * (Precision(1) + point.r / a)
+                           * (Precision(1) - point.s) - Precision(0.25) * h_rt_5;
+
+    tying_weights[ 8](gamma_r3) += h_rt_1 * assumed_weights(gamma_r3);
+    tying_weights[ 9](gamma_r3) += h_rt_2 * assumed_weights(gamma_r3);
+    tying_weights[10](gamma_r3) += h_rt_3 * assumed_weights(gamma_r3);
+    tying_weights[11](gamma_r3) += h_rt_4 * assumed_weights(gamma_r3);
+    tying_weights[12](gamma_r3) += Precision(0.5) * h_rt_5 * assumed_weights(gamma_r3);
+    tying_weights[13](gamma_r3) += Precision(0.5) * h_rt_5 * assumed_weights(gamma_r3);
+
+    const Precision h_st_5 = Precision(1) - point.r * point.r;
+    const Precision h_st_1 = Precision(0.25) * (Precision(1) + point.s / a)
+                           * (Precision(1) + point.r) - Precision(0.25) * h_st_5;
+    const Precision h_st_2 = Precision(0.25) * (Precision(1) + point.s / a)
+                           * (Precision(1) - point.r) - Precision(0.25) * h_st_5;
+    const Precision h_st_3 = Precision(0.25) * (Precision(1) - point.s / a)
+                           * (Precision(1) - point.r) - Precision(0.25) * h_st_5;
+    const Precision h_st_4 = Precision(0.25) * (Precision(1) - point.s / a)
+                           * (Precision(1) + point.r) - Precision(0.25) * h_st_5;
+
+    tying_weights[14](gamma_s3) += h_st_1 * assumed_weights(gamma_s3);
+    tying_weights[17](gamma_s3) += h_st_2 * assumed_weights(gamma_s3);
+    tying_weights[16](gamma_s3) += h_st_3 * assumed_weights(gamma_s3);
+    tying_weights[15](gamma_s3) += h_st_4 * assumed_weights(gamma_s3);
+    tying_weights[18](gamma_s3) += Precision(0.5) * h_st_5 * assumed_weights(gamma_s3);
+    tying_weights[19](gamma_s3) += Precision(0.5) * h_st_5 * assumed_weights(gamma_s3);
 }
 
 } // namespace fem::model

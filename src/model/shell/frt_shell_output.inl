@@ -53,13 +53,13 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
 
     if (nonlinear) {
         compute_natural_strain(data, point, strain_nat);
-        apply_mitc_natural(data, point, strain_nat, nullptr, nullptr);
+        apply_mitc_natural(data, point, strain_nat, nullptr);
         transform_strain_to_local(point, strain_nat);
         return strain_nat;
     }
 
     compute_natural_strain(data, point, strain_nat, &B_nat);
-    apply_mitc_natural(data, point, strain_nat, &B_nat, nullptr);
+    apply_mitc_natural(data, point, strain_nat, &B_nat);
     transform_strain_to_local(point, strain_nat, &B_nat, nullptr);
     return B_nat * q;
 }

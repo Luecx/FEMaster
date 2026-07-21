@@ -6,7 +6,7 @@
  * MITC6-b assumed-strain interpolation. Both in-plane and transverse-shear
  * natural strain components are mixed interpolated to suppress membrane and
  * shear locking. The same interpolation is applied independently to membrane
- * strain, curvature, B and G.
+ * strain, curvature, B and geometric-resultant pull-back.
  *
  * @see FRTShell
  * @see Surface6
@@ -57,8 +57,12 @@ struct FRTShellS6 : FRTShell<6> {
     void apply_mitc_natural(const EvaluationData& data,
                             const ReferencePoint& point,
                             Vec8&                 strain_nat,
-                            Mat8x6N*              B_nat,
-                            Vec6NMat*             G_nat) const override;
+                            Mat8x6N*              B_nat) const override;
+
+    void pull_back_mitc_resultants(const ReferencePoint& point,
+                                   const Vec8&           assumed_weights,
+                                   Vec8&                 compatible_weights,
+                                   std::vector<Vec8>&    tying_weights) const override;
 };
 
 } // namespace fem::model

@@ -68,8 +68,14 @@ struct FRTShellS8 : FRTShell<8> {
         const EvaluationData& data,
         const ReferencePoint& point,
         Vec8&                 strain_nat,
-        Mat8x6N*              B_nat,
-        Vec6NMat*             G_nat
+        Mat8x6N*              B_nat
+    ) const override;
+
+    void pull_back_mitc_resultants(
+        const ReferencePoint& point,
+        const Vec8&           assumed_weights,
+        Vec8&                 compatible_weights,
+        std::vector<Vec8>&    tying_weights
     ) const override;
 };
 

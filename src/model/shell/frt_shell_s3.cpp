@@ -4,8 +4,8 @@
  *
  * The assumed covariant shear field follows the isotropic MITC3 interpolation
  * on the natural triangle. The same coefficients are applied to the shear
- * values, their B rows and their G matrices, preserving the exact consistent
- * tangent of the common nonlinear shell kernel.
+ * values and their B rows; geometric-tangent weights are pulled back through
+ * the transposed interpolation.
  *
  * @see FRTShellS3
  *
@@ -129,8 +129,7 @@ void FRTShellS3::apply_mitc_natural(
     const EvaluationData& data,
     const ReferencePoint& point,
     Vec8&                 strain_nat,
-    Mat8x6N*              B_nat,
-    Vec6NMat*             G_nat
+    Mat8x6N*              B_nat
 ) const {
     constexpr Index gamma_r3 = 6;
     constexpr Index gamma_s3 = 7;
@@ -157,16 +156,28 @@ void FRTShellS3::apply_mitc_natural(
         B_nat->row(gamma_r3) = data.tying_B_nat[0].row(gamma_r3) + s * c_B;
         B_nat->row(gamma_s3) = data.tying_B_nat[1].row(gamma_s3) - r * c_B;
     }
+}
 
-    if (G_nat) {
-        const Mat6N c_G = data.tying_G_nat[1][gamma_s3]
-                        - data.tying_G_nat[0][gamma_r3]
-                        - data.tying_G_nat[2][gamma_s3]
-                        + data.tying_G_nat[2][gamma_r3];
+void FRTShellS3::pull_back_mitc_resultants(
+    const ReferencePoint& point,
+    const Vec8&           assumed_weights,
+    Vec8&                 compatible_weights,
+    std::vector<Vec8>&    tying_weights
+) const {
+    constexpr Index gamma_r3 = 6;
+    constexpr Index gamma_s3 = 7;
 
-        (*G_nat)[gamma_r3] = data.tying_G_nat[0][gamma_r3] + s * c_G;
-        (*G_nat)[gamma_s3] = data.tying_G_nat[1][gamma_s3] - r * c_G;
-    }
+    const Precision r = point.r;
+    const Precision s = point.s;
+    const Precision wr = assumed_weights(gamma_r3);
+    const Precision ws = assumed_weights(gamma_s3);
+
+    compatible_weights.template segment<6>(0) += assumed_weights.template segment<6>(0);
+
+    tying_weights[0](gamma_r3) += (Precision(1) - s) * wr + r * ws;
+    tying_weights[1](gamma_s3) += s * wr + (Precision(1) - r) * ws;
+    tying_weights[2](gamma_r3) += s * wr - r * ws;
+    tying_weights[2](gamma_s3) += -s * wr + r * ws;
 }
 
 } // namespace fem::model

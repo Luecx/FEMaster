@@ -526,66 +526,27 @@ void FRTShell<N>::compute_natural_strain(
         return;
     }
 
-    // Use optimized direct assembly when second derivatives are requested
-    if (with_G) {
-        add_xx_derivatives<N>(data.x_nodes, dshape_r, dshape_r, Precision(0.5), epsilon_rr, strain_nat, B_nat, G_nat);
-        add_xx_derivatives<N>(data.x_nodes, dshape_s, dshape_s, Precision(0.5), epsilon_ss, strain_nat, B_nat, G_nat);
-        add_xx_derivatives<N>(data.x_nodes, dshape_r, dshape_s, Precision(1)  ,   gamma_rs, strain_nat, B_nat, G_nat);
+    add_xx_derivatives<N>(data.x_nodes, dshape_r, dshape_r, Precision(0.5), epsilon_rr, strain_nat, B_nat, G_nat);
+    add_xx_derivatives<N>(data.x_nodes, dshape_s, dshape_s, Precision(0.5), epsilon_ss, strain_nat, B_nat, G_nat);
+    add_xx_derivatives<N>(data.x_nodes, dshape_r, dshape_s, Precision(1)  ,   gamma_rs, strain_nat, B_nat, G_nat);
 
-        add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, dshape_r, Precision(1), kappa_rr, strain_nat, B_nat, G_nat);
-        add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, dshape_s, Precision(1), kappa_ss, strain_nat, B_nat, G_nat);
-        add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, dshape_s, Precision(1), kappa_rs, strain_nat, B_nat, G_nat);
-        add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, dshape_r, Precision(1), kappa_rs, strain_nat, B_nat, G_nat);
+    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, dshape_r, Precision(1), kappa_rr, strain_nat, B_nat, G_nat);
+    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, dshape_s, Precision(1), kappa_ss, strain_nat, B_nat, G_nat);
+    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, dshape_s, Precision(1), kappa_rs, strain_nat, B_nat, G_nat);
+    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, dshape_r, Precision(1), kappa_rs, strain_nat, B_nat, G_nat);
 
-        add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, shape, Precision(1), gamma_r3, strain_nat, B_nat, G_nat);
-        add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, shape, Precision(1), gamma_s3, strain_nat, B_nat, G_nat);
+    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, shape, Precision(1), gamma_r3, strain_nat, B_nat, G_nat);
+    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, shape, Precision(1), gamma_s3, strain_nat, B_nat, G_nat);
 
-        // Subtract the reference metric, curvature and shear contributions
-        strain_nat(epsilon_rr) -= Precision(0.5) * point.X_r.dot(point.X_r);
-        strain_nat(epsilon_ss) -= Precision(0.5) * point.X_s.dot(point.X_s);
-        strain_nat(gamma_rs)   -= point.X_r.dot(point.X_s);
-        strain_nat(kappa_rr)   -= point.X_r.dot(point.D_r);
-        strain_nat(kappa_ss)   -= point.X_s.dot(point.D_s);
-        strain_nat(kappa_rs)   -= point.X_r.dot(point.D_s) + point.X_s.dot(point.D_r);
-        strain_nat(gamma_r3)   -= point.X_r.dot(point.D);
-        strain_nat(gamma_s3)   -= point.X_s.dot(point.D);
-        return;
-    }
-
-    // Construct value and first derivative from reusable vector combinations
-    const VectorDerivatives x_r = linear_combination(data.x_nodes, dshape_r);
-    const VectorDerivatives x_s = linear_combination(data.x_nodes, dshape_s);
-    const VectorDerivatives d   = linear_combination(data.d_nodes, shape);
-    const VectorDerivatives d_r = linear_combination(data.d_nodes, dshape_r);
-    const VectorDerivatives d_s = linear_combination(data.d_nodes, dshape_s);
-
-    std::array<ScalarDerivatives, num_strains> items;
-    items[epsilon_rr] = scaled(dot_value_B<VectorDerivatives, ScalarDerivatives>(x_r, x_r), Precision(0.5));
-    items[epsilon_ss] = scaled(dot_value_B<VectorDerivatives, ScalarDerivatives>(x_s, x_s), Precision(0.5));
-    items[gamma_rs]   = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_r, x_s);
-    items[kappa_rr]   = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_r, d_r);
-    items[kappa_ss]   = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_s, d_s);
-    items[gamma_r3]   = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_r, d);
-    items[gamma_s3]   = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_s, d);
-
-    const ScalarDerivatives xr_ds = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_r, d_s);
-    const ScalarDerivatives xs_dr = dot_value_B<VectorDerivatives, ScalarDerivatives>(x_s, d_r);
-    items[kappa_rs].value = xr_ds.value + xs_dr.value;
-    items[kappa_rs].d1    = xr_ds.d1    + xs_dr.d1;
-
-    strain_nat(epsilon_rr) = items[epsilon_rr].value - Precision(0.5) * point.X_r.dot(point.X_r);
-    strain_nat(epsilon_ss) = items[epsilon_ss].value - Precision(0.5) * point.X_s.dot(point.X_s);
-    strain_nat(gamma_rs)   = items[gamma_rs].value   - point.X_r.dot(point.X_s);
-    strain_nat(kappa_rr)   = items[kappa_rr].value   - point.X_r.dot(point.D_r);
-    strain_nat(kappa_ss)   = items[kappa_ss].value   - point.X_s.dot(point.D_s);
-    strain_nat(kappa_rs)   = items[kappa_rs].value   - point.X_r.dot(point.D_s)
-                                                     - point.X_s.dot(point.D_r);
-    strain_nat(gamma_r3)   = items[gamma_r3].value   - point.X_r.dot(point.D);
-    strain_nat(gamma_s3)   = items[gamma_s3].value   - point.X_s.dot(point.D);
-
-    for (Index component = 0; component < num_strains; ++component) {
-        B_nat->row(component) = items[component].d1.transpose();
-    }
+    // Subtract the reference metric, curvature and shear contributions.
+    strain_nat(epsilon_rr) -= Precision(0.5) * point.X_r.dot(point.X_r);
+    strain_nat(epsilon_ss) -= Precision(0.5) * point.X_s.dot(point.X_s);
+    strain_nat(gamma_rs)   -= point.X_r.dot(point.X_s);
+    strain_nat(kappa_rr)   -= point.X_r.dot(point.D_r);
+    strain_nat(kappa_ss)   -= point.X_s.dot(point.D_s);
+    strain_nat(kappa_rs)   -= point.X_r.dot(point.D_s) + point.X_s.dot(point.D_r);
+    strain_nat(gamma_r3)   -= point.X_r.dot(point.D);
+    strain_nat(gamma_s3)   -= point.X_s.dot(point.D);
 }
 
 /**
@@ -593,8 +554,8 @@ void FRTShell<N>::compute_natural_strain(
  * orthonormal reference basis.
  *
  * The transformation depends exclusively on the reference geometry. It is
- * therefore applied identically to strain values, B rows and G matrices without
- * additional configuration derivatives.
+ * therefore applied identically to strain values, B rows and optional
+ * compatible G matrices without additional configuration derivatives.
  */
 template<Index N>
 void FRTShell<N>::transform_strain_to_local(
@@ -679,11 +640,6 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     const Field*        ip_stress,
     int                 ip_start_idx
 ) const {
-    if (with_G) {
-        with_B      = true;
-        with_strain = true;
-    }
-
     if (with_B) {
         with_strain = true;
     }
@@ -694,21 +650,30 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
 
     const auto& ref = reference_data();
     EvaluationData data(static_cast<Index>(ref.ip_points.size()),
-                        static_cast<Index>(ref.tying_points.size()));
+                        static_cast<Index>(ref.tying_points.size()),
+                        with_strain,
+                        with_B,
+                        with_G,
+                        with_resultants);
 
-    data.with_strain     = with_strain;
-    data.with_B          = with_B;
-    data.with_G          = with_G;
-    data.with_resultants = with_resultants;
-    data.state           = state;
-    data.H               = resultant_stiffness();
-    data.drill_k         = drill_stiffness_per_node(data.H);
+    data.state = state;
 
-    // Initialize the integration-point section tangents for linear response and
-    // for callers that do not request a fresh nonlinear material evaluation
     for (Index ip = 0; ip < static_cast<Index>(ref.ip_points.size()); ++ip) {
         const ReferencePoint& point = ref.ip_points[static_cast<std::size_t>(ip)];
-        data.ip_tangent[static_cast<std::size_t>(ip)] = resultant_stiffness(point.r, point.s);
+        data.ip_weight[static_cast<std::size_t>(ip)] = point.w * point.detJ;
+    }
+
+    if (data.with_B) {
+        data.H = resultant_stiffness();
+    }
+
+    // Initialize section tangents only for callers that actually consume a
+    // linearized tangent without a fresh nonlinear material update.
+    if (data.with_B && !with_resultants) {
+        for (Index ip = 0; ip < static_cast<Index>(ref.ip_points.size()); ++ip) {
+            const ReferencePoint& point = ref.ip_points[static_cast<std::size_t>(ip)];
+            data.ip_tangent[static_cast<std::size_t>(ip)] = resultant_stiffness(point.r, point.s);
+        }
     }
 
     // Prepare nodal positions and directors at the requested derivative order
@@ -748,7 +713,7 @@ void FRTShell<N>::evaluate_tying_points(EvaluationData& data) const {
             points[static_cast<std::size_t>(tying)],
             data.tying_strain_nat[static_cast<std::size_t>(tying)],
             data.with_B ? &data.tying_B_nat[static_cast<std::size_t>(tying)] : nullptr,
-            data.with_G ? &data.tying_G_nat[static_cast<std::size_t>(tying)] : nullptr
+            nullptr
         );
     }
 }
@@ -761,18 +726,15 @@ void FRTShell<N>::evaluate_integration_points(EvaluationData& data) const {
         const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
         Vec8&                 strain = data.ip_strain[static_cast<std::size_t>(ip)];
         Mat8x6N* B = data.with_B ? &data.ip_B[static_cast<std::size_t>(ip)] : nullptr;
-        Vec6NMat* G = data.with_G ? &data.ip_G[static_cast<std::size_t>(ip)] : nullptr;
 
         // Evaluate the compatible natural strain field
-        compute_natural_strain(data, point, strain, B, G);
+        compute_natural_strain(data, point, strain, B, nullptr);
 
         // Replace the selected components by the element-specific MITC field
-        apply_mitc_natural(data, point, strain, B, G);
+        apply_mitc_natural(data, point, strain, B);
 
         // Express all generalized quantities in the local material basis
-        transform_strain_to_local(point, strain, B, G);
-
-        data.ip_weight[static_cast<std::size_t>(ip)] = point.w * point.detJ;
+        transform_strain_to_local(point, strain, B, nullptr);
     }
 }
 

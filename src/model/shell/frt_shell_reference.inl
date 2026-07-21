@@ -28,37 +28,27 @@ namespace fem::model {
 using math::normalized;
 
 template<Index N>
-FRTShell<N>::VectorDerivatives::VectorDerivatives() {
-    for (auto& value : d2) {
-        value.setZero();
-    }
-}
+FRTShell<N>::VectorDerivatives::VectorDerivatives() = default;
 
 template<Index N>
-FRTShell<N>::EvaluationData::EvaluationData(Index num_ip, Index num_tying)
-    : tying_strain_nat(static_cast<std::size_t>(num_tying), Vec8::Zero()),
-      tying_B_nat     (static_cast<std::size_t>(num_tying), Mat8x6N::Zero()),
-      tying_G_nat     (static_cast<std::size_t>(num_tying)),
-      ip_strain       (static_cast<std::size_t>(num_ip), Vec8::Zero()),
-      ip_B            (static_cast<std::size_t>(num_ip), Mat8x6N::Zero()),
-      ip_G            (static_cast<std::size_t>(num_ip)),
-      ip_resultants   (static_cast<std::size_t>(num_ip), Vec8::Zero()),
-      ip_tangent      (static_cast<std::size_t>(num_ip), Mat8::Zero()),
-      ip_weight       (static_cast<std::size_t>(num_ip), Precision(0)) {
-    // Initialize every strain Hessian explicitly because std::array does not
-    // guarantee zero initialization for the fixed-size Eigen matrices
-    for (auto& point_G : tying_G_nat) {
-        for (auto& value : point_G) {
-            value.setZero();
-        }
-    }
-
-    for (auto& point_G : ip_G) {
-        for (auto& value : point_G) {
-            value.setZero();
-        }
-    }
-}
+FRTShell<N>::EvaluationData::EvaluationData(Index num_ip,
+                                            Index num_tying,
+                                            bool  strain_requested,
+                                            bool  B_requested,
+                                            bool  G_requested,
+                                            bool  resultants_requested)
+    : with_strain     (strain_requested || B_requested),
+      with_B          (B_requested),
+      with_G          (G_requested),
+      with_resultants (resultants_requested),
+      tying_strain_nat(with_strain ? static_cast<std::size_t>(num_tying) : 0, Vec8::Zero()),
+      tying_B_nat     (with_B      ? static_cast<std::size_t>(num_tying) : 0, Mat8x6N::Zero()),
+      ip_strain       (with_strain ? static_cast<std::size_t>(num_ip)    : 0, Vec8::Zero()),
+      ip_B            (with_B      ? static_cast<std::size_t>(num_ip)    : 0, Mat8x6N::Zero()),
+      ip_resultants   (with_resultants ? static_cast<std::size_t>(num_ip) : 0, Vec8::Zero()),
+      ip_tangent      ((with_B || with_resultants) ? static_cast<std::size_t>(num_ip) : 0,
+                       Mat8::Zero()),
+      ip_weight       (static_cast<std::size_t>(num_ip), Precision(0)) {}
 
 template<Index N>
 FRTShell<N>::FRTShell(ID id, const std::array<ID, N>& nodes)
