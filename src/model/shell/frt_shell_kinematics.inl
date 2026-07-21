@@ -1,22 +1,21 @@
 /**
- * @file frt_shell_kinematics.cpp
- * @brief Implements finite-rotation shell kinematics and exact derivatives.
+ * @file frt_shell_kinematics.inl
+ * @brief Implements finite-rotation shell kinematics and compact derivatives.
  *
  * The implementation evaluates the current nodal directors through the SO(3)
- * exponential map and constructs the compatible Total-Lagrangian membrane,
- * bending and transverse-shear strains in natural coordinates. Their first and
- * second derivatives with respect to all element degrees of freedom are
- * evaluated analytically.
+ * exponential map and constructs compatible Total-Lagrangian membrane,
+ * bending and transverse-shear strains in natural coordinates. First strain
+ * derivatives are assembled directly from analytical translational identities
+ * and compact local rotation derivatives.
  *
- * Concrete MITC elements replace selected natural strain components after the
- * compatible evaluation. The final generalized strains and derivatives are
- * transformed into the pointwise orthonormal reference basis before the shell
- * section is evaluated.
+ * No element-sized position derivative matrices and no dense generalized
+ * strain Hessians are stored. Second SO(3) derivatives are retained only in the
+ * active thread-local workspace when the geometric tangent is requested.
  *
  * @see FRTShell
  *
  * @author Finn Eggers
- * @date 20.07.2026
+ * @date 21.07.2026
  */
 
 #include "frt_shell.h"
@@ -30,189 +29,192 @@ namespace fem::model {
 
 namespace {
 
-template<class VectorDerivatives, class ScalarDerivatives>
-ScalarDerivatives dot_value_B(const VectorDerivatives& a,
-                              const VectorDerivatives& b) {
-    ScalarDerivatives result;
-    result.value = a.value.dot(b.value);
-    result.d1    = a.d1 * b.value + b.d1 * a.value;
-    return result;
-}
-
+/**
+ * Adds one scaled scalar product of two current midsurface derivatives to a
+ * membrane strain component and optionally to its B row.
+ *
+ * The current vector fields are
+ *
+ *     x_a = sum_i a_i x_i,
+ *     x_b = sum_i b_i x_i.
+ *
+ * Their scalar product contributes `scale * x_a . x_b`. Because nodal
+ * positions depend linearly on the translational degrees of freedom, the
+ * derivative is inserted directly as
+ *
+ *     d(x_a . x_b)/du_i = a_i x_b + b_i x_a.
+ *
+ * No explicit `dx/du` identity matrices are constructed or stored.
+ *
+ * @tparam N Number of shell nodes.
+ * @param positions Current nodal midsurface positions.
+ * @param a_coefficients Interpolation coefficients of the first vector field.
+ * @param b_coefficients Interpolation coefficients of the second vector field.
+ * @param scale Scalar multiplier of the complete contribution.
+ * @param strain_id Generalized natural strain row receiving the contribution.
+ * @param strain Generalized natural strain vector to update.
+ * @param B Optional generalized strain-displacement matrix to update.
+ */
 template<Index N>
-void add_xx_derivatives(
-    const std::array<typename FRTShell<N>::VectorDerivatives, N>& x_nodes,
-    const typename FRTShell<N>::VecN&                            a_coefficients,
-    const typename FRTShell<N>::VecN&                            b_coefficients,
-    Precision                                                    scale,
-    Index                                                        strain_id,
-    typename FRTShell<N>::Vec8&                                  strain,
-    typename FRTShell<N>::Mat8x6N*                               B,
-    typename FRTShell<N>::Vec6NMat*                              G
+void add_xx_strain_and_B(
+    const typename FRTShell<N>::MatN3& positions,
+    const typename FRTShell<N>::VecN&  a_coefficients,
+    const typename FRTShell<N>::VecN&  b_coefficients,
+    Precision                          scale,
+    Index                              strain_id,
+    typename FRTShell<N>::Vec8&        strain,
+    typename FRTShell<N>::Mat8x6N*     B
 ) {
     using Shell = FRTShell<N>;
 
     Vec3 a_value = Vec3::Zero();
     Vec3 b_value = Vec3::Zero();
 
+    // Interpolate the two current vector fields from the nodal positions
     for (Index node = 0; node < N; ++node) {
-        a_value += a_coefficients(node) * x_nodes[node].value;
-        b_value += b_coefficients(node) * x_nodes[node].value;
+        const Vec3 x_i = positions.row(node).transpose();
+        a_value += a_coefficients(node) * x_i;
+        b_value += b_coefficients(node) * x_i;
     }
 
+    // Add the scalar kinematic value to the requested strain component
     strain(strain_id) += scale * a_value.dot(b_value);
 
-    // Differentiate the scalar product with respect to translational nodal DOFs
-    if (B) {
-        for (Index node = 0; node < N; ++node) {
-            const Index base = Shell::dofs_per_node * node;
-            const Vec3  value = scale
+    if (!B) {
+        return;
+    }
+
+    // Insert the analytical translational derivative directly into the B row
+    for (Index node = 0; node < N; ++node) {
+        const Index base = Shell::dofs_per_node * node;
+        const Vec3 derivative = scale
                               * (a_coefficients(node) * b_value
                                + b_coefficients(node) * a_value);
 
-            B->template block<1, 3>(strain_id, base) += value.transpose();
-        }
-    }
-
-    // The translational Hessian consists only of constant identity blocks
-    if (G) {
-        typename Shell::Mat6N& hessian = (*G)[strain_id];
-
-        for (Index i = 0; i < N; ++i) {
-            const Index row = Shell::dofs_per_node * i;
-
-            for (Index j = 0; j < N; ++j) {
-                const Index col = Shell::dofs_per_node * j;
-                const Precision block_scale = scale
-                    * (a_coefficients(i) * b_coefficients(j)
-                     + b_coefficients(i) * a_coefficients(j));
-
-                if (block_scale != Precision(0)) {
-                    hessian.template block<3, 3>(row, col).diagonal().array() += block_scale;
-                }
-            }
-        }
+        B->template block<1, 3>(strain_id, base) += derivative.transpose();
     }
 }
 
+/**
+ * Adds one scaled scalar product between a current midsurface derivative and a
+ * current director field to a generalized strain component and optional B row.
+ *
+ * The two vector fields are
+ *
+ *     x_a = sum_i a_i x_i,
+ *     d_b = sum_i b_i R_i d0_i.
+ *
+ * Translational derivatives are inserted analytically. Rotational derivatives
+ * use the compact nodal matrices `dR_i/dtheta_ia` retained by the active
+ * thread-local workspace:
+ *
+ *     d(d_b)/dtheta_ia = b_i (dR_i/dtheta_ia) d0_i.
+ *
+ * @tparam N Number of shell nodes.
+ * @param data Active element evaluation data.
+ * @param reference_directors Nodal undeformed directors acted on by R.
+ * @param a_coefficients Interpolation coefficients of the position field.
+ * @param b_coefficients Interpolation coefficients of the director field.
+ * @param scale Scalar multiplier of the complete contribution.
+ * @param strain_id Generalized natural strain row receiving the contribution.
+ * @param strain Generalized natural strain vector to update.
+ * @param B Optional generalized strain-displacement matrix to update.
+ */
 template<Index N>
-void add_xd_derivatives(
-    const std::array<typename FRTShell<N>::VectorDerivatives, N>& x_nodes,
-    const std::array<typename FRTShell<N>::VectorDerivatives, N>& d_nodes,
-    const typename FRTShell<N>::VecN&                            x_coefficients,
-    const typename FRTShell<N>::VecN&                            d_coefficients,
-    Precision                                                    scale,
-    Index                                                        strain_id,
-    typename FRTShell<N>::Vec8&                                  strain,
-    typename FRTShell<N>::Mat8x6N*                               B,
-    typename FRTShell<N>::Vec6NMat*                              G
+void add_xd_strain_and_B(
+    const typename FRTShell<N>::EvaluationData& data,
+    const typename FRTShell<N>::MatN3&          reference_directors,
+    const typename FRTShell<N>::VecN&           a_coefficients,
+    const typename FRTShell<N>::VecN&           b_coefficients,
+    Precision                                   scale,
+    Index                                       strain_id,
+    typename FRTShell<N>::Vec8&                 strain,
+    typename FRTShell<N>::Mat8x6N*              B
 ) {
     using Shell = FRTShell<N>;
 
     Vec3 x_value = Vec3::Zero();
     Vec3 d_value = Vec3::Zero();
 
+    // Interpolate the current position derivative and director field once
     for (Index node = 0; node < N; ++node) {
-        x_value += x_coefficients(node) * x_nodes[node].value;
-        d_value += d_coefficients(node) * d_nodes[node].value;
+        x_value += a_coefficients(node) * data.state.x.row(node).transpose();
+        d_value += b_coefficients(node) * data.state.d.row(node).transpose();
     }
 
+    // Add the current scalar product to the requested strain component
     strain(strain_id) += scale * x_value.dot(d_value);
 
-    // Differentiate with respect to all translational coordinates
-    if (B) {
-        for (Index node = 0; node < N; ++node) {
-            const Index base  = Shell::dofs_per_node * node;
-            const Vec3  value = scale * x_coefficients(node) * d_value;
-            B->template block<1, 3>(strain_id, base) += value.transpose();
-        }
+    if (!B) {
+        return;
     }
 
-    typename Shell::Mat6N* hessian = G ? &(*G)[strain_id] : nullptr;
+    logging::error(data.rotations != nullptr,
+                   "FRTShell: B evaluation requires nodal rotation derivatives");
 
-    // Differentiate the rotated directors with respect to nodal rotations
-    for (Index d_node = 0; d_node < N; ++d_node) {
-        const Index     rot_base     = Shell::dofs_per_node * d_node + 3;
-        const Precision d_coefficient = d_coefficients(d_node);
+    const auto& rotations = *data.rotations;
 
-        for (Index a = 0; a < 3; ++a) {
-            const Vec3 director_first = d_nodes[d_node].d1.row(rot_base + a).transpose();
+    // Differentiate the position field with respect to nodal translations
+    for (Index node = 0; node < N; ++node) {
+        const Index base = Shell::dofs_per_node * node;
+        const Vec3 derivative = scale * a_coefficients(node) * d_value;
+        B->template block<1, 3>(strain_id, base) += derivative.transpose();
+    }
 
-            if (B) {
-                (*B)(strain_id, rot_base + a) +=
-                    scale * d_coefficient * director_first.dot(x_value);
-            }
+    // Differentiate the director field with respect to the three local nodal
+    // axis-angle coordinates using the persistent nodal reference director.
+    for (Index node = 0; node < N; ++node) {
+        const Index     rot_base    = Shell::dofs_per_node * node + 3;
+        const Precision coefficient = b_coefficients(node);
 
-            if (hessian) {
-                // Mixed translation-rotation derivative blocks
-                for (Index x_node = 0; x_node < N; ++x_node) {
-                    const Index x_base = Shell::dofs_per_node * x_node;
-                    const Vec3  mixed  = scale
-                                      * x_coefficients(x_node)
-                                      * d_coefficient
-                                      * director_first;
-
-                    hessian->template block<3, 1>(x_base, rot_base + a) += mixed;
-                    hessian->template block<1, 3>(rot_base + a, x_base) += mixed.transpose();
-                }
-            }
+        if (coefficient == Precision(0)) {
+            continue;
         }
 
-        if (hessian) {
-            // Pure rotation-rotation blocks use the second SO(3) derivatives
-            for (Index a = 0; a < 3; ++a) {
-                for (Index b = 0; b < 3; ++b) {
-                    Precision second = Precision(0);
+        const Vec3 d0 = reference_directors.row(node).transpose();
 
-                    for (Index c = 0; c < 3; ++c) {
-                        second += x_value(c)
-                                * d_nodes[d_node].d2[c](rot_base + a, rot_base + b);
-                    }
-
-                    (*hessian)(rot_base + a, rot_base + b) +=
-                        scale * d_coefficient * second;
-                }
-            }
+        for (Index component = 0; component < 3; ++component) {
+            const Vec3 director_derivative = rotations[node].d1[component] * d0;
+            (*B)(strain_id, rot_base + component) +=
+                scale * coefficient * director_derivative.dot(x_value);
         }
     }
 }
 
+/**
+ * Transforms one three-component engineering tensor block and its optional B
+ * rows by a constant pointwise reference transformation.
+ *
+ * The helper is used for both the membrane and curvature blocks. The source is
+ * copied before assignment so in-place transformations remain valid.
+ *
+ * @tparam N Number of shell nodes.
+ * @param transformation Engineering tensor transformation matrix.
+ * @param start First component of the three-row block.
+ * @param strain Generalized strain vector to transform in place.
+ * @param B Optional generalized strain-displacement matrix to transform.
+ */
 template<Index N>
-void transform_scalar_rows(
-    const StaticMatrix<3, 3>&          transformation,
-    Index                              source_start,
-    Index                              target_start,
-    typename FRTShell<N>::Vec8&        strain,
-    typename FRTShell<N>::Mat8x6N*     B,
-    typename FRTShell<N>::Vec6NMat*    G
+void transform_in_plane_rows(
+    const StaticMatrix<3, 3>&      transformation,
+    Index                          start,
+    typename FRTShell<N>::Vec8&    strain,
+    typename FRTShell<N>::Mat8x6N* B
 ) {
     using Shell = FRTShell<N>;
 
-    const StaticVector<3> values = strain.template segment<3>(source_start);
-    strain.template segment<3>(target_start) = transformation * values;
+    // Copy the current values because source and target occupy the same block
+    const StaticVector<3> values = strain.template segment<3>(start);
+    strain.template segment<3>(start) = transformation * values;
 
-    if (B) {
-        const StaticMatrix<3, Shell::num_dofs> rows =
-            B->template block<3, Shell::num_dofs>(source_start, 0);
-        B->template block<3, Shell::num_dofs>(target_start, 0) = transformation * rows;
+    if (!B) {
+        return;
     }
 
-    if (G) {
-        std::array<typename Shell::Mat6N, 3> source;
-
-        for (Index component = 0; component < 3; ++component) {
-            source[component] = (*G)[source_start + component];
-        }
-
-        for (Index target = 0; target < 3; ++target) {
-            (*G)[target_start + target].setZero();
-
-            for (Index source_id = 0; source_id < 3; ++source_id) {
-                (*G)[target_start + target] +=
-                    transformation(target, source_id) * source[source_id];
-            }
-        }
-    }
+    // Apply the identical linear map to the corresponding B rows
+    const StaticMatrix<3, Shell::num_dofs> rows =
+        B->template block<3, Shell::num_dofs>(start, 0);
+    B->template block<3, Shell::num_dofs>(start, 0) = transformation * rows;
 }
 
 } // namespace
@@ -222,6 +224,8 @@ void transform_scalar_rows(
  *
  * The model POSITION field stores six values per shell node in the order
  * `[x, y, z, rx, ry, rz]` for the current nonlinear configuration.
+ *
+ * @return Matrix containing one current six-component nodal state per row.
  */
 template<Index N>
 typename FRTShell<N>::MatN6 FRTShell<N>::node_coords_current_6() const {
@@ -233,13 +237,24 @@ typename FRTShell<N>::MatN6 FRTShell<N>::node_coords_current_6() const {
     const auto& positions = *this->_model_data->positions;
     MatN6      values;
 
+    // Gather the element rows once in local nodal ordering
     for (Index node = 0; node < num_nodes; ++node) {
-        values.row(node) = positions.row_vec6(static_cast<Index>(this->node_ids[node])).transpose();
+        values.row(node) = positions.row_vec6(
+            static_cast<Index>(this->node_ids[node])
+        ).transpose();
     }
 
     return values;
 }
 
+/**
+ * Constructs the current nodal shell state from the model POSITION field.
+ *
+ * The total nodal axis-angle vector is converted to one SO(3) rotation matrix
+ * and applied to the corresponding reference director.
+ *
+ * @return Current nodal positions, directors and total rotations.
+ */
 template<Index N>
 typename FRTShell<N>::CurrentState FRTShell<N>::current_state() const {
     const auto& ref       = reference_data();
@@ -247,6 +262,7 @@ typename FRTShell<N>::CurrentState FRTShell<N>::current_state() const {
 
     CurrentState state;
 
+    // Construct the physical nodal position and director at every shell node
     for (Index node = 0; node < num_nodes; ++node) {
         const Vec3 x     = positions.template block<1, 3>(node, 0).transpose();
         const Vec3 theta = positions.template block<1, 3>(node, 3).transpose();
@@ -261,17 +277,33 @@ typename FRTShell<N>::CurrentState FRTShell<N>::current_state() const {
     return state;
 }
 
+/**
+ * Constructs the undeformed nodal state used by linear shell evaluation.
+ *
+ * @return Reference positions and directors with zero total rotations.
+ */
 template<Index N>
 typename FRTShell<N>::CurrentState FRTShell<N>::reference_state() const {
     const auto& ref = reference_data();
 
     CurrentState state;
-    state.x     = ref.X;
-    state.d     = ref.d0;
+    state.x = ref.X;
+    state.d = ref.d0;
     state.theta.setZero();
     return state;
 }
 
+/**
+ * Constructs a trial shell state from the reference geometry and a supplied
+ * nodal displacement field.
+ *
+ * Translational components are added to the reference midsurface coordinates.
+ * Rotational components are interpreted as total global axis-angle vectors and
+ * rotate the nodal reference directors through the SO(3) exponential map.
+ *
+ * @param displacement Nodal six-component trial displacement field.
+ * @return Trial nodal positions, directors and total rotations.
+ */
 template<Index N>
 typename FRTShell<N>::CurrentState FRTShell<N>::current_state_from_displacement(
     const Field& displacement
@@ -284,6 +316,7 @@ typename FRTShell<N>::CurrentState FRTShell<N>::current_state_from_displacement(
     const auto& ref = reference_data();
     CurrentState state;
 
+    // Build the complete trial state in local element-node ordering
     for (Index node = 0; node < num_nodes; ++node) {
         const Index node_id = static_cast<Index>(this->node_ids[node]);
         const Vec6  q       = displacement.row_vec6(node_id);
@@ -300,6 +333,13 @@ typename FRTShell<N>::CurrentState FRTShell<N>::current_state_from_displacement(
     return state;
 }
 
+/**
+ * Gathers the element displacement vector in nodal six-degree-of-freedom
+ * ordering.
+ *
+ * @param displacement Global nodal displacement field.
+ * @return Fixed-size element displacement vector.
+ */
 template<Index N>
 typename FRTShell<N>::Vec6N FRTShell<N>::element_displacement_vector(
     const Field& displacement
@@ -311,6 +351,7 @@ typename FRTShell<N>::Vec6N FRTShell<N>::element_displacement_vector(
 
     Vec6N q;
 
+    // Gather the six nodal components without intermediate dynamic storage
     for (Index node = 0; node < num_nodes; ++node) {
         const Index node_id = static_cast<Index>(this->node_ids[node]);
         q.template segment<6>(dofs_per_node * node) = displacement.row_vec6(node_id);
@@ -319,152 +360,30 @@ typename FRTShell<N>::Vec6N FRTShell<N>::element_displacement_vector(
     return q;
 }
 
-template<Index N>
-std::array<typename FRTShell<N>::VectorDerivatives, N>
-FRTShell<N>::x_derivatives(const CurrentState& state) const {
-    std::array<VectorDerivatives, N> x_nodes;
-
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Index base = dofs_per_node * node;
-
-        x_nodes[node].value = state.x.row(node).transpose();
-        x_nodes[node].d1(base + 0, 0) = Precision(1);
-        x_nodes[node].d1(base + 1, 1) = Precision(1);
-        x_nodes[node].d1(base + 2, 2) = Precision(1);
-    }
-
-    return x_nodes;
-}
-
 /**
- * Evaluates the rotated nodal directors and their exact SO(3) derivatives.
+ * Evaluates the compatible generalized shell strain in natural coordinates.
  *
- * The current director at node `i` is `d_i = R(theta_i) d0_i`. First
- * derivatives are always evaluated. Second derivatives are only requested for
- * the geometric tangent because they are considerably more expensive.
- */
-template<Index N>
-std::array<typename FRTShell<N>::VectorDerivatives, N>
-FRTShell<N>::director_derivatives(const CurrentState& state,
-                                  bool                with_second_derivatives) const {
-    const auto& ref = reference_data();
-    std::array<VectorDerivatives, N> directors;
-
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Index base  = dofs_per_node * node;
-        const Vec3  theta = state.theta.row(node).transpose();
-        const Vec3  d0    = ref.d0.row(node).transpose();
-
-        Mat3                R;
-        std::array<Mat3, 3> first;
-
-        if (with_second_derivatives) {
-            std::array<std::array<Mat3, 3>, 3> second;
-            math::so3::rotation_matrix_second_derivatives(theta, R, first, second);
-
-            directors[node].value = R * d0;
-
-            for (Index a = 0; a < 3; ++a) {
-                const Index ia = base + 3 + a;
-                directors[node].d1.row(ia) = (first[a] * d0).transpose();
-
-                for (Index b = 0; b < 3; ++b) {
-                    const Index ib    = base + 3 + b;
-                    const Vec3  value = second[a][b] * d0;
-
-                    for (Index component = 0; component < 3; ++component) {
-                        directors[node].d2[component](ia, ib) = value(component);
-                    }
-                }
-            }
-
-            continue;
-        }
-
-        math::so3::rotation_matrix_first_derivatives(theta, R, first);
-        directors[node].value = R * d0;
-
-        for (Index a = 0; a < 3; ++a) {
-            const Index ia = base + 3 + a;
-            directors[node].d1.row(ia) = (first[a] * d0).transpose();
-        }
-    }
-
-    return directors;
-}
-
-template<Index N>
-typename FRTShell<N>::ScalarDerivatives FRTShell<N>::dot_derivatives(
-    const VectorDerivatives& a,
-    const VectorDerivatives& b
-) {
-    ScalarDerivatives result;
-    result.value = a.value.dot(b.value);
-    result.d1    = a.d1 * b.value + b.d1 * a.value;
-    result.d2.noalias() = a.d1 * b.d1.transpose();
-    result.d2.noalias() += b.d1 * a.d1.transpose();
-
-    for (Index component = 0; component < 3; ++component) {
-        result.d2.noalias() += b.value(component) * a.d2[component];
-        result.d2.noalias() += a.value(component) * b.d2[component];
-    }
-
-    return result;
-}
-
-template<Index N>
-typename FRTShell<N>::ScalarDerivatives FRTShell<N>::scaled(
-    const ScalarDerivatives& value,
-    Precision                scale
-) {
-    ScalarDerivatives result;
-    result.value = scale * value.value;
-    result.d1    = scale * value.d1;
-    result.d2    = scale * value.d2;
-    return result;
-}
-
-template<Index N>
-typename FRTShell<N>::VectorDerivatives FRTShell<N>::linear_combination(
-    const std::array<VectorDerivatives, N>& values,
-    const VecN&                            coefficients
-) {
-    VectorDerivatives result;
-
-    for (Index node = 0; node < num_nodes; ++node) {
-        result.value += coefficients(node) * values[node].value;
-        result.d1    += coefficients(node) * values[node].d1;
-
-        for (Index component = 0; component < 3; ++component) {
-            result.d2[component] += coefficients(node) * values[node].d2[component];
-        }
-    }
-
-    return result;
-}
-
-/**
- * Evaluates the compatible generalized shell strains in natural coordinates.
+ * Membrane strains are Green-Lagrange midsurface strains. Bending strains
+ * compare current position/director derivatives with their reference values,
+ * and transverse-shear strains compare current tangents with the interpolated
+ * current director. Engineering shear conventions are used for the `rs`,
+ * curvature and transverse-shear entries.
  *
- * The membrane strains are Green-Lagrange strains of the current midsurface.
- * Bending strains compare the current position/director derivatives with their
- * reference values, and transverse-shear strains compare the current tangents
- * with the current interpolated director.
+ * When `B_nat` is supplied, all first derivatives are assembled analytically.
+ * Trivial translational identities are inserted directly, while director
+ * derivatives use only compact nodal SO(3) matrices.
  *
- * The function optionally evaluates
- *
- *     B = d(epsilon) / d(q)
- *
- * and one Hessian for every generalized strain component. Engineering shear
- * conventions are used for the `rs`, curvature and transverse-shear entries.
+ * @param data Active element evaluation data.
+ * @param point Pointwise curved-reference geometry.
+ * @param strain_nat Output compatible generalized strain in natural components.
+ * @param B_nat Optional output first strain derivative.
  */
 template<Index N>
 void FRTShell<N>::compute_natural_strain(
     const EvaluationData& data,
     const ReferencePoint& point,
     Vec8&                 strain_nat,
-    Mat8x6N*              B_nat,
-    Vec6NMat*             G_nat
+    Mat8x6N*              B_nat
 ) const {
     using Component = ShellGeneralizedStrain::Component;
 
@@ -483,62 +402,56 @@ void FRTShell<N>::compute_natural_strain(
         B_nat->setZero();
     }
 
-    if (G_nat) {
-        for (auto& value : *G_nat) {
-            value.setZero();
-        }
-    }
-
+    // Copy the pointwise interpolation coefficients once because each group of
+    // shell strains reuses the same natural derivatives and shape values
     const VecN dshape_r = point.dshape_rs.col(0);
     const VecN dshape_s = point.dshape_rs.col(1);
-    const VecN shape     = point.shape;
+    const VecN shape    = point.shape;
+    const MatN3& d0     = reference_data().d0;
 
-    const bool with_G = G_nat != nullptr;
-    const bool with_B = B_nat != nullptr || with_G;
+    // Construct the three membrane metric changes
+    add_xx_strain_and_B<N>(
+        data.state.x,
+        dshape_r,
+        dshape_r,
+        Precision(0.5),
+        epsilon_rr,
+        strain_nat,
+        B_nat
+    );
+    add_xx_strain_and_B<N>(
+        data.state.x,
+        dshape_s,
+        dshape_s,
+        Precision(0.5),
+        epsilon_ss,
+        strain_nat,
+        B_nat
+    );
+    add_xx_strain_and_B<N>(
+        data.state.x,
+        dshape_r,
+        dshape_s,
+        Precision(1),
+        gamma_rs,
+        strain_nat,
+        B_nat
+    );
 
-    // Evaluate values directly when no derivatives are requested
-    if (!with_B) {
-        Vec3 x_r = Vec3::Zero();
-        Vec3 x_s = Vec3::Zero();
-        Vec3 d   = Vec3::Zero();
-        Vec3 d_r = Vec3::Zero();
-        Vec3 d_s = Vec3::Zero();
+    // Construct the three changes of curvature from current tangent/director
+    // derivative products
+    add_xd_strain_and_B<N>(data, d0, dshape_r, dshape_r, Precision(1), kappa_rr, strain_nat, B_nat);
+    add_xd_strain_and_B<N>(data, d0, dshape_s, dshape_s, Precision(1), kappa_ss, strain_nat, B_nat);
+    add_xd_strain_and_B<N>(data, d0, dshape_r, dshape_s, Precision(1), kappa_rs, strain_nat, B_nat);
+    add_xd_strain_and_B<N>(data, d0, dshape_s, dshape_r, Precision(1), kappa_rs, strain_nat, B_nat);
 
-        for (Index node = 0; node < num_nodes; ++node) {
-            x_r += dshape_r(node) * data.x_nodes[node].value;
-            x_s += dshape_s(node) * data.x_nodes[node].value;
-            d   += shape(node)    * data.d_nodes[node].value;
-            d_r += dshape_r(node) * data.d_nodes[node].value;
-            d_s += dshape_s(node) * data.d_nodes[node].value;
-        }
+    // Construct the two transverse-shear measures from current tangents and the
+    // interpolated current director
+    add_xd_strain_and_B<N>(data, d0, dshape_r, shape, Precision(1), gamma_r3, strain_nat, B_nat);
+    add_xd_strain_and_B<N>(data, d0, dshape_s, shape, Precision(1), gamma_s3, strain_nat, B_nat);
 
-        strain_nat(epsilon_rr) = Precision(0.5) * (x_r.dot(x_r) - point.X_r.dot(point.X_r));
-        strain_nat(epsilon_ss) = Precision(0.5) * (x_s.dot(x_s) - point.X_s.dot(point.X_s));
-        strain_nat(gamma_rs)   = x_r.dot(x_s) - point.X_r.dot(point.X_s);
-
-        strain_nat(kappa_rr) = x_r.dot(d_r) - point.X_r.dot(point.D_r);
-        strain_nat(kappa_ss) = x_s.dot(d_s) - point.X_s.dot(point.D_s);
-        strain_nat(kappa_rs) = x_r.dot(d_s) + x_s.dot(d_r)
-                             - point.X_r.dot(point.D_s) - point.X_s.dot(point.D_r);
-
-        strain_nat(gamma_r3) = x_r.dot(d) - point.X_r.dot(point.D);
-        strain_nat(gamma_s3) = x_s.dot(d) - point.X_s.dot(point.D);
-        return;
-    }
-
-    add_xx_derivatives<N>(data.x_nodes, dshape_r, dshape_r, Precision(0.5), epsilon_rr, strain_nat, B_nat, G_nat);
-    add_xx_derivatives<N>(data.x_nodes, dshape_s, dshape_s, Precision(0.5), epsilon_ss, strain_nat, B_nat, G_nat);
-    add_xx_derivatives<N>(data.x_nodes, dshape_r, dshape_s, Precision(1)  ,   gamma_rs, strain_nat, B_nat, G_nat);
-
-    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, dshape_r, Precision(1), kappa_rr, strain_nat, B_nat, G_nat);
-    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, dshape_s, Precision(1), kappa_ss, strain_nat, B_nat, G_nat);
-    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, dshape_s, Precision(1), kappa_rs, strain_nat, B_nat, G_nat);
-    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, dshape_r, Precision(1), kappa_rs, strain_nat, B_nat, G_nat);
-
-    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_r, shape, Precision(1), gamma_r3, strain_nat, B_nat, G_nat);
-    add_xd_derivatives<N>(data.x_nodes, data.d_nodes, dshape_s, shape, Precision(1), gamma_s3, strain_nat, B_nat, G_nat);
-
-    // Subtract the reference metric, curvature and shear contributions.
+    // Subtract the complete reference metric, curvature and shear values so the
+    // undeformed curved shell has exactly zero generalized strain
     strain_nat(epsilon_rr) -= Precision(0.5) * point.X_r.dot(point.X_r);
     strain_nat(epsilon_ss) -= Precision(0.5) * point.X_s.dot(point.X_s);
     strain_nat(gamma_rs)   -= point.X_r.dot(point.X_s);
@@ -553,16 +466,19 @@ void FRTShell<N>::compute_natural_strain(
  * Transforms generalized natural strain components into the pointwise local
  * orthonormal reference basis.
  *
- * The transformation depends exclusively on the reference geometry. It is
- * therefore applied identically to strain values, B rows and optional
- * compatible G matrices without additional configuration derivatives.
+ * The transformation depends exclusively on the undeformed curved-reference
+ * geometry. It is therefore applied identically to values and B rows without
+ * any additional nonlinear derivatives.
+ *
+ * @param point Pointwise curved-reference geometry.
+ * @param strain Generalized strain vector transformed in place.
+ * @param B Optional generalized B matrix transformed in place.
  */
 template<Index N>
 void FRTShell<N>::transform_strain_to_local(
     const ReferencePoint& point,
     Vec8&                 strain,
-    Mat8x6N*              B,
-    Vec6NMat*             G
+    Mat8x6N*              B
 ) const {
     const Precision t00 = point.invA(0, 0);
     const Precision t01 = point.invA(0, 1);
@@ -570,15 +486,15 @@ void FRTShell<N>::transform_strain_to_local(
     const Precision t11 = point.invA(1, 1);
 
     StaticMatrix<3, 3> in_plane;
-    in_plane << t00 * t00,              t01 * t01,              t00 * t01,
-                t10 * t10,              t11 * t11,              t10 * t11,
-                Precision(2) * t00*t10, Precision(2) * t01*t11, t00*t11 + t01*t10;
+    in_plane << t00 * t00,               t01 * t01,               t00 * t01,
+                t10 * t10,               t11 * t11,               t10 * t11,
+                Precision(2) * t00 * t10, Precision(2) * t01 * t11, t00 * t11 + t01 * t10;
 
-    // Transform membrane and bending tensor components
-    transform_scalar_rows<N>(in_plane, 0, 0, strain, B, G);
-    transform_scalar_rows<N>(in_plane, 3, 3, strain, B, G);
+    // Transform the membrane and curvature engineering tensor blocks
+    transform_in_plane_rows<N>(in_plane, 0, strain, B);
+    transform_in_plane_rows<N>(in_plane, 3, strain, B);
 
-    // Transform the covariant transverse-shear vector
+    // Transform the covariant transverse-shear vector and the same B rows
     const Vec2 shear_nat = strain.template segment<2>(6);
     strain.template segment<2>(6) = point.invA * shear_nat;
 
@@ -586,49 +502,30 @@ void FRTShell<N>::transform_strain_to_local(
         const Mat2x6N shear_B = B->template block<2, num_dofs>(6, 0);
         B->template block<2, num_dofs>(6, 0) = point.invA * shear_B;
     }
-
-    if (G) {
-        const Mat6N G_r = (*G)[6];
-        const Mat6N G_s = (*G)[7];
-
-        (*G)[6] = point.invA(0, 0) * G_r + point.invA(0, 1) * G_s;
-        (*G)[7] = point.invA(1, 0) * G_r + point.invA(1, 1) * G_s;
-    }
 }
 
 /**
- * Returns the engineering-strain transformation between two pointwise local
- * reference bases.
+ * Prepares all quantities requested by one shell evaluation.
  *
- * The result maps `[eps11, eps22, gamma12]` represented in `from` into the
- * basis of `to`. Both bases belong to the undeformed reference surface, so the
- * map is constant with respect to the nonlinear degrees of freedom.
- */
-template<Index N>
-StaticMatrix<3, 3> FRTShell<N>::in_plane_transform(
-    const ReferencePoint& from,
-    const ReferencePoint& to
-) const {
-    const Precision c11 = to.e1.dot(from.e1);
-    const Precision c12 = to.e1.dot(from.e2);
-    const Precision c21 = to.e2.dot(from.e1);
-    const Precision c22 = to.e2.dot(from.e2);
-
-    StaticMatrix<3, 3> transformation;
-    transformation << c11*c11,              c12*c12,              c11*c12,
-                      c21*c21,              c22*c22,              c21*c22,
-                      Precision(2)*c11*c21, Precision(2)*c12*c22, c11*c22 + c12*c21;
-    return transformation;
-}
-
-/**
- * Evaluates all kinematic and constitutive quantities requested by one caller.
+ * The function owns no dynamic temporary data. A `thread_local` workspace is
+ * resized to the required topology-specific point counts and retains its
+ * capacity for subsequent elements on the same worker thread. The returned
+ * `EvaluationData` contains non-owning spans into this workspace.
  *
- * Tying-point strains are formed first because every integration-point MITC
- * interpolation depends on them. The compatible natural strain is then
- * evaluated at each quadrature point, modified by the concrete MITC element,
- * transformed into the local reference basis and optionally passed to the
- * shell section.
+ * First and second SO(3) derivatives are evaluated once per node and reused at
+ * all tying and integration points. The cached zero-strain in-plane shear
+ * modulus A66 defines a configuration-independent drilling coefficient at every
+ * integration point, ensuring that force and tangent derive from one fixed
+ * quadratic potential even for nonlinear material sections.
+ *
+ * @param state Current or trial nodal shell state.
+ * @param with_strain Request generalized strain values.
+ * @param with_B Request first generalized strain derivatives.
+ * @param with_G Request second nodal SO(3) derivatives.
+ * @param with_resultants Request generalized shell resultants.
+ * @param ip_stress Optional previously evaluated resultant field.
+ * @param ip_start_idx First row of the supplied resultant field.
+ * @return Non-owning view into the active thread-local workspace.
  */
 template<Index N>
 typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
@@ -649,49 +546,153 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     }
 
     const auto& ref = reference_data();
-    EvaluationData data(static_cast<Index>(ref.ip_points.size()),
-                        static_cast<Index>(ref.tying_points.size()),
-                        with_strain,
-                        with_B,
-                        with_G,
-                        with_resultants);
+    const std::size_t num_ip    = ref.ip_points.size();
+    const std::size_t num_tying = ref.tying_points.size();
 
-    data.state = state;
+    // One reusable workspace exists for every executing thread and shell
+    // topology. No element owns or deallocates this temporary storage.
+    thread_local EvaluationWorkspace workspace;
 
-    for (Index ip = 0; ip < static_cast<Index>(ref.ip_points.size()); ++ip) {
-        const ReferencePoint& point = ref.ip_points[static_cast<std::size_t>(ip)];
-        data.ip_weight[static_cast<std::size_t>(ip)] = point.w * point.detJ;
-    }
+    // Resize only the arrays required by this caller. Standard vector resize
+    // preserves capacity, so repeated evaluations do not allocate after the
+    // thread has encountered its largest element request.
+    workspace.tying_strain_nat.resize(with_strain ? num_tying : 0);
+    workspace.tying_B_nat.resize(with_B ? num_tying : 0);
+    workspace.ip_strain.resize(with_strain ? num_ip : 0);
+    workspace.ip_B.resize(with_B ? num_ip : 0);
+    workspace.ip_resultants.resize(with_resultants ? num_ip : 0);
+    workspace.ip_tangent.resize(with_B && ip_stress == nullptr ? num_ip : 0);
+    workspace.ip_drill_stiffness.resize(with_B ? num_ip : 0);
+    workspace.geometric_tying_weights.resize(with_G ? num_tying : 0);
 
-    if (data.with_B) {
-        data.H = resultant_stiffness();
-    }
+    EvaluationData data;
+    data.with_strain     = with_strain;
+    data.with_B          = with_B;
+    data.with_G          = with_G;
+    data.with_resultants = with_resultants;
+    data.state           = state;
 
-    // Initialize section tangents only for callers that actually consume a
-    // linearized tangent without a fresh nonlinear material update.
-    if (data.with_B && !with_resultants) {
-        for (Index ip = 0; ip < static_cast<Index>(ref.ip_points.size()); ++ip) {
-            const ReferencePoint& point = ref.ip_points[static_cast<std::size_t>(ip)];
-            data.ip_tangent[static_cast<std::size_t>(ip)] = resultant_stiffness(point.r, point.s);
-        }
-    }
+    // Expose exactly the active portions of the thread-local buffers
+    data.tying_strain_nat = Span<Vec8>(workspace.tying_strain_nat);
+    data.tying_B_nat = Span<Mat8x6N>(workspace.tying_B_nat);
+    data.ip_strain = Span<Vec8>(workspace.ip_strain);
+    data.ip_B = Span<Mat8x6N>(workspace.ip_B);
+    data.ip_resultants = Span<Vec8>(workspace.ip_resultants);
+    data.ip_tangent = Span<Mat8>(workspace.ip_tangent);
+    data.ip_drill_stiffness = Span<Precision>(workspace.ip_drill_stiffness);
+    data.geometric_tying_weights = Span<Vec8>(workspace.geometric_tying_weights);
 
-    // Prepare nodal positions and directors at the requested derivative order
+    // Evaluate each nodal SO(3) rotation and its requested derivatives once.
+    // The complete local 3 x 3 matrices are retained because both the physical
+    // director and objective drilling tangent vectors act on the same rotation.
     if (with_B || with_G) {
-        data.x_nodes = x_derivatives(state);
-        data.d_nodes = director_derivatives(state, with_G);
-    } else {
         for (Index node = 0; node < num_nodes; ++node) {
-            data.x_nodes[node].value = state.x.row(node).transpose();
-            data.d_nodes[node].value = state.d.row(node).transpose();
+            const Vec3 theta = state.theta.row(node).transpose();
+
+            if (with_G) {
+                math::so3::rotation_matrix_second_derivatives(
+                    theta,
+                    workspace.rotations[node].value,
+                    workspace.rotations[node].d1,
+                    workspace.rotations[node].d2
+                );
+            } else {
+                math::so3::rotation_matrix_first_derivatives(
+                    theta,
+                    workspace.rotations[node].value,
+                    workspace.rotations[node].d1
+                );
+            }
+        }
+
+        data.rotations = &workspace.rotations;
+    }
+
+    // Initialize the unscaled positive drilling modulus lazily and exactly once
+    // for this element. This keeps temporary-storage lifecycle independent of
+    // step_begin()/step_end() while avoiding repeated zero-strain section calls.
+    if (with_B) {
+        std::call_once(ref.drill_stiffness_once, [&]() {
+            using Component = ShellGeneralizedStrain::Component;
+            constexpr Index gamma_12 = static_cast<Index>(Component::GammaXY);
+
+            for (ReferencePoint& point : reference_data_->ip_points) {
+                ShellGeneralizedStrain zero_strain(Vec8::Zero());
+                ShellStressResultants  zero_resultants;
+                Mat8                   H0;
+
+                Mat3 basis;
+                basis.col(0) = point.e1;
+                basis.col(1) = point.e2;
+                basis.col(2) = point.e3;
+
+                shell_section()->evaluate(
+                    reference_position(point.r, point.s),
+                    basis,
+                    zero_strain,
+                    false,
+                    zero_resultants,
+                    H0
+                );
+
+                point.drill_stiffness_base =
+                    drill_scale * std::abs(H0(gamma_12, gamma_12));
+            }
+        });
+
+        // Apply only the current topology scale during each evaluation. The
+        // underlying modulus remains independent of the current deformation,
+        // so force and tangent derive from one fixed quadratic potential.
+        const Precision stiffness_scale = std::abs(topology_stiffness_scale());
+
+        for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
+            data.ip_drill_stiffness[static_cast<std::size_t>(ip)] =
+                stiffness_scale
+                * ref.ip_points[static_cast<std::size_t>(ip)].drill_stiffness_base;
         }
     }
 
-    if (with_strain) {
-        evaluate_tying_points(data);
-        evaluate_integration_points(data);
+    // Linearized callers without a constitutive material update require the
+    // zero-strain section tangent at every integration point. Nonlinear callers
+    // receive their current tangent from compute_material_resultants().
+    if (with_B && !with_resultants) {
+        for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
+            const ReferencePoint& point = ref.ip_points[static_cast<std::size_t>(ip)];
+            data.ip_tangent[static_cast<std::size_t>(ip)] =
+                resultant_stiffness(point.r, point.s);
+        }
     }
 
+    // Tying values must be prepared before the integration-point MITC fields
+    // can be reconstructed. The two loops remain here because they form one
+    // evaluation sequence and are not reused independently anywhere else.
+    if (with_strain) {
+        for (Index tying = 0; tying < static_cast<Index>(ref.tying_points.size()); ++tying) {
+            const std::size_t id = static_cast<std::size_t>(tying);
+            compute_natural_strain(
+                data,
+                ref.tying_points[id],
+                data.tying_strain_nat[id],
+                data.with_B ? &data.tying_B_nat[id] : nullptr
+            );
+        }
+
+        for (Index ip = 0; ip < static_cast<Index>(ref.ip_points.size()); ++ip) {
+            const std::size_t id = static_cast<std::size_t>(ip);
+            const ReferencePoint& point = ref.ip_points[id];
+            Vec8& strain = data.ip_strain[id];
+            Mat8x6N* B = data.with_B ? &data.ip_B[id] : nullptr;
+
+            // Evaluate the compatible natural field, replace the selected MITC
+            // components and finally transform to the local material basis
+            compute_natural_strain(data, point, strain, B);
+            apply_mitc_natural(data, point, strain, B);
+            transform_strain_to_local(point, strain, B);
+        }
+    }
+
+    // Either import an existing resultant field or perform the nonlinear
+    // constitutive shell-section update at all integration points
     if (with_resultants) {
         if (ip_stress) {
             load_ip_resultants(data, *ip_stress, ip_start_idx);
@@ -701,41 +702,6 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     }
 
     return data;
-}
-
-template<Index N>
-void FRTShell<N>::evaluate_tying_points(EvaluationData& data) const {
-    const auto& points = reference_data().tying_points;
-
-    for (Index tying = 0; tying < static_cast<Index>(points.size()); ++tying) {
-        compute_natural_strain(
-            data,
-            points[static_cast<std::size_t>(tying)],
-            data.tying_strain_nat[static_cast<std::size_t>(tying)],
-            data.with_B ? &data.tying_B_nat[static_cast<std::size_t>(tying)] : nullptr,
-            nullptr
-        );
-    }
-}
-
-template<Index N>
-void FRTShell<N>::evaluate_integration_points(EvaluationData& data) const {
-    const auto& points = reference_data().ip_points;
-
-    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
-        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
-        Vec8&                 strain = data.ip_strain[static_cast<std::size_t>(ip)];
-        Mat8x6N* B = data.with_B ? &data.ip_B[static_cast<std::size_t>(ip)] : nullptr;
-
-        // Evaluate the compatible natural strain field
-        compute_natural_strain(data, point, strain, B, nullptr);
-
-        // Replace the selected components by the element-specific MITC field
-        apply_mitc_natural(data, point, strain, B);
-
-        // Express all generalized quantities in the local material basis
-        transform_strain_to_local(point, strain, B, nullptr);
-    }
 }
 
 } // namespace fem::model

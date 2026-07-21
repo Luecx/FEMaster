@@ -18,7 +18,7 @@
  * @see FRTShellS8
  *
  * @author Finn Eggers
- * @date 20.07.2026
+ * @date 21.07.2026
  */
 
 #include "frt_shell_s8.h"
@@ -29,16 +29,34 @@
 
 namespace fem::model {
 
+/**
+ * Constructs the eight-node MITC8 finite-rotation shell.
+ *
+ * @param id Element identifier.
+ * @param nodes Eight nodal identifiers in quadratic serendipity ordering.
+ */
 FRTShellS8::FRTShellS8(ID id, const std::array<ID, 8>& nodes)
     : FRTShell<8>       (id, nodes),
-      geometry          (nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_QUAD,
                           math::quadrature::Order::ORDER_QUINTIC) {}
 
+/**
+ * Returns the public element type identifier.
+ *
+ * @return String identifier `MITC8FRT`.
+ */
 std::string FRTShellS8::type_name() const {
     return "MITC8FRT";
 }
 
+/**
+ * Returns an oriented quadratic serendipity surface representation.
+ *
+ * The reverse side changes both corner and midside ordering consistently.
+ *
+ * @param surface_id Requested positive or negative shell side.
+ * @return Oriented eight-node surface object.
+ */
 std::shared_ptr<SurfaceInterface> FRTShellS8::surface(int surface_id) {
     return std::make_shared<Surface8>(
         surface_id == 1
@@ -49,10 +67,20 @@ std::shared_ptr<SurfaceInterface> FRTShellS8::surface(int surface_id) {
     );
 }
 
+/**
+ * Returns the full quadrilateral area quadrature used by the element.
+ *
+ * @return Quintic rule corresponding to full `3 x 3` integration.
+ */
 const math::quadrature::Quadrature& FRTShellS8::integration_scheme() const {
     return integration_scheme_;
 }
 
+/**
+ * Returns all numerical integration-point coordinates for result storage.
+ *
+ * @return Matrix of `(r,s,t)` integration-point coordinates.
+ */
 RowMatrix FRTShellS8::stress_strain_ip_rst() {
     RowMatrix rst(integration_scheme_.count(), 3);
     rst.setZero();
@@ -66,6 +94,11 @@ RowMatrix FRTShellS8::stress_strain_ip_rst() {
     return rst;
 }
 
+/**
+ * Returns the eight natural nodal coordinates for result recovery.
+ *
+ * @return Matrix of corner and midside coordinates in `(r,s,t)` format.
+ */
 RowMatrix FRTShellS8::stress_strain_nodal_rst() {
     RowMatrix rst(8, 3);
     rst << Precision(-1), Precision(-1), Precision(0),
@@ -79,6 +112,13 @@ RowMatrix FRTShellS8::stress_strain_nodal_rst() {
     return rst;
 }
 
+/**
+ * Evaluates the eight quadratic serendipity shape functions.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @return Eight serendipity shape-function values.
+ */
 FRTShellS8::VecN FRTShellS8::shape_function(Precision r, Precision s) const {
     VecN shape;
 
@@ -101,6 +141,13 @@ FRTShellS8::VecN FRTShellS8::shape_function(Precision r, Precision s) const {
     return shape;
 }
 
+/**
+ * Evaluates the first natural derivatives of the serendipity interpolation.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @return Matrix whose rows contain `[dN_i/dr,dN_i/ds]`.
+ */
 FRTShellS8::MatN2 FRTShellS8::shape_derivative(Precision r, Precision s) const {
     MatN2 derivative;
 
@@ -130,6 +177,11 @@ FRTShellS8::MatN2 FRTShellS8::shape_derivative(Precision r, Precision s) const {
     return derivative;
 }
 
+/**
+ * Returns the natural coordinates of the four corner and four midside nodes.
+ *
+ * @return Eight serendipity node coordinates on `[-1,1]^2`.
+ */
 FRTShellS8::MatN2 FRTShellS8::node_coords_natural() const {
     MatN2 coordinates;
     coordinates << Precision(-1), Precision(-1),
@@ -151,6 +203,8 @@ FRTShellS8::MatN2 FRTShellS8::node_coords_natural() const {
  * `8..13` belong to the assumed `rt` shear field and points `14..19`
  * belong to the assumed `st` shear field. The fifth coefficient of each shear
  * interpolation is the mean of its two interior sampling values.
+ *
+ * @return Ordered natural tying-point coordinates.
  */
 std::vector<Vec2> FRTShellS8::tying_point_coordinates() const {
     const Precision a = Precision(1) / std::sqrt(Precision(3));
@@ -198,6 +252,11 @@ std::vector<Vec2> FRTShellS8::tying_point_coordinates() const {
  * covariant natural components. Their fifth interpolation values are the means
  * at the RA/RB and SA/SB sampling pairs. The common shell kernel performs the
  * pointwise natural-to-local transformation after this function returns.
+ *
+ * @param data Active tying-point strain and B data.
+ * @param point Target natural shell point.
+ * @param strain_nat Compatible natural strain vector to modify.
+ * @param B_nat Optional compatible natural B matrix to modify.
  */
 void FRTShellS8::apply_mitc_natural(
     const EvaluationData& data,
@@ -519,11 +578,25 @@ void FRTShellS8::apply_mitc_natural(
 
 }
 
+/**
+ * Applies the exact transpose of the complete classical MITC8 interpolation.
+ *
+ * In-layer tensor weights are transformed between the physical sampling bases
+ * and distributed to the eight compatible sampling tensors. The two assumed
+ * shear weights are distributed to their boundary and interior averaging
+ * samples. The caller supplies a zeroed thread-local span, so no dynamic
+ * allocation occurs in the geometric-tangent loop.
+ *
+ * @param point Integration point defining all MITC8 interpolation functions.
+ * @param assumed_weights Generalized natural weights after basis pull-back.
+ * @param compatible_weights Compatible integration-point weights to increment.
+ * @param tying_weights Zeroed compatible tying-point weights to increment.
+ */
 void FRTShellS8::pull_back_mitc_resultants(
     const ReferencePoint& point,
     const Vec8&           assumed_weights,
     Vec8&                 compatible_weights,
-    std::vector<Vec8>&    tying_weights
+    Span<Vec8>            tying_weights
 ) const {
     (void) compatible_weights;
 

@@ -1,5 +1,5 @@
 /**
- * @file frt_shell_output.cpp
+ * @file frt_shell_output.inl
  * @brief Implements generalized and physical shell result recovery.
  *
  * The routines evaluate MITC generalized strains and shell resultants at
@@ -12,7 +12,7 @@
  * @see FRTShell
  *
  * @author Finn Eggers
- * @date 20.07.2026
+ * @date 21.07.2026
  */
 
 #include "frt_shell.h"
@@ -35,6 +35,13 @@ using math::normalized;
  * In nonlinear mode the strain is evaluated directly from the supplied current
  * state. In linear mode the reference B matrix is evaluated at the point and
  * multiplied by the element displacement vector.
+ *
+ * @param data Active evaluation data containing state and MITC tying values.
+ * @param q Element displacement vector used by linear recovery.
+ * @param r First natural output coordinate.
+ * @param s Second natural output coordinate.
+ * @param nonlinear Select direct nonlinear or linearized strain recovery.
+ * @return Generalized local shell strain vector.
  */
 template<Index N>
 typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
@@ -60,7 +67,7 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
 
     compute_natural_strain(data, point, strain_nat, &B_nat);
     apply_mitc_natural(data, point, strain_nat, &B_nat);
-    transform_strain_to_local(point, strain_nat, &B_nat, nullptr);
+    transform_strain_to_local(point, strain_nat, &B_nat);
     return B_nat * q;
 }
 
@@ -68,8 +75,16 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
  * Evaluates generalized shell resultants at an arbitrary natural point.
  *
  * Nonlinear output calls the shell section with the recovered generalized
- * strain. Linear output multiplies the local section tangent by the linearized
- * generalized strain.
+ * strain. Linear output multiplies the zero-strain local section tangent by the
+ * linearized generalized strain.
+ *
+ * @param data Active evaluation data containing state and MITC tying values.
+ * @param q Element displacement vector used by linear recovery.
+ * @param r First natural output coordinate.
+ * @param s Second natural output coordinate.
+ * @param nonlinear Select nonlinear section evaluation or linear multiplication.
+ * @param strain_out Optional generalized strain output.
+ * @return Generalized local shell resultant vector.
  */
 template<Index N>
 typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
@@ -107,52 +122,17 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
 }
 
 /**
- * Constructs an orthonormal output basis in the current configuration.
- *
- * The third vector follows the interpolated current director. The first vector
- * is obtained by projecting the current first midsurface tangent into the plane
- * normal to the director; the second vector completes the right-handed basis.
- */
-template<Index N>
-Mat3 FRTShell<N>::current_output_basis(const CurrentState& state,
-                                       Precision           r,
-                                       Precision           s) const {
-    const ReferencePoint point = make_reference_point(r, s, Precision(0));
-
-    Vec3 x_a      = Vec3::Zero();
-    Vec3 x_b      = Vec3::Zero();
-    Vec3 director = Vec3::Zero();
-
-    for (Index node = 0; node < num_nodes; ++node) {
-        x_a      += point.dshape_a(node) * state.x.row(node).transpose();
-        x_b      += point.dshape_b(node) * state.x.row(node).transpose();
-        director += point.shape(node)    * state.d.row(node).transpose();
-    }
-
-    Vec3 e3 = normalized(director);
-    Vec3 e1 = x_a - e3 * x_a.dot(e3);
-
-    if (e1.squaredNorm() <= Precision(1e-24)) {
-        e1 = x_b - e3 * x_b.dot(e3);
-    }
-
-    e1 = normalized(e1);
-    Vec3 e2 = normalized(e3.cross(e1));
-    e1 = normalized(e2.cross(e3));
-
-    Mat3 basis;
-    basis.col(0) = e1;
-    basis.col(1) = e2;
-    basis.col(2) = e3;
-    return basis;
-}
-
-/**
  * Evaluates the shell deformation gradient at one through-thickness point.
  *
  * The reference and current covariant bases include the linear director
  * variation through the thickness coordinate `z`. The result maps the
  * undeformed shell basis into the current shell basis.
+ *
+ * @param state Current nodal shell state.
+ * @param r First natural output coordinate.
+ * @param s Second natural output coordinate.
+ * @param z Physical through-thickness coordinate measured from the midsurface.
+ * @return Three-dimensional shell deformation gradient.
  */
 template<Index N>
 Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
@@ -203,6 +183,15 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
  * Membrane resultants and moments are converted into the corresponding stress
  * distribution for a homogeneous shell section. Transverse shear is assumed
  * constant through the thickness, consistent with the Reissner-Mindlin model.
+ *
+ * @param data Active evaluation data and current nodal state.
+ * @param q Element displacement vector used by linear recovery.
+ * @param r First natural output coordinate.
+ * @param s Second natural output coordinate.
+ * @param zeta Normalized through-thickness coordinate in `[-1,1]`.
+ * @param nonlinear Select nonlinear PK2-to-Cauchy transformation.
+ * @param strain_out Reconstructed global Green-Lagrange strain vector.
+ * @param stress_out Reconstructed global Cauchy stress vector.
  */
 template<Index N>
 void FRTShell<N>::physical_stress_strain_at(
@@ -292,6 +281,13 @@ void FRTShell<N>::physical_stress_strain_at(
 /**
  * Computes physical stress and strain tensors at requested natural and
  * through-thickness coordinates.
+ *
+ * @param strain Optional physical strain output field.
+ * @param stress Optional physical stress output field.
+ * @param displacement Global nodal displacement field.
+ * @param rst Requested natural and normalized thickness coordinates.
+ * @param offset First output row belonging to this element.
+ * @param use_green_lagrange_nl Select nonlinear or linearized recovery.
  */
 template<Index N>
 void FRTShell<N>::compute_stress_strain(Field*           strain,
@@ -356,6 +352,11 @@ void FRTShell<N>::compute_stress_strain(Field*           strain,
 
 /**
  * Computes the eight generalized shell resultants at all integration points.
+ *
+ * @param stress_state Output integration-point resultant field.
+ * @param displacement Global nodal displacement field.
+ * @param offset First output row belonging to this element.
+ * @param use_green_lagrange_nl Select nonlinear or linearized evaluation.
  */
 template<Index N>
 void FRTShell<N>::compute_stress_state(Field&       stress_state,
@@ -416,6 +417,11 @@ void FRTShell<N>::compute_stress_state(Field&       stress_state,
 /**
  * Averages generalized shell resultants from the element nodes into nodal
  * result fields.
+ *
+ * @param resultants Global nodal generalized-resultant accumulator.
+ * @param contribution_count Global nodal contribution counter.
+ * @param displacement Global nodal displacement field.
+ * @return Always `true` after shell resultants were accumulated.
  */
 template<Index N>
 bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,

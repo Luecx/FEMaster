@@ -6,7 +6,7 @@
  * according to mathematical responsibility:
  *
  * - reference configuration and curved-surface geometry,
- * - finite-rotation kinematics and exact strain derivatives,
+ * - finite-rotation kinematics and compact exact rotation derivatives,
  * - shell-section response and consistent assembly,
  * - stress and strain result recovery,
  * - mass, volume and distributed-field integration.
@@ -20,7 +20,7 @@
  * @see FRTShell
  *
  * @author Finn Eggers
- * @date 20.07.2026
+ * @date 21.07.2026
  */
 
 #include "frt_shell_reference.inl"
@@ -38,3 +38,4 @@ template struct FRTShell<6>;
 template struct FRTShell<8>;
 
 } // namespace fem::model
+

@@ -25,5 +25,6 @@ cmake-build-release/
 *.aux
 *.log
 *.vtk
+*.zip
 
 .DS_Store

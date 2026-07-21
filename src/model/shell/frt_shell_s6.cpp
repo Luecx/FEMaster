@@ -10,7 +10,7 @@
  * @see FRTShellS6
  *
  * @author Finn Eggers
- * @date 20.07.2026
+ * @date 21.07.2026
  */
 
 #include "frt_shell_s6.h"
@@ -19,16 +19,35 @@
 
 namespace fem::model {
 
+/**
+ * Constructs the six-node MITC6-b finite-rotation shell.
+ *
+ * @param id Element identifier.
+ * @param nodes Six nodal identifiers in quadratic triangular ordering.
+ */
 FRTShellS6::FRTShellS6(ID id, const std::array<ID, 6>& nodes)
     : FRTShell<6>       (id, nodes),
-      geometry          (nodes),
       integration_scheme_(math::quadrature::Domain::DOMAIN_ISO_TRI,
                           math::quadrature::Order::ORDER_CUBIC) {}
 
+/**
+ * Returns the public element type identifier.
+ *
+ * @return String identifier `MITC6FRT`.
+ */
 std::string FRTShellS6::type_name() const {
     return "MITC6FRT";
 }
 
+/**
+ * Returns an oriented quadratic triangular surface representation.
+ *
+ * The reverse side swaps the second and third corner nodes and consistently
+ * reverses the three associated midside nodes.
+ *
+ * @param surface_id Requested positive or negative shell side.
+ * @return Oriented six-node surface object.
+ */
 std::shared_ptr<SurfaceInterface> FRTShellS6::surface(int surface_id) {
     return std::make_shared<Surface6>(
         surface_id == 1
@@ -39,10 +58,20 @@ std::shared_ptr<SurfaceInterface> FRTShellS6::surface(int surface_id) {
     );
 }
 
+/**
+ * Returns the numerical area quadrature used by the element.
+ *
+ * @return Cubic triangular quadrature rule.
+ */
 const math::quadrature::Quadrature& FRTShellS6::integration_scheme() const {
     return integration_scheme_;
 }
 
+/**
+ * Returns all numerical integration-point coordinates for result storage.
+ *
+ * @return Matrix of `(r,s,t)` integration-point coordinates.
+ */
 RowMatrix FRTShellS6::stress_strain_ip_rst() {
     RowMatrix rst(integration_scheme_.count(), 3);
     rst.setZero();
@@ -56,6 +85,11 @@ RowMatrix FRTShellS6::stress_strain_ip_rst() {
     return rst;
 }
 
+/**
+ * Returns the six natural nodal coordinates for result recovery.
+ *
+ * @return Matrix of corner and midside coordinates in `(r,s,t)` format.
+ */
 RowMatrix FRTShellS6::stress_strain_nodal_rst() {
     RowMatrix rst(6, 3);
     rst << Precision(0.0), Precision(0.0), Precision(0),
@@ -67,6 +101,13 @@ RowMatrix FRTShellS6::stress_strain_nodal_rst() {
     return rst;
 }
 
+/**
+ * Evaluates the six quadratic Lagrange shape functions on the reference triangle.
+ *
+ * @param r First natural triangle coordinate.
+ * @param s Second natural triangle coordinate.
+ * @return Six quadratic shape-function values.
+ */
 FRTShellS6::VecN FRTShellS6::shape_function(Precision r, Precision s) const {
     const Precision t = Precision(1) - r - s;
 
@@ -80,6 +121,13 @@ FRTShellS6::VecN FRTShellS6::shape_function(Precision r, Precision s) const {
     return shape;
 }
 
+/**
+ * Evaluates the first natural derivatives of the quadratic triangle interpolation.
+ *
+ * @param r First natural triangle coordinate.
+ * @param s Second natural triangle coordinate.
+ * @return Matrix whose rows contain `[dN_i/dr,dN_i/ds]`.
+ */
 FRTShellS6::MatN2 FRTShellS6::shape_derivative(Precision r, Precision s) const {
     MatN2 derivative;
 
@@ -99,6 +147,11 @@ FRTShellS6::MatN2 FRTShellS6::shape_derivative(Precision r, Precision s) const {
     return derivative;
 }
 
+/**
+ * Returns the natural coordinates of the three corner and three midside nodes.
+ *
+ * @return Six quadratic triangular node coordinates.
+ */
 FRTShellS6::MatN2 FRTShellS6::node_coords_natural() const {
     MatN2 coordinates;
     coordinates << Precision(0.0), Precision(0.0),
@@ -121,6 +174,8 @@ FRTShellS6::MatN2 FRTShellS6::node_coords_natural() const {
  * are the two-point Gauss positions mapped onto every triangle edge. The first
  * nine points define the isotropic in-plane strain interpolation. The final six
  * points define the MITC6-b transverse-shear field.
+ *
+ * @return Ordered natural tying-point coordinates.
  */
 std::vector<Vec2> FRTShellS6::tying_point_coordinates() const {
     const Precision sqrt3     = std::sqrt(Precision(3));
@@ -164,6 +219,11 @@ std::vector<Vec2> FRTShellS6::tying_point_coordinates() const {
  * The transverse-shear field is linear inside the triangle and uses two tying
  * values on each edge. Values, B rows and transposed geometric weights follow
  * exactly the same coefficient construction.
+ *
+ * @param data Active tying-point strain and B data.
+ * @param point Target natural shell point.
+ * @param strain_nat Compatible natural strain vector to modify.
+ * @param B_nat Optional compatible natural B matrix to modify.
  */
 void FRTShellS6::apply_mitc_natural(
     const EvaluationData& data,
@@ -376,11 +436,24 @@ void FRTShellS6::apply_mitc_natural(
 
 }
 
+/**
+ * Applies the exact transpose of the complete MITC6-b interpolation.
+ *
+ * The operation distributes assumed membrane, curvature and transverse-shear
+ * weights to the compatible tying-point Hessians using the same coefficients
+ * as the forward interpolation. The supplied thread-local span is updated in
+ * place and no temporary dynamic storage is created.
+ *
+ * @param point Integration point defining the interpolation coefficients.
+ * @param assumed_weights Generalized natural weights after basis pull-back.
+ * @param compatible_weights Compatible integration-point weights to increment.
+ * @param tying_weights Zeroed compatible tying-point weights to increment.
+ */
 void FRTShellS6::pull_back_mitc_resultants(
     const ReferencePoint& point,
     const Vec8&           assumed_weights,
     Vec8&                 compatible_weights,
-    std::vector<Vec8>&    tying_weights
+    Span<Vec8>            tying_weights
 ) const {
     (void) compatible_weights;
 
