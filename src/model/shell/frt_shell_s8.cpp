@@ -342,7 +342,7 @@ void FRTShellS8::apply_mitc_natural(
         for (Index corner = 0; corner < 4; ++corner) {
             const ReferencePoint& sample = tying_points[static_cast<std::size_t>(corner)];
             const StaticMatrix<3, 3> transformation =
-                natural_to_directions(sample, point.basis.col(0), point.basis.col(2));
+                natural_to_directions(sample, point.basis.col(0), point.basis.col(1));
 
             sampled[corner] = transformation
                             * data.tying_strain_nat[static_cast<std::size_t>(corner)]
