@@ -211,8 +211,8 @@ struct FRTShell : ShellElement<N> {
 
         // Natural shape-function derivatives [N_,r, N_,s] and
         // shape function derivatives in orthonormal basis [N_,a, N_,b]
-        MatN2 dshape_rs = MatN2::Zero();
-        MatN2 dshape_ab = MatN2::Zero();
+        MatN2 shape_rs = MatN2::Zero();
+        MatN2 shape_ab = MatN2::Zero();
 
         // natural reference midsurface tangent [X_,r, X_,s] in natural coordinates and
         // natural reference midsurface tangent [X_,a, X_,b] in orthonormal basis

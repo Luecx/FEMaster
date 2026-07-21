@@ -25,155 +25,6 @@
 
 namespace fem::model {
 
-namespace {
-
-/**
- * Adds one stress-weighted Hessian of a scalar product between two current
- * midsurface derivatives directly to the translational element block.
- *
- * For
- *
- *     x_a = sum_i a_i x_i,
- *     x_b = sum_i b_i x_i,
- *
- * the second derivative of `scale * x_a . x_b` consists only of constant
- * translational identity blocks
- *
- *     scale * (a_i b_j + b_i a_j) I.
- *
- * The identities are inserted through the block diagonals and are never stored
- * as explicit derivative fields.
- *
- * @tparam N Number of shell nodes.
- * @param a_coefficients Interpolation coefficients of the first position field.
- * @param b_coefficients Interpolation coefficients of the second position field.
- * @param scale Complete stress and quadrature multiplier.
- * @param Kgeo Element geometric tangent to update.
- */
-template<Index N>
-void add_xx_weighted_hessian(
-    const typename FRTShell<N>::VecN& a_coefficients,
-    const typename FRTShell<N>::VecN& b_coefficients,
-    Precision                         scale,
-    typename FRTShell<N>::Mat6N&      Kgeo
-) {
-    if (scale == Precision(0)) {
-        return;
-    }
-
-    using Shell = FRTShell<N>;
-
-    // Insert every translational identity block directly into the global
-    // element matrix without constructing an intermediate Hessian
-    for (Index i = 0; i < N; ++i) {
-        const Index row = Shell::dofs_per_node * i;
-
-        for (Index j = 0; j < N; ++j) {
-            const Index col = Shell::dofs_per_node * j;
-            const Precision block_scale = scale
-                * (a_coefficients(i) * b_coefficients(j)
-                 + b_coefficients(i) * a_coefficients(j));
-
-            if (block_scale != Precision(0)) {
-                Kgeo.template block<3, 3>(row, col).diagonal().array() += block_scale;
-            }
-        }
-    }
-}
-
-/**
- * Adds one stress-weighted Hessian of a scalar product between a current
- * midsurface derivative and a rotated director field.
- *
- * The scalar kinematic quantity is
- *
- *     scale * (sum_i a_i x_i) . (sum_j b_j R_j d0_j).
- *
- * Its Hessian contains mixed translation-rotation blocks from the first SO(3)
- * derivatives and local rotation-rotation blocks from the second SO(3)
- * derivatives. Only compact nodal `3 x 3` matrices are read from the active
- * workspace.
- *
- * @tparam N Number of shell nodes.
- * @param positions Current nodal midsurface positions.
- * @param rotations Compact nodal SO(3) values and derivatives.
- * @param reference_directors Nodal reference directors acted on by the rotations.
- * @param x_coefficients Interpolation coefficients of the position field.
- * @param d_coefficients Interpolation coefficients of the director field.
- * @param scale Complete stress and quadrature multiplier.
- * @param Kgeo Element geometric tangent to update.
- */
-template<Index N>
-void add_xd_weighted_hessian(
-    const typename FRTShell<N>::MatN3& positions,
-    const std::array<typename FRTShell<N>::RotationDerivatives, N>& rotations,
-    const typename FRTShell<N>::MatN3& reference_directors,
-    const typename FRTShell<N>::VecN&  x_coefficients,
-    const typename FRTShell<N>::VecN&  d_coefficients,
-    Precision                          scale,
-    typename FRTShell<N>::Mat6N&       Kgeo
-) {
-    if (scale == Precision(0)) {
-        return;
-    }
-
-    using Shell = FRTShell<N>;
-
-    Vec3 x_value = Vec3::Zero();
-
-    // Interpolate the current position derivative appearing in all rotational
-    // blocks of this scalar product
-    for (Index node = 0; node < N; ++node) {
-        x_value += x_coefficients(node) * positions.row(node).transpose();
-    }
-
-    for (Index d_node = 0; d_node < N; ++d_node) {
-        const Index     rot_base    = Shell::dofs_per_node * d_node + 3;
-        const Precision coefficient = d_coefficients(d_node);
-
-        if (coefficient == Precision(0)) {
-            continue;
-        }
-
-        const Vec3 d0 = reference_directors.row(d_node).transpose();
-
-        // First SO(3) derivatives generate the symmetric mixed
-        // translation-rotation Hessian blocks
-        for (Index a = 0; a < 3; ++a) {
-            const Vec3 director_first = rotations[d_node].d1[a] * d0;
-
-            for (Index x_node = 0; x_node < N; ++x_node) {
-                const Precision x_coefficient = x_coefficients(x_node);
-
-                if (x_coefficient == Precision(0)) {
-                    continue;
-                }
-
-                const Index x_base = Shell::dofs_per_node * x_node;
-                const Vec3 mixed = scale
-                                 * x_coefficient
-                                 * coefficient
-                                 * director_first;
-
-                Kgeo.template block<3, 1>(x_base, rot_base + a) += mixed;
-                Kgeo.template block<1, 3>(rot_base + a, x_base) += mixed.transpose();
-            }
-        }
-
-        // Second SO(3) derivatives contribute only to the local three-by-three
-        // rotational block of the same director node
-        for (Index a = 0; a < 3; ++a) {
-            for (Index b = 0; b < 3; ++b) {
-                const Vec3 director_second = rotations[d_node].d2[a][b] * d0;
-                Kgeo(rot_base + a, rot_base + b) +=
-                    scale * coefficient * x_value.dot(director_second);
-            }
-        }
-    }
-}
-
-} // namespace
-
 /**
  * Loads previously stored generalized shell resultants at the integration
  * points.
@@ -329,93 +180,30 @@ void FRTShell<N>::add_weighted_natural_hessian(
     }
 
     logging::error(data.rotations != nullptr,
-                   "FRTShell: geometric tangent requires nodal rotation derivatives");
+        "FRTShell: geometric tangent requires nodal rotation derivatives");
 
     const auto& rotations = *data.rotations;
     const auto& ref       = reference_data();
 
-    const VecN dshape_r = point.dshape_rs.col(0);
-    const VecN dshape_s = point.dshape_rs.col(1);
-    const VecN shape    = point.shape;
+    const VecN shape_r = point.shape_rs.col(0);
+    const VecN shape_s = point.shape_rs.col(1);
+    const VecN shape   = point.shape;
 
     // Membrane metric Hessians contain only direct translational identities
-    add_xx_weighted_hessian<N>(
-        dshape_r,
-        dshape_r,
-        Precision(0.5) * weights(epsilon_rr),
-        Kgeo
-    );
-    add_xx_weighted_hessian<N>(
-        dshape_s,
-        dshape_s,
-        Precision(0.5) * weights(epsilon_ss),
-        Kgeo
-    );
-    add_xx_weighted_hessian<N>(
-        dshape_r,
-        dshape_s,
-        weights(gamma_rs),
-        Kgeo
-    );
+    add_xx_hessian<N>(shape_r, shape_r, Precision(0.5) * weights(epsilon_rr), Kgeo);
+    add_xx_hessian<N>(shape_s, shape_s, Precision(0.5) * weights(epsilon_ss), Kgeo);
+    add_xx_hessian<N>(shape_r, shape_s, weights(gamma_rs), Kgeo);
 
     // Curvature Hessians contain mixed translation-rotation and local
     // rotation-rotation SO(3) blocks
-    add_xd_weighted_hessian<N>(
-        data.state.x,
-        rotations,
-        ref.d0,
-        dshape_r,
-        dshape_r,
-        weights(kappa_rr),
-        Kgeo
-    );
-    add_xd_weighted_hessian<N>(
-        data.state.x,
-        rotations,
-        ref.d0,
-        dshape_s,
-        dshape_s,
-        weights(kappa_ss),
-        Kgeo
-    );
-    add_xd_weighted_hessian<N>(
-        data.state.x,
-        rotations,
-        ref.d0,
-        dshape_r,
-        dshape_s,
-        weights(kappa_rs),
-        Kgeo
-    );
-    add_xd_weighted_hessian<N>(
-        data.state.x,
-        rotations,
-        ref.d0,
-        dshape_s,
-        dshape_r,
-        weights(kappa_rs),
-        Kgeo
-    );
+    add_xd_hessian<N>(data.state.x, rotations, ref.d0, shape_r, shape_r, weights(kappa_rr), Kgeo);
+    add_xd_hessian<N>(data.state.x, rotations, ref.d0, shape_s, shape_s, weights(kappa_ss), Kgeo);
+    add_xd_hessian<N>(data.state.x, rotations, ref.d0, shape_r, shape_s, weights(kappa_rs), Kgeo);
+    add_xd_hessian<N>(data.state.x, rotations, ref.d0, shape_s, shape_r, weights(kappa_rs), Kgeo);
 
     // Transverse-shear Hessians use the interpolated current director field
-    add_xd_weighted_hessian<N>(
-        data.state.x,
-        rotations,
-        ref.d0,
-        dshape_r,
-        shape,
-        weights(gamma_r3),
-        Kgeo
-    );
-    add_xd_weighted_hessian<N>(
-        data.state.x,
-        rotations,
-        ref.d0,
-        dshape_s,
-        shape,
-        weights(gamma_s3),
-        Kgeo
-    );
+    add_xd_hessian<N>(data.state.x, rotations, ref.d0, shape_r, shape, weights(gamma_r3), Kgeo);
+    add_xd_hessian<N>(data.state.x, rotations, ref.d0, shape_s, shape, weights(gamma_s3), Kgeo);
 }
 
 /**
@@ -440,9 +228,9 @@ void FRTShell<N>::assemble_geometric_stiffness(
     Mat6N&                Kgeo
 ) const {
     logging::error(data.with_G,
-                   "FRTShell: geometric stiffness requires second rotation derivatives");
+        "FRTShell: geometric stiffness requires second rotation derivatives");
     logging::error(data.with_resultants,
-                   "FRTShell: geometric stiffness requires shell resultants");
+        "FRTShell: geometric stiffness requires shell resultants");
 
     Kgeo.setZero();
 
@@ -472,12 +260,9 @@ void FRTShell<N>::assemble_geometric_stiffness(
                     t00 * t11 + t01 * t10;
 
         Vec8 natural_resultants = Vec8::Zero();
-        natural_resultants.template segment<3>(0) =
-            in_plane.transpose() * local_resultants.template segment<3>(0);
-        natural_resultants.template segment<3>(3) =
-            in_plane.transpose() * local_resultants.template segment<3>(3);
-        natural_resultants.template segment<2>(6) =
-            points[id].invJ.transpose() * local_resultants.template segment<2>(6);
+        natural_resultants.template segment<3>(0) = in_plane.transpose() * local_resultants.template segment<3>(0);
+        natural_resultants.template segment<3>(3) = in_plane.transpose() * local_resultants.template segment<3>(3);
+        natural_resultants.template segment<2>(6) = points[id].invJ.transpose() * local_resultants.template segment<2>(6);
 
         Vec8 compatible_weights = Vec8::Zero();
         for (Vec8& tying_weight : data.geometric_tying_weights) {
@@ -590,11 +375,11 @@ void FRTShell<N>::assemble_drill_stabilization(
     Vec6N*                internal_force
 ) const {
     logging::error(data.with_B,
-                   "FRTShell: drilling stabilization requires first rotation derivatives");
+        "FRTShell: drilling stabilization requires first rotation derivatives");
     logging::error(data.rotations != nullptr,
-                   "FRTShell: drilling stabilization requires nodal rotations");
+        "FRTShell: drilling stabilization requires nodal rotations");
     logging::error(data.ip_drill_stiffness.size() == reference_data().ip_points.size(),
-                   "FRTShell: invalid drilling stiffness workspace size");
+        "FRTShell: invalid drilling stiffness workspace size");
 
     const auto& rotations = *data.rotations;
     const auto& points    = reference_data().ip_points;
@@ -617,8 +402,8 @@ void FRTShell<N>::assemble_drill_stabilization(
         // rotated reference tangent vectors
         for (Index node = 0; node < num_nodes; ++node) {
             const Vec3 x_i = data.state.x.row(node).transpose();
-            x_a += point.dshape_ab.col(0)(node) * x_i;
-            x_b += point.dshape_ab.col(1)(node) * x_i;
+            x_a += point.shape_ab.col(0)(node) * x_i;
+            x_b += point.shape_ab.col(1)(node) * x_i;
             a1  += point.shape(node) * rotations[node].value * point.basis.col(0);
             a2  += point.shape(node) * rotations[node].value * point.basis.col(1);
         }
@@ -633,8 +418,8 @@ void FRTShell<N>::assemble_drill_stabilization(
         for (Index node = 0; node < num_nodes; ++node) {
             const Index base = dofs_per_node * node;
             const Vec3 derivative = Precision(0.5)
-                                  * (point.dshape_ab.col(1)(node) * a1
-                                   - point.dshape_ab.col(0)(node) * a2);
+                                  * (point.shape_ab.col(1)(node) * a1
+                                   - point.shape_ab.col(0)(node) * a2);
             B_d.template segment<3>(base) = derivative;
         }
 
@@ -689,8 +474,8 @@ void FRTShell<N>::assemble_drill_stabilization(
                 for (Index x_node = 0; x_node < num_nodes; ++x_node) {
                     const Index x_base = dofs_per_node * x_node;
                     const Vec3 mixed = Precision(0.5)
-                                     * (point.dshape_ab.col(1)(x_node) * da1
-                                      - point.dshape_ab.col(0)(x_node) * da2);
+                                     * (point.shape_ab.col(1)(x_node) * da1
+                                      - point.shape_ab.col(0)(x_node) * da2);
 
                     stiffness_matrix->template block<3, 1>(
                         x_base,

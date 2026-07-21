@@ -122,19 +122,17 @@ const typename FRTShell<N>::ReferenceData& FRTShell<N>::reference_data() const {
  */
 template<Index N>
 typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_node_coords() const {
-    logging::error(this->_model_data                      != nullptr,
-                   "FRTShell: no model data assigned to element ", this->elem_id);
+    logging::error(this->_model_data != nullptr,
+        "FRTShell: no model data assigned to element ", this->elem_id);
     logging::error(this->_model_data->positions_reference != nullptr,
-                   "FRTShell: POSITION_REFERENCE field is not set");
+        "FRTShell: POSITION_REFERENCE field is not set");
 
     const auto& positions = *this->_model_data->positions_reference;
     MatN3       X;
 
     // Gather the global reference positions in local element-node ordering
     for (Index node = 0; node < num_nodes; ++node) {
-        X.row(node) = positions.row_vec3(
-            static_cast<Index>(this->node_ids[node])
-        ).transpose();
+        X.row(node) = positions.row_vec3(static_cast<Index>(this->node_ids[node])).transpose();
     }
 
     return X;
@@ -154,53 +152,54 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_node_coords() const {
  * @return Unit reference director at every shell node.
  */
 template<Index N>
-typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(
-    const MatN3& X
-) const {
+typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(const MatN3& X) const {
     MatN3 d0;
 
+    // check if there are normals defined inside model data
     const bool has_element_normals =
         this->_model_data != nullptr &&
         this->_model_data->shell_element_nodal_normals != nullptr;
 
+    // natural coordinates of nodes in (r,s) space for which we may need to evaluate the normal
     const MatN2 natural_nodes = node_coords_natural();
 
+    // for each node, compute the normal or use an existing one
     for (Index node = 0; node < num_nodes; ++node) {
         Vec3 director = Vec3::Zero();
 
         if (has_element_normals) {
             // Use explicitly supplied element-nodal normals when available
             const Field& normals = *this->_model_data->shell_element_nodal_normals;
-            const Index row = static_cast<Index>(this->elem_nodal_offset) + node;
+            // convert local node index to global element-nodal index
+            const Index row      = static_cast<Index>(this->elem_nodal_offset) + node;
 
+            // quick sanity check
             director = normals.row_vec3(row);
-            logging::error(
-                director.allFinite() && director.norm() > Precision(0),
+            logging::error(director.allFinite() && director.norm() > Precision(0),
                 "FRTShell: invalid element-nodal shell normal for element ",
                 this->elem_id
             );
         } else {
             // Recover the normal from the actual topology-specific
             // isoparametric tangents at the natural node coordinate
-            const Precision r = natural_nodes(node, 0);
-            const Precision s = natural_nodes(node, 1);
+            const Precision r  = natural_nodes(node, 0);
+            const Precision s  = natural_nodes(node, 1);
+
+            // derivative of shape functions w.r.t r and s at (r,s)
             const MatN2 dshape = shape_derivative(r, s);
 
-            Mat32 X_rs = Mat32::Zero();
+            // tangent (derivative of X w.r.t (r,s))
+            // X(r,s) = sum_i N_i(r,s) X_i
+            // therefor:
+            // X_r    = sum_i N_i(r,s)_r X_i
+            // X_s    = sum_i N_i(r,s)_s X_i
+            const Mat32 X_rs = X.transpose() * dshape;
 
-            for (Index i = 0; i < num_nodes; ++i) {
-                const Vec3 X_i = X.row(i).transpose();
-                X_rs.col(0) += dshape(i, 0) * X_i;
-                X_rs.col(1) += dshape(i, 1) * X_i;
-            }
-
+            // normal
             director = X_rs.col(0).cross(X_rs.col(1));
-            logging::error(
-                director.allFinite() && director.norm() > Precision(1e-14),
-                "FRTShell: singular reference geometry at node ",
-                node,
-                " of element ",
-                this->elem_id
+            logging::error(director.allFinite() && director.norm() > Precision(1e-14),
+                "FRTShell: singular reference geometry at node ",node,
+                " of element ", this->elem_id
             );
         }
 
@@ -212,6 +211,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(
     // local sign reversals inside one higher-order element
     const Vec3 orientation = d0.row(0).transpose();
 
+    // flip other normals if needed
     for (Index node = 1; node < num_nodes; ++node) {
         if (d0.row(node).transpose().dot(orientation) < Precision(0)) {
             d0.row(node) *= Precision(-1);
@@ -242,71 +242,87 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
 ) const {
     const auto& ref = reference_data();
 
+    // create a reference point object at some coordinate r,s with weight w coming from integration
     ReferencePoint point;
     point.r         = r;
     point.s         = s;
     point.w         = w;
     point.shape     = shape_function(r, s);
-    point.dshape_rs = shape_derivative(r, s);
+    point.shape_rs = shape_derivative(r, s);
 
-    // Interpolate the actual isoparametric reference tangents
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Vec3 X_i = ref.X.row(node).transpose();
-        point.X_rs.col(0) += point.dshape_rs(node, 0) * X_i;
-        point.X_rs.col(1) += point.dshape_rs(node, 1) * X_i;
-    }
+    // Reference midsurface tangents obtained from
+    // X(r,s) = sum_i N_i(r,s) X_i:
+    // X_,r   = sum_i N_i,r X_i,
+    // X_,s   = sum_i N_i,s X_i.
+    point.X_rs.noalias() = ref.X.transpose() * point.shape_rs;
 
-    const Vec3 normal = point.X_rs.col(0).cross(point.X_rs.col(1));
-    point.detJ = normal.norm();
+    // normal used below
+    const Vec3 normal    = point.X_rs.col(0).cross(point.X_rs.col(1));
+    point.detJ           = normal.norm();
 
     logging::error(point.detJ > Precision(1e-14) && std::isfinite(point.detJ),
-        "FRTShell: singular reference surface Jacobian in element ",this->elem_id,
-        " at (", r, ", ", s, ")"
-    );
+        "FRTShell: singular reference surface Jacobian in element ",this->elem_id, " at (", r, ", ", s, ")");
 
-    // Construct the pointwise orthonormal basis on the curved reference surface
+    // Construct the pointwise right-handed orthonormal reference basis:
+    //
+    // e1 follows X_,r,
+    // e3 is the reference-surface normal,
+    // e2 = e3 x e1.
+    //
+    // Recomputing e1 from e2 x e3 removes the remaining round-off component
+    // and ensures that the stored basis is orthonormal and right-handed.
     point.basis.col(0) = normalized(point.X_rs.col(0));
     point.basis.col(2) = normal / point.detJ;
     point.basis.col(1) = normalized(point.basis.col(2).cross(point.basis.col(0)));
     point.basis.col(0) = normalized(point.basis.col(1).cross(point.basis.col(2)));
 
-    // Express the two natural tangents in the local orthonormal tangent basis
-    point.J << point.X_rs.col(0).dot(point.basis.col(0)), point.X_rs.col(0).dot(point.basis.col(1)),
-               point.X_rs.col(1).dot(point.basis.col(0)), point.X_rs.col(1).dot(point.basis.col(1));
+    // Project the natural midsurface tangents X_,r and X_,s onto the local
+    // orthonormal tangent basis e1 and e2:
+    //
+    // J = [ X_,r · e1   X_,r · e2
+    //       X_,s · e1   X_,s · e2 ]
+    //
+    // Hence J maps derivatives in local tangent coordinates (a,b) to derivatives
+    // in natural coordinates (r,s).
+    point.J = point.X_rs.transpose() * point.basis.template leftCols<2>();
 
+    // the determinant of J is actually already computed above and should be the same because e1 and e2
+    // are orthonormal. Hence, we can check for sanity:
     const Precision detJ = point.J.determinant();
+    logging::error(std::abs(detJ - point.detJ) <= Precision(1e-10) * point.detJ,
+        "FRTShell: inconsistent reference Jacobian");
     logging::error(std::abs(detJ) > Precision(1e-14),
-        "FRTShell: singular local reference mapping in element ", this->elem_id,
-        " at (", r, ", ", s,")"
-    );
+        "FRTShell: singular local reference mapping in element ", this->elem_id, " at (", r, ", ", s,")");
 
+    // storing the inverse for mapping (r,s) -> (a,b) space
     point.invJ = point.J.inverse();
 
-    // Transform every shape gradient into the orthonormal tangent coordinates
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Vec2 derivative_nat = point.dshape_rs.row(node).transpose();
-        const Vec2 derivative_loc = point.invJ * derivative_nat;
+    // Each shape-function gradient is stored as one row. From
+    //
+    //     [N_,a, N_,b]^T = invJ [N_,r, N_,s]^T
+    //
+    // follows for the complete row-wise derivative matrices
+    //
+    //     shape_ab = shape_rs invJ^T.
+    point.shape_ab.noalias() = point.shape_rs * point.invJ.transpose();
 
-        point.dshape_ab.col(0)(node) = derivative_loc(0);
-        point.dshape_ab.col(1)(node) = derivative_loc(1);
-    }
+    // Because a and b are the local orthonormal surface coordinates,
+    //
+    // X_,a = e1,
+    // X_,b = e2.
+    point.X_ab = point.basis.template leftCols<2>();
 
-    // The reference derivatives with respect to the orthonormal coordinates are
-    // exactly the local basis vectors by construction
-    point.X_ab.col(0) = point.basis.col(0);
-    point.X_ab.col(1) = point.basis.col(1);
+    // Interpolate the nodal reference director field:
+    //
+    // D = sum_i N_i D_i.
+    point.D.noalias() = ref.d0.transpose() * point.shape;
 
-    // Interpolate the nodal reference director field and all natural and local
-    // tangent derivatives required by the shell curvature and shear measures
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Vec3 D_i = ref.d0.row(node).transpose();
-
-        point.D   += point.shape(node)                    * D_i;
-        point.D_rs.col(0) += point.dshape_rs(node, 0)     * D_i;
-        point.D_rs.col(1) += point.dshape_rs(node, 1)     * D_i;
-        point.D_ab.col(0) += point.dshape_ab.col(0)(node) * D_i;
-        point.D_ab.col(1) += point.dshape_ab.col(1)(node) * D_i;
-    }
+    // Interpolate its natural and local tangent derivatives:
+    //
+    // D_,r = sum_i N_i,r D_i,    D_,s = sum_i N_i,s D_i,
+    // D_,a = sum_i N_i,a D_i,    D_,b = sum_i N_i,b D_i.
+    point.D_rs.noalias() = ref.d0.transpose() * point.shape_rs;
+    point.D_ab.noalias() = ref.d0.transpose() * point.shape_ab;
 
     return point;
 }
@@ -320,17 +336,17 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
  */
 template<Index N>
 Vec3 FRTShell<N>::reference_position(Precision r, Precision s) const {
+    // Evaluate all shape-function values N_i at the requested natural point.
     const VecN shape = shape_function(r, s);
-    const MatN3& X   = reference_data().X;
 
-    Vec3 position = Vec3::Zero();
-
-    // Interpolate directly from the persistent nodal reference coordinates
-    for (Index node = 0; node < num_nodes; ++node) {
-        position += shape(node) * X.row(node).transpose();
-    }
-
-    return position;
+    // Interpolate the global reference position:
+    //
+    // X(r,s) = sum_i N_i(r,s) X_i.
+    //
+    // reference_data().X stores the nodal coordinates row-wise as an N x 3
+    // matrix. After transposition it is 3 x N, so multiplication with the
+    // N x 1 shape vector yields the interpolated 3 x 1 global position.
+    return reference_data().X.transpose() * shape;
 }
 
 /**
@@ -345,13 +361,15 @@ Vec3 FRTShell<N>::reference_position(Precision r, Precision s) const {
  */
 template<Index N>
 Mat3 FRTShell<N>::reference_basis_global(Precision r, Precision s) const {
-    const ReferencePoint* cached = cached_reference_point(r, s);
-    const ReferencePoint temporary =
-        cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
-    const ReferencePoint& point = cached ? *cached : temporary;
+    // see if we find a cached reference point. if its evaluated at a tying point or ip, this should work
+    const ReferencePoint* cached   = cached_reference_point(r, s);
 
-    Mat3 basis = point.basis;
-    return basis;
+    // if we found one, return that basis
+    if (cached)
+        return cached->basis;
+
+    // make a new reference point. this is technically a bit wasteful but its not a huge overhead here.
+    return make_reference_point(r, s, Precision(0)).basis;
 }
 
 /**
@@ -398,10 +416,9 @@ const typename FRTShell<N>::ReferencePoint* FRTShell<N>::cached_reference_point(
 template<Index N>
 ShellSection* FRTShell<N>::shell_section() const {
     logging::error(this->_section != nullptr,
-                   "FRTShell: section not set for element ", this->elem_id);
+        "FRTShell: section not set for element ", this->elem_id);
     logging::error(this->_section->template as<ShellSection>() != nullptr,
-                   "FRTShell: section is not a shell section for element ",
-                   this->elem_id);
+        "FRTShell: section is not a shell section for element ", this->elem_id);
 
     return this->_section->template as<ShellSection>();
 }
@@ -421,8 +438,7 @@ Precision FRTShell<N>::topology_stiffness_scale() const {
     if (this->_model_data && this->_model_data->element_stiffness_scale) {
         const auto field = this->_model_data->element_stiffness_scale;
         logging::error(field->components == 1,
-                       "Field '", field->name,
-                       "': element stiffness scale requires one component");
+            "Field '", field->name, "': element stiffness scale requires one component");
         scale = (*field)(static_cast<Index>(this->elem_id));
     }
 

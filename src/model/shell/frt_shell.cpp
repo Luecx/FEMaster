@@ -6,7 +6,8 @@
  * according to mathematical responsibility:
  *
  * - reference configuration and curved-surface geometry,
- * - finite-rotation kinematics and compact exact rotation derivatives,
+ * - compact kinematic product derivatives and Hessian kernels,
+ * - finite-rotation shell kinematics,
  * - shell-section response and consistent assembly,
  * - stress and strain result recovery,
  * - mass, volume and distributed-field integration.
@@ -24,6 +25,7 @@
  */
 
 #include "frt_shell_reference.inl"
+#include "frt_shell_derivatives.inl"
 #include "frt_shell_kinematics.inl"
 #include "frt_shell_assembly.inl"
 #include "frt_shell_output.inl"

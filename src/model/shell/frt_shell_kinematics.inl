@@ -29,157 +29,6 @@ namespace fem::model {
 
 namespace {
 
-/**
- * Adds one scaled scalar product of two current midsurface derivatives to a
- * membrane strain component and optionally to its B row.
- *
- * The current vector fields are
- *
- *     x_a = sum_i a_i x_i,
- *     x_b = sum_i b_i x_i.
- *
- * Their scalar product contributes `scale * x_a . x_b`. Because nodal
- * positions depend linearly on the translational degrees of freedom, the
- * derivative is inserted directly as
- *
- *     d(x_a . x_b)/du_i = a_i x_b + b_i x_a.
- *
- * No explicit `dx/du` identity matrices are constructed or stored.
- *
- * @tparam N Number of shell nodes.
- * @param positions Current nodal midsurface positions.
- * @param a_coefficients Interpolation coefficients of the first vector field.
- * @param b_coefficients Interpolation coefficients of the second vector field.
- * @param scale Scalar multiplier of the complete contribution.
- * @param strain_id Generalized natural strain row receiving the contribution.
- * @param strain Generalized natural strain vector to update.
- * @param B Optional generalized strain-displacement matrix to update.
- */
-template<Index N>
-void add_xx_strain_and_B(
-    const typename FRTShell<N>::MatN3& positions,
-    const typename FRTShell<N>::VecN&  a_coefficients,
-    const typename FRTShell<N>::VecN&  b_coefficients,
-    Precision                          scale,
-    Index                              strain_id,
-    typename FRTShell<N>::Vec8&        strain,
-    typename FRTShell<N>::Mat8x6N*     B
-) {
-    using Shell = FRTShell<N>;
-
-    Vec3 a_value = Vec3::Zero();
-    Vec3 b_value = Vec3::Zero();
-
-    // Interpolate the two current vector fields from the nodal positions
-    for (Index node = 0; node < N; ++node) {
-        const Vec3 x_i = positions.row(node).transpose();
-        a_value += a_coefficients(node) * x_i;
-        b_value += b_coefficients(node) * x_i;
-    }
-
-    // Add the scalar kinematic value to the requested strain component
-    strain(strain_id) += scale * a_value.dot(b_value);
-
-    if (!B) {
-        return;
-    }
-
-    // Insert the analytical translational derivative directly into the B row
-    for (Index node = 0; node < N; ++node) {
-        const Index base = Shell::dofs_per_node * node;
-        const Vec3 derivative = scale
-                              * (a_coefficients(node) * b_value
-                               + b_coefficients(node) * a_value);
-
-        B->template block<1, 3>(strain_id, base) += derivative.transpose();
-    }
-}
-
-/**
- * Adds one scaled scalar product between a current midsurface derivative and a
- * current director field to a generalized strain component and optional B row.
- *
- * The two vector fields are
- *
- *     x_a = sum_i a_i x_i,
- *     d_b = sum_i b_i R_i d0_i.
- *
- * Translational derivatives are inserted analytically. Rotational derivatives
- * use the compact nodal matrices `dR_i/dtheta_ia` retained by the active
- * thread-local workspace:
- *
- *     d(d_b)/dtheta_ia = b_i (dR_i/dtheta_ia) d0_i.
- *
- * @tparam N Number of shell nodes.
- * @param data Active element evaluation data.
- * @param reference_directors Nodal undeformed directors acted on by R.
- * @param a_coefficients Interpolation coefficients of the position field.
- * @param b_coefficients Interpolation coefficients of the director field.
- * @param scale Scalar multiplier of the complete contribution.
- * @param strain_id Generalized natural strain row receiving the contribution.
- * @param strain Generalized natural strain vector to update.
- * @param B Optional generalized strain-displacement matrix to update.
- */
-template<Index N>
-void add_xd_strain_and_B(
-    const typename FRTShell<N>::EvaluationData& data,
-    const typename FRTShell<N>::MatN3&          reference_directors,
-    const typename FRTShell<N>::VecN&           a_coefficients,
-    const typename FRTShell<N>::VecN&           b_coefficients,
-    Precision                                   scale,
-    Index                                       strain_id,
-    typename FRTShell<N>::Vec8&                 strain,
-    typename FRTShell<N>::Mat8x6N*              B
-) {
-    using Shell = FRTShell<N>;
-
-    Vec3 x_value = Vec3::Zero();
-    Vec3 d_value = Vec3::Zero();
-
-    // Interpolate the current position derivative and director field once
-    for (Index node = 0; node < N; ++node) {
-        x_value += a_coefficients(node) * data.state.x.row(node).transpose();
-        d_value += b_coefficients(node) * data.state.d.row(node).transpose();
-    }
-
-    // Add the current scalar product to the requested strain component
-    strain(strain_id) += scale * x_value.dot(d_value);
-
-    if (!B) {
-        return;
-    }
-
-    logging::error(data.rotations != nullptr,
-                   "FRTShell: B evaluation requires nodal rotation derivatives");
-
-    const auto& rotations = *data.rotations;
-
-    // Differentiate the position field with respect to nodal translations
-    for (Index node = 0; node < N; ++node) {
-        const Index base = Shell::dofs_per_node * node;
-        const Vec3 derivative = scale * a_coefficients(node) * d_value;
-        B->template block<1, 3>(strain_id, base) += derivative.transpose();
-    }
-
-    // Differentiate the director field with respect to the three local nodal
-    // axis-angle coordinates using the persistent nodal reference director.
-    for (Index node = 0; node < N; ++node) {
-        const Index     rot_base    = Shell::dofs_per_node * node + 3;
-        const Precision coefficient = b_coefficients(node);
-
-        if (coefficient == Precision(0)) {
-            continue;
-        }
-
-        const Vec3 d0 = reference_directors.row(node).transpose();
-
-        for (Index component = 0; component < 3; ++component) {
-            const Vec3 director_derivative = rotations[node].d1[component] * d0;
-            (*B)(strain_id, rot_base + component) +=
-                scale * coefficient * director_derivative.dot(x_value);
-        }
-    }
-}
 
 /**
  * Transforms one three-component engineering tensor block and its optional B
@@ -363,15 +212,39 @@ typename FRTShell<N>::Vec6N FRTShell<N>::element_displacement_vector(
 /**
  * Evaluates the compatible generalized shell strain in natural coordinates.
  *
- * Membrane strains are Green-Lagrange midsurface strains. Bending strains
- * compare current position/director derivatives with their reference values,
- * and transverse-shear strains compare current tangents with the interpolated
- * current director. Engineering shear conventions are used for the `rs`,
- * curvature and transverse-shear entries.
+ * The generalized natural strain vector is ordered as
  *
- * When `B_nat` is supplied, all first derivatives are assembled analytically.
- * Trivial translational identities are inserted directly, while director
- * derivatives use only compact nodal SO(3) matrices.
+ *     strain_nat =
+ *     [ epsilon_rr,
+ *       epsilon_ss,
+ *       gamma_rs,
+ *       kappa_rr,
+ *       kappa_ss,
+ *       kappa_rs,
+ *       gamma_r3,
+ *       gamma_s3 ].
+ *
+ * Membrane strains are obtained from changes of the current midsurface metric.
+ * Bending strains are obtained from products between current midsurface
+ * tangents and current director derivatives. Transverse-shear strains compare
+ * the current midsurface tangents with the interpolated current director.
+ *
+ * The current contributions are evaluated first. The corresponding reference
+ * metric, curvature and shear quantities are subtracted afterwards, such that
+ * the complete generalized strain vanishes in the undeformed configuration.
+ *
+ * When `B_nat` is supplied, it contains the first derivative
+ *
+ *     B_nat = d strain_nat / d q_e,
+ *
+ * where the element degrees of freedom are arranged node-wise as
+ *
+ *     q_i = [u_x,i, u_y,i, u_z,i, theta_x,i, theta_y,i, theta_z,i].
+ *
+ * Each helper inserts its analytical derivative directly into the row belonging
+ * to the generalized strain component being evaluated. Translational
+ * derivatives are assembled through compact matrix products and strided Eigen
+ * indexing. Director derivatives use the cached nodal SO(3) derivatives.
  *
  * @param data Active element evaluation data.
  * @param point Pointwise curved-reference geometry.
@@ -402,56 +275,153 @@ void FRTShell<N>::compute_natural_strain(
         B_nat->setZero();
     }
 
-    // Copy the pointwise interpolation coefficients once because each group of
-    // shell strains reuses the same natural derivatives and shape values
-    const VecN dshape_r = point.dshape_rs.col(0);
-    const VecN dshape_s = point.dshape_rs.col(1);
-    const VecN shape    = point.shape;
-    const MatN3& d0     = reference_data().d0;
+    // Store the pointwise shape-function values and their natural derivatives
+    // once because they are reused by the membrane, bending and transverse-
+    // shear strain terms:
+    //
+    //     shape_r(i) = N_i,r,
+    //     shape_s(i) = N_i,s,
+    //     shape(i)   = N_i.
+    const VecN shape_r = point.shape_rs.col(0);
+    const VecN shape_s = point.shape_rs.col(1);
+    const VecN shape   = point.shape;
+    const MatN3& d0    = reference_data().d0;
 
-    // Construct the three membrane metric changes
-    add_xx_strain_and_B<N>(
-        data.state.x,
-        dshape_r,
-        dshape_r,
-        Precision(0.5),
-        epsilon_rr,
-        strain_nat,
-        B_nat
+    // -------------------------------------------------------------------------
+    // Membrane strains
+    // -------------------------------------------------------------------------
+    //
+    // The current midsurface position is interpolated as
+    //
+    //     x(r,s) = sum_i N_i(r,s) x_i.
+    //
+    // Its natural tangent vectors are
+    //
+    //     x_,r = sum_i N_i,r x_i,
+    //     x_,s = sum_i N_i,s x_i.
+    //
+    // The current covariant metric components are
+    //
+    //     g_rr = dot(x_,r, x_,r),
+    //     g_ss = dot(x_,s, x_,s),
+    //     g_rs = dot(x_,r, x_,s).
+    //
+    // The Green-Lagrange membrane components use
+    //
+    //     epsilon_rr,current = 0.5 g_rr,
+    //     epsilon_ss,current = 0.5 g_ss,
+    //     gamma_rs,current   =       g_rs.
+    //
+    // `gamma_rs` is stored as an engineering shear component and therefore does
+    // not contain the factor 0.5.
+    //
+    // evaluate_xx_product() returns the corresponding scalar product and,
+    // when B_nat is supplied, inserts its derivative directly into the
+    // translational columns of the selected B_nat row. The rotational columns
+    // of these three rows remain zero because the membrane metric depends only
+    // on the current nodal positions.
+
+    strain_nat(epsilon_rr) += evaluate_xx_product<N>(
+        data.state.x, shape_r, shape_r, Precision(0.5), epsilon_rr, B_nat
     );
-    add_xx_strain_and_B<N>(
-        data.state.x,
-        dshape_s,
-        dshape_s,
-        Precision(0.5),
-        epsilon_ss,
-        strain_nat,
-        B_nat
+    strain_nat(epsilon_ss) += evaluate_xx_product<N>(
+        data.state.x, shape_s, shape_s, Precision(0.5), epsilon_ss, B_nat
     );
-    add_xx_strain_and_B<N>(
-        data.state.x,
-        dshape_r,
-        dshape_s,
-        Precision(1),
-        gamma_rs,
-        strain_nat,
-        B_nat
+    strain_nat(gamma_rs) += evaluate_xx_product<N>(
+        data.state.x, shape_r, shape_s, Precision(1), gamma_rs, B_nat
     );
 
-    // Construct the three changes of curvature from current tangent/director
-    // derivative products
-    add_xd_strain_and_B<N>(data, d0, dshape_r, dshape_r, Precision(1), kappa_rr, strain_nat, B_nat);
-    add_xd_strain_and_B<N>(data, d0, dshape_s, dshape_s, Precision(1), kappa_ss, strain_nat, B_nat);
-    add_xd_strain_and_B<N>(data, d0, dshape_r, dshape_s, Precision(1), kappa_rs, strain_nat, B_nat);
-    add_xd_strain_and_B<N>(data, d0, dshape_s, dshape_r, Precision(1), kappa_rs, strain_nat, B_nat);
+    // -------------------------------------------------------------------------
+    // Bending strains
+    // -------------------------------------------------------------------------
+    //
+    // The current nodal directors are
+    //
+    //     d_i = R_i d0_i,
+    //
+    // and the current interpolated director field is
+    //
+    //     d(r,s) = sum_i N_i d_i.
+    //
+    // Its natural derivatives are
+    //
+    //     d_,r = sum_i N_i,r d_i,
+    //     d_,s = sum_i N_i,s d_i.
+    //
+    // The current curvature terms are formed from products between the current
+    // midsurface tangents and current director derivatives:
+    //
+    //     kappa_rr,current = dot(x_,r, d_,r),
+    //     kappa_ss,current = dot(x_,s, d_,s),
+    //
+    //     kappa_rs,current =
+    //         dot(x_,r, d_,s) + dot(x_,s, d_,r).
+    //
+    // The mixed curvature component is stored in engineering convention and is
+    // therefore assembled from both off-diagonal contributions.
+    //
+    // evaluate_xd_product() inserts both derivative
+    // parts directly into the selected B_nat row:
+    //
+    //   - translation derivatives caused by x_,r or x_,s,
+    //   - rotation derivatives caused by d_,r or d_,s.
 
-    // Construct the two transverse-shear measures from current tangents and the
-    // interpolated current director
-    add_xd_strain_and_B<N>(data, d0, dshape_r, shape, Precision(1), gamma_r3, strain_nat, B_nat);
-    add_xd_strain_and_B<N>(data, d0, dshape_s, shape, Precision(1), gamma_s3, strain_nat, B_nat);
+    strain_nat(kappa_rr) += evaluate_xd_product<N>(
+        data, d0, shape_r, shape_r, Precision(1), kappa_rr, B_nat
+    );
+    strain_nat(kappa_ss) += evaluate_xd_product<N>(
+        data, d0, shape_s, shape_s, Precision(1), kappa_ss, B_nat
+    );
+    strain_nat(kappa_rs) += evaluate_xd_product<N>(
+        data, d0, shape_r, shape_s, Precision(1), kappa_rs, B_nat
+    );
+    strain_nat(kappa_rs) += evaluate_xd_product<N>(
+        data, d0, shape_s, shape_r, Precision(1), kappa_rs, B_nat
+    );
 
-    // Subtract the complete reference metric, curvature and shear values so the
-    // undeformed curved shell has exactly zero generalized strain
+    // -------------------------------------------------------------------------
+    // Transverse-shear strains
+    // -------------------------------------------------------------------------
+    //
+    // The interpolated current director at the evaluation point is
+    //
+    //     d = sum_i N_i d_i.
+    //
+    // The two covariant transverse-shear measures are
+    //
+    //     gamma_r3,current = dot(x_,r, d),
+    //     gamma_s3,current = dot(x_,s, d).
+    //
+    // The position coefficients are therefore the natural shape derivatives,
+    // while the director coefficients are the shape-function values
+    // themselves.
+
+    strain_nat(gamma_r3) += evaluate_xd_product<N>(
+        data, d0, shape_r, shape, Precision(1), gamma_r3, B_nat
+    );
+
+    strain_nat(gamma_s3) += evaluate_xd_product<N>(
+        data, d0, shape_s, shape, Precision(1), gamma_s3, B_nat
+    );
+
+    // -------------------------------------------------------------------------
+    // Reference-state subtraction
+    // -------------------------------------------------------------------------
+    //
+    // The terms evaluated above contain the complete current metric, curvature
+    // and transverse-shear quantities. Subtracting their pointwise reference
+    // values produces the corresponding changes:
+    //
+    //     epsilon_rr = 0.5 [dot(x_,r, x_,r) - dot(X_,r, X_,r)],
+    //
+    //     epsilon_ss = 0.5 [dot(x_,s, x_,s) - dot(X_,s, X_,s)],
+    //
+    //     gamma_rs = dot(x_,r, x_,s) - dot(X_,r, X_,s),
+    //
+    // and analogously for curvature and transverse shear.
+    //
+    // All reference quantities depend only on the undeformed geometry.
+    // Consequently, they contribute no entries to B_nat.
     strain_nat(epsilon_rr) -= Precision(0.5) * point.X_rs.col(0).dot(point.X_rs.col(0));
     strain_nat(epsilon_ss) -= Precision(0.5) * point.X_rs.col(1).dot(point.X_rs.col(1));
     strain_nat(gamma_rs)   -= point.X_rs.col(0).dot(point.X_rs.col(1));
@@ -505,27 +475,46 @@ void FRTShell<N>::transform_strain_to_local(
 }
 
 /**
- * Prepares all quantities requested by one shell evaluation.
+ * Prepares all pointwise quantities required for one shell evaluation.
  *
- * The function owns no dynamic temporary data. A `thread_local` workspace is
- * resized to the required topology-specific point counts and retains its
- * capacity for subsequent elements on the same worker thread. The returned
- * `EvaluationData` contains non-owning spans into this workspace.
+ * The caller controls which quantities are needed through the `with_*` flags.
+ * Dependencies between these quantities are resolved at the beginning:
  *
- * First and second SO(3) derivatives are evaluated once per node and reused at
- * all tying and integration points. The cached zero-strain in-plane shear
- * modulus A66 defines a configuration-independent drilling coefficient at every
- * integration point, ensuring that force and tangent derive from one fixed
- * quadratic potential even for nonlinear material sections.
+ *     with_B          -> with_strain
+ *     with_resultants -> with_strain, unless resultants are imported
+ *
+ * Temporary integration-point and tying-point data are stored in one
+ * topology-specific `thread_local` workspace. The workspace belongs to the
+ * executing thread, not to the element. Its vectors retain their allocated
+ * capacity between calls, so repeated evaluations normally require no further
+ * dynamic allocations.
+ *
+ * The returned `EvaluationData` object does not own this temporary storage. Its
+ * spans point directly into the currently active parts of the thread-local
+ * workspace and remain valid only until that workspace is reused by a later
+ * evaluation on the same thread.
+ *
+ * Depending on the requested quantities, the function performs the following
+ * steps:
+ *
+ *  1. Resize the required workspace buffers.
+ *  2. Expose the active buffers through `EvaluationData`.
+ *  3. Evaluate nodal SO(3) rotation derivatives when B or geometric terms are
+ *     required.
+ *  4. Initialize and scale the drilling stiffness.
+ *  5. Evaluate the section tangent for linearized calls.
+ *  6. Evaluate compatible strains and B matrices at tying points.
+ *  7. Reconstruct MITC strains and B matrices at integration points.
+ *  8. Import or evaluate generalized stress resultants.
  *
  * @param state Current or trial nodal shell state.
  * @param with_strain Request generalized strain values.
  * @param with_B Request first generalized strain derivatives.
- * @param with_G Request second nodal SO(3) derivatives.
- * @param with_resultants Request generalized shell resultants.
- * @param ip_stress Optional previously evaluated resultant field.
- * @param ip_start_idx First row of the supplied resultant field.
- * @return Non-owning view into the active thread-local workspace.
+ * @param with_G Request second rotation derivatives for the geometric tangent.
+ * @param with_resultants Request generalized shell stress resultants.
+ * @param ip_stress Optional previously evaluated integration-point resultants.
+ * @param ip_start_idx First row of `ip_stress` belonging to this element.
+ * @return Non-owning view of all quantities prepared in the active workspace.
  */
 template<Index N>
 typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
@@ -537,54 +526,87 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     const Field*        ip_stress,
     int                 ip_start_idx
 ) const {
+    // A B matrix is the first derivative of the generalized strain and
+    // therefore cannot be evaluated without evaluating the strain kinematics.
     if (with_B) {
         with_strain = true;
     }
 
+    // Constitutive resultants must be evaluated from the current strains unless
+    // an already evaluated integration-point resultant field is supplied.
     if (with_resultants && ip_stress == nullptr) {
         with_strain = true;
     }
 
     const auto& ref = reference_data();
+
     const std::size_t num_ip    = ref.ip_points.size();
     const std::size_t num_tying = ref.tying_points.size();
 
-    // One reusable workspace exists for every executing thread and shell
-    // topology. No element owns or deallocates this temporary storage.
+    // One workspace exists for each executing thread and shell topology.
+    //
+    // The workspace is reused by all elements of the same topology processed
+    // by that thread. Its vectors retain their capacity after resize(), so the
+    // first sufficiently large evaluation establishes the temporary storage
+    // required by later calls.
     thread_local EvaluationWorkspace workspace;
 
-    // Resize only the arrays required by this caller. Standard vector resize
-    // preserves capacity, so repeated evaluations do not allocate after the
-    // thread has encountered its largest element request.
-    workspace.tying_strain_nat.resize(with_strain ? num_tying : 0);
-    workspace.tying_B_nat.resize(with_B ? num_tying : 0);
-    workspace.ip_strain.resize(with_strain ? num_ip : 0);
-    workspace.ip_B.resize(with_B ? num_ip : 0);
-    workspace.ip_resultants.resize(with_resultants ? num_ip : 0);
-    workspace.ip_tangent.resize(with_B && ip_stress == nullptr ? num_ip : 0);
+    // Resize only the buffers needed by the current evaluation.
+    //
+    // A size of zero marks a buffer as inactive while preserving its allocated
+    // capacity for later calls.
+    workspace.tying_strain_nat  .resize(with_strain     ? num_tying : 0);
+    workspace.tying_B_nat       .resize(with_B          ? num_tying : 0);
+    workspace.ip_strain         .resize(with_strain     ? num_ip : 0);
+    workspace.ip_B              .resize(with_B          ? num_ip : 0);
+    workspace.ip_resultants     .resize(with_resultants ? num_ip : 0);
+
+    // The constitutive tangent is needed together with B. When resultants are
+    // imported, no local material update is performed and no current tangent is
+    // produced by compute_material_resultants().
+    workspace.ip_tangent        .resize(with_B && ip_stress == nullptr ? num_ip : 0);
     workspace.ip_drill_stiffness.resize(with_B ? num_ip : 0);
+
+    // Geometric tying weights depend on second kinematic derivatives and are
+    // required only while assembling the geometric tangent.
     workspace.geometric_tying_weights.resize(with_G ? num_tying : 0);
 
     EvaluationData data;
+
     data.with_strain     = with_strain;
     data.with_B          = with_B;
     data.with_G          = with_G;
     data.with_resultants = with_resultants;
     data.state           = state;
 
-    // Expose exactly the active portions of the thread-local buffers
-    data.tying_strain_nat = Span<Vec8>(workspace.tying_strain_nat);
-    data.tying_B_nat = Span<Mat8x6N>(workspace.tying_B_nat);
-    data.ip_strain = Span<Vec8>(workspace.ip_strain);
-    data.ip_B = Span<Mat8x6N>(workspace.ip_B);
-    data.ip_resultants = Span<Vec8>(workspace.ip_resultants);
-    data.ip_tangent = Span<Mat8>(workspace.ip_tangent);
-    data.ip_drill_stiffness = Span<Precision>(workspace.ip_drill_stiffness);
+    // Expose the active portions of the thread-local buffers.
+    //
+    // EvaluationData owns none of these arrays. The spans merely provide
+    // convenient indexed access to the storage held by `workspace`.
+    data.tying_strain_nat        = Span<Vec8>(workspace.tying_strain_nat);
+    data.tying_B_nat             = Span<Mat8x6N>(workspace.tying_B_nat);
+
+    data.ip_strain               = Span<Vec8>(workspace.ip_strain);
+    data.ip_B                    = Span<Mat8x6N>(workspace.ip_B);
+    data.ip_resultants           = Span<Vec8>(workspace.ip_resultants);
+    data.ip_tangent              = Span<Mat8>(workspace.ip_tangent);
+
+    data.ip_drill_stiffness      = Span<Precision>(workspace.ip_drill_stiffness);
     data.geometric_tying_weights = Span<Vec8>(workspace.geometric_tying_weights);
 
-    // Evaluate each nodal SO(3) rotation and its requested derivatives once.
-    // The complete local 3 x 3 matrices are retained because both the physical
-    // director and objective drilling tangent vectors act on the same rotation.
+    // Evaluate nodal SO(3) derivatives once and reuse them at every tying and
+    // integration point.
+    //
+    // with_B requires first derivatives
+    //
+    //     dR_i / d theta_i,a,
+    //
+    // while with_G additionally requires second derivatives
+    //
+    //     d²R_i / d theta_i,a d theta_i,b.
+    //
+    // The values are stored node-wise in the workspace because all pointwise
+    // strain evaluations use the same nodal rotations.
     if (with_B || with_G) {
         for (Index node = 0; node < num_nodes; ++node) {
             const Vec3 theta = state.theta.row(node).transpose();
@@ -605,16 +627,27 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
             }
         }
 
+        // Store a non-owning pointer to the complete nodal rotation cache.
         data.rotations = &workspace.rotations;
     }
 
-    // Initialize the unscaled positive drilling modulus lazily and exactly once
-    // for this element. This keeps temporary-storage lifecycle independent of
-    // step_begin()/step_end() while avoiding repeated zero-strain section calls.
+    // Initialize the configuration-independent drilling modulus once for every
+    // element.
+    //
+    // The underlying modulus is derived from the zero-strain in-plane shear
+    // tangent
+    //
+    //     A66 = H0(gamma_12, gamma_12).
+    //
+    // Only the positive magnitude is retained. Keeping this base value
+    // independent of the current deformation ensures that drilling force and
+    // drilling tangent derive from the same fixed quadratic potential.
     if (with_B) {
         std::call_once(ref.drill_stiffness_once, [&]() {
             using Component = ShellGeneralizedStrain::Component;
-            constexpr Index gamma_12 = static_cast<Index>(Component::GammaXY);
+
+            constexpr Index gamma_12 =
+                static_cast<Index>(Component::GammaXY);
 
             for (ReferencePoint& point : reference_data_->ip_points) {
                 ShellGeneralizedStrain zero_strain(Vec8::Zero());
@@ -622,6 +655,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 Mat8                   H0;
 
                 Mat3 basis = point.basis;
+
                 shell_section()->evaluate(
                     reference_position(point.r, point.s),
                     basis,
@@ -636,63 +670,84 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
             }
         });
 
-        // Apply only the current topology scale during each evaluation. The
-        // underlying modulus remains independent of the current deformation,
-        // so force and tangent derive from one fixed quadratic potential.
-        const Precision stiffness_scale = std::abs(topology_stiffness_scale());
+        // Apply the current element-topology scale to the cached base modulus.
+        //
+        // The base modulus is stored in the reference data, whereas the scaled
+        // pointwise values belong to the current evaluation workspace.
+        const Precision stiffness_scale =
+            std::abs(topology_stiffness_scale());
 
         for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
-            data.ip_drill_stiffness[static_cast<std::size_t>(ip)] =
-                stiffness_scale
-                * ref.ip_points[static_cast<std::size_t>(ip)].drill_stiffness_base;
+            const std::size_t id = static_cast<std::size_t>(ip);
+
+            data.ip_drill_stiffness[id] =
+                stiffness_scale * ref.ip_points[id].drill_stiffness_base;
         }
     }
 
-    // Linearized callers without a constitutive material update require the
-    // zero-strain section tangent at every integration point. Nonlinear callers
-    // receive their current tangent from compute_material_resultants().
+    // Linearized evaluations require the zero-strain shell-section tangent at
+    // every integration point.
+    //
+    // Nonlinear evaluations with resultants obtain their current constitutive
+    // tangent later from compute_material_resultants(). Therefore this explicit
+    // tangent evaluation is needed only when B is requested without resultants.
     if (with_B && !with_resultants) {
         for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
-            const ReferencePoint& point = ref.ip_points[static_cast<std::size_t>(ip)];
-            data.ip_tangent[static_cast<std::size_t>(ip)] =
-                resultant_stiffness(point.r, point.s);
+            const std::size_t    id    = static_cast<std::size_t>(ip);
+            const ReferencePoint& point = ref.ip_points[id];
+
+            data.ip_tangent[id] = resultant_stiffness(point.r, point.s);
         }
     }
 
-    // Tying values must be prepared before the integration-point MITC fields
-    // can be reconstructed. The two loops remain here because they form one
-    // evaluation sequence and are not reused independently anywhere else.
     if (with_strain) {
-        for (Index tying = 0; tying < static_cast<Index>(ref.tying_points.size()); ++tying) {
+        // First evaluate the compatible natural strains at all tying points.
+        //
+        // MITC interpolation at the integration points depends on these tying
+        // values, so this loop must be completed before the integration-point
+        // loop begins.
+        for (Index tying = 0;
+             tying < static_cast<Index>(num_tying);
+             ++tying) {
             const std::size_t id = static_cast<std::size_t>(tying);
+
             compute_natural_strain(
                 data,
                 ref.tying_points[id],
                 data.tying_strain_nat[id],
-                data.with_B ? &data.tying_B_nat[id] : nullptr
+                with_B ? &data.tying_B_nat[id] : nullptr
             );
         }
 
-        for (Index ip = 0; ip < static_cast<Index>(ref.ip_points.size()); ++ip) {
-            const std::size_t id = static_cast<std::size_t>(ip);
+        // Evaluate the complete strain field at every integration point:
+        //
+        //  1. Compute the compatible strain and its optional B matrix in
+        //     natural coordinates.
+        //  2. Replace the MITC-controlled components by values reconstructed
+        //     from the tying points.
+        //  3. Transform all generalized strain components and B rows from the
+        //     natural coordinates into the local material basis.
+        for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
+            const std::size_t     id    = static_cast<std::size_t>(ip);
             const ReferencePoint& point = ref.ip_points[id];
-            Vec8& strain = data.ip_strain[id];
-            Mat8x6N* B = data.with_B ? &data.ip_B[id] : nullptr;
 
-            // Evaluate the compatible natural field, replace the selected MITC
-            // components and finally transform to the local material basis
+            Vec8&    strain = data.ip_strain[id];
+            Mat8x6N* B      = with_B ? &data.ip_B[id] : nullptr;
+
             compute_natural_strain(data, point, strain, B);
             apply_mitc_natural(data, point, strain, B);
             transform_strain_to_local(point, strain, B);
         }
     }
 
-    // Either import an existing resultant field or perform the nonlinear
-    // constitutive shell-section update at all integration points
     if (with_resultants) {
         if (ip_stress) {
+            // Reuse generalized resultants supplied by the caller. No local
+            // constitutive section update is performed in this path.
             load_ip_resultants(data, *ip_stress, ip_start_idx);
         } else {
+            // Evaluate generalized stress resultants and the current
+            // constitutive tangent from the integration-point strains.
             compute_material_resultants(data);
         }
     }

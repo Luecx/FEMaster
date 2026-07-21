@@ -151,11 +151,11 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
         const Vec3 x_i = state.x.row(node).transpose();
         const Vec3 d_i = state.d.row(node).transpose();
 
-        x_a += point.dshape_ab.col(0)(node) * x_i;
-        x_b += point.dshape_ab.col(1)(node) * x_i;
+        x_a += point.shape_ab.col(0)(node) * x_i;
+        x_b += point.shape_ab.col(1)(node) * x_i;
         d   += point.shape(node)    * d_i;
-        d_a += point.dshape_ab.col(0)(node) * d_i;
-        d_b += point.dshape_ab.col(1)(node) * d_i;
+        d_a += point.shape_ab.col(0)(node) * d_i;
+        d_b += point.shape_ab.col(1)(node) * d_i;
     }
 
     Mat3 reference_covariant;

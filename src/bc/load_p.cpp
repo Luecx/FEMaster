@@ -58,7 +58,7 @@ void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         surface->integrate_vector_field(
             node_positions,
             bc,
-            [&](const Vec3& position) {
+            [&](const Vec3& position) -> Vec3 {
                 // Recover the surface-local coordinates needed by the normal
                 // implementation and apply pressure opposite to that normal.
                 const Vec2 local = surface->global_to_local(position, node_positions);
