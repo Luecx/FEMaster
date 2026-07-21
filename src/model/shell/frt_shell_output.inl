@@ -159,8 +159,8 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
     }
 
     Mat3 reference_covariant;
-    reference_covariant.col(0) = point.X_ab.col(0) + z * point.D_a;
-    reference_covariant.col(1) = point.X_ab.col(1) + z * point.D_b;
+    reference_covariant.col(0) = point.X_ab.col(0) + z * point.D_ab.col(0);
+    reference_covariant.col(1) = point.X_ab.col(1) + z * point.D_ab.col(1);
     reference_covariant.col(2) = point.D;
 
     Mat3 current_covariant;

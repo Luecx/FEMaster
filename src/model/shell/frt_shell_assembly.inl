@@ -236,10 +236,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         Mat8                   tangent;
 
         // Construct the global pointwise material basis once for the section
-        Mat3 basis;
-        basis.col(0) = point.e1;
-        basis.col(1) = point.e2;
-        basis.col(2) = point.e3;
+        Mat3 basis = point.basis;
 
         section->evaluate(
             reference_position(point.r, point.s),
@@ -622,8 +619,8 @@ void FRTShell<N>::assemble_drill_stabilization(
             const Vec3 x_i = data.state.x.row(node).transpose();
             x_a += point.dshape_ab.col(0)(node) * x_i;
             x_b += point.dshape_ab.col(1)(node) * x_i;
-            a1  += point.shape(node) * rotations[node].value * point.e1;
-            a2  += point.shape(node) * rotations[node].value * point.e2;
+            a1  += point.shape(node) * rotations[node].value * point.basis.col(0);
+            a2  += point.shape(node) * rotations[node].value * point.basis.col(1);
         }
 
         const Precision gamma_d = Precision(0.5)
@@ -648,8 +645,8 @@ void FRTShell<N>::assemble_drill_stabilization(
             const Precision shape = point.shape(node);
 
             for (Index a = 0; a < 3; ++a) {
-                const Vec3 da1 = shape * rotations[node].d1[a] * point.e1;
-                const Vec3 da2 = shape * rotations[node].d1[a] * point.e2;
+                const Vec3 da1 = shape * rotations[node].d1[a] * point.basis.col(0);
+                const Vec3 da2 = shape * rotations[node].d1[a] * point.basis.col(1);
                 B_d(rot_base + a) = Precision(0.5)
                                   * (da1.dot(x_b) - da2.dot(x_a));
             }
@@ -686,8 +683,8 @@ void FRTShell<N>::assemble_drill_stabilization(
             const Precision shape = point.shape(rot_node);
 
             for (Index a = 0; a < 3; ++a) {
-                const Vec3 da1 = shape * rotations[rot_node].d1[a] * point.e1;
-                const Vec3 da2 = shape * rotations[rot_node].d1[a] * point.e2;
+                const Vec3 da1 = shape * rotations[rot_node].d1[a] * point.basis.col(0);
+                const Vec3 da2 = shape * rotations[rot_node].d1[a] * point.basis.col(1);
 
                 for (Index x_node = 0; x_node < num_nodes; ++x_node) {
                     const Index x_base = dofs_per_node * x_node;
@@ -711,8 +708,8 @@ void FRTShell<N>::assemble_drill_stabilization(
             // linear sum of independent nodal rotation matrices
             for (Index a = 0; a < 3; ++a) {
                 for (Index b = 0; b < 3; ++b) {
-                    const Vec3 d2a1 = shape * rotations[rot_node].d2[a][b] * point.e1;
-                    const Vec3 d2a2 = shape * rotations[rot_node].d2[a][b] * point.e2;
+                    const Vec3 d2a1 = shape * rotations[rot_node].d2[a][b] * point.basis.col(0);
+                    const Vec3 d2a2 = shape * rotations[rot_node].d2[a][b] * point.basis.col(1);
                     const Precision second = Precision(0.5)
                                            * (d2a1.dot(x_b) - d2a2.dot(x_a));
 

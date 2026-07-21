@@ -63,7 +63,7 @@ MapMatrix FRTShell<N>::mass(Precision* buffer) {
             // Use the interpolated reference director where possible and fall
             // back to the exact surface normal for a degenerate interpolation
             if (director.squaredNorm() <= Precision(1e-24)) {
-                director = point.e3;
+                director = point.basis.col(2);
             } else {
                 director.normalize();
             }

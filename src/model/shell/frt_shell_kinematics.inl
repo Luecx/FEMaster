@@ -455,9 +455,9 @@ void FRTShell<N>::compute_natural_strain(
     strain_nat(epsilon_rr) -= Precision(0.5) * point.X_rs.col(0).dot(point.X_rs.col(0));
     strain_nat(epsilon_ss) -= Precision(0.5) * point.X_rs.col(1).dot(point.X_rs.col(1));
     strain_nat(gamma_rs)   -= point.X_rs.col(0).dot(point.X_rs.col(1));
-    strain_nat(kappa_rr)   -= point.X_rs.col(0).dot(point.D_r);
-    strain_nat(kappa_ss)   -= point.X_rs.col(1).dot(point.D_s);
-    strain_nat(kappa_rs)   -= point.X_rs.col(0).dot(point.D_s) + point.X_rs.col(1).dot(point.D_r);
+    strain_nat(kappa_rr)   -= point.X_rs.col(0).dot(point.D_rs.col(0));
+    strain_nat(kappa_ss)   -= point.X_rs.col(1).dot(point.D_rs.col(1));
+    strain_nat(kappa_rs)   -= point.X_rs.col(0).dot(point.D_rs.col(1)) + point.X_rs.col(1).dot(point.D_rs.col(0));
     strain_nat(gamma_r3)   -= point.X_rs.col(0).dot(point.D);
     strain_nat(gamma_s3)   -= point.X_rs.col(1).dot(point.D);
 }
@@ -621,11 +621,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 ShellStressResultants  zero_resultants;
                 Mat8                   H0;
 
-                Mat3 basis;
-                basis.col(0) = point.e1;
-                basis.col(1) = point.e2;
-                basis.col(2) = point.e3;
-
+                Mat3 basis = point.basis;
                 shell_section()->evaluate(
                     reference_position(point.r, point.s),
                     basis,

@@ -108,8 +108,7 @@ template<Index N>
 const typename FRTShell<N>::ReferenceData& FRTShell<N>::reference_data() const {
     logging::error(
         reference_data_ != nullptr,
-        "FRTShell: reference data has not been initialized for element ",
-        this->elem_id,
+        "FRTShell: reference data has not been initialized for element ", this->elem_id,
         ". Call step_begin() before evaluating the element."
     );
 
@@ -187,7 +186,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(
             const Precision s = natural_nodes(node, 1);
             const MatN2 dshape = shape_derivative(r, s);
 
-            Mat32 X_rs = Vec3::Zero();
+            Mat32 X_rs = Mat32::Zero();
 
             for (Index i = 0; i < num_nodes; ++i) {
                 const Vec3 X_i = X.row(i).transpose();
@@ -266,14 +265,14 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
     );
 
     // Construct the pointwise orthonormal basis on the curved reference surface
-    point.e1 = normalized(point.X_rs.col(0));
-    point.e3 = normal / point.detJ;
-    point.e2 = normalized(point.e3.cross(point.e1));
-    point.e1 = normalized(point.e2.cross(point.e3));
+    point.basis.col(0) = normalized(point.X_rs.col(0));
+    point.basis.col(2) = normal / point.detJ;
+    point.basis.col(1) = normalized(point.basis.col(2).cross(point.basis.col(0)));
+    point.basis.col(0) = normalized(point.basis.col(1).cross(point.basis.col(2)));
 
     // Express the two natural tangents in the local orthonormal tangent basis
-    point.J << point.X_rs.col(0).dot(point.e1), point.X_rs.col(0).dot(point.e2),
-               point.X_rs.col(1).dot(point.e1), point.X_rs.col(1).dot(point.e2);
+    point.J << point.X_rs.col(0).dot(point.basis.col(0)), point.X_rs.col(0).dot(point.basis.col(1)),
+               point.X_rs.col(1).dot(point.basis.col(0)), point.X_rs.col(1).dot(point.basis.col(1));
 
     const Precision detJ = point.J.determinant();
     logging::error(std::abs(detJ) > Precision(1e-14),
@@ -294,19 +293,19 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
 
     // The reference derivatives with respect to the orthonormal coordinates are
     // exactly the local basis vectors by construction
-    point.X_ab.col(0) = point.e1;
-    point.X_ab.col(1) = point.e2;
+    point.X_ab.col(0) = point.basis.col(0);
+    point.X_ab.col(1) = point.basis.col(1);
 
     // Interpolate the nodal reference director field and all natural and local
     // tangent derivatives required by the shell curvature and shear measures
     for (Index node = 0; node < num_nodes; ++node) {
         const Vec3 D_i = ref.d0.row(node).transpose();
 
-        point.D   += point.shape(node)            * D_i;
-        point.D_r += point.dshape_rs(node, 0)     * D_i;
-        point.D_s += point.dshape_rs(node, 1)     * D_i;
-        point.D_a += point.dshape_ab.col(0)(node) * D_i;
-        point.D_b += point.dshape_ab.col(1)(node) * D_i;
+        point.D   += point.shape(node)                    * D_i;
+        point.D_rs.col(0) += point.dshape_rs(node, 0)     * D_i;
+        point.D_rs.col(1) += point.dshape_rs(node, 1)     * D_i;
+        point.D_ab.col(0) += point.dshape_ab.col(0)(node) * D_i;
+        point.D_ab.col(1) += point.dshape_ab.col(1)(node) * D_i;
     }
 
     return point;
@@ -351,10 +350,7 @@ Mat3 FRTShell<N>::reference_basis_global(Precision r, Precision s) const {
         cached ? ReferencePoint{} : make_reference_point(r, s, Precision(0));
     const ReferencePoint& point = cached ? *cached : temporary;
 
-    Mat3 basis;
-    basis.col(0) = point.e1;
-    basis.col(1) = point.e2;
-    basis.col(2) = point.e3;
+    Mat3 basis = point.basis;
     return basis;
 }
 

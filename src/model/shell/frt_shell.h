@@ -210,38 +210,25 @@ struct FRTShell : ShellElement<N> {
         VecN shape = VecN::Zero();
 
         // Natural shape-function derivatives [N_,r, N_,s] and
-        // shape function derivatives in orthonormal basis [N_,a, n_,b]
+        // shape function derivatives in orthonormal basis [N_,a, N_,b]
         MatN2 dshape_rs = MatN2::Zero();
         MatN2 dshape_ab = MatN2::Zero();
 
         // natural reference midsurface tangent [X_,r, X_,s] in natural coordinates and
         // natural reference midsurface tangent [X_,a, X_,b] in orthonormal basis
-        Mat32 X_rs = Vec3::Zero();
-        Mat32 X_ab = Vec3::Zero();
+        Mat32 X_rs = Mat32::Zero();
+        Mat32 X_ab = Mat32::Zero(); // technically redundant since its the same as basis [e1, e2]
 
         // Interpolated nodal reference director field.
         Vec3 D = Vec3::Zero();
 
-        // Natural derivative D_,r of the reference director field.
-        Vec3 D_r = Vec3::Zero();
+        // Derivatives of the reference director field in natural coordinates
+        // [D_,r, D_,s] and in the local orthonormal tangent basis [D_,a, D_,b].
+        Mat32 D_rs = Mat32::Zero();
+        Mat32 D_ab = Mat32::Zero();
 
-        // Natural derivative D_,s of the reference director field.
-        Vec3 D_s = Vec3::Zero();
-
-        // Local tangent derivative D_,a of the reference director field.
-        Vec3 D_a = Vec3::Zero();
-
-        // Local tangent derivative D_,b of the reference director field.
-        Vec3 D_b = Vec3::Zero();
-
-        // First pointwise orthonormal reference tangent.
-        Vec3 e1 = Vec3::Zero();
-
-        // Second pointwise orthonormal reference tangent.
-        Vec3 e2 = Vec3::Zero();
-
-        // Pointwise reference surface normal.
-        Vec3 e3 = Vec3::Zero();
+        // Pointwise orthonormal reference basis [e1, e2, e3].
+        Mat3 basis = Mat3::Zero();
 
         // Unscaled objective drilling stiffness per unit reference area. The
         // value equals drill_scale times the zero-strain in-plane shear
@@ -258,16 +245,12 @@ struct FRTShell : ShellElement<N> {
      * warped S4 geometry.
      */
     struct ReferenceData {
-        // Global reference midsurface coordinates of the element nodes.
-        MatN3 X = MatN3::Zero();
-
-        // Global reference directors of the element nodes.
+        // Global reference midsurface coordinates of the element nodes and nodal director
+        MatN3 X  = MatN3::Zero();
         MatN3 d0 = MatN3::Zero();
 
-        // Cached reference geometry at all numerical integration points.
+        // Cached reference geometry at all numerical integration points and mitc tying points
         std::vector<ReferencePoint> ip_points;
-
-        // Cached reference geometry at all topology-specific MITC tying points.
         std::vector<ReferencePoint> tying_points;
 
         // Reference midsurface area obtained from the selected quadrature rule.
@@ -438,7 +421,7 @@ struct FRTShell : ShellElement<N> {
     // topology: shape functions, natural node coordinates, quadrature point
     // locations exposed for output, surface extraction, and the forward and
     // transposed MITC assumed-strain operators.
-    virtual VecN shape_function(Precision r, Precision s) const = 0;
+    virtual VecN  shape_function(Precision r, Precision s) const = 0;
     virtual MatN2 shape_derivative(Precision r, Precision s) const = 0;
     virtual MatN2 node_coords_natural() const = 0;
     virtual std::vector<Vec2> tying_point_coordinates() const = 0;
