@@ -48,6 +48,12 @@ struct ShellStressResultants {
     // Returns [Qx, Qy]
     [[nodiscard]] Vec2 transverse_shear() const;
 
+    // In-plane basis transformations for membrane forces, bending moments and
+    // transverse shear forces. The columns of the rotation matrix contain the
+    // target in-plane basis vectors expressed in the current basis.
+    [[nodiscard]] ShellStressResultants transformed(const Mat2& rotation) const;
+    [[nodiscard]] static Mat8          transformation(const Mat2& rotation);
+
     // Returns all generalized resultants by constant or mutable access
     [[nodiscard]] const Vec8& values() const;
     [[nodiscard]] Vec8&       values();

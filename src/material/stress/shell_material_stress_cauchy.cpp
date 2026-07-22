@@ -16,4 +16,17 @@ namespace fem {
 ShellMaterialStressCauchy::ShellMaterialStressCauchy(const Vec5& values)
     : ShellMaterialStress(values) {}
 
+/**
+ * Expresses the shell material Cauchy stress in a rotated in-plane basis.
+ *
+ * The operation preserves the Cauchy-stress type and applies the common shell
+ * material stress transformation to the stored physical stress components.
+ *
+ * @param rotation In-plane target basis vectors expressed in the current basis.
+ * @return Shell material Cauchy stress in the target basis.
+ */
+ShellMaterialStressCauchy ShellMaterialStressCauchy::transformed(const Mat2& rotation) const {
+    return ShellMaterialStressCauchy(ShellMaterialStress::transformation(rotation) * values_);
+}
+
 } // namespace fem

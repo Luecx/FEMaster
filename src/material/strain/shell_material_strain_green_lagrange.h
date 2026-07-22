@@ -22,6 +22,9 @@ struct ShellMaterialStrainGreenLagrange : ShellMaterialStrain {
 
     // Constructs the finite-strain state from five engineering components
     explicit ShellMaterialStrainGreenLagrange(const Vec5& values);
+
+    // Expresses the Green-Lagrange components in a rotated in-plane basis
+    [[nodiscard]] ShellMaterialStrainGreenLagrange transformed(const Mat2& rotation) const;
 };
 
 } // namespace fem

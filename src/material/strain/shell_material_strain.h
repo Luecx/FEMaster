@@ -37,6 +37,11 @@ struct ShellMaterialStrain {
     Precision& operator[](Component component);
     Precision  operator[](Component component) const;
 
+    // In-plane basis transformation for the five material-point strain
+    // components. The columns of the rotation matrix contain the target
+    // in-plane basis vectors expressed in the current basis.
+    [[nodiscard]] static Mat5 transformation(const Mat2& rotation);
+
     // Returns all material-point components by constant or mutable access
     [[nodiscard]] const Vec5& values() const;
     [[nodiscard]] Vec5&       values();

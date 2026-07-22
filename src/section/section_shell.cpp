@@ -68,30 +68,8 @@ void ShellSection::evaluate(const Vec3&                   position_reference,
     material_to_shell(0, 1) = shell_basis_global.col(0).dot(material_basis_global.col(1));
     material_to_shell(1, 1) = shell_basis_global.col(1).dot(material_basis_global.col(1));
 
-    const Precision a1 = material_to_shell(0, 0);
-    const Precision a2 = material_to_shell(1, 0);
-    const Precision b1 = material_to_shell(0, 1);
-    const Precision b2 = material_to_shell(1, 1);
-
-    Mat3 plane_strain_transform;
-    plane_strain_transform <<
-        a1 * a1,     a2 * a2,     a1 * a2,
-        b1 * b1,     b2 * b2,     b1 * b2,
-        2 * a1 * b1, 2 * a2 * b2, a1 * b2 + a2 * b1;
-
-    using StrainComponent = ShellGeneralizedStrain::Component;
-
-    const Index membrane_start = static_cast<Index>(StrainComponent::EpsilonXX);
-    const Index curvature_start = static_cast<Index>(StrainComponent::KappaXX);
-    const Index shear_start     = static_cast<Index>(StrainComponent::GammaXZ);
-
-    Mat8 strain_transform = Mat8::Zero();
-    strain_transform.template block<3, 3>(membrane_start, membrane_start) = plane_strain_transform;
-    strain_transform.template block<3, 3>(curvature_start, curvature_start) = plane_strain_transform;
-    strain_transform.template block<2, 2>(shear_start, shear_start) = material_to_shell.transpose();
-
-    const Vec8                   strain_material_values = strain_transform * strain.values();
-    const ShellGeneralizedStrain strain_material(strain_material_values);
+    const Mat8                   strain_transform = ShellGeneralizedStrain::transformation(material_to_shell);
+    const ShellGeneralizedStrain strain_material(strain_transform * strain.values());
 
     ShellStressResultants resultants_material;
     Mat8                  tangent_material;
@@ -102,9 +80,14 @@ void ShellSection::evaluate(const Vec3&                   position_reference,
         tangent_material
     );
 
-    // Return resultants and tangent in the supplied shell basis
-    resultants.values() = strain_transform.transpose() * resultants_material.values();
-    tangent             = strain_transform.transpose() * tangent_material * strain_transform;
+    // Return resultants and tangent in the supplied shell basis. Stress
+    // resultants transform in the inverse direction with the physical-shear
+    // convention, which is dual to the generalized strain transformation.
+    const Mat2 shell_to_material    = material_to_shell.transpose();
+    const Mat8 resultants_transform = ShellStressResultants::transformation(shell_to_material);
+
+    resultants = ShellStressResultants(resultants_transform * resultants_material.values());
+    tangent    = resultants_transform * tangent_material * strain_transform;
 }
 
 void ShellSection::info() {

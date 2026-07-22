@@ -22,6 +22,9 @@ struct ShellMaterialStressPK2 : ShellMaterialStress {
 
     // Constructs the PK2 stress from five plane-stress components
     explicit ShellMaterialStressPK2(const Vec5& values);
+
+    // Expresses the PK2 stress components in a rotated in-plane basis
+    [[nodiscard]] ShellMaterialStressPK2 transformed(const Mat2& rotation) const;
 };
 
 } // namespace fem

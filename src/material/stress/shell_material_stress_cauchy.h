@@ -22,6 +22,9 @@ struct ShellMaterialStressCauchy : ShellMaterialStress {
 
     // Constructs the Cauchy stress from five plane-stress components
     explicit ShellMaterialStressCauchy(const Vec5& values);
+
+    // Expresses the Cauchy stress components in a rotated in-plane basis
+    [[nodiscard]] ShellMaterialStressCauchy transformed(const Mat2& rotation) const;
 };
 
 } // namespace fem

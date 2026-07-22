@@ -48,6 +48,12 @@ struct ShellGeneralizedStrain {
     // Returns the transverse-shear block [gamma_xz, gamma_yz]
     [[nodiscard]] Vec2 transverse_shear() const;
 
+    // In-plane basis transformations for membrane strain, curvature and
+    // transverse-shear components. The columns of the rotation matrix contain
+    // the target in-plane basis vectors expressed in the current basis.
+    [[nodiscard]] ShellGeneralizedStrain transformed(const Mat2& rotation) const;
+    [[nodiscard]] static Mat8            transformation(const Mat2& rotation);
+
     // Returns all generalized components by constant or mutable access
     [[nodiscard]] const Vec8& values() const;
     [[nodiscard]] Vec8&       values();

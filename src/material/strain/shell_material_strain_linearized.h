@@ -22,6 +22,9 @@ struct ShellMaterialStrainLinearized : ShellMaterialStrain {
 
     // Constructs the small-strain state from five engineering components
     explicit ShellMaterialStrainLinearized(const Vec5& values);
+
+    // Expresses the small-strain components in a rotated in-plane basis
+    [[nodiscard]] ShellMaterialStrainLinearized transformed(const Mat2& rotation) const;
 };
 
 } // namespace fem
