@@ -13,9 +13,9 @@ The script visualizes, in a documentation-friendly scientific style:
 
 Supported element families:
 
-- 3D solid elements: C3D4, C3D6, C3D8, C3D10, C3D13, C3D15, C3D20, C3D20R
-- shell elements: S3, S4, MITC4, S6, S8, QSPT
-- line elements: T33, B33
+- 3D solid elements: C3D4, C3D5, C3D6, C3D8, C3D10, C3D13, C3D15, C3D20, C3D20R
+- shell elements: S3, S4, MITC4, MITC3FRT, MITC4FRT, S6, MITC6FRT, S8, MITC8, MITC8FRT, QSPT
+- line elements: T3, B33
 
 Dependencies:
     pip install numpy matplotlib pillow
@@ -143,6 +143,30 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         shape_functions="linear tetrahedral Lagrange",
         dof_per_node=3,
     ),
+    "C3D5": ElementDefinition(
+        name="C3D5",
+        title="5-node pyramid input element",
+        family="solid",
+        nodes={
+            1: (1.0, 1.0, 0.0),
+            2: (-1.0, 1.0, 0.0),
+            3: (-1.0, -1.0, 0.0),
+            4: (1.0, -1.0, 0.0),
+            5: (0.0, 0.0, 1.15),
+        },
+        faces={
+            1: (1, 2, 3, 4),
+            2: (1, 5, 2),
+            3: (2, 5, 3),
+            4: (3, 5, 4),
+            5: (4, 5, 1),
+        },
+        integration_domain="degenerated DOMAIN_ISO_HEX",
+        integration_order="mapped C3D8 rule",
+        shape_functions="pyramid input mapped to C3D8",
+        dof_per_node=3,
+        has_faces_in_solver=False,
+    ),
     "C3D6": ElementDefinition(
         name="C3D6",
         title="6-node wedge solid element",
@@ -192,6 +216,33 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         integration_domain="DOMAIN_ISO_HEX",
         integration_order="ORDER_QUADRATIC",
         shape_functions="trilinear Lagrange",
+        dof_per_node=3,
+    ),
+    "C3D8R": ElementDefinition(
+        name="C3D8R",
+        title="8-node reduced-integration hexahedral solid element",
+        family="solid",
+        nodes={
+            1: (-1.0, -1.0, -1.0),
+            2: (1.0, -1.0, -1.0),
+            3: (1.0, 1.0, -1.0),
+            4: (-1.0, 1.0, -1.0),
+            5: (-1.0, -1.0, 1.0),
+            6: (1.0, -1.0, 1.0),
+            7: (1.0, 1.0, 1.0),
+            8: (-1.0, 1.0, 1.0),
+        },
+        faces={
+            1: (1, 2, 3, 4),
+            2: (5, 6, 7, 8),
+            3: (1, 2, 6, 5),
+            4: (2, 3, 7, 6),
+            5: (3, 4, 8, 7),
+            6: (4, 1, 5, 8),
+        },
+        integration_domain="DOMAIN_ISO_HEX",
+        integration_order="ORDER_CONSTANT",
+        shape_functions="trilinear Lagrange with hourglass stabilization",
         dof_per_node=3,
     ),
     "C3D10": ElementDefinition(
@@ -413,6 +464,37 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         shape_functions="bilinear MITC quadrilateral shell",
         dof_per_node=6,
     ),
+    "MITC3FRT": ElementDefinition(
+        name="MITC3FRT",
+        title="3-node finite-rotation MITC shell element",
+        family="shell",
+        nodes={
+            1: (0.0, 0.0, 0.0),
+            2: (1.0, 0.0, 0.0),
+            3: (0.20, 0.88, 0.0),
+        },
+        faces={1: (1, 2, 3)},
+        integration_domain="DOMAIN_ISO_TRI",
+        integration_order="ORDER_CUBIC",
+        shape_functions="finite-rotation MITC3 shell",
+        dof_per_node=6,
+    ),
+    "MITC4FRT": ElementDefinition(
+        name="MITC4FRT",
+        title="4-node finite-rotation MITC shell element",
+        family="shell",
+        nodes={
+            1: (-1.0, -1.0, 0.0),
+            2: (1.0, -1.0, 0.0),
+            3: (1.0, 1.0, 0.0),
+            4: (-1.0, 1.0, 0.0),
+        },
+        faces={1: (1, 2, 3, 4)},
+        integration_domain="DOMAIN_ISO_QUAD",
+        integration_order="ORDER_CUBIC",
+        shape_functions="finite-rotation MITC4 shell",
+        dof_per_node=6,
+    ),
     "S6": ElementDefinition(
         name="S6",
         title="6-node triangular shell element",
@@ -429,6 +511,24 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         integration_domain="DOMAIN_ISO_TRI",
         integration_order="ORDER_CUBIC",
         shape_functions="quadratic triangular shell",
+        dof_per_node=6,
+    ),
+    "MITC6FRT": ElementDefinition(
+        name="MITC6FRT",
+        title="6-node finite-rotation MITC6-b shell element",
+        family="shell",
+        nodes={
+            1: (0.0, 0.0, 0.0),
+            2: (1.0, 0.0, 0.0),
+            3: (0.20, 0.88, 0.0),
+            4: (0.5, 0.0, 0.0),
+            5: (0.60, 0.44, 0.0),
+            6: (0.10, 0.44, 0.0),
+        },
+        faces={1: (1, 2, 3, 4, 5, 6)},
+        integration_domain="DOMAIN_ISO_TRI",
+        integration_order="ORDER_CUBIC",
+        shape_functions="finite-rotation MITC6-b shell",
         dof_per_node=6,
     ),
     "S8": ElementDefinition(
@@ -451,6 +551,46 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         shape_functions="quadratic serendipity shell",
         dof_per_node=6,
     ),
+    "MITC8": ElementDefinition(
+        name="MITC8",
+        title="8-node MITC quadrilateral shell element",
+        family="shell",
+        nodes={
+            1: (-1.0, -1.0, 0.0),
+            2: (1.0, -1.0, 0.0),
+            3: (1.0, 1.0, 0.0),
+            4: (-1.0, 1.0, 0.0),
+            5: (0.0, -1.0, 0.0),
+            6: (1.0, 0.0, 0.0),
+            7: (0.0, 1.0, 0.0),
+            8: (-1.0, 0.0, 0.0),
+        },
+        faces={1: (1, 2, 3, 4, 5, 6, 7, 8)},
+        integration_domain="DOMAIN_ISO_QUAD",
+        integration_order="ORDER_QUINTIC",
+        shape_functions="quadratic MITC8 shell",
+        dof_per_node=6,
+    ),
+    "MITC8FRT": ElementDefinition(
+        name="MITC8FRT",
+        title="8-node finite-rotation MITC shell element",
+        family="shell",
+        nodes={
+            1: (-1.0, -1.0, 0.0),
+            2: (1.0, -1.0, 0.0),
+            3: (1.0, 1.0, 0.0),
+            4: (-1.0, 1.0, 0.0),
+            5: (0.0, -1.0, 0.0),
+            6: (1.0, 0.0, 0.0),
+            7: (0.0, 1.0, 0.0),
+            8: (-1.0, 0.0, 0.0),
+        },
+        faces={1: (1, 2, 3, 4, 5, 6, 7, 8)},
+        integration_domain="DOMAIN_ISO_QUAD",
+        integration_order="ORDER_QUINTIC",
+        shape_functions="finite-rotation MITC8 shell",
+        dof_per_node=6,
+    ),
     "QSPT": ElementDefinition(
         name="QSPT",
         title="4-node quadrilateral shear-panel element",
@@ -467,8 +607,8 @@ ELEMENTS: Dict[str, ElementDefinition] = {
         shape_functions="quadrilateral shear-panel formulation",
         dof_per_node=3,
     ),
-    "T33": ElementDefinition(
-        name="T33",
+    "T3": ElementDefinition(
+        name="T3",
         title="2-node truss element",
         family="line",
         nodes={
