@@ -32,17 +32,57 @@
  * @date 28.08.2024
  */
 
-#include "../model/element/element.h"
 #include "../core/logging.h"
+#include "../data/field.h"
+#include "../model/element/element.h"
 
 #include <algorithm>
 #include <limits>
+#include <type_traits>
 
 #ifdef _OPENMP
     #include <omp.h>
 #endif
 
 namespace fem { namespace mattools {
+
+/**
+ * Evaluates an element-local matrix and optionally exposes a nodal force field.
+ *
+ * Matrix-only assembly callbacks keep the traditional signature
+ *
+ *     f(element, storage).
+ *
+ * Nonlinear tangent assembly may instead use
+ *
+ *     f(element, storage, nodal_forces),
+ *
+ * where `nodal_forces` is either the caller-owned serial field or the
+ * thread-local force field belonging to the active OpenMP worker.
+ *
+ * @param compute_local_matrix Element-local matrix callback.
+ * @param element Current element.
+ * @param local_matrix_storage Aligned dense matrix storage.
+ * @param nodal_forces Optional nodal force output field.
+ * @return Element-local matrix mapped onto the supplied storage.
+ */
+template<typename Lambda>
+auto compute_local_matrix_with_optional_forces(
+    Lambda&                 compute_local_matrix,
+    const model::ElementPtr& element,
+    Precision*              local_matrix_storage,
+    model::NodeData*        nodal_forces
+) {
+    if constexpr (std::is_invocable_v<Lambda&, const model::ElementPtr&, Precision*, model::NodeData&>) {
+        logging::error(nodal_forces != nullptr,
+            "Matrix assembly callback requires a nodal force output field");
+
+        return compute_local_matrix(element, local_matrix_storage, *nodal_forces);
+    } else {
+        (void) nodal_forces;
+        return compute_local_matrix(element, local_matrix_storage);
+    }
+}
 
 /**
  * @brief Assembles a global sparse matrix using a single execution thread.
@@ -58,7 +98,9 @@ namespace fem { namespace mattools {
  *
  * The local-matrix callback receives the current element and aligned temporary
  * storage owned by this function. It must return an Eigen-compatible matrix
- * view whose dimensions correspond to the element's active local DOFs.
+ * view whose dimensions correspond to the element's active local DOFs. If
+ * `nodal_forces` is supplied, the callback may additionally receive that field
+ * as a third argument and accumulate element force contributions into it.
  *
  * @tparam Lambda Callable type used to compute element-local matrices.
  *
@@ -67,13 +109,16 @@ namespace fem { namespace mattools {
  *                system indices. Negative indices identify inactive DOFs.
  * @param compute_local_matrix Callable that computes and returns the local
  *                             matrix of one element.
+ * @param nodal_forces Optional nodal force field accumulated by callbacks that
+ *                     accept a third argument.
  *
  * @return Assembled square sparse matrix over all active global DOFs.
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>& elements,
                                             const SystemDofIds& indices,
-                                            Lambda&& compute_local_matrix) {
+                                            Lambda&& compute_local_matrix,
+                                            model::NodeData* nodal_forces = nullptr) {
     // Restrict Eigen to one internal worker because the complete assembly is
     // executed by the calling thread.
     Eigen::setNbThreads(1);
@@ -88,6 +133,11 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
     // square assembled matrix. Active indices are assumed to be contiguous and
     // zero-based.
     int global_size = indices.maxCoeff() + 1;
+
+    // Prepare the optional nodal output field before element force accumulation.
+    if (nodal_forces) {
+        nodal_forces->set_zero();
+    }
 
     // Collect local contributions as triplets before inserting them into the
     // global sparse matrix.
@@ -113,7 +163,12 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
         alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
 
         // Evaluate the current element matrix into the temporary storage.
-        auto local_matrix = compute_local_matrix(element, local_matrix_storage);
+        auto local_matrix = compute_local_matrix_with_optional_forces(
+            compute_local_matrix,
+            element,
+            local_matrix_storage,
+            nodal_forces
+        );
 
         // Determine the element topology and infer the uniform number of local
         // DOFs associated with each node.
@@ -201,14 +256,20 @@ SparseMatrix assemble_matrix_singlethreaded(const std::vector<model::ElementPtr>
  * @param indices Mapping from node identifiers and local DOFs to active global
  *                system indices. Negative indices identify inactive DOFs.
  * @param compute_local_matrix Callable that computes and returns the local
- *                             matrix of one element.
+ *                             matrix of one element. When `nodal_forces` is not
+ *                             null, it may accept a thread-local nodal force
+ *                             field as a third argument.
+ * @param nodal_forces Optional global nodal force field. The parallel
+ *                     implementation accumulates into thread-local copies and
+ *                     reduces them into this field after the element loop.
  *
  * @return Assembled square sparse matrix over all active global DOFs.
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>& elements,
                                            const SystemDofIds& indices,
-                                           Lambda&& compute_local_matrix) {
+                                           Lambda&& compute_local_matrix,
+                                           model::NodeData* nodal_forces = nullptr) {
     // Use the storage-index type selected by Eigen for direct access to the
     // compressed sparse matrix arrays.
     using StorageIndex = typename SparseMatrix::StorageIndex;
@@ -231,6 +292,25 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     // eliminates shared writes during local element assembly.
     std::vector<SparseMatrix> thread_matrices(num_threads, SparseMatrix(global_size, global_size));
     std::vector<TripletList>  thread_triplets(num_threads);
+
+    // Optional element force output is accumulated into one nodal field per
+    // worker. This avoids shared writes at nodes connected to elements processed
+    // by different threads.
+    std::vector<model::NodeData> thread_nodal_forces;
+    if (nodal_forces) {
+        nodal_forces->set_zero();
+        thread_nodal_forces.reserve(static_cast<std::size_t>(num_threads));
+
+        for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
+            thread_nodal_forces.emplace_back(
+                nodal_forces->name,
+                nodal_forces->domain,
+                nodal_forces->rows,
+                nodal_forces->components
+            );
+            thread_nodal_forces.back().set_zero();
+        }
+    }
 
     // Reserve a large triplet batch for each worker. Large batches are
     // periodically inserted into the corresponding partial sparse matrix.
@@ -267,7 +347,16 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
 
         // Evaluate the current element matrix into the worker-local temporary
         // storage.
-        auto local_matrix = compute_local_matrix(element, local_matrix_storage);
+        model::NodeData* local_nodal_forces = nodal_forces
+            ? &thread_nodal_forces[static_cast<std::size_t>(thread_id)]
+            : nullptr;
+
+        auto local_matrix = compute_local_matrix_with_optional_forces(
+            compute_local_matrix,
+            element,
+            local_matrix_storage,
+            local_nodal_forces
+        );
 
         // Infer the complete local algebraic dimension and the uniform number
         // of DOFs associated with each node.
@@ -319,6 +408,30 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
     timer.stop();
     logging::info(true, "Time for parallel loop    : ", timer.elapsed(), " ms");
     timer.start();
+
+    // Reduce the optional thread-local force fields back into the caller-owned
+    // field while the partial sparse matrices are still independent.
+    if (nodal_forces) {
+        const Index value_count = nodal_forces->rows * nodal_forces->components;
+        Precision*  target      = nodal_forces->data();
+
+        #pragma omp parallel for num_threads(num_threads) schedule(static, 1024)
+        for (Index value = 0; value < value_count; ++value) {
+            Precision sum = Precision(0);
+
+            for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
+                sum += thread_nodal_forces[static_cast<std::size_t>(thread_id)].data()[value];
+            }
+
+            target[value] = sum;
+        }
+
+        std::vector<model::NodeData>{}.swap(thread_nodal_forces);
+
+        timer.stop();
+        logging::info(true, "Time for force reduction  : ", timer.elapsed(), " ms");
+        timer.start();
+    }
 
     // Flush the remaining triplets of every worker and compress each partial
     // matrix. Compression guarantees sorted row indices inside every column,
@@ -507,8 +620,8 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
  * is used unconditionally. With OpenMP enabled, the parallel k-way assembly is
  * selected only when more than one worker thread has been configured.
  *
- * The element collection, global DOF mapping and local-matrix callback are
- * forwarded unchanged to the selected implementation.
+ * The element collection, global DOF mapping, local-matrix callback and optional
+ * nodal force output are forwarded unchanged to the selected implementation.
  *
  * @tparam Lambda Callable type used to compute element-local matrices.
  *
@@ -517,25 +630,27 @@ SparseMatrix assemble_matrix_multithreaded(const std::vector<model::ElementPtr>&
  *                system indices.
  * @param compute_local_matrix Callable that computes and returns one local
  *                             element matrix.
+ * @param nodal_forces Optional global nodal force field for callbacks that
+ *                     produce internal force contributions.
  *
  * @return Assembled square sparse matrix over all active global DOFs.
  */
 template<typename Lambda>
 SparseMatrix assemble_matrix(const std::vector<model::ElementPtr>& elements,
                              const SystemDofIds& indices,
-                             Lambda&& compute_local_matrix) {
+                             Lambda&& compute_local_matrix,
+                             model::NodeData* nodal_forces = nullptr) {
 #ifndef _OPENMP
     // OpenMP support is unavailable, so assembly must remain serial.
-    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix);
+    return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
 #else
     // Use parallel assembly only when more than one worker is configured.
     if (global_config.max_threads > 1) {
-        return assemble_matrix_multithreaded(elements, indices, compute_local_matrix);
+        return assemble_matrix_multithreaded(elements, indices, compute_local_matrix, nodal_forces);
     } else {
-        return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix);
+        return assemble_matrix_singlethreaded(elements, indices, compute_local_matrix, nodal_forces);
     }
 #endif
 }
 
 } } // namespace fem::mattools
-

@@ -377,35 +377,29 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
     logging::error(nodal_forces.components >= 6,
         "tangent internal force output requires at least 6 components");
 
-    nodal_forces.set_zero();
+    const Index max_ip = this->_data->max_integration_points;
 
-    const int   global_size = indices.maxCoeff() + 1;
-    const Index max_ip      = this->_data->max_integration_points;
-    TripletList triplets;
-    SparseMatrix global_matrix(global_size, global_size);
-
-    // create a stress state which is optional to be used by the elements and can hold up
-    // to 8 entries
-    Field ip_stress_state{ "IP_STRESS_STATE", FieldDomain::ELEMENT_IP, max_ip, 8};
+    // Store the current integration-point resultants produced during tangent
+    // evaluation. Element IP rows are element-local, so parallel element calls
+    // write disjoint rows.
+    Field ip_stress_state{"IP_STRESS_STATE", FieldDomain::ELEMENT_IP, max_ip, 8};
     ip_stress_state.set_zero();
 
-    for (const auto& element : _data->elements) {
-        if (!element) {
-            continue;
-        }
-
+    // Evaluate the element tangent and scatter internal force contributions into
+    // the nodal force field owned by the active assembly worker.
+    auto lambda = [&](const ElementPtr& element,
+                      Precision*        local_matrix_storage,
+                      NodeData&         local_nodal_forces) -> MapMatrix {
         auto* structural = element->as<StructuralElement>();
         if (!structural) {
-            continue;
+            MapMatrix matrix{local_matrix_storage, 0, 0};
+            return matrix;
         }
-
-        constexpr int MAX_LOCAL_MATRIX_SIZE = 128;
-        alignas(64) Precision local_matrix_storage[MAX_LOCAL_MATRIX_SIZE * MAX_LOCAL_MATRIX_SIZE]{};
 
         MapMatrix tangent = structural->stiffness_tangent(
             local_matrix_storage,
             ip_stress_state,
-            nodal_forces,
+            local_nodal_forces,
             displacement
         );
 
@@ -417,38 +411,34 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
             tangent *= (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
         }
 
-        const int num_nodes = element->n_nodes();
-        const int local_matrix_size = static_cast<int>(tangent.rows());
-        const int dofs_per_node = local_matrix_size / num_nodes;
+        return tangent;
+    };
 
-        for (int i = 0; i < num_nodes; ++i) {
-            for (int j = 0; j < num_nodes; ++j) {
-                for (int idof = 0; idof < dofs_per_node; ++idof) {
-                    for (int jdof = 0; jdof < dofs_per_node; ++jdof) {
-                        const int global_row = indices(element->nodes()[i], idof);
-                        const int global_col = indices(element->nodes()[j], jdof);
+    // Assemble structural element tangents through the common sparse-matrix
+    // assembly path. With OpenMP enabled, nodal internal forces are accumulated in
+    // thread-local fields and reduced after the element loop.
+    SparseMatrix global_matrix = mattools::assemble_matrix(
+        _data->elements,
+        indices,
+        lambda,
+        &nodal_forces
+    );
 
-                        if (global_row < 0 || global_col < 0) {
-                            continue;
-                        }
-
-                        triplets.emplace_back(
-                            global_row,
-                            global_col,
-                            tangent(i * dofs_per_node + idof, j * dofs_per_node + jdof)
-                        );
-                    }
-                }
-            }
-        }
-    }
-
+    // Add nonlinear contact contributions after the structural element matrix has
+    // been assembled. Contact assembly owns additional search state and is kept
+    // outside the generic element loop.
+    TripletList contact_triplets;
     for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, triplets);
+        contact.assemble(indices, *_data, nodal_forces, contact_triplets);
     }
 
-    global_matrix.insertFromTriplets(triplets.begin(), triplets.end());
+    if (!contact_triplets.empty()) {
+        SparseMatrix contact_matrix(global_matrix.rows(), global_matrix.cols());
+        contact_matrix.insertFromTriplets(contact_triplets.begin(), contact_triplets.end());
+        global_matrix += contact_matrix;
+    }
 
+    // Add feature-based stiffness contributions such as point springs.
     if (!_data->features.empty()) {
         TripletList feature_triplets;
         for (const auto& feature : _data->features) {
@@ -461,6 +451,8 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
         }
     }
 
+    // Validate the reduced internal-force assembly before the nonlinear solver
+    // forms the residual.
     for (Index i = 0; i < nodal_forces.rows; ++i) {
         for (Index j = 0; j < nodal_forces.components; ++j) {
             const bool bad = std::isnan(nodal_forces(i, j)) || std::isinf(nodal_forces(i, j));

@@ -293,11 +293,26 @@ void NonlinearStatic::run() {
         };
         internal_mat.set_zero();
 
-        auto Kt = model->build_tangent_stiffness_matrix(
-            active_dof_idx_mat,
-            internal_mat,
-            displacement
-        );
+        SparseMatrix Kt;
+        const bool logging_was_enabled = logging::is_enabled();
+        logging::disable();
+
+        try {
+            Kt = model->build_tangent_stiffness_matrix(
+                active_dof_idx_mat,
+                internal_mat,
+                displacement
+            );
+        } catch (...) {
+            if (logging_was_enabled) {
+                logging::enable();
+            }
+            throw;
+        }
+
+        if (logging_was_enabled) {
+            logging::enable();
+        }
 
         if (regularize_zero_stiffness_rows) {
             regularise_stiffness(Kt, zero_stiffness_regularization_alpha);
@@ -323,9 +338,22 @@ void NonlinearStatic::run() {
                             const DynamicVector& rhs) {
         SparseMatrix matrix = tangent;
 
+        DynamicVector solution;
+        const bool logging_was_enabled = logging::is_enabled();
         logging::disable();
-        DynamicVector solution = solver::solve(device, method, matrix, rhs);
-        logging::enable();
+
+        try {
+            solution = solver::solve(device, method, matrix, rhs);
+        } catch (...) {
+            if (logging_was_enabled) {
+                logging::enable();
+            }
+            throw;
+        }
+
+        if (logging_was_enabled) {
+            logging::enable();
+        }
         return solution;
     };
 
@@ -350,15 +378,28 @@ void NonlinearStatic::run() {
                             const DynamicMatrix& rhs) {
         SparseMatrix matrix = tangent;
 
+        DynamicMatrix solution;
+        const bool logging_was_enabled = logging::is_enabled();
         logging::disable();
-        DynamicMatrix solution = solver::solve(
-            device,
-            method,
-            matrix,
-            rhs,
-            solver::DirectSolverMatrixType::General
-        );
-        logging::enable();
+
+        try {
+            solution = solver::solve(
+                device,
+                method,
+                matrix,
+                rhs,
+                solver::DirectSolverMatrixType::General
+            );
+        } catch (...) {
+            if (logging_was_enabled) {
+                logging::enable();
+            }
+            throw;
+        }
+
+        if (logging_was_enabled) {
+            logging::enable();
+        }
         return solution;
     };
 
