@@ -3,11 +3,9 @@
  * @brief Implements generalized and physical shell result recovery.
  *
  * The routines evaluate MITC generalized strains and shell resultants at
- * arbitrary natural coordinates. Physical through-thickness strain and stress
- * tensors are reconstructed from membrane resultants, bending moments and
- * transverse shear resultants. Nonlinear stress output transforms the recovered
- * second Piola-Kirchhoff stress into Cauchy stress through the shell deformation
- * gradient.
+ * arbitrary natural coordinates. Physical through-thickness strains are
+ * reconstructed from generalized shell strains. Material stresses are evaluated
+ * by the shell section and transformed to the configured output basis.
  *
  * @see FRTShell
  *
@@ -20,7 +18,6 @@
 #include "../../core/logging.h"
 #include "../../material/strain/volume_strain_green_lagrange.h"
 #include "../../material/stress/volume_stress_cauchy.h"
-#include "../../material/stress/volume_stress_pk2.h"
 #include "../../math/vec_util.h"
 
 #include <cmath>
@@ -191,7 +188,7 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
  * @param zeta Normalized through-thickness coordinate in `[-1,1]`.
  * @param nonlinear Select nonlinear PK2-to-Cauchy transformation.
  * @param strain_out Reconstructed global Green-Lagrange strain vector.
- * @param stress_out Reconstructed global Cauchy stress vector.
+ * @param stress_out Reconstructed Cauchy stress vector in the section output basis.
  */
 template<Index N>
 void FRTShell<N>::physical_stress_strain_at(
@@ -204,14 +201,12 @@ void FRTShell<N>::physical_stress_strain_at(
     Vec6&                 strain_out,
     Vec6&                 stress_out
 ) const {
-    Vec8 generalized_strain;
-    const Vec8 resultants = generalized_resultant_at(
+    const Vec8 generalized_strain = generalized_strain_at(
         data,
         q,
         r,
         s,
-        nonlinear,
-        &generalized_strain
+        nonlinear
     );
 
     const Precision h = this->get_section()->thickness_;
@@ -220,24 +215,13 @@ void FRTShell<N>::physical_stress_strain_at(
     const Index membrane_strain_start = static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
     const Index curvature_start       = static_cast<Index>(ShellGeneralizedStrain::Component::KappaXX);
     const Index shear_strain_start    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
-    const Index membrane_stress_start = static_cast<Index>(ShellStressResultants::Component::NXX);
-    const Index moment_start          = static_cast<Index>(ShellStressResultants::Component::MXX);
-    const Index shear_stress_start    = static_cast<Index>(ShellStressResultants::Component::QX);
 
     const Vec3 plane_strain =
         generalized_strain.template segment<3>(membrane_strain_start)
         + z * generalized_strain.template segment<3>(curvature_start);
-
-    const Vec3 plane_stress =
-        resultants.template segment<3>(membrane_stress_start) / h
-        + z * (Precision(12) / (h * h * h))
-        * resultants.template segment<3>(moment_start);
-
     const Vec2 shear_strain = generalized_strain.template segment<2>(shear_strain_start);
-    const Vec2 shear_stress = resultants.template segment<2>(shear_stress_start) / h;
 
     VolumeStrainGreenLagrange strain_local;
-    VolumeStressPK2           stress_local;
 
     strain_local[VolumeStrain::Component::XX]      = plane_strain(0);
     strain_local[VolumeStrain::Component::YY]      = plane_strain(1);
@@ -245,37 +229,29 @@ void FRTShell<N>::physical_stress_strain_at(
     strain_local[VolumeStrain::Component::GammaXZ] = shear_strain(0);
     strain_local[VolumeStrain::Component::GammaXY] = plane_strain(2);
 
-    stress_local[VolumeStress::Component::XX] = plane_stress(0);
-    stress_local[VolumeStress::Component::YY] = plane_stress(1);
-    stress_local[VolumeStress::Component::YZ] = shear_stress(1);
-    stress_local[VolumeStress::Component::XZ] = shear_stress(0);
-    stress_local[VolumeStress::Component::XY] = plane_stress(2);
-
     const Mat3 reference_basis = reference_basis_global(r, s);
     const Mat3 green_lagrange_global = reference_basis
                                      * strain_local.tensor()
                                      * reference_basis.transpose();
-    const Mat3 second_pk_global = reference_basis
-                                * stress_local.tensor()
-                                * reference_basis.transpose();
 
     strain_out = VolumeStrainGreenLagrange(green_lagrange_global).voigt();
 
-    if (!nonlinear) {
-        stress_out = VolumeStressCauchy(second_pk_global).voigt();
-        return;
-    }
+    // Let the section apply the same orientation and output-basis convention
+    // used by shell resultants. The element supplies the deformation gradient
+    // only for finite-strain PK2-to-Cauchy recovery.
+    const Mat3 deformation_gradient = nonlinear
+        ? deformation_gradient_at(data.state, r, s, z)
+        : Mat3::Identity();
+    const VolumeStressCauchy cauchy_stress = this->get_section()->compute_stress(
+        reference_position(r, s),
+        reference_basis,
+        ShellGeneralizedStrain(generalized_strain),
+        z,
+        nonlinear,
+        deformation_gradient
+    );
 
-    const Mat3      F = deformation_gradient_at(data.state, r, s, z);
-    const Precision J = F.determinant();
-
-    logging::error(J > Precision(0) && std::isfinite(J),
-                   "FRTShell: invalid deformation gradient during stress recovery in element ",
-                   this->elem_id,
-                   ", J = ", J);
-
-    const Mat3 cauchy_global = (F * second_pk_global * F.transpose()) / J;
-    stress_out = VolumeStressCauchy(cauchy_global).voigt();
+    stress_out = topology_stiffness_scale() * cauchy_stress.voigt();
 }
 
 /**
@@ -441,15 +417,29 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         false
     );
     const Vec6N q = element_displacement_vector(displacement);
+    ShellSection* section = shell_section();
+    const Precision scale = topology_stiffness_scale();
 
     for (Index node = 0; node < num_nodes; ++node) {
-        const Vec8 values = generalized_resultant_at(
+        const Precision r = rst(node, 0);
+        const Precision s = rst(node, 1);
+
+        const Vec8 strain_values = generalized_strain_at(
             data,
             q,
-            rst(node, 0),
-            rst(node, 1),
+            r,
+            s,
             true
         );
+        const ShellGeneralizedStrain strain(strain_values);
+        const ShellStressResultants  output_resultants = section->compute_resultants(
+            reference_position(r, s),
+            reference_basis_global(r, s),
+            strain,
+            true
+        );
+        const Vec8 values = scale * output_resultants.values();
+
         const Index node_id = static_cast<Index>(this->node_ids[node]);
 
         for (Index component = 0; component < num_strains; ++component) {

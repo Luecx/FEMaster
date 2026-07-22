@@ -431,9 +431,14 @@ void Model::truss_section(const std::string& set, const std::string& material, P
     this->_data->sections.push_back(sec);
 }
 
-void Model::shell_section(const std::string& set, const std::string& material, Precision thickness, const std::string& orientation) {
+void Model::shell_section(const std::string& set,
+                          const std::string& material,
+                          Precision          thickness,
+                          const std::string& orientation,
+                          Index              csys_axis) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
     logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
+    logging::error(csys_axis >= 0 && csys_axis < 3, "SHELLSECTION: CSYSAXIS must be 1, 2 or 3");
     if (!orientation.empty()) {
         logging::error(_data->coordinate_systems.has(orientation), "Coordinate system ", orientation, " does not exist");
     }
@@ -442,7 +447,8 @@ void Model::shell_section(const std::string& set, const std::string& material, P
         _data->materials.get(material),
         _data->elem_sets.get(set),
         thickness,
-        orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation)
+        orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation),
+        csys_axis
     );
     this->_data->sections.push_back(sec);
 }
@@ -452,8 +458,10 @@ void Model::shell_section_abd(const std::string& set,
                               Precision          thickness,
                               const Mat6&        abd,
                               const Mat2&        shear,
-                              const std::string& orientation) {
+                              const std::string& orientation,
+                              Index              csys_axis) {
     logging::error(_data->elem_sets.has(set), "Element set ", set, " is not a defined element set");
+    logging::error(csys_axis >= 0 && csys_axis < 3, "SHELLSECTION: CSYSAXIS must be 1, 2 or 3");
     if (!material.empty()) {
         logging::error(_data->materials.has(material), "Material ", material, " is not a defined material");
     }
@@ -467,7 +475,8 @@ void Model::shell_section_abd(const std::string& set,
         thickness,
         abd,
         shear,
-        orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation)
+        orientation.empty() ? nullptr : _data->coordinate_systems.get(orientation),
+        csys_axis
     );
     this->_data->sections.push_back(sec);
 }

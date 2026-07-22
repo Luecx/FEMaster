@@ -740,9 +740,6 @@ struct DefaultShellElement : public ShellElement<N> {
         // extract thickness
         const Precision h = this->get_section()->thickness_;
 
-        // predeclare the volume stress cauchy which we compute later for the given point
-        VolumeStressCauchy stress_element;
-
         // for ever node, we need to store the in-plane dispalacement (u,v), bending components (w,phi1, phi2) and the
         // shear components (w,phi1,phi2)
         StaticVector<2 * N> disp_membrane;
@@ -808,32 +805,18 @@ struct DefaultShellElement : public ShellElement<N> {
         generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
         generalized_strain.values().template segment<2>(shear_start)     = gamma_element;
 
-        // get the results and tangent (unused here)
-        ShellStressResultants  generalized_resultants;
-        Mat8                   tangent;
-        // compute the generalized results in linear theory
-        this->get_section()->evaluate(
-            reference_point(r, s), shell_basis, generalized_strain, false, generalized_resultants, tangent
-        );
-
-        const Vec3 membrane_force_element = topo_scale * generalized_resultants.membrane();
-        const Vec3 bending_moment_element = topo_scale * generalized_resultants.moments();
-        const Vec2 shear_stress_element   = topo_scale * generalized_resultants.transverse_shear() / h;
-
         const Precision z = t * h / Precision(2);
 
-        Vec3 stress_plane_element =
-            membrane_force_element / h
-            + z * (Precision(12) / (h * h * h)) * bending_moment_element;
+        VolumeStressCauchy stress = this->get_section()->compute_stress(
+            reference_point(r, s),
+            shell_basis,
+            generalized_strain,
+            z,
+            false
+        );
+        stress.voigt() *= topo_scale;
 
-        stress_element[VolumeStress::Component::XX] = stress_plane_element(0);
-        stress_element[VolumeStress::Component::YY] = stress_plane_element(1);
-        stress_element[VolumeStress::Component::ZZ] = Precision(0);
-        stress_element[VolumeStress::Component::YZ] = shear_stress_element(1);
-        stress_element[VolumeStress::Component::XZ] = shear_stress_element(0);
-        stress_element[VolumeStress::Component::XY] = stress_plane_element(2);
-
-        return stress_element.transformed(shell_basis, Mat3::Identity());
+        return stress;
     }
 
     bool compute_shell_section_forces(Field& resultants,
@@ -911,18 +894,14 @@ struct DefaultShellElement : public ShellElement<N> {
             generalized_strain.values().template segment<3>(membrane_start) = eps_element;
             generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
             generalized_strain.values().template segment<2>(shear_start) = gamma_element;
-            ShellStressResultants  generalized_resultants;
-            Mat8                   tangent;
-            this->get_section()->evaluate(
+            const ShellStressResultants output_resultants = this->get_section()->compute_resultants(
                 reference_point(r, s),
                 shell_basis,
                 generalized_strain,
-                false,
-                generalized_resultants,
-                tangent
+                false
             );
 
-            const Vec8 values = topo_scale * generalized_resultants.values();
+            const Vec8 values = topo_scale * output_resultants.values();
 
             const Index node_idx = static_cast<Index>(node_id);
 

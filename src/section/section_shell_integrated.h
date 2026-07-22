@@ -18,9 +18,17 @@ struct IntegratedShellSection : ShellSection {
     IntegratedShellSection(material::Material::Ptr    material,
                            model::ElementRegion::Ptr  region,
                            Precision                  thickness,
-                           cos::CoordinateSystem::Ptr orientation);
+                           cos::CoordinateSystem::Ptr orientation,
+                           Index                      csys_axis = 0);
 
     Index num_mp_per_ip() const override { return 5; }
+
+    [[nodiscard]] VolumeStressCauchy compute_stress(const Vec3&                   position_reference,
+                                                    const Mat3&                   shell_basis_global,
+                                                    const ShellGeneralizedStrain& strain,
+                                                    Precision                     z,
+                                                    bool                          use_green_lagrange,
+                                                    Mat3                          deformation_gradient = Mat3::Identity()) const override;
 
 protected:
     void evaluate_material(const ShellGeneralizedStrain& strain,
