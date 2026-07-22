@@ -18,7 +18,7 @@ namespace fem {
 // Generalized shell forces and moments per unit reference length
 struct ShellStressResultants {
     // Component order used by the internal eight-entry vector
-    enum class Component : int {
+    enum class Component : Index {
         NXX = 0,
         NYY = 1,
         NXY = 2,

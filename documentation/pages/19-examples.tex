@@ -104,7 +104,7 @@ TENSION
 
 \section{Shell with explicit ABD and transverse shear stiffness}
 
-The six lines following \cmd{ELASTIC} are the rows of the \(6\times6\) ABD matrix. The final line contains the four entries of \(S\) in row-major order. The example uses a symmetric uncoupled laminate, but the parser accepts all 36 ABD entries independently.
+The data following \cmd{SHELLSECTION} with \key{TYPE=ABD} contain the \(6\times6\) ABD matrix in row-major order followed by the four entries of \(S\), also in row-major order. The example uses a symmetric uncoupled laminate, but the parser accepts all 36 ABD entries independently.
 
 \begin{exampledeck}
 *MODEL, NAME=ABD_CANTILEVER
@@ -123,8 +123,7 @@ The six lines following \cmd{ELASTIC} are the rows of the \(6\times6\) ABD matri
 *NSET, NAME=TIP
 2, 3
 
-*MATERIAL, NAME=LAMINATE_ABD
-*ELASTIC, TYPE=ABD
+*SHELLSECTION, ELSET=PANEL, TYPE=ABD, THICKNESS=1.0
 1.0e6, 2.5e5, 0.0, 0.0, 0.0, 0.0
 2.5e5, 1.0e6, 0.0, 0.0, 0.0, 0.0
 0.0, 0.0, 3.0e5, 0.0, 0.0, 0.0
@@ -132,9 +131,6 @@ The six lines following \cmd{ELASTIC} are the rows of the \(6\times6\) ABD matri
 0.0, 0.0, 0.0, 2.5e2, 1.0e3, 0.0
 0.0, 0.0, 0.0, 0.0, 0.0, 3.0e2
 3.0e5, 0.0, 0.0, 3.0e5
-
-*SHELLSECTION, ELSET=PANEL, MATERIAL=LAMINATE_ABD
-1.0
 
 *SUPPORT, SUPPORT_COLLECTOR=BC
 ROOT, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0

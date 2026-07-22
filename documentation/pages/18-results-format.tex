@@ -82,4 +82,6 @@ Supported structural elements are written with FRD element type codes for common
 \bottomrule
 \end{longtable}
 
+For shell resultants, an explicitly assigned \cmd{SHELLSECTION} orientation also defines the output basis. Without an orientation, FEMaster writes physical shell stresses in global Cartesian components and rotates shell resultants into a deterministic tangent basis obtained by projecting global \(X\) into the shell plane, falling back to global \(Y\) when necessary.
+
 For transient results, the frame value written to FRD is the physical time passed by the transient loadcase. For eigenfrequency and buckling results, the frame value is the frequency or buckling factor associated with the written mode.

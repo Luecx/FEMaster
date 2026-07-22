@@ -164,15 +164,15 @@ Reciprocal Poisson ratios are derived from modulus ratios. In particular, FEMast
 \]
 The input column is named \key{NU13}, but the material construction uses the reciprocal value needed by the compliance matrix. Orthotropic data should be checked carefully because inconsistent modulus and Poisson-ratio combinations can produce a non-positive or ill-conditioned stiffness matrix.
 
-\section{ABD elasticity}
+\section{Prescribed ABD shell stiffness}
 
 \begin{syntax}
-*ELASTIC, TYPE=ABD
+*SHELLSECTION, ELSET=<elset>, TYPE=ABD, THICKNESS=<t>, ORIENTATION=<orientation>, CSYSAXIS=<1|2|3>
 <abd11>, <abd12>, ..., <abd66>,
 <s11>, <s12>, <s21>, <s22>
 \end{syntax}
 
-\cmd{ELASTIC, TYPE=ABD} reads 40 values. The first 36 values are a \(6\times6\) ABD matrix in row-major order. The last 4 values are a \(2\times2\) transverse shear matrix in row-major order. The values may be distributed over up to eight input lines.
+Prescribed ABD stiffness is a shell-section formulation, not an \cmd{ELASTIC} material subcommand. It is documented in this chapter because it replaces a material law with already homogenized generalized section stiffnesses. The data belong to \cmd{SHELLSECTION} with \key{TYPE=ABD}. The command reads 40 values. The first 36 values are a \(6\times6\) ABD matrix in row-major order. The last 4 values are a \(2\times2\) transverse shear matrix in row-major order. The values may be distributed over up to eight input lines.
 
 The ABD matrix is a shell or laminate stiffness representation:
 \[
@@ -213,7 +213,7 @@ S
 \]
 Thus the complete generalized shell law consists of the \(6\times6\) ABD matrix and the separate \(2\times2\) matrix \(S\). FEMaster uses the transverse-shear component order \((xz,yz)\), so the four values following the 36 ABD entries map exactly to \(s_{11},s_{12},s_{21},s_{22}\). For \val{TYPE=ABD}, these are already section stiffnesses: FEMaster does not multiply the supplied ABD or \(S\) matrix by shell thickness and does not apply an additional shear-correction factor.
 
-Both matrices must contain finite values, be symmetric, and be positive definite. These conditions are checked when the ABD shell section is constructed.
+Both matrices must contain finite values, be symmetric, and be positive definite. These conditions are checked when the ABD shell section is constructed. \key{MATERIAL} is optional for ABD shell sections because the generalized stiffness is supplied directly. When no orientation is assigned, the matrices act in the geometric shell basis. With \key{ORIENTATION}, FEMaster projects the selected \key{CSYSAXIS} into the shell plane, evaluates the prescribed matrices in that section basis, and rotates the element-facing resultants and tangent back into the geometric shell basis.
 
 \begin{exampledeck}
 *MATERIAL, NAME=STEEL

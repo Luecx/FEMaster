@@ -18,7 +18,7 @@ namespace fem {
 // Section-level membrane, bending and transverse-shear strain state
 struct ShellGeneralizedStrain {
     // Component order used by the internal eight-entry vector
-    enum class Component : int {
+    enum class Component : Index {
         EpsilonXX = 0,
         EpsilonYY = 1,
         GammaXY   = 2,

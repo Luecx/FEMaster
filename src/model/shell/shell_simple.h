@@ -807,7 +807,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         const Precision z = t * h / Precision(2);
 
-        VolumeStressCauchy stress = this->get_section()->compute_stress(
+        VolumeStressCauchy stress = this->get_section()->evaluate_output_stress(
             reference_point(r, s),
             shell_basis,
             generalized_strain,
@@ -894,7 +894,7 @@ struct DefaultShellElement : public ShellElement<N> {
             generalized_strain.values().template segment<3>(membrane_start) = eps_element;
             generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
             generalized_strain.values().template segment<2>(shear_start) = gamma_element;
-            const ShellStressResultants output_resultants = this->get_section()->compute_resultants(
+            const ShellStressResultants output_resultants = this->get_section()->evaluate_output_resultants(
                 reference_point(r, s),
                 shell_basis,
                 generalized_strain,

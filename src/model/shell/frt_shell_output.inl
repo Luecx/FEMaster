@@ -5,7 +5,7 @@
  * The routines evaluate MITC generalized strains and shell resultants at
  * arbitrary natural coordinates. Physical through-thickness strains are
  * reconstructed from generalized shell strains. Material stresses are evaluated
- * by the shell section and transformed to the configured output basis.
+ * by the shell section and returned in the configured stress-output convention.
  *
  * @see FRTShell
  *
@@ -188,7 +188,7 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
  * @param zeta Normalized through-thickness coordinate in `[-1,1]`.
  * @param nonlinear Select nonlinear PK2-to-Cauchy transformation.
  * @param strain_out Reconstructed global Green-Lagrange strain vector.
- * @param stress_out Reconstructed Cauchy stress vector in the section output basis.
+ * @param stress_out Reconstructed Cauchy stress vector in the section-defined output convention.
  */
 template<Index N>
 void FRTShell<N>::physical_stress_strain_at(
@@ -236,13 +236,12 @@ void FRTShell<N>::physical_stress_strain_at(
 
     strain_out = VolumeStrainGreenLagrange(green_lagrange_global).voigt();
 
-    // Let the section apply the same orientation and output-basis convention
-    // used by shell resultants. The element supplies the deformation gradient
-    // only for finite-strain PK2-to-Cauchy recovery.
+    // Let the section apply its stress-output convention. The element supplies
+    // the deformation gradient only for finite-strain PK2-to-Cauchy recovery.
     const Mat3 deformation_gradient = nonlinear
         ? deformation_gradient_at(data.state, r, s, z)
         : Mat3::Identity();
-    const VolumeStressCauchy cauchy_stress = this->get_section()->compute_stress(
+    const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress(
         reference_position(r, s),
         reference_basis,
         ShellGeneralizedStrain(generalized_strain),
@@ -432,7 +431,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             true
         );
         const ShellGeneralizedStrain strain(strain_values);
-        const ShellStressResultants  output_resultants = section->compute_resultants(
+        const ShellStressResultants  output_resultants = section->evaluate_output_resultants(
             reference_position(r, s),
             reference_basis_global(r, s),
             strain,

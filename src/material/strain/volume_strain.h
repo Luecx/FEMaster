@@ -21,7 +21,7 @@ namespace fem {
 // Common six-component representation of a symmetric volume strain tensor
 struct VolumeStrain {
     // Voigt component order, using engineering shear strains
-    enum class Component : int {
+    enum class Component : Index {
         XX      = 0,
         YY      = 1,
         ZZ      = 2,

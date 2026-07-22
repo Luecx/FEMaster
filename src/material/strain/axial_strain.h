@@ -18,7 +18,7 @@ namespace fem {
 // Common storage interface for a scalar axial strain
 struct AxialStrain {
     // Named access to the single available strain component
-    enum class Component : int {
+    enum class Component : Index {
         XX = 0
     };
 

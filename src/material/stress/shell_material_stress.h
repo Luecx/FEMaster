@@ -19,7 +19,7 @@ namespace fem {
 // Local plane-stress state used at a shell material point
 struct ShellMaterialStress {
     // Component order using physical shear stresses without engineering scaling
-    enum class Component : int {
+    enum class Component : Index {
         XX = 0,
         YY = 1,
         XY = 2,

@@ -34,25 +34,46 @@ Solid sections are usually simple, but they are easy to misuse in large models. 
 \section{\cmd{SHELLSECTION}: shell sections}
 
 \begin{syntax}
-*SHELLSECTION, ELSET=<elset>, MATERIAL=<material>, THICKNESS=<t>, ORIENTATION=<orientation>
+*SHELLSECTION, ELSET=<elset>, TYPE=INTEGRATED, MATERIAL=<material>, THICKNESS=<t>, ORIENTATION=<orientation>, CSYSAXIS=<1|2|3>
+<thickness>
+
+*SHELLSECTION, ELSET=<elset>, TYPE=ABD, THICKNESS=<t>, ORIENTATION=<orientation>, CSYSAXIS=<1|2|3>
+<abd11>, <abd12>, ..., <abd66>, <s11>, <s12>, <s21>, <s22>
 \end{syntax}
 
-A shell section assigns material and thickness data to a set of shell elements. Shell elements represent a thin structure through a two-dimensional surface mesh, so the section carries information that would otherwise be present in a full three-dimensional solid mesh. The most important of these quantities is \key{THICKNESS}. It affects membrane stiffness, bending stiffness, transverse shear behaviour, mass, stress recovery, and shell resultants.
+A shell section assigns a section formulation to a set of shell elements. Shell elements represent a thin structure through a two-dimensional surface mesh, so the section carries information that would otherwise be present in a full three-dimensional solid mesh. \key{TYPE} selects how the generalized membrane, bending and transverse-shear response is obtained. \val{INTEGRATED} is the default and evaluates an assigned material through the physical thickness. \val{ABD} reads prescribed generalized section stiffness matrices directly from the section command.
 
-Thickness is not just a display property. In a shell formulation, membrane stiffness generally scales with thickness, while bending stiffness is much more sensitive because it depends on the thickness cubed in classical plate behaviour. A small thickness error can therefore have a large effect on bending response. The thickness value must be positive and expressed in the same length unit as the node coordinates and the rest of the model.
+\key{TYPE=INTEGRATED} requires \key{MATERIAL}. The data line following the command supplies the physical shell thickness. The keyword \key{THICKNESS} also defaults to \val{1.0}, but the data-line form is the authoritative thickness for the integrated variant. The material is evaluated at through-thickness points and integrated into generalized shell resultants and a consistent section tangent.
 
-\key{MATERIAL} references the material used by the shell section. For isotropic shells, the material and thickness together define the main stiffness behaviour. For orthotropic materials or ABD-type material descriptions, the shell orientation becomes part of the physical definition. It controls how material axes, laminate axes, or directional stiffness terms are aligned with the shell surface.
+\key{TYPE=ABD} reads 40 values after the command. The first 36 values form a \(6\times6\) ABD matrix in row-major order. The final 4 values form the \(2\times2\) transverse-shear stiffness matrix in row-major order. These values may be distributed over up to eight data lines. \key{MATERIAL} is optional for ABD sections because the prescribed matrices already define the generalized elastic response; a material may still be referenced when shared material data such as density is desired.
 
-\key{ORIENTATION} is optional but important whenever the material is direction-dependent. It should be chosen so that the local material direction follows the intended engineering direction, such as panel length, fibre direction, stiffener direction, or manufacturing direction. The shell element itself also has a local surface orientation through its connectivity and normal direction. If shell normals are inconsistent or the material orientation is wrong, section resultants and stresses can be difficult to interpret even when the solver produces a displacement field.
+Thickness is not just a display property. For integrated shells, membrane stiffness generally scales with thickness, while bending stiffness is much more sensitive because it depends on the thickness cubed in classical plate behaviour. For ABD shells, the prescribed ABD and shear matrices are already section stiffnesses; FEMaster does not multiply them by \key{THICKNESS}. The thickness is still used for shell mass, geometric thickness coordinates, and equivalent stress recovery. In all cases the thickness must be positive and expressed in the same length unit as the node coordinates and the rest of the model.
+
+\key{MATERIAL} references the material used by an integrated shell section. For isotropic shells, the material and thickness together define the main stiffness behaviour. For orthotropic materials or ABD-type section descriptions, the shell orientation becomes part of the physical definition. It controls how material axes, laminate axes, or directional stiffness terms are aligned with the shell surface.
+
+\key{ORIENTATION} is optional but important whenever the material or prescribed section stiffness is direction-dependent. \key{CSYSAXIS} selects which axis of the coordinate system is projected into the shell tangent plane to define the first local section axis; valid values are \val{1}, \val{2}, and \val{3}. If the selected axis is perpendicular to a shell surface, FEMaster reports an error instead of silently choosing another direction. Without an explicit orientation, physical stress output is written in global Cartesian components, while shell resultants use a deterministic tangent output basis constructed from the global \(X\) axis and, if needed, the global \(Y\) axis.
 
 Shell sections should be defined at the level of physical regions. If a panel has different thickness zones, each zone should normally receive its own element set and shell section. If a model uses offsets or more advanced section behaviour elsewhere in the input language, those settings should be kept consistent with the geometric idealization of the midsurface. A shell surface placed at a physical midplane behaves differently from a shell surface placed on an outer skin unless the section definition accounts for that modelling choice.
 
 \begin{exampledeck}
-*SHELLSECTION, ELSET=SKIN_TOP, MATERIAL=AL2024, THICKNESS=1.6
+*SHELLSECTION, ELSET=SKIN_TOP, TYPE=INTEGRATED, MATERIAL=AL2024
+1.6
 \end{exampledeck}
 
 \begin{exampledeck}
-*SHELLSECTION, ELSET=PANEL_45, MATERIAL=ORTHO_LAMINA, THICKNESS=0.8, ORIENTATION=PANEL_AXES
+*SHELLSECTION, ELSET=PANEL_45, TYPE=INTEGRATED, MATERIAL=ORTHO_LAMINA, ORIENTATION=PANEL_AXES, CSYSAXIS=1
+0.8
+\end{exampledeck}
+
+\begin{exampledeck}
+*SHELLSECTION, ELSET=LAMINATE_PANEL, TYPE=ABD, THICKNESS=1.0, ORIENTATION=LAMINATE_AXES
+1.0e6, 2.5e5, 0.0, 0.0, 0.0, 0.0
+2.5e5, 1.0e6, 0.0, 0.0, 0.0, 0.0
+0.0, 0.0, 3.0e5, 0.0, 0.0, 0.0
+0.0, 0.0, 0.0, 1.0e3, 2.5e2, 0.0
+0.0, 0.0, 0.0, 2.5e2, 1.0e3, 0.0
+0.0, 0.0, 0.0, 0.0, 0.0, 3.0e2
+3.0e5, 0.0, 0.0, 3.0e5
 \end{exampledeck}
 
 \clearpage

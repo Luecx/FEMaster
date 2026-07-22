@@ -2,9 +2,18 @@
  * @file section_shell_abd.cpp
  * @brief Implements the shell section based on prescribed ABD and shear matrices.
  *
- * @see src/section/section_shell_abd.h
+ * The generalized response is evaluated directly from constant section
+ * stiffness matrices. If an orientation exists, element strains are rotated
+ * into the projected section basis and the response is rotated back into the
+ * geometric shell basis required by the element formulation.
+ *
+ * Physical stress output is an equivalent reconstruction because a prescribed
+ * ABD section does not contain a layerwise material model.
+ *
+ * @see ABDShellSection
+ *
  * @author Finn Eggers
- * @date 18.07.2026
+ * @date 22.07.2026
  */
 
 #include "section_shell_abd.h"
@@ -12,36 +21,46 @@
 #include "../core/logging.h"
 
 #include <Eigen/Cholesky>
+#include <Eigen/LU>
 
 #include <cmath>
-#include <sstream>
 #include <utility>
 
 namespace fem {
 
-ABDShellSection::ABDShellSection(material::Material::Ptr    material,
-                                 model::ElementRegion::Ptr  region,
-                                 Precision                  thickness,
-                                 const Mat6&                abd,
-                                 const Mat2&                shear,
-                                 cos::CoordinateSystem::Ptr orientation,
-                                 Index                      csys_axis)
-    : ShellSection(std::move(material),
-                   std::move(region),
-                   thickness,
-                   std::move(orientation),
-                   csys_axis),
-      abd_         (abd),
-      shear_       (shear) {
+ABDShellSection::ABDShellSection(
+    material::Material::Ptr    material,
+    model::ElementRegion::Ptr  region,
+    Precision                  thickness,
+    const Mat6&                abd,
+    const Mat2&                shear,
+    cos::CoordinateSystem::Ptr orientation,
+    Index                      csys_axis
+)
+    : ShellSection(
+          std::move(material),
+          std::move(region),
+          thickness,
+          std::move(orientation),
+          csys_axis
+      ),
+      abd_  (abd),
+      shear_(shear) {
+    // Finite coefficients are required before symmetry and positive
+    // definiteness can be evaluated meaningfully.
     logging::error(abd_.allFinite(),
         "ABDShellSection: ABD matrix must contain only finite values");
     logging::error(shear_.allFinite(),
         "ABDShellSection: shear matrix must contain only finite values");
+
+    // Conservative elastic generalized stiffness matrices are symmetric.
     logging::error(abd_.isApprox(abd_.transpose()),
         "ABDShellSection: ABD matrix must be symmetric");
     logging::error(shear_.isApprox(shear_.transpose()),
         "ABDShellSection: shear matrix must be symmetric");
 
+    // Cholesky factorization checks positive definiteness of both independent
+    // generalized stiffness blocks.
     const Eigen::LLT<Mat6> abd_factorization(abd_);
     const Eigen::LLT<Mat2> shear_factorization(shear_);
 
@@ -51,119 +70,164 @@ ABDShellSection::ABDShellSection(material::Material::Ptr    material,
         "ABDShellSection: shear matrix must be positive definite");
 }
 
-/**
- * Reconstructs an equivalent through-thickness Cauchy stress from ABD
- * resultants.
- *
- * ABD sections do not store a layerwise material model. For stress output they
- * are therefore interpreted as one homogeneous equivalent shell layer: membrane
- * forces and bending moments form a linear stress distribution through the
- * thickness, and transverse shear resultants are distributed uniformly.
- *
- * Resultants are evaluated in the section output basis. Without an orientation
- * the reconstructed Cauchy tensor is returned in global components. With an
- * orientation the tensor is returned in the projected section material basis.
- *
- * @param position_reference Physical reference position of the evaluation point.
- * @param shell_basis_global Orthonormal shell basis defining the input strain.
- * @param strain Generalized shell strain in the supplied shell basis.
- * @param z Physical through-thickness coordinate measured from the midsurface.
- * @param use_green_lagrange Select finite-strain PK2-to-Cauchy recovery.
- * @param deformation_gradient Deformation gradient used for finite-strain recovery.
- * @return Equivalent Cauchy stress in the documented output basis.
- */
-VolumeStressCauchy ABDShellSection::compute_stress(const Vec3&                   position_reference,
-                                                   const Mat3&                   shell_basis_global,
-                                                   const ShellGeneralizedStrain& strain,
-                                                   Precision                     z,
-                                                   bool                          use_green_lagrange,
-                                                   Mat3                          deformation_gradient) const {
-    const Precision h = thickness_;
-
-    // Evaluate resultants in the same output basis used by shell section forces.
-    const ShellStressResultants resultants = compute_resultants(
-        position_reference,
-        shell_basis_global,
-        strain,
-        use_green_lagrange
-    );
-
-    const Vec3 plane_stress =
-        resultants.membrane() / h
-        + z * (Precision(12) / (h * h * h)) * resultants.moments();
-    const Vec2 shear_stress = resultants.transverse_shear() / h;
-
-    VolumeStressCauchy stress_output;
-    stress_output[VolumeStress::Component::XX] = plane_stress(0);
-    stress_output[VolumeStress::Component::YY] = plane_stress(1);
-    stress_output[VolumeStress::Component::ZZ] = Precision(0);
-    stress_output[VolumeStress::Component::YZ] = shear_stress(1);
-    stress_output[VolumeStress::Component::XZ] = shear_stress(0);
-    stress_output[VolumeStress::Component::XY] = plane_stress(2);
-
-    const Mat3 output_basis = output_basis_global(position_reference, shell_basis_global);
-
-    if (!use_green_lagrange) {
-        if (orientation_) {
-            return stress_output;
-        }
-
-        const Mat3 cauchy_global = output_basis * stress_output.tensor() * output_basis.transpose();
-        return VolumeStressCauchy(cauchy_global);
-    }
-
-    // Treat the equivalent ABD stress as a PK2 stress in the reference output
-    // basis and push it forward for Cauchy stress output.
-    const Precision J = deformation_gradient.determinant();
-    logging::error(J > Precision(0) && std::isfinite(J),
-        "ABDShellSection: invalid deformation gradient during stress recovery, J = ", J);
-
-    const Mat3 second_pk_global = output_basis * stress_output.tensor() * output_basis.transpose();
-    const Mat3 cauchy_global =
-        (deformation_gradient * second_pk_global * deformation_gradient.transpose()) / J;
-
-    if (!orientation_) {
-        return VolumeStressCauchy(cauchy_global);
-    }
-
-    return VolumeStressCauchy(cauchy_global).transformed(Mat3::Identity(), output_basis);
-}
-
-void ABDShellSection::evaluate_material(const ShellGeneralizedStrain& strain,
-                                        bool                          use_green_lagrange,
-                                        ShellStressResultants&        resultants,
-                                        Mat8&                         tangent) const {
+void ABDShellSection::evaluate(
+    const Vec3&                   position_reference,
+    const Mat3&                   shell_basis_global,
+    const ShellGeneralizedStrain& strain_shell,
+    bool                          use_green_lagrange,
+    ShellStressResultants&        resultants_shell,
+    Mat8&                         tangent_shell
+) const {
+    // A prescribed linear generalized stiffness does not depend on whether the
+    // supplied strain was generated by linearized or Green-Lagrange kinematics.
     (void) use_green_lagrange;
 
+    // Without an orientation the prescribed matrices already act in the
+    // geometric shell basis. Otherwise construct the projected section basis.
+    const Mat3 section_basis_global = orientation_
+        ? stress_basis(position_reference, shell_basis_global)
+        : shell_basis_global;
+
+    // Express the section in-plane axes in geometric shell coordinates:
+    //
+    //     R = Q_shell^T Q_section.
+    //
+    // This rotation maps generalized shell-basis strain components into the
+    // section basis used by the prescribed stiffness matrices.
+    const Mat2 section_axes_in_shell =
+        shell_basis_global.template block<3, 2>(0, 0).transpose()
+        * section_basis_global.template block<3, 2>(0, 0);
+
+    const Mat8 strain_shell_to_section =
+        ShellGeneralizedStrain::transformation(section_axes_in_shell);
+
+    const ShellGeneralizedStrain strain_section(
+        strain_shell_to_section * strain_shell.values()
+    );
+
+    // Assemble the complete eight-by-eight generalized tangent in the section
+    // basis from the prescribed membrane-bending and shear blocks.
     const Index membrane_row = static_cast<Index>(ShellStressResultants::Component::NXX);
     const Index membrane_col = static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
     const Index shear_row    = static_cast<Index>(ShellStressResultants::Component::QX);
     const Index shear_col    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
 
-    tangent.setZero();
-    tangent.template block<6, 6>(membrane_row, membrane_col) = abd_;
-    tangent.template block<2, 2>(shear_row, shear_col) = shear_;
-    resultants.values() = tangent * strain.values();
+    Mat8 tangent_section = Mat8::Zero();
+    tangent_section.template block<6, 6>(membrane_row, membrane_col) = abd_;
+    tangent_section.template block<2, 2>(shear_row, shear_col)       = shear_;
+
+    const ShellStressResultants resultants_section(
+        tangent_section * strain_section.values()
+    );
+
+    // No transformation is required when geometric shell and section bases are
+    // identical.
+    if (!orientation_) {
+        resultants_shell = resultants_section;
+        tangent_shell    = tangent_section;
+        return;
+    }
+
+    // Physical resultants use a stress-type component transformation. The
+    // transpose expresses the geometric shell axes in section coordinates.
+    const Mat2 shell_axes_in_section = section_axes_in_shell.transpose();
+    const Mat8 resultants_section_to_shell =
+        ShellStressResultants::transformation(shell_axes_in_section);
+
+    // Return resultants and tangent in the geometric shell basis used by the B
+    // matrix and all element assembly operations.
+    resultants_shell = ShellStressResultants(
+        resultants_section_to_shell * resultants_section.values()
+    );
+    tangent_shell = resultants_section_to_shell
+                  * tangent_section
+                  * strain_shell_to_section;
 }
 
-void ABDShellSection::info() {
-    logging::info(true, "ABDShellSection:");
-    logging::info(true, "   Material   : ", (material_    ? material_   ->name : "-"));
-    logging::info(true, "   Region     : ", (region_      ? region_     ->name : "-"));
-    logging::info(true, "   Orientation: ", (orientation_ ? orientation_->name : "-"));
-    logging::info(orientation_ != nullptr, "   CSYSAXIS   : ", csys_axis_ + 1);
-    logging::info(true, "   Thickness  : ", thickness_);
+VolumeStressCauchy ABDShellSection::evaluate_output_stress(
+    const Vec3&                   position_reference,
+    const Mat3&                   shell_basis_global,
+    const ShellGeneralizedStrain& strain_shell,
+    Precision                     z,
+    bool                          use_green_lagrange,
+    const Mat3&                   deformation_gradient
+) const {
+    const Precision h = thickness_;
+
+    // Physical stress components are global without an orientation and section-
+    // local with an orientation.
+    const Mat3 output_basis_global =
+        stress_basis(position_reference, shell_basis_global);
+
+    // The equivalent stress distribution must be reconstructed in a tangential
+    // basis in which the prescribed matrices are defined.
+    const Mat3 recovery_basis_global = orientation_
+        ? output_basis_global
+        : shell_basis_global;
+
+    // Rotate generalized strains into the recovery basis.
+    const Mat2 recovery_axes_in_shell =
+        shell_basis_global.template block<3, 2>(0, 0).transpose()
+        * recovery_basis_global.template block<3, 2>(0, 0);
+
+    const ShellGeneralizedStrain strain_recovery =
+        strain_shell.transformed(recovery_axes_in_shell);
+
+    // Assemble and apply the prescribed generalized tangent directly in the
+    // recovery basis. This deliberately avoids the nodal resultant-output basis,
+    // which is a separate post-processing convention.
+    const Index membrane_row = static_cast<Index>(ShellStressResultants::Component::NXX);
+    const Index membrane_col = static_cast<Index>(ShellGeneralizedStrain::Component::EpsilonXX);
+    const Index shear_row    = static_cast<Index>(ShellStressResultants::Component::QX);
+    const Index shear_col    = static_cast<Index>(ShellGeneralizedStrain::Component::GammaXZ);
+
+    Mat8 tangent_recovery = Mat8::Zero();
+    tangent_recovery.template block<6, 6>(membrane_row, membrane_col) = abd_;
+    tangent_recovery.template block<2, 2>(shear_row, shear_col)       = shear_;
+
+    const ShellStressResultants resultants_recovery(
+        tangent_recovery * strain_recovery.values()
+    );
+
+    // Interpret the resultants as one homogeneous equivalent layer:
+    //
+    //     sigma(z) = N/h + 12 z M/h^3,
+    //     tau(z)   = Q/h.
+    const Vec3 plane_stress = resultants_recovery.membrane() / h
+        + z * (Precision(12) / (h * h * h)) * resultants_recovery.moments();
+    const Vec2 shear_stress = resultants_recovery.transverse_shear() / h;
+
+    VolumeStressCauchy stress_recovery;
+    stress_recovery[VolumeStress::Component::XX] = plane_stress(0);
+    stress_recovery[VolumeStress::Component::YY] = plane_stress(1);
+    stress_recovery[VolumeStress::Component::ZZ] = Precision(0);
+    stress_recovery[VolumeStress::Component::YZ] = shear_stress(1);
+    stress_recovery[VolumeStress::Component::XZ] = shear_stress(0);
+    stress_recovery[VolumeStress::Component::XY] = plane_stress(2);
+
+    // Linearized recovery already represents Cauchy stress. Transform it from
+    // the tangential recovery basis into the configured output basis.
+    if (!use_green_lagrange) {
+        return stress_recovery.transformed(recovery_basis_global, output_basis_global);
+    }
+
+    // For finite-strain recovery, treat the equivalent reconstructed tensor as
+    // PK2 stress in the reference recovery basis and push it forward.
+    const Precision J = deformation_gradient.determinant();
+    logging::error(J > Precision(0) && std::isfinite(J),
+        "ABDShellSection: invalid deformation gradient during stress recovery, J = ", J);
+
+    const Mat3 second_pk_global = recovery_basis_global
+        * stress_recovery.tensor()
+        * recovery_basis_global.transpose();
+    const Mat3 cauchy_global =
+        (deformation_gradient * second_pk_global * deformation_gradient.transpose()) / J;
+
+    // Express the final global Cauchy tensor in the configured stress basis.
+    return VolumeStressCauchy(cauchy_global).transformed(
+        Mat3::Identity(),
+        output_basis_global
+    );
 }
 
-std::string ABDShellSection::str() const {
-    std::ostringstream os;
-
-    os << "ABDShellSection: t=" << thickness_
-       << ", material="         << (material_    ? material_   ->name : std::string("-"))
-       << ", orientation="      << (orientation_ ? orientation_->name : std::string("-"))
-       << ", csysaxis="         << (orientation_ ? std::to_string(csys_axis_ + 1) : std::string("-"))
-       << ", region="           << (region_      ? static_cast<int>(region_->size()) : 0);
-
-    return os.str();
-}
 } // namespace fem
