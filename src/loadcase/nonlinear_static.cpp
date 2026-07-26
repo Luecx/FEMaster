@@ -268,22 +268,24 @@ void NonlinearStatic::run() {
 
     Index last_converged_increment = 0;
 
-    // Initialize the load-control predictor history
-    DynamicVector q_previous = q_total;
-    DynamicVector q_accepted = q_total;
+    auto assemble_state = [&](const DynamicVector& q,
+                              Precision            lambda,
+                              DynamicVector&       residual,
+                              SparseMatrix&        tangent,
+                              SparseMatrix*        full_tangent) {
+        // Evaluate the supplied solver state without modifying q_total. This is
+        // essential because line-search trial states must not modify the actual
+        // Newton iterate.
+        const DynamicVector u_evaluation =
+            recover_total_displacement(q, lambda);
 
-    Precision lambda_previous = Precision(0);
-    Precision lambda_accepted = Precision(0);
+        const model::Field displacement_evaluation =
+            mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
 
-    bool secant_available = false;
-
-    auto evaluate = [&](const DynamicVector& q,
-                        Precision            lambda,
-                        DynamicVector&       residual,
-                        SparseMatrix&        tangent) {
-        q_total = q;
-        u_total = recover_total_displacement(q_total, lambda);
-        update_positions();
+        *model->_data->positions = current_positions_from_displacement(
+            reference_positions,
+            displacement_evaluation
+        );
 
         model::NodeData internal_mat{
             "INTERNAL_FORCES",
@@ -294,6 +296,7 @@ void NonlinearStatic::run() {
         internal_mat.set_zero();
 
         SparseMatrix Kt;
+
         const bool logging_was_enabled = logging::is_enabled();
         logging::disable();
 
@@ -301,12 +304,13 @@ void NonlinearStatic::run() {
             Kt = model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
                 internal_mat,
-                displacement
+                displacement_evaluation
             );
         } catch (...) {
             if (logging_was_enabled) {
                 logging::enable();
             }
+
             throw;
         }
 
@@ -315,23 +319,48 @@ void NonlinearStatic::run() {
         }
 
         if (regularize_zero_stiffness_rows) {
-            regularise_stiffness(Kt, zero_stiffness_regularization_alpha);
+            regularise_stiffness(
+                Kt,
+                zero_stiffness_regularization_alpha
+            );
         }
 
-        const DynamicVector internal_force = mattools::reduce_mat_to_vec(
-            active_dof_idx_mat,
-            internal_mat
-        );
+        const DynamicVector internal_force =
+            mattools::reduce_mat_to_vec(
+                active_dof_idx_mat,
+                internal_mat
+            );
 
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
 
         transformer->project_vector(full_residual, residual);
+
+        if (full_tangent) {
+            *full_tangent = Kt;
+        }
+
         tangent = transformer->assemble_system_matrix(Kt);
+
         final_internal = internal_mat;
 
-        logging::error(residual.allFinite(),
-            "Reduced residual contains NaN/Inf entries");
+        logging::error(
+            residual.allFinite(),
+            "Reduced residual contains NaN/Inf entries"
+        );
+    };
+
+    auto evaluate = [&](const DynamicVector& q,
+                        Precision            lambda,
+                        DynamicVector&       residual,
+                        SparseMatrix&        tangent) {
+        assemble_state(
+            q,
+            lambda,
+            residual,
+            tangent,
+            nullptr
+        );
     };
 
     auto linear_solve = [&](const SparseMatrix&  tangent,
@@ -343,7 +372,7 @@ void NonlinearStatic::run() {
         logging::disable();
 
         try {
-            solution = solver::solve(device, method, matrix, rhs);
+            solution = solver::solve(device, method, matrix, rhs, solver::DirectSolverMatrixType::General);
         } catch (...) {
             if (logging_was_enabled) {
                 logging::enable();
@@ -360,18 +389,48 @@ void NonlinearStatic::run() {
     auto predictor = [&](DynamicVector& q,
                          Precision      lambda,
                          Precision      target_lambda) {
-        if (!secant_available) {
+        if (q.size() == 0) {
             return;
         }
 
-        // Extrapolate the last converged reduced increment
-        const Precision previous_increment = lambda - lambda_previous;
-        const Precision target_increment   = target_lambda - lambda;
+        /*
+         * Assemble the tangent at the last accepted equilibrium state. For
+         *
+         *     u(lambda, q) = lambda * u_p + T q
+         *
+         * the equilibrium-path tangent follows from
+         *
+         *     T^T K_t T dq/dlambda = T^T (f - K_t u_p).
+         *
+         * ConstraintTransformer::assemble_system_rhs() already evaluates the
+         * right-hand side T^T (f - K_t u_p), so the same predictor handles
+         * force loading, prescribed displacements and arbitrary mixtures.
+         */
+        DynamicVector accepted_residual;
+        SparseMatrix  accepted_tangent;
+        SparseMatrix  accepted_full_tangent;
 
-        logging::error(previous_increment > Precision(0),
-            "NONLINEARSTATIC predictor requires a positive previous increment");
+        assemble_state(
+            q,
+            lambda,
+            accepted_residual,
+            accepted_tangent,
+            &accepted_full_tangent
+        );
 
-        q = q_accepted + target_increment / previous_increment * (q_accepted - q_previous);
+        const DynamicVector predictor_rhs =
+            transformer->assemble_system_rhs(
+                accepted_full_tangent,
+                f_total
+            );
+
+        const DynamicVector dq_dlambda =
+            linear_solve(
+                accepted_tangent,
+                predictor_rhs
+            );
+
+        q += (target_lambda - lambda) * dq_dlambda;
     };
 
     auto matrix_solve = [&](const SparseMatrix&  tangent,
@@ -449,12 +508,6 @@ void NonlinearStatic::run() {
                             Precision            lambda) {
         last_converged_increment = increment;
 
-        q_previous       = q_accepted;
-        q_accepted       = q;
-        lambda_previous  = lambda_accepted;
-        lambda_accepted  = lambda;
-        secant_available = true;
-
         q_total     = q;
         load_factor = lambda;
         u_total     = recover_total_displacement(q_total, lambda);
@@ -485,14 +538,99 @@ void NonlinearStatic::run() {
         writer->write_field(lambda_field, lambda_field.name, nullptr);
     };
 
+    auto begin_contact_increment_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(false, true);
+        }
+    };
+
+    auto begin_contact_frozen_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(true);
+        }
+    };
+
+    auto commit_contact_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.commit_trial();
+        }
+    };
+
+    auto rollback_contact_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.rollback_trial();
+        }
+    };
+
+    auto update_contact_active_set = [&](const DynamicVector& q,
+                                         Precision            lambda) {
+        if (model->_data->contacts.empty()) {
+            return true;
+        }
+
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(false, true);
+        }
+
+        try {
+            DynamicVector active_set_residual;
+            SparseMatrix  active_set_tangent;
+
+            assemble_state(
+                q,
+                lambda,
+                active_set_residual,
+                active_set_tangent,
+                nullptr
+            );
+        } catch (...) {
+            for (const auto& contact : model->_data->contacts) {
+                contact.rollback_trial();
+            }
+
+            throw;
+        }
+
+        bool changed = false;
+
+        for (const auto& contact : model->_data->contacts) {
+            changed = changed || contact.partner_signature_changed();
+            contact.commit_trial();
+        }
+
+        return !changed;
+    };
+
     bool        converged      = false;
     const char* failure_reason = "NONE";
+
+    const bool has_contact = !model->_data->contacts.empty();
+
+    // Fixed contact ownership can turn the late Newton convergence nearly
+    // linear at edge-supported contact states. Give such contact load cases
+    // enough iterations before triggering a cutback, and do not reduce an
+    // already converged contact increment only because the fixed active set
+    // needed many linearized Newton corrections.
+    const Index effective_max_iterations =
+        has_contact
+            ? std::max(static_cast<Index>(max_iterations), Index(120))
+            : static_cast<Index>(max_iterations);
+
+    const Index effective_max_increments =
+        has_contact
+            ? std::max(static_cast<Index>(max_increments), Index(1000))
+            : static_cast<Index>(max_increments);
+
+    const Index effective_slow_iterations =
+        has_contact
+            ? effective_max_iterations + Index(1)
+            : static_cast<Index>(slow_iterations);
 
     if (control == NonlinearControl::LoadControl) {
         tools::LoadControl load_control;
 
-        load_control.maximum_increments = static_cast<Index>(max_increments);
-        load_control.maximum_iterations = static_cast<Index>(max_iterations);
+        load_control.maximum_increments = effective_max_increments;
+        load_control.maximum_iterations = effective_max_iterations;
         load_control.tolerance          = tolerance;
         load_control.initial_increment  = initial_increment;
         load_control.minimum_increment  = minimum_increment;
@@ -500,9 +638,19 @@ void NonlinearStatic::run() {
         load_control.growth_factor      = growth_factor;
         load_control.cutback_factor     = cutback_factor;
         load_control.fast_iterations    = static_cast<Index>(fast_iterations);
-        load_control.slow_iterations    = static_cast<Index>(slow_iterations);
+        load_control.slow_iterations    = effective_slow_iterations;
         load_control.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
         load_control.adaptive           = adaptive_increments;
+
+        load_control.begin_increment_trial    = begin_contact_increment_trial;
+        load_control.commit_increment_trial   = commit_contact_trial;
+        load_control.rollback_increment_trial = rollback_contact_trial;
+
+        load_control.begin_line_search_trial    = begin_contact_frozen_trial;
+        load_control.commit_line_search_trial   = commit_contact_trial;
+        load_control.rollback_line_search_trial = rollback_contact_trial;
+
+        load_control.update_active_set = update_contact_active_set;
 
         converged = load_control.solve(
             q_total,
@@ -520,8 +668,8 @@ void NonlinearStatic::run() {
     } else {
         tools::ArcLengthControl arc_length_control;
 
-        arc_length_control.maximum_increments = static_cast<Index>(max_increments);
-        arc_length_control.maximum_iterations = static_cast<Index>(max_iterations);
+        arc_length_control.maximum_increments = effective_max_increments;
+        arc_length_control.maximum_iterations = effective_max_iterations;
         arc_length_control.tolerance          = tolerance;
         arc_length_control.initial_increment  = initial_increment;
         arc_length_control.minimum_increment  = minimum_increment;
@@ -530,9 +678,19 @@ void NonlinearStatic::run() {
         arc_length_control.growth_factor      = growth_factor;
         arc_length_control.cutback_factor     = cutback_factor;
         arc_length_control.fast_iterations    = static_cast<Index>(fast_iterations);
-        arc_length_control.slow_iterations    = static_cast<Index>(slow_iterations);
+        arc_length_control.slow_iterations    = effective_slow_iterations;
         arc_length_control.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
         arc_length_control.adaptive           = adaptive_increments;
+
+        arc_length_control.begin_increment_trial    = begin_contact_increment_trial;
+        arc_length_control.commit_increment_trial   = commit_contact_trial;
+        arc_length_control.rollback_increment_trial = rollback_contact_trial;
+
+        arc_length_control.begin_line_search_trial    = begin_contact_frozen_trial;
+        arc_length_control.commit_line_search_trial   = commit_contact_trial;
+        arc_length_control.rollback_line_search_trial = rollback_contact_trial;
+
+        arc_length_control.update_active_set = update_contact_active_set;
 
         converged = arc_length_control.solve(
             q_total,

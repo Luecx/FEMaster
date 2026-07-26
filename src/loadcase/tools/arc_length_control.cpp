@@ -14,6 +14,11 @@
 namespace fem {
 namespace loadcase {
 namespace tools {
+namespace {
+
+constexpr Index maximum_active_set_updates = 8;
+
+}
 
 bool ArcLengthControl::solve(
     DynamicVector&           q,
@@ -76,6 +81,10 @@ bool ArcLengthControl::solve(
            accepted_increments_ < maximum_increments) {
         q_accepted_      = q;
         lambda_accepted_ = lambda;
+
+        if (begin_increment_trial) {
+            begin_increment_trial();
+        }
 
         DynamicVector predictor_residual;
         SparseMatrix  predictor_tangent;
@@ -140,6 +149,10 @@ bool ArcLengthControl::solve(
         }
 
         if (increment_ < minimum_increment) {
+            if (rollback_increment_trial) {
+                rollback_increment_trial();
+            }
+
             failure_reason_ = "MINIMUM_INCREMENT";
             return false;
         }
@@ -147,130 +160,157 @@ bool ArcLengthControl::solve(
         q      = q_accepted_ + predictor_delta_lambda * dq_load;
         lambda = lambda_accepted_ + predictor_delta_lambda;
 
-        const Precision target_lambda = lambda;
-
-        configure_newton_();
-
         Precision current_equilibrium_norm = Precision(0);
 
         bool        converged              = false;
         const char* attempt_failure_reason = "NONE";
+        Index       active_set_updates     = 0;
 
-        converged = newton_.solve(
-            q,
-            [&](const DynamicVector& current_q,
-                DynamicVector&       residual,
-                SparseMatrix&        tangent) {
-                evaluate(current_q, lambda, residual, tangent);
-            },
-            [&](const SparseMatrix&  tangent,
-                const DynamicVector& residual) {
-                const Index n = tangent.rows();
+        while (true) {
+            configure_newton_();
 
-                logging::error(tangent.rows() == tangent.cols(),
-                    "ArcLengthControl: tangent matrix must be square");
-                logging::error(reference_load.size() == n,
-                    "ArcLengthControl: reference load has invalid size");
+            converged = newton_.solve(
+                q,
+                [&](const DynamicVector& current_q,
+                    DynamicVector&       residual,
+                    SparseMatrix&        tangent) {
+                    evaluate(current_q, lambda, residual, tangent);
+                },
+                [&](const SparseMatrix&  tangent,
+                    const DynamicVector& residual) {
+                    const Index n = tangent.rows();
 
-                const DynamicVector delta_q      = q - q_accepted_;
-                const Precision     delta_lambda = lambda - lambda_accepted_;
-                const Precision     constraint   =
-                    delta_q.dot(delta_q)
-                  + psi2 * load_scale2_ * delta_lambda * delta_lambda
-                  - arc_radius_ * arc_radius_;
+                    logging::error(tangent.rows() == tangent.cols(),
+                        "ArcLengthControl: tangent matrix must be square");
+                    logging::error(reference_load.size() == n,
+                        "ArcLengthControl: reference load has invalid size");
 
-                SparseMatrix augmented(n + 1, n + 1);
-                TripletList  triplets;
-                triplets.reserve(
-                    static_cast<std::size_t>(tangent.nonZeros())
-                  + static_cast<std::size_t>(2 * n)
-                  + 1
-                );
+                    const DynamicVector delta_q      = q - q_accepted_;
+                    const Precision     delta_lambda = lambda - lambda_accepted_;
+                    const Precision     constraint   =
+                        delta_q.dot(delta_q)
+                      + psi2 * load_scale2_ * delta_lambda * delta_lambda
+                      - arc_radius_ * arc_radius_;
 
-                for (Index col = 0; col < tangent.outerSize(); ++col) {
-                    for (SparseMatrix::InnerIterator it(tangent, col); it; ++it) {
-                        triplets.emplace_back(it.row(), it.col(), it.value());
-                    }
-                }
-
-                for (Index i = 0; i < n; ++i) {
-                    if (reference_load(i) != Precision(0)) {
-                        triplets.emplace_back(i, n, -reference_load(i));
-                    }
-
-                    if (delta_q(i) != Precision(0)) {
-                        triplets.emplace_back(n, i, Precision(2) * delta_q(i));
-                    }
-                }
-
-                triplets.emplace_back(
-                    n,
-                    n,
-                    Precision(2) * psi2 * load_scale2_ * delta_lambda
-                );
-
-                augmented.setFromTriplets(triplets.begin(), triplets.end());
-
-                DynamicMatrix rhs(n + 1, 1);
-                rhs.col(0).head(n) = residual;
-                rhs(n, 0)          = -constraint;
-
-                const DynamicMatrix solution = matrix_solve(augmented, rhs);
-
-                logging::error(solution.rows() == n + 1 &&
-                               solution.cols() == 1,
-                    "ArcLengthControl: augmented solve returned an invalid shape");
-                logging::error(solution.allFinite(),
-                    "ArcLengthControl: correction contains NaN/Inf entries");
-
-                const DynamicVector dq      = solution.col(0).head(n);
-                const Precision     dlambda = solution(n, 0);
-
-                lambda += dlambda;
-
-                return dq;
-            },
-            [&](const DynamicVector& residual) {
-                current_equilibrium_norm = residual_norm(residual, lambda);
-
-                return std::max(
-                    current_equilibrium_norm,
-                    arc_constraint_norm_(q, lambda)
-                );
-            },
-            correction_norm,
-            [&](Index     iteration,
-                Precision current_residual_norm,
-                Precision current_correction_norm,
-                Precision convergence_order,
-                Time      assembly_ms,
-                Time      solve_ms,
-                bool      iteration_converged) {
-                (void) current_residual_norm;
-
-                if (on_iteration) {
-                    on_iteration(
-                        accepted_increments_ + 1,
-                        iteration,
-                        lambda,
-                        current_equilibrium_norm,
-                        current_correction_norm,
-                        convergence_order,
-                        assembly_ms,
-                        solve_ms,
-                        iteration_converged
+                    SparseMatrix augmented(n + 1, n + 1);
+                    TripletList  triplets;
+                    triplets.reserve(
+                        static_cast<std::size_t>(tangent.nonZeros())
+                      + static_cast<std::size_t>(2 * n)
+                      + 1
                     );
-                }
-            }
-        );
 
-        if (!converged) {
-            attempt_failure_reason = newton_.failure_reason();
+                    for (Index col = 0; col < tangent.outerSize(); ++col) {
+                        for (SparseMatrix::InnerIterator it(tangent, col); it; ++it) {
+                            triplets.emplace_back(it.row(), it.col(), it.value());
+                        }
+                    }
+
+                    for (Index i = 0; i < n; ++i) {
+                        if (reference_load(i) != Precision(0)) {
+                            triplets.emplace_back(i, n, -reference_load(i));
+                        }
+
+                        if (delta_q(i) != Precision(0)) {
+                            triplets.emplace_back(n, i, Precision(2) * delta_q(i));
+                        }
+                    }
+
+                    triplets.emplace_back(
+                        n,
+                        n,
+                        Precision(2) * psi2 * load_scale2_ * delta_lambda
+                    );
+
+                    augmented.setFromTriplets(triplets.begin(), triplets.end());
+
+                    DynamicMatrix rhs(n + 1, 1);
+                    rhs.col(0).head(n) = residual;
+                    rhs(n, 0)          = -constraint;
+
+                    const DynamicMatrix solution = matrix_solve(augmented, rhs);
+
+                    logging::error(solution.rows() == n + 1 &&
+                                   solution.cols() == 1,
+                        "ArcLengthControl: augmented solve returned an invalid shape");
+                    logging::error(solution.allFinite(),
+                        "ArcLengthControl: correction contains NaN/Inf entries");
+
+                    const DynamicVector dq      = solution.col(0).head(n);
+                    const Precision     dlambda = solution(n, 0);
+
+                    lambda += dlambda;
+
+                    return dq;
+                },
+                [&](const DynamicVector& residual) {
+                    current_equilibrium_norm = residual_norm(residual, lambda);
+
+                    return std::max(
+                        current_equilibrium_norm,
+                        arc_constraint_norm_(q, lambda)
+                    );
+                },
+                correction_norm,
+                [&](Index     iteration,
+                    Precision current_residual_norm,
+                    Precision current_correction_norm,
+                    Precision convergence_order,
+                    Time      assembly_ms,
+                    Time      solve_ms,
+                    bool      iteration_converged) {
+                    (void) current_residual_norm;
+
+                    if (on_iteration) {
+                        on_iteration(
+                            accepted_increments_ + 1,
+                            iteration,
+                            lambda,
+                            current_equilibrium_norm,
+                            current_correction_norm,
+                            convergence_order,
+                            assembly_ms,
+                            solve_ms,
+                            iteration_converged
+                        );
+                    }
+                }
+            );
+
+            if (!converged) {
+                attempt_failure_reason = newton_.failure_reason();
+                break;
+            }
+
+            if (!update_active_set ||
+                update_active_set(q, lambda)) {
+                break;
+            }
+
+            ++active_set_updates;
+
+            logging::info(
+                true,
+                "Contact active set changed; restarting Newton at lambda = ",
+                lambda
+            );
+
+            if (active_set_updates > maximum_active_set_updates) {
+                converged              = false;
+                attempt_failure_reason = "CONTACT_ACTIVE_SET";
+                break;
+            }
         }
 
         if (!converged) {
+            const Precision rejected_lambda = lambda;
+
             q      = q_accepted_;
             lambda = lambda_accepted_;
+
+            if (rollback_increment_trial) {
+                rollback_increment_trial();
+            }
 
             if (!adaptive) {
                 failure_reason_ = "FIXED_INCREMENT_FAILED";
@@ -282,7 +322,7 @@ bool ArcLengthControl::solve(
 
             logging::info(true,
                 "Increment rejected at lambda = ",
-                target_lambda,
+                rejected_lambda,
                 "; reason = ",
                 attempt_failure_reason,
                 "; reducing increment to ",
@@ -314,6 +354,11 @@ bool ArcLengthControl::solve(
                 q               = q_accepted_;
                 lambda          = lambda_accepted_;
                 failure_reason_ = "INVALID_FINAL_DIRECTION";
+
+                if (rollback_increment_trial) {
+                    rollback_increment_trial();
+                }
+
                 return false;
             }
 
@@ -323,6 +368,10 @@ bool ArcLengthControl::solve(
 
             q      = q_accepted_;
             lambda = lambda_accepted_;
+
+            if (rollback_increment_trial) {
+                rollback_increment_trial();
+            }
 
             ++cutback_count;
 
@@ -351,6 +400,10 @@ bool ArcLengthControl::solve(
         previous_delta_q_      = q - q_accepted_;
         previous_delta_lambda_ = lambda - lambda_accepted_;
         adjusting_final_step_  = false;
+
+        if (commit_increment_trial) {
+            commit_increment_trial();
+        }
 
         ++accepted_increments_;
         cutback_count = 0;
@@ -409,6 +462,10 @@ void ArcLengthControl::configure_newton_() {
     newton_.stagnation_tolerance     = Precision(1e-3) * tolerance;
     newton_.check_finite             = true;
     newton_.early_failure_detection  = true;
+
+    newton_.begin_line_search_trial    = begin_line_search_trial;
+    newton_.commit_line_search_trial   = commit_line_search_trial;
+    newton_.rollback_line_search_trial = rollback_line_search_trial;
 }
 
 void ArcLengthControl::adapt_increment_() {

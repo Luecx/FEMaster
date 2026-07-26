@@ -58,8 +58,8 @@ TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {
     displacement(3, 0) = 1.0;
 
     auto shear_flow = model.compute_shear_flow(displacement);
-    ASSERT_EQ(shear_flow.rows(), 4);
-    ASSERT_EQ(shear_flow.cols(), 3);
+    ASSERT_EQ(shear_flow.rows, 4);
+    ASSERT_EQ(shear_flow.components, 3);
 
     const fem::Precision expected[4] {-5.0, 5.0, -5.0, 5.0};
     for (int i = 0; i < 4; ++i) {
@@ -203,7 +203,7 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
     auto* elem = model._data->elements[0]->as<fem::model::T3>();
     ASSERT_NE(elem, nullptr);
     ASSERT_NE(elem->get_section(), nullptr);
-    EXPECT_NEAR(elem->get_section()->A, 2.0, 1e-12);
+    EXPECT_NEAR(elem->get_section()->area_, 2.0, 1e-12);
 
     fem::Precision k_storage[6 * 6] {};
     fem::DynamicMatrix K = elem->stiffness(k_storage);
@@ -222,8 +222,8 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
     displacement(1, 0) = 1.0;
 
     const auto section_forces = model.compute_section_forces(displacement);
-    ASSERT_EQ(section_forces.rows(), 2);
-    ASSERT_EQ(section_forces.cols(), 8);
+    ASSERT_EQ(section_forces.rows, 2);
+    ASSERT_EQ(section_forces.components, 8);
     EXPECT_NEAR(section_forces(0, 0), 0.0, 1e-12);
     EXPECT_NEAR(section_forces(1, 0), 0.0, 1e-12);
     EXPECT_NEAR(section_forces(0, 1), 0.0, 1e-12);

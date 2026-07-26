@@ -12,6 +12,11 @@
 namespace fem {
 namespace loadcase {
 namespace tools {
+namespace {
+
+constexpr Index maximum_active_set_updates = 8;
+
+}
 
 bool LoadControl::solve(
     DynamicVector&           q,
@@ -76,50 +81,96 @@ bool LoadControl::solve(
         const Precision     lambda_accepted = lambda;
         const Precision     target_lambda   = lambda + increment_;
 
-        configure_newton_();
+        if (begin_increment_trial) {
+            begin_increment_trial();
+        }
 
         if (predictor) {
             predictor(q, lambda_accepted, target_lambda);
         }
 
-        const bool converged = newton_.solve(
-            q,
-            [&](const DynamicVector& current_q,
-                DynamicVector&       residual,
-                SparseMatrix&        tangent) {
-                evaluate(current_q, target_lambda, residual, tangent);
-            },
-            linear_solve,
-            [&](const DynamicVector& residual) {
-                return residual_norm(residual, target_lambda);
-            },
-            correction_norm,
-            [&](Index     iteration,
-                Precision current_residual_norm,
-                Precision current_correction_norm,
-                Precision convergence_order,
-                Time      assembly_ms,
-                Time      solve_ms,
-                bool      iteration_converged) {
-                if (on_iteration) {
-                    on_iteration(
-                        accepted_increments_ + 1,
-                        iteration,
-                        target_lambda,
-                        current_residual_norm,
-                        current_correction_norm,
-                        convergence_order,
-                        assembly_ms,
-                        solve_ms,
-                        iteration_converged
-                    );
+        bool        converged              = false;
+        const char* attempt_failure_reason = "NONE";
+        Index       active_set_updates     = 0;
+
+        while (true) {
+            configure_newton_();
+
+            converged = newton_.solve(
+                q,
+                [&](const DynamicVector& current_q,
+                    DynamicVector&       residual,
+                    SparseMatrix&        tangent) {
+                    evaluate(current_q, target_lambda, residual, tangent);
+                },
+                linear_solve,
+                [&](const DynamicVector& residual) {
+                    return residual_norm(residual, target_lambda);
+                },
+                correction_norm,
+                [&](Index     iteration,
+                    Precision current_residual_norm,
+                    Precision current_correction_norm,
+                    Precision convergence_order,
+                    Time      assembly_ms,
+                    Time      solve_ms,
+                    bool      iteration_converged) {
+                    if (on_iteration) {
+                        on_iteration(
+                            accepted_increments_ + 1,
+                            iteration,
+                            target_lambda,
+                            current_residual_norm,
+                            current_correction_norm,
+                            convergence_order,
+                            assembly_ms,
+                            solve_ms,
+                            iteration_converged
+                        );
+                    }
                 }
+            );
+
+            if (!converged) {
+                attempt_failure_reason = newton_.failure_reason();
+                break;
             }
-        );
+
+            if (!update_active_set ||
+                update_active_set(q, target_lambda)) {
+                break;
+            }
+
+            ++active_set_updates;
+
+            logging::info(
+                true,
+                "Contact active set changed; restarting Newton at lambda = ",
+                target_lambda
+            );
+
+            if (active_set_updates > maximum_active_set_updates) {
+                converged              = false;
+                attempt_failure_reason = "CONTACT_ACTIVE_SET";
+                break;
+            }
+        }
 
         if (!converged) {
             q      = q_accepted;
             lambda = lambda_accepted;
+
+            if (rollback_increment_trial) {
+                rollback_increment_trial();
+            }
+
+            logging::info(
+                true,
+                "Newton failed: ",
+                attempt_failure_reason,
+                ", last alpha = ",
+                newton_.last_step_length()
+            );
 
             if (!adaptive) {
                 failure_reason_ = "FIXED_INCREMENT_FAILED";
@@ -129,7 +180,8 @@ bool LoadControl::solve(
             increment_ *= cutback_factor;
             ++cutback_count;
 
-            logging::info(true,
+            logging::info(
+                true,
                 "Increment rejected at lambda = ",
                 target_lambda,
                 "; reducing increment to ",
@@ -151,20 +203,33 @@ bool LoadControl::solve(
 
         lambda = target_lambda;
 
+        if (commit_increment_trial) {
+            commit_increment_trial();
+        }
+
         ++accepted_increments_;
         cutback_count = 0;
 
         if (on_increment) {
-            on_increment(accepted_increments_, q, lambda);
+            on_increment(
+                accepted_increments_,
+                q,
+                lambda
+            );
         }
 
         adapt_increment_();
 
-        logging::info(true,
-            "Accepted increment "   , accepted_increments_,
-            ": lambda = "           , lambda,
-            ", Newton iterations = ", newton_.iterations(),
-            ", next increment = "  , increment_
+        logging::info(
+            true,
+            "Accepted increment ",
+            accepted_increments_,
+            ": lambda = ",
+            lambda,
+            ", Newton iterations = ",
+            newton_.iterations(),
+            ", next increment = ",
+            increment_
         );
     }
 
@@ -195,11 +260,15 @@ void LoadControl::reset_state_() {
 }
 
 void LoadControl::configure_newton_() {
-    newton_.maximum_iterations       = maximum_iterations;
-    newton_.residual_tolerance       = tolerance;
-    newton_.stagnation_tolerance     = Precision(1e-3) * tolerance;
-    newton_.check_finite             = true;
-    newton_.early_failure_detection  = true;
+    newton_.maximum_iterations      = maximum_iterations;
+    newton_.residual_tolerance      = tolerance;
+    newton_.stagnation_tolerance    = Precision(1e-3) * tolerance;
+    newton_.check_finite            = true;
+    newton_.early_failure_detection = false;
+
+    newton_.begin_line_search_trial    = begin_line_search_trial;
+    newton_.commit_line_search_trial   = commit_line_search_trial;
+    newton_.rollback_line_search_trial = rollback_line_search_trial;
 }
 
 void LoadControl::adapt_increment_() {

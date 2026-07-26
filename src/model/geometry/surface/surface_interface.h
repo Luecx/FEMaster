@@ -73,6 +73,7 @@ struct SurfaceInterface {
     // Contiguous global node connectivity used by generic model traversal and
     // range-based access through begin() and end().
     virtual ID* nodes() = 0;
+    virtual const ID* nodes() const = 0;
 
     ID* begin() { return nodes(); }
     ID* end()   { return nodes() + n_nodes; }

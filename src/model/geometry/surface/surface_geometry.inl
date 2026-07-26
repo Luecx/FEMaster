@@ -206,5 +206,19 @@ template<Index N>
 ID* Surface<N>::nodes() {
     return nodeIds.data();
 }
+/**
+ * @brief Returns a const pointer to the first global node identifier.
+ *
+ * The fixed-size `std::array` stores all identifiers contiguously, which allows
+ * the surface to provide the pointer-based connectivity interface expected by
+ * `SurfaceInterface`.
+ *
+ * @return Pointer to the first node identifier.
+ */
+template<Index N>
+const ID* Surface<N>::nodes() const {
+    return nodeIds.data();
+}
+
 
 } // namespace fem::model

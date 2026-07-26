@@ -80,6 +80,7 @@ struct Surface : public SurfaceInterface {
 
     // Return contiguous mutable connectivity storage
     ID* nodes() override;
+    const ID* nodes() const override;
 
     // Boundary projection delegated to the concrete surface implementation
     virtual Vec2 closest_point_on_boundary(

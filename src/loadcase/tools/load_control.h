@@ -61,6 +61,13 @@ public:
         Precision            lambda
     )>;
 
+    using TrialCallback = NewtonSolver::TrialCallback;
+
+    using ActiveSetCallback = std::function<bool(
+        const DynamicVector& q,
+        Precision            lambda
+    )>;
+
 public:
     LoadControl() = default;
 
@@ -97,6 +104,16 @@ public:
     Index maximum_cutbacks      = 20;
 
     bool adaptive               = true;
+
+    TrialCallback begin_increment_trial;
+    TrialCallback commit_increment_trial;
+    TrialCallback rollback_increment_trial;
+
+    TrialCallback begin_line_search_trial;
+    TrialCallback commit_line_search_trial;
+    TrialCallback rollback_line_search_trial;
+
+    ActiveSetCallback update_active_set;
 
 private:
     void reset_state_();
