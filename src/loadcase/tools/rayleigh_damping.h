@@ -1,53 +1,62 @@
-#pragma once
 /**
- * @file
- * @brief Rayleigh damping model: C = α M + β K.
+ * @file rayleigh_damping.h
+ * @brief Defines proportional Rayleigh damping for linear dynamic analyses.
  *
- * Usage:
- *   RayleighDamping dmp(0.02, 1e-4);
- *   SparseMatrix C = dmp.build(M, K);          // C = αM + βK
- *   // If you need to accumulate:
- *   // C_total = C_total + dmp.build(M, K);
+ * Rayleigh damping approximates the global viscous damping matrix as a linear
+ * combination of the mass and stiffness matrices:
  *
- * Assumptions:
- *   - M, K are BC-reduced and constant (linear, time-invariant system).
- *   - Uses your project types from core/types_eig.h (SparseMatrix, Precision).
+ *     C = alpha M + beta K.
+ *
+ * The mass-proportional coefficient `alpha` primarily affects the lower
+ * frequency range, while the stiffness-proportional coefficient `beta`
+ * primarily affects the higher frequency range.
+ *
+ * The damping model stores only the two proportionality coefficients. The
+ * global damping matrix is constructed from externally assembled mass and
+ * stiffness matrices and is returned as a new sparse matrix.
+ *
+ * Matrix assembly, boundary-condition reduction and time integration remain
+ * responsibilities of the surrounding load-case implementation.
+ *
+ * @see SparseMatrix
+ *
+ * @author Finn Eggers
+ * @date 26.07.2026
  */
 
-#include "../../core/types_eig.h"  // SparseMatrix, Precision
+#pragma once
 
-namespace fem {
-namespace loadcase {
-namespace tools {
+#include "../../core/types_eig.h"
 
+namespace fem::loadcase::tools {
+
+/**
+ * @brief Proportional Rayleigh damping model.
+ *
+ * The model constructs the viscous damping matrix from the global mass and
+ * stiffness matrices according to
+ *
+ *     C = alpha M + beta K.
+ *
+ * Both coefficients may be zero. In that case, the generated damping matrix
+ * has the same dimensions as the supplied system matrices but contains no
+ * entries.
+ *
+ * The class does not own or cache the mass, stiffness or damping matrices.
+ * Every call to `build` constructs and returns a new sparse matrix.
+ */
 struct RayleighDamping {
-    Precision alpha = Precision(0);  ///< mass-proportional coefficient
-    Precision beta  = Precision(0);  ///< stiffness-proportional coefficient
+    // Rayleigh damping coefficients
+    Precision alpha = Precision(0);
+    Precision beta  = Precision(0);
 
+    // Construction
     RayleighDamping() = default;
-    RayleighDamping(Precision a, Precision b) : alpha(a), beta(b) {}
+    RayleighDamping(Precision alpha, Precision beta);
 
-    /// Build a fresh damping matrix: C = α M + β K
-    [[nodiscard]] SparseMatrix
-    build(const SparseMatrix& M, const SparseMatrix& K) const {
-        // Fast paths to avoid unnecessary ops
-        if (alpha == static_cast<Precision>(0)
-          && beta == static_cast<Precision>(0))
-            return SparseMatrix(M.rows(), M.cols());
-
-        if (alpha == static_cast<Precision>(0))
-            return beta * K;
-
-        if (beta == static_cast<Precision>(0))
-            return alpha * M;
-
-        // General case
-        SparseMatrix C = alpha * M;
-        C = C + beta * K;
-        return C;
-    }
+    // Construct the global damping matrix from the supplied mass and stiffness
+    // matrices according to C = alpha M + beta K.
+    [[nodiscard]] SparseMatrix build(const SparseMatrix& mass, const SparseMatrix& stiffness) const;
 };
 
-} // namespace tools
-} // namespace loadcase
-} // namespace fem
+} // namespace fem::loadcase::tools
