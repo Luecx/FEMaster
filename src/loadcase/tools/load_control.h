@@ -8,6 +8,7 @@
 #include "newton_solver.h"
 
 #include <functional>
+#include <string>
 
 namespace fem {
 namespace loadcase {
@@ -50,6 +51,7 @@ public:
         Precision residual_norm,
         Precision correction_norm,
         Precision convergence_order,
+        Index     line_search_iterations,
         Time      assembly_ms,
         Time      solve_ms,
         bool      converged
@@ -126,7 +128,7 @@ private:
     Index     accepted_increments_ = 0;
     Precision increment_           = Precision(0);
 
-    const char* failure_reason_    = "NONE";
+    std::string failure_reason_    = "NONE";
 };
 
 } // namespace tools

@@ -8,6 +8,8 @@
 #include "../../core/logging.h"
 
 #include <algorithm>
+#include <exception>
+#include <string>
 
 namespace fem {
 namespace loadcase {
@@ -81,79 +83,94 @@ bool LoadControl::solve(
         const Precision     lambda_accepted = lambda;
         const Precision     target_lambda   = lambda + increment_;
 
-        if (begin_increment_trial) {
-            begin_increment_trial();
-        }
-
-        if (predictor) {
-            predictor(q, lambda_accepted, target_lambda);
-        }
-
         bool        converged              = false;
         const char* attempt_failure_reason = "NONE";
+        std::string attempt_error_message;
         Index       active_set_updates     = 0;
 
-        while (true) {
-            configure_newton_();
+        // Treat analysis failures inside this attempted increment like Newton
+        // non-convergence so adaptive load control can reduce the step size.
+        try {
+            if (begin_increment_trial) {
+                begin_increment_trial();
+            }
 
-            converged = newton_.solve(
-                q,
-                [&](const DynamicVector& current_q,
-                    DynamicVector&       residual,
-                    SparseMatrix&        tangent) {
-                    evaluate(current_q, target_lambda, residual, tangent);
-                },
-                linear_solve,
-                [&](const DynamicVector& residual) {
-                    return residual_norm(residual, target_lambda);
-                },
-                correction_norm,
-                [&](Index     iteration,
-                    Precision current_residual_norm,
-                    Precision current_correction_norm,
-                    Precision convergence_order,
-                    Time      assembly_ms,
-                    Time      solve_ms,
-                    bool      iteration_converged) {
-                    if (on_iteration) {
-                        on_iteration(
-                            accepted_increments_ + 1,
-                            iteration,
-                            target_lambda,
-                            current_residual_norm,
-                            current_correction_norm,
-                            convergence_order,
-                            assembly_ms,
-                            solve_ms,
-                            iteration_converged
-                        );
+            if (predictor) {
+                predictor(q, lambda_accepted, target_lambda);
+            }
+
+            while (true) {
+                configure_newton_();
+
+                converged = newton_.solve(
+                    q,
+                    [&](const DynamicVector& current_q,
+                        DynamicVector&       residual,
+                        SparseMatrix&        tangent) {
+                        evaluate(current_q, target_lambda, residual, tangent);
+                    },
+                    linear_solve,
+                    [&](const DynamicVector& residual) {
+                        return residual_norm(residual, target_lambda);
+                    },
+                    correction_norm,
+                    [&](Index     iteration,
+                        Precision current_residual_norm,
+                        Precision current_correction_norm,
+                        Precision convergence_order,
+                        Index     line_search_iterations,
+                        Time      assembly_ms,
+                        Time      solve_ms,
+                        bool      iteration_converged) {
+                        if (on_iteration) {
+                            on_iteration(
+                                accepted_increments_ + 1,
+                                iteration,
+                                target_lambda,
+                                current_residual_norm,
+                                current_correction_norm,
+                                convergence_order,
+                                line_search_iterations,
+                                assembly_ms,
+                                solve_ms,
+                                iteration_converged
+                            );
+                        }
                     }
+                );
+
+                if (!converged) {
+                    attempt_failure_reason = newton_.failure_reason();
+                    break;
                 }
-            );
 
-            if (!converged) {
-                attempt_failure_reason = newton_.failure_reason();
-                break;
+                if (!update_active_set ||
+                    update_active_set(q, target_lambda)) {
+                    break;
+                }
+
+                ++active_set_updates;
+
+                logging::info(
+                    true,
+                    "Contact active set changed; restarting Newton at lambda = ",
+                    target_lambda
+                );
+
+                if (active_set_updates > maximum_active_set_updates) {
+                    converged              = false;
+                    attempt_failure_reason = "CONTACT_ACTIVE_SET";
+                    break;
+                }
             }
-
-            if (!update_active_set ||
-                update_active_set(q, target_lambda)) {
-                break;
-            }
-
-            ++active_set_updates;
-
-            logging::info(
-                true,
-                "Contact active set changed; restarting Newton at lambda = ",
-                target_lambda
-            );
-
-            if (active_set_updates > maximum_active_set_updates) {
-                converged              = false;
-                attempt_failure_reason = "CONTACT_ACTIVE_SET";
-                break;
-            }
+        } catch (const std::exception& exception) {
+            converged              = false;
+            attempt_failure_reason = "ANALYSIS_ERROR";
+            attempt_error_message  = exception.what();
+        } catch (...) {
+            converged              = false;
+            attempt_failure_reason = "ANALYSIS_ERROR";
+            attempt_error_message  = "unknown exception";
         }
 
         if (!converged) {
@@ -173,7 +190,9 @@ bool LoadControl::solve(
             );
 
             if (!adaptive) {
-                failure_reason_ = "FIXED_INCREMENT_FAILED";
+                failure_reason_ = attempt_error_message.empty()
+                    ? "FIXED_INCREMENT_FAILED"
+                    : "FIXED_INCREMENT_FAILED: " + attempt_error_message;
                 return false;
             }
 
@@ -189,12 +208,16 @@ bool LoadControl::solve(
             );
 
             if (increment_ < minimum_increment) {
-                failure_reason_ = "MINIMUM_INCREMENT";
+                failure_reason_ = attempt_error_message.empty()
+                    ? "MINIMUM_INCREMENT"
+                    : "MINIMUM_INCREMENT: " + attempt_error_message;
                 return false;
             }
 
             if (cutback_count > maximum_cutbacks) {
-                failure_reason_ = "MAXIMUM_CUTBACKS";
+                failure_reason_ = attempt_error_message.empty()
+                    ? "MAXIMUM_CUTBACKS"
+                    : "MAXIMUM_CUTBACKS: " + attempt_error_message;
                 return false;
             }
 
@@ -250,7 +273,7 @@ Precision LoadControl::increment() const {
 }
 
 const char* LoadControl::failure_reason() const {
-    return failure_reason_;
+    return failure_reason_.c_str();
 }
 
 void LoadControl::reset_state_() {

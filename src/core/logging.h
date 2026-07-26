@@ -8,7 +8,7 @@
  * Wrapping rules:
  *  - Hard newlines '\n' are respected.
  *  - Lines are wrapped to the configured console width.
- *  - On wrapped lines, the same prefix ([INFO]/[WARNING]/[ERROR] + indentation)
+ *  - On wrapped lines, the same prefix ([INFO]/[WARNING] + indentation)
  *    is repeated.
  *  - Leading spaces/tabs of the original text segment (after the prefix) are
  *    detected and re-applied to all wrapped continuation lines to keep the
@@ -49,7 +49,8 @@ void enable();
 /**
  * @brief Disable informational and warning log output.
  *
- * Error logging remains active so failed checks still abort with diagnostics.
+ * Runtime checks remain active and throw even when informational output is
+ * disabled.
  */
 void disable();
 
@@ -85,9 +86,8 @@ void warning(bool condition, Args... args);
 template<typename... Args>
 void info(bool condition, Args... args);
 
-/**
- * @brief Logs an error and aborts when the supplied condition evaluates to false.
- */
+// Runtime checks. Failed checks raise an exception and are reported by the
+// root caller.
 template<typename... Args>
 void error(bool condition, Args... args);
 } // namespace logging

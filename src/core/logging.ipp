@@ -6,10 +6,10 @@
  */
 
 #include <algorithm>
-#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -266,11 +266,9 @@ void info(bool condition, Args... args) {
 template<typename... Args>
 void error(bool condition, Args... args) {
     if (!condition) {
-        // Build content first to include in [ERROR] header
         std::ostringstream s;
         (detail::process(args, s), ...);
-        detail::log_wrapped_with_prefix("[ERROR]", s.str());
-        std::exit(-1);
+        throw std::runtime_error(s.str());
     }
 }
 

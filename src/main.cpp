@@ -203,7 +203,7 @@ int main(int argc, char** argv) {
     try {
         parser.run(input_path.string(), output_file, writer_formats);
     } catch (const std::exception& e) {
-        std::cerr << "Parsing failed: " << e.what() << std::endl;
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 

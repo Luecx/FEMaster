@@ -1478,14 +1478,14 @@ void Contact::assemble(
 
     bvh.finalize();
 
-    if (!bvh.valid()) {
-        std::cout
-            << "[CONTACT]"
-            << " call=" << runtime_state.call
-            << " invalid_bvh=1"
-            << '\n';
-        return;
-    }
+    // if (!bvh.valid()) {
+    //     std::cout
+    //         << "[CONTACT]"
+    //         << " call=" << runtime_state.call
+    //         << " invalid_bvh=1"
+    //         << '\n';
+    //     return;
+    // }
 
     if (!runtime_state.slave_nodes_initialized) {
         runtime_state.slave_node_ids =
@@ -1878,37 +1878,37 @@ void Contact::assemble(
                         old_local
                     );
 
-                const auto previous_flags =
-                    std::cout.flags();
+                // const auto previous_flags =
+                //     std::cout.flags();
+                //
+                // const auto previous_precision =
+                //     std::cout.precision();
 
-                const auto previous_precision =
-                    std::cout.precision();
+                // std::cout
+                //     << std::scientific
+                //     << std::setprecision(9)
+                //     << "[CONTACT_SWITCH]"
+                //     << " call="       << runtime_state.call
+                //     << " slave="      << slave_node_id
+                //     << " old="        << old_surface_id
+                //     << " new="        << best_surface_id
+                //     << " old_mode="   << projection_mode_name(old_projection_info.mode)
+                //     << " new_mode="   << projection_mode_name(projection_info.mode)
+                //     << " old_dist="   << old_distance
+                //     << " new_dist="   << best_distance
+                //     << " delta_dist=" << best_distance - old_distance
+                //     << " old_gap="    << old_gap
+                //     << " new_gap="    << gap
+                //     << " old_local=(" << old_local(0)
+                //     << ','             << old_local(1)
+                //     << ")"
+                //     << " new_local=(" << best_local(0)
+                //     << ','             << best_local(1)
+                //     << ")"
+                //     << '\n';
 
-                std::cout
-                    << std::scientific
-                    << std::setprecision(9)
-                    << "[CONTACT_SWITCH]"
-                    << " call="       << runtime_state.call
-                    << " slave="      << slave_node_id
-                    << " old="        << old_surface_id
-                    << " new="        << best_surface_id
-                    << " old_mode="   << projection_mode_name(old_projection_info.mode)
-                    << " new_mode="   << projection_mode_name(projection_info.mode)
-                    << " old_dist="   << old_distance
-                    << " new_dist="   << best_distance
-                    << " delta_dist=" << best_distance - old_distance
-                    << " old_gap="    << old_gap
-                    << " new_gap="    << gap
-                    << " old_local=(" << old_local(0)
-                    << ','             << old_local(1)
-                    << ")"
-                    << " new_local=(" << best_local(0)
-                    << ','             << best_local(1)
-                    << ")"
-                    << '\n';
-
-                std::cout.flags(previous_flags);
-                std::cout.precision(previous_precision);
+                // std::cout.flags(previous_flags);
+                // std::cout.precision(previous_precision);
             }
         }
 
@@ -1991,71 +1991,71 @@ void Contact::assemble(
               static_cast<Precision>(diagnostics.slave_nodes)
             : Precision(0);
 
-    const auto previous_flags =
-        std::cout.flags();
+    // const auto previous_flags =
+    //     std::cout.flags();
+    //
+    // const auto previous_precision =
+    //     std::cout.precision();
 
-    const auto previous_precision =
-        std::cout.precision();
+    // std::cout
+    //     << std::scientific
+    //     << std::setprecision(3)
+    //     << "[CONTACT]"
+    //     << " call="          << runtime_state.call
+    //     << " frozen="        << (freeze_surface_partners ? 1 : 0)
+    //     << " active="        << diagnostics.active_contacts
+    //     << " d_active="      << active_change
+    //     << " activated="     << diagnostics.activations
+    //     << " deactivated="   << diagnostics.deactivations
+    //     << " switches="      << diagnostics.partner_switches
+    //     << " changed="       << (signature_changed ? 1 : 0)
+    //     << " interior="      << diagnostics.interior_consistent
+    //     << " interior_fb="   << diagnostics.interior_fallback
+    //     << " edge="          << diagnostics.edge_consistent
+    //     << " edge_fb="       << diagnostics.edge_fallback
+    //     << " corner="        << diagnostics.corner_direct
+    //     << " no_partner="    << diagnostics.no_partner
+    //     << " zero_cand="     << diagnostics.zero_candidate_slaves
+    //     << " invalid_proj="  << diagnostics.invalid_projections
+    //     << " distance_rej="  << diagnostics.distance_rejections
+    //     << " open="          << diagnostics.open_closest_partner
+    //     << " cand_avg="      << average_candidates
+    //     << " cand_max="      << diagnostics.maximum_candidates
+    //     << " max_dist="      << diagnostics.maximum_closest_distance
+    //     << " max_pen="       << diagnostics.maximum_penetration
+    //     << " max_force="     << diagnostics.maximum_slave_force
+    //     << " force_norm="    << contact_force_norm
+    //     << " min_Js="        << diagnostics.minimum_surface_jacobian
+    //     << " min_H2="        << diagnostics.minimum_interior_hessian_ratio
+    //     << " min_H1="        << diagnostics.minimum_edge_hessian_ratio
+    //     << " max_dproj="     << diagnostics.maximum_projection_derivative
+    //     << " max_asym="      << diagnostics.maximum_raw_asymmetry
+    //     << " max_Kc="        << diagnostics.maximum_local_tangent_norm
+    //     << " triplets="      << added_triplets
+    //     << " ms="            << elapsed_ms
+    //     << " signature="     << diagnostics.signature
+    //     << '\n';
 
-    std::cout
-        << std::scientific
-        << std::setprecision(3)
-        << "[CONTACT]"
-        << " call="          << runtime_state.call
-        << " frozen="        << (freeze_surface_partners ? 1 : 0)
-        << " active="        << diagnostics.active_contacts
-        << " d_active="      << active_change
-        << " activated="     << diagnostics.activations
-        << " deactivated="   << diagnostics.deactivations
-        << " switches="      << diagnostics.partner_switches
-        << " changed="       << (signature_changed ? 1 : 0)
-        << " interior="      << diagnostics.interior_consistent
-        << " interior_fb="   << diagnostics.interior_fallback
-        << " edge="          << diagnostics.edge_consistent
-        << " edge_fb="       << diagnostics.edge_fallback
-        << " corner="        << diagnostics.corner_direct
-        << " no_partner="    << diagnostics.no_partner
-        << " zero_cand="     << diagnostics.zero_candidate_slaves
-        << " invalid_proj="  << diagnostics.invalid_projections
-        << " distance_rej="  << diagnostics.distance_rejections
-        << " open="          << diagnostics.open_closest_partner
-        << " cand_avg="      << average_candidates
-        << " cand_max="      << diagnostics.maximum_candidates
-        << " max_dist="      << diagnostics.maximum_closest_distance
-        << " max_pen="       << diagnostics.maximum_penetration
-        << " max_force="     << diagnostics.maximum_slave_force
-        << " force_norm="    << contact_force_norm
-        << " min_Js="        << diagnostics.minimum_surface_jacobian
-        << " min_H2="        << diagnostics.minimum_interior_hessian_ratio
-        << " min_H1="        << diagnostics.minimum_edge_hessian_ratio
-        << " max_dproj="     << diagnostics.maximum_projection_derivative
-        << " max_asym="      << diagnostics.maximum_raw_asymmetry
-        << " max_Kc="        << diagnostics.maximum_local_tangent_norm
-        << " triplets="      << added_triplets
-        << " ms="            << elapsed_ms
-        << " signature="     << diagnostics.signature
-        << '\n';
+    // if (diagnostics.active_contacts > 0) {
+    //     std::cout
+    //         << std::scientific
+    //         << std::setprecision(6)
+    //         << "[CONTACT_MAX]"
+    //         << " call="     << runtime_state.call
+    //         << " slave="    << diagnostics.worst_slave
+    //         << " surface="  << diagnostics.worst_surface
+    //         << " mode="     << projection_mode_name(diagnostics.worst_mode)
+    //         << " local=("   << diagnostics.worst_local(0)
+    //         << ","          << diagnostics.worst_local(1)
+    //         << ")"
+    //         << " gap="      << diagnostics.worst_gap
+    //         << " pen="      << diagnostics.maximum_penetration
+    //         << " distance=" << diagnostics.worst_distance
+    //         << '\n';
+    // }
 
-    if (diagnostics.active_contacts > 0) {
-        std::cout
-            << std::scientific
-            << std::setprecision(6)
-            << "[CONTACT_MAX]"
-            << " call="     << runtime_state.call
-            << " slave="    << diagnostics.worst_slave
-            << " surface="  << diagnostics.worst_surface
-            << " mode="     << projection_mode_name(diagnostics.worst_mode)
-            << " local=("   << diagnostics.worst_local(0)
-            << ","          << diagnostics.worst_local(1)
-            << ")"
-            << " gap="      << diagnostics.worst_gap
-            << " pen="      << diagnostics.maximum_penetration
-            << " distance=" << diagnostics.worst_distance
-            << '\n';
-    }
-
-    std::cout.flags(previous_flags);
-    std::cout.precision(previous_precision);
+    // std::cout.flags(previous_flags);
+    // std::cout.precision(previous_precision);
 }
 
 } // namespace constraint

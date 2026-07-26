@@ -20,6 +20,7 @@
 #include <cmath>
 #include <iomanip>
 #include <memory>
+#include <string>
 
 namespace fem {
 namespace loadcase {
@@ -259,8 +260,8 @@ void NonlinearStatic::run() {
     logging::info(true, "Control: ",
         control == NonlinearControl::ArcLength ? "ARC LENGTH" : "LOAD CONTROL");
     logging::info(true, "");
-    logging::info(true, " inc iter      lambda        rel_res          du_norm   asm_ms solve_ms");
-    logging::info(true, "--------------------------------------------------------------------------");
+    logging::info(true, " inc iter      lambda        rel_res          du_norm   ls   asm_ms solve_ms");
+    logging::info(true, "----------------------------------------------------------------------------");
 
     // Stream converged increment frames as they become available. This keeps
     // the accepted path in the result file even if a later increment fails.
@@ -483,6 +484,7 @@ void NonlinearStatic::run() {
                             Precision residual_norm,
                             Precision correction_norm,
                             Precision convergence_order,
+                            Index     line_search_iterations,
                             Time      assembly_ms,
                             Time      solve_ms,
                             bool      converged) {
@@ -497,6 +499,7 @@ void NonlinearStatic::run() {
             std::setw(12), lambda,
             std::setw(15), residual_norm,
             std::setw(15), correction_norm,
+            std::setw(5), line_search_iterations,
             std::fixed, std::setprecision(1),
             std::setw(9), assembly_ms,
             std::setw(9), solve_ms
@@ -602,7 +605,7 @@ void NonlinearStatic::run() {
     };
 
     bool        converged      = false;
-    const char* failure_reason = "NONE";
+    std::string failure_reason = "NONE";
 
     const bool has_contact = !model->_data->contacts.empty();
 

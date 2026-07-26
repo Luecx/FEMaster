@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <limits>
 
 namespace fem {
@@ -99,6 +98,7 @@ bool NewtonSolver::solve(
                     last_residual_norm_,
                     last_correction_norm_,
                     convergence_order_,
+                    Index(0),
                     assembly_timer.elapsed(),
                     Time(0),
                     true
@@ -115,6 +115,7 @@ bool NewtonSolver::solve(
                     last_residual_norm_,
                     last_correction_norm_,
                     convergence_order_,
+                    Index(0),
                     assembly_timer.elapsed(),
                     Time(0),
                     false
@@ -136,6 +137,7 @@ bool NewtonSolver::solve(
         Precision     accepted_alpha = Precision(1);
         DynamicVector accepted_dx    = dx;
         bool          step_accepted  = !line_search_enabled;
+        Index         line_search_iterations = 0;
 
         if (line_search_enabled) {
             Precision alpha = Precision(1);
@@ -145,6 +147,7 @@ bool NewtonSolver::solve(
 
             DynamicVector trial_residual;
             SparseMatrix  trial_tangent;
+            bool          trial_open = false;
 
             auto begin_trial = [&]() {
                 if (begin_line_search_trial) {
@@ -167,9 +170,10 @@ bool NewtonSolver::solve(
             auto evaluate_trial = [&](Precision trial_alpha) {
                 const DynamicVector x_trial = x + trial_alpha * dx;
 
-                begin_trial();
-
                 try {
+                    begin_trial();
+                    trial_open = true;
+
                     evaluate(x_trial, trial_residual, trial_tangent);
 
                     Precision trial_norm =
@@ -181,8 +185,12 @@ bool NewtonSolver::solve(
 
                     return trial_norm;
                 } catch (...) {
-                    rollback_trial();
-                    throw;
+                    if (trial_open) {
+                        rollback_trial();
+                        trial_open = false;
+                    }
+
+                    return std::numeric_limits<Precision>::infinity();
                 }
             };
 
@@ -191,6 +199,7 @@ bool NewtonSolver::solve(
                  ++line_search_iteration) {
                 const Precision trial_norm =
                     evaluate_trial(alpha);
+                ++line_search_iterations;
 
                 if (std::isfinite(trial_norm) && trial_norm < best_norm) {
                     best_norm  = trial_norm;
@@ -206,26 +215,19 @@ bool NewtonSolver::solve(
                     std::isfinite(trial_norm) &&
                     trial_norm <= required_norm;
 
-                std::cout
-                    << "[LINESEARCH]"
-                    << " iter="       << iter
-                    << " ls="         << line_search_iteration
-                    << " alpha="      << alpha
-                    << " rel_res="    << last_residual_norm_
-                    << " trial_rel="  << trial_norm
-                    << " limit="      << required_norm
-                    << " accepted="   << accepted
-                    << '\n';
-
                 if (accepted) {
                     accepted_alpha = alpha;
                     accepted_dx    = alpha * dx;
                     step_accepted  = true;
                     commit_trial();
+                    trial_open     = false;
                     break;
                 }
 
-                rollback_trial();
+                if (trial_open) {
+                    rollback_trial();
+                    trial_open = false;
+                }
 
                 alpha *= line_search_reduction;
 
@@ -243,24 +245,26 @@ bool NewtonSolver::solve(
             if (!step_accepted &&
                 best_alpha > Precision(0) &&
                 best_norm < last_residual_norm_) {
-                (void) evaluate_trial(best_alpha);
-                commit_trial();
+                const Precision retry_norm = evaluate_trial(best_alpha);
+                ++line_search_iterations;
 
-                accepted_alpha = best_alpha;
-                accepted_dx    = best_alpha * dx;
-                step_accepted  = true;
+                if (std::isfinite(retry_norm) &&
+                    retry_norm < last_residual_norm_) {
+                    commit_trial();
+                    trial_open = false;
+
+                    accepted_alpha = best_alpha;
+                    accepted_dx    = best_alpha * dx;
+                    step_accepted  = true;
+                } else if (trial_open) {
+                    rollback_trial();
+                    trial_open = false;
+                }
             }
 
             if (!step_accepted) {
                 last_step_length_      = best_alpha;
                 failed_by_line_search_ = true;
-
-                std::cout
-                    << "[LINESEARCH] FAILED"
-                    << " iter="      << iter
-                    << " best_alpha=" << best_alpha
-                    << " best_rel="   << best_norm
-                    << '\n';
 
                 return false;
             }
@@ -280,6 +284,7 @@ bool NewtonSolver::solve(
                 last_residual_norm_,
                 last_correction_norm_,
                 convergence_order_,
+                line_search_iterations,
                 assembly_timer.elapsed(),
                 solve_timer.elapsed(),
                 false

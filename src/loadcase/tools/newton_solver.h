@@ -41,6 +41,7 @@ public:
         Precision residual_norm,
         Precision correction_norm,
         Precision convergence_order,
+        Index     line_search_iterations,
         Time      assembly_ms,
         Time      solve_ms,
         bool      converged
