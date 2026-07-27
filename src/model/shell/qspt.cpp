@@ -354,8 +354,4 @@ void QSPT::compute_compliance(Field& displacement, Field& result) {
     result(this->elem_id, 0) = c;
 }
 
-void QSPT::compute_compliance_angle_derivative(Field& displacement, Field& result) {
-    (void) displacement;
-    (void) result;
-}
 } // namespace fem::model

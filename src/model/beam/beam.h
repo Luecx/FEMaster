@@ -149,12 +149,9 @@ struct BeamElement : StructuralElement {
     ) override;
 
     // Optional structural-element operations that currently have no generic
-    // beam implementation. They deliberately preserve the neutral behavior of
-    // the previous inline definitions.
+    // beam implementation. Thermal loading deliberately preserves the neutral
+    // behavior of the previous inline definition.
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
-    void compute_compliance(Field& displacement, Field& result) override;
-    void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
-    bool compute_shear_flow(Field& shear_flow, const Field& displacement, int offset) override;
 
     // Fixed topology and degree-of-freedom metadata required by the common
     // element interface, together with direct connectivity access. Beam
@@ -166,17 +163,11 @@ struct BeamElement : StructuralElement {
     const ID*  nodes() const override;
     SurfacePtr surface(ID surface_id) override;
 
-    // Recover nodal beam resultants in the original section frame. Shell force
-    // recovery remains unsupported for beam elements and returns false.
+    // Recover nodal beam resultants in the original section frame.
     bool compute_beam_section_forces(
         Field&       section_forces,
         const Field& displacement,
         int          offset
-    ) override;
-    bool compute_shell_section_forces(
-        Field&       section_forces,
-        Field&       contribution_count,
-        const Field& displacement
     ) override;
 
     // One-point midpoint integration of scalar, vector and tensor fields over

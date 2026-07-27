@@ -511,21 +511,6 @@ void T3::compute_compliance(Field& displacement, Field& result) {
         u.dot(K * u);
 }
 
-void T3::compute_compliance_angle_derivative(Field& displacement, Field& result) {
-    (void) displacement;
-    (void) result;
-}
-
-bool T3::compute_shear_flow(Field&       shear_flow,
-                            const Field& displacement,
-                            int          offset) {
-    (void) shear_flow;
-    (void) displacement;
-    (void) offset;
-
-    return false;
-}
-
 bool T3::compute_beam_section_forces(Field&       section_forces,
                                      const Field& displacement,
                                      int          offset) {
@@ -566,16 +551,6 @@ bool T3::compute_beam_section_forces(Field&       section_forces,
     }
 
     return true;
-}
-
-bool T3::compute_shell_section_forces(Field&       section_forces,
-                                      Field&       contribution_count,
-                                      const Field& displacement) {
-    (void) section_forces;
-    (void) contribution_count;
-    (void) displacement;
-
-    return false;
 }
 
 } // namespace model

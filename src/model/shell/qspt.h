@@ -52,7 +52,6 @@ struct QSPT : ShellElement<4> {
     Mat3      integrate_tensor_field(bool scale_by_density, const TenField& field) override;
 
     void compute_compliance(Field& displacement, Field& result) override;
-    void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
 
 private:
     struct GeometryData {

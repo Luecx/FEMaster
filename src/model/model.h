@@ -148,16 +148,10 @@ struct Model {
     void          build_internal_force_nonlinear(SystemDofIds& indices,
                                                  NodeData& nodal_forces,
                                                  const Field& displacement);
-    Field         build_internal_force_nonlinear(const Field& ip_stress);
 
-    std::tuple<Field, Field>       compute_stress_ip(Field& displacement, bool use_green_lagrange_nl = false);
     Field                          compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field>       compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field>       compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
-    std::tuple<Field, Field>       compute_ip_stress_strain(Field& displacement);
-    Field                          compute_ip_stress_nonlinear(Field& displacement);
-    std::tuple<Field, Field>       compute_stress_strain(Field& displacement);
-    std::tuple<Field, Field>       compute_shell_stress_surfaces(Field& displacement);
     Field                          compute_shell_resultants(Field& displacement);
     Field                          compute_compliance   (Field& displacement);
     Field                          compute_compliance_angle_derivative(Field& displacement);

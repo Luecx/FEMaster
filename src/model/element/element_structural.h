@@ -79,29 +79,34 @@ struct StructuralElement : ElementInterface {
         Field&       node_forces,
         const Field& ip_stress
     ) = 0;
-    virtual void compute_compliance(
-        Field& displacement,
-        Field& result
-    ) = 0;
-    virtual void compute_compliance_angle_derivative(
-        Field& displacement,
-        Field& result
-    ) = 0;
-    virtual bool compute_shear_flow(
-        Field&       shear_flow,
-        const Field& displacement,
-        int          offset
-    ) = 0;
-    virtual bool compute_beam_section_forces(
-        Field&       section_forces,
-        const Field& displacement,
-        int          offset
-    ) = 0;
-    virtual bool compute_shell_section_forces(
-        Field&       section_forces,
-        Field&       contribution_count,
-        const Field& displacement
-    ) = 0;
+    virtual void compute_compliance(Field& displacement, Field& result) {
+        (void) displacement;
+        (void) result;
+    }
+    virtual void compute_compliance_angle_derivative(Field& displacement, Field& result) {
+        (void) displacement;
+        (void) result;
+    }
+    virtual bool compute_shear_flow(Field& shear_flow, const Field& displacement, int offset) {
+        (void) shear_flow;
+        (void) displacement;
+        (void) offset;
+        return false;
+    }
+    virtual bool compute_beam_section_forces(Field& section_forces, const Field& displacement, int offset) {
+        (void) section_forces;
+        (void) displacement;
+        (void) offset;
+        return false;
+    }
+    virtual bool compute_shell_section_forces(Field& section_forces,
+                                              Field& contribution_count,
+                                              const Field& displacement) {
+        (void) section_forces;
+        (void) contribution_count;
+        (void) displacement;
+        return false;
+    }
 };
 } // namespace model
 } // namespace fem

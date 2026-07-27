@@ -414,35 +414,6 @@ void BeamElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Prec
 }
 
 /**
- * @brief Preserves the no-op base implementation for compliance evaluation.
- */
-template<Index N>
-void BeamElement<N>::compute_compliance(Field& displacement, Field& result) {
-    (void)displacement;
-    (void)result;
-}
-
-/**
- * @brief Preserves the no-op base implementation for compliance-angle derivatives.
- */
-template<Index N>
-void BeamElement<N>::compute_compliance_angle_derivative(Field& displacement, Field& result) {
-    (void)displacement;
-    (void)result;
-}
-
-/**
- * @brief Reports that generic beam shear-flow recovery is unavailable.
- */
-template<Index N>
-bool BeamElement<N>::compute_shear_flow(Field& shear_flow, const Field& displacement, int offset) {
-    (void)shear_flow;
-    (void)displacement;
-    (void)offset;
-    return false;
-}
-
-/**
  * @brief Returns the six active beam degrees of freedom per node.
  */
 template<Index N>
@@ -534,21 +505,6 @@ bool BeamElement<N>::compute_beam_section_forces(
     }
 
     return true;
-}
-
-/**
- * @brief Reports that shell-section force recovery is not applicable to beams.
- */
-template<Index N>
-bool BeamElement<N>::compute_shell_section_forces(
-    Field&       section_forces,
-    Field&       contribution_count,
-    const Field& displacement
-) {
-    (void)section_forces;
-    (void)contribution_count;
-    (void)displacement;
-    return false;
 }
 
 /**

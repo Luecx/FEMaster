@@ -166,21 +166,6 @@ public:
         Field& displacement,
         Field& result
     ) override;
-    bool compute_shear_flow(
-        Field&       shear_flow,
-        const Field& displacement,
-        int          offset
-    ) override;
-    bool compute_beam_section_forces(
-        Field&       section_forces,
-        const Field& displacement,
-        int          offset
-    ) override;
-    bool compute_shell_section_forces(
-        Field&       section_forces,
-        Field&       contribution_count,
-        const Field& displacement
-    ) override;
 
     template<class ElementType>
     static bool test_implementation(bool print = false);

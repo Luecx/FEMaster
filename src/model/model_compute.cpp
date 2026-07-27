@@ -24,56 +24,6 @@ void check_field_finite(const Field& field, const std::string& label) {
 
 } // namespace
 
-std::tuple<Field, Field>
-Model::compute_stress_ip(Field& displacement, bool use_green_lagrange_nl) {
-    // 1) Use IP enumeration with sentinel total in the last row
-    logging::error(_data->element_ip_offsets != nullptr,
-                   "element IP offset field has not been initialized");
-    const auto& ip_enum = *_data->element_ip_offsets;
-    logging::error(ip_enum.rows == static_cast<Index>(_data->max_elems + 1),
-                   "ip_numeration must have max_elems+1 rows (with total at the end).");
-
-    const ID total_ips = static_cast<ID>(ip_enum(static_cast<Index>(_data->max_elems), 0));
-    logging::error(total_ips >= 0, "Total number of integration points must be non-negative.");
-
-    // 2) Allocate IP-level containers (Voigt: 6 components)
-    Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
-    Field ip_strain{"IP_STRAIN", FieldDomain::ELEMENT_IP, static_cast<Index>(total_ips), 6};
-    ip_stress.set_zero();
-    ip_strain.set_zero();
-
-    // 3) Dispatch to each structural element
-    for (auto el : _data->elements) {
-        if (!el) continue;
-        if (auto sel = el->as<StructuralElement>()) {
-            const ID eid = sel->elem_id;
-            logging::error(eid >= 0 && eid < _data->max_elems,
-                           "Element id out of range in compute_ip_stress_strain: ", eid);
-
-            const ID ip_offset = static_cast<ID>(ip_enum(static_cast<Index>(eid), 0));
-            logging::error(ip_offset >= 0 && ip_offset <= total_ips,
-                           "Invalid IP offset for element ", eid, ": ", ip_offset, " / total=", total_ips);
-
-            RowMatrix rst = sel->stress_strain_ip_rst();
-            logging::error(rst.rows() == sel->num_ip(),
-                           "Element ", eid, " returned ", rst.rows(),
-                           " stress IP coordinates, expected ", sel->num_ip());
-            if (rst.rows() == 0) continue;
-            sel->compute_stress_strain(&ip_strain,
-                                       &ip_stress,
-                                       displacement,
-                                       rst,
-                                       static_cast<int>(ip_offset),
-                                       use_green_lagrange_nl);
-        }
-    }
-
-    check_field_finite(ip_stress, "IP stress");
-    check_field_finite(ip_strain, "IP strain");
-
-    return {ip_stress, ip_strain};
-}
-
 Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_nl) {
     logging::error(_data->element_ip_offsets != nullptr,
                    "element IP offset field has not been initialized");
@@ -108,41 +58,6 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
     check_field_finite(ip_stress, "Stress state");
 
     return ip_stress;
-}
-
-std::tuple<Field, Field> Model::compute_ip_stress_strain(Field& displacement) {
-    return compute_stress_ip(displacement, false);
-}
-
-Field Model::compute_ip_stress_nonlinear(Field& displacement) {
-    return compute_stress_state(displacement, true);
-}
-
-Field Model::build_internal_force_nonlinear(const Field& ip_stress) {
-    logging::error(ip_stress.domain == FieldDomain::ELEMENT_IP,
-        "nonlinear internal force assembly requires ELEMENT_IP stress field");
-
-    // final field to be filled by each element
-    Field internal{"INTERNAL_FORCES", FieldDomain::NODE, static_cast<Index>(_data->max_nodes), 6};
-    internal.set_zero();
-
-    // iterate over all elements
-    for (auto el : _data->elements) {
-        if (!el) continue;
-        if (auto sel = el->as<StructuralElement>()) {
-            sel->compute_internal_force_nonlinear(internal, ip_stress);
-        }
-    }
-
-    // check for any invalid entries 
-    for (Index i = 0; i < internal.rows; ++i) {
-        for (Index j = 0; j < internal.components; ++j) {
-            const bool bad = std::isnan(internal(i, j)) || std::isinf(internal(i, j));
-            logging::error(!bad, "Internal force at node ", i, " has invalid value at col ", j);
-        }
-    }
-
-    return internal;
 }
 
 std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl) {
@@ -207,10 +122,6 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
     check_field_finite(strain, "Nodal strain");
 
     return {stress, strain};
-}
-
-std::tuple<Field, Field> Model::compute_stress_strain(Field& displacement) {
-    return compute_stress_nodal(displacement, false);
 }
 
 std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl) {
@@ -281,10 +192,6 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
     check_field_finite(stress_bot, "Nodal bottom stress");
 
     return {stress_top, stress_bot};
-}
-
-std::tuple<Field, Field> Model::compute_shell_stress_surfaces(Field& displacement) {
-    return compute_stress_top_bot(displacement, false);
 }
 
 Field Model::compute_shell_resultants(Field& displacement) {

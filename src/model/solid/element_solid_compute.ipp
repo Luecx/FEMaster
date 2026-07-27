@@ -170,36 +170,6 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
     }
 }
 
-template<Index N>
-bool SolidElement<N>::compute_shear_flow(Field& shear_flow,
-                                         const Field& displacement,
-                                         int offset) {
-    (void) shear_flow;
-    (void) displacement;
-    (void) offset;
-    return false;
-}
-
-template<Index N>
-bool SolidElement<N>::compute_beam_section_forces(Field& section_forces,
-                                                  const Field& displacement,
-                                                  int offset) {
-    (void) section_forces;
-    (void) displacement;
-    (void) offset;
-    return false;
-}
-
-template<Index N>
-bool SolidElement<N>::compute_shell_section_forces(Field& section_forces,
-                                                   Field& contribution_count,
-                                                   const Field& displacement) {
-    (void) section_forces;
-    (void) contribution_count;
-    (void) displacement;
-    return false;
-}
-
 //-----------------------------------------------------------------------------
 // compute_compliance
 //-----------------------------------------------------------------------------

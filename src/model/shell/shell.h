@@ -161,33 +161,6 @@ struct ShellElement : StructuralElement {
         compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
     }
 
-    bool compute_shear_flow(Field& shear_flow,
-                            const Field& displacement,
-                            int offset) override {
-        (void) shear_flow;
-        (void) displacement;
-        (void) offset;
-        return false;
-    }
-
-    bool compute_beam_section_forces(Field& section_forces,
-                                     const Field& displacement,
-                                     int offset) override {
-        (void) section_forces;
-        (void) displacement;
-        (void) offset;
-        return false;
-    }
-
-    bool compute_shell_section_forces(Field& section_forces,
-                                      Field& contribution_count,
-                                      const Field& displacement) override {
-        (void) section_forces;
-        (void) contribution_count;
-        (void) displacement;
-        return false;
-    }
-
     /**
      * @brief Extracts nodal data for the element from the full global nodal data.
      *
@@ -233,10 +206,6 @@ struct ShellElement : StructuralElement {
         result(this->elem_id, 0) = Ce;
     }
 
-    void compute_compliance_angle_derivative(Field& displacement, Field& result) override {
-        (void) displacement;
-        (void) result;
-    };
     protected:
 };
 }
