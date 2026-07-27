@@ -1,6 +1,24 @@
 /**
  * @file arc_length_control.cpp
- * @brief Implements a generic nonlinear arc-length solver.
+ * @brief Implements arc-length control for nonlinear equilibrium paths.
+ *
+ * The implementation follows nonlinear static equilibrium paths by solving the
+ * finite-element residual together with a scalar arc-length constraint. The path
+ * radius is adapted between accepted increments, while each attempted increment
+ * may be rolled back and retried when Newton convergence or final-load
+ * adjustment fails.
+ *
+ * All finite-element-specific work is delegated to callbacks supplied by the
+ * owning load case. This file only handles the reduced path-following algorithm,
+ * augmented Newton system, cutback/growth decisions, active-set restarts and
+ * state transaction wiring for nonlinear subsystems.
+ *
+ * Trial transactions are generic. Contact currently uses them for master
+ * partner ownership and future nonlinear material models can use them for trial
+ * stress states and committed internal variables.
+ *
+ * @see ArcLengthControl
+ * @see NewtonSolver
  */
 
 #include "arc_length_control.h"
@@ -20,8 +38,50 @@ namespace {
 
 constexpr Index maximum_active_set_updates = 8;
 
-}
+} // namespace
 
+/**
+ * Solves the nonlinear equilibrium path with an arc-length constraint.
+ *
+ * Each attempted increment starts from the last accepted reduced state `q` and
+ * load factor `lambda`. The first tangent predictor determines a load-direction
+ * correction and the current radius. Subsequent Newton iterations solve an
+ * augmented system containing both the reduced equilibrium residual and the
+ * spherical path constraint
+ *
+ *     ||Delta q||^2 + psi^2 load_scale^2 Delta lambda^2 = radius^2.
+ *
+ * Increment trial callbacks wrap the complete attempted path increment. They are
+ * committed only after the increment is accepted and rolled back for cutbacks,
+ * failed Newton solves, failed final-load adjustments or callback exceptions.
+ *
+ * Line-search trial callbacks are forwarded to the Newton solver for consistency
+ * with the load-control interface. The current arc-length implementation
+ * disables line search because the generic Newton line search scales only the
+ * explicit state vector, while arc-length corrections also contain an implicit
+ * load-factor correction.
+ *
+ * After a converged augmented Newton solve, `update_active_set` may update
+ * discontinuous nonlinear state at the converged configuration. A reported
+ * change restarts Newton on the same path increment using the new state.
+ *
+ * @param q Reduced nonlinear unknown vector. On success it contains the final
+ *          accepted state. On failure it is restored to the last accepted state.
+ * @param lambda Load factor associated with `q`.
+ * @param reference_load Reduced reference load vector used by the arc-length
+ *                       predictor and augmented Newton system.
+ * @param evaluate Residual and tangent assembly at a supplied `q` and load
+ *                 factor.
+ * @param linear_solve Linearized solve with one right-hand side.
+ * @param matrix_solve Linearized solve for the augmented system.
+ * @param residual_norm Problem-specific equilibrium-residual measure.
+ * @param correction_norm Problem-specific correction-size measure.
+ * @param on_iteration Optional per-Newton-iteration reporting callback.
+ * @param on_increment Optional accepted-increment callback for result writing.
+ * @param evaluate_residual Optional residual-only evaluation callback.
+ *
+ * @return `true` when the path reaches load factor one, otherwise `false`.
+ */
 bool ArcLengthControl::solve(
     DynamicVector&           q,
     Precision&               lambda,
@@ -310,13 +370,13 @@ bool ArcLengthControl::solve(
 
                 logging::info(
                     true,
-                    "Contact active set changed; restarting Newton at lambda = ",
+                    "Nonlinear active set changed; restarting Newton at lambda = ",
                     lambda
                 );
 
                 if (active_set_updates > maximum_active_set_updates) {
                     converged              = false;
-                    attempt_failure_reason = "CONTACT_ACTIVE_SET";
+                    attempt_failure_reason = "ACTIVE_SET";
                     break;
                 }
             }

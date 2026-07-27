@@ -1,6 +1,27 @@
 /**
  * @file nonlinear_static.cpp
  * @brief Implements incremental nonlinear static analysis.
+ *
+ * The nonlinear static load case assembles reduced equilibrium equations for
+ * updated nodal positions, applies linear constraints through a null-space
+ * transformer, and solves the resulting nonlinear path with either direct load
+ * control or arc-length control.
+ *
+ * Element and contact contributions are evaluated in the current configuration.
+ * External loads and prescribed displacements enter through the affine
+ * constraint recovery
+ *
+ *     u(lambda, q) = lambda * u_particular + T q.
+ *
+ * The load case wires stateful nonlinear subsystems into the generic trial
+ * callbacks owned by the path controllers. Contact is the only current
+ * participant, but the callback names and transaction levels are deliberately
+ * subsystem-independent so later nonlinear material history states can use the
+ * same increment and line-search lifecycle.
+ *
+ * @see NonlinearStatic
+ * @see tools::LoadControl
+ * @see tools::ArcLengthControl
  */
 
 #include "nonlinear_static.h"
@@ -29,6 +50,20 @@ using constraint::ConstraintTransformer;
 
 namespace {
 
+/**
+ * Builds the current nodal position field from reference coordinates and total
+ * generalized displacement.
+ *
+ * Translational components are interpreted as displacements from the reference
+ * configuration and are added to the reference coordinates. Rotational
+ * components are generalized displacement coordinates and therefore replace the
+ * corresponding entries directly.
+ *
+ * @param reference Reference nodal coordinates in the undeformed configuration.
+ * @param displacement Total generalized nodal displacement field.
+ *
+ * @return Current nodal position field used by element and contact assembly.
+ */
 model::Field current_positions_from_displacement(
     const model::Field& reference,
     const model::Field& displacement
@@ -73,6 +108,20 @@ model::Field subtract_field(
     return result;
 }
 
+/**
+ * Computes the relative residual norm used by nonlinear static convergence.
+ *
+ * The reduced residual is normalized by the largest RMS scale among the reduced
+ * external force, the implied reduced internal force and one. This keeps the
+ * convergence measure meaningful for both force-driven and displacement-driven
+ * analyses, including states where the external load vector is small.
+ *
+ * @param reduced_residual Projected nonlinear residual in reduced coordinates.
+ * @param reduced_external Projected external load vector at the current load
+ *                         factor.
+ *
+ * @return Dimensionless residual norm used by Newton convergence checks.
+ */
 Precision calculate_relative_residual(
     const DynamicVector& reduced_residual,
     const DynamicVector& reduced_external
@@ -109,6 +158,39 @@ Precision calculate_relative_residual(
 NonlinearStatic::NonlinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
+/**
+ * Executes the nonlinear static load case.
+ *
+ * The analysis starts from the reference coordinates and incrementally solves
+ * the constrained nonlinear equilibrium equation in reduced coordinates. The
+ * constraint transformer represents all active linear constraints as
+ *
+ *     u = lambda u_p + T q,
+ *
+ * where `u_p` is the particular solution for prescribed displacements and `T`
+ * spans the admissible incremental displacement space.
+ *
+ * For every residual or tangent evaluation, the supplied reduced state is
+ * expanded to total nodal displacement, the current nodal position field is
+ * updated, structural element forces are assembled, and nonlinear contact forces
+ * are added by the model assembly routine. The residual is then projected back
+ * into the reduced space.
+ *
+ * Stateful nonlinear subsystems are connected through generic trial callbacks:
+ *
+ * - increment trials cover a complete attempted nonlinear increment and are
+ *   committed only after the path controller accepts the increment,
+ * - line-search trials cover temporary residual evaluations inside Newton and
+ *   are committed only when the step length is accepted,
+ * - active-set updates allow discontinuous nonlinear state to be refreshed after
+ *   a converged Newton solve and can request a Newton restart at the same load
+ *   factor.
+ *
+ * Solver controls such as maximum increments, maximum iterations and adaptive
+ * iteration thresholds are forwarded exactly as configured by the load case. The
+ * presence of contact or another stateful subsystem does not change these
+ * parameters internally.
+ */
 void NonlinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
@@ -604,32 +686,44 @@ void NonlinearStatic::run() {
         writer->write_field(lambda_field, lambda_field.name, nullptr);
     };
 
-    auto begin_contact_increment_trial = [&]() {
+    // Open a complete attempted-increment transaction for every stateful
+    // nonlinear subsystem. Contact updates its partner state once during this
+    // trial and then freezes the selected surface for the Newton solve.
+    auto begin_increment_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.begin_trial(false, true);
         }
     };
 
-    auto begin_contact_frozen_trial = [&]() {
+    // Open a temporary residual-evaluation transaction nested inside the active
+    // increment. Line-search trials freeze discontinuous ownership immediately
+    // so rejected step lengths cannot modify the accepted nonlinear state.
+    auto begin_line_search_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.begin_trial(true);
         }
     };
 
-    auto commit_contact_trial = [&]() {
+    // Accept the most recently evaluated trial state. This callback is used for
+    // both increment-level and line-search-level transactions.
+    auto commit_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.commit_trial();
         }
     };
 
-    auto rollback_contact_trial = [&]() {
+    // Restore the state that existed before the most recent trial transaction.
+    auto rollback_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.rollback_trial();
         }
     };
 
-    auto update_contact_active_set = [&](const DynamicVector& q,
-                                         Precision            lambda) {
+    // Refresh discontinuous nonlinear state after Newton has converged at the
+    // current trial configuration. If the state changes, the path controller
+    // restarts Newton at the same load factor or arc-length radius.
+    auto update_active_set = [&](const DynamicVector& q,
+                                 Precision            lambda) {
         if (model->_data->contacts.empty()) {
             return true;
         }
@@ -670,33 +764,23 @@ void NonlinearStatic::run() {
     bool        converged      = false;
     std::string failure_reason = "NONE";
 
-    const bool has_contact = !model->_data->contacts.empty();
+    // Use the nonlinear controls exactly as configured. The trial callbacks
+    // below manage stateful nonlinear subsystems without changing increment or
+    // iteration limits based on which subsystem is present.
+    const Index configured_max_iterations =
+        static_cast<Index>(max_iterations);
 
-    // Fixed contact ownership can turn the late Newton convergence nearly
-    // linear at edge-supported contact states. Give such contact load cases
-    // enough iterations before triggering a cutback, and do not reduce an
-    // already converged contact increment only because the fixed active set
-    // needed many linearized Newton corrections.
-    const Index effective_max_iterations =
-        has_contact
-            ? std::max(static_cast<Index>(max_iterations), Index(120))
-            : static_cast<Index>(max_iterations);
+    const Index configured_max_increments =
+        static_cast<Index>(max_increments);
 
-    const Index effective_max_increments =
-        has_contact
-            ? std::max(static_cast<Index>(max_increments), Index(1000))
-            : static_cast<Index>(max_increments);
-
-    const Index effective_slow_iterations =
-        has_contact
-            ? effective_max_iterations + Index(1)
-            : static_cast<Index>(slow_iterations);
+    const Index configured_slow_iterations =
+        static_cast<Index>(slow_iterations);
 
     if (control == NonlinearControl::LoadControl) {
         tools::LoadControl load_control;
 
-        load_control.maximum_increments = effective_max_increments;
-        load_control.maximum_iterations = effective_max_iterations;
+        load_control.maximum_increments = configured_max_increments;
+        load_control.maximum_iterations = configured_max_iterations;
         load_control.tolerance          = tolerance;
         load_control.initial_increment  = initial_increment;
         load_control.minimum_increment  = minimum_increment;
@@ -704,19 +788,19 @@ void NonlinearStatic::run() {
         load_control.growth_factor      = growth_factor;
         load_control.cutback_factor     = cutback_factor;
         load_control.fast_iterations    = static_cast<Index>(fast_iterations);
-        load_control.slow_iterations    = effective_slow_iterations;
+        load_control.slow_iterations    = configured_slow_iterations;
         load_control.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
         load_control.adaptive           = adaptive_increments;
 
-        load_control.begin_increment_trial    = begin_contact_increment_trial;
-        load_control.commit_increment_trial   = commit_contact_trial;
-        load_control.rollback_increment_trial = rollback_contact_trial;
+        load_control.begin_increment_trial    = begin_increment_trial;
+        load_control.commit_increment_trial   = commit_trial;
+        load_control.rollback_increment_trial = rollback_trial;
 
-        load_control.begin_line_search_trial    = begin_contact_frozen_trial;
-        load_control.commit_line_search_trial   = commit_contact_trial;
-        load_control.rollback_line_search_trial = rollback_contact_trial;
+        load_control.begin_line_search_trial    = begin_line_search_trial;
+        load_control.commit_line_search_trial   = commit_trial;
+        load_control.rollback_line_search_trial = rollback_trial;
 
-        load_control.update_active_set = update_contact_active_set;
+        load_control.update_active_set = update_active_set;
 
         converged = load_control.solve(
             q_total,
@@ -735,8 +819,8 @@ void NonlinearStatic::run() {
     } else {
         tools::ArcLengthControl arc_length_control;
 
-        arc_length_control.maximum_increments = effective_max_increments;
-        arc_length_control.maximum_iterations = effective_max_iterations;
+        arc_length_control.maximum_increments = configured_max_increments;
+        arc_length_control.maximum_iterations = configured_max_iterations;
         arc_length_control.tolerance          = tolerance;
         arc_length_control.initial_increment  = initial_increment;
         arc_length_control.minimum_increment  = minimum_increment;
@@ -745,19 +829,19 @@ void NonlinearStatic::run() {
         arc_length_control.growth_factor      = growth_factor;
         arc_length_control.cutback_factor     = cutback_factor;
         arc_length_control.fast_iterations    = static_cast<Index>(fast_iterations);
-        arc_length_control.slow_iterations    = effective_slow_iterations;
+        arc_length_control.slow_iterations    = configured_slow_iterations;
         arc_length_control.maximum_cutbacks   = static_cast<Index>(maximum_cutbacks);
         arc_length_control.adaptive           = adaptive_increments;
 
-        arc_length_control.begin_increment_trial    = begin_contact_increment_trial;
-        arc_length_control.commit_increment_trial   = commit_contact_trial;
-        arc_length_control.rollback_increment_trial = rollback_contact_trial;
+        arc_length_control.begin_increment_trial    = begin_increment_trial;
+        arc_length_control.commit_increment_trial   = commit_trial;
+        arc_length_control.rollback_increment_trial = rollback_trial;
 
-        arc_length_control.begin_line_search_trial    = begin_contact_frozen_trial;
-        arc_length_control.commit_line_search_trial   = commit_contact_trial;
-        arc_length_control.rollback_line_search_trial = rollback_contact_trial;
+        arc_length_control.begin_line_search_trial    = begin_line_search_trial;
+        arc_length_control.commit_line_search_trial   = commit_trial;
+        arc_length_control.rollback_line_search_trial = rollback_trial;
 
-        arc_length_control.update_active_set = update_contact_active_set;
+        arc_length_control.update_active_set = update_active_set;
 
         converged = arc_length_control.solve(
             q_total,

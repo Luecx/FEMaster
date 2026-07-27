@@ -14,9 +14,8 @@
  *
  * An optional backtracking line search can reduce the Newton step when the full
  * correction does not provide sufficient residual reduction. Trial-state
- * callbacks allow constitutive, contact or other history-dependent subsystems
- * to begin, commit and roll back temporary evaluations performed during the
- * line search.
+ * callbacks allow stateful nonlinear subsystems to begin, commit and roll back
+ * temporary evaluations performed during the line search.
  *
  * The solver additionally records convergence diagnostics and can terminate
  * early when it detects divergence, repeated residual growth, residual
@@ -89,9 +88,9 @@ namespace tools {
  * - `commit_line_search_trial` accepts the evaluated trial state,
  * - `rollback_line_search_trial` restores the state before the trial.
  *
- * These callbacks are optional for purely state-independent problems but are
- * required when residual evaluation modifies material, contact or other
- * persistent trial data.
+     * These callbacks are optional for purely state-independent problems but are
+     * required when residual evaluation modifies material history, active-set
+     * ownership or other persistent trial data.
  *
  * A solver object may be reused for multiple nonlinear solves. Diagnostic and
  * failure state is reset at the beginning of every call to `solve`.

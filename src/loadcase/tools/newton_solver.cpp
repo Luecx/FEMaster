@@ -72,11 +72,10 @@ namespace tools {
  * strictly reduces the same residual norm used for convergence. In that case,
  * the best strictly decreasing trial is evaluated again and accepted.
  *
- * Trial evaluations may modify external constitutive or contact state. The
- * optional begin, commit and rollback callbacks provide transactional handling
- * of this state. A rejected trial is rolled back before the next step length is
- * tested. An accepted trial is committed before the nonlinear state vector is
- * updated.
+ * Trial evaluations may modify external nonlinear subsystem state. The optional
+ * begin, commit and rollback callbacks provide transactional handling of this
+ * state. A rejected trial is rolled back before the next step length is tested.
+ * An accepted trial is committed before the nonlinear state vector is updated.
  *
  * A return value of `false` indicates one of the classified failure conditions
  * exposed through `failure_reason`. Exceptions thrown by the supplied
@@ -321,7 +320,7 @@ bool NewtonSolver::solve(
                         ? trial_norm
                         : std::numeric_limits<Precision>::infinity();
                 } catch (...) {
-                    // Restore external material or contact state before
+                    // Restore external nonlinear subsystem state before
                     // classifying the trial as invalid
                     if (trial_open) {
                         rollback_trial();
@@ -834,4 +833,3 @@ bool NewtonSolver::should_stop_early_() {
 } // namespace tools
 } // namespace loadcase
 } // namespace fem
-

@@ -1,6 +1,21 @@
 /**
  * @file load_control.cpp
- * @brief Implements a generic nonlinear load-control solver.
+ * @brief Implements direct load-factor control for nonlinear equilibrium paths.
+ *
+ * The implementation advances the scalar load factor by attempted increments,
+ * solves the nonlinear residual at each target load factor, and applies adaptive
+ * growth or cutback based on Newton convergence. It does not assemble finite
+ * element matrices itself; all model-specific operations are supplied by the
+ * owning load case through callbacks.
+ *
+ * Stateful nonlinear subsystems are handled through explicit trial
+ * transactions. Increment trials protect state across cutbacks, while
+ * line-search trials protect temporary residual evaluations inside the Newton
+ * solver. The same mechanism is used by contact and can be reused by nonlinear
+ * material history updates.
+ *
+ * @see LoadControl
+ * @see NewtonSolver
  */
 
 #include "load_control.h"
@@ -18,8 +33,49 @@ namespace {
 
 constexpr Index maximum_active_set_updates = 8;
 
-}
+} // namespace
 
+/**
+ * Solves the nonlinear equilibrium path by prescribing the load factor.
+ *
+ * Each attempted increment starts from the last accepted reduced state `q` and
+ * load factor `lambda`. The target load factor is fixed during the Newton solve,
+ * so the Newton state contains only the reduced unknowns. A caller-supplied
+ * predictor may initialize `q` for the target load factor before the first
+ * Newton evaluation.
+ *
+ * The increment trial callbacks wrap the entire attempted step. They are opened
+ * before predictor and Newton evaluations, committed only after the increment is
+ * accepted, and rolled back when Newton fails, an analysis callback throws or an
+ * adaptive cutback is required.
+ *
+ * Line-search trial callbacks are forwarded to the Newton solver and are nested
+ * inside the active increment trial. They allow temporary residual evaluations
+ * to modify trial-only state without contaminating the accepted increment state.
+ *
+ * After a converged Newton solve, `update_active_set` may update discontinuous
+ * nonlinear state at the converged configuration. If it reports a change, Newton
+ * is restarted at the same target load factor. This is used for contact partner
+ * ownership today and is intentionally independent of any specific subsystem.
+ *
+ * @param q Reduced nonlinear unknown vector. On success it contains the final
+ *          accepted state. On failure it is restored to the last accepted state.
+ * @param lambda Load factor. On success it reaches one within tolerance. On
+ *               failure it is restored to the last accepted value.
+ * @param evaluate Residual and tangent assembly at a supplied `q` and load
+ *                 factor.
+ * @param linear_solve Linearized Newton solve returning the correction added to
+ *                     `q`.
+ * @param residual_norm Problem-specific residual convergence measure.
+ * @param correction_norm Problem-specific correction-size measure.
+ * @param on_iteration Optional per-Newton-iteration reporting callback.
+ * @param on_increment Optional accepted-increment callback for result writing.
+ * @param predictor Optional tangent predictor for the attempted target load.
+ * @param evaluate_residual Optional residual-only evaluation used by line
+ *                          search.
+ *
+ * @return `true` when the load factor reaches one, otherwise `false`.
+ */
 bool LoadControl::solve(
     DynamicVector&           q,
     Precision&               lambda,
@@ -168,13 +224,13 @@ bool LoadControl::solve(
 
                 logging::info(
                     true,
-                    "Contact active set changed; restarting Newton at lambda = ",
+                    "Nonlinear active set changed; restarting Newton at lambda = ",
                     target_lambda
                 );
 
                 if (active_set_updates > maximum_active_set_updates) {
                     converged              = false;
-                    attempt_failure_reason = "CONTACT_ACTIVE_SET";
+                    attempt_failure_reason = "ACTIVE_SET";
                     break;
                 }
             }
