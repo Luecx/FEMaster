@@ -463,6 +463,80 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
     return global_matrix;
 }
 
+/**
+ * Assembles the nonlinear internal force at the current trial displacement
+ * without assembling the structural tangent stiffness.
+ *
+ * The nonlinear Newton line search only needs the residual norm at temporary
+ * trial states. This routine therefore evaluates each structural element's
+ * current stress or shell resultant state and scatters `f_int` directly into the
+ * supplied nodal field. The same contact force contribution as tangent assembly
+ * is retained so the residual equation remains unchanged; contact tangent
+ * triplets are evaluated by the existing contact routine and intentionally
+ * discarded here until contact owns a separate force-only assembly path.
+ *
+ * @param indices Active global degree-of-freedom ids used by contact assembly.
+ * @param nodal_forces Nodal internal-force field to overwrite and fill.
+ * @param displacement Trial displacement defining the current configuration.
+ */
+void Model::build_internal_force_nonlinear(SystemDofIds& indices,
+                                           NodeData&      nodal_forces,
+                                           const Field&   displacement) {
+    logging::error(nodal_forces.domain == FieldDomain::NODE,
+        "nonlinear internal force output must use NODE domain");
+    logging::error(nodal_forces.rows == static_cast<Index>(_data->max_nodes),
+        "nonlinear internal force output has wrong node count");
+    logging::error(nodal_forces.components >= 6,
+        "nonlinear internal force output requires at least 6 components");
+
+    const Index max_ip = this->_data->max_integration_points;
+
+    Field ip_stress_state{"IP_STRESS_STATE", FieldDomain::ELEMENT_IP, max_ip, 8};
+    ip_stress_state.set_zero();
+    nodal_forces.set_zero();
+
+    // Element callbacks evaluate the current nonlinear stress/resultant state
+    // and scatter the corresponding element internal force directly. This is a
+    // residual assembly, so no material or geometric tangent matrix is built.
+    for (const auto& element : _data->elements) {
+        if (!element) {
+            continue;
+        }
+
+        auto* structural = element->as<StructuralElement>();
+        if (!structural) {
+            continue;
+        }
+
+        structural->internal_force_nonlinear(
+            ip_stress_state,
+            nodal_forces,
+            displacement
+        );
+    }
+
+    // Contact contributes to the same nonlinear residual. The existing contact
+    // API computes force and tangent together; the tangent triplets are ignored
+    // in this residual-only path so line-search acceptance remains correct.
+    TripletList discarded_contact_triplets;
+    for (const auto& contact : _data->contacts) {
+        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+    }
+
+    // Match the validation performed by tangent assembly before the nonlinear
+    // solver projects the residual.
+    for (Index i = 0; i < nodal_forces.rows; ++i) {
+        for (Index j = 0; j < nodal_forces.components; ++j) {
+            const bool bad =
+                std::isnan(nodal_forces(i, j)) ||
+                std::isinf(nodal_forces(i, j));
+
+            logging::error(!bad,
+                "Internal force at node ", i, " has invalid value at col ", j);
+        }
+    }
+}
+
 SparseMatrix Model::build_geom_stiffness_matrix(SystemDofIds &indices,
                                                 const Field& ip_stress,
                                                 const Field* stiffness_scalar)

@@ -93,6 +93,10 @@ namespace tools {
  * @param on_iteration Optional reporting callback invoked after every completed
  *                     Newton iteration and for residual convergence detected
  *                     before a linear solve.
+ * @param evaluate_residual Optional residual-only callback used for
+ *                          line-search trials. If it is absent, line search
+ *                          falls back to the full residual-and-tangent
+ *                          evaluation callback.
  *
  * @return `true` when the residual tolerance is satisfied, otherwise `false`.
  */
@@ -102,7 +106,8 @@ bool NewtonSolver::solve(
     const LinearSolve&       linear_solve,
     const Norm&              residual_norm,
     const CorrectionNorm&    correction_norm,
-    const IterationCallback& on_iteration
+    const IterationCallback& on_iteration,
+    const EvaluateResidual&  evaluate_residual
 ) {
     // Validate the Newton iteration and convergence settings
     logging::error(maximum_iterations > 0,
@@ -250,9 +255,9 @@ bool NewtonSolver::solve(
             Precision best_step_length = Precision(0);
             Precision best_residual    = std::numeric_limits<Precision>::infinity();
 
-            // Trial tangent assembly is currently required by the common
-            // evaluation interface even though only the residual norm is used
-            // for line-search acceptance
+            // Trial acceptance only needs the residual norm. A tangent object
+            // is kept for the backwards-compatible path where no residual-only
+            // callback has been supplied by the nonlinear strategy.
             DynamicVector trial_residual{};
             SparseMatrix  trial_tangent{};
 
@@ -298,7 +303,11 @@ bool NewtonSolver::solve(
                     begin_trial();
                     trial_open = true;
 
-                    evaluate(trial_state, trial_residual, trial_tangent);
+                    if (evaluate_residual) {
+                        evaluate_residual(trial_state, trial_residual);
+                    } else {
+                        evaluate(trial_state, trial_residual, trial_tangent);
+                    }
 
                     // Invalid residual entries are treated like a failed trial
                     // without passing them to an arbitrary norm implementation

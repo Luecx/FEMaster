@@ -107,6 +107,14 @@ public:
         SparseMatrix&        tangent
     )>;
 
+    // Residual-only evaluation at a supplied nonlinear trial state. Line search
+    // uses this optional callback when available because trial acceptance only
+    // depends on the residual norm, not on a freshly assembled tangent.
+    using EvaluateResidual = std::function<void(
+        const DynamicVector& x,
+        DynamicVector&       residual
+    )>;
+
     // Linearized-system solution. The callback returns the correction applied
     // directly to the current state through x += dx.
     using LinearSolve = std::function<DynamicVector(
@@ -191,7 +199,8 @@ public:
         const LinearSolve&       linear_solve,
         const Norm&              residual_norm,
         const CorrectionNorm&    correction_norm,
-        const IterationCallback& on_iteration = {}
+        const IterationCallback& on_iteration = {},
+        const EvaluateResidual&  evaluate_residual = {}
     );
 
     // Diagnostics of the most recent nonlinear solve

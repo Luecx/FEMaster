@@ -32,7 +32,8 @@ bool ArcLengthControl::solve(
     const ResidualNorm&      residual_norm,
     const CorrectionNorm&    correction_norm,
     const IterationCallback& on_iteration,
-    const IncrementCallback& on_increment
+    const IncrementCallback& on_increment,
+    const EvaluateResidual&  evaluate_residual
 ) {
     logging::error(maximum_increments > 0,
         "ArcLengthControl requires maximum_increments > 0");
@@ -171,6 +172,19 @@ bool ArcLengthControl::solve(
             while (true) {
                 configure_newton_();
 
+                NewtonSolver::EvaluateResidual newton_evaluate_residual;
+                if (evaluate_residual) {
+                    newton_evaluate_residual =
+                        [&](const DynamicVector& current_q,
+                            DynamicVector&       residual) {
+                            evaluate_residual(
+                                current_q,
+                                lambda,
+                                residual
+                            );
+                        };
+                }
+
                 converged = newton_.solve(
                     q,
                     [&](const DynamicVector& current_q,
@@ -278,7 +292,8 @@ bool ArcLengthControl::solve(
                                 iteration_converged
                             );
                         }
-                    }
+                    },
+                    newton_evaluate_residual
                 );
 
                 if (!converged) {

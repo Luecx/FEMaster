@@ -29,7 +29,8 @@ bool LoadControl::solve(
     const CorrectionNorm&    correction_norm,
     const IterationCallback& on_iteration,
     const IncrementCallback& on_increment,
-    const Predictor&         predictor
+    const Predictor&         predictor,
+    const EvaluateResidual&  evaluate_residual
 ) {
     logging::error(maximum_increments > 0,
         "LoadControl requires maximum_increments > 0");
@@ -102,6 +103,19 @@ bool LoadControl::solve(
             while (true) {
                 configure_newton_();
 
+                NewtonSolver::EvaluateResidual newton_evaluate_residual;
+                if (evaluate_residual) {
+                    newton_evaluate_residual =
+                        [&](const DynamicVector& current_q,
+                            DynamicVector&       residual) {
+                            evaluate_residual(
+                                current_q,
+                                target_lambda,
+                                residual
+                            );
+                        };
+                }
+
                 converged = newton_.solve(
                     q,
                     [&](const DynamicVector& current_q,
@@ -136,7 +150,8 @@ bool LoadControl::solve(
                                 iteration_converged
                             );
                         }
-                    }
+                    },
+                    newton_evaluate_residual
                 );
 
                 if (!converged) {

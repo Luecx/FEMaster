@@ -30,6 +30,7 @@ struct StructuralElement : ElementInterface {
     virtual MapMatrix stiffness        (Precision* buffer) = 0;
     virtual MapMatrix stiffness_geom   (Precision* buffer, const Field& ip_stress_state, int ip_start_idx) = 0;
     virtual MapMatrix stiffness_tangent(Precision* buffer,       Field& ip_stress_state, NodeData& nodal_forces, const Field& displacement);
+    virtual void      internal_force_nonlinear(Field& ip_stress_state, NodeData& nodal_forces, const Field& displacement);
     virtual MapMatrix mass             (Precision* buffer) = 0;
     virtual bool      is_shell         () const {return false;}
     virtual bool      is_solid         () const {return false;}

@@ -23,6 +23,12 @@ public:
         SparseMatrix&        tangent
     )>;
 
+    using EvaluateResidual = std::function<void(
+        const DynamicVector& q,
+        Precision            lambda,
+        DynamicVector&       residual
+    )>;
+
     using LinearSolve = std::function<DynamicVector(
         const SparseMatrix&  tangent,
         const DynamicVector& rhs
@@ -82,7 +88,8 @@ public:
         const ResidualNorm&      residual_norm,
         const CorrectionNorm&    correction_norm,
         const IterationCallback& on_iteration = {},
-        const IncrementCallback& on_increment = {}
+        const IncrementCallback& on_increment = {},
+        const EvaluateResidual&  evaluate_residual = {}
     );
 
     Index       accepted_increments() const;

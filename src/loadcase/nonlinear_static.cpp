@@ -364,6 +364,69 @@ void NonlinearStatic::run() {
         );
     };
 
+    auto evaluate_residual = [&](const DynamicVector& q,
+                                 Precision            lambda,
+                                 DynamicVector&       residual) {
+        // Evaluate the same nonlinear residual as the full tangent assembly,
+        // but avoid constructing the material and geometric element tangents.
+        // Line-search acceptance only uses the projected residual norm.
+        const DynamicVector u_evaluation =
+            recover_total_displacement(q, lambda);
+
+        const model::Field displacement_evaluation =
+            mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
+
+        *model->_data->positions = current_positions_from_displacement(
+            reference_positions,
+            displacement_evaluation
+        );
+
+        model::NodeData internal_mat{
+            "INTERNAL_FORCES",
+            model::FieldDomain::NODE,
+            max_nodes,
+            6
+        };
+        internal_mat.set_zero();
+
+        const bool logging_was_enabled = logging::is_enabled();
+        logging::disable();
+
+        try {
+            model->build_internal_force_nonlinear(
+                active_dof_idx_mat,
+                internal_mat,
+                displacement_evaluation
+            );
+        } catch (...) {
+            if (logging_was_enabled) {
+                logging::enable();
+            }
+
+            throw;
+        }
+
+        if (logging_was_enabled) {
+            logging::enable();
+        }
+
+        const DynamicVector internal_force =
+            mattools::reduce_mat_to_vec(
+                active_dof_idx_mat,
+                internal_mat
+            );
+
+        const DynamicVector external_force = lambda * f_total;
+        const DynamicVector full_residual  = external_force - internal_force;
+
+        transformer->project_vector(full_residual, residual);
+
+        final_internal = internal_mat;
+
+        logging::error(residual.allFinite(),
+            "Reduced residual contains NaN/Inf entries");
+    };
+
     auto linear_solve = [&](const SparseMatrix&  tangent,
                             const DynamicVector& rhs) {
         SparseMatrix matrix = tangent;
@@ -664,7 +727,8 @@ void NonlinearStatic::run() {
             correction_norm,
             on_iteration,
             on_increment,
-            predictor
+            predictor,
+            evaluate_residual
         );
 
         failure_reason = load_control.failure_reason();
@@ -705,7 +769,8 @@ void NonlinearStatic::run() {
             residual_norm,
             correction_norm,
             on_iteration,
-            on_increment
+            on_increment,
+            evaluate_residual
         );
 
         failure_reason = arc_length_control.failure_reason();
