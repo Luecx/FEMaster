@@ -144,7 +144,7 @@ void accumulate_structural_mass(
 
         // Only structural elements provide the mass-weighted integration
         // operations required by inertia relief
-        const auto* structural_element = element->as<model::StructuralElement>();
+        auto* structural_element = element->as<model::StructuralElement>();
 
         if (!structural_element) {
             continue;
@@ -260,7 +260,7 @@ void accumulate_structural_inertia(
             continue;
         }
 
-        const auto* structural_element = element->as<model::StructuralElement>();
+        auto* structural_element = element->as<model::StructuralElement>();
 
         if (!structural_element) {
             continue;
