@@ -497,6 +497,13 @@ void ArcLengthControl::configure_newton_() {
     newton_.check_finite             = true;
     newton_.early_failure_detection  = true;
 
+    // Arc-length Newton corrections contain both dq and dlambda, but the
+    // generic Newton line search can scale only the explicit state vector q.
+    // Scaling q while lambda already contains the full correction evaluates a
+    // point away from the augmented arc-length linearization, so globalization
+    // is left to the adaptive arc-length increment control.
+    newton_.line_search_enabled      = false;
+
     newton_.begin_line_search_trial    = begin_line_search_trial;
     newton_.commit_line_search_trial   = commit_line_search_trial;
     newton_.rollback_line_search_trial = rollback_line_search_trial;
