@@ -162,11 +162,11 @@ SurfacePtr C3D10::surface(ID surface_id) {
     }
 }
 const math::quadrature::Quadrature& C3D10::integration_scheme() const {
-    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_QUADRATIC};
+    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_QUARTIC};
     return quad;
 }
-const math::quadrature::Quadrature& C3D10::integration_scheme_mass() const {
-    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_QUARTIC};
+const math::quadrature::Quadrature& C3D10::integration_scheme_stiffness() const {
+    const static math::quadrature::Quadrature quad {math::quadrature::DOMAIN_ISO_TET, math::quadrature::ORDER_QUADRATIC};
     return quad;
 }
 }    // namespace model

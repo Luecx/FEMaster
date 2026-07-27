@@ -47,7 +47,7 @@ public:
     virtual StaticMatrix<N, D> shape_derivative(Precision r, Precision s, Precision t) = 0;
 
     virtual const math::quadrature::Quadrature& integration_scheme() const = 0;
-    virtual const math::quadrature::Quadrature& integration_scheme_mass() const {
+    virtual const math::quadrature::Quadrature& integration_scheme_stiffness() const {
         return integration_scheme();
     }
 

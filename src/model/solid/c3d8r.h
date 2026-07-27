@@ -55,9 +55,9 @@ public:
     std::string type_name() const override;
 
     /**
-     * @brief One-point integration at the element center with weight eight.
+     * @brief One-point stiffness integration at the element center with weight eight.
      */
-    const math::quadrature::Quadrature& integration_scheme() const override;
+    const math::quadrature::Quadrature& integration_scheme_stiffness() const override;
 
     /**
      * @brief Evaluates all extrapolated nodal results at the element center.

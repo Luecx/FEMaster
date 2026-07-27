@@ -18,6 +18,6 @@ struct C3D10 : public SolidElement<10>{
 
     const math::quadrature::Quadrature& integration_scheme() const override;
 
-    const math::quadrature::Quadrature& integration_scheme_mass() const override;
+    const math::quadrature::Quadrature& integration_scheme_stiffness() const override;
 };
 } }

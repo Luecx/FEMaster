@@ -10,7 +10,7 @@ struct C3D20R : public SolidElement<20>{
 
     const math::quadrature::Quadrature& integration_scheme() const override;
 
-    const math::quadrature::Quadrature& integration_scheme_mass() const override;
+    const math::quadrature::Quadrature& integration_scheme_stiffness() const override;
 
     SurfacePtr                    surface(ID surface_id) override;
 

@@ -360,7 +360,7 @@ SolidElement<N>::stiffness(Precision* buffer) {
             return StaticMatrix<D * N, D * N>(res);
         };
 
-    StaticMatrix<D * N, D * N> stiffness = integration_scheme().integrate(func);
+    StaticMatrix<D * N, D * N> stiffness = integration_scheme_stiffness().integrate(func);
     stiffness = 0.5 * (stiffness + stiffness.transpose()); // Symmetrize
 
     MapMatrix mapped{buffer, D * N, D * N};
@@ -408,7 +408,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& ip_stress, int i
         return Kg;
     };
 
-    StaticMatrix<D * N, D * N> Kg = integration_scheme().integrate(func);
+    StaticMatrix<D * N, D * N> Kg = integration_scheme_stiffness().integrate(func);
     Kg = 0.5 * (Kg + Kg.transpose()); // Symmetrize
 
     MapMatrix mapped{buffer, D * N, D * N};

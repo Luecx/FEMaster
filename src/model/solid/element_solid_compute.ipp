@@ -140,7 +140,7 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
                                                        const Field& ip_stress) {
     auto reference_coords = this->node_coords_reference();
     auto current_coords   = this->node_coords_current();
-    auto scheme           = this->integration_scheme();
+    auto scheme           = this->integration_scheme_stiffness();
 
     for (Index n = 0; n < scheme.count(); n++) {
         const Precision r = scheme.get_point(n).r;
@@ -268,7 +268,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
 
     const auto reference_coords = this->node_coords_reference();
     const auto current_coords   = this->node_coords_current();
-    const auto& scheme          = this->integration_scheme();
+    const auto& scheme          = this->integration_scheme_stiffness();
 
     const Precision scaling    = element_stiffness_scale();
     Vec3            derivative = Vec3::Zero();

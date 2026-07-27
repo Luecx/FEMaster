@@ -56,7 +56,7 @@ SolidElement<N>::nodes() const {
 template<Index N>
 Dim
 SolidElement<N>::num_ip() const {
-    return integration_scheme().count();
+    return integration_scheme_stiffness().count();
 }
 
 template<Index N>
@@ -73,7 +73,7 @@ RowMatrix SolidElement<N>::stress_strain_nodal_rst() {
 
 template<Index N>
 RowMatrix SolidElement<N>::stress_strain_ip_rst() {
-    const auto& scheme = this->integration_scheme();
+    const auto& scheme = this->integration_scheme_stiffness();
     RowMatrix rst(scheme.count(), 3);
     for (Index i = 0; i < scheme.count(); ++i) {
         rst(i, 0) = scheme.get_point(i).r;

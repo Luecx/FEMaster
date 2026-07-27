@@ -24,7 +24,7 @@ std::string C3D8R::type_name() const {
 // Reduced integration and output locations
 // -----------------------------------------------------------------------------
 
-const math::quadrature::Quadrature& C3D8R::integration_scheme() const {
+const math::quadrature::Quadrature& C3D8R::integration_scheme_stiffness() const {
     /*
      * One-point hexahedral rule:
      *
