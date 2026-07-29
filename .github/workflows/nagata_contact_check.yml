@@ -56,6 +56,6 @@ jobs:
         shell: bash
         run: cmake --build build/nagata-check --target FEMaster_test
 
-      - name: Run tests
+      - name: Run Nagata tests
         shell: bash
-        run: ctest --test-dir build/nagata-check --output-on-failure
+        run: ctest --test-dir build/nagata-check --output-on-failure -R '^ContactNagata\\.'
