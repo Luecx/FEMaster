@@ -158,3 +158,70 @@ TEST(ContactNagata, ProjectsOntoClosedTriangle) {
     EXPECT_NEAR(projection.position(2), 0.0, 1e-9);
     EXPECT_NEAR(projection.distance, 1.0, 1e-9);
 }
+
+TEST(ContactNagata, ClassifiesCoplanarSharedEdgeAsSmooth) {
+    std::vector<model::SurfaceInterface::Ptr> surfaces(2);
+    surfaces[0] = std::make_shared<model::Surface3>(std::array<ID, 3>{0, 1, 2});
+    surfaces[1] = std::make_shared<model::Surface3>(std::array<ID, 3>{1, 3, 2});
+
+    model::Field positions("CONTACT_NAGATA_TEST", model::FieldDomain::NODE, 4, 3);
+    set_position(positions, 0, 0, 0);
+    set_position(positions, 1, 1, 0);
+    set_position(positions, 2, 0, 1);
+    set_position(positions, 3, 1, 1);
+
+    model::SurfaceRegion region("MASTER");
+    region.add(0);
+    region.add(1);
+
+    constraint::NagataContactSurface geometry(region, surfaces, positions);
+    const auto& first  = geometry.patch(0);
+    const auto& second = geometry.patch(1);
+
+    bool found = false;
+
+    for (Index edge = 0; edge < 3; ++edge) {
+        if (first.neighbors[static_cast<std::size_t>(edge)] != &second) {
+            continue;
+        }
+
+        found = true;
+        EXPECT_EQ(first.edge_types[static_cast<std::size_t>(edge)], constraint::NagataEdgeType::Smooth);
+    }
+
+    EXPECT_TRUE(found);
+}
+
+TEST(ContactNagata, KeepsSharpSharedEdgeLinear) {
+    std::vector<model::SurfaceInterface::Ptr> surfaces(2);
+    surfaces[0] = std::make_shared<model::Surface3>(std::array<ID, 3>{0, 1, 2});
+    surfaces[1] = std::make_shared<model::Surface3>(std::array<ID, 3>{0, 3, 1});
+
+    model::Field positions("CONTACT_NAGATA_TEST", model::FieldDomain::NODE, 4, 3);
+    set_position(positions, 0, 0, 0, 0);
+    set_position(positions, 1, 1, 0, 0);
+    set_position(positions, 2, 0, 1, 0);
+    set_position(positions, 3, 0, 0, 1);
+
+    model::SurfaceRegion region("MASTER");
+    region.add(0);
+    region.add(1);
+
+    constraint::NagataContactSurface geometry(region, surfaces, positions);
+    const auto& first  = geometry.patch(0);
+    const auto& second = geometry.patch(1);
+
+    bool found = false;
+
+    for (Index edge = 0; edge < 3; ++edge) {
+        if (first.neighbors[static_cast<std::size_t>(edge)] != &second) {
+            continue;
+        }
+
+        found = true;
+        EXPECT_EQ(first.edge_types[static_cast<std::size_t>(edge)], constraint::NagataEdgeType::Sharp);
+        EXPECT_NEAR(first.curvatures[static_cast<std::size_t>(edge)].norm(), 0.0, 1e-12);
+    }
+
+    EXPECT_TRUE(found);
+}
