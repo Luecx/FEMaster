@@ -20,6 +20,8 @@
 #include "../../model/geometry/surface/surface_interface.h"
 #include "bvh.h"
 
+#include <Eigen/Geometry>
+
 #include <array>
 #include <cstdint>
 #include <limits>
