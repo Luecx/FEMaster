@@ -1,26 +1,23 @@
 /**
  * @file contact.cpp
- * @brief Implements frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Implements frictionless node-to-Nagata-surface augmented-Lagrange contact.
  *
- * New or released slave points acquire their master partner through a bounded
- * closest-point search. Established active or augmented points are tracked only
- * across topologically connected master facets, so ownership changes occur when
- * the unconstrained projection crosses an actual facet edge rather than because
- * another equilibrium branch happens to make a remote facet slightly closer.
+ * The master surface set is tessellated into topologically connected Nagata
+ * triangles. New or released slave points acquire their master patch through a
+ * bounded closest-point search. Established active or augmented points are
+ * tracked only across neighboring Nagata patches, so ownership changes occur
+ * when the unconstrained projection crosses an actual patch edge.
  *
- * The inner Newton solve keeps the selected master facet and normal multiplier
- * fixed while reprojecting the natural coordinates on that facet. After Newton
- * convergence, an outer augmented-Lagrange update reduces penetration without
- * requiring an excessively large penalty stiffness. All partner and multiplier
- * history is contained in explicit trial states and therefore supports predictor,
- * line-search and increment rollback.
+ * The inner Newton solve keeps the selected master patch and normal multiplier
+ * fixed while reprojecting the natural coordinates on that patch. Nodal normals
+ * and Nagata edge maps are updated for every assembly but treated as lagged
+ * quantities within the local contact linearization.
  */
 
 #include "contact.h"
 
 #include "../../core/logging.h"
 #include "../../model/model_data.h"
-#include "bvh.h"
 
 #include <Eigen/Cholesky>
 
@@ -29,7 +26,6 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -37,15 +33,13 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
 namespace fem::constraint {
 namespace {
 
 constexpr Precision maximum_projection_derivative_norm = Precision(5000);
 constexpr Precision projection_selection_tolerance     = Precision(1e-8);
 
-// The augmentation tolerance is scaled with the selected master-facet length,
-// not with the broadphase search radius. The multiplier is left unchanged once
-// the normal gap lies inside this geometric band.
 constexpr Precision augmentation_gap_relative_tolerance = Precision(1e-4);
 constexpr Precision augmentation_gap_absolute_tolerance = Precision(1e-10);
 constexpr Precision augmentation_multiplier_relative_tolerance = Precision(1e-6);
@@ -54,6 +48,9 @@ constexpr Precision augmentation_multiplier_absolute_tolerance = Precision(1e-10
 constexpr bool  print_contact_summary = true;
 constexpr bool  print_contact_details = false;
 constexpr Index maximum_detail_prints = 16;
+
+constexpr Precision nagata_feature_angle =
+    Precision(0.78539816339744830962); // 45 degrees
 
 enum class ProjectionMode {
     Interior,
@@ -102,225 +99,63 @@ struct ContactDiagnostics {
     Precision maximum_raw_asymmetry          = Precision(0);
     Precision maximum_local_tangent_norm     = Precision(0);
 
-    ID             worst_slave   = ID(-1);
-    ID             worst_surface = ID(-1);
-    Vec2           worst_local   = Vec2::Zero();
-    ProjectionMode worst_mode    = ProjectionMode::Interior;
-    Precision      worst_gap     = Precision(0);
+    ID             worst_slave    = ID(-1);
+    ID             worst_surface  = ID(-1);
+    Vec2           worst_local    = Vec2::Zero();
+    ProjectionMode worst_mode     = ProjectionMode::Interior;
+    Precision      worst_gap      = Precision(0);
     Precision      worst_distance = Precision(0);
 
     std::uint64_t signature = 1469598103934665603ull;
 };
 
+struct PatchProjection {
+    bool valid = false;
+
+    ID   patch_id = ID(-1);
+    Vec2 local    = Vec2::Zero();
+
+    Precision distance = std::numeric_limits<Precision>::max();
+    Precision gap      = std::numeric_limits<Precision>::max();
+
+    NagataProjectionFeature feature = NagataProjectionFeature::Interior;
+    Index feature_index = Index(-1);
+};
+
 const char* projection_mode_name(ProjectionMode mode) {
     switch (mode) {
-        case ProjectionMode::Interior:
-            return "INTERIOR";
-        case ProjectionMode::Edge:
-            return "EDGE";
-        case ProjectionMode::Corner:
-            return "CORNER";
+        case ProjectionMode::Interior: return "INTERIOR";
+        case ProjectionMode::Edge:     return "EDGE";
+        case ProjectionMode::Corner:   return "CORNER";
     }
 
     return "UNKNOWN";
 }
 
-bool projection_is_inside_closed_domain(
-    Index       number_of_nodes,
-    const Vec2& local
-);
+ProjectionInfo classify_projection(const PatchProjection& projection) {
+    ProjectionInfo info;
 
-struct EdgeKey {
-    ID first  = ID(-1);
-    ID second = ID(-1);
-    ID middle = ID(-1);
+    switch (projection.feature) {
+        case NagataProjectionFeature::Interior:
+            info.mode = ProjectionMode::Interior;
+            break;
 
-    bool operator==(const EdgeKey& other) const {
-        return first  == other.first &&
-               second == other.second &&
-               middle == other.middle;
-    }
-};
-
-struct EdgeKeyHash {
-    std::size_t operator()(const EdgeKey& key) const {
-        std::size_t seed = std::hash<ID>{}(key.first);
-
-        seed ^= std::hash<ID>{}(key.second) +
-                std::size_t(0x9e3779b9) +
-                (seed << 6) +
-                (seed >> 2);
-
-        seed ^= std::hash<ID>{}(key.middle) +
-                std::size_t(0x9e3779b9) +
-                (seed << 6) +
-                (seed >> 2);
-
-        return seed;
-    }
-};
-
-struct PatchProjection {
-    bool      valid      = false;
-    ID        surface_id = ID(-1);
-    Vec2      local      = Vec2::Zero();
-    Precision distance   = std::numeric_limits<Precision>::max();
-    Precision gap        = std::numeric_limits<Precision>::max();
-};
-
-std::array<Index, 3> edge_local_nodes(
-    const model::SurfaceInterface& surface,
-    Index                          edge
-) {
-    if (surface.n_nodes == 3) {
-        switch (edge) {
-            case 0: return {0, 1, Index(-1)};
-            case 1: return {1, 2, Index(-1)};
-            default: return {2, 0, Index(-1)};
-        }
-    }
-
-    if (surface.n_nodes == 6) {
-        switch (edge) {
-            case 0: return {0, 1, 3};
-            case 1: return {1, 2, 4};
-            default: return {2, 0, 5};
-        }
-    }
-
-    if (surface.n_nodes == 4) {
-        switch (edge) {
-            case 0: return {0, 1, Index(-1)};
-            case 1: return {1, 2, Index(-1)};
-            case 2: return {2, 3, Index(-1)};
-            default: return {3, 0, Index(-1)};
-        }
-    }
-
-    switch (edge) {
-        case 0: return {0, 1, 4};
-        case 1: return {1, 2, 5};
-        case 2: return {2, 3, 6};
-        default: return {3, 0, 7};
-    }
-}
-
-EdgeKey make_edge_key(
-    const model::SurfaceInterface& surface,
-    Index                          edge
-) {
-    const auto local_nodes =
-        edge_local_nodes(surface, edge);
-
-    ID first =
-        surface.nodes()[local_nodes[0]];
-
-    ID second =
-        surface.nodes()[local_nodes[1]];
-
-    const ID middle =
-        local_nodes[2] >= 0
-            ? surface.nodes()[local_nodes[2]]
-            : ID(-1);
-
-    if (second < first) {
-        std::swap(first, second);
-    }
-
-    return {first, second, middle};
-}
-
-ID crossed_edge_index(
-    const model::SurfaceInterface& surface,
-    const Vec2&                    local
-) {
-    const Precision r = local(0);
-    const Precision s = local(1);
-
-    Precision largest_violation = Precision(1e-10);
-    ID        edge              = ID(-1);
-
-    auto update = [&](Precision violation, ID candidate_edge) {
-        if (violation > largest_violation) {
-            largest_violation = violation;
-            edge              = candidate_edge;
-        }
-    };
-
-    if (surface.n_nodes == 3 || surface.n_nodes == 6) {
-        update(-s, 0);
-        update(r + s - Precision(1), 1);
-        update(-r, 2);
-    } else {
-        update(-Precision(1) - s, 0);
-        update( r - Precision(1), 1);
-        update( s - Precision(1), 2);
-        update(-Precision(1) - r, 3);
-    }
-
-    return edge;
-}
-
-std::vector<std::array<ID, 4>> build_master_patch_topology(
-    const model::SurfaceRegion::Ptr&                 master_surfaces,
-    const std::vector<model::SurfaceInterface::Ptr>& surfaces
-) {
-    std::vector<std::array<ID, 4>> edge_neighbors(surfaces.size());
-
-    for (auto& neighbors : edge_neighbors) {
-        neighbors.fill(ID(-1));
-    }
-
-    std::unordered_map<EdgeKey, std::pair<ID, Index>, EdgeKeyHash> edge_owner;
-
-    for (ID surface_id : *master_surfaces) {
-        if (surface_id < 0 ||
-            static_cast<std::size_t>(surface_id) >= surfaces.size()) {
-            continue;
-        }
-
-        const auto& surface =
-            surfaces[static_cast<std::size_t>(surface_id)];
-
-        if (!surface) {
-            continue;
-        }
-
-        for (Index edge = 0; edge < surface->n_edges; ++edge) {
-            const EdgeKey key =
-                make_edge_key(*surface, edge);
-
-            const auto owner =
-                edge_owner.find(key);
-
-            if (owner == edge_owner.end()) {
-                edge_owner.emplace(key, std::make_pair(surface_id, edge));
-                continue;
-            }
-
-            const ID    neighbor_id   = owner->second.first;
-            const Index neighbor_edge = owner->second.second;
-
-            logging::error(
-                edge_neighbors[static_cast<std::size_t>(neighbor_id)]
-                                               [static_cast<std::size_t>(neighbor_edge)] < 0,
-                "CONTACT: non-manifold master edge shared by more than two surfaces"
+        case NagataProjectionFeature::Edge:
+            info.mode = ProjectionMode::Edge;
+            info.edge_direction = NagataContactSurface::edge_direction(
+                projection.feature_index
             );
+            break;
 
-            edge_neighbors[static_cast<std::size_t>(surface_id)]
-                                           [static_cast<std::size_t>(edge)] =
-                neighbor_id;
-
-            edge_neighbors[static_cast<std::size_t>(neighbor_id)]
-                                           [static_cast<std::size_t>(neighbor_edge)] =
-                surface_id;
-        }
+        case NagataProjectionFeature::Corner:
+            info.mode = ProjectionMode::Corner;
+            break;
     }
 
-    return edge_neighbors;
+    return info;
 }
 
-bool valid_surface_id(
+bool valid_parent_surface(
     ID                                                surface_id,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces
 ) {
@@ -329,12 +164,19 @@ bool valid_surface_id(
            surfaces[static_cast<std::size_t>(surface_id)] != nullptr;
 }
 
-bool surface_contains_node(
-    const model::SurfaceInterface& surface,
-    ID                             node_id
+bool parent_surface_contains_node(
+    const NagataPatch&                                patch,
+    ID                                                node_id,
+    const std::vector<model::SurfaceInterface::Ptr>& surfaces
 ) {
-    for (Index local_node = 0; local_node < surface.n_nodes; ++local_node) {
-        if (surface.nodes()[local_node] == node_id) {
+    if (!valid_parent_surface(patch.parent_surface, surfaces)) {
+        return false;
+    }
+
+    const auto& surface = surfaces[static_cast<std::size_t>(patch.parent_surface)];
+
+    for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
+        if (surface->nodes()[local_node] == node_id) {
             return true;
         }
     }
@@ -343,80 +185,67 @@ bool surface_contains_node(
 }
 
 PatchProjection evaluate_projection(
-    ID                                                surface_id,
-    const Vec2&                                       local,
-    const Vec3&                                       slave_position,
-    const model::Field&                               node_coords,
-    const std::vector<model::SurfaceInterface::Ptr>& surfaces,
-    Precision                                         clearance,
-    bool                                              flip_normal
+    const NagataContactSurface::Projection& geometry_projection,
+    const Vec3&                             slave_position,
+    Precision                               clearance,
+    bool                                    flip_normal
 ) {
     PatchProjection projection;
 
-    if (!valid_surface_id(surface_id, surfaces)) {
+    if (!geometry_projection.valid || geometry_projection.patch == nullptr) {
         return projection;
     }
 
-    const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
-
-    if (!local.allFinite() ||
-        !projection_is_inside_closed_domain(surface->n_nodes, local)) {
-        return projection;
-    }
-
-    const Vec3 master_position = surface->local_to_global(local, node_coords);
-    Vec3       normal          = surface->normal(node_coords, local);
+    Vec3 normal = geometry_projection.normal;
 
     if (flip_normal) {
         normal = -normal;
     }
 
-    const Vec3 difference = slave_position - master_position;
+    const Vec3 difference = slave_position - geometry_projection.position;
+    const Precision gap = difference.dot(normal) - clearance;
 
-    if (!master_position.allFinite() ||
-        !normal.allFinite() ||
-        !difference.allFinite()) {
+    if (!normal.allFinite() || !difference.allFinite() ||
+        !std::isfinite(geometry_projection.distance) || !std::isfinite(gap)) {
         return projection;
     }
 
-    const Precision distance_to_surface = difference.norm();
-    const Precision gap                 = difference.dot(normal) - clearance;
-
-    if (!std::isfinite(distance_to_surface) || !std::isfinite(gap)) {
-        return projection;
-    }
-
-    projection.valid      = true;
-    projection.surface_id = surface_id;
-    projection.local      = local;
-    projection.distance   = distance_to_surface;
-    projection.gap        = gap;
+    projection.valid         = true;
+    projection.patch_id      = geometry_projection.patch->id;
+    projection.local         = geometry_projection.local;
+    projection.distance      = geometry_projection.distance;
+    projection.gap           = gap;
+    projection.feature       = geometry_projection.feature;
+    projection.feature_index = geometry_projection.feature_index;
 
     return projection;
 }
 
-PatchProjection project_on_surface(
-    ID                                                surface_id,
-    const Vec3&                                       slave_position,
-    const model::Field&                               node_coords,
-    const std::vector<model::SurfaceInterface::Ptr>& surfaces,
-    Precision                                         clearance,
-    bool                                              flip_normal
+PatchProjection project_on_patch(
+    NagataContactSurface& geometry,
+    ID                    patch_id,
+    const Vec3&           slave_position,
+    Precision             clearance,
+    bool                  flip_normal
 ) {
-    if (!valid_surface_id(surface_id, surfaces)) {
-        return {};
-    }
-
-    const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
-
-    const Vec2 local = surface->global_to_local(slave_position, node_coords, true);
-
     return evaluate_projection(
-        surface_id,
-        local,
+        geometry.project_on_patch(patch_id, slave_position, true),
         slave_position,
-        node_coords,
-        surfaces,
+        clearance,
+        flip_normal
+    );
+}
+
+PatchProjection walk_master_patch(
+    NagataContactSurface& geometry,
+    ID                    start_patch,
+    const Vec3&           slave_position,
+    Precision             clearance,
+    bool                  flip_normal
+) {
+    return evaluate_projection(
+        geometry.walk(start_patch, slave_position),
+        slave_position,
         clearance,
         flip_normal
     );
@@ -434,111 +263,16 @@ bool projection_is_better(
         return true;
     }
 
-    /*
-     * Partner selection is purely geometrical. The sign of the gap must never
-     * make a farther facet win: for a large master patch, many unrelated facets
-     * may place the slave point on their negative half-space even though a much
-     * closer open facet is the physically relevant partner.
-     */
     if (candidate.distance < current.distance - projection_selection_tolerance) {
         return true;
     }
 
     return std::abs(candidate.distance - current.distance) <=
                projection_selection_tolerance &&
-           candidate.surface_id < current.surface_id;
+           candidate.patch_id < current.patch_id;
 }
 
-PatchProjection walk_master_patch(
-    ID                                                start_surface_id,
-    const Vec3&                                       slave_position,
-    const model::Field&                               node_coords,
-    const std::vector<model::SurfaceInterface::Ptr>& surfaces,
-    const std::vector<std::array<ID, 4>>&             edge_neighbors,
-    Precision                                         clearance,
-    bool                                              flip_normal
-) {
-    ID current_surface_id = start_surface_id;
-
-    std::unordered_set<ID> visited;
-    visited.reserve(
-        std::min<std::size_t>(
-            edge_neighbors.size(),
-            std::size_t(32)
-        )
-    );
-
-    const Index maximum_steps =
-        static_cast<Index>(
-            std::min<std::size_t>(
-                edge_neighbors.size(),
-                std::size_t(64)
-            )
-        );
-
-    for (Index step = 0; step < maximum_steps; ++step) {
-        if (!valid_surface_id(current_surface_id, surfaces) ||
-            visited.find(current_surface_id) != visited.end()) {
-            break;
-        }
-
-        visited.insert(current_surface_id);
-
-        const auto& surface =
-            surfaces[static_cast<std::size_t>(current_surface_id)];
-
-        const Vec2 unclipped_local =
-            surface->global_to_local(
-                slave_position,
-                node_coords,
-                false
-            );
-
-        if (unclipped_local.allFinite() &&
-            projection_is_inside_closed_domain(surface->n_nodes, unclipped_local)) {
-            return evaluate_projection(
-                current_surface_id,
-                unclipped_local,
-                slave_position,
-                node_coords,
-                surfaces,
-                clearance,
-                flip_normal
-            );
-        }
-
-        const ID crossed_edge =
-            unclipped_local.allFinite()
-                ? crossed_edge_index(*surface, unclipped_local)
-                : ID(-1);
-
-        if (crossed_edge < 0 ||
-            static_cast<std::size_t>(current_surface_id) >=
-                edge_neighbors.size()) {
-            break;
-        }
-
-        const ID neighbor_surface_id =
-            edge_neighbors[static_cast<std::size_t>(current_surface_id)]
-                                   [static_cast<std::size_t>(crossed_edge)];
-
-        if (!valid_surface_id(neighbor_surface_id, surfaces) ||
-            visited.find(neighbor_surface_id) != visited.end()) {
-            break;
-        }
-
-        current_surface_id = neighbor_surface_id;
-    }
-
-    // A failed walk deliberately returns no boundary fallback. The caller then
-    // performs a bounded BVH search and compares all admissible candidates.
-    return {};
-}
-
-void hash_value(
-    std::uint64_t& signature,
-    std::uint64_t  value
-) {
+void hash_value(std::uint64_t& signature, std::uint64_t value) {
     constexpr std::uint64_t prime = 1099511628211ull;
 
     for (Index byte = 0; byte < 8; ++byte) {
@@ -567,19 +301,14 @@ std::vector<ID> collect_slave_nodes(
     }
 
     std::unordered_set<ID> unique_nodes;
-    auto&                  surfaces = model_data.surfaces;
+    auto& surfaces = model_data.surfaces;
 
     for (ID surface_id : *slave_surfaces) {
-        if (surface_id < 0 ||
-            static_cast<std::size_t>(surface_id) >= surfaces.size()) {
+        if (!valid_parent_surface(surface_id, surfaces)) {
             continue;
         }
 
         const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
-
-        if (!surface) {
-            continue;
-        }
 
         for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
             unique_nodes.insert(surface->nodes()[local_node]);
@@ -610,14 +339,13 @@ std::unordered_map<ID, Precision> build_slave_tributary_areas(
     auto& surfaces = model_data.surfaces;
 
     for (ID surface_id : *slave_surfaces) {
-        if (surface_id < 0 ||
-            static_cast<std::size_t>(surface_id) >= surfaces.size()) {
+        if (!valid_parent_surface(surface_id, surfaces)) {
             continue;
         }
 
         const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
 
-        if (!surface || surface->n_nodes <= 0) {
+        if (surface->n_nodes <= 0) {
             continue;
         }
 
@@ -629,14 +357,10 @@ std::unordered_map<ID, Precision> build_slave_tributary_areas(
             surface_id
         );
 
-        // Positive lumping avoids negative tributary weights for quadratic
-        // serendipity surfaces.
         const Precision nodal_area =
             surface_area / static_cast<Precision>(surface->n_nodes);
 
-        for (Index local_node = 0;
-             local_node < surface->n_nodes;
-             ++local_node) {
+        for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
             areas[surface->nodes()[local_node]] += nodal_area;
         }
     }
@@ -656,8 +380,7 @@ ContactLaw evaluate_augmented_lagrange_law(
     Precision normal_multiplier,
     Precision penalty
 ) {
-    const Precision shifted_gap =
-        gap - normal_multiplier / penalty;
+    const Precision shifted_gap = gap - normal_multiplier / penalty;
 
     if (shifted_gap >= Precision(0)) {
         return {};
@@ -693,165 +416,35 @@ Mat3 skew(const Vec3& vector) {
     return matrix;
 }
 
-bool projection_is_inside_closed_domain(
-    Index       number_of_nodes,
-    const Vec2& local
-) {
-    constexpr Precision tolerance = Precision(1e-9);
-
-    if (number_of_nodes == 3 || number_of_nodes == 6) {
-        const Precision r = local(0);
-        const Precision s = local(1);
-
-        return r >= -tolerance &&
-               s >= -tolerance &&
-               r + s <= Precision(1) + tolerance;
-    }
-
-    if (number_of_nodes == 4 || number_of_nodes == 8) {
-        const Precision r = local(0);
-        const Precision s = local(1);
-
-        return r >= Precision(-1) - tolerance &&
-               r <= Precision( 1) + tolerance &&
-               s >= Precision(-1) - tolerance &&
-               s <= Precision( 1) + tolerance;
-    }
-
-    return false;
-}
-
-ProjectionInfo classify_projection(
-    Index       number_of_nodes,
-    const Vec2& local
-) {
-    constexpr Precision edge_tolerance = Precision(1e-7);
-
-    ProjectionInfo info;
-
-    if (number_of_nodes == 3 || number_of_nodes == 6) {
-        const Precision r = local(0);
-        const Precision s = local(1);
-        const Precision t = Precision(1) - r - s;
-
-        const bool on_r_edge = std::abs(r) <= edge_tolerance;
-        const bool on_s_edge = std::abs(s) <= edge_tolerance;
-        const bool on_t_edge = std::abs(t) <= edge_tolerance;
-
-        /*
-         * A clipped projection on two natural boundaries is a true patch
-         * corner. Treating it as an edge gives the Newton tangent a spurious
-         * one-dimensional sliding direction along an edge endpoint and can
-         * drive the line search into a non-smooth contact branch.
-         */
-        if ((on_r_edge ? 1 : 0) +
-            (on_s_edge ? 1 : 0) +
-            (on_t_edge ? 1 : 0) >= 2) {
-            info.mode = ProjectionMode::Corner;
-            return info;
-        }
-
-        if (on_r_edge) {
-            info.mode           = ProjectionMode::Edge;
-            info.edge_direction = Vec2(Precision(0), Precision(1));
-            return info;
-        }
-
-        if (on_s_edge) {
-            info.mode           = ProjectionMode::Edge;
-            info.edge_direction = Vec2(Precision(1), Precision(0));
-            return info;
-        }
-
-        if (on_t_edge) {
-            info.mode           = ProjectionMode::Edge;
-            info.edge_direction = Vec2(Precision(1), Precision(-1));
-            return info;
-        }
-
-        info.mode = ProjectionMode::Interior;
-        return info;
-    }
-
-    if (number_of_nodes == 4 || number_of_nodes == 8) {
-        const Precision r = local(0);
-        const Precision s = local(1);
-
-        const bool on_r_min_edge = std::abs(r + Precision(1)) <= edge_tolerance;
-        const bool on_r_max_edge = std::abs(r - Precision(1)) <= edge_tolerance;
-        const bool on_s_min_edge = std::abs(s + Precision(1)) <= edge_tolerance;
-        const bool on_s_max_edge = std::abs(s - Precision(1)) <= edge_tolerance;
-
-        /*
-         * A point on two quadrilateral boundaries is constrained to a corner.
-         * The corner branch intentionally uses a zero projection derivative and
-         * the patch-averaged corner normal, which is more conservative than an
-         * artificial edge tangent through the endpoint.
-         */
-        const bool on_r_edge = on_r_min_edge || on_r_max_edge;
-        const bool on_s_edge = on_s_min_edge || on_s_max_edge;
-
-        if (on_r_edge && on_s_edge) {
-            info.mode = ProjectionMode::Corner;
-            return info;
-        }
-
-        if (on_r_min_edge || on_r_max_edge) {
-            info.mode           = ProjectionMode::Edge;
-            info.edge_direction = Vec2(Precision(0), Precision(1));
-            return info;
-        }
-
-        if (on_s_min_edge || on_s_max_edge) {
-            info.mode           = ProjectionMode::Edge;
-            info.edge_direction = Vec2(Precision(1), Precision(0));
-            return info;
-        }
-
-        info.mode = ProjectionMode::Interior;
-        return info;
-    }
-
-    info.mode = ProjectionMode::Corner;
-    return info;
-}
-
-
-
 template<Index N>
 void scatter_contact_tangent(
-    const std::array<ID, N + 1>&                    node_ids,
-    const StaticMatrix<3 * (N + 1), 3 * (N + 1)>& tangent,
-    SystemDofIds&                                   system_nodal_dofs,
-    TripletList&                                    triplets
+    const std::array<ID, N>&          node_ids,
+    const StaticMatrix<3 * N, 3 * N>& tangent,
+    SystemDofIds&                     system_nodal_dofs,
+    TripletList&                      triplets
 ) {
-    constexpr Index local_nodes = N + 1;
-    constexpr Index local_dofs  = 3 * local_nodes;
-
+    constexpr Index local_dofs = 3 * N;
     std::array<int, local_dofs> global_dofs{};
 
-    for (Index local_node = 0; local_node < local_nodes; ++local_node) {
+    for (Index local_node = 0; local_node < N; ++local_node) {
         const ID node_id = node_ids[static_cast<std::size_t>(local_node)];
 
         for (Dim component = 0; component < 3; ++component) {
             const Index local_dof = 3 * local_node + component;
-
             global_dofs[static_cast<std::size_t>(local_dof)] =
                 system_nodal_dofs(node_id, component);
         }
     }
 
     for (Index local_row = 0; local_row < local_dofs; ++local_row) {
-        const int global_row =
-            global_dofs[static_cast<std::size_t>(local_row)];
+        const int global_row = global_dofs[static_cast<std::size_t>(local_row)];
 
         if (global_row < 0) {
             continue;
         }
 
         for (Index local_col = 0; local_col < local_dofs; ++local_col) {
-            const int global_col =
-                global_dofs[static_cast<std::size_t>(local_col)];
+            const int global_col = global_dofs[static_cast<std::size_t>(local_col)];
 
             if (global_col < 0) {
                 continue;
@@ -868,24 +461,24 @@ void scatter_contact_tangent(
     }
 }
 
-template<Index N>
 void assemble_contact_pair(
-    const model::Surface<N>& surface,
-    ID                       slave_node_id,
-    const Vec2&              master_local,
-    const ProjectionInfo&    projection_info,
-    Precision                penalty,
-    Precision                clearance,
-    Precision                normal_multiplier,
-    Precision                slave_weight,
-    bool                     flip_normal,
-    SystemDofIds&            system_nodal_dofs,
-    const model::Field&      node_coords,
-    model::NodeData&         nodal_forces,
-    TripletList&             triplets,
-    ContactDiagnostics&      diagnostics
+    const NagataContactSurface& geometry,
+    const NagataPatch&          patch,
+    ID                          slave_node_id,
+    const Vec2&                 master_local,
+    const ProjectionInfo&       projection_info,
+    Precision                   penalty,
+    Precision                   clearance,
+    Precision                   normal_multiplier,
+    Precision                   slave_weight,
+    bool                        flip_normal,
+    SystemDofIds&               system_nodal_dofs,
+    const model::Field&         node_coords,
+    model::NodeData&            nodal_forces,
+    TripletList&                triplets,
+    ContactDiagnostics&         diagnostics
 ) {
-    constexpr Index local_nodes = N + 1;
+    constexpr Index local_nodes = 4;
     constexpr Index local_dofs  = 3 * local_nodes;
 
     using LocalMatrix   = StaticMatrix<local_dofs, local_dofs>;
@@ -893,106 +486,63 @@ void assemble_contact_pair(
     using LocalMap      = StaticMatrix<3, local_dofs>;
     using ProjectionMap = StaticMatrix<2, local_dofs>;
 
-    const Precision r = master_local(0);
-    const Precision s = master_local(1);
+    const NagataContactSurface::Evaluation evaluation =
+        geometry.evaluate(patch, master_local);
 
-    const StaticMatrix<N, 1> shape =
-        surface.shape_function(r, s);
+    logging::error(
+        evaluation.valid,
+        "CONTACT: singular Nagata master-patch Jacobian"
+    );
 
-    const StaticMatrix<N, 2> shape_derivative =
-        surface.shape_derivative(r, s);
-
-    const StaticMatrix<N, 3> shape_second_derivative =
-        surface.shape_second_derivative(r, s);
-
-    const StaticMatrix<N, 3> master_coordinates =
-        surface.node_coords_global(node_coords);
+    diagnostics.minimum_surface_jacobian = std::min(
+        diagnostics.minimum_surface_jacobian,
+        evaluation.jacobian
+    );
 
     const Vec3 slave_position =
         node_coords.row_vec3(static_cast<Index>(slave_node_id));
 
-    const Vec3 master_position =
-        master_coordinates.transpose() * shape;
+    const Vec3 master_position = evaluation.position;
+    const Vec3 difference      = slave_position - master_position;
 
-    const Vec3 difference =
-        slave_position - master_position;
+    const Vec3 tangent_r  = evaluation.first.col(0);
+    const Vec3 tangent_s  = evaluation.first.col(1);
+    const Vec3 tangent_rr = evaluation.second.col(0);
+    const Vec3 tangent_ss = evaluation.second.col(1);
+    const Vec3 tangent_rs = evaluation.second.col(2);
 
-    const StaticMatrix<3, 2> first =
-        master_coordinates.transpose() * shape_derivative;
+    const Vec3 normal_base = evaluation.normal;
+    const Vec3 normal = flip_normal ? -normal_base : normal_base;
+    const Precision gap = difference.dot(normal) - clearance;
 
-    const Vec3 tangent_r = first.col(0);
-    const Vec3 tangent_s = first.col(1);
+    std::array<ID, local_nodes> local_node_ids{
+        slave_node_id,
+        patch.nodes[0],
+        patch.nodes[1],
+        patch.nodes[2]
+    };
 
-    const StaticMatrix<3, 3> second =
-        master_coordinates.transpose() * shape_second_derivative;
-
-    const Vec3 tangent_rr = second.col(0);
-    const Vec3 tangent_ss = second.col(1);
-    const Vec3 tangent_rs = second.col(2);
-
-    const Vec3 normal_unnormalized =
-        tangent_r.cross(tangent_s);
-
-    const Precision surface_jacobian =
-        normal_unnormalized.norm();
-
-    diagnostics.minimum_surface_jacobian =
-        std::min(
-            diagnostics.minimum_surface_jacobian,
-            surface_jacobian
-        );
-
-    logging::error(
-        std::isfinite(surface_jacobian) &&
-        surface_jacobian > Precision(1e-14),
-        "CONTACT: singular master-surface Jacobian"
+    const ContactLaw contact_law = evaluate_augmented_lagrange_law(
+        gap,
+        normal_multiplier,
+        penalty
     );
-
-    const Vec3 normal_base =
-        normal_unnormalized / surface_jacobian;
-
-    const Vec3 normal =
-        flip_normal ? -normal_base : normal_base;
-
-    const Precision gap =
-        difference.dot(normal) - clearance;
-
-    std::array<ID, local_nodes> local_node_ids{};
-    local_node_ids[0] = slave_node_id;
-
-    for (Index master_node = 0; master_node < N; ++master_node) {
-        local_node_ids[static_cast<std::size_t>(master_node + 1)] =
-            surface.nodes()[master_node];
-    }
-
-    const ContactLaw contact_law =
-        evaluate_augmented_lagrange_law(
-            gap,
-            normal_multiplier,
-            penalty
-        );
 
     if (!contact_law.active) {
         return;
     }
 
-    const Precision contact_scale =
-        slave_weight * penalty;
+    const Precision contact_scale = slave_weight * penalty;
+    const Vec3 slave_force = contact_scale * contact_law.value * normal;
 
-    const Vec3 slave_force =
-        contact_scale * contact_law.value * normal;
+    add_translational_force(nodal_forces, slave_node_id, slave_force);
 
-    add_translational_force(
-        nodal_forces,
-        slave_node_id,
-        slave_force
-    );
-
-    for (Index master_node = 0; master_node < N; ++master_node) {
+    for (Index master_node = 0; master_node < 3; ++master_node) {
         add_translational_force(
             nodal_forces,
-            surface.nodes()[master_node],
-            -shape(master_node) * slave_force
+            patch.nodes[static_cast<std::size_t>(master_node)],
+            -evaluation.position_derivative[static_cast<std::size_t>(master_node)].transpose() *
+                slave_force
         );
     }
 
@@ -1002,21 +552,21 @@ void assemble_contact_pair(
     LocalMap direct_tangent_r = LocalMap::Zero();
     LocalMap direct_tangent_s = LocalMap::Zero();
 
-    for (Index master_node = 0; master_node < N; ++master_node) {
-        const Index column_offset = 3 * (master_node + 1);
+    for (Index master_node = 0; master_node < 3; ++master_node) {
+        const Index column = 3 * (master_node + 1);
 
-        direct_difference.template block<3, 3>(0, column_offset) =
-            -shape(master_node) * Mat3::Identity();
+        direct_difference.template block<3, 3>(0, column) =
+            -evaluation.position_derivative[static_cast<std::size_t>(master_node)];
 
-        direct_tangent_r.template block<3, 3>(0, column_offset) =
-            shape_derivative(master_node, 0) * Mat3::Identity();
+        direct_tangent_r.template block<3, 3>(0, column) =
+            evaluation.position_derivative_r[static_cast<std::size_t>(master_node)];
 
-        direct_tangent_s.template block<3, 3>(0, column_offset) =
-            shape_derivative(master_node, 1) * Mat3::Identity();
+        direct_tangent_s.template block<3, 3>(0, column) =
+            evaluation.position_derivative_s[static_cast<std::size_t>(master_node)];
     }
 
     ProjectionMap projection_derivative = ProjectionMap::Zero();
-    bool          projection_linearization_valid = false;
+    bool projection_linearization_valid = false;
 
     if (projection_info.mode == ProjectionMode::Interior) {
         StaticMatrix<2, 2> projection_hessian;
@@ -1030,11 +580,9 @@ void assemble_contact_pair(
         projection_hessian(0, 1) =
             tangent_r.dot(tangent_s) - difference.dot(tangent_rs);
 
-        projection_hessian(1, 0) =
-            projection_hessian(0, 1);
+        projection_hessian(1, 0) = projection_hessian(0, 1);
 
         ProjectionMap projection_rhs;
-
         projection_rhs.row(0) =
             tangent_r.transpose() * direct_difference +
             difference.transpose() * direct_tangent_r;
@@ -1050,11 +598,10 @@ void assemble_contact_pair(
             Precision(1e-14) * scale * scale;
 
         if (projection_hessian.allFinite()) {
-            diagnostics.minimum_interior_hessian_ratio =
-                std::min(
-                    diagnostics.minimum_interior_hessian_ratio,
-                    projection_hessian.determinant() / (scale * scale)
-                );
+            diagnostics.minimum_interior_hessian_ratio = std::min(
+                diagnostics.minimum_interior_hessian_ratio,
+                projection_hessian.determinant() / (scale * scale)
+            );
         }
 
         const bool valid_hessian =
@@ -1063,13 +610,10 @@ void assemble_contact_pair(
             projection_hessian.determinant() > determinant_tolerance;
 
         if (valid_hessian) {
-            const Eigen::LDLT<StaticMatrix<2, 2>> solver(
-                projection_hessian
-            );
+            const Eigen::LDLT<StaticMatrix<2, 2>> solver(projection_hessian);
 
             if (solver.info() == Eigen::Success) {
-                const ProjectionMap candidate =
-                    solver.solve(projection_rhs);
+                const ProjectionMap candidate = solver.solve(projection_rhs);
 
                 if (candidate.allFinite()) {
                     projection_derivative          = candidate;
@@ -1078,14 +622,8 @@ void assemble_contact_pair(
             }
         }
     } else if (projection_info.mode == ProjectionMode::Edge) {
-        const Vec2 edge_direction =
-            projection_info.edge_direction;
-
-        const StaticMatrix<N, 1> edge_shape_derivative =
-            shape_derivative * edge_direction;
-
-        const Vec3 edge_tangent =
-            first * edge_direction;
+        const Vec2 edge_direction = projection_info.edge_direction;
+        const Vec3 edge_tangent   = evaluation.first * edge_direction;
 
         const Precision dr = edge_direction(0);
         const Precision ds = edge_direction(1);
@@ -1095,60 +633,39 @@ void assemble_contact_pair(
             ds * ds * tangent_ss +
             Precision(2) * dr * ds * tangent_rs;
 
-        LocalMap direct_edge_tangent = LocalMap::Zero();
-
-        for (Index master_node = 0; master_node < N; ++master_node) {
-            const Index column_offset = 3 * (master_node + 1);
-
-            direct_edge_tangent.template block<3, 3>(0, column_offset) =
-                edge_shape_derivative(master_node) * Mat3::Identity();
-        }
+        const LocalMap direct_edge_tangent =
+            dr * direct_tangent_r + ds * direct_tangent_s;
 
         const LocalRow edge_rhs =
             edge_tangent.transpose() * direct_difference +
             difference.transpose() * direct_edge_tangent;
 
         const Precision edge_hessian =
-            edge_tangent.squaredNorm() -
-            difference.dot(edge_curvature);
+            edge_tangent.squaredNorm() - difference.dot(edge_curvature);
 
         const Precision edge_scale =
             std::max(edge_tangent.squaredNorm(), Precision(1e-16));
 
         if (std::isfinite(edge_hessian)) {
-            diagnostics.minimum_edge_hessian_ratio =
-                std::min(
-                    diagnostics.minimum_edge_hessian_ratio,
-                    edge_hessian / edge_scale
-                );
+            diagnostics.minimum_edge_hessian_ratio = std::min(
+                diagnostics.minimum_edge_hessian_ratio,
+                edge_hessian / edge_scale
+            );
         }
 
         if (std::isfinite(edge_hessian) &&
             edge_hessian > Precision(1e-12) * edge_scale) {
-            const LocalRow eta_derivative =
-                edge_rhs / edge_hessian;
-
             projection_derivative =
-                edge_direction * eta_derivative;
+                edge_direction * (edge_rhs / edge_hessian);
 
-            projection_linearization_valid =
-                projection_derivative.allFinite();
+            projection_linearization_valid = projection_derivative.allFinite();
         }
     }
 
-    /*
-     * Very small or nearly edge-aligned master facets can produce a formally
-     * finite closest-point derivative with a huge natural-coordinate norm. In
-     * that case the contact residual remains well defined, but the Newton
-     * tangent overpredicts the motion of the projected point and drives the
-     * line search into a non-smooth branch. Falling back to a fixed-local
-     * linearization keeps the partner and contact force unchanged while using a
-     * more conservative small-sliding tangent for this pair.
-     */
     if (projection_linearization_valid &&
         projection_derivative.norm() > maximum_projection_derivative_norm) {
-        projection_derivative              = ProjectionMap::Zero();
-        projection_linearization_valid     = false;
+        projection_derivative.setZero();
+        projection_linearization_valid = false;
     }
 
     switch (projection_info.mode) {
@@ -1173,11 +690,10 @@ void assemble_contact_pair(
             break;
     }
 
-    diagnostics.maximum_projection_derivative =
-        std::max(
-            diagnostics.maximum_projection_derivative,
-            projection_derivative.norm()
-        );
+    diagnostics.maximum_projection_derivative = std::max(
+        diagnostics.maximum_projection_derivative,
+        projection_derivative.norm()
+    );
 
     LocalMatrix contact_tangent = LocalMatrix::Zero();
 
@@ -1186,13 +702,8 @@ void assemble_contact_pair(
         projection_linearization_valid;
 
     if (use_consistent_tangent) {
-        StaticMatrix<3, 2> surface_tangents;
-        surface_tangents.col(0) = tangent_r;
-        surface_tangents.col(1) = tangent_s;
-
         const LocalMap difference_derivative =
-            direct_difference -
-            surface_tangents * projection_derivative;
+            direct_difference - evaluation.first * projection_derivative;
 
         const LocalMap tangent_r_derivative =
             direct_tangent_r +
@@ -1208,7 +719,7 @@ void assemble_contact_pair(
             Mat3::Identity() - normal_base * normal_base.transpose();
 
         const LocalMap normal_derivative_base =
-            normal_projector / surface_jacobian *
+            normal_projector / evaluation.jacobian *
             (
                 -skew(tangent_s) * tangent_r_derivative +
                  skew(tangent_r) * tangent_s_derivative
@@ -1221,235 +732,77 @@ void assemble_contact_pair(
             normal.transpose() * difference_derivative +
             difference.transpose() * normal_derivative;
 
-        for (Index local_node = 0; local_node < local_nodes; ++local_node) {
-            Precision weight = Precision(1);
-            LocalRow weight_derivative = LocalRow::Zero();
+        const LocalMap slave_force_derivative =
+            contact_scale *
+            (
+                normal * (contact_law.derivative * gap_derivative) +
+                contact_law.value * normal_derivative
+            );
 
-            if (local_node > 0) {
-                const Index master_node = local_node - 1;
+        contact_tangent.template block<3, local_dofs>(0, 0) =
+            slave_force_derivative;
 
-                weight = -shape(master_node);
+        for (Index master_node = 0; master_node < 3; ++master_node) {
+            const Mat3& position_map =
+                evaluation.position_derivative[static_cast<std::size_t>(master_node)];
 
-                weight_derivative = -(
-                    shape_derivative(master_node, 0) *
-                        projection_derivative.row(0) +
-                    shape_derivative(master_node, 1) *
-                        projection_derivative.row(1)
-                );
-            }
+            const Vec3 derivative_r_force =
+                evaluation.position_derivative_r[static_cast<std::size_t>(master_node)].transpose() *
+                slave_force;
 
-            const LocalMap force_derivative =
-                contact_scale *
-                (
-                    weight * normal *
-                        (contact_law.derivative * gap_derivative) +
-                    contact_law.value * normal * weight_derivative +
-                    contact_law.value * weight * normal_derivative
-                );
+            const Vec3 derivative_s_force =
+                evaluation.position_derivative_s[static_cast<std::size_t>(master_node)].transpose() *
+                slave_force;
+
+            const LocalMap position_map_force_derivative =
+                derivative_r_force * projection_derivative.row(0) +
+                derivative_s_force * projection_derivative.row(1);
 
             contact_tangent.template block<3, local_dofs>(
-                3 * local_node,
+                3 * (master_node + 1),
                 0
-            ) = force_derivative;
+            ) =
+                -position_map.transpose() * slave_force_derivative -
+                position_map_force_derivative;
         }
 
         ++diagnostics.consistent_tangents;
     } else {
-        std::array<Precision, local_nodes> weights{};
-        weights[0] = Precision(1);
+        const LocalRow gap_derivative = normal.transpose() * direct_difference;
 
-        for (Index master_node = 0; master_node < N; ++master_node) {
-            weights[static_cast<std::size_t>(master_node + 1)] =
-                -shape(master_node);
-        }
-
-        const Mat3 normal_stiffness =
+        contact_tangent =
             contact_scale * contact_law.derivative *
-            normal * normal.transpose();
-
-        for (Index local_row = 0; local_row < local_nodes; ++local_row) {
-            for (Index local_col = 0; local_col < local_nodes; ++local_col) {
-                contact_tangent.template block<3, 3>(
-                    3 * local_row,
-                    3 * local_col
-                ) = weights[static_cast<std::size_t>(local_row)] *
-                    weights[static_cast<std::size_t>(local_col)] *
-                    normal_stiffness;
-            }
-        }
+            gap_derivative.transpose() * gap_derivative;
 
         ++diagnostics.stabilized_tangents;
     }
 
     logging::error(
         contact_tangent.allFinite(),
-        "CONTACT: non-finite local contact tangent"
+        "CONTACT: non-finite local Nagata contact tangent"
     );
 
-    const Precision tangent_norm =
-        contact_tangent.norm();
-
+    const Precision tangent_norm = contact_tangent.norm();
     const Precision raw_asymmetry =
         (contact_tangent - contact_tangent.transpose()).norm() /
         std::max(tangent_norm, std::numeric_limits<Precision>::epsilon());
 
-    diagnostics.maximum_raw_asymmetry =
-        std::max(
-            diagnostics.maximum_raw_asymmetry,
-            raw_asymmetry
-        );
+    diagnostics.maximum_raw_asymmetry = std::max(
+        diagnostics.maximum_raw_asymmetry,
+        raw_asymmetry
+    );
 
-    diagnostics.maximum_local_tangent_norm =
-        std::max(
-            diagnostics.maximum_local_tangent_norm,
-            tangent_norm
-        );
+    diagnostics.maximum_local_tangent_norm = std::max(
+        diagnostics.maximum_local_tangent_norm,
+        tangent_norm
+    );
 
-    scatter_contact_tangent<N>(
+    scatter_contact_tangent<local_nodes>(
         local_node_ids,
         contact_tangent,
         system_nodal_dofs,
         triplets
     );
-}
-
-void dispatch_contact_pair(
-    const model::SurfaceInterface::Ptr& surface,
-    ID                                  slave_node_id,
-    const Vec2&                         master_local,
-    const ProjectionInfo&               projection_info,
-    Precision                           penalty,
-    Precision                           clearance,
-    Precision                           normal_multiplier,
-    Precision                           slave_weight,
-    bool                                flip_normal,
-    SystemDofIds&                       system_nodal_dofs,
-    const model::Field&                 node_coords,
-    model::NodeData&                    nodal_forces,
-    TripletList&                        triplets,
-    ContactDiagnostics&                 diagnostics
-) {
-    switch (surface->n_nodes) {
-        case 3: {
-            const auto* typed_surface =
-                dynamic_cast<const model::Surface<3>*>(surface.get());
-
-            logging::error(
-                typed_surface != nullptr,
-                "CONTACT: failed to cast three-node master surface"
-            );
-
-            assemble_contact_pair<3>(
-                *typed_surface,
-                slave_node_id,
-                master_local,
-                projection_info,
-                penalty,
-                clearance,
-                normal_multiplier,
-                slave_weight,
-                flip_normal,
-                system_nodal_dofs,
-                node_coords,
-                nodal_forces,
-                triplets,
-                diagnostics
-            );
-            return;
-        }
-
-        case 4: {
-            const auto* typed_surface =
-                dynamic_cast<const model::Surface<4>*>(surface.get());
-
-            logging::error(
-                typed_surface != nullptr,
-                "CONTACT: failed to cast four-node master surface"
-            );
-
-            assemble_contact_pair<4>(
-                *typed_surface,
-                slave_node_id,
-                master_local,
-                projection_info,
-                penalty,
-                clearance,
-                normal_multiplier,
-                slave_weight,
-                flip_normal,
-                system_nodal_dofs,
-                node_coords,
-                nodal_forces,
-                triplets,
-                diagnostics
-            );
-            return;
-        }
-
-        case 6: {
-            const auto* typed_surface =
-                dynamic_cast<const model::Surface<6>*>(surface.get());
-
-            logging::error(
-                typed_surface != nullptr,
-                "CONTACT: failed to cast six-node master surface"
-            );
-
-            assemble_contact_pair<6>(
-                *typed_surface,
-                slave_node_id,
-                master_local,
-                projection_info,
-                penalty,
-                clearance,
-                normal_multiplier,
-                slave_weight,
-                flip_normal,
-                system_nodal_dofs,
-                node_coords,
-                nodal_forces,
-                triplets,
-                diagnostics
-            );
-            return;
-        }
-
-        case 8: {
-            const auto* typed_surface =
-                dynamic_cast<const model::Surface<8>*>(surface.get());
-
-            logging::error(
-                typed_surface != nullptr,
-                "CONTACT: failed to cast eight-node master surface"
-            );
-
-            assemble_contact_pair<8>(
-                *typed_surface,
-                slave_node_id,
-                master_local,
-                projection_info,
-                penalty,
-                clearance,
-                normal_multiplier,
-                slave_weight,
-                flip_normal,
-                system_nodal_dofs,
-                node_coords,
-                nodal_forces,
-                triplets,
-                diagnostics
-            );
-            return;
-        }
-
-        default:
-            logging::error(
-                false,
-                "CONTACT: unsupported master surface with ",
-                surface->n_nodes,
-                " nodes"
-            );
-    }
 }
 
 } // namespace
@@ -1506,10 +859,7 @@ Contact::Contact(
     );
 }
 
-void Contact::begin_trial(
-    bool freeze_partners,
-    bool freeze_after_update
-) const {
+void Contact::begin_trial(bool freeze_partners, bool freeze_after_update) const {
     const AssemblyState& parent_state =
         runtime_state.trials.empty()
             ? runtime_state.committed
@@ -1528,9 +878,7 @@ void Contact::commit_trial() const {
         "CONTACT: no active trial state to commit"
     );
 
-    AssemblyState accepted_state =
-        std::move(runtime_state.trials.back().state);
-
+    AssemblyState accepted_state = std::move(runtime_state.trials.back().state);
     runtime_state.trials.pop_back();
 
     if (runtime_state.trials.empty()) {
@@ -1564,13 +912,6 @@ bool Contact::update_augmented_lagrange() const {
             ? runtime_state.committed
             : runtime_state.trials.back().state;
 
-    /*
-     * A changed partner or active-set signature defines a different inner
-     * nonlinear problem. First commit that discrete state and re-equilibrate it
-     * with the old multipliers. Updating the multipliers in the same outer
-     * iteration would combine a partner jump and an augmentation jump and can
-     * produce a persistent two-cycle.
-     */
     if (state.last_signature_changed) {
         state.last_augmentation_changed = false;
 
@@ -1599,74 +940,61 @@ bool Contact::update_augmented_lagrange() const {
     Precision maximum_penetration = Precision(0);
     Precision maximum_change      = Precision(0);
 
-    for (const auto& [slave_node_id, surface_id] : state.partners) {
-        (void) surface_id;
+    for (const auto& [slave_node_id, patch_id] : state.partners) {
+        (void) patch_id;
 
         const auto gap_it = state.gaps.find(slave_node_id);
+
         if (gap_it == state.gaps.end() || !std::isfinite(gap_it->second)) {
             continue;
         }
 
         const Precision gap = gap_it->second;
-
-        const auto length_it =
-            state.characteristic_lengths.find(slave_node_id);
+        const auto length_it = state.characteristic_lengths.find(slave_node_id);
 
         const Precision characteristic_length =
             length_it != state.characteristic_lengths.end()
                 ? std::max(length_it->second, Precision(0))
                 : Precision(0);
 
-        const Precision gap_tolerance =
-            std::max(
-                augmentation_gap_absolute_tolerance,
-                augmentation_gap_relative_tolerance * characteristic_length
-            );
+        const Precision gap_tolerance = std::max(
+            augmentation_gap_absolute_tolerance,
+            augmentation_gap_relative_tolerance * characteristic_length
+        );
 
-        Precision& normal_multiplier =
-            state.normal_multipliers[slave_node_id];
-
-        const Precision old_multiplier =
-            std::max(normal_multiplier, Precision(0));
-
+        Precision& normal_multiplier = state.normal_multipliers[slave_node_id];
+        const Precision old_multiplier = std::max(normal_multiplier, Precision(0));
         Precision new_multiplier = old_multiplier;
 
-        // Increase the multiplier only for a meaningful penetration and reduce
-        // it only for a meaningful opening. Inside the geometric tolerance band
-        // the current multiplier is retained, which terminates the outer loop.
         if (gap < -gap_tolerance ||
             (gap > gap_tolerance && old_multiplier > Precision(0))) {
-            new_multiplier =
-                std::max(
-                    Precision(0),
-                    old_multiplier - penalty * gap
-                );
+            new_multiplier = std::max(
+                Precision(0),
+                old_multiplier - penalty * gap
+            );
         }
 
         const Precision multiplier_change =
             std::abs(new_multiplier - old_multiplier);
 
-        const Precision multiplier_scale =
-            std::max({
-                old_multiplier,
-                new_multiplier,
-                penalty * gap_tolerance,
-                Precision(1)
-            });
+        const Precision multiplier_scale = std::max({
+            old_multiplier,
+            new_multiplier,
+            penalty * gap_tolerance,
+            Precision(1)
+        });
 
-        const Precision multiplier_tolerance =
-            std::max(
-                augmentation_multiplier_absolute_tolerance,
-                augmentation_multiplier_relative_tolerance * multiplier_scale
-            );
+        const Precision multiplier_tolerance = std::max(
+            augmentation_multiplier_absolute_tolerance,
+            augmentation_multiplier_relative_tolerance * multiplier_scale
+        );
 
         normal_multiplier = new_multiplier;
-
-        maximum_penetration =
-            std::max(maximum_penetration, std::max(Precision(0), -gap));
-
-        maximum_change =
-            std::max(maximum_change, multiplier_change);
+        maximum_penetration = std::max(
+            maximum_penetration,
+            std::max(Precision(0), -gap)
+        );
+        maximum_change = std::max(maximum_change, multiplier_change);
 
         if (multiplier_change > multiplier_tolerance) {
             ++updated_points;
@@ -1706,20 +1034,18 @@ void Contact::assemble(
         "CONTACT: positions field not set in model data"
     );
 
-    const model::Field& node_coords =
-        *model_data.positions;
+    logging::error(
+        master_surfaces != nullptr,
+        "CONTACT: master surface region is not set"
+    );
 
-    auto& surfaces =
-        model_data.surfaces;
+    const model::Field& node_coords = *model_data.positions;
+    auto& surfaces = model_data.surfaces;
 
-    const auto assembly_start =
-        std::chrono::steady_clock::now();
-
-    const std::size_t initial_triplet_count =
-        triplets.size();
+    const auto assembly_start = std::chrono::steady_clock::now();
+    const std::size_t initial_triplet_count = triplets.size();
 
     ContactDiagnostics diagnostics;
-
     ++runtime_state.call;
 
     AssemblyState& state =
@@ -1727,55 +1053,31 @@ void Contact::assemble(
             ? runtime_state.committed
             : runtime_state.trials.back().state;
 
-    // Increments start with one closest-surface search and then freeze the
-    // selected master surface. Natural coordinates continue to be reprojected
-    // on that surface so the contact point can slide within the element.
     const bool freeze_surface_partners =
         !runtime_state.trials.empty() &&
         runtime_state.trials.back().freeze_surface_partners;
 
-    std::unordered_map<ID, ID> current_partners;
-    std::unordered_set<ID>     current_active_slaves;
-
     const Precision search_radius =
         distance + std::max(clearance, Precision(0));
 
-    BvhAabb bvh(search_radius);
+    if (!runtime_state.master_geometry) {
+        const model::Field& reference_positions =
+            model_data.positions_reference != nullptr
+                ? *model_data.positions_reference
+                : node_coords;
 
-    if (!runtime_state.master_topology_initialized) {
-        runtime_state.master_edge_neighbors =
-            build_master_patch_topology(master_surfaces, surfaces);
-
-        runtime_state.master_topology_initialized = true;
-    }
-
-    const auto& master_edge_neighbors =
-        runtime_state.master_edge_neighbors;
-
-    for (ID surface_id : *master_surfaces) {
-        if (surface_id < 0 ||
-            static_cast<std::size_t>(surface_id) >= surfaces.size()) {
-            continue;
-        }
-
-        const auto& surface =
-            surfaces[static_cast<std::size_t>(surface_id)];
-
-        if (!surface) {
-            continue;
-        }
-
-        bvh.add_element(
-            surface_id,
-            node_coords,
-            surface->nodes(),
-            static_cast<int>(surface->n_nodes)
+        runtime_state.master_geometry = std::make_unique<NagataContactSurface>(
+            *master_surfaces,
+            surfaces,
+            reference_positions,
+            nagata_feature_angle
         );
     }
 
-    bvh.finalize();
+    NagataContactSurface& master_geometry = *runtime_state.master_geometry;
+    master_geometry.update(surfaces, node_coords, search_radius);
 
-    if (print_contact_summary && !bvh.valid()) {
+    if (print_contact_summary && !master_geometry.valid()) {
         std::cout
             << "[CONTACT]"
             << " call=" << runtime_state.call
@@ -1784,35 +1086,32 @@ void Contact::assemble(
     }
 
     if (!runtime_state.slave_nodes_initialized) {
-        runtime_state.slave_node_ids =
-            collect_slave_nodes(
-                slave_nodes,
-                slave_surfaces,
-                model_data
-            );
+        runtime_state.slave_node_ids = collect_slave_nodes(
+            slave_nodes,
+            slave_surfaces,
+            model_data
+        );
 
         runtime_state.slave_nodes_initialized = true;
     }
 
-    const auto& slave_node_ids =
-        runtime_state.slave_node_ids;
-
-    diagnostics.slave_nodes =
-        static_cast<Index>(slave_node_ids.size());
+    const auto& slave_node_ids = runtime_state.slave_node_ids;
+    diagnostics.slave_nodes = static_cast<Index>(slave_node_ids.size());
 
     if (!runtime_state.slave_weights_initialized) {
-        runtime_state.slave_tributary_areas =
-            build_slave_tributary_areas(
-                slave_surfaces,
-                model_data,
-                node_coords
-            );
+        runtime_state.slave_tributary_areas = build_slave_tributary_areas(
+            slave_surfaces,
+            model_data,
+            node_coords
+        );
 
         runtime_state.slave_weights_initialized = true;
     }
 
-    const auto& slave_tributary_areas =
-        runtime_state.slave_tributary_areas;
+    const auto& slave_tributary_areas = runtime_state.slave_tributary_areas;
+
+    std::unordered_map<ID, ID> current_partners;
+    std::unordered_set<ID>     current_active_slaves;
 
     current_partners.reserve(slave_node_ids.size());
     current_active_slaves.reserve(slave_node_ids.size());
@@ -1834,11 +1133,8 @@ void Contact::assemble(
         const Vec3 slave_position =
             node_coords.row_vec3(static_cast<Index>(slave_node_id));
 
-        const auto previous_partner =
-            state.partners.find(slave_node_id);
-
-        const auto previous_multiplier =
-            state.normal_multipliers.find(slave_node_id);
+        const auto previous_partner = state.partners.find(slave_node_id);
+        const auto previous_multiplier = state.normal_multipliers.find(slave_node_id);
 
         const Precision normal_multiplier =
             previous_multiplier != state.normal_multipliers.end()
@@ -1846,8 +1142,7 @@ void Contact::assemble(
                 : Precision(0);
 
         const bool previously_active =
-            state.active_slaves.find(slave_node_id) !=
-            state.active_slaves.end();
+            state.active_slaves.find(slave_node_id) != state.active_slaves.end();
 
         const bool track_established_partner =
             previous_partner != state.partners.end() &&
@@ -1856,22 +1151,18 @@ void Contact::assemble(
         PatchProjection best_projection;
 
         if (freeze_surface_partners) {
-            // Newton and line-search evaluations keep the discrete master facet
-            // fixed. Only the local coordinates are reprojected in the current
-            // geometry.
             if (previous_partner != state.partners.end() &&
-                valid_surface_id(previous_partner->second, surfaces)) {
-                const auto& fixed_surface =
-                    surfaces[static_cast<std::size_t>(previous_partner->second)];
+                master_geometry.valid_patch(previous_partner->second)) {
+                const NagataPatch& fixed_patch =
+                    master_geometry.patch(previous_partner->second);
 
-                if (surface_contains_node(*fixed_surface, slave_node_id)) {
+                if (parent_surface_contains_node(fixed_patch, slave_node_id, surfaces)) {
                     ++diagnostics.self_contact_rejections;
                 } else {
-                    best_projection = project_on_surface(
-                        previous_partner->second,
+                    best_projection = project_on_patch(
+                        master_geometry,
+                        fixed_patch.id,
                         slave_position,
-                        node_coords,
-                        surfaces,
                         clearance,
                         flip_normal
                     );
@@ -1884,30 +1175,21 @@ void Contact::assemble(
                 }
             }
         } else if (track_established_partner) {
-            // Established contact ownership evolves only by crossing a real
-            // edge of the connected master patch. This removes the global
-            // closest-facet A/B switching observed after converged Newton solves.
             best_projection = walk_master_patch(
+                master_geometry,
                 previous_partner->second,
                 slave_position,
-                node_coords,
-                surfaces,
-                master_edge_neighbors,
                 clearance,
                 flip_normal
             );
 
             if (best_projection.valid) {
                 ++diagnostics.valid_projections;
-            } else {
-                // At a physical patch boundary the unconstrained walk has no
-                // neighbour. Retain the clipped projection on the current facet
-                // so legitimate edge and corner contact remains representable.
-                best_projection = project_on_surface(
+            } else if (master_geometry.valid_patch(previous_partner->second)) {
+                best_projection = project_on_patch(
+                    master_geometry,
                     previous_partner->second,
                     slave_position,
-                    node_coords,
-                    surfaces,
                     clearance,
                     flip_normal
                 );
@@ -1921,16 +1203,11 @@ void Contact::assemble(
             }
         }
 
-        // New, released or no-longer-trackable points acquire a partner through
-        // the bounded global closest-point search. Existing active/augmented
-        // points never compete globally while their topological tracking works.
         if (!freeze_surface_partners && !best_projection.valid) {
             const auto& candidate_ids =
-                bvh.query_point(slave_position, &candidates);
+                master_geometry.query_point(slave_position, &candidates);
 
-            const Index candidate_count =
-                static_cast<Index>(candidate_ids.size());
-
+            const Index candidate_count = static_cast<Index>(candidate_ids.size());
             diagnostics.candidate_surfaces += candidate_count;
             diagnostics.maximum_candidates = std::max(
                 diagnostics.maximum_candidates,
@@ -1941,28 +1218,25 @@ void Contact::assemble(
                 ++diagnostics.zero_candidate_slaves;
             }
 
-            for (ID surface_id : candidate_ids) {
-                if (!valid_surface_id(surface_id, surfaces)) {
+            for (ID patch_id : candidate_ids) {
+                if (!master_geometry.valid_patch(patch_id)) {
                     continue;
                 }
 
-                const auto& surface =
-                    surfaces[static_cast<std::size_t>(surface_id)];
+                const NagataPatch& candidate_patch = master_geometry.patch(patch_id);
 
-                if (surface_contains_node(*surface, slave_node_id)) {
+                if (parent_surface_contains_node(candidate_patch, slave_node_id, surfaces)) {
                     ++diagnostics.self_contact_rejections;
                     continue;
                 }
 
-                const PatchProjection candidate_projection =
-                    project_on_surface(
-                        surface_id,
-                        slave_position,
-                        node_coords,
-                        surfaces,
-                        clearance,
-                        flip_normal
-                    );
+                const PatchProjection candidate_projection = project_on_patch(
+                    master_geometry,
+                    patch_id,
+                    slave_position,
+                    clearance,
+                    flip_normal
+                );
 
                 if (!candidate_projection.valid) {
                     ++diagnostics.invalid_projections;
@@ -1992,40 +1266,36 @@ void Contact::assemble(
             continue;
         }
 
-        const ID        best_surface_id = best_projection.surface_id;
-        const Vec2      best_local      = best_projection.local;
-        const Precision best_distance   = best_projection.distance;
-        const Precision gap             = best_projection.gap;
+        const ID        best_patch_id = best_projection.patch_id;
+        const Vec2      best_local    = best_projection.local;
+        const Precision best_distance = best_projection.distance;
+        const Precision gap           = best_projection.gap;
 
-        diagnostics.maximum_closest_distance =
-            std::max(diagnostics.maximum_closest_distance, best_distance);
+        diagnostics.maximum_closest_distance = std::max(
+            diagnostics.maximum_closest_distance,
+            best_distance
+        );
 
-        const auto& best_surface =
-            surfaces[static_cast<std::size_t>(best_surface_id)];
+        const NagataPatch& best_patch = master_geometry.patch(best_patch_id);
+        const ProjectionInfo projection_info = classify_projection(best_projection);
 
-        const ProjectionInfo projection_info =
-            classify_projection(best_surface->n_nodes, best_local);
-
-        const auto slave_area_it =
-            slave_tributary_areas.find(slave_node_id);
-
+        const auto slave_area_it = slave_tributary_areas.find(slave_node_id);
         const Precision slave_weight =
             slave_area_it != slave_tributary_areas.end()
                 ? slave_area_it->second
                 : Precision(1);
 
-        const ContactLaw contact_law =
-            evaluate_augmented_lagrange_law(
-                gap,
-                normal_multiplier,
-                penalty
-            );
+        const ContactLaw contact_law = evaluate_augmented_lagrange_law(
+            gap,
+            normal_multiplier,
+            penalty
+        );
 
-        current_partners[slave_node_id]              = best_surface_id;
-        current_multipliers[slave_node_id]           = normal_multiplier;
-        current_gaps[slave_node_id]                  = gap;
+        current_partners[slave_node_id] = best_patch_id;
+        current_multipliers[slave_node_id] = normal_multiplier;
+        current_gaps[slave_node_id] = gap;
         current_characteristic_lengths[slave_node_id] =
-            std::sqrt(std::max(best_surface->area(node_coords), Precision(0)));
+            std::sqrt(std::max(best_patch.area, Precision(0)));
 
         if (!contact_law.active) {
             ++diagnostics.open_closest_partner;
@@ -2035,22 +1305,19 @@ void Contact::assemble(
         ++diagnostics.active_contacts;
         current_active_slaves.insert(slave_node_id);
 
-        const Precision penetration =
-            std::max(Precision(0), -gap);
+        const Precision penetration = std::max(Precision(0), -gap);
+        const Precision slave_force = slave_weight * contact_law.pressure;
 
-        const Precision slave_force =
-            slave_weight * contact_law.pressure;
-
-        diagnostics.slave_force_squared_sum +=
-            slave_force * slave_force;
-
-        diagnostics.maximum_slave_force =
-            std::max(diagnostics.maximum_slave_force, slave_force);
+        diagnostics.slave_force_squared_sum += slave_force * slave_force;
+        diagnostics.maximum_slave_force = std::max(
+            diagnostics.maximum_slave_force,
+            slave_force
+        );
 
         if (penetration > diagnostics.maximum_penetration) {
             diagnostics.maximum_penetration = penetration;
             diagnostics.worst_slave         = slave_node_id;
-            diagnostics.worst_surface       = best_surface_id;
+            diagnostics.worst_surface       = best_patch_id;
             diagnostics.worst_local         = best_local;
             diagnostics.worst_mode          = projection_info.mode;
             diagnostics.worst_gap           = gap;
@@ -2062,11 +1329,10 @@ void Contact::assemble(
         }
 
         if (previous_partner != state.partners.end() &&
-            previous_partner->second != best_surface_id) {
+            previous_partner->second != best_patch_id) {
             ++diagnostics.partner_switches;
 
-            if (print_contact_details &&
-                detail_prints < maximum_detail_prints) {
+            if (print_contact_details && detail_prints < maximum_detail_prints) {
                 const auto previous_flags = std::cout.flags();
                 const auto previous_precision = std::cout.precision();
 
@@ -2077,7 +1343,7 @@ void Contact::assemble(
                     << " call="      << runtime_state.call
                     << " slave="     << slave_node_id
                     << " old="       << previous_partner->second
-                    << " new="       << best_surface_id
+                    << " new="       << best_patch_id
                     << " new_mode="  << projection_mode_name(projection_info.mode)
                     << " new_dist="  << best_distance
                     << " new_gap="   << gap
@@ -2094,20 +1360,17 @@ void Contact::assemble(
 
         hash_value(
             diagnostics.signature,
-            static_cast<std::uint64_t>(
-                static_cast<std::uint32_t>(slave_node_id)
-            )
+            static_cast<std::uint64_t>(static_cast<std::uint32_t>(slave_node_id))
         );
 
         hash_value(
             diagnostics.signature,
-            static_cast<std::uint64_t>(
-                static_cast<std::uint32_t>(best_surface_id)
-            )
+            static_cast<std::uint64_t>(static_cast<std::uint32_t>(best_patch_id))
         );
 
-        dispatch_contact_pair(
-            best_surface,
+        assemble_contact_pair(
+            master_geometry,
+            best_patch,
             slave_node_id,
             best_local,
             projection_info,
@@ -2158,17 +1421,13 @@ void Contact::assemble(
     const Precision contact_force_norm =
         std::sqrt(diagnostics.slave_force_squared_sum);
 
-    const auto assembly_end =
-        std::chrono::steady_clock::now();
-
+    const auto assembly_end = std::chrono::steady_clock::now();
     const double elapsed_ms =
         std::chrono::duration<double, std::milli>(
             assembly_end - assembly_start
         ).count();
 
-    const std::size_t added_triplets =
-        triplets.size() - initial_triplet_count;
-
+    const std::size_t added_triplets = triplets.size() - initial_triplet_count;
     const Precision average_candidates =
         diagnostics.slave_nodes > 0
             ? static_cast<Precision>(diagnostics.candidate_surfaces) /
@@ -2186,6 +1445,7 @@ void Contact::assemble(
             << " call="          << runtime_state.call
             << " depth="         << runtime_state.trials.size()
             << " frozen="        << (freeze_surface_partners ? 1 : 0)
+            << " patches="       << master_geometry.patch_count()
             << " active="        << diagnostics.active_contacts
             << " d_active="      << active_change
             << " activated="     << diagnostics.activations
@@ -2231,7 +1491,7 @@ void Contact::assemble(
                 << "[CONTACT_MAX]"
                 << " call="     << runtime_state.call
                 << " slave="    << diagnostics.worst_slave
-                << " surface="  << diagnostics.worst_surface
+                << " patch="    << diagnostics.worst_surface
                 << " mode="     << projection_mode_name(diagnostics.worst_mode)
                 << " local=("   << diagnostics.worst_local(0)
                 << ","          << diagnostics.worst_local(1)
@@ -2247,4 +1507,4 @@ void Contact::assemble(
     }
 }
 
-} // namespace constraint
+} // namespace fem::constraint
