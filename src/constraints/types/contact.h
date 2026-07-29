@@ -1,22 +1,22 @@
 /**
  * @file contact.h
- * @brief Declares frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Declares frictionless node-to-Nagata-surface augmented-Lagrange contact.
  *
  * Master partners and normal multipliers are stored in explicit per-contact
  * trial states. Increment, active-set, predictor and line-search evaluations can
  * therefore be committed or rolled back without hidden global history. Active
- * or augmented contact points are tracked topologically across connected master
- * facets; only new or released contact points use a global closest-point search.
+ * or augmented contact points are tracked topologically across connected Nagata
+ * patches; only new or released contact points use a global closest-point search.
  */
 
 #pragma once
 
 #include "../../data/field.h"
 #include "../../data/region.h"
-#include "../../model/geometry/surface/surface.h"
+#include "contact_nagata.h"
 
-#include <array>
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -30,7 +30,7 @@ namespace constraint {
 
 class Contact {
     struct AssemblyState {
-        // Discrete master ownership and active set.
+        // Discrete Nagata-patch ownership and active set.
         std::unordered_map<ID, ID> partners;
         std::unordered_set<ID>     active_slaves;
 
@@ -44,9 +44,9 @@ class Contact {
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
 
-        std::uint64_t previous_signature     = 0;
-        Index         previous_active        = 0;
-        bool          last_signature_changed = false;
+        std::uint64_t previous_signature        = 0;
+        Index         previous_active           = 0;
+        bool          last_signature_changed    = false;
         bool          last_augmentation_changed = false;
     };
 
@@ -60,13 +60,13 @@ class Contact {
         AssemblyState committed;
         std::vector<TrialState> trials;
 
+        // Contact-only tessellation and Nagata interpolation of the master set.
+        std::unique_ptr<NagataContactSurface> master_geometry;
+
         // Fixed positive slave weights initialized once from the first
         // assembled geometry.
         std::vector<ID> slave_node_ids;
         bool            slave_nodes_initialized = false;
-
-        std::vector<std::array<ID, 4>> master_edge_neighbors;
-        bool                           master_topology_initialized = false;
 
         std::unordered_map<ID, Precision> slave_tributary_areas;
         bool                              slave_weights_initialized = false;
@@ -111,7 +111,7 @@ public:
     bool partner_signature_changed() const;
     bool update_augmented_lagrange() const;
 
-    // Assemble contact forces and the faceted contact tangent with fixed
+    // Assemble contact forces and the Nagata-patch contact tangent with fixed
     // multipliers during the inner Newton solve.
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
