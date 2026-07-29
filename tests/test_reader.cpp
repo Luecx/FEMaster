@@ -1,7 +1,7 @@
 #include "../src/io/reader/parser.h"
 #include "../src/material/orthotropic_elasticity.h"
-#include "../src/material/strain/shell_generalized_strain.h"
-#include "../src/material/stress/shell_stress_resultants.h"
+#include "../src/material/strain/shell_material_strain_linearized.h"
+#include "../src/material/stress/shell_material_stress_cauchy.h"
 #include "../src/model/model.h"
 
 #include <filesystem>
@@ -84,16 +84,15 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
         0.23, 0.13, 0.12
     );
 
-    const Precision k = Precision(5) / Precision(6);
-    ShellGeneralizedStrain strain;
-    ShellStressResultants  resultants;
-    Mat8                   tangent;
-    ortho.evaluate(strain, Precision(1), nullptr, nullptr, resultants, tangent);
+    ShellMaterialStrainLinearized strain;
+    ShellMaterialStressCauchy     stress;
+    Mat5                          tangent;
+    ortho.evaluate(strain, nullptr, nullptr, stress, tangent);
 
-    const Mat2 shear = tangent.template block<2, 2>(6, 6);
+    const Mat2 shear = tangent.template block<2, 2>(3, 3);
 
-    EXPECT_NEAR(shear(0, 0), 13.0 * k, 1e-12);
-    EXPECT_NEAR(shear(1, 1), 23.0 * k, 1e-12);
+    EXPECT_NEAR(shear(0, 0), 13.0, 1e-12);
+    EXPECT_NEAR(shear(1, 1), 23.0, 1e-12);
     EXPECT_NEAR(shear(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(shear(1, 0), 0.0, 1e-12);
 }

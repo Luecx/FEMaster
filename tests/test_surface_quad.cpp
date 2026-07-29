@@ -1,7 +1,8 @@
 #include "../src/model/geometry/surface/surface4.h"   // Include path relative to the src folder
 #include "../src/model/geometry/surface/surface8.h"   // Include Surface8 for testing
-#include <Eigen/Dense>
 #include <gtest/gtest.h>
+
+#include <array>
 #include <cstdlib>
 
 using namespace fem;
@@ -11,30 +12,43 @@ template <typename SurfaceType>
 class SurfaceTest : public ::testing::Test {
 protected:
     SurfaceTest()
-        : surface(generate_ids())  // Initialize surface with node IDs
+        : surface    (generate_ids()),
+          node_coords("SURFACE_QUAD_TEST", model::FieldDomain::NODE, 8, 3)
     {
-        // Define node coordinates for a surface
-        node_coords.resize(8, 3);
-        node_coords << 0.0, 0.0, 0.0,   // Node 0
-                       4.0, 0.0, 0.0,   // Node 1
-                       4.0, 4.0, 0.0,   // Node 2
-                       0.0, 4.0, 0.0,   // Node 3
-                       2.0, 0.0, 0.0,   // Node 4 (midpoint 0-1)
-                       4.0, 2.0, 0.0,   // Node 5 (midpoint 1-2)
-                       2.0, 4.0, 0.0,   // Node 6 (midpoint 2-3)
-                       0.0, 2.0, 0.0;   // Node 7 (midpoint 3-0)
+        // Define nodal coordinates for a square quadrilateral surface. Rows
+        // 4-7 are the midside nodes used by Surface8.
+        const std::array<std::array<Precision, 3>, 8> coordinates{{
+            {0.0, 0.0, 0.0},
+            {4.0, 0.0, 0.0},
+            {4.0, 4.0, 0.0},
+            {0.0, 4.0, 0.0},
+            {2.0, 0.0, 0.0},
+            {4.0, 2.0, 0.0},
+            {2.0, 4.0, 0.0},
+            {0.0, 2.0, 0.0}
+        }};
+
+        for (Index node = 0; node < 8; ++node) {
+            for (Dim component = 0; component < 3; ++component) {
+                node_coords(node, component) = coordinates[node][component];
+            }
+        }
     }
 
     // Helper function to generate IDs for surface nodes
-    std::array<int, SurfaceType::num_nodes> generate_ids() {
-        std::array<int, SurfaceType::num_nodes> ids;
-        for (int i = 0; i < SurfaceType::num_nodes; ++i) ids[i] = i;
+    std::array<ID, SurfaceType::num_nodes> generate_ids() {
+        std::array<ID, SurfaceType::num_nodes> ids{};
+
+        for (Index i = 0; i < SurfaceType::num_nodes; ++i) {
+            ids[i] = i;
+        }
+
         return ids;
     }
 
     // Member variables for the fixture
-    SurfaceType              surface;
-    Eigen::Matrix<double, 8, 3> node_coords;
+    SurfaceType  surface;
+    model::Field node_coords;
 };
 
 // Define the test suite name
@@ -110,7 +124,7 @@ TYPED_TEST_P(SurfaceTest, ShapeFunctionEvaluation) {
 }
 
 TYPED_TEST_P(SurfaceTest, LocalToGlobalTransformation) {
-    Eigen::Vector2d local_coords(-1.0, -1.0);
+    Vec2 local_coords(-1.0, -1.0);
     auto            global_coords = this->surface.local_to_global(local_coords, this->node_coords);
     EXPECT_NEAR(global_coords[0], 0.0, 1e-6);
     EXPECT_NEAR(global_coords[1], 0.0, 1e-6);

@@ -556,13 +556,36 @@ void NonlinearStatic::run() {
         SparseMatrix  accepted_tangent;
         SparseMatrix  accepted_full_tangent;
 
-        assemble_state(
-            q,
-            lambda,
-            accepted_residual,
-            accepted_tangent,
-            &accepted_full_tangent
-        );
+        /*
+         * The outer increment trial is deliberately still unfrozen here. The
+         * predictor tangent is evaluated at the last accepted configuration,
+         * but it must not select and freeze the partners that Newton will use
+         * at the predicted target configuration. A nested frozen trial makes
+         * this assembly completely state-neutral and is always rolled back.
+         */
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(true);
+        }
+
+        try {
+            assemble_state(
+                q,
+                lambda,
+                accepted_residual,
+                accepted_tangent,
+                &accepted_full_tangent
+            );
+        } catch (...) {
+            for (const auto& contact : model->_data->contacts) {
+                contact.rollback_trial();
+            }
+
+            throw;
+        }
+
+        for (const auto& contact : model->_data->contacts) {
+            contact.rollback_trial();
+        }
 
         const DynamicVector predictor_rhs =
             transformer->assemble_system_rhs(
@@ -754,7 +777,23 @@ void NonlinearStatic::run() {
         bool changed = false;
 
         for (const auto& contact : model->_data->contacts) {
-            changed = changed || contact.partner_signature_changed();
+            const bool partner_changed =
+                contact.partner_signature_changed();
+
+            /*
+             * Multipliers are updated only after the inner Newton solve has
+             * converged. They remain fixed during Newton and all line-search
+             * residual evaluations, so the assembled residual and tangent
+             * describe one well-defined nonlinear problem.
+             */
+            const bool multiplier_changed =
+                contact.update_augmented_lagrange();
+
+            changed =
+                changed ||
+                partner_changed ||
+                multiplier_changed;
+
             contact.commit_trial();
         }
 

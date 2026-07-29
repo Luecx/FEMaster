@@ -1,12 +1,12 @@
 /**
  * @file contact.h
- * @brief Declares frictionless faceted node-to-surface penalty contact.
+ * @brief Declares frictionless faceted node-to-surface augmented-Lagrange contact.
  *
- * Explicit slave node sets use nodal penalty stiffness. Slave surface sets are
- * reduced to unique slave nodes and use fixed positive tributary areas that are
- * initialized on the first assembly. Master-surface assignments are stored in
- * explicit per-contact trial states so line-search and increment-cutback
- * evaluations can be committed or rolled back without hidden global state.
+ * Master partners and normal multipliers are stored in explicit per-contact
+ * trial states. Increment, active-set, predictor and line-search evaluations can
+ * therefore be committed or rolled back without hidden global history. Active
+ * or augmented contact points are tracked topologically across connected master
+ * facets; only new or released contact points use a global closest-point search.
  */
 
 #pragma once
@@ -30,12 +30,24 @@ namespace constraint {
 
 class Contact {
     struct AssemblyState {
+        // Discrete master ownership and active set.
         std::unordered_map<ID, ID> partners;
         std::unordered_set<ID>     active_slaves;
+
+        // Augmented-Lagrange state. The multiplier has the same units as
+        // PENALTY * gap; slave tributary weighting is applied only to force
+        // assembly and is therefore not included here.
+        std::unordered_map<ID, Precision> normal_multipliers;
+
+        // Geometry recorded by the most recent assembly. These values are used
+        // only by the outer augmentation update after Newton convergence.
+        std::unordered_map<ID, Precision> gaps;
+        std::unordered_map<ID, Precision> characteristic_lengths;
 
         std::uint64_t previous_signature     = 0;
         Index         previous_active        = 0;
         bool          last_signature_changed = false;
+        bool          last_augmentation_changed = false;
     };
 
     struct TrialState {
@@ -48,11 +60,10 @@ class Contact {
         AssemblyState committed;
         std::vector<TrialState> trials;
 
-        // Fixed positive slave weights. They are initialized once from the
-        // geometry present during the first assembly and remain constant during
-        // all subsequent Newton, line-search, and cutback evaluations.
-        std::vector<ID>                slave_node_ids;
-        bool                           slave_nodes_initialized = false;
+        // Fixed positive slave weights initialized once from the first
+        // assembled geometry.
+        std::vector<ID> slave_node_ids;
+        bool            slave_nodes_initialized = false;
 
         std::vector<std::array<ID, 4>> master_edge_neighbors;
         bool                           master_topology_initialized = false;
@@ -74,7 +85,7 @@ class Contact {
 
     mutable RuntimeState runtime_state;
 
-    public:
+public:
     Contact(model::SurfaceRegion::Ptr master,
             model::NodeRegion::Ptr    slave,
             Precision                 search_distance,
@@ -89,16 +100,19 @@ class Contact {
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Trial-state control for nonlinear solvers. Increment and active-set
-    // trials may update the selected master surface once and then freeze it.
-    // Natural coordinates are reprojected on that fixed surface so contact may
-    // slide within the element. Line-search trials freeze immediately.
+    // Trial-state control. Line-search and predictor subtrials freeze the
+    // current partner state immediately. Increment and active-set trials may
+    // update partners once and freeze them afterwards.
     void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
     void commit_trial() const;
     void rollback_trial() const;
-    bool partner_signature_changed() const;
 
-    // Assemble contact forces and the consistent faceted contact tangent.
+    // State changes detected after a converged Newton solve.
+    bool partner_signature_changed() const;
+    bool update_augmented_lagrange() const;
+
+    // Assemble contact forces and the faceted contact tangent with fixed
+    // multipliers during the inner Newton solve.
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,

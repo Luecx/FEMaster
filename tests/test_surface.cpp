@@ -1,5 +1,4 @@
 #include "../src/model/geometry/surface/surface3.h"  // Include path relative to the src folder
-#include <Eigen/Dense>
 #include <gtest/gtest.h>
 #include <cstdlib>
 
@@ -10,18 +9,26 @@ class Surface3Test : public ::testing::Test {
     protected:
     // Use constructor initialization list to initialize Surface3 with node IDs
     Surface3Test()
-        : surface({0, 1, 2})  // Initialize Surface3 with node IDs during test fixture construction
+        : surface    ({0, 1, 2}),  // Initialize Surface3 with node IDs during test fixture construction
+          node_coords("SURFACE3_TEST", model::FieldDomain::NODE, 3, 3)
     {
         // Define node coordinates for a triangular surface
-        node_coords.resize(3, 3);
-        node_coords << 0.0, 0.0, 1.0,   // Node 0
-            4.0, 0.0, 0.0,   // Node 1
-            0.0, 1.0, 0.0;   // Node 2
+        node_coords(0, 0) = 0.0;
+        node_coords(0, 1) = 0.0;
+        node_coords(0, 2) = 1.0;
+
+        node_coords(1, 0) = 4.0;
+        node_coords(1, 1) = 0.0;
+        node_coords(1, 2) = 0.0;
+
+        node_coords(2, 0) = 0.0;
+        node_coords(2, 1) = 1.0;
+        node_coords(2, 2) = 0.0;
     }
 
     // Member variables for the fixture
-    fem::model::Surface3        surface;
-    Eigen::Matrix<double, 3, 3> node_coords;
+    fem::model::Surface3 surface;
+    model::Field         node_coords;
 };
 
 // Test for area computation
@@ -70,9 +77,9 @@ TEST_F(Surface3Test, ProjectionWithoutClipping) {
         auto            local_coords = surface.global_to_local(point, node_coords, false);
         auto            projected = surface.local_to_global(local_coords, node_coords);
         auto            diff = point - projected;
-        auto diff_p1 = projected - node_coords.row(0).transpose();
-        auto diff_p2 = projected - node_coords.row(1).transpose();
-        auto diff_p3 = projected - node_coords.row(2).transpose();
+        auto diff_p1 = projected - node_coords.row_vec3(0);
+        auto diff_p2 = projected - node_coords.row_vec3(1);
+        auto diff_p3 = projected - node_coords.row_vec3(2);
 
         Precision proj_1 = diff.dot(diff_p1);
         Precision proj_2 = diff.dot(diff_p2);
@@ -87,27 +94,27 @@ TEST_F(Surface3Test, ProjectionWithoutClipping) {
 // Test for local to global transformation with additional points
 TEST_F(Surface3Test, LocalToGlobalTransformation) {
     // Original midpoint test
-    Eigen::Vector2d local_coords(0.5, 0.5);
+    Vec2 local_coords(0.5, 0.5);
     auto            global_coords = surface.local_to_global(local_coords, node_coords);
     EXPECT_NEAR(global_coords[0], 2.0, 1e-6);
     EXPECT_NEAR(global_coords[1], 0.5, 1e-6);
     EXPECT_NEAR(global_coords[2], 0.0, 1e-6);
 
     // New test cases based on the provided results
-    Eigen::Vector2d local_coords1(0.5, 0.7);
+    Vec2 local_coords1(0.5, 0.7);
     auto            global_coords1 = surface.local_to_global(local_coords1, node_coords);
     EXPECT_NEAR(global_coords1[0],  2.0, 1e-6);
     EXPECT_NEAR(global_coords1[1],  0.7, 1e-6);
     EXPECT_NEAR(global_coords1[2], -0.2, 1e-6);
 
-    Eigen::Vector2d local_coords2(0.2, 0.4);
+    Vec2 local_coords2(0.2, 0.4);
     auto            global_coords2 = surface.local_to_global(local_coords2, node_coords);
     StaticVector<3> expected_coords2 {2.8, 0.4, -0.1};
     EXPECT_NEAR(global_coords2[0], 0.8, 1e-6);
     EXPECT_NEAR(global_coords2[1], 0.4, 1e-6);
     EXPECT_NEAR(global_coords2[2], 0.4, 1e-6);
 
-    Eigen::Vector2d local_coords3(0.3, 0.3);
+    Vec2 local_coords3(0.3, 0.3);
     auto            global_coords3 = surface.local_to_global(local_coords3, node_coords);
     StaticVector<3> expected_coords3 {1.2, 0.3, 0.4};
     EXPECT_NEAR(global_coords3[0], 1.2, 1e-6);
@@ -118,7 +125,7 @@ TEST_F(Surface3Test, LocalToGlobalTransformation) {
 // Test for shape function evaluation with more test points
 TEST_F(Surface3Test, ShapeFunctionEvaluation) {
     // Test at original point (0.3, 0.3)
-    Eigen::Vector2d local_coords(0.3, 0.3);
+    Vec2 local_coords(0.3, 0.3);
     auto            shape_values = surface.shape_function(local_coords[0], local_coords[1]);
 
     double sum = shape_values.sum();
@@ -128,7 +135,7 @@ TEST_F(Surface3Test, ShapeFunctionEvaluation) {
     EXPECT_NEAR(shape_values[2], 0.3, 1e-6);
 
     // Test at additional points r1 and r2
-    Eigen::Vector2d local_coords1(0.5, 0.7);
+    Vec2 local_coords1(0.5, 0.7);
     auto            shape_values1 = surface.shape_function(local_coords1[0], local_coords1[1]);
 
     sum = shape_values1.sum();
@@ -137,7 +144,7 @@ TEST_F(Surface3Test, ShapeFunctionEvaluation) {
     EXPECT_NEAR(shape_values1[1], 0.5, 1e-6);
     EXPECT_NEAR(shape_values1[2], 0.7, 1e-6);
 
-    Eigen::Vector2d local_coords2(0.2, 0.4);
+    Vec2 local_coords2(0.2, 0.4);
     auto            shape_values2 = surface.shape_function(local_coords2[0], local_coords2[1]);
 
     sum = shape_values2.sum();
@@ -147,21 +154,21 @@ TEST_F(Surface3Test, ShapeFunctionEvaluation) {
     EXPECT_NEAR(shape_values2[2], 0.4, 1e-6);
 
     // Test at triangle corners
-    Eigen::Vector2d corner_coords0(0.0, 0.0);
+    Vec2 corner_coords0(0.0, 0.0);
     auto            shape_values_corner0 = surface.shape_function(corner_coords0[0], corner_coords0[1]);
 
     EXPECT_NEAR(shape_values_corner0[0], 1.0, 1e-6);
     EXPECT_NEAR(shape_values_corner0[1], 0.0, 1e-6);
     EXPECT_NEAR(shape_values_corner0[2], 0.0, 1e-6);
 
-    Eigen::Vector2d corner_coords1(1.0, 0.0);
+    Vec2 corner_coords1(1.0, 0.0);
     auto            shape_values_corner1 = surface.shape_function(corner_coords1[0], corner_coords1[1]);
 
     EXPECT_NEAR(shape_values_corner1[0], 0.0, 1e-6);
     EXPECT_NEAR(shape_values_corner1[1], 1.0, 1e-6);
     EXPECT_NEAR(shape_values_corner1[2], 0.0, 1e-6);
 
-    Eigen::Vector2d corner_coords2(0.0, 1.0);
+    Vec2 corner_coords2(0.0, 1.0);
     auto            shape_values_corner2 = surface.shape_function(corner_coords2[0], corner_coords2[1]);
 
     EXPECT_NEAR(shape_values_corner2[0], 0.0, 1e-6);

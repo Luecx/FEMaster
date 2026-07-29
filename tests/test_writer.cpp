@@ -3,7 +3,7 @@
 #include "../src/model/model.h"
 #include "../src/model/shell/s4.h"
 #include "../src/io/writer/writer_frd.h"
-#include "../src/reader/writer.h"
+#include "../src/io/writer/writer_res.h"
 
 #include <filesystem>
 #include <fstream>
@@ -33,7 +33,7 @@ TEST(Reader_Writer, WritesFieldTypeForModelField) {
     field.set_zero();
 
     {
-        io::writer::Writer writer(output_path);
+        io::writer::ResWriter writer(output_path);
         writer.write_field(field, "DISPLACEMENT");
     }
 
@@ -47,16 +47,19 @@ TEST(Reader_Writer, WritesInferredTypeForIndexedMatrixField) {
     const std::string output_path = "tests/TMP_WRITER_MATRIX.RES";
     std::filesystem::remove(output_path);
 
-    DynamicMatrix matrix(1, 5);
-    matrix << 1.0, 2.0, 10.0, 20.0, 30.0;
+    model::Model model(4, 1, 0);
+    model.set_element<model::S4>(0, 0, 1, 2, 3);
+
+    model::Field field("LOCAL_SECTION_FORCES", model::FieldDomain::ELEMENT_NODAL, 4, 3);
+    field.set_zero();
 
     {
-        io::writer::Writer writer(output_path);
-        writer.write_eigen_matrix(matrix, "LOCAL_SECTION_FORCES", 2);
+        io::writer::ResWriter writer(output_path);
+        writer.write_field(field, "LOCAL_SECTION_FORCES", model._data.get());
     }
 
     const std::string text = read_text(output_path);
-    EXPECT_NE(text.find("FIELD, NAME=LOCAL_SECTION_FORCES, TYPE=ELEMENT_NODAL, INDEX_COLS=2, VALUE_COLS=3, ROWS=1"),
+    EXPECT_NE(text.find("FIELD, NAME=LOCAL_SECTION_FORCES, TYPE=ELEMENT_NODAL, INDEX_COLS=2, VALUE_COLS=3, ROWS=4"),
               std::string::npos);
 
     std::filesystem::remove(output_path);

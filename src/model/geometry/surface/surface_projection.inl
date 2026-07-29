@@ -38,110 +38,163 @@ Vec2 Surface<N>::global_to_local(
     const Field& node_coords,
     bool         clip
 ) const {
-    constexpr Index     max_iterations = 32;
-    constexpr Precision tolerance      = Precision(1e-12);
+    constexpr Index     max_iterations             = 40;
+    constexpr Index     max_line_search_iterations = 20;
+    constexpr Precision step_tolerance             = Precision(1e-12);
+    constexpr Precision gradient_tolerance         = Precision(1e-12);
+    constexpr Precision armijo_constant            = Precision(1e-4);
+    constexpr Precision minimum_step_length        = Precision(1e-8);
+    constexpr Precision metric_regularization      = Precision(1e-14);
 
-    // Gather the fixed-size coordinate matrix once because it is reused by
-    // every initial guess and every Newton iteration
     const auto coordinates = node_coords_global(node_coords);
 
-    // Evaluate the physical squared distance associated with natural
-    // coordinates; squared distances are sufficient for all comparisons
-    const auto squared_distance = [&](const Vec2& local) {
+    const auto objective = [&](const Vec2& local) {
         const Vec3 position = interpolate(coordinates, local(0), local(1));
-        return (position - global).squaredNorm();
+        return Precision(0.5) * (position - global).squaredNorm();
     };
 
-    Vec2      best_local            = Vec2::Zero();
-    Precision best_distance_squared = std::numeric_limits<Precision>::max();
+    Vec2      best_local     = Vec2::Zero();
+    Precision best_objective = std::numeric_limits<Precision>::max();
 
-    // Project one initial guess with Newton's method and retain the best valid
-    // stationary point found so far
     const auto project_initial_guess = [&](const Vec2& initial_guess) {
-        Precision r = initial_guess(0);
-        Precision s = initial_guess(1);
+        Vec2      local             = initial_guess;
+        Precision current_objective = objective(local);
+
+        if (!std::isfinite(current_objective)) {
+            return;
+        }
 
         for (Index iteration = 0; iteration < max_iterations; ++iteration) {
-            // Evaluate the interpolation and its first and second derivatives
-            // at the current natural coordinates
+            const Precision r = local(0);
+            const Precision s = local(1);
+
             const auto shape             = shape_function(r, s);
             const auto derivative        = shape_derivative(r, s);
             const auto second_derivative = shape_second_derivative(r, s);
 
-            // Map the interpolation quantities into physical space
             const Vec3               position = coordinates.transpose() * shape;
             const StaticMatrix<3, 2> first    = coordinates.transpose() * derivative;
             const StaticMatrix<3, 3> second   = coordinates.transpose() * second_derivative;
 
-            // Interpret the first derivative columns as the physical tangent
-            // vectors
             const Vec3 dx_dr = first.col(0);
             const Vec3 dx_ds = first.col(1);
 
-            // Read the second derivative columns in the common order
-            // d²x/dr², d²x/ds² and d²x/(dr ds)
             const Vec3 d2x_dr2  = second.col(0);
             const Vec3 d2x_ds2  = second.col(1);
             const Vec3 d2x_drds = second.col(2);
 
             const Vec3 difference = position - global;
 
-            // Evaluate the gradient of one half of the squared-distance
-            // objective
-            const Precision gradient_r = difference.dot(dx_dr);
-            const Precision gradient_s = difference.dot(dx_ds);
+            Vec2 gradient;
+            gradient << difference.dot(dx_dr),
+                        difference.dot(dx_ds);
 
-            // Evaluate the exact Hessian of one half of the squared-distance
-            // objective
-            const Precision hessian_rr = dx_dr.dot(dx_dr) + difference.dot(d2x_dr2);
-            const Precision hessian_ss = dx_ds.dot(dx_ds) + difference.dot(d2x_ds2);
-            const Precision hessian_rs = dx_dr.dot(dx_ds) + difference.dot(d2x_drds);
+            if (!gradient.allFinite() || gradient.norm() < gradient_tolerance) {
+                break;
+            }
 
             StaticMatrix<2, 2> hessian;
-            Vec2               gradient;
+            hessian << dx_dr.dot(dx_dr) + difference.dot(d2x_dr2),
+                       dx_dr.dot(dx_ds) + difference.dot(d2x_drds),
+                       dx_dr.dot(dx_ds) + difference.dot(d2x_drds),
+                       dx_ds.dot(dx_ds) + difference.dot(d2x_ds2);
 
-            hessian << hessian_rr, hessian_rs,
-                       hessian_rs, hessian_ss;
+            Vec2 direction = Vec2::Zero();
 
-            gradient << gradient_r,
-                        gradient_s;
+            if (hessian.allFinite()) {
+                const Eigen::LDLT<StaticMatrix<2, 2>> decomposition(hessian);
 
-            // Solve the two-dimensional Newton system for the natural-coordinate
-            // correction
-            const Vec2 delta = hessian.ldlt().solve(-gradient);
+                if (decomposition.info() == Eigen::Success) {
+                    direction = decomposition.solve(-gradient);
+                }
+            }
 
-            r += delta(0);
-            s += delta(1);
+            if (!direction.allFinite() || gradient.dot(direction) >= Precision(0)) {
+                StaticMatrix<2, 2> metric = first.transpose() * first;
+                metric.diagonal().array() += metric_regularization;
 
-            // Use the natural-coordinate correction as the local convergence
-            // measure
-            if (delta.norm() < tolerance) {
+                const Eigen::LDLT<StaticMatrix<2, 2>> decomposition(metric);
+
+                if (decomposition.info() == Eigen::Success) {
+                    direction = decomposition.solve(-gradient);
+                }
+            }
+
+            if (!direction.allFinite() || gradient.dot(direction) >= Precision(0)) {
+                direction = -gradient;
+            }
+
+            const Precision directional_derivative = gradient.dot(direction);
+
+            if (!std::isfinite(directional_derivative) ||
+                directional_derivative >= Precision(0)) {
+                break;
+            }
+
+            Precision step_length       = Precision(1);
+            Vec2      accepted_local     = local;
+            Precision accepted_objective = current_objective;
+            bool      accepted           = false;
+
+            for (Index line_search_iteration = 0;
+                 line_search_iteration < max_line_search_iterations;
+                 ++line_search_iteration) {
+                const Vec2 trial_local = local + step_length * direction;
+
+                if (clip && !in_bounds(trial_local)) {
+                    step_length *= Precision(0.5);
+                    continue;
+                }
+
+                const Precision trial_objective = objective(trial_local);
+                const Precision armijo_bound =
+                    current_objective +
+                    armijo_constant * step_length * directional_derivative;
+
+                if (std::isfinite(trial_objective) &&
+                    trial_objective <= armijo_bound) {
+                    accepted_local     = trial_local;
+                    accepted_objective = trial_objective;
+                    accepted           = true;
+                    break;
+                }
+
+                step_length *= Precision(0.5);
+            }
+
+            if (!accepted || step_length < minimum_step_length) {
+                break;
+            }
+
+            const Vec2 applied_step = accepted_local - local;
+
+            local             = accepted_local;
+            current_objective = accepted_objective;
+
+            if (applied_step.norm() < step_tolerance) {
                 break;
             }
         }
 
-        const Vec2 local{r, s};
-
-        // Reject stationary points outside the natural element domain when
-        // clipping is requested
         if (clip && !in_bounds(local)) {
             return;
         }
 
-        const Precision distance_squared = squared_distance(local);
+        const Precision final_objective = objective(local);
 
-        // Retain the closest valid projection found across all initial guesses
-        if (distance_squared < best_distance_squared) {
-            best_local            = local;
-            best_distance_squared = distance_squared;
+        if (std::isfinite(final_objective) &&
+            final_objective < best_objective) {
+            best_local     = local;
+            best_objective = final_objective;
         }
     };
 
-    // Use topology-specific fixed-size initial guesses without dynamic memory
-    // allocation
     if constexpr (N == 3) {
         const std::array initial_guesses{
-            Vec2{Precision(0.25), Precision(0.25)}
+            Vec2{Precision(1.0 / 3.0), Precision(1.0 / 3.0)},
+            Vec2{Precision(0.10), Precision(0.10)},
+            Vec2{Precision(0.80), Precision(0.10)},
+            Vec2{Precision(0.10), Precision(0.80)}
         };
 
         for (const Vec2& initial_guess : initial_guesses) {
@@ -149,10 +202,11 @@ Vec2 Surface<N>::global_to_local(
         }
     } else if constexpr (N == 4) {
         const std::array initial_guesses{
-            Vec2{Precision(-1), Precision(-1)},
-            Vec2{Precision( 1), Precision(-1)},
-            Vec2{Precision( 1), Precision( 1)},
-            Vec2{Precision(-1), Precision( 1)}
+            Vec2{Precision( 0.00), Precision( 0.00)},
+            Vec2{Precision(-0.50), Precision(-0.50)},
+            Vec2{Precision( 0.50), Precision(-0.50)},
+            Vec2{Precision( 0.50), Precision( 0.50)},
+            Vec2{Precision(-0.50), Precision( 0.50)}
         };
 
         for (const Vec2& initial_guess : initial_guesses) {
@@ -160,9 +214,13 @@ Vec2 Surface<N>::global_to_local(
         }
     } else if constexpr (N == 6) {
         const std::array initial_guesses{
-            Vec2{Precision(0), Precision(0)},
-            Vec2{Precision(1), Precision(0)},
-            Vec2{Precision(0), Precision(1)}
+            Vec2{Precision(1.0 / 3.0), Precision(1.0 / 3.0)},
+            Vec2{Precision(0.10), Precision(0.10)},
+            Vec2{Precision(0.80), Precision(0.10)},
+            Vec2{Precision(0.10), Precision(0.80)},
+            Vec2{Precision(0.45), Precision(0.10)},
+            Vec2{Precision(0.45), Precision(0.45)},
+            Vec2{Precision(0.10), Precision(0.45)}
         };
 
         for (const Vec2& initial_guess : initial_guesses) {
@@ -170,14 +228,15 @@ Vec2 Surface<N>::global_to_local(
         }
     } else {
         const std::array initial_guesses{
-            Vec2{Precision(-1), Precision(-1)},
-            Vec2{Precision( 1), Precision(-1)},
-            Vec2{Precision( 1), Precision( 1)},
-            Vec2{Precision(-1), Precision( 1)},
-            Vec2{Precision( 0), Precision(-1)},
-            Vec2{Precision( 1), Precision( 0)},
-            Vec2{Precision( 0), Precision( 1)},
-            Vec2{Precision(-1), Precision( 0)}
+            Vec2{Precision( 0.00), Precision( 0.00)},
+            Vec2{Precision(-0.50), Precision(-0.50)},
+            Vec2{Precision( 0.50), Precision(-0.50)},
+            Vec2{Precision( 0.50), Precision( 0.50)},
+            Vec2{Precision(-0.50), Precision( 0.50)},
+            Vec2{Precision( 0.00), Precision(-0.80)},
+            Vec2{Precision( 0.80), Precision( 0.00)},
+            Vec2{Precision( 0.00), Precision( 0.80)},
+            Vec2{Precision(-0.80), Precision( 0.00)}
         };
 
         for (const Vec2& initial_guess : initial_guesses) {
@@ -185,18 +244,17 @@ Vec2 Surface<N>::global_to_local(
         }
     }
 
-    // A constrained projection can lie in the element interior or on its
-    // boundary, so compare both candidates
     if (clip) {
-        const Vec2 boundary_local = closest_point_on_boundary(global, coordinates);
-        const Precision boundary_distance_squared = squared_distance(boundary_local);
+        const Vec2      boundary_local     = closest_point_on_boundary(global, coordinates);
+        const Precision boundary_objective = objective(boundary_local);
 
-        if (boundary_distance_squared < best_distance_squared) {
-            best_local = boundary_local;
+        if (std::isfinite(boundary_objective) &&
+            boundary_objective < best_objective) {
+            best_local     = boundary_local;
+            best_objective = boundary_objective;
         }
     }
 
     return best_local;
 }
-
 } // namespace fem::model

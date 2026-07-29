@@ -14,6 +14,7 @@ topo/runs
 projects/
 libs/
 tests_decks/
+benchmark/
 cmake-build-debug/
 cmake-build-release/
 
