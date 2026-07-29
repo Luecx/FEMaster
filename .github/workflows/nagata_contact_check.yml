@@ -1,0 +1,61 @@
+name: Nagata contact check
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/nagata_contact_check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtest-dev
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Configure tests
+        shell: bash
+        run: |
+          cmake -S . -B build/nagata-check -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFEMASTER_BUILD_TESTS=ON \
+            -DFEMASTER_ENABLE_MKL=OFF \
+            -DFEMASTER_ENABLE_OPENMP=OFF \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build tests
+        shell: bash
+        run: cmake --build build/nagata-check --target FEMaster_test
+
+      - name: Run tests
+        shell: bash
+        run: ctest --test-dir build/nagata-check --output-on-failure
