@@ -1,8 +1,26 @@
-// register_field.inl — registers *FIELD
+/**
+ * @file register_field.inl
+ * @brief Registers generic model-field input.
+ *
+ * The `*FIELD` command creates and populates dense fields on the supported
+ * FEMaster domains. Field allocation uses the domain-specific row counts owned
+ * by `ModelData`, while the command data lines assign values by field row.
+ *
+ * Interpretation of a field remains the responsibility of the subsystem that
+ * later references it. This registration only manages generic field storage and
+ * does not attach application-specific semantics to the values.
+ *
+ * @see model::Field
+ * @see model::ModelData
+ *
+ * @author Finn Eggers
+ * @date 30.07.2026
+ */
 
 #include <array>
-#include <sstream>
 #include <limits>
+#include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -50,6 +68,17 @@ inline Precision parse_precision_or_throw(const std::string& token) {
 
 } // namespace detail
 
+/**
+ * Registers generic field allocation and row-wise field population.
+ *
+ * `*FIELD` selects the storage domain and component count, initializes the full
+ * field to zero or NaN and then applies the supplied row values. Enumeration-
+ * dependent domains require the corresponding ModelData offsets to exist before
+ * the command is executed.
+ *
+ * @param registry DSL registry receiving the `*FIELD` command definition.
+ * @param model Model whose generic field registry is modified.
+ */
 inline void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("FIELD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::any_of({
@@ -68,7 +97,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
 
         struct Context {
             model::Field::Ptr field = nullptr;
-            Index cols = 0;
+            Index             cols  = 0;
         };
         auto ctx = std::make_shared<Context>();
 
@@ -76,7 +105,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
             const std::string name = keys.raw("NAME");
             const std::string type = keys.raw("TYPE");
             const std::string fill = keys.has("FILL") ? keys.raw("FILL") : std::string("ZERO");
-            const int cols = keys.get<int>("COLS");
+            const int         cols = keys.get<int>("COLS");
 
             if (cols <= 0) {
                 throw std::runtime_error("FIELD: COLS must be > 0");
@@ -85,7 +114,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                 throw std::runtime_error("FIELD: COLS exceeds internal limit of " + std::to_string(detail::kMaxFieldCols));
             }
 
-            const auto domain = detail::parse_field_domain(type);
+            const auto domain   = detail::parse_field_domain(type);
             const bool fill_nan = (fill == "NAN");
 
             if (domain == model::FieldDomain::ELEMENT_NODAL &&
@@ -105,7 +134,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
             }
 
             ctx->field = model._data->create_field(name, domain, static_cast<Index>(cols), fill_nan);
-            ctx->cols = static_cast<Index>(cols);
+            ctx->cols  = static_cast<Index>(cols);
 
             if (fill_nan) {
                 ctx->field->fill_nan();
@@ -130,8 +159,9 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                     }
 
                     if (id < 0 || static_cast<Index>(id) >= ctx->field->rows) {
-                        logging::error(false, "FIELD: id ", id, " out of bounds for field '",
-                                       ctx->field->name, "' (rows=", ctx->field->rows, ")");
+                        logging::error(false,
+                            "FIELD: id ", id, " out of bounds for field '",
+                            ctx->field->name, "' (rows=", ctx->field->rows, ")");
                         return;
                     }
 

@@ -1,3 +1,27 @@
+/**
+ * @file parser.cpp
+ * @brief Implements staged FEMaster input-deck parsing and command registration.
+ *
+ * The parser executes several passes over the same deck. Identifier counting
+ * determines model capacities, topology construction creates nodes and elements,
+ * field parsing creates enumeration-dependent fields, and the final data pass
+ * executes the remaining model and load-case commands.
+ *
+ * The dedicated field pass is required because `ELEMENT_NODAL` field sizes are
+ * known only after element enumeration. It also ensures that `*NORMAL` selects
+ * the shell-normal field before `Model::build_shell_element_normals()` completes
+ * missing entries and performs angular equalisation.
+ *
+ * Individual keyword layouts remain implemented by the registration helpers in
+ * `src/io/reader/commands`.
+ *
+ * @see Parser
+ * @see model::Model::build_shell_element_normals
+ *
+ * @author Finn Eggers
+ * @date 30.07.2026
+ */
+
 #include "parser.h"
 
 #include "../dsl/engine.h"
@@ -21,6 +45,7 @@
 #include "commands/register_surface_count.inl"
 #include "commands/register_heading.inl"
 #include "commands/register_field.inl"
+#include "commands/register_normal.inl"
 #include "commands/register_node.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_elset.inl"
@@ -91,22 +116,42 @@ Parser::~Parser() = default;
 
 // ----------------- Public API -----------------
 
-void Parser::run(const std::string&                  input_path,
-                 const std::string&                  output_path,
+/**
+ * Parses one FEMaster input deck and executes all requested load cases.
+ *
+ * The deck is processed in four dependency-ordered stages:
+ *
+ * 1. determine allocation capacities from the highest identifiers,
+ * 2. construct topology, assign sections and enumerate element-local data,
+ * 3. create generic fields and select an optional shell-normal field,
+ * 4. complete shell normals and execute the remaining data commands.
+ *
+ * Re-reading the deck is intentional. Commands that do not belong to the active
+ * stage are consumed without invoking hooks or data bindings.
+ *
+ * @param input_path Input-deck path.
+ * @param output_path Optional output base path.
+ * @param writer_formats Requested result-writer formats.
+ */
+void Parser::run(const std::string&                   input_path,
+                 const std::string&                   output_path,
                  const io::writer::WriterFileFormats& writer_formats) {
-    // 1) Count ids needed for ModelData allocation.
+    // Determine the model capacities before allocating ModelData.
     CountData count = run_count_stage(input_path);
-
-    // 2) Rebuild model with correct capacities, reset state
     allocate_model(count);
 
-    // 3) Parse topology and sections before element offsets are built
+    // Build topology and all enumeration data required to size generic fields.
     run_topology_stage(input_path);
     m_model->assign_sections();
     m_model->_data->initialize_element_enumeration();
+
+    // Create enumeration-dependent fields and select the optional normal field
+    // before model-side shell-normal construction fills unspecified rows.
+    run_field_stage(input_path);
     m_model->build_shell_element_normals();
 
-    // 4) Parse all non-topology input and field data.
+    // Execute all remaining model and load-case commands. FIELD and NORMAL are
+    // consumed here because they were already applied in the previous stage.
     run_data_stage(input_path, output_path, writer_formats);
 }
 
@@ -229,6 +274,32 @@ void Parser::run_topology_stage(const std::string& input_path) {
     engine.run(file);
 }
 
+/**
+ * Executes field definitions after element-local enumeration is available.
+ *
+ * All commands are registered because the DSL engine must understand and
+ * consume the complete deck. The registry is then switched to `ConsumeOnly`,
+ * and only `*FIELD` and `*NORMAL` are activated. This creates correctly sized
+ * generic fields and publishes the selected shell-normal field without running
+ * materials, loads or load cases prematurely.
+ *
+ * @param input_path Input-deck path parsed by this stage.
+ */
+void Parser::run_field_stage(const std::string& input_path) {
+    io::dsl::Registry registry;
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
+
+    // Consume the complete deck while executing only field-related commands.
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("FIELD", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::Active);
+
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(registry);
+    engine.run(file);
+}
+
 // ----------------- Model & registration -----------------
 
 void Parser::allocate_model(const CountData& count) {
@@ -244,8 +315,8 @@ void Parser::allocate_model(const CountData& count) {
     m_next_loadcase_id = 1;
 }
 
-void Parser::run_data_stage(const std::string&                  input_path,
-                            const std::string&                  output_path,
+void Parser::run_data_stage(const std::string&                   input_path,
+                            const std::string&                   output_path,
                             const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
     for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
@@ -275,6 +346,11 @@ void Parser::run_data_stage(const std::string&                  input_path,
     registry.set_active_mode("DENSITY", io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
+
+    // These commands were executed in run_field_stage() and must not recreate
+    // or reselect fields while the remaining data commands are processed.
+    registry.set_active_mode("FIELD", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::ConsumeOnly);
 
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
@@ -344,6 +420,7 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     // Base model/sections/materials
     commands::register_heading(reg);
     commands::register_field(reg, mdl);
+    commands::register_normal(reg, mdl);
     commands::register_material(reg, mdl);
     commands::register_elastic(reg, mdl);
     commands::register_hyperelastic(reg, mdl);
@@ -402,4 +479,5 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     commands::register_loadcase_inertiarelief(reg, *this);
     commands::register_loadcase_rebalance(reg, *this);
 }
+
 } // namespace fem::io::reader
