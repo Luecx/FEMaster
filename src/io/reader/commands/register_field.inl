@@ -1,18 +1,17 @@
 /**
  * @file register_field.inl
- * @brief Registers generic model fields and shell-normal field selection.
+ * @brief Registers generic model-field input.
  *
  * The `*FIELD` command creates and populates dense fields on the supported
- * FEMaster domains. The `*NORMAL` command does not define normal values itself;
- * it selects an existing three-component `ELEMENT_NODAL` field and exposes it
- * through `ModelData::shell_element_nodal_normals`.
+ * FEMaster domains. Field allocation uses the domain-specific row counts owned
+ * by `ModelData`, while the command data lines assign values by field row.
  *
- * Geometric completion, angular clustering and preservation of prescribed
- * element-nodal normals remain responsibilities of
- * `Model::build_shell_element_normals()`.
+ * Interpretation of a field remains the responsibility of the subsystem that
+ * later references it. This registration only manages generic field storage and
+ * does not attach application-specific semantics to the values.
  *
  * @see model::Field
- * @see model::Model::build_shell_element_normals
+ * @see model::ModelData
  *
  * @author Finn Eggers
  * @date 30.07.2026
@@ -70,14 +69,15 @@ inline Precision parse_precision_or_throw(const std::string& token) {
 } // namespace detail
 
 /**
- * Registers generic field input and the shell-normal field selector.
+ * Registers generic field allocation and row-wise field population.
  *
- * `*FIELD` owns allocation and row-wise population of arbitrary model fields.
- * `*NORMAL, FIELD=<name>` only validates and selects one existing field. No
- * shell-normal generation or averaging is performed by the reader command.
+ * `*FIELD` selects the storage domain and component count, initializes the full
+ * field to zero or NaN and then applies the supplied row values. Enumeration-
+ * dependent domains require the corresponding ModelData offsets to exist before
+ * the command is executed.
  *
- * @param registry DSL registry receiving both command definitions.
- * @param model Model whose field registry and shell-normal pointer are modified.
+ * @param registry DSL registry receiving the `*FIELD` command definition.
+ * @param model Model whose generic field registry is modified.
  */
 inline void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("FIELD", [&](fem::io::dsl::Command& command) {
@@ -183,35 +183,6 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                 })
             )
         );
-    });
-
-    registry.command("NORMAL", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Use an ELEMENT_NODAL vector field as the shell normal field.");
-        command.keyword(
-            fem::io::dsl::KeywordSpec::make()
-                .key("FIELD").required().doc("ELEMENT_NODAL field containing shell normals")
-        );
-
-        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            // Resolve the already populated generic field. The normal command
-            // only selects this storage; completion remains model-side.
-            const std::string field_name = keys.raw("FIELD");
-            const auto        field      = model._data->get_field(field_name);
-
-            logging::error(field != nullptr,
-                "NORMAL: field '", field_name, "' does not exist");
-            logging::error(field->domain == model::FieldDomain::ELEMENT_NODAL,
-                "NORMAL: field '", field_name, "' must use ELEMENT_NODAL domain");
-            logging::error(field->components == 3,
-                "NORMAL: field '", field_name, "' must have exactly three components");
-
-            // Publish the selected field directly. Existing entries are
-            // interpreted later by Model::build_shell_element_normals().
-            model._data->shell_element_nodal_normals = field;
-        });
-
-        command.variant(fem::io::dsl::Variant::make());
     });
 }
 
