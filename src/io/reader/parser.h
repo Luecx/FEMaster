@@ -46,19 +46,19 @@ struct DocOptions {
     enum class Format { Text, Markdown, Json };
     enum class Verbosity { Index, Compact, Full };
 
-    // Requested documentation operation and output format
-    Action    action    = Action::List;
-    Format    format    = Format::Text;
-    Verbosity verbosity = Verbosity::Full;
+    // Requested documentation operation
+    Action action = Action::List;
 
     // Optional command or search selection
     std::string cmd;
     std::string query;
 
-    // Text rendering options
-    int  wrap_width = 100;
-    bool regex      = false;
-    bool no_wrap    = false;
+    // Output representation and text rendering
+    Format    format    = Format::Text;
+    Verbosity verbosity = Verbosity::Full;
+    int       wrap_width = 100;
+    bool      regex      = false;
+    bool      no_wrap    = false;
 };
 
 /**
