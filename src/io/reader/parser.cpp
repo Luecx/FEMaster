@@ -45,6 +45,7 @@
 #include "commands/register_surface_count.inl"
 #include "commands/register_heading.inl"
 #include "commands/register_field.inl"
+#include "commands/register_normal.inl"
 #include "commands/register_node.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_elset.inl"
@@ -419,6 +420,7 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     // Base model/sections/materials
     commands::register_heading(reg);
     commands::register_field(reg, mdl);
+    commands::register_normal(reg, mdl);
     commands::register_material(reg, mdl);
     commands::register_elastic(reg, mdl);
     commands::register_hyperelastic(reg, mdl);
