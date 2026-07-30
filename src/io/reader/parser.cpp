@@ -100,13 +100,17 @@ void Parser::run(const std::string&                  input_path,
     // 2) Rebuild model with correct capacities, reset state
     allocate_model(count);
 
-    // 3) Parse topology and sections before element offsets are built
+    // 3) Parse topology and sections before element offsets are built.
     run_topology_stage(input_path);
     m_model->assign_sections();
     m_model->_data->initialize_element_enumeration();
+
+    // 4) Parse generic fields and select an optional shell-normal field before
+    //    automatic shell normals are completed and equalised.
+    run_field_stage(input_path);
     m_model->build_shell_element_normals();
 
-    // 4) Parse all non-topology input and field data.
+    // 5) Parse all remaining non-topology input and load-case data.
     run_data_stage(input_path, output_path, writer_formats);
 }
 
@@ -229,6 +233,20 @@ void Parser::run_topology_stage(const std::string& input_path) {
     engine.run(file);
 }
 
+void Parser::run_field_stage(const std::string& input_path) {
+    io::dsl::Registry registry;
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
+
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("FIELD", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::Active);
+
+    io::dsl::File file(input_path);
+    io::dsl::Engine engine(registry);
+    engine.run(file);
+}
+
 // ----------------- Model & registration -----------------
 
 void Parser::allocate_model(const CountData& count) {
@@ -275,6 +293,8 @@ void Parser::run_data_stage(const std::string&                  input_path,
     registry.set_active_mode("DENSITY", io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("FIELD", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::ConsumeOnly);
 
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
