@@ -19,8 +19,9 @@
  */
 
 #include <array>
-#include <sstream>
 #include <limits>
+#include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -195,8 +196,8 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             // Resolve the already populated generic field. The normal command
             // only selects this storage; completion remains model-side.
-            const std::string      field_name = keys.raw("FIELD");
-            const model::Field::Ptr field     = model._data->get_field(field_name);
+            const std::string field_name = keys.raw("FIELD");
+            const auto        field      = model._data->get_field(field_name);
 
             logging::error(field != nullptr,
                 "NORMAL: field '", field_name, "' does not exist");
