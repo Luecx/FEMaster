@@ -70,6 +70,7 @@ private:
     // Pipeline steps
     CountData run_count_stage(const std::string& input_path);
     void run_topology_stage(const std::string& input_path);
+    void run_field_stage(const std::string& input_path);
     void run_data_stage(const std::string&                  input_path,
                         const std::string&                  output_path,
                         const io::writer::WriterFileFormats& writer_formats);
