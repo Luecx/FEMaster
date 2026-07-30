@@ -200,7 +200,7 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
         ID master_id = c.master_node;
         auto master_dofs = c.master_dofs(mask, *_data);
         for (ID dof = 0; dof < 6; dof++) {
-            mask(master_id, dof) |= dofs(0, dof);
+            mask(master_id, dof) |= master_dofs(0, dof);
         }
     }
     // go through all connectors and mask the dofs of both nodes
