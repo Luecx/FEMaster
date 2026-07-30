@@ -1,4 +1,22 @@
-// register_field.inl — registers *FIELD and *NORMAL
+/**
+ * @file register_field.inl
+ * @brief Registers generic model fields and shell-normal field selection.
+ *
+ * The `*FIELD` command creates and populates dense fields on the supported
+ * FEMaster domains. The `*NORMAL` command does not define normal values itself;
+ * it selects an existing three-component `ELEMENT_NODAL` field and exposes it
+ * through `ModelData::shell_element_nodal_normals`.
+ *
+ * Geometric completion, angular clustering and preservation of prescribed
+ * element-nodal normals remain responsibilities of
+ * `Model::build_shell_element_normals()`.
+ *
+ * @see model::Field
+ * @see model::Model::build_shell_element_normals
+ *
+ * @author Finn Eggers
+ * @date 30.07.2026
+ */
 
 #include <array>
 #include <sstream>
@@ -50,6 +68,16 @@ inline Precision parse_precision_or_throw(const std::string& token) {
 
 } // namespace detail
 
+/**
+ * Registers generic field input and the shell-normal field selector.
+ *
+ * `*FIELD` owns allocation and row-wise population of arbitrary model fields.
+ * `*NORMAL, FIELD=<name>` only validates and selects one existing field. No
+ * shell-normal generation or averaging is performed by the reader command.
+ *
+ * @param registry DSL registry receiving both command definitions.
+ * @param model Model whose field registry and shell-normal pointer are modified.
+ */
 inline void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("FIELD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::any_of({
@@ -68,7 +96,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
 
         struct Context {
             model::Field::Ptr field = nullptr;
-            Index cols = 0;
+            Index             cols  = 0;
         };
         auto ctx = std::make_shared<Context>();
 
@@ -76,7 +104,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
             const std::string name = keys.raw("NAME");
             const std::string type = keys.raw("TYPE");
             const std::string fill = keys.has("FILL") ? keys.raw("FILL") : std::string("ZERO");
-            const int cols = keys.get<int>("COLS");
+            const int         cols = keys.get<int>("COLS");
 
             if (cols <= 0) {
                 throw std::runtime_error("FIELD: COLS must be > 0");
@@ -85,7 +113,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                 throw std::runtime_error("FIELD: COLS exceeds internal limit of " + std::to_string(detail::kMaxFieldCols));
             }
 
-            const auto domain = detail::parse_field_domain(type);
+            const auto domain   = detail::parse_field_domain(type);
             const bool fill_nan = (fill == "NAN");
 
             if (domain == model::FieldDomain::ELEMENT_NODAL &&
@@ -105,7 +133,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
             }
 
             ctx->field = model._data->create_field(name, domain, static_cast<Index>(cols), fill_nan);
-            ctx->cols = static_cast<Index>(cols);
+            ctx->cols  = static_cast<Index>(cols);
 
             if (fill_nan) {
                 ctx->field->fill_nan();
@@ -130,8 +158,9 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                     }
 
                     if (id < 0 || static_cast<Index>(id) >= ctx->field->rows) {
-                        logging::error(false, "FIELD: id ", id, " out of bounds for field '",
-                                       ctx->field->name, "' (rows=", ctx->field->rows, ")");
+                        logging::error(false,
+                            "FIELD: id ", id, " out of bounds for field '",
+                            ctx->field->name, "' (rows=", ctx->field->rows, ")");
                         return;
                     }
 
@@ -164,16 +193,20 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
         );
 
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            const std::string field_name = keys.raw("FIELD");
-            const auto field = model._data->get_field(field_name);
+            // Resolve the already populated generic field. The normal command
+            // only selects this storage; completion remains model-side.
+            const std::string      field_name = keys.raw("FIELD");
+            const model::Field::Ptr field     = model._data->get_field(field_name);
 
             logging::error(field != nullptr,
-                           "NORMAL: field '", field_name, "' does not exist");
+                "NORMAL: field '", field_name, "' does not exist");
             logging::error(field->domain == model::FieldDomain::ELEMENT_NODAL,
-                           "NORMAL: field '", field_name, "' must use ELEMENT_NODAL domain");
+                "NORMAL: field '", field_name, "' must use ELEMENT_NODAL domain");
             logging::error(field->components == 3,
-                           "NORMAL: field '", field_name, "' must have exactly three components");
+                "NORMAL: field '", field_name, "' must have exactly three components");
 
+            // Publish the selected field directly. Existing entries are
+            // interpreted later by Model::build_shell_element_normals().
             model._data->shell_element_nodal_normals = field;
         });
 
