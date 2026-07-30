@@ -1,6 +1,23 @@
-//
-// Created by Finn Eggers on 03.09.23.
-//
+/**
+ * @file model_build.cpp
+ * @brief Implements model-level field construction and structural assembly.
+ *
+ * This file contains build operations that combine element-local information
+ * into model-wide fields, constraints, forces and sparse matrices. Element
+ * formulations remain responsible for their local mechanics, while `Model`
+ * coordinates enumeration, field ownership and global assembly.
+ *
+ * Shell reference directors are represented by an `ELEMENT_NODAL` field. The
+ * shell-normal build routine completes missing field rows from the reference
+ * geometry and equalises compatible element-local normals at shared nodes while
+ * preserving explicitly prescribed values.
+ *
+ * @see Model
+ * @see ModelData
+ *
+ * @author Finn Eggers
+ * @date 30.07.2026
+ */
 
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
@@ -27,58 +44,93 @@ void Model::assign_sections() {
 }
 
 /**
- * Builds an element-nodal reference normal field for shell elements.
+ * Builds and completes the element-nodal reference-normal field for shells.
  *
- * Existing finite, non-zero vectors in `shell_element_nodal_normals` are
- * treated as prescribed element-node normals and are never overwritten.
- * Missing rows are evaluated from the physical shell geometry. All prescribed
- * and evaluated normals participate in the same angular clustering at each
- * global node. The cluster average is written only to missing rows, while
- * prescribed rows remain unchanged.
+ * If `ModelData::shell_element_nodal_normals` already references a field, every
+ * finite row with magnitude above the numerical tolerance is interpreted as a
+ * prescribed element-node normal. Prescribed values remain unchanged in field
+ * storage. A normalized copy is used only for angular comparison and averaging.
  *
- * @param equalize_angle_degrees Maximum angle for equalising adjacent shell
- *                               normals at one global node.
+ * Missing rows are evaluated from the physical reference surface at the
+ * corresponding natural node coordinate. At each global node, the resulting
+ * unit vectors are divided into angularly compatible clusters according to
+ *
+ * \f[
+ *     \hat{\boldsymbol n}_i \cdot \hat{\boldsymbol n}_c
+ *     \ge \cos(\theta_{\mathrm{eq}}).
+ * \f]
+ *
+ * Prescribed and geometrically evaluated vectors contribute equally to the
+ * normalized cluster mean
+ *
+ * \f[
+ *     \bar{\boldsymbol n}
+ *     = \frac{\sum_i \hat{\boldsymbol n}_i}
+ *            {\left\|\sum_i \hat{\boldsymbol n}_i\right\|}.
+ * \f]
+ *
+ * The cluster mean is written only to previously missing rows. Consequently,
+ * two prescribed normals and one missing normal at the same smooth node cause
+ * the missing row to follow the mean of all three directions, while both
+ * prescribed field entries remain untouched. Angularly incompatible clusters
+ * remain separate and therefore preserve sharp folds.
+ *
+ * If no field was selected, the routine creates the default
+ * `SHELL_ELEMENT_NODAL_NORMALS` field and reproduces the fully automatic
+ * construction used previously.
+ *
+ * @param equalize_angle_degrees Maximum angle between normals that may belong
+ *                               to one smooth cluster at a global node.
  */
 void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
+    // ---------------------------------------------------------------------
+    // Validate model state and configure angular equalisation
+    // ---------------------------------------------------------------------
     logging::error(_data->positions_reference != nullptr,
-                   "Model: POSITION_REFERENCE field is not set");
+        "Model: POSITION_REFERENCE field is not set");
     logging::error(_data->element_nodal_offsets != nullptr,
-                   "Model: element nodal offsets are not initialized");
+        "Model: element nodal offsets are not initialized");
 
     constexpr Precision normal_tolerance = Precision(1e-12);
 
     const Precision pi             = std::acos(Precision(-1));
     const Precision equalize_angle = equalize_angle_degrees * pi / Precision(180);
     const Precision cos_equalize   = std::cos(equalize_angle);
-    const Index expected_rows      = static_cast<Index>(
-        (*_data->element_nodal_offsets)(static_cast<Index>(_data->max_elems))
-    );
+    const Index expected_rows =
+        static_cast<Index>((*_data->element_nodal_offsets)(static_cast<Index>(_data->max_elems)));
 
+    // ---------------------------------------------------------------------
+    // Reuse a selected field or create the default automatic normal field
+    // ---------------------------------------------------------------------
     Field::Ptr normals = _data->shell_element_nodal_normals;
+
     if (normals == nullptr) {
         normals = _data->create_field(
             "SHELL_ELEMENT_NODAL_NORMALS", FieldDomain::ELEMENT_NODAL, 3, false);
         normals->set_zero();
-        _data->shell_element_nodal_normals = normals;
     } else {
         logging::error(normals->domain == FieldDomain::ELEMENT_NODAL,
-                       "Model: shell normal field '", normals->name,
-                       "' must use ELEMENT_NODAL domain");
+            "Model: shell normal field '", normals->name,
+            "' must use ELEMENT_NODAL domain");
         logging::error(normals->components == 3,
-                       "Model: shell normal field '", normals->name,
-                       "' must have exactly three components");
+            "Model: shell normal field '", normals->name,
+            "' must have exactly three components");
         logging::error(normals->rows == expected_rows,
-                       "Model: shell normal field '", normals->name,
-                       "' has an incompatible row count");
+            "Model: shell normal field '", normals->name,
+            "' has ", normals->rows, " rows, expected ", expected_rows);
     }
 
+    // Store the element-nodal rows attached to each global node. The working
+    // vectors are normalized independently of the original field values, while
+    // the prescribed mask controls which rows may be written during completion.
     std::vector<std::vector<Index>> node_rows(static_cast<std::size_t>(_data->max_nodes));
-    std::vector<Vec3> row_normals(static_cast<std::size_t>(normals->rows), Vec3::Zero());
-    std::vector<bool> prescribed_rows(static_cast<std::size_t>(normals->rows), false);
+    std::vector<Vec3>               row_normals(static_cast<std::size_t>(normals->rows), Vec3::Zero());
+    std::vector<bool>               prescribed_rows(static_cast<std::size_t>(normals->rows), false);
 
-    // Read prescribed normals where available and evaluate only missing rows
-    // from the shell reference geometry.
-    for (const ElementPtr& element: _data->elements) {
+    // ---------------------------------------------------------------------
+    // Gather prescribed normals and evaluate missing geometric normals
+    // ---------------------------------------------------------------------
+    for (const ElementPtr& element : _data->elements) {
         if (element == nullptr) {
             continue;
         }
@@ -90,35 +142,39 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
 
         const auto surface = structural->surface(1);
         logging::error(surface != nullptr,
-                       "Model: shell element ", structural->elem_id,
-                       " does not provide a reference surface");
+            "Model: shell element ", structural->elem_id,
+            " does not provide a reference surface");
 
         const Index offset  = static_cast<Index>(structural->elem_nodal_offset);
         const Index n_nodes = static_cast<Index>(structural->n_nodes());
 
         const DynamicMatrix natural_coords = surface->node_coords_natural();
-        logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes &&
-                       static_cast<Index>(natural_coords.cols()) == 2,
-                       "Model: natural surface node coordinates do not match shell element ",
-                       structural->elem_id);
+        logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes
+                    && static_cast<Index>(natural_coords.cols()) == 2,
+            "Model: natural surface node coordinates do not match shell element ",
+            structural->elem_id);
 
         for (Index local_node = 0; local_node < n_nodes; ++local_node) {
             const ID    node_id = structural->nodes()[local_node];
             const Index row     = offset + local_node;
 
+            // A valid field vector is prescribed. Normalize only the local copy
+            // so the user-provided field row remains exactly unchanged.
             Vec3 normal = normals->row_vec3(row);
-            const bool prescribed =
-                normal.allFinite() && normal.norm() > normal_tolerance;
+            const bool prescribed = normal.allFinite() && normal.norm() > normal_tolerance;
 
             if (prescribed) {
                 normal.normalize();
                 prescribed_rows[static_cast<std::size_t>(row)] = true;
             } else {
+                // Evaluate the physical reference normal at the natural shell
+                // node only when no usable field value was supplied.
                 const Vec2 local = natural_coords.row(local_node).transpose();
                 normal = surface->normal(*_data->positions_reference, local);
 
                 logging::error(normal.allFinite() && normal.norm() > normal_tolerance,
-                               "Model: invalid shell normal in element ", structural->elem_id);
+                    "Model: invalid shell normal in element ", structural->elem_id,
+                    " at local node ", local_node);
 
                 normal.normalize();
             }
@@ -128,14 +184,16 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
         }
     }
 
-    // Group compatible normals at every global node. Prescribed and evaluated
-    // normals contribute equally to the cluster average. Only evaluated rows
-    // are replaced by that average.
-    for (const auto& rows: node_rows) {
-        std::vector<Vec3> cluster_sums;
+    // ---------------------------------------------------------------------
+    // Cluster compatible normals and complete only non-prescribed rows
+    // ---------------------------------------------------------------------
+    for (const auto& rows : node_rows) {
+        std::vector<Vec3>               cluster_sums;
         std::vector<std::vector<Index>> cluster_rows;
 
-        for (Index row: rows) {
+        // Build angular clusters using the current normalized sum as the
+        // representative direction. Every member contributes unit weight.
+        for (Index row : rows) {
             const Vec3 normal = row_normals[static_cast<std::size_t>(row)];
             bool added = false;
 
@@ -159,21 +217,27 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
             }
         }
 
+        // The normalized sum is the equalised direction of one smooth cluster.
+        // Prescribed rows participated in this sum but are deliberately skipped
+        // during the write-back step.
         for (Index cluster = 0; cluster < static_cast<Index>(cluster_sums.size()); ++cluster) {
-            const Vec3 normal = cluster_sums[static_cast<std::size_t>(cluster)].normalized();
+            const Vec3 equalized_normal =
+                cluster_sums[static_cast<std::size_t>(cluster)].normalized();
 
-            for (Index row: cluster_rows[static_cast<std::size_t>(cluster)]) {
+            for (Index row : cluster_rows[static_cast<std::size_t>(cluster)]) {
                 if (prescribed_rows[static_cast<std::size_t>(row)]) {
                     continue;
                 }
 
-                (*normals)(row, 0) = normal(0);
-                (*normals)(row, 1) = normal(1);
-                (*normals)(row, 2) = normal(2);
+                (*normals)(row, 0) = equalized_normal(0);
+                (*normals)(row, 1) = equalized_normal(1);
+                (*normals)(row, 2) = equalized_normal(2);
             }
         }
     }
 
+    // Publish either the completed selected field or the newly created default
+    // field as the semantic shell-normal storage consumed by shell elements.
     _data->shell_element_nodal_normals = normals;
 }
 
