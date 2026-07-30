@@ -1,4 +1,4 @@
-// register_field.inl — registers *FIELD
+// register_field.inl — registers *FIELD and *NORMAL
 
 #include <array>
 #include <sstream>
@@ -9,6 +9,7 @@
 #include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../../data/field.h"
+#include "../../../model/element/element_structural.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../../model/model.h"
@@ -154,6 +155,78 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
             )
         );
     });
+
+    registry.command("NORMAL", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
+        command.doc("Assign an explicit unit normal to an element-node pair of a shell element.");
+        command.keyword(fem::io::dsl::KeywordSpec::make());
+
+        auto normals = std::make_shared<model::Field::Ptr>();
+
+        command.on_enter([&model, normals](const fem::io::dsl::Keys&) {
+            logging::error(model._data->element_nodal_offsets != nullptr,
+                           "NORMAL: element-nodal offsets are not initialized");
+
+            *normals = model._data->create_field(
+                "SHELL_ELEMENT_NODAL_NORMALS",
+                model::FieldDomain::ELEMENT_NODAL,
+                3,
+                false
+            );
+            model._data->shell_element_nodal_normals = *normals;
+        });
+
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<fem::ID>().name("ELEMENT").desc("Element id")
+                    .one<fem::ID>().name("NODE").desc("Global node id")
+                    .one<Precision>().name("NX").desc("Normal x component")
+                    .one<Precision>().name("NY").desc("Normal y component")
+                    .one<Precision>().name("NZ").desc("Normal z component")
+                )
+                .bind([&model, normals](fem::ID element_id,
+                                        fem::ID node_id,
+                                        Precision nx,
+                                        Precision ny,
+                                        Precision nz) {
+                    logging::error(*normals != nullptr, "NORMAL: internal field is not initialized");
+                    logging::error(element_id >= 0 && element_id < model._data->max_elems,
+                                   "NORMAL: element id ", element_id, " is out of bounds");
+
+                    const auto& element = model._data->elements[static_cast<std::size_t>(element_id)];
+                    logging::error(element != nullptr,
+                                   "NORMAL: element ", element_id, " does not exist");
+
+                    const auto structural = element->as<model::StructuralElement>();
+                    logging::error(structural != nullptr && structural->is_shell(),
+                                   "NORMAL: element ", element_id, " is not a shell element");
+
+                    Index local_node = -1;
+                    for (Index node = 0; node < static_cast<Index>(structural->n_nodes()); ++node) {
+                        if (structural->nodes()[node] == node_id) {
+                            local_node = node;
+                            break;
+                        }
+                    }
+                    logging::error(local_node >= 0,
+                                   "NORMAL: node ", node_id, " does not belong to element ", element_id);
+
+                    Vec3 normal(nx, ny, nz);
+                    logging::error(normal.allFinite() && normal.norm() > Precision(0),
+                                   "NORMAL: invalid normal for element ", element_id,
+                                   " and node ", node_id);
+                    normal.normalize();
+
+                    const Index row = static_cast<Index>(structural->elem_nodal_offset) + local_node;
+                    (**normals)(row, 0) = normal(0);
+                    (**normals)(row, 1) = normal(1);
+                    (**normals)(row, 2) = normal(2);
+                })
+            )
+        );
+    });
 }
 
-} // namespace fem::io::reader::commands
+} // namespace fem::io::reader::commands {
