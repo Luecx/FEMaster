@@ -169,7 +169,12 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
 
             logging::error(field != nullptr,
                            "NORMAL: field '", field_name, "' does not exist");
-            model.apply_shell_element_normal_field(field);
+            logging::error(field->domain == model::FieldDomain::ELEMENT_NODAL,
+                           "NORMAL: field '", field_name, "' must use ELEMENT_NODAL domain");
+            logging::error(field->components == 3,
+                           "NORMAL: field '", field_name, "' must have exactly three components");
+
+            model._data->shell_element_nodal_normals = field;
         });
 
         command.variant(fem::io::dsl::Variant::make());
