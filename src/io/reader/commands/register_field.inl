@@ -72,7 +72,9 @@ inline Precision parse_precision_or_throw(const std::string& token) {
  * Registers generic field allocation and row-wise field population.
  *
  * `*FIELD` selects the storage domain and component count, initializes the full
- * field to zero or NaN and then applies the supplied row values. Enumeration-
+ * field to zero or NaN and then applies the supplied values. Element-nodal
+ * values are addressed by element identifier and zero-based local node index;
+ * the remaining domains use their flat field row identifier. Enumeration-
  * dependent domains require the corresponding ModelData offsets to exist before
  * the command is executed.
  *
@@ -146,6 +148,68 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
         static const std::string kSkipToken = "__SKIP__";
 
         command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_NODAL"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<fem::ID>().name("ELEMENT_ID").desc("Element identifier")
+                    .one<fem::ID>().name("LOCAL_NODE").desc("Zero-based local node index")
+                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
+                        .on_empty(kSkipToken).on_missing(kSkipToken)
+                )
+                .bind([&model, ctx](fem::ID element_id,
+                                    fem::ID local_node,
+                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
+                    if (!ctx->field) {
+                        throw std::runtime_error("FIELD: internal error (field not initialized)");
+                    }
+
+                    // Resolve the element-local node into the flat element-nodal
+                    // storage used by ModelData and all element implementations
+                    if (element_id < 0 || element_id >= model._data->max_elems ||
+                        model._data->elements[static_cast<std::size_t>(element_id)] == nullptr) {
+                        logging::error(false,
+                            "FIELD: element id ", element_id, " is not configured for field '",
+                            ctx->field->name, "'");
+                        return;
+                    }
+
+                    const model::Field& offsets = *model._data->element_nodal_offsets;
+                    const Index         begin   = static_cast<Index>(offsets(static_cast<Index>(element_id)));
+                    const Index         end     = static_cast<Index>(offsets(static_cast<Index>(element_id) + 1));
+
+                    if (local_node < 0 || static_cast<Index>(local_node) >= end - begin) {
+                        logging::error(false,
+                            "FIELD: local node ", local_node, " out of bounds for element ",
+                            element_id, " in field '", ctx->field->name,
+                            "' (nodes=", end - begin, ")");
+                        return;
+                    }
+
+                    // Assign the supplied components and preserve the initial fill
+                    // value for omitted entries
+                    const Index row = begin + static_cast<Index>(local_node);
+                    for (Index c = 0; c < ctx->cols; ++c) {
+                        const auto& token = values[static_cast<std::size_t>(c)];
+                        if (token == kSkipToken) {
+                            continue;
+                        }
+                        const Precision v = detail::parse_precision_or_throw(token);
+                        (*ctx->field)(row, c) = v;
+                    }
+
+                    for (Index c = ctx->cols; c < static_cast<Index>(detail::kMaxFieldCols); ++c) {
+                        if (values[static_cast<std::size_t>(c)] != kSkipToken) {
+                            throw std::runtime_error("FIELD: more values than COLS for field '" + ctx->field->name + "'");
+                        }
+                    }
+                })
+            )
+        );
+
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::negate(
+                fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_NODAL"})))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
