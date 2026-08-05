@@ -18,6 +18,7 @@
 #pragma once
 
 #include "loadcase.h"
+#include "tools/rayleigh_damping.h"
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../solve/sparse/solve_sparse.h"
 
@@ -42,10 +43,11 @@ struct LinearHarmonic : public LoadCase {
     constraint::ConstraintTransformer::Method constraint_method =
         constraint::ConstraintTransformer::Method::NullSpace;
 
-    Precision rayleigh_alpha = 0.0;
-    Precision rayleigh_beta  = 0.0;
+    tools::RayleighDamping damping; ///< Proportional viscous damping model.
 
     LinearHarmonic(ID id, io::writer::ResultWriters* writer, model::Model* model);
+
+    void set_damping(const tools::RayleighDamping& value) { damping = value; }
 
     void run() override;
 };
