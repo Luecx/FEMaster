@@ -185,7 +185,7 @@ void LinearHarmonic::run() {
         return transformer->assemble_system_rhs(K, f);
     });
 
-    SparseMatrix Cr = rayleigh_alpha * Mr + rayleigh_beta * Kr;
+    SparseMatrix Cr = damping.build(Mr, Kr);
     Cr.makeCompressed();
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
