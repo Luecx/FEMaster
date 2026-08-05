@@ -1,10 +1,11 @@
-// register_loadcase_constraintmethod.inl — registers CONSTRAINTMETHOD within *LOADCASE (LinearStatic and LinearStaticTopo)
+// register_loadcase_constraintmethod.inl — registers CONSTRAINTMETHOD within *LOADCASE
 
 #include <stdexcept>
 #include <string>
 
 #include "../parser.h"
 
+#include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
 
@@ -14,21 +15,8 @@ inline void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry,
     registry.command("CONSTRAINTMETHOD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
-            "Select constraint backend for LINEARSTATIC/LINEARSTATICTOPO: NULLSPACE, LAGRANGE or ELIMINATION.\n"
-            "\n"
-            "Constraint | Backend   | DIRECT       | INDIRECT\n"
-            "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
-            "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
-            "NULLSPACE  | GPU       | Yes          | Yes\n"
-            "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
-            "LAGRANGE   | CPU MKL   | Yes          | No\n"
-            "LAGRANGE   | CPU Eigen | Limited      | No\n"
-            "LAGRANGE   | GPU       | No           | No\n"
-            "LAGRANGE   | GPU cuDSS | Yes          | No\n"
-            "ELIMINATION| CPU MKL   | Yes          | Yes\n"
-            "ELIMINATION| CPU Eigen | Yes          | Yes\n"
-            "ELIMINATION| GPU       | Yes          | Yes\n"
-            "ELIMINATION| GPU cuDSS | Yes          | Yes"
+            "Select constraint backend for supported structural loadcases: NULLSPACE, LAGRANGE or ELIMINATION.\n"
+            "LINEARHARMONIC currently accepts only NULLSPACE during execution."
         );
 
         command.keyword(
@@ -42,12 +30,6 @@ inline void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry,
                 throw std::runtime_error("CONSTRAINTMETHOD must appear inside *LOADCASE");
             }
 
-            auto* lc = dynamic_cast<loadcase::LinearStatic*>(base);
-            auto* nlc = dynamic_cast<loadcase::NonlinearStatic*>(base);
-            if (!lc && !nlc) {
-                throw std::runtime_error("CONSTRAINTMETHOD is only supported for LINEARSTATIC, LINEARSTATICTOPO and NONLINEARSTATIC loadcases");
-            }
-
             const std::string type = keys.raw("TYPE");
             auto method = constraint::ConstraintTransformer::Method::NullSpace;
             if (type == "LAGRANGE") {
@@ -55,11 +37,23 @@ inline void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry,
             } else if (type == "ELIMINATION") {
                 method = constraint::ConstraintTransformer::Method::Elimination;
             }
-            if (lc) {
+
+            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
                 lc->constraint_method = method;
                 return;
             }
-            nlc->constraint_method = method;
+            if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+                lc->constraint_method = method;
+                return;
+            }
+            if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+                lc->constraint_method = method;
+                return;
+            }
+
+            throw std::runtime_error(
+                "CONSTRAINTMETHOD not supported for loadcase type " +
+                parser.active_loadcase_type());
         });
 
         command.variant(fem::io::dsl::Variant::make());
