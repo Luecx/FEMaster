@@ -56,15 +56,15 @@ inline void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& 
                             logging::error(base != nullptr, "DAMPING must appear inside *LOADCASE.");
                             logging::error(*type == "RAYLEIGH", "DAMPING TYPE must be RAYLEIGH.");
 
+                            const fem::loadcase::tools::RayleighDamping damping{ab[0], ab[1]};
+
                             if (auto* lc = dynamic_cast<fem::loadcase::Transient*>(base)) {
-                                fem::loadcase::tools::RayleighDamping damping{ab[0], ab[1]};
                                 lc->set_damping(damping);
                                 return;
                             }
 
                             if (auto* lc = dynamic_cast<fem::loadcase::LinearHarmonic*>(base)) {
-                                lc->rayleigh_alpha = ab[0];
-                                lc->rayleigh_beta  = ab[1];
+                                lc->set_damping(damping);
                                 return;
                             }
 
