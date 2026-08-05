@@ -30,6 +30,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fem {
@@ -40,6 +42,27 @@ using constraint::ConstraintTransformer;
 namespace {
 
 constexpr Precision pi = Precision(3.141592653589793238462643383279502884L);
+
+template<class Function>
+decltype(auto) run_quiet(Function&& function) {
+    const bool logging_was_enabled = logging::is_enabled();
+    logging::disable();
+
+    try {
+        if constexpr (std::is_void_v<std::invoke_result_t<Function>>) {
+            std::forward<Function>(function)();
+            if (logging_was_enabled) logging::enable();
+            return;
+        } else {
+            auto result = std::forward<Function>(function)();
+            if (logging_was_enabled) logging::enable();
+            return result;
+        }
+    } catch (...) {
+        if (logging_was_enabled) logging::enable();
+        throw;
+    }
+}
 
 SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
     logging::error(A.rows() == A.cols(), "LinearHarmonic: A must be square");
@@ -88,7 +111,6 @@ LinearHarmonic::LinearHarmonic(ID id, io::writer::ResultWriters* writer, model::
 
 void LinearHarmonic::run() {
     logging::info(true, "");
-    logging::info(true, "");
     logging::info(true, "===============================================================================================");
     logging::info(true, "LINEAR HARMONIC RESPONSE ANALYSIS");
     logging::info(true, "===============================================================================================");
@@ -103,159 +125,139 @@ void LinearHarmonic::run() {
     logging::error(
         constraint_method == ConstraintTransformer::Method::NullSpace,
         "LinearHarmonic: only NULLSPACE constraints are currently supported");
+    logging::error(method == solver::DIRECT,
+                   "LinearHarmonic: only DIRECT solver method is currently supported");
 
     model->assign_sections();
     model->step_begin();
 
-    auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_unconstrained_index_matrix(); },
-        "generating active_dof_idx_mat index matrix");
+    auto active_dof_idx_mat = run_quiet([&]() {
+        return model->build_unconstrained_index_matrix();
+    });
 
-    auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
-        "constructing harmonic load-amplitude matrix");
+    auto global_load_mat = run_quiet([&]() {
+        return model->build_load_matrix(loads);
+    });
 
-    auto groups = Timer::measure(
-        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
-        "building constraints");
+    auto groups = run_quiet([&]() {
+        return model->collect_constraints(active_dof_idx_mat, supps);
+    });
 
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
-    auto K = Timer::measure(
-        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
-        "constructing stiffness matrix K");
+    auto K = run_quiet([&]() {
+        return model->build_stiffness_matrix(active_dof_idx_mat);
+    });
 
-    auto M = Timer::measure(
-        [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
-        "constructing mass matrix M");
+    auto M = run_quiet([&]() {
+        return model->build_lumped_mass_matrix(active_dof_idx_mat);
+    });
 
-    auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing harmonic load matrix -> active RHS vector");
+    auto f = run_quiet([&]() {
+        return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
+    });
 
-    auto transformer = Timer::measure(
-        [&]() {
-            ConstraintTransformer::Options options;
-            options.method = constraint_method;
-            return std::make_unique<ConstraintTransformer>(
-                equations,
-                active_dof_idx_mat,
-                K.rows(),
-                options);
-        },
-        "building constraint transformer");
+    auto transformer = run_quiet([&]() {
+        ConstraintTransformer::Options options;
+        options.method = constraint_method;
+        return std::make_unique<ConstraintTransformer>(
+            equations,
+            active_dof_idx_mat,
+            K.rows(),
+            options);
+    });
 
     logging::error(transformer->homogeneous(),
                    "LinearHarmonic: harmonic constraints must be homogeneous");
     logging::error(transformer->feasible(),
                    "LinearHarmonic: constraint system is infeasible");
 
-    auto Kr = Timer::measure(
-        [&]() { return transformer->assemble_system_matrix(K); },
-        "assembling reduced stiffness matrix Kr");
+    auto Kr = run_quiet([&]() {
+        return transformer->assemble_system_matrix(K);
+    });
 
-    auto Mr = Timer::measure(
-        [&]() { return transformer->reduce_secondary_matrix(M); },
-        "assembling reduced mass matrix Mr");
+    auto Mr = run_quiet([&]() {
+        return transformer->reduce_secondary_matrix(M);
+    });
 
-    auto fr = Timer::measure(
-        [&]() { return transformer->assemble_system_rhs(K, f); },
-        "assembling reduced harmonic RHS");
+    auto fr = run_quiet([&]() {
+        return transformer->assemble_system_rhs(K, f);
+    });
 
     SparseMatrix Cr = rayleigh_alpha * Mr + rayleigh_beta * Kr;
     Cr.makeCompressed();
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
 
-    logging::info(true, "");
+    logging::info(true, "Frequency sweep");
     logging::info(true,
-                  std::setw(8),  "Index",
-                  std::setw(18), "Frequency",
-                  std::setw(18), "Omega",
-                  std::setw(18), "||u||");
+                  std::setw(6),  "Idx",
+                  std::setw(16), "Frequency",
+                  std::setw(18), "Response norm");
+    logging::info(true, "----------------------------------------");
 
     for (Index i = 0; i < static_cast<Index>(frequencies.size()); ++i) {
         const Precision frequency = frequencies[i];
         const Precision omega     = 2.0 * pi * frequency;
 
-        SparseMatrix A = Kr - omega * omega * Mr;
-        SparseMatrix B = omega * Cr;
-        A.makeCompressed();
-        B.makeCompressed();
+        DynamicVector u_real;
+        DynamicVector u_imag;
 
-        auto block_matrix = Timer::measure(
-            [&]() { return build_block_matrix(A, B); },
-            "constructing real harmonic block matrix");
+        run_quiet([&]() {
+            SparseMatrix A = Kr - omega * omega * Mr;
+            SparseMatrix B = omega * Cr;
+            A.makeCompressed();
+            B.makeCompressed();
 
-        const DynamicVector zero = DynamicVector::Zero(fr.size());
-        const DynamicVector rhs  = build_block_rhs(fr, zero);
+            SparseMatrix block_matrix = build_block_matrix(A, B);
+            const DynamicVector zero = DynamicVector::Zero(fr.size());
+            const DynamicVector rhs  = build_block_rhs(fr, zero);
 
-        auto solution = Timer::measure(
-            [&]() {
-                return solve(device,
-                             method,
-                             block_matrix,
-                             rhs,
-                             solver::DirectSolverMatrixType::General);
-            },
-            "solving harmonic block system");
+            DynamicVector solution = solve(
+                device,
+                method,
+                block_matrix,
+                rhs,
+                solver::DirectSolverMatrixType::General);
 
-        const Index n = static_cast<Index>(fr.size());
-        const DynamicVector q_real = solution.head(n);
-        const DynamicVector q_imag = solution.tail(n);
+            const Index n = static_cast<Index>(fr.size());
+            const DynamicVector q_real = solution.head(n);
+            const DynamicVector q_imag = solution.tail(n);
 
-        auto u_real = Timer::measure(
-            [&]() { return transformer->recover_displacement(q_real); },
-            "recovering real displacement vector");
+            u_real = transformer->recover_displacement(q_real);
+            u_imag = transformer->recover_displacement(q_imag);
 
-        auto u_imag = Timer::measure(
-            [&]() { return transformer->recover_displacement(q_imag); },
-            "recovering imaginary displacement vector");
+            auto displacement_real = mattools::expand_vec_to_mat(active_dof_idx_mat, u_real);
+            auto displacement_imag = mattools::expand_vec_to_mat(active_dof_idx_mat, u_imag);
 
-        auto displacement_real = Timer::measure(
-            [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_real); },
-            "expanding real displacement vector");
+            displacement_real.name = "DISPLACEMENT_REAL";
+            displacement_imag.name = "DISPLACEMENT_IMAG";
 
-        auto displacement_imag = Timer::measure(
-            [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_imag); },
-            "expanding imaginary displacement vector");
+            auto [stress_real, strain_real] = model->compute_stress_nodal(displacement_real, false);
+            auto [stress_imag, strain_imag] = model->compute_stress_nodal(displacement_imag, false);
 
-        displacement_real.name = "DISPLACEMENT_REAL";
-        displacement_imag.name = "DISPLACEMENT_IMAG";
+            stress_real.name = "STRESS_REAL";
+            stress_imag.name = "STRESS_IMAG";
+            strain_real.name = "STRAIN_REAL";
+            strain_imag.name = "STRAIN_IMAG";
 
-        auto [stress_real, strain_real] = Timer::measure(
-            [&]() { return model->compute_stress_nodal(displacement_real, false); },
-            "computing real stress and strain");
-
-        auto [stress_imag, strain_imag] = Timer::measure(
-            [&]() { return model->compute_stress_nodal(displacement_imag, false); },
-            "computing imaginary stress and strain");
-
-        stress_real.name = "STRESS_REAL";
-        stress_imag.name = "STRESS_IMAG";
-        strain_real.name = "STRAIN_REAL";
-        strain_imag.name = "STRAIN_IMAG";
-
-        Timer::measure(
-            [&]() {
-                writer->write_field(displacement_real, displacement_real.name, model->_data.get(), frequency);
-                writer->write_field(displacement_imag, displacement_imag.name, model->_data.get(), frequency);
-                writer->write_field(stress_real, stress_real.name, model->_data.get(), frequency);
-                writer->write_field(stress_imag, stress_imag.name, model->_data.get(), frequency);
-                writer->write_field(strain_real, strain_real.name, model->_data.get(), frequency);
-                writer->write_field(strain_imag, strain_imag.name, model->_data.get(), frequency);
-            },
-            "writing harmonic result fields");
+            writer->write_field(displacement_real, displacement_real.name, model->_data.get(), frequency);
+            writer->write_field(displacement_imag, displacement_imag.name, model->_data.get(), frequency);
+            writer->write_field(stress_real, stress_real.name, model->_data.get(), frequency);
+            writer->write_field(stress_imag, stress_imag.name, model->_data.get(), frequency);
+            writer->write_field(strain_real, strain_real.name, model->_data.get(), frequency);
+            writer->write_field(strain_imag, strain_imag.name, model->_data.get(), frequency);
+        });
 
         logging::info(true,
-                      std::setw(8),  i + 1,
-                      std::setw(18), std::fixed, std::setprecision(6), frequency,
-                      std::setw(18), std::fixed, std::setprecision(6), omega,
+                      std::setw(6),  i + 1,
+                      std::setw(16), std::fixed, std::setprecision(6), frequency,
                       std::setw(18), std::scientific, std::setprecision(6),
                       std::sqrt(u_real.squaredNorm() + u_imag.squaredNorm()));
     }
 
+    logging::info(true, "");
     model->step_end();
 }
 
