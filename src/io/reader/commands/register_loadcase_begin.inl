@@ -8,10 +8,12 @@
 
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
+#include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "register_loadcase_frequency.inl"
 
 namespace fem::io::reader::commands {
 
@@ -24,7 +26,7 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
                     "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
-                    "NONLINEARSTATIC"})
+                    "LINEARHARMONIC", "NONLINEARSTATIC"})
                 .key("NAME").optional()
         );
 
@@ -51,6 +53,8 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
                 lc = std::make_unique<loadcase::LinearEigenfrequency>(id, &wrt, &mdl, 10);
             } else if (type == "LINEARTRANSIENT") {
                 lc = std::make_unique<loadcase::Transient>(id, &wrt, &mdl);
+            } else if (type == "LINEARHARMONIC") {
+                lc = std::make_unique<loadcase::LinearHarmonic>(id, &wrt, &mdl);
             } else {
                 throw std::runtime_error("Unsupported loadcase type: " + type);
             }
@@ -58,11 +62,9 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             parser.set_active_loadcase(std::move(lc), type);
         });
 
-        // When the LOADCASE scope exits, run and clear it.
         command.on_exit([&parser](const fem::io::dsl::Keys&) {
             auto* lc = parser.active_loadcase();
             if (!lc) {
-                // Nothing to do (either already cleared, or mis-scoped END).
                 return;
             }
             try {
@@ -75,6 +77,8 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
 
         command.variant(fem::io::dsl::Variant::make());
     });
+
+    register_loadcase_frequency(registry, parser);
 }
 
 } // namespace fem::io::reader::commands
