@@ -8,6 +8,7 @@
 #include "../parser.h"
 
 #include "../../../loadcase/linear_buckling.h"
+#include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
 
@@ -46,6 +47,10 @@ inline void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& pa
                         return;
                     }
                     if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+                        append_tokens(names, lc->loads);
+                        return;
+                    }
+                    if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
                         append_tokens(names, lc->loads);
                         return;
                     }
