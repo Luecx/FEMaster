@@ -4,12 +4,8 @@
  * @brief Register *FREQUENCY inside a linear harmonic load case.
  */
 
-#include <algorithm>
 #include <array>
 #include <cmath>
-#include <memory>
-#include <string>
-#include <vector>
 
 #include "../parser.h"
 #include "../../dsl/condition.h"
@@ -23,33 +19,26 @@ namespace fem::io::reader::commands {
 inline void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("FREQUENCY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
-        command.doc("Define excitation frequencies for a linear harmonic response analysis.");
+        command.doc("Define a linearly spaced excitation-frequency sweep.");
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("SCALE").optional().allowed({"LINEAR", "LIST"})
+                .key("SCALE").optional().allowed({"LINEAR"})
         );
-
-        auto scale = std::make_shared<std::string>("LINEAR");
-        command.on_enter([scale](const fem::io::dsl::Keys& keys) {
-            if (keys.has("SCALE")) {
-                *scale = keys.raw("SCALE");
-            }
-        });
 
         command.variant(
             fem::io::dsl::Variant::make()
-                .doc("LINEAR: one line start, end, number_of_points. LIST: one frequency per line.")
+                .doc("One data line: start_frequency, end_frequency, number_of_points.")
                 .segment(
                     fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1))
+                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
                         .pattern(
                             fem::io::dsl::Pattern::make()
-                                .dynamic<fem::Precision>()
-                                .name("FREQUENCIES")
-                                .desc("Frequency definition in cycles per unit time.")
+                                .fixed<fem::Precision, 3>()
+                                .name("FREQUENCY")
+                                .desc("start, end, number_of_points")
                         )
-                        .bind([&parser, scale](const std::vector<fem::Precision>& values) {
+                        .bind([&parser](const std::array<fem::Precision, 3>& values) {
                             auto* base = parser.active_loadcase();
                             logging::error(base != nullptr, "FREQUENCY must appear inside *LOADCASE.");
 
@@ -58,23 +47,17 @@ inline void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser
                                            "FREQUENCY not supported for loadcase type " +
                                            parser.active_loadcase_type());
 
-                            lc->frequencies.clear();
-
-                            if (*scale == "LIST") {
-                                logging::error(!values.empty(), "FREQUENCY LIST must not be empty.");
-                                lc->frequencies = values;
-                                return;
-                            }
-
-                            logging::error(values.size() == 3,
-                                           "FREQUENCY LINEAR requires start, end, number_of_points.");
-
                             const fem::Precision start = values[0];
                             const fem::Precision end   = values[1];
                             const int points = static_cast<int>(std::llround(values[2]));
 
-                            logging::error(points >= 1, "FREQUENCY number_of_points must be >= 1.");
+                            logging::error(std::isfinite(start) && std::isfinite(end),
+                                           "FREQUENCY bounds must be finite.");
+                            logging::error(start >= 0.0, "FREQUENCY start must be non-negative.");
                             logging::error(end >= start, "FREQUENCY end must be >= start.");
+                            logging::error(points >= 1, "FREQUENCY number_of_points must be >= 1.");
+                            logging::error(std::abs(values[2] - fem::Precision(points)) < 1e-9,
+                                           "FREQUENCY number_of_points must be an integer.");
 
                             lc->frequencies.resize(points);
                             if (points == 1) {
