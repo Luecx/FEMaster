@@ -77,6 +77,9 @@ void MaterialStateTransaction::rollback_increment() {
 }
 
 void MaterialStateTransaction::bind() {
+    committed_->name = "MATERIAL_STATE_COMMITTED";
+    trial_->name     = "MATERIAL_STATE_TRIAL";
+
     model_._data->material_state_old = committed_;
     model_._data->material_state_new = trial_;
 }
