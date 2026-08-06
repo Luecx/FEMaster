@@ -44,44 +44,37 @@ struct Elasticity {
     virtual void  initialize_state(Precision* state) const;
 
     virtual void evaluate(const AxialStrainLinearized& strain,
-                          const Precision*             state_old,
-                          Precision*                   state_new,
+                          Precision*                   state,
                           AxialStressCauchy&           stress,
                           Precision&                   tangent) const;
 
     virtual void evaluate(const AxialStrainGreenLagrange& strain,
-                          const Precision*                state_old,
-                          Precision*                      state_new,
+                          Precision*                      state,
                           AxialStressPK2&                 stress,
                           Precision&                      tangent) const;
 
     virtual void evaluate(const VolumeStrainLinearized& strain,
-                          const Precision*              state_old,
-                          Precision*                    state_new,
+                          Precision*                    state,
                           VolumeStressCauchy&           stress,
                           Mat6&                         tangent) const;
 
     virtual void evaluate(const VolumeStrainGreenLagrange& strain,
-                          const Precision*                 state_old,
-                          Precision*                       state_new,
+                          Precision*                       state,
                           VolumeStressPK2&                 stress,
                           Mat6&                            tangent) const;
 
     virtual void evaluate(const BeamGeneralizedStrain& strain,
-                          const Precision*             state_old,
-                          Precision*                   state_new,
+                          Precision*                   state,
                           BeamStressResultants&        resultants,
                           Mat6&                        tangent) const;
 
     virtual void evaluate(const ShellMaterialStrainLinearized& strain,
-                          const Precision*                     state_old,
-                          Precision*                           state_new,
+                          Precision*                           state,
                           ShellMaterialStressCauchy&            stress,
                           Mat5&                                 tangent) const;
 
     virtual void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                          const Precision*                        state_old,
-                          Precision*                              state_new,
+                          Precision*                              state,
                           ShellMaterialStressPK2&                 stress,
                           Mat5&                                   tangent) const;
 
