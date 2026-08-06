@@ -17,8 +17,7 @@ namespace tools {
 
 MaterialStateTransaction::MaterialStateTransaction(model::Model& model)
     : model_(model),
-      previous_old_(model._data->material_state_old),
-      previous_new_(model._data->material_state_new) {
+      previous_state_(model._data->material_state) {
     const Index state_size = model_.maximum_material_state_size();
     if (state_size == 0) {
         return;
@@ -33,7 +32,7 @@ MaterialStateTransaction::MaterialStateTransaction(model::Model& model)
     );
 
     trial_ = model_._data->create_field(
-        "MATERIAL_STATE_TRIAL",
+        "MATERIAL_STATE",
         model::FieldDomain::ELEMENT_MP,
         state_size,
         false,
@@ -46,8 +45,7 @@ MaterialStateTransaction::MaterialStateTransaction(model::Model& model)
 }
 
 MaterialStateTransaction::~MaterialStateTransaction() {
-    model_._data->material_state_old = previous_old_;
-    model_._data->material_state_new = previous_new_;
+    model_._data->material_state = previous_state_;
 }
 
 bool MaterialStateTransaction::active() const {
@@ -79,10 +77,9 @@ void MaterialStateTransaction::rollback_increment() {
 
 void MaterialStateTransaction::bind() {
     committed_->name = "MATERIAL_STATE_COMMITTED";
-    trial_->name     = "MATERIAL_STATE_TRIAL";
+    trial_->name     = "MATERIAL_STATE";
 
-    model_._data->material_state_old = committed_;
-    model_._data->material_state_new = trial_;
+    model_._data->material_state = trial_;
 }
 
 } // namespace tools
