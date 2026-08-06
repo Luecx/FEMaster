@@ -9,8 +9,8 @@
  * their rows.
  *
  * The model initializes storage but does not own nonlinear trial buffers. The
- * active load case creates and binds committed and trial fields through the
- * semantic pointers in `ModelData`.
+ * active load case owns committed and trial fields and binds only the currently
+ * active state through `ModelData::material_state`.
  *
  * @see Model::maximum_material_state_size
  * @see Model::initialize_material_state
