@@ -64,7 +64,7 @@ struct TestElement final : model::ElementInterface {
     std::array<ID, 1> node_ids{0};
 };
 
-TEST(MaterialStateTransaction, InitializesCommitsRollsBackAndRestoresBindings) {
+TEST(MaterialStateTransaction, InitializesCommitsRollsBackAndRestoresBinding) {
     model::Model model(1, 1, 0);
 
     auto material = std::make_shared<material::Material>("STATEFUL");
@@ -79,52 +79,44 @@ TEST(MaterialStateTransaction, InitializesCommitsRollsBackAndRestoresBindings) {
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
 
-    auto previous_old = std::make_shared<model::Field>(
-        "PREVIOUS_OLD", model::FieldDomain::ELEMENT_MP, 4, 1);
-    auto previous_new = std::make_shared<model::Field>(
-        "PREVIOUS_NEW", model::FieldDomain::ELEMENT_MP, 4, 1);
-
-    model._data->material_state_old = previous_old;
-    model._data->material_state_new = previous_new;
+    auto previous_state = std::make_shared<model::Field>(
+        "PREVIOUS_STATE", model::FieldDomain::ELEMENT_MP, 4, 1);
+    model._data->material_state = previous_state;
 
     {
         loadcase::tools::MaterialStateTransaction transaction(model);
 
         ASSERT_TRUE(transaction.active());
-        ASSERT_NE(model._data->material_state_old, nullptr);
-        ASSERT_NE(model._data->material_state_new, nullptr);
-        EXPECT_NE(model._data->material_state_old, model._data->material_state_new);
-
-        EXPECT_EQ(model._data->material_state_old->domain, model::FieldDomain::ELEMENT_MP);
-        EXPECT_EQ(model._data->material_state_old->rows, 4);
-        EXPECT_EQ(model._data->material_state_old->components, 3);
+        ASSERT_NE(model._data->material_state, nullptr);
+        EXPECT_EQ(model._data->material_state->domain, model::FieldDomain::ELEMENT_MP);
+        EXPECT_EQ(model._data->material_state->rows, 4);
+        EXPECT_EQ(model._data->material_state->components, 3);
 
         for (Index row = 0; row < 4; ++row) {
-            EXPECT_EQ((*model._data->material_state_old)(row, 0), Precision(1));
-            EXPECT_EQ((*model._data->material_state_old)(row, 1), Precision(2));
-            EXPECT_EQ((*model._data->material_state_old)(row, 2), Precision(3));
+            EXPECT_EQ((*model._data->material_state)(row, 0), Precision(1));
+            EXPECT_EQ((*model._data->material_state)(row, 1), Precision(2));
+            EXPECT_EQ((*model._data->material_state)(row, 2), Precision(3));
         }
 
-        ASSERT_NE(element->material_state_old(1, 0), nullptr);
-        ASSERT_NE(element->material_state_new(1, 0), nullptr);
-        EXPECT_EQ(element->material_state_old(1, 0)[1], Precision(2));
+        const Index row = element->mp_index(1, 0);
+        Precision* state = model._data->material_state->data()
+                         + row * model._data->material_state->components;
+        EXPECT_EQ(state[1], Precision(2));
 
-        element->material_state_new(1, 0)[1] = Precision(99);
+        state[1] = Precision(99);
         transaction.begin_evaluation();
-        EXPECT_EQ(element->material_state_new(1, 0)[1], Precision(2));
+        EXPECT_EQ((*model._data->material_state)(row, 1), Precision(2));
 
-        element->material_state_new(1, 0)[1] = Precision(7);
+        (*model._data->material_state)(row, 1) = Precision(7);
         transaction.commit_increment();
-        EXPECT_EQ(element->material_state_old(1, 0)[1], Precision(7));
+        EXPECT_EQ((*model._data->material_state)(row, 1), Precision(7));
 
-        element->material_state_new(1, 0)[1] = Precision(42);
+        (*model._data->material_state)(row, 1) = Precision(42);
         transaction.rollback_increment();
-        EXPECT_EQ(element->material_state_old(1, 0)[1], Precision(7));
-        EXPECT_EQ(element->material_state_new(1, 0)[1], Precision(7));
+        EXPECT_EQ((*model._data->material_state)(row, 1), Precision(7));
     }
 
-    EXPECT_EQ(model._data->material_state_old, previous_old);
-    EXPECT_EQ(model._data->material_state_new, previous_new);
+    EXPECT_EQ(model._data->material_state, previous_state);
 }
 
 TEST(MaterialStateTransaction, RemainsInactiveForStatelessMaterials) {
@@ -144,10 +136,7 @@ TEST(MaterialStateTransaction, RemainsInactiveForStatelessMaterials) {
     loadcase::tools::MaterialStateTransaction transaction(model);
 
     EXPECT_FALSE(transaction.active());
-    EXPECT_EQ(model._data->material_state_old, nullptr);
-    EXPECT_EQ(model._data->material_state_new, nullptr);
-    EXPECT_EQ(element->material_state_old(0, 0), nullptr);
-    EXPECT_EQ(element->material_state_new(0, 0), nullptr);
+    EXPECT_EQ(model._data->material_state, nullptr);
 }
 
 } // namespace
