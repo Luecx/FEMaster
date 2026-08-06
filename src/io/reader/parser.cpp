@@ -83,6 +83,7 @@
 #include "commands/register_loadcase_loads.inl"
 #include "commands/register_loadcase_solver.inl"
 #include "commands/register_loadcase_constraintmethod.inl"
+#include "commands/register_loadcase_frequency.inl"
 #include "commands/register_loadcase_request_stiffness.inl"
 #include "commands/register_loadcase_request_stgeom.inl"
 #include "commands/register_loadcase_numeigenvalues.inl"
@@ -460,6 +461,7 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     commands::register_loadcase_loads(reg, *this);
     commands::register_loadcase_solver(reg, *this);
     commands::register_loadcase_constraintmethod(reg, *this);
+    commands::register_loadcase_frequency(reg, *this);
     commands::register_loadcase_request_stiffness(reg, *this);
     commands::register_loadcase_request_stgeom(reg, *this);
     commands::register_loadcase_numeigenvalues(reg, *this);
