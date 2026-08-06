@@ -120,6 +120,10 @@ struct Model {
     void step_begin();
     void step_end();
 
+    // Material-point state lifecycle.
+    Index maximum_material_state_size() const;
+    void  initialize_material_state(Field& state) const;
+
     // assigns sections to each element
     void assign_sections();
 
