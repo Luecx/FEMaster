@@ -64,46 +64,6 @@ struct ElementInterface {
              + local_mp;
     }
 
-    /// Returns the committed state row for one material point, or nullptr when no state is active.
-    const Precision* material_state_old(Index local_ip, Index local_mp = 0) const {
-        logging::error(local_ip >= 0 && local_ip < static_cast<Index>(num_ip()),
-            "local integration point ", local_ip, " out of range for element ", elem_id);
-        logging::error(local_mp >= 0 && local_mp < num_mp_per_ip(),
-            "local material point ", local_mp, " out of range for element ", elem_id);
-
-        if (!_model_data || !_model_data->material_state_old) {
-            return nullptr;
-        }
-
-        const Field& state = *_model_data->material_state_old;
-        const Index row = mp_index(local_ip, local_mp);
-        logging::error(state.domain == FieldDomain::ELEMENT_MP,
-            "material_state_old must use ELEMENT_MP domain");
-        logging::error(row >= 0 && row < state.rows,
-            "material state row ", row, " out of range for element ", elem_id);
-        return state.data() + row * state.components;
-    }
-
-    /// Returns the writable trial state row for one material point, or nullptr when no state is active.
-    Precision* material_state_new(Index local_ip, Index local_mp = 0) {
-        logging::error(local_ip >= 0 && local_ip < static_cast<Index>(num_ip()),
-            "local integration point ", local_ip, " out of range for element ", elem_id);
-        logging::error(local_mp >= 0 && local_mp < num_mp_per_ip(),
-            "local material point ", local_mp, " out of range for element ", elem_id);
-
-        if (!_model_data || !_model_data->material_state_new) {
-            return nullptr;
-        }
-
-        Field& state = *_model_data->material_state_new;
-        const Index row = mp_index(local_ip, local_mp);
-        logging::error(state.domain == FieldDomain::ELEMENT_MP,
-            "material_state_new must use ELEMENT_MP domain");
-        logging::error(row >= 0 && row < state.rows,
-            "material state row ", row, " out of range for element ", elem_id);
-        return state.data() + row * state.components;
-    }
-
     /// Casts the element to a specific derived type, returning `nullptr` on failure.
     template<typename T> T* as() {
         return dynamic_cast<T*>(this);
