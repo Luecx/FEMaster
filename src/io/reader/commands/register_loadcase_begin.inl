@@ -61,9 +61,11 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             parser.set_active_loadcase(std::move(lc), type);
         });
 
+        // When the LOADCASE scope exits, run and clear it.
         command.on_exit([&parser](const fem::io::dsl::Keys&) {
             auto* lc = parser.active_loadcase();
             if (!lc) {
+                // Nothing to do (either already cleared, or mis-scoped END).
                 return;
             }
             try {
