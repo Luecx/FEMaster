@@ -89,67 +89,55 @@ Mat6 GeneralisedIsotropicElasticity::volume_tangent() const {
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const AxialStrainLinearized& strain,
-                                              const Precision*             state_old,
-                                              Precision*                   state_new,
+                                              Precision*                   state,
                                               AxialStressCauchy&           stress,
                                               Precision&                   tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     tangent        = youngs;
     stress.value() = tangent * strain.value();
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
-                                              const Precision*                state_old,
-                                              Precision*                      state_new,
+                                              Precision*                      state,
                                               AxialStressPK2&                 stress,
                                               Precision&                      tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     tangent        = youngs;
     stress.value() = tangent * strain.value();
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                              const Precision*              state_old,
-                                              Precision*                    state_new,
+                                              Precision*                    state,
                                               VolumeStressCauchy&           stress,
                                               Mat6&                         tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                                              const Precision*                 state_old,
-                                              Precision*                       state_new,
+                                              Precision*                       state,
                                               VolumeStressPK2&                 stress,
                                               Mat6&                            tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                              const Precision*                     state_old,
-                                              Precision*                           state_new,
+                                              Precision*                           state,
                                               ShellMaterialStressCauchy&            stress,
                                               Mat5&                                 tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     tangent         = shell_material_tangent();
     stress.values() = tangent * strain.values();
 }
 
 void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                                              const Precision*                        state_old,
-                                              Precision*                              state_new,
+                                              Precision*                              state,
                                               ShellMaterialStressPK2&                 stress,
                                               Mat5&                                   tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     tangent         = shell_material_tangent();
     stress.values() = tangent * strain.values();
 }
