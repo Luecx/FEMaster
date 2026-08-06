@@ -59,7 +59,6 @@ void SolidSection::evaluate(const Vec3&                   position_reference,
     elasticity->evaluate(
         strain_material,
         nullptr,
-        nullptr,
         stress_material,
         tangent_material
     );
@@ -106,7 +105,6 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
     // call into material model
     elasticity->evaluate(
         strain_material,
-        nullptr,
         nullptr,
         stress_material,
         tangent_material
@@ -159,7 +157,6 @@ std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     Mat6                   tangent_material;
     elasticity->evaluate(
         zero_strain,
-        nullptr,
         nullptr,
         zero_stress,
         tangent_material
