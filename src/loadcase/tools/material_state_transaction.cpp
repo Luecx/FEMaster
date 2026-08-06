@@ -69,6 +69,7 @@ void MaterialStateTransaction::commit_increment() {
     }
 
     std::swap(committed_, trial_);
+    trial_->values = committed_->values;
     bind();
 }
 
