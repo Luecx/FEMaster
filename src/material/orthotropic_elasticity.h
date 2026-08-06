@@ -31,26 +31,22 @@ struct OrthotropicElasticity : Elasticity {
     bool supports_shell_integration_green_lagrange() const override;
 
     void evaluate(const VolumeStrainLinearized& strain,
-                  const Precision*              state_old,
-                  Precision*                    state_new,
+                  Precision*                    state,
                   VolumeStressCauchy&           stress,
                   Mat6&                         tangent) const override;
 
     void evaluate(const VolumeStrainGreenLagrange& strain,
-                  const Precision*                 state_old,
-                  Precision*                       state_new,
+                  Precision*                       state,
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override;
 
     void evaluate(const ShellMaterialStrainLinearized& strain,
-                  const Precision*                     state_old,
-                  Precision*                           state_new,
+                  Precision*                           state,
                   ShellMaterialStressCauchy&            stress,
                   Mat5&                                 tangent) const override;
 
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                  const Precision*                        state_old,
-                  Precision*                              state_new,
+                  Precision*                              state,
                   ShellMaterialStressPK2&                 stress,
                   Mat5&                                   tangent) const override;
 
