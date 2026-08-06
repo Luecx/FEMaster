@@ -13,7 +13,6 @@
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
-#include "register_loadcase_frequency.inl"
 
 namespace fem::io::reader::commands {
 
@@ -77,8 +76,6 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
 
         command.variant(fem::io::dsl::Variant::make());
     });
-
-    register_loadcase_frequency(registry, parser);
 }
 
 } // namespace fem::io::reader::commands
