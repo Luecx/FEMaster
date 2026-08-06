@@ -120,15 +120,15 @@ struct Model {
     void step_begin();
     void step_end();
 
-    // Material-point state lifecycle.
-    Index maximum_material_state_size() const;
-    void  initialize_material_state(Field& state) const;
-
     // assigns sections to each element
     void assign_sections();
 
     // Builds smoothed element-nodal reference normals for shell directors.
     void build_shell_element_normals(Precision equalize_angle_degrees = Precision(20));
+
+    // Material-point state sizing and initialization.
+    [[nodiscard]] Index maximum_material_state_size() const;
+    void initialize_material_state(Field& state) const;
 
     // solving the given problem  set
     SystemDofIds  build_unconstrained_index_matrix();
