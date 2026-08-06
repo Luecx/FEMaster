@@ -89,12 +89,10 @@ Mat5 NeoHookeElasticity::linear_shell_tangent() const {
 }
 
 void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
-                                  const Precision*             state_old,
-                                  Precision*                   state_new,
+                                  Precision*                   state,
                                   AxialStressCauchy&           stress,
                                   Precision&                   tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     const Precision youngs = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
     tangent        = youngs;
@@ -102,12 +100,10 @@ void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
 }
 
 void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
-                                  const Precision*                state_old,
-                                  Precision*                      state_new,
+                                  Precision*                      state,
                                   AxialStressPK2&                 stress,
                                   Precision&                      tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     const Precision c       = Precision(1) + Precision(2) * strain.value();
     const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
@@ -167,24 +163,20 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
 }
 
 void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                  const Precision*              state_old,
-                                  Precision*                    state_new,
+                                  Precision*                    state,
                                   VolumeStressCauchy&           stress,
                                   Mat6&                         tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     tangent        = linear_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
 
 void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                                  const Precision*                 state_old,
-                                  Precision*                       state_new,
+                                  Precision*                       state,
                                   VolumeStressPK2&                 stress,
                                   Mat6&                            tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     const Mat3 C = Mat3::Identity() + Precision(2) * strain.tensor();
     Mat3       full_stress;
@@ -194,24 +186,20 @@ void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 }
 
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                  const Precision*                     state_old,
-                                  Precision*                           state_new,
+                                  Precision*                           state,
                                   ShellMaterialStressCauchy&            stress,
                                   Mat5&                                 tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     tangent         = linear_shell_tangent();
     stress.values() = tangent * strain.values();
 }
 
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                                  const Precision*                        state_old,
-                                  Precision*                              state_new,
+                                  Precision*                              state,
                                   ShellMaterialStressPK2&                 stress,
                                   Mat5&                                   tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     Mat3 C = Mat3::Identity();
     C(0, 0) = Precision(1) + Precision(2) * strain.values()(0);
