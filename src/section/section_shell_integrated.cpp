@@ -185,7 +185,6 @@ void IntegratedShellSection::evaluate(
             material_->elasticity()->evaluate(
                 material_strain_gl,
                 nullptr,
-                nullptr,
                 material_stress_pk2,
                 material_tangent
             );
@@ -197,7 +196,6 @@ void IntegratedShellSection::evaluate(
 
             material_->elasticity()->evaluate(
                 material_strain_linearized,
-                nullptr,
                 nullptr,
                 material_stress_cauchy,
                 material_tangent
@@ -374,7 +372,6 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         material_->elasticity()->evaluate(
             material_strain_linearized,
             nullptr,
-            nullptr,
             material_stress_cauchy,
             material_tangent
         );
@@ -390,7 +387,6 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
 
     material_->elasticity()->evaluate(
         material_strain_gl,
-        nullptr,
         nullptr,
         material_stress_pk2,
         material_tangent
