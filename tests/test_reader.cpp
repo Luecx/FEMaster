@@ -87,7 +87,7 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     ShellMaterialStrainLinearized strain;
     ShellMaterialStressCauchy     stress;
     Mat5                          tangent;
-    ortho.evaluate(strain, nullptr, nullptr, stress, tangent);
+    ortho.evaluate(strain, nullptr, stress, tangent);
 
     const Mat2 shear = tangent.template block<2, 2>(3, 3);
 
