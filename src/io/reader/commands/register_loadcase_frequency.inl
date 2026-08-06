@@ -40,24 +40,28 @@ inline void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser
                         )
                         .bind([&parser](const std::array<fem::Precision, 3>& values) {
                             auto* base = parser.active_loadcase();
-                            logging::error(base != nullptr, "FREQUENCIES must appear inside *LOADCASE.");
+                            logging::error(base != nullptr,
+                                "FREQUENCIES must appear inside *LOADCASE.");
 
                             auto* lc = dynamic_cast<fem::loadcase::LinearHarmonic*>(base);
                             logging::error(lc != nullptr,
-                                           "FREQUENCIES not supported for loadcase type " +
-                                           parser.active_loadcase_type());
+                                "FREQUENCIES not supported for loadcase type " +
+                                parser.active_loadcase_type());
 
                             const fem::Precision start = values[0];
                             const fem::Precision end   = values[1];
                             const int points = static_cast<int>(std::llround(values[2]));
 
                             logging::error(std::isfinite(start) && std::isfinite(end),
-                                           "FREQUENCIES bounds must be finite.");
-                            logging::error(start >= 0.0, "FREQUENCIES start must be non-negative.");
-                            logging::error(end >= start, "FREQUENCIES end must be >= start.");
-                            logging::error(points >= 1, "FREQUENCIES number_of_points must be >= 1.");
+                                "FREQUENCIES bounds must be finite.");
+                            logging::error(start >= 0.0,
+                                "FREQUENCIES start must be non-negative.");
+                            logging::error(end >= start,
+                                "FREQUENCIES end must be >= start.");
+                            logging::error(points >= 1,
+                                "FREQUENCIES number_of_points must be >= 1.");
                             logging::error(std::abs(values[2] - fem::Precision(points)) < 1e-9,
-                                           "FREQUENCIES number_of_points must be an integer.");
+                                "FREQUENCIES number_of_points must be an integer.");
 
                             lc->frequencies.resize(points);
                             if (points == 1) {
