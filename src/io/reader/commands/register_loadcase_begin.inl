@@ -8,6 +8,7 @@
 
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
+#include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
@@ -24,7 +25,7 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
                     "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
-                    "NONLINEARSTATIC"})
+                    "LINEARHARMONIC", "NONLINEARSTATIC"})
                 .key("NAME").optional()
         );
 
@@ -51,6 +52,8 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
                 lc = std::make_unique<loadcase::LinearEigenfrequency>(id, &wrt, &mdl, 10);
             } else if (type == "LINEARTRANSIENT") {
                 lc = std::make_unique<loadcase::Transient>(id, &wrt, &mdl);
+            } else if (type == "LINEARHARMONIC") {
+                lc = std::make_unique<loadcase::LinearHarmonic>(id, &wrt, &mdl);
             } else {
                 throw std::runtime_error("Unsupported loadcase type: " + type);
             }

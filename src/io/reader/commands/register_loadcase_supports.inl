@@ -9,6 +9,7 @@
 
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
+#include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/nonlinear_static.h"
@@ -56,6 +57,10 @@ inline void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser&
                         return;
                     }
                     if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
+                        append_tokens(names, lc->supps);
+                        return;
+                    }
+                    if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
                         append_tokens(names, lc->supps);
                         return;
                     }
