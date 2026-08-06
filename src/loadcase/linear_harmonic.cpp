@@ -65,9 +65,12 @@ decltype(auto) run_quiet(Function&& function) {
 }
 
 SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
-    logging::error(A.rows() == A.cols(), "LinearHarmonic: A must be square");
-    logging::error(B.rows() == B.cols(), "LinearHarmonic: B must be square");
-    logging::error(A.rows() == B.rows(), "LinearHarmonic: A and B size mismatch");
+    logging::error(A.rows() == A.cols(),
+        "LinearHarmonic: A must be square");
+    logging::error(B.rows() == B.cols(),
+        "LinearHarmonic: B must be square");
+    logging::error(A.rows() == B.rows(),
+        "LinearHarmonic: A and B size mismatch");
 
     using Triplet = Eigen::Triplet<Precision, Index>;
 
@@ -96,7 +99,8 @@ SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
 }
 
 DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& imag) {
-    logging::error(real.size() == imag.size(), "LinearHarmonic: RHS size mismatch");
+    logging::error(real.size() == imag.size(),
+        "LinearHarmonic: RHS size mismatch");
 
     DynamicVector result(2 * real.size());
     result.head(real.size()) = real;
@@ -116,77 +120,80 @@ void LinearHarmonic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
-    logging::error(!frequencies.empty(), "LinearHarmonic: no frequencies defined");
+    logging::error(!frequencies.empty(),
+        "LinearHarmonic: no frequencies defined");
     logging::error(
         std::all_of(frequencies.begin(), frequencies.end(), [](Precision frequency) {
             return std::isfinite(frequency) && frequency >= 0.0;
         }),
         "LinearHarmonic: frequencies must be finite and non-negative");
-    logging::error(
-        constraint_method == ConstraintTransformer::Method::NullSpace,
+    logging::error(constraint_method == ConstraintTransformer::Method::NullSpace,
         "LinearHarmonic: only NULLSPACE constraints are currently supported");
     logging::error(method == solver::DIRECT,
-                   "LinearHarmonic: only DIRECT solver method is currently supported");
+        "LinearHarmonic: only DIRECT solver method is currently supported");
 
     model->assign_sections();
     model->step_begin();
 
-    auto active_dof_idx_mat = run_quiet([&]() {
-        return model->build_unconstrained_index_matrix();
-    });
+    auto active_dof_idx_mat = Timer::measure(
+        [&]() { return model->build_unconstrained_index_matrix(); },
+        "generating active_dof_idx_mat index matrix");
 
-    auto global_load_mat = run_quiet([&]() {
-        return model->build_load_matrix(loads);
-    });
+    auto global_load_mat = Timer::measure(
+        [&]() { return model->build_load_matrix(loads); },
+        "constructing harmonic load-amplitude matrix");
 
-    auto groups = run_quiet([&]() {
-        return model->collect_constraints(active_dof_idx_mat, supps);
-    });
+    auto groups = Timer::measure(
+        [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
+        "building constraints");
 
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
-    auto K = run_quiet([&]() {
-        return model->build_stiffness_matrix(active_dof_idx_mat);
-    });
+    auto K = Timer::measure(
+        [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
+        "constructing stiffness matrix K");
 
-    auto M = run_quiet([&]() {
-        return model->build_lumped_mass_matrix(active_dof_idx_mat);
-    });
+    auto M = Timer::measure(
+        [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
+        "constructing mass matrix M");
 
-    auto f = run_quiet([&]() {
-        return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
-    });
+    auto f = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
+        "reducing harmonic load matrix -> active RHS vector");
 
-    auto transformer = run_quiet([&]() {
-        ConstraintTransformer::Options options;
-        options.method = constraint_method;
-        return std::make_unique<ConstraintTransformer>(
-            equations,
-            active_dof_idx_mat,
-            K.rows(),
-            options);
-    });
+    auto transformer = Timer::measure(
+        [&]() {
+            ConstraintTransformer::Options options;
+            options.method = constraint_method;
+            return std::make_unique<ConstraintTransformer>(
+                equations,
+                active_dof_idx_mat,
+                K.rows(),
+                options);
+        },
+        "building constraint transformer");
 
     logging::error(transformer->homogeneous(),
-                   "LinearHarmonic: harmonic constraints must be homogeneous");
+        "LinearHarmonic: harmonic constraints must be homogeneous");
     logging::error(transformer->feasible(),
-                   "LinearHarmonic: constraint system is infeasible");
+        "LinearHarmonic: constraint system is infeasible");
 
-    auto Kr = run_quiet([&]() {
-        return transformer->assemble_system_matrix(K);
-    });
+    auto Kr = Timer::measure(
+        [&]() { return transformer->assemble_system_matrix(K); },
+        "assembling reduced stiffness matrix Kr");
 
-    auto Mr = run_quiet([&]() {
-        return transformer->reduce_secondary_matrix(M);
-    });
+    auto Mr = Timer::measure(
+        [&]() { return transformer->reduce_secondary_matrix(M); },
+        "assembling reduced mass matrix Mr");
 
-    auto fr = run_quiet([&]() {
-        return transformer->assemble_system_rhs(K, f);
-    });
+    auto fr = Timer::measure(
+        [&]() { return transformer->assemble_system_rhs(K, f); },
+        "assembling reduced harmonic RHS");
 
-    SparseMatrix Cr = damping.build(Mr, Kr);
-    Cr.makeCompressed();
+    auto Cr = Timer::measure(
+        [&]() { return damping.build(Mr, Kr); },
+        "constructing reduced Rayleigh damping matrix Cr");
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
 
