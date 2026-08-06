@@ -75,6 +75,7 @@ TEST(MaterialStateTransaction, InitializesCommitsRollsBackAndRestoresBindings) {
 
     auto element = std::make_shared<TestElement>(0);
     element->set_section(section);
+    element->_model_data = model._data.get();
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
 
@@ -104,18 +105,22 @@ TEST(MaterialStateTransaction, InitializesCommitsRollsBackAndRestoresBindings) {
             EXPECT_EQ((*model._data->material_state_old)(row, 2), Precision(3));
         }
 
-        (*model._data->material_state_new)(2, 1) = Precision(99);
+        ASSERT_NE(element->material_state_old(1, 0), nullptr);
+        ASSERT_NE(element->material_state_new(1, 0), nullptr);
+        EXPECT_EQ(element->material_state_old(1, 0)[1], Precision(2));
+
+        element->material_state_new(1, 0)[1] = Precision(99);
         transaction.begin_evaluation();
-        EXPECT_EQ((*model._data->material_state_new)(2, 1), Precision(2));
+        EXPECT_EQ(element->material_state_new(1, 0)[1], Precision(2));
 
-        (*model._data->material_state_new)(2, 1) = Precision(7);
+        element->material_state_new(1, 0)[1] = Precision(7);
         transaction.commit_increment();
-        EXPECT_EQ((*model._data->material_state_old)(2, 1), Precision(7));
+        EXPECT_EQ(element->material_state_old(1, 0)[1], Precision(7));
 
-        (*model._data->material_state_new)(2, 1) = Precision(42);
+        element->material_state_new(1, 0)[1] = Precision(42);
         transaction.rollback_increment();
-        EXPECT_EQ((*model._data->material_state_old)(2, 1), Precision(7));
-        EXPECT_EQ((*model._data->material_state_new)(2, 1), Precision(7));
+        EXPECT_EQ(element->material_state_old(1, 0)[1], Precision(7));
+        EXPECT_EQ(element->material_state_new(1, 0)[1], Precision(7));
     }
 
     EXPECT_EQ(model._data->material_state_old, previous_old);
@@ -132,6 +137,7 @@ TEST(MaterialStateTransaction, RemainsInactiveForStatelessMaterials) {
 
     auto element = std::make_shared<TestElement>(0);
     element->set_section(section);
+    element->_model_data = model._data.get();
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
 
@@ -140,6 +146,8 @@ TEST(MaterialStateTransaction, RemainsInactiveForStatelessMaterials) {
     EXPECT_FALSE(transaction.active());
     EXPECT_EQ(model._data->material_state_old, nullptr);
     EXPECT_EQ(model._data->material_state_new, nullptr);
+    EXPECT_EQ(element->material_state_old(0, 0), nullptr);
+    EXPECT_EQ(element->material_state_new(0, 0), nullptr);
 }
 
 } // namespace
