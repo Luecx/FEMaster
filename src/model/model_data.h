@@ -72,14 +72,16 @@ struct ModelData {
     std::unordered_map<std::string, Field::Ptr> fields;
 
     // Cached semantic fields ---------------------------------------------------
-    Field::Ptr positions               = nullptr;
-    Field::Ptr positions_reference     = nullptr;
-    Field::Ptr element_stiffness_scale = nullptr;
-    Field::Ptr material_orientation    = nullptr;
+    Field::Ptr positions                   = nullptr;
+    Field::Ptr positions_reference         = nullptr;
+    Field::Ptr element_stiffness_scale     = nullptr;
+    Field::Ptr material_orientation        = nullptr;
+    Field::Ptr material_state_old          = nullptr;
+    Field::Ptr material_state_new          = nullptr;
     Field::Ptr shell_element_nodal_normals = nullptr;
-    Field::Ptr element_nodal_offsets   = nullptr;
-    Field::Ptr element_ip_offsets      = nullptr;
-    Field::Ptr element_mp_offsets      = nullptr;
+    Field::Ptr element_nodal_offsets       = nullptr;
+    Field::Ptr element_ip_offsets          = nullptr;
+    Field::Ptr element_mp_offsets          = nullptr;
 
     // Region registries --------------------------------------------------------
     Sets<NodeRegion   > node_sets   {SET_NODE_ALL};
