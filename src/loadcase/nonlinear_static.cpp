@@ -13,15 +13,17 @@
  *
  *     u(lambda, q) = lambda * u_particular + T q.
  *
- * The load case wires stateful nonlinear subsystems into the generic trial
- * callbacks owned by the path controllers. Contact is the only current
- * participant, but the callback names and transaction levels are deliberately
- * subsystem-independent so later nonlinear material history states can use the
- * same increment and line-search lifecycle.
+ * Stateful nonlinear subsystems are connected to the generic increment and
+ * line-search trial callbacks owned by the path controllers. Contact maintains
+ * nested discrete-state transactions. Material history uses one committed and
+ * one trial `ELEMENT_MP` field; every constitutive evaluation reconstructs the
+ * trial state from the last accepted increment and only an accepted increment
+ * swaps the two buffers.
  *
  * @see NonlinearStatic
  * @see tools::LoadControl
  * @see tools::ArcLengthControl
+ * @see tools::MaterialStateTransaction
  */
 
 #include "nonlinear_static.h"
@@ -35,6 +37,7 @@
 #include "../io/writer/write_mtx.h"
 #include "tools/arc_length_control.h"
 #include "tools/load_control.h"
+#include "tools/material_state_transaction.h"
 #include "tools/regularise_stiffness.h"
 
 #include <algorithm>
@@ -58,26 +61,21 @@ namespace {
  * configuration and are added to the reference coordinates. Rotational
  * components are generalized displacement coordinates and therefore replace the
  * corresponding entries directly.
- *
- * @param reference Reference nodal coordinates in the undeformed configuration.
- * @param displacement Total generalized nodal displacement field.
- *
- * @return Current nodal position field used by element and contact assembly.
  */
 model::Field current_positions_from_displacement(
     const model::Field& reference,
     const model::Field& displacement
 ) {
     logging::error(reference.domain == model::FieldDomain::NODE,
-                   "NonlinearStatic: reference positions must use NODE domain");
+        "NonlinearStatic: reference positions must use NODE domain");
     logging::error(displacement.domain == model::FieldDomain::NODE,
-                   "NonlinearStatic: displacement must use NODE domain");
+        "NonlinearStatic: displacement must use NODE domain");
     logging::error(reference.rows == displacement.rows,
-                   "NonlinearStatic: reference/displacement row mismatch");
+        "NonlinearStatic: reference/displacement row mismatch");
     logging::error(reference.components == displacement.components,
-                   "NonlinearStatic: reference/displacement component mismatch");
+        "NonlinearStatic: reference/displacement component mismatch");
     logging::error(reference.components >= 6,
-                   "NonlinearStatic: position fields require six components");
+        "NonlinearStatic: position fields require six components");
 
     model::Field current = reference;
 
@@ -86,9 +84,6 @@ model::Field current_positions_from_displacement(
             current(i, d) = reference(i, d) + displacement(i, d);
         }
 
-        // The rotational entries are the total generalized displacement
-        // coordinates rx, ry and rz. They are constrained, solved and written
-        // exactly like the translational displacement components.
         for (Index d = 3; d < 6; ++d) {
             current(i, d) = displacement(i, d);
         }
@@ -110,17 +105,6 @@ model::Field subtract_field(
 
 /**
  * Computes the relative residual norm used by nonlinear static convergence.
- *
- * The reduced residual is normalized by the largest RMS scale among the reduced
- * external force, the implied reduced internal force and one. This keeps the
- * convergence measure meaningful for both force-driven and displacement-driven
- * analyses, including states where the external load vector is small.
- *
- * @param reduced_residual Projected nonlinear residual in reduced coordinates.
- * @param reduced_external Projected external load vector at the current load
- *                         factor.
- *
- * @return Dimensionless residual norm used by Newton convergence checks.
  */
 Precision calculate_relative_residual(
     const DynamicVector& reduced_residual,
@@ -161,35 +145,11 @@ NonlinearStatic::NonlinearStatic(ID id, io::writer::ResultWriters* writer, model
 /**
  * Executes the nonlinear static load case.
  *
- * The analysis starts from the reference coordinates and incrementally solves
- * the constrained nonlinear equilibrium equation in reduced coordinates. The
- * constraint transformer represents all active linear constraints as
- *
- *     u = lambda u_p + T q,
- *
- * where `u_p` is the particular solution for prescribed displacements and `T`
- * spans the admissible incremental displacement space.
- *
- * For every residual or tangent evaluation, the supplied reduced state is
- * expanded to total nodal displacement, the current nodal position field is
- * updated, structural element forces are assembled, and nonlinear contact forces
- * are added by the model assembly routine. The residual is then projected back
- * into the reduced space.
- *
- * Stateful nonlinear subsystems are connected through generic trial callbacks:
- *
- * - increment trials cover a complete attempted nonlinear increment and are
- *   committed only after the path controller accepts the increment,
- * - line-search trials cover temporary residual evaluations inside Newton and
- *   are committed only when the step length is accepted,
- * - active-set updates allow discontinuous nonlinear state to be refreshed after
- *   a converged Newton solve and can request a Newton restart at the same load
- *   factor.
- *
- * Solver controls such as maximum increments, maximum iterations and adaptive
- * iteration thresholds are forwarded exactly as configured by the load case. The
- * presence of contact or another stateful subsystem does not change these
- * parameters internally.
+ * Material history is transactional at increment level. Every residual or
+ * tangent evaluation receives the last accepted material state as `state_old`
+ * and writes the current candidate into `state_new`. Line-search acceptance does
+ * not promote this state. Promotion occurs only after the complete nonlinear
+ * increment, including active-set updates, has been accepted.
  */
 void NonlinearStatic::run() {
     logging::info(true, "");
@@ -199,7 +159,6 @@ void NonlinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
-    // perform important checks
     logging::error(max_increments > 0,
         "NONLINEARSTATIC requires MAX_INCREMENTS > 0");
     logging::error(initial_increment > Precision(0),
@@ -236,16 +195,17 @@ void NonlinearStatic::run() {
     logging::error(model->_data->positions_reference != nullptr,
         "NonlinearStatic: positions_reference field not initialized");
 
-    // create a copy of original and reference positions and reset them at the end
     const model::Field original_positions  = *model->_data->positions;
     const model::Field reference_positions = *model->_data->positions_reference;
     *model->_data->positions = reference_positions;
 
-    // assign sections so every element knows its section and the elements can prepare
     model->assign_sections();
     model->step_begin();
 
-    // compute general stuff needed below
+    // The load case owns both large state buffers. ModelData exposes only the
+    // currently bound old/new pointers consumed by elements and materials.
+    tools::MaterialStateTransaction material_state(*model);
+
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -266,17 +226,12 @@ void NonlinearStatic::run() {
         "building constraints"
     );
 
-    // report groups if desired by the user
     report_constraint_groups(groups);
-
-    // convert into actual equations (just flattening all the equation groups)
     auto equations = groups.flatten();
 
-    // track a few simple coefficients used below
     const Index n_active  = active_dof_idx_mat.maxCoeff() + 1;
     const Index max_nodes = static_cast<Index>(model->_data->max_nodes);
 
-    // create the constraint transformer
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::Options options;
@@ -345,8 +300,6 @@ void NonlinearStatic::run() {
     logging::info(true, " inc iter      lambda        rel_res          du_norm   ls   asm_ms solve_ms");
     logging::info(true, "----------------------------------------------------------------------------");
 
-    // Stream converged increment frames as they become available. This keeps
-    // the accepted path in the result file even if a later increment fails.
     writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
     Index last_converged_increment = 0;
@@ -356,9 +309,10 @@ void NonlinearStatic::run() {
                               DynamicVector&       residual,
                               SparseMatrix&        tangent,
                               SparseMatrix*        full_tangent) {
-        // Evaluate the supplied solver state without modifying q_total. This is
-        // essential because line-search trial states must not modify the actual
-        // Newton iterate.
+        // A Newton iterate is not a constitutive commit. Always integrate the
+        // supplied candidate from the last accepted increment state.
+        material_state.begin_evaluation();
+
         const DynamicVector u_evaluation =
             recover_total_displacement(q, lambda);
 
@@ -393,7 +347,6 @@ void NonlinearStatic::run() {
             if (logging_was_enabled) {
                 logging::enable();
             }
-
             throw;
         }
 
@@ -424,13 +377,10 @@ void NonlinearStatic::run() {
         }
 
         tangent = transformer->assemble_system_matrix(Kt);
-
         final_internal = internal_mat;
 
-        logging::error(
-            residual.allFinite(),
-            "Reduced residual contains NaN/Inf entries"
-        );
+        logging::error(residual.allFinite(),
+            "Reduced residual contains NaN/Inf entries");
     };
 
     auto evaluate = [&](const DynamicVector& q,
@@ -449,9 +399,10 @@ void NonlinearStatic::run() {
     auto evaluate_residual = [&](const DynamicVector& q,
                                  Precision            lambda,
                                  DynamicVector&       residual) {
-        // Evaluate the same nonlinear residual as the full tangent assembly,
-        // but avoid constructing the material and geometric element tangents.
-        // Line-search acceptance only uses the projected residual norm.
+        // Line-search candidates use the same constitutive base state as a full
+        // Newton evaluation but do not assemble the material tangent.
+        material_state.begin_evaluation();
+
         const DynamicVector u_evaluation =
             recover_total_displacement(q, lambda);
 
@@ -484,7 +435,6 @@ void NonlinearStatic::run() {
             if (logging_was_enabled) {
                 logging::enable();
             }
-
             throw;
         }
 
@@ -502,7 +452,6 @@ void NonlinearStatic::run() {
         const DynamicVector full_residual  = external_force - internal_force;
 
         transformer->project_vector(full_residual, residual);
-
         final_internal = internal_mat;
 
         logging::error(residual.allFinite(),
@@ -539,30 +488,10 @@ void NonlinearStatic::run() {
             return;
         }
 
-        /*
-         * Assemble the tangent at the last accepted equilibrium state. For
-         *
-         *     u(lambda, q) = lambda * u_p + T q
-         *
-         * the equilibrium-path tangent follows from
-         *
-         *     T^T K_t T dq/dlambda = T^T (f - K_t u_p).
-         *
-         * ConstraintTransformer::assemble_system_rhs() already evaluates the
-         * right-hand side T^T (f - K_t u_p), so the same predictor handles
-         * force loading, prescribed displacements and arbitrary mixtures.
-         */
         DynamicVector accepted_residual;
         SparseMatrix  accepted_tangent;
         SparseMatrix  accepted_full_tangent;
 
-        /*
-         * The outer increment trial is deliberately still unfrozen here. The
-         * predictor tangent is evaluated at the last accepted configuration,
-         * but it must not select and freeze the partners that Newton will use
-         * at the predicted target configuration. A nested frozen trial makes
-         * this assembly completely state-neutral and is always rolled back.
-         */
         for (const auto& contact : model->_data->contacts) {
             contact.begin_trial(true);
         }
@@ -579,7 +508,6 @@ void NonlinearStatic::run() {
             for (const auto& contact : model->_data->contacts) {
                 contact.rollback_trial();
             }
-
             throw;
         }
 
@@ -634,7 +562,6 @@ void NonlinearStatic::run() {
     auto residual_norm = [&](const DynamicVector& residual,
                              Precision            lambda) {
         const DynamicVector reduced_external = lambda * reduced_total_load;
-
         return calculate_relative_residual(residual, reduced_external);
     };
 
@@ -703,48 +630,61 @@ void NonlinearStatic::run() {
             lambda
         );
 
-        model::Field lambda_field{"LAMBDA_" + std::to_string(increment), model::FieldDomain::UNKNOWN, 1, 1};
+        model::Field lambda_field{
+            "LAMBDA_" + std::to_string(increment),
+            model::FieldDomain::UNKNOWN,
+            1,
+            1
+        };
         lambda_field(0) = lambda;
 
         writer->write_field(lambda_field, lambda_field.name, nullptr);
     };
 
-    // Open a complete attempted-increment transaction for every stateful
-    // nonlinear subsystem. Contact updates its partner state once during this
-    // trial and then freezes the selected surface for the Newton solve.
     auto begin_increment_trial = [&]() {
+        material_state.begin_evaluation();
+
         for (const auto& contact : model->_data->contacts) {
             contact.begin_trial(false, true);
         }
     };
 
-    // Open a temporary residual-evaluation transaction nested inside the active
-    // increment. Line-search trials freeze discontinuous ownership immediately
-    // so rejected step lengths cannot modify the accepted nonlinear state.
+    auto commit_increment_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.commit_trial();
+        }
+
+        material_state.commit_increment();
+    };
+
+    auto rollback_increment_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.rollback_trial();
+        }
+
+        material_state.rollback_increment();
+    };
+
+    // A line-search commit accepts only the candidate within the current Newton
+    // increment. It must not promote material history to the persistent state.
     auto begin_line_search_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.begin_trial(true);
         }
     };
 
-    // Accept the most recently evaluated trial state. This callback is used for
-    // both increment-level and line-search-level transactions.
-    auto commit_trial = [&]() {
+    auto commit_line_search_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.commit_trial();
         }
     };
 
-    // Restore the state that existed before the most recent trial transaction.
-    auto rollback_trial = [&]() {
+    auto rollback_line_search_trial = [&]() {
         for (const auto& contact : model->_data->contacts) {
             contact.rollback_trial();
         }
     };
 
-    // Refresh discontinuous nonlinear state after Newton has converged at the
-    // current trial configuration. If the state changes, the path controller
-    // restarts Newton at the same load factor or arc-length radius.
     auto update_active_set = [&](const DynamicVector& q,
                                  Precision            lambda) {
         if (model->_data->contacts.empty()) {
@@ -770,7 +710,6 @@ void NonlinearStatic::run() {
             for (const auto& contact : model->_data->contacts) {
                 contact.rollback_trial();
             }
-
             throw;
         }
 
@@ -780,12 +719,6 @@ void NonlinearStatic::run() {
             const bool partner_changed =
                 contact.partner_signature_changed();
 
-            /*
-             * Multipliers are updated only after the inner Newton solve has
-             * converged. They remain fixed during Newton and all line-search
-             * residual evaluations, so the assembled residual and tangent
-             * describe one well-defined nonlinear problem.
-             */
             const bool multiplier_changed =
                 contact.update_augmented_lagrange();
 
@@ -803,9 +736,6 @@ void NonlinearStatic::run() {
     bool        converged      = false;
     std::string failure_reason = "NONE";
 
-    // Use the nonlinear controls exactly as configured. The trial callbacks
-    // below manage stateful nonlinear subsystems without changing increment or
-    // iteration limits based on which subsystem is present.
     const Index configured_max_iterations =
         static_cast<Index>(max_iterations);
 
@@ -832,12 +762,12 @@ void NonlinearStatic::run() {
         load_control.adaptive           = adaptive_increments;
 
         load_control.begin_increment_trial    = begin_increment_trial;
-        load_control.commit_increment_trial   = commit_trial;
-        load_control.rollback_increment_trial = rollback_trial;
+        load_control.commit_increment_trial   = commit_increment_trial;
+        load_control.rollback_increment_trial = rollback_increment_trial;
 
         load_control.begin_line_search_trial    = begin_line_search_trial;
-        load_control.commit_line_search_trial   = commit_trial;
-        load_control.rollback_line_search_trial = rollback_trial;
+        load_control.commit_line_search_trial   = commit_line_search_trial;
+        load_control.rollback_line_search_trial = rollback_line_search_trial;
 
         load_control.update_active_set = update_active_set;
 
@@ -873,12 +803,12 @@ void NonlinearStatic::run() {
         arc_length_control.adaptive           = adaptive_increments;
 
         arc_length_control.begin_increment_trial    = begin_increment_trial;
-        arc_length_control.commit_increment_trial   = commit_trial;
-        arc_length_control.rollback_increment_trial = rollback_trial;
+        arc_length_control.commit_increment_trial   = commit_increment_trial;
+        arc_length_control.rollback_increment_trial = rollback_increment_trial;
 
         arc_length_control.begin_line_search_trial    = begin_line_search_trial;
-        arc_length_control.commit_line_search_trial   = commit_trial;
-        arc_length_control.rollback_line_search_trial = rollback_trial;
+        arc_length_control.commit_line_search_trial   = commit_line_search_trial;
+        arc_length_control.rollback_line_search_trial = rollback_line_search_trial;
 
         arc_length_control.update_active_set = update_active_set;
 
@@ -904,6 +834,7 @@ void NonlinearStatic::run() {
 
     update_positions();
 
+    material_state.begin_evaluation();
     auto [final_stress, final_strain] = Timer::measure(
         [&]() { return model->compute_stress_nodal(displacement, true); },
         "computing final nonlinear nodal stress/strain"
@@ -917,6 +848,7 @@ void NonlinearStatic::run() {
     final_internal = model::NodeData{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
     final_internal.set_zero();
 
+    material_state.begin_evaluation();
     auto final_Kt = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
@@ -941,7 +873,7 @@ void NonlinearStatic::run() {
 
     auto global_load_final = global_load_total;
     global_load_final *= load_factor;
-    auto reaction_full     = subtract_field(
+    auto reaction_full = subtract_field(
         final_internal,
         global_load_final,
         "REACTION_FORCES_RAW"
