@@ -142,10 +142,12 @@ Precision C3D8R::hourglass_material_scale() {
      *
      *     G_eff = (C44 + C55 + C66) / 3.
      */
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
     const Mat6 material_tangent = material_tangent_reference(
         Precision(0),
         Precision(0),
-        Precision(0)
+        Precision(0),
+        state
     );
 
     const Precision shear_scale =
