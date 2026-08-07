@@ -101,12 +101,14 @@ void SolidElement<N>::evaluate_material(Precision                     r,
                                         Precision                     s,
                                         Precision                     t,
                                         const VolumeStrainLinearized& global_strain,
+                                        Precision*                    state,
                                         VolumeStressCauchy&           global_stress,
                                         Mat6&                         global_tangent) {
     get_section()->evaluate(
         material_position_reference(r, s, t),
         additional_material_rotation(),
         global_strain,
+        state,
         global_stress,
         global_tangent
     );
@@ -121,12 +123,14 @@ void SolidElement<N>::evaluate_material(Precision                        r,
                                         Precision                        s,
                                         Precision                        t,
                                         const VolumeStrainGreenLagrange& global_strain,
+                                        Precision*                       state,
                                         VolumeStressPK2&                 global_stress,
                                         Mat6&                            global_tangent) {
     get_section()->evaluate(
         material_position_reference(r, s, t),
         additional_material_rotation(),
         global_strain,
+        state,
         global_stress,
         global_tangent
     );
@@ -215,12 +219,12 @@ auto SolidElement<N>::green_lagrange_strain_displacement(const StaticMatrix<N, D
 }
 
 template<Index N>
-auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t)
+auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t, Precision* state)
     -> StaticMatrix<n_strain, n_strain> {
     VolumeStrainGreenLagrange zero_strain;
     VolumeStressPK2           zero_stress;
     Mat6                      tangent;
-    evaluate_material(r, s, t, zero_strain, zero_stress, tangent);
+    evaluate_material(r, s, t, zero_strain, state, zero_stress, tangent);
     return tangent;
 }
 
@@ -343,8 +347,10 @@ SolidElement<N>::stiffness(Precision* buffer) {
     StaticMatrix<N, D> reference_coords = this->node_coords_reference();
     StaticMatrix<N, D> current_coords = this->node_coords_current();
 
+    Index ip = 0;
+
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
-        [this, &reference_coords, &current_coords](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
+        [this, &reference_coords, &current_coords, &ip](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det0;
             const StaticMatrix<N, D> dN_dX =
                 this->shape_derivatives_reference(reference_coords, r, s, t, det0);
@@ -355,7 +361,10 @@ SolidElement<N>::stiffness(Precision* buffer) {
                 VolumeStrainGreenLagrange::from_deformation_gradient(F);
             VolumeStressPK2 stress;
             Mat6            C;
-            evaluate_material(r, s, t, strain, stress, C);
+
+            Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip++), 0);
+            evaluate_material(r, s, t, strain, state, stress, C);
+
             StaticMatrix<D * N, D * N> res = B.transpose() * (C * B) * det0;
             return StaticMatrix<D * N, D * N>(res);
         };
