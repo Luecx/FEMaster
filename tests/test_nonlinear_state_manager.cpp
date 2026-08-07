@@ -1,3 +1,15 @@
+/**
+ * @file test_nonlinear_state_manager.cpp
+ * @brief Tests nonlinear material-state ownership and lifecycle transitions.
+ *
+ * The tests exercise the material portion of `NonlinearStateManager` with a
+ * stateful dummy material and explicit material-point enumeration. Contact state
+ * is covered by the contact-specific tests and remains owned by `Contact`.
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "../src/loadcase/tools/nonlinear_state_manager.h"
 #include "../src/material/elasticity.h"
 #include "../src/model/model.h"
@@ -64,7 +76,7 @@ struct TestElement final : model::ElementInterface {
     std::array<ID, 1> node_ids{0};
 };
 
-TEST(NonlinearStateManager, InitializesCommitsRollsBackAndRestoresBinding) {
+TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
     model::Model model(1, 1, 0);
 
     auto material = std::make_shared<material::Material>("STATEFUL");
@@ -103,16 +115,15 @@ TEST(NonlinearStateManager, InitializesCommitsRollsBackAndRestoresBinding) {
         EXPECT_EQ(material_state[1], Precision(2));
 
         material_state[1] = Precision(99);
-        state.prepare_evaluation();
+        state.reset_material_state();
         EXPECT_EQ((*model._data->material_state)(row, 1), Precision(2));
 
-        state.begin_increment_trial();
         (*model._data->material_state)(row, 1) = Precision(7);
-        state.commit_increment_trial();
+        state.commit_material_state();
         EXPECT_EQ((*model._data->material_state)(row, 1), Precision(7));
 
         (*model._data->material_state)(row, 1) = Precision(42);
-        state.rollback_increment_trial();
+        state.reset_material_state();
         EXPECT_EQ((*model._data->material_state)(row, 1), Precision(7));
     }
 
