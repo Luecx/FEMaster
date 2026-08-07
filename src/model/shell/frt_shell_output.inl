@@ -106,10 +106,31 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
     ShellStressResultants  resultants;
     Mat8                   tangent;
 
+    const auto& points = reference_data().ip_points;
+    Index state_ip = 0;
+    Precision state_distance =
+        (r - points[0].r) * (r - points[0].r)
+        + (s - points[0].s) * (s - points[0].s);
+
+    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+        const Precision distance =
+            (r - point.r) * (r - point.r)
+            + (s - point.s) * (s - point.s);
+        if (distance < state_distance) {
+            state_ip       = ip;
+            state_distance = distance;
+        }
+    }
+
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
         strain,
+        state,
+        this->_model_data->material_state->components,
         true,
         resultants,
         tangent
@@ -241,10 +262,32 @@ void FRTShell<N>::physical_stress_strain_at(
     const Mat3 deformation_gradient = nonlinear
         ? deformation_gradient_at(data.state, r, s, z)
         : Mat3::Identity();
+
+    const auto& points = reference_data().ip_points;
+    Index state_ip = 0;
+    Precision state_distance =
+        (r - points[0].r) * (r - points[0].r)
+        + (s - points[0].s) * (s - points[0].s);
+
+    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+        const Precision distance =
+            (r - point.r) * (r - point.r)
+            + (s - point.s) * (s - point.s);
+        if (distance < state_distance) {
+            state_ip       = ip;
+            state_distance = distance;
+        }
+    }
+
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
     const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress(
         reference_position(r, s),
         reference_basis,
         ShellGeneralizedStrain(generalized_strain),
+        state,
+        this->_model_data->material_state->components,
         z,
         nonlinear,
         deformation_gradient
@@ -418,6 +461,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
     const Vec6N q = element_displacement_vector(displacement);
     ShellSection* section = shell_section();
     const Precision scale = topology_stiffness_scale();
+    const auto& points = reference_data().ip_points;
 
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision r = rst(node, 0);
@@ -431,10 +475,32 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             true
         );
         const ShellGeneralizedStrain strain(strain_values);
-        const ShellStressResultants  output_resultants = section->evaluate_output_resultants(
+
+        Index state_ip = 0;
+        Precision state_distance =
+            (r - points[0].r) * (r - points[0].r)
+            + (s - points[0].s) * (s - points[0].s);
+
+        for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+            const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+            const Precision distance =
+                (r - point.r) * (r - point.r)
+                + (s - point.s) * (s - point.s);
+            if (distance < state_distance) {
+                state_ip       = ip;
+                state_distance = distance;
+            }
+        }
+
+        Precision* material_state =
+            &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
+        const ShellStressResultants output_resultants = section->evaluate_output_resultants(
             reference_position(r, s),
             reference_basis_global(r, s),
             strain,
+            material_state,
+            this->_model_data->material_state->components,
             true
         );
         const Vec8 values = scale * output_resultants.values();
