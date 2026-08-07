@@ -2,9 +2,11 @@
  * @file section_shell_abd.h
  * @brief Declares a shell section defined by prescribed ABD and shear matrices.
  *
- * The section contains no through-thickness material-point state. Its generalized
- * response follows directly from constant section stiffness matrices, while
- * physical stress output is reconstructed as one equivalent homogeneous layer.
+ * The generalized response follows directly from constant section stiffness
+ * matrices, while physical stress output is reconstructed as one equivalent
+ * homogeneous layer. One material-state slot per shell integration point keeps
+ * the common element-to-section state interface uniform; the prescribed ABD
+ * formulation itself does not modify that state.
  *
  * @see ABDShellSection
  * @see ShellSection
@@ -36,17 +38,6 @@ struct ABDShellSection : ShellSection {
     // Transverse-shear stiffness matrix in the section basis.
     Mat2 shear_ = Mat2::Zero();
 
-    /**
-     * @brief Constructs and validates a prescribed generalized shell section.
-     *
-     * @param material Optional material association retained as model metadata.
-     * @param region Element region receiving the section.
-     * @param thickness Positive physical shell thickness.
-     * @param abd Symmetric positive-definite membrane-bending stiffness matrix.
-     * @param shear Symmetric positive-definite transverse-shear stiffness matrix.
-     * @param orientation Optional coordinate system defining the section basis.
-     * @param csys_axis Zero-based coordinate-system axis projected into the shell plane.
-     */
     ABDShellSection(
         material::Material::Ptr    material,
         model::ElementRegion::Ptr  region,
@@ -57,36 +48,32 @@ struct ABDShellSection : ShellSection {
         Index                      csys_axis = 0
     );
 
-    /**
-     * @brief Evaluates prescribed generalized resultants in the shell basis.
-     *
-     * @copydetails ShellSection::evaluate
-     */
+    // Prescribed generalized response in the geometric shell basis
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
         Mat8&                         tangent_shell
     ) const override;
 
-    /**
-     * @brief Reconstructs an equivalent through-thickness Cauchy stress.
-     *
-     * @copydetails ShellSection::evaluate_output_stress
-     */
+    // Equivalent through-thickness physical stress recovery
     [[nodiscard]] VolumeStressCauchy evaluate_output_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         Precision                     z,
         bool                          use_green_lagrange,
         const Mat3&                   deformation_gradient
     ) const override;
 
-    // A prescribed ABD section contains no actual material points.
-    [[nodiscard]] Index num_mp_per_ip() const override { return 0; }
+    // One state slot keeps shell element MP addressing uniform; ABD does not use it.
+    [[nodiscard]] Index num_mp_per_ip() const override { return 1; }
 };
 
 } // namespace fem
