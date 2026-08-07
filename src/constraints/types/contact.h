@@ -44,9 +44,9 @@ class Contact {
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
 
-        std::uint64_t previous_signature     = 0;
-        Index         previous_active        = 0;
-        bool          last_signature_changed = false;
+        std::uint64_t previous_signature        = 0;
+        Index         previous_active           = 0;
+        bool          last_signature_changed    = false;
         bool          last_augmentation_changed = false;
     };
 
@@ -85,6 +85,10 @@ class Contact {
 
     mutable RuntimeState runtime_state;
 
+    void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
+    void commit_trial() const;
+    void rollback_trial() const;
+
 public:
     Contact(model::SurfaceRegion::Ptr master,
             model::NodeRegion::Ptr    slave,
@@ -100,12 +104,19 @@ public:
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Trial-state control. Line-search and predictor subtrials freeze the
-    // current partner state immediately. Increment and active-set trials may
-    // update partners once and freeze them afterwards.
-    void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
-    void commit_trial() const;
-    void rollback_trial() const;
+    // Solver-facing transaction levels. The internal freeze policy remains a
+    // contact implementation detail.
+    void begin_increment_trial() const { begin_trial(false, true); }
+    void commit_increment_trial() const { commit_trial(); }
+    void rollback_increment_trial() const { rollback_trial(); }
+
+    void begin_line_search_trial() const { begin_trial(true); }
+    void commit_line_search_trial() const { commit_trial(); }
+    void rollback_line_search_trial() const { rollback_trial(); }
+
+    void begin_active_set_trial() const { begin_trial(false, true); }
+    void commit_active_set_trial() const { commit_trial(); }
+    void rollback_active_set_trial() const { rollback_trial(); }
 
     // State changes detected after a converged Newton solve.
     bool partner_signature_changed() const;
