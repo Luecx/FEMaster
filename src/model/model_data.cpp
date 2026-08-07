@@ -86,6 +86,20 @@ void ModelData::initialize_element_enumeration() {
     (*element_mp_offsets)(sentinel)    = static_cast<Precision>(mp_offset);
     max_integration_points = static_cast<ID>(ip_offset);
     max_material_points    = static_cast<ID>(mp_offset);
+
+    // Keep one directly addressable state row for every enumerated material
+    // point. Stateless constitutive laws simply ignore the single dummy
+    // component. Nonlinear state management replaces this field with the
+    // correctly sized active trial buffer when history variables are present.
+    if (max_material_points > 0) {
+        material_state = std::make_shared<Field>(
+            "MATERIAL_STATE",
+            FieldDomain::ELEMENT_MP,
+            static_cast<Index>(max_material_points),
+            1
+        );
+        material_state->set_zero();
+    }
 }
 
 bool ModelData::has_field(const std::string& name) const {
@@ -210,7 +224,7 @@ Field ModelData::element_nodal_to_nodal(const Field& element_nodal,
         if (weight == Precision(0)) {
             continue;
         }
-        for (Index component = 0; component < element_nodal.components; ++component) {
+        for (Index component = 0; component < nodal.components; ++component) {
             nodal(node, component) /= weight;
         }
     }
