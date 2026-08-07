@@ -74,6 +74,8 @@ struct ShellSection : Section {
      * @param position_reference Physical reference position of the evaluation point.
      * @param shell_basis_global Orthonormal geometric shell basis in global coordinates.
      * @param strain_shell Generalized strain in the geometric shell basis.
+     * @param material_state First material-point state row belonging to this shell integration point.
+     * @param material_state_stride Number of scalar components between consecutive material-point rows.
      * @param use_green_lagrange Select finite-strain material evaluation.
      * @param resultants_shell Resultants returned in the geometric shell basis.
      * @param tangent_shell Tangent returned in the geometric shell basis.
@@ -82,6 +84,8 @@ struct ShellSection : Section {
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
         Mat8&                         tangent_shell
@@ -93,17 +97,13 @@ struct ShellSection : Section {
      * The concrete section response is first evaluated in the geometric shell
      * basis through `evaluate()`. The common base implementation then rotates
      * the resultants into `stress_resultant_basis()`.
-     *
-     * @param position_reference Physical reference position of the evaluation point.
-     * @param shell_basis_global Orthonormal geometric shell basis in global coordinates.
-     * @param strain_shell Generalized strain in the geometric shell basis.
-     * @param use_green_lagrange Select finite-strain material evaluation.
-     * @return Resultants in the configured stress-resultant output basis.
      */
     [[nodiscard]] ShellStressResultants evaluate_output_resultants(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         bool                          use_green_lagrange
     ) const;
 
@@ -112,19 +112,13 @@ struct ShellSection : Section {
      *
      * Without an explicit orientation, stress components are global. With an
      * orientation, they are expressed in the projected section basis.
-     *
-     * @param position_reference Physical reference position of the evaluation point.
-     * @param shell_basis_global Orthonormal geometric shell basis in global coordinates.
-     * @param strain_shell Generalized strain in the geometric shell basis.
-     * @param z Physical thickness coordinate measured from the midsurface.
-     * @param use_green_lagrange Select finite-strain PK2-to-Cauchy recovery.
-     * @param deformation_gradient Three-dimensional deformation gradient.
-     * @return Cauchy stress in the configured physical-stress basis.
      */
     [[nodiscard]] virtual VolumeStressCauchy evaluate_output_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         Precision                     z,
         bool                          use_green_lagrange,
         const Mat3&                   deformation_gradient = Mat3::Identity()
@@ -146,12 +140,6 @@ struct ShellSection : Section {
 protected:
     /**
      * @brief Initializes common shell-section data.
-     *
-     * @param material Material assigned to the section.
-     * @param region Element region receiving the section.
-     * @param thickness Positive physical shell thickness.
-     * @param orientation Optional coordinate system defining section directions.
-     * @param csys_axis Zero-based selected coordinate-system axis.
      */
     ShellSection(
         material::Material::Ptr    material,
@@ -163,14 +151,6 @@ protected:
 
     /**
      * @brief Builds the basis used for physical shell stress output.
-     *
-     * Without an orientation, the global Cartesian basis is returned. With an
-     * orientation, the selected coordinate-system axis is projected into the
-     * shell plane and completed with the shell normal to a right-handed basis.
-     *
-     * @param position_reference Physical reference position of the evaluation point.
-     * @param shell_basis_global Orthonormal shell basis whose third axis is the normal.
-     * @return Stress basis expressed in global coordinates.
      */
     [[nodiscard]] Mat3 stress_basis(
         const Vec3& position_reference,
@@ -179,13 +159,6 @@ protected:
 
     /**
      * @brief Builds the basis used for generalized stress-resultant output.
-     *
-     * With an orientation, this equals `stress_basis()`. Without one, global X
-     * is projected into the shell plane and global Y is used only if required.
-     *
-     * @param position_reference Physical reference position of the evaluation point.
-     * @param shell_basis_global Orthonormal geometric shell basis.
-     * @return Stress-resultant basis expressed in global coordinates.
      */
     [[nodiscard]] Mat3 stress_resultant_basis(
         const Vec3& position_reference,
