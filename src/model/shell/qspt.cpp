@@ -1,3 +1,18 @@
+/**
+ * @file qspt.cpp
+ * @brief Implements the quadrilateral shear-panel truss shell element.
+ *
+ * QSPT derives its effective in-plane shear stiffness from the assigned shell
+ * section and uses the resulting scalar flexibility for its shear-flow element
+ * formulation. Section evaluation receives the globally enumerated material-
+ * point state directly from `ModelData::material_state`.
+ *
+ * @see QSPT
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "qspt.h"
 
 namespace fem::model {
@@ -125,10 +140,14 @@ Precision QSPT::effective_shear_modulus() {
     ShellGeneralizedStrain zero_strain;
     ShellStressResultants  zero_resultants;
     Mat8                   tangent;
+
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0, 0), 0);
     this->get_section()->evaluate(
         center,
         shell_basis,
         zero_strain,
+        state,
+        this->_model_data->material_state->components,
         false,
         zero_resultants,
         tangent
