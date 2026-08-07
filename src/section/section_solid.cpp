@@ -26,15 +26,14 @@ Mat3 SolidSection::section_orientation_basis(const Vec3& position_reference) con
 void SolidSection::evaluate(const Vec3&                   position_reference,
                             const Mat3&                   additional_rotation,
                             const VolumeStrainLinearized& strain_global,
-                            VolumeStressCauchy&            stress_global,
-                            Mat6&                          tangent_global) const {
+                            Precision*                    state,
+                            VolumeStressCauchy&           stress_global,
+                            Mat6&                         tangent_global) const {
 
     logging::error(material_ && material_->has_elasticity(),
         "SolidSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_volume_linearized(),
         "SolidSection material does not support linearized volume evaluation");
-    logging::error(material_->elasticity()->state_size() == 0           ,
-        "SolidSection does not yet provide integration-point material state storage");
 
     // get the elastic material model from the material
     auto elasticity = material_->elasticity();
@@ -55,13 +54,9 @@ void SolidSection::evaluate(const Vec3&                   position_reference,
     // prepare cauchy stress and tangent as output for the elasticity
     VolumeStressCauchy stress_material;
     Mat6               tangent_material;
-    // call into material model
-    elasticity->evaluate(
-        strain_material,
-        nullptr,
-        stress_material,
-        tangent_material
-    );
+
+    // Evaluate the material directly on the state row selected by the element.
+    elasticity->evaluate(strain_material, state, stress_material, tangent_material);
 
     // turn the stress back into global coordinates
     const Vec6 stress_global_values = stress_transform * stress_material.voigt();
@@ -73,6 +68,7 @@ void SolidSection::evaluate(const Vec3&                   position_reference,
 void SolidSection::evaluate(const Vec3&                      position_reference,
                             const Mat3&                      additional_rotation,
                             const VolumeStrainGreenLagrange& strain_global,
+                            Precision*                       state,
                             VolumeStressPK2&                 stress_global,
                             Mat6&                            tangent_global) const {
 
@@ -80,8 +76,6 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
                    "SolidSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_volume_green_lagrange(),
         "SolidSection material does not support Green-Lagrange volume evaluation");
-    logging::error(material_->elasticity()->state_size() == 0,
-        "SolidSection does not yet provide integration-point material state storage");
 
     // get the elastic material model from the material
     auto elasticity = material_->elasticity();
@@ -102,13 +96,9 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
     // prepare PK2 stress and tangent as output for the elasticity
     VolumeStressPK2 stress_material;
     Mat6            tangent_material;
-    // call into material model
-    elasticity->evaluate(
-        strain_material,
-        nullptr,
-        stress_material,
-        tangent_material
-    );
+
+    // Evaluate the material directly on the state row selected by the element.
+    elasticity->evaluate(strain_material, state, stress_material, tangent_material);
 
     // turn the stress back into global coordinates
     const Vec6 stress_global_values = stress_transform * stress_material.voigt();
@@ -119,28 +109,27 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
 }
 
 /**
+ * As stated in `SolidElement<N>::compute_compliance_angle_derivative`, computes
+ * the derivative of the material tangent with respect to the three additional
+ * material-orientation angles.
  *
- * As stated in @SolidElement<N>::compute_compliance_angle_derivative, we need the derivative of the tangent stiffness
- * w.r.t to the 3 angles.
- *
- *
- * @param position_reference
- * @param additional_rotation
- * @param additional_rotation_derivatives
- * @return
+ * @param position_reference Reference position of the material point.
+ * @param additional_rotation Current additional material rotation.
+ * @param additional_rotation_derivatives Derivatives of the additional rotation.
+ * @param state Active material-point state selected by the element.
+ * @return Derivatives of the global tangent with respect to the three angles.
  */
 std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     const Vec3&                position_reference,
     const Mat3&                additional_rotation,
-    const std::array<Mat3, 3>& additional_rotation_derivatives
+    const std::array<Mat3, 3>& additional_rotation_derivatives,
+    Precision*                 state
 ) const {
     // a few checks
     logging::error(material_ && material_->has_elasticity(),
         "SolidSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_volume_linearized(),
         "SolidSection material does not support linearized volume evaluation");
-    logging::error(material_->elasticity()->state_size() == 0,
-        "SolidSection does not yet provide integration-point material state storage");
 
     // get the elastic material model from the material
     auto elasticity = material_->elasticity();
@@ -155,12 +144,7 @@ std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     VolumeStrainLinearized zero_strain;
     VolumeStressCauchy     zero_stress;
     Mat6                   tangent_material;
-    elasticity->evaluate(
-        zero_strain,
-        nullptr,
-        zero_stress,
-        tangent_material
-    );
+    elasticity->evaluate(zero_strain, state, zero_stress, tangent_material);
 
     // The material basis is composed of the prescribed section orientation Q_section and an
     // additional rotation R:
