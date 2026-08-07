@@ -35,8 +35,9 @@ struct SolidSection : Section {
     void evaluate(const Vec3&                   position_reference,
                   const Mat3&                   additional_rotation,
                   const VolumeStrainLinearized& strain_global,
-                  VolumeStressCauchy&            stress_global,
-                  Mat6&                          tangent_global) const;
+                  Precision*                    state,
+                  VolumeStressCauchy&           stress_global,
+                  Mat6&                         tangent_global) const;
 
     /**
      * @brief Evaluates a Green-Lagrange solid response in the global basis.
@@ -44,6 +45,7 @@ struct SolidSection : Section {
     void evaluate(const Vec3&                      position_reference,
                   const Mat3&                      additional_rotation,
                   const VolumeStrainGreenLagrange& strain_global,
+                  Precision*                       state,
                   VolumeStressPK2&                 stress_global,
                   Mat6&                            tangent_global) const;
 
@@ -53,7 +55,8 @@ struct SolidSection : Section {
     std::array<Mat6, 3> tangent_rotation_derivatives(
         const Vec3&                position_reference,
         const Mat3&                additional_rotation,
-        const std::array<Mat3, 3>& additional_rotation_derivatives
+        const std::array<Mat3, 3>& additional_rotation_derivatives,
+        Precision*                 state
     ) const;
 
     /**
