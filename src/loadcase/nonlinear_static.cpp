@@ -755,6 +755,10 @@ void NonlinearStatic::run() {
     // a changed partner signature or multiplier requests another Newton solve.
     auto update_active_set = [&](const DynamicVector& q,
                                  Precision            lambda) {
+        if (model->_data->contacts.empty()) {
+            return true;
+        }
+
         nonlinear_state.begin_contact_update_trial();
 
         try {
@@ -888,6 +892,7 @@ void NonlinearStatic::run() {
         "computing final nonlinear nodal stress/strain"
     );
 
+    nonlinear_state.reset_material_state();
     auto [final_stress_top, final_stress_bot] = Timer::measure(
         [&]() { return model->compute_stress_top_bot(displacement, true); },
         "computing final nonlinear top/bottom stress"
