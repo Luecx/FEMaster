@@ -32,12 +32,30 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
     auto local_displacement = this->nodal_data<3>(displacement);
     auto local_disp_mat = StaticMatrix<3, N>(local_displacement.transpose());
     auto local_displacement_vec = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+    const auto& state_scheme = this->integration_scheme_stiffness();
 
     for (Eigen::Index n = 0; n < rst.rows(); ++n) {
         const Precision r = rst(n, 0);
         const Precision s = rst(n, 1);
         const Precision t = rst(n, 2);
         const Index row = static_cast<Index>(offset + n);
+
+        // Output coordinates may be nodal rather than integration points. Use
+        // the history state of the nearest constitutive integration point.
+        Index     state_ip       = 0;
+        Precision state_distance = std::numeric_limits<Precision>::infinity();
+        for (Index ip = 0; ip < state_scheme.count(); ++ip) {
+            const auto point = state_scheme.get_point(ip);
+            const Precision distance =
+                (r - point.r) * (r - point.r)
+                + (s - point.s) * (s - point.s)
+                + (t - point.t) * (t - point.t);
+            if (distance < state_distance) {
+                state_ip       = ip;
+                state_distance = distance;
+            }
+        }
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip), 0);
 
         if (!use_green_lagrange_nl) {
             Precision det;
@@ -51,7 +69,7 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
             const VolumeStrainLinearized global_strain(global_strain_voigt);
             VolumeStressCauchy           global_stress;
             Mat6                         global_tangent;
-            evaluate_material(r, s, t, global_strain, global_stress, global_tangent);
+            evaluate_material(r, s, t, global_strain, state, global_stress, global_tangent);
 
             for (Dim j = 0; j < n_strain; ++j) {
                 if (strain) (*strain)(row, j) = global_strain.voigt()(j);
@@ -66,7 +84,7 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
         VolumeStressPK2 second_pk;
         Mat6            tangent;
-        evaluate_material(r, s, t, green_lagrange, second_pk, tangent);
+        evaluate_material(r, s, t, green_lagrange, state, second_pk, tangent);
 
         const VolumeStressCauchy cauchy = second_pk.to_cauchy(F);
 
@@ -99,6 +117,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
         const Precision s   = rst(n, 1);
         const Precision t   = rst(n, 2);
         const Index     row = static_cast<Index>(offset + n);
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(static_cast<Index>(n)), 0);
 
         if (!use_green_lagrange_nl) {
             Precision det = Precision(0);
@@ -113,7 +132,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
             const VolumeStrainLinearized strain(strain_voigt);
             VolumeStressCauchy           cauchy;
             Mat6                         tangent;
-            evaluate_material(r, s, t, strain, cauchy, tangent);
+            evaluate_material(r, s, t, strain, state, cauchy, tangent);
 
             for (Dim component = 0; component < n_strain; ++component) {
                 stress_state(row, component) = cauchy.voigt()(component);
@@ -126,7 +145,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
         VolumeStressPK2 second_pk;
         Mat6            tangent;
-        evaluate_material(r, s, t, green_lagrange, second_pk, tangent);
+        evaluate_material(r, s, t, green_lagrange, state, second_pk, tangent);
 
         // Total-Lagrange internal forces and geometric stiffness require PK2
         for (Dim component = 0; component < n_strain; ++component) {
@@ -259,12 +278,14 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         // get the position of the point in reference coordinates, needed for the transformation
         // inside the sections coordinate system
         const Vec3 position_reference = this->interpolate<D>(reference_coords, r, s, t);
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(n), 0);
 
         // get the tangent rotation derivatives dC/d_alpha
         const auto tangent_derivatives = get_section()->tangent_rotation_derivatives(
             position_reference,
             additional_rotation,
-            additional_rotation_derivatives
+            additional_rotation_derivatives,
+            state
         );
 
         // store in the final derivative
