@@ -1,6 +1,16 @@
-//
-// Created by f_eggers on 11.12.2024.
-//
+/**
+ * @file shell_simple.h
+ * @brief Defines the legacy default shell element formulation.
+ *
+ * The default shell element assembles membrane, bending and transverse-shear
+ * contributions in one element-local Cartesian basis. Section responses are
+ * evaluated through the common `ShellSection` interface. Material-point history
+ * is addressed directly through the element's globally enumerated shell
+ * integration points and passed unchanged to the section.
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
 
 #ifndef SHELL_SIMPLE_H
 #define SHELL_SIMPLE_H
@@ -403,8 +413,11 @@ struct DefaultShellElement : public ShellElement<N> {
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
 
+        Index ip_abd = 0;
+        Index ip_shear = 0;
+
         std::function<StaticMatrix<5 * N, 5 * N>(Precision, Precision, Precision)> func_abd =
-            [this, section, topo_scale, &xy_coords, &shell_basis](
+            [this, section, topo_scale, &xy_coords, &shell_basis, &ip_abd](
                 Precision r,
                 Precision s,
                 Precision /*t*/
@@ -419,10 +432,13 @@ struct DefaultShellElement : public ShellElement<N> {
                 ShellGeneralizedStrain zero_strain;
                 ShellStressResultants  zero_resultants;
                 Mat8                   tangent;
+                Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip_abd++, 0), 0);
                 section->evaluate(
                     this->reference_point(r, s),
                     shell_basis,
                     zero_strain,
+                    state,
+                    this->_model_data->material_state->components,
                     false,
                     zero_resultants,
                     tangent
@@ -440,7 +456,7 @@ struct DefaultShellElement : public ShellElement<N> {
             };
 
         std::function<StaticMatrix<3 * N, 3 * N>(Precision, Precision, Precision)> func_shear =
-            [this, section, topo_scale, &xy_coords, &shell_basis](
+            [this, section, topo_scale, &xy_coords, &shell_basis, &ip_shear](
                 Precision r,
                 Precision s,
                 Precision /*t*/
@@ -454,10 +470,13 @@ struct DefaultShellElement : public ShellElement<N> {
                 ShellGeneralizedStrain zero_strain;
                 ShellStressResultants  zero_resultants;
                 Mat8                   tangent;
+                Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip_shear++, 0), 0);
                 section->evaluate(
                     this->reference_point(r, s),
                     shell_basis,
                     zero_strain,
+                    state,
+                    this->_model_data->material_state->components,
                     false,
                     zero_resultants,
                     tangent
@@ -807,10 +826,32 @@ struct DefaultShellElement : public ShellElement<N> {
 
         const Precision z = t * h / Precision(2);
 
+        const auto& scheme = this->integration_scheme();
+        Index state_ip = 0;
+        auto state_point = scheme.get_point(0);
+        Precision state_distance =
+            (r - state_point.r) * (r - state_point.r)
+            + (s - state_point.s) * (s - state_point.s);
+
+        for (Index ip = 1; ip < scheme.count(); ++ip) {
+            state_point = scheme.get_point(ip);
+            const Precision distance =
+                (r - state_point.r) * (r - state_point.r)
+                + (s - state_point.s) * (s - state_point.s);
+            if (distance < state_distance) {
+                state_ip       = ip;
+                state_distance = distance;
+            }
+        }
+
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
         VolumeStressCauchy stress = this->get_section()->evaluate_output_stress(
             reference_point(r, s),
             shell_basis,
             generalized_strain,
+            state,
+            this->_model_data->material_state->components,
             z,
             false
         );
@@ -865,6 +906,7 @@ struct DefaultShellElement : public ShellElement<N> {
 
         StaticMatrix<N, 2> coords    = this->geometry.node_coords_local();
         LocalCoords        xy_coords = get_xy_coords(axes);
+        const auto&        scheme    = this->integration_scheme();
 
         for (Index i = 0; i < N; ++i) {
             ID node_id = this->nodes()[i];
@@ -894,10 +936,32 @@ struct DefaultShellElement : public ShellElement<N> {
             generalized_strain.values().template segment<3>(membrane_start) = eps_element;
             generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
             generalized_strain.values().template segment<2>(shear_start) = gamma_element;
+
+            Index state_ip = 0;
+            auto state_point = scheme.get_point(0);
+            Precision state_distance =
+                (r - state_point.r) * (r - state_point.r)
+                + (s - state_point.s) * (s - state_point.s);
+
+            for (Index ip = 1; ip < scheme.count(); ++ip) {
+                state_point = scheme.get_point(ip);
+                const Precision distance =
+                    (r - state_point.r) * (r - state_point.r)
+                    + (s - state_point.s) * (s - state_point.s);
+                if (distance < state_distance) {
+                    state_ip       = ip;
+                    state_distance = distance;
+                }
+            }
+
+            Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
             const ShellStressResultants output_resultants = this->get_section()->evaluate_output_resultants(
                 reference_point(r, s),
                 shell_basis,
                 generalized_strain,
+                state,
+                this->_model_data->material_state->components,
                 false
             );
 
@@ -1034,8 +1098,16 @@ struct DefaultShellElement : public ShellElement<N> {
             generalized_strain.values().template segment<3>(membrane_start) = eps_element;
             ShellStressResultants  generalized_resultants;
             Mat8                   tangent;
+            Precision*             state = &(*this->_model_data->material_state)(this->mp_index(ip, 0), 0);
             this->get_section()->evaluate(
-                reference_point(r, s),shell_basis,generalized_strain,false,generalized_resultants,tangent
+                reference_point(r, s),
+                shell_basis,
+                generalized_strain,
+                state,
+                this->_model_data->material_state->components,
+                false,
+                generalized_resultants,
+                tangent
             );
 
             const Vec3 membrane_force_element = topo_scale * generalized_resultants.membrane();
