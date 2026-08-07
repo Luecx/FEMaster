@@ -57,12 +57,13 @@ public:
     Precision element_stiffness_scale      () const;
     Vec3      material_position_reference  (Precision r, Precision s, Precision t);
 
-    Mat6 material_tangent_reference(Precision r, Precision s, Precision t);
+    Mat6 material_tangent_reference(Precision r, Precision s, Precision t, Precision* state);
 
     void evaluate_material(Precision                     r,
                            Precision                     s,
                            Precision                     t,
                            const VolumeStrainLinearized& global_strain,
+                           Precision*                    state,
                            VolumeStressCauchy&           global_stress,
                            Mat6&                         global_tangent);
 
@@ -70,6 +71,7 @@ public:
                            Precision                        s,
                            Precision                        t,
                            const VolumeStrainGreenLagrange& global_strain,
+                           Precision*                       state,
                            VolumeStressPK2&                 global_stress,
                            Mat6&                            global_tangent);
 
