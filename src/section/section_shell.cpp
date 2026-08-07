@@ -52,6 +52,8 @@ ShellStressResultants ShellSection::evaluate_output_resultants(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
+    Precision*                    material_state,
+    Index                         material_state_stride,
     bool                          use_green_lagrange
 ) const {
     // Every concrete section returns the element-facing response in the
@@ -64,6 +66,8 @@ ShellStressResultants ShellSection::evaluate_output_resultants(
         position_reference,
         shell_basis_global,
         strain_shell,
+        material_state,
+        material_state_stride,
         use_green_lagrange,
         resultants_shell,
         tangent_shell
