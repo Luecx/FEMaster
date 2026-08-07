@@ -42,8 +42,10 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
     logging::error(material()->has_elasticity(), "material has no elasticity components assigned at element ", elem_id);
     logging::error(material()->has_thermal_expansion(), "material has no thermal expansion assigned at element ", elem_id);
 
+    const auto& state_scheme = this->integration_scheme_stiffness();
+
     std::function<StaticMatrix<D*N,1>(Precision, Precision, Precision)> func =
-        [this, node_coords_glob, &node_temp_glob, &ref_temp](Precision r, Precision s, Precision t) -> StaticMatrix<D*N,1> {
+        [this, node_coords_glob, &node_temp_glob, &ref_temp, &state_scheme](Precision r, Precision s, Precision t) -> StaticMatrix<D*N,1> {
 
         // get temperature at integration point
         auto shape_func = shape_function(r, s, t);
@@ -53,8 +55,31 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
         Precision strain_value = material()->get_thermal_expansion() * (temp - ref_temp);
         Vec6 strain{strain_value, strain_value, strain_value, 0, 0, 0};
 
+        // Associate auxiliary quadrature points with the nearest constitutive
+        // integration point so the material receives a valid history state.
+        Index state_ip = 0;
+        auto  state_point = state_scheme.get_point(0);
+        Precision state_distance =
+            (r - state_point.r) * (r - state_point.r)
+            + (s - state_point.s) * (s - state_point.s)
+            + (t - state_point.t) * (t - state_point.t);
+
+        for (Index ip = 1; ip < state_scheme.count(); ++ip) {
+            state_point = state_scheme.get_point(ip);
+            const Precision distance =
+                (r - state_point.r) * (r - state_point.r)
+                + (s - state_point.s) * (s - state_point.s)
+                + (t - state_point.t) * (t - state_point.t);
+            if (distance < state_distance) {
+                state_ip       = ip;
+                state_distance = distance;
+            }
+        }
+
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip), 0);
+
         // stress tensor
-        auto mat_matrix = material_tangent_reference(r,s,t);
+        auto mat_matrix = material_tangent_reference(r, s, t, state);
         auto stress = mat_matrix * strain;
 
         // compute strain-displacement matrix
