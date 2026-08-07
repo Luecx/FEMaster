@@ -68,10 +68,21 @@ IntegratedShellSection::IntegratedShellSection(
           csys_axis
       ) {}
 
+/**
+ * Integrates one shell integration point through the five physical material
+ * points of the section.
+ *
+ * `material_state` points to the first material-point row belonging to the shell
+ * integration point. Consecutive rows are separated by
+ * `material_state_stride` scalar components and are passed directly to the
+ * constitutive model without additional state ownership in the section.
+ */
 void IntegratedShellSection::evaluate(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
+    Precision*                    material_state,
+    Index                         material_state_stride,
     bool                          use_green_lagrange,
     ShellStressResultants&        resultants_shell,
     Mat8&                         tangent_shell
@@ -123,8 +134,6 @@ void IntegratedShellSection::evaluate(
         "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
     logging::error(material_->elasticity()->supports_shell_integration_linearized() || use_green_lagrange,
         "IntegratedShellSection material does not support linearized shell evaluation");
-    logging::error(material_->elasticity()->state_size() == 0,
-        "IntegratedShellSection does not yet provide material-point state storage");
 
     // Use the geometric shell basis when no orientation exists. Otherwise use
     // the projected coordinate-system basis for all material evaluations.
@@ -175,6 +184,7 @@ void IntegratedShellSection::evaluate(
 
         ShellMaterialStress material_stress;
         Mat5                material_tangent;
+        Precision*          state = material_state + mp * material_state_stride;
 
         // Evaluate either PK2 stress conjugate to Green-Lagrange strain or
         // Cauchy stress for the linearized shell response.
@@ -184,7 +194,7 @@ void IntegratedShellSection::evaluate(
 
             material_->elasticity()->evaluate(
                 material_strain_gl,
-                nullptr,
+                state,
                 material_stress_pk2,
                 material_tangent
             );
@@ -196,7 +206,7 @@ void IntegratedShellSection::evaluate(
 
             material_->elasticity()->evaluate(
                 material_strain_linearized,
-                nullptr,
+                state,
                 material_stress_cauchy,
                 material_tangent
             );
@@ -273,10 +283,20 @@ void IntegratedShellSection::evaluate(
         * strain_shell_to_section;
 }
 
+/**
+ * Evaluates physical Cauchy stress at one requested thickness coordinate.
+ *
+ * The output point reuses the closest of the five Simpson material-point state
+ * rows belonging to the in-plane shell integration point supplied by the
+ * element. This keeps history attached to actual constitutive material points
+ * while allowing physical stress recovery at arbitrary thickness coordinates.
+ */
 VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
+    Precision*                    material_state,
+    Index                         material_state_stride,
     Precision                     z,
     bool                          use_green_lagrange,
     const Mat3&                   deformation_gradient
@@ -315,8 +335,6 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         "IntegratedShellSection material does not support Green-Lagrange shell evaluation");
     logging::error(material_->elasticity()->supports_shell_integration_linearized() || use_green_lagrange,
         "IntegratedShellSection material does not support linearized shell evaluation");
-    logging::error(material_->elasticity()->state_size() == 0,
-        "IntegratedShellSection does not yet provide material-point state storage");
 
     // Stress output is global without an orientation and section-local with one.
     const Mat3 output_basis_global = stress_basis(position_reference, shell_basis_global);
@@ -343,6 +361,21 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     material_strain[MXY] = strain_material[GXY] + z * strain_material[KXY];
     material_strain[MXZ] = strain_material[GXZ];
     material_strain[MYZ] = strain_material[GYZ];
+
+    // Associate arbitrary thickness output with the nearest actual material point.
+    Index     state_mp       = 0;
+    Precision state_distance = std::abs(z - Precision(0.5) * thickness_ * simpson_points[0]);
+
+    for (Index mp = 1; mp < 5; ++mp) {
+        const Precision z_mp = Precision(0.5) * thickness_ * simpson_points[mp];
+        const Precision distance = std::abs(z - z_mp);
+        if (distance < state_distance) {
+            state_mp       = mp;
+            state_distance = distance;
+        }
+    }
+
+    Precision* state = material_state + state_mp * material_state_stride;
 
     // Convert five plane-stress shell components into a symmetric 3D tensor in
     // the recovery basis.
@@ -371,7 +404,7 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
 
         material_->elasticity()->evaluate(
             material_strain_linearized,
-            nullptr,
+            state,
             material_stress_cauchy,
             material_tangent
         );
@@ -387,18 +420,15 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
 
     material_->elasticity()->evaluate(
         material_strain_gl,
-        nullptr,
+        state,
         material_stress_pk2,
         material_tangent
     );
 
     // Validate the finite-strain push-forward before division by J.
     const Precision J = deformation_gradient.determinant();
-    logging::error(
-        J > Precision(0) && std::isfinite(J),
-        "IntegratedShellSection: invalid deformation gradient during stress recovery, J = ",
-        J
-    );
+    logging::error(J > Precision(0) && std::isfinite(J),
+        "IntegratedShellSection: invalid deformation gradient during stress recovery, J = ", J);
 
     // Rotate PK2 stress from the reference material basis to global coordinates
     // and apply sigma = J^-1 F S F^T.
