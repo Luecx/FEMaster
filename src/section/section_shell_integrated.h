@@ -31,15 +31,6 @@ namespace fem {
 struct IntegratedShellSection : ShellSection {
     using Ptr = std::shared_ptr<IntegratedShellSection>;
 
-    /**
-     * @brief Constructs a through-thickness integrated shell section.
-     *
-     * @param material Material providing shell-point elasticity evaluation.
-     * @param region Element region receiving the section.
-     * @param thickness Positive physical shell thickness.
-     * @param orientation Optional coordinate system defining the section basis.
-     * @param csys_axis Zero-based coordinate-system axis projected into the shell plane.
-     */
     IntegratedShellSection(
         material::Material::Ptr    material,
         model::ElementRegion::Ptr  region,
@@ -48,29 +39,25 @@ struct IntegratedShellSection : ShellSection {
         Index                      csys_axis = 0
     );
 
-    /**
-     * @brief Integrates generalized resultants and tangent through the thickness.
-     *
-     * @copydetails ShellSection::evaluate
-     */
+    // Integrate generalized resultants and tangent through the five material points
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
         Mat8&                         tangent_shell
     ) const override;
 
-    /**
-     * @brief Evaluates material stress at one physical thickness coordinate.
-     *
-     * @copydetails ShellSection::evaluate_output_stress
-     */
+    // Evaluate physical stress using the nearest through-thickness material state
     [[nodiscard]] VolumeStressCauchy evaluate_output_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
+        Precision*                    material_state,
+        Index                         material_state_stride,
         Precision                     z,
         bool                          use_green_lagrange,
         const Mat3&                   deformation_gradient
