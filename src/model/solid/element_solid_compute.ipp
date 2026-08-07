@@ -1,12 +1,14 @@
 /**
- * @file element_solid.ipp
- * @brief Implementation of the SolidElement class template. This file contains
- * the definitions for methods declared in the SolidElement class, including
- * the computation of the strain-displacement matrix, Jacobian, stiffness and
- * mass matrices, and other element-level calculations.
+ * @file element_solid_compute.ipp
+ * @brief Implements solid stress recovery and nonlinear force/tangent assembly.
  *
- * @date Created on 12.06.2023
+ * Constitutive evaluations use the globally enumerated material-point state
+ * associated with each solid integration point. The nonlinear tangent path
+ * evaluates stress and material tangent together so an in-place history state
+ * is advanced exactly once per material point and solver evaluation.
+ *
  * @author Finn Eggers
+ * @date 07.08.2026
  */
 
 #pragma once
@@ -23,44 +25,52 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
                                             int offset,
                                             bool use_green_lagrange_nl) {
     logging::error(strain != nullptr || stress != nullptr,
-                   "SolidElement: compute_stress_strain requires at least one output field");
+        "SolidElement: compute_stress_strain requires at least one output field");
     logging::error(rst.cols() >= 3,
-                   "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
+        "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
 
-    auto reference_coords = this->node_coords_reference();
-    auto current_coords = this->node_coords_current();
-    auto local_displacement = this->nodal_data<3>(displacement);
-    auto local_disp_mat = StaticMatrix<3, N>(local_displacement.transpose());
+    auto reference_coords       = this->node_coords_reference();
+    auto current_coords         = this->node_coords_current();
+    auto local_displacement     = this->nodal_data<3>(displacement);
+    auto local_disp_mat         = StaticMatrix<3, N>(local_displacement.transpose());
     auto local_displacement_vec = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-    const auto& state_scheme = this->integration_scheme_stiffness();
+    const auto& state_scheme    = this->integration_scheme_stiffness();
 
     for (Eigen::Index n = 0; n < rst.rows(); ++n) {
-        const Precision r = rst(n, 0);
-        const Precision s = rst(n, 1);
-        const Precision t = rst(n, 2);
-        const Index row = static_cast<Index>(offset + n);
+        const Precision r   = rst(n, 0);
+        const Precision s   = rst(n, 1);
+        const Precision t   = rst(n, 2);
+        const Index     row = static_cast<Index>(offset + n);
 
-        // Output coordinates may be nodal rather than integration points. Use
-        // the history state of the nearest constitutive integration point.
-        Index     state_ip       = 0;
-        Precision state_distance = std::numeric_limits<Precision>::infinity();
-        for (Index ip = 0; ip < state_scheme.count(); ++ip) {
-            const auto point = state_scheme.get_point(ip);
+        // Output coordinates may be nodal rather than constitutive integration
+        // points. Reuse the history row of the nearest material point.
+        Index state_ip = 0;
+        auto  state_point = state_scheme.get_point(0);
+        Precision state_distance =
+            (r - state_point.r) * (r - state_point.r)
+            + (s - state_point.s) * (s - state_point.s)
+            + (t - state_point.t) * (t - state_point.t);
+
+        for (Index ip = 1; ip < state_scheme.count(); ++ip) {
+            state_point = state_scheme.get_point(ip);
             const Precision distance =
-                (r - point.r) * (r - point.r)
-                + (s - point.s) * (s - point.s)
-                + (t - point.t) * (t - point.t);
+                (r - state_point.r) * (r - state_point.r)
+                + (s - state_point.s) * (s - state_point.s)
+                + (t - state_point.t) * (t - state_point.t);
+
             if (distance < state_distance) {
                 state_ip       = ip;
                 state_distance = distance;
             }
         }
+
         Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip), 0);
 
         if (!use_green_lagrange_nl) {
             Precision det;
             StaticMatrix<n_strain, D * N> B =
                 this->strain_displacements(reference_coords, r, s, t, det, false);
+
             if (det <= Precision(0) || std::isnan(det) || std::isinf(det)) {
                 continue;
             }
@@ -79,9 +89,9 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
         }
 
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
-
         const VolumeStrainGreenLagrange green_lagrange =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
+
         VolumeStressPK2 second_pk;
         Mat6            tangent;
         evaluate_material(r, s, t, green_lagrange, state, second_pk, tangent);
@@ -117,7 +127,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
         const Precision s   = rst(n, 1);
         const Precision t   = rst(n, 2);
         const Index     row = static_cast<Index>(offset + n);
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(static_cast<Index>(n)), 0);
+        Precision*      state = &(*this->_model_data->material_state)(this->mp_index(static_cast<Index>(n)), 0);
 
         if (!use_green_lagrange_nl) {
             Precision det = Precision(0);
@@ -143,15 +153,118 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
         const VolumeStrainGreenLagrange green_lagrange =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
+
         VolumeStressPK2 second_pk;
         Mat6            tangent;
         evaluate_material(r, s, t, green_lagrange, state, second_pk, tangent);
 
-        // Total-Lagrange internal forces and geometric stiffness require PK2
+        // Total-Lagrange internal forces and geometric stiffness require PK2.
         for (Dim component = 0; component < n_strain; ++component) {
             stress_state(row, component) = second_pk.voigt()(component);
         }
     }
+}
+
+/**
+ * Assembles material tangent, geometric tangent and internal force from one
+ * constitutive update at every solid material point.
+ *
+ * For each integration point the Green-Lagrange strain and PK2 stress satisfy
+ * the Total-Lagrangian virtual-work relation. The material contribution is
+ *
+ *     K_mat = integral B^T C B dV0,
+ *
+ * while the stress-dependent geometric contribution is assembled from
+ * `grad(N_a)^T S grad(N_b)`. The same PK2 stress is used for the internal force
+ * `B^T S`, so no second constitutive evaluation of the material point is
+ * required within the tangent assembly.
+ *
+ * @param buffer Caller-provided dense tangent storage.
+ * @param ip_stress_state Global integration-point PK2 stress field to update.
+ * @param nodal_forces Global nodal internal-force field to increment.
+ * @param displacement Trial displacement defining the current configuration.
+ * @return Complete material plus geometric tangent.
+ */
+template<Index N>
+MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
+                                             Field&       ip_stress_state,
+                                             NodeData&    nodal_forces,
+                                             const Field& displacement) {
+    (void) displacement;
+
+    logging::error(ip_stress_state.components >= n_strain,
+        "SolidElement: nonlinear stress state requires at least six components");
+    logging::error(nodal_forces.components >= D,
+        "SolidElement: nonlinear internal force requires at least three nodal components");
+
+    const auto reference_coords = this->node_coords_reference();
+    const auto current_coords   = this->node_coords_current();
+    const auto& scheme          = this->integration_scheme_stiffness();
+
+    StaticMatrix<D * N, D * N> tangent = StaticMatrix<D * N, D * N>::Zero();
+
+    // Every quadrature point performs one constitutive update and immediately
+    // uses the resulting stress and tangent for all element contributions.
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto point = scheme.get_point(ip);
+
+        Precision det0;
+        const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
+            reference_coords, point.r, point.s, point.t, det0);
+        const Mat3 F = this->deformation_gradient(
+            reference_coords, current_coords, point.r, point.s, point.t);
+        const StaticMatrix<n_strain, D * N> B =
+            this->green_lagrange_strain_displacement(dN_dX, F);
+        const VolumeStrainGreenLagrange strain =
+            VolumeStrainGreenLagrange::from_deformation_gradient(F);
+
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip), 0);
+
+        VolumeStressPK2 stress;
+        Mat6            material_tangent;
+        evaluate_material(point.r, point.s, point.t, strain, state, stress, material_tangent);
+
+        // Store the freshly evaluated PK2 stress in the common integration-point field.
+        const Index stress_row = this->ip_index(ip);
+        for (Index component = 0; component < n_strain; ++component) {
+            ip_stress_state(stress_row, component) = stress.voigt()(component);
+        }
+
+        const Precision measure = point.w * det0;
+
+        // Material tangent contribution B^T C B.
+        tangent.noalias() += measure * B.transpose() * material_tangent * B;
+
+        // Total-Lagrangian geometric tangent generated by the current PK2 stress.
+        const Mat3 S = stress.tensor();
+        for (Index a = 0; a < N; ++a) {
+            const Vec3 dNa = dN_dX.row(a).transpose();
+
+            for (Index b = 0; b < N; ++b) {
+                const Vec3 dNb = dN_dX.row(b).transpose();
+                const Precision s_ab = dNa.dot(S * dNb) * measure;
+
+                for (Dim d = 0; d < D; ++d) {
+                    tangent(D * a + d, D * b + d) += s_ab;
+                }
+            }
+        }
+
+        // Matching internal force contribution from the same constitutive state.
+        const StaticVector<D * N> local_force = B.transpose() * stress.voigt() * measure;
+        for (Index a = 0; a < N; ++a) {
+            const Index node_id = static_cast<Index>(node_ids[a]);
+            for (Dim d = 0; d < D; ++d) {
+                nodal_forces(node_id, d) += local_force(D * a + d);
+            }
+        }
+    }
+
+    tangent = Precision(0.5) * (tangent + tangent.transpose());
+
+    MapMatrix mapped{buffer, D * N, D * N};
+    mapped = tangent;
+    return mapped;
 }
 
 template<Index N>
@@ -193,8 +306,7 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
 // compute_compliance
 //-----------------------------------------------------------------------------
 template<Index N>
-void
-SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
+void SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[D * N * D * N];
     auto K = stiffness(buffer);
 
@@ -206,26 +318,17 @@ SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
 }
 
 /**
- * Goal is to compute the derivative of the compliance from a linear solution w.r.t the three angles which classify
- * the additional rotation going into the section. The derivation with ()' = del () / del (alpha_i)
- * Using:
- *              K u = f
- *      K' u + K u' = 0 (chain rule)
+ * Computes the compliance derivative with respect to the three additional
+ * material-orientation angles from the derivative of the constitutive tangent.
  *
- * And the definition of compliance:
- *              J  = f^T u
- *              J' = f^T u'                  (inserting u' from above)
- *                 = f^T (-K^-1 K' u)        (inserting f^T = (Ku)^T = u^T K^T = u^T K (since K = K^T)
- *                 = - u^T K K^-1 K' u       (K K^-1 = I)
- *                 = - u^T K' u
+ * With equilibrium `K u = f` and compliance `J = f^T u`, differentiation gives
  *
- * Using the definition of stiffness:
- *              K  = ∫B^T C_tan B dV
+ *     J' = -u^T K' u
+ *        = -integral eps^T C'_tan eps dV.
  *
- *              J' = - u^T ∫B^T C'_tan B dV u
- *                 = - ∫ u^T B^T C'_tan B u dV
- *                 = - ∫ eps^T C'_tan eps dV
-*/
+ * @param displacement Current nodal displacement field.
+ * @param result Element result field receiving the three angle derivatives.
+ */
 template<Index N>
 void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, Field& result) {
     if (!this->_model_data || !this->_model_data->material_orientation) {
@@ -240,10 +343,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
     const Vec3  angles = angles_field->row_vec3(row);
 
     const Mat3 additional_rotation = cos::RectangularSystem::euler(
-        angles(0),
-        angles(1),
-        angles(2)
-    ).get_axes(Vec3::Zero());
+        angles(0), angles(1), angles(2)).get_axes(Vec3::Zero());
 
     const std::array<Mat3, 3> additional_rotation_derivatives {
         cos::RectangularSystem::derivative_rot_x(angles(0), angles(1), angles(2)),
@@ -251,7 +351,6 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2))
     };
 
-    // Initialize element state
     auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
@@ -262,25 +361,18 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
     const Precision scaling    = element_stiffness_scale();
     Vec3            derivative = Vec3::Zero();
 
-    // Integrate compliance derivatives
     for (Index n = 0; n < scheme.count(); ++n) {
-        const Precision r = scheme.get_point(n).r;
-        const Precision s = scheme.get_point(n).s;
-        const Precision t = scheme.get_point(n).t;
-        const Precision w = scheme.get_point(n).w;
+        const auto point = scheme.get_point(n);
         Precision det;
 
-        // compute strain displacement matrix B
-        const StaticMatrix<n_strain, D * N> B = this->strain_displacements( current_coords, r, s, t, det);
-        // compute (small) strains
-        const StaticVector<n_strain> strain   = B * local_displacement;
+        const StaticMatrix<n_strain, D * N> B =
+            this->strain_displacements(current_coords, point.r, point.s, point.t, det);
+        const StaticVector<n_strain> strain = B * local_displacement;
 
-        // get the position of the point in reference coordinates, needed for the transformation
-        // inside the sections coordinate system
-        const Vec3 position_reference = this->interpolate<D>(reference_coords, r, s, t);
+        const Vec3 position_reference =
+            this->interpolate<D>(reference_coords, point.r, point.s, point.t);
         Precision* state = &(*this->_model_data->material_state)(this->mp_index(n), 0);
 
-        // get the tangent rotation derivatives dC/d_alpha
         const auto tangent_derivatives = get_section()->tangent_rotation_derivatives(
             position_reference,
             additional_rotation,
@@ -288,9 +380,8 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
             state
         );
 
-        // store in the final derivative
         for (Index i = 0; i < 3; ++i) {
-            derivative(i) += scaling * w * strain.dot(tangent_derivatives[i] * strain) * det;
+            derivative(i) += scaling * point.w * strain.dot(tangent_derivatives[i] * strain) * det;
         }
     }
 
@@ -299,4 +390,4 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
     result(elem_id, 2) = derivative(2);
 }
 
-}  // namespace fem::model
+} // namespace fem::model
