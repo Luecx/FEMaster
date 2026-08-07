@@ -110,8 +110,7 @@ TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
         }
 
         const Index row = element->mp_index(1, 0);
-        Precision* material_state = model._data->material_state->data()
-                                  + row * model._data->material_state->components;
+        Precision* material_state = &(*model._data->material_state)(row, 0);
         EXPECT_EQ(material_state[1], Precision(2));
 
         material_state[1] = Precision(99);
@@ -130,7 +129,7 @@ TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
     EXPECT_EQ(model._data->material_state, previous_state);
 }
 
-TEST(NonlinearStateManager, LeavesMaterialStateUnboundForStatelessMaterials) {
+TEST(NonlinearStateManager, KeepsEnumeratedStateForStatelessMaterials) {
     model::Model model(1, 1, 0);
 
     auto material = std::make_shared<material::Material>("STATELESS");
@@ -144,9 +143,15 @@ TEST(NonlinearStateManager, LeavesMaterialStateUnboundForStatelessMaterials) {
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
 
-    loadcase::tools::NonlinearStateManager state(model);
+    auto enumerated_state = model._data->material_state;
+    ASSERT_NE(enumerated_state, nullptr);
 
-    EXPECT_EQ(model._data->material_state, nullptr);
+    {
+        loadcase::tools::NonlinearStateManager state(model);
+        EXPECT_EQ(model._data->material_state, enumerated_state);
+    }
+
+    EXPECT_EQ(model._data->material_state, enumerated_state);
 }
 
 } // namespace
