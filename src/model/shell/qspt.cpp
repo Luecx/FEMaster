@@ -124,7 +124,23 @@ Precision QSPT::effective_density() {
     return this->get_density(false);
 }
 
+/**
+ * Derives the scalar in-plane shear modulus used by the shear-panel formulation.
+ *
+ * The assigned shell section is evaluated at zero generalized strain in an
+ * orthonormal basis constructed at the element center. The generalized `N12`
+ * tangent entry is divided by physical thickness to recover the material-level
+ * engineering shear modulus.
+ *
+ * QSPT has one enumerated integration point. Its first material-state row and
+ * the global state stride are passed through the common section interface so
+ * stateful section formulations receive valid storage even for this auxiliary
+ * stiffness query.
+ *
+ * @return Non-zero effective in-plane engineering shear modulus.
+ */
 Precision QSPT::effective_shear_modulus() {
+    // Construct a right-handed reference shell basis at the element center
     const NodeCoords coords = this->node_coords_reference();
     const Vec3       center = coords.colwise().mean().transpose();
 
@@ -141,6 +157,7 @@ Precision QSPT::effective_shear_modulus() {
     ShellStressResultants  zero_resultants;
     Mat8                   tangent;
 
+    // Evaluate the zero-strain section tangent on the element material-state row
     Precision* state = &(*this->_model_data->material_state)(this->mp_index(0, 0), 0);
     this->get_section()->evaluate(
         center,
@@ -153,6 +170,7 @@ Precision QSPT::effective_shear_modulus() {
         tangent
     );
 
+    // Convert generalized in-plane shear stiffness to a material shear modulus
     const Precision thickness = this->get_section()->thickness_;
     const Precision g         = tangent(2, 2) / thickness;
     logging::error(std::abs(g) > kGeomTol,

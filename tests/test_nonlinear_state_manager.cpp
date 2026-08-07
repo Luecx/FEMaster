@@ -25,6 +25,14 @@ namespace {
 
 using namespace fem;
 
+/**
+ * @brief Minimal stateful constitutive law used to verify state initialization.
+ *
+ * The dummy model reserves three scalars and initializes them to distinct values
+ * so buffer reset, promotion and restoration can be observed unambiguously. It
+ * implements no stress response because the manager tests exercise only state
+ * ownership and lifecycle operations.
+ */
 struct StatefulElasticity final : material::Elasticity {
     Index state_size() const override {
         return 3;
@@ -37,6 +45,12 @@ struct StatefulElasticity final : material::Elasticity {
     }
 };
 
+/**
+ * @brief Minimal section that associates the dummy material with a test element.
+ *
+ * No constitutive section behavior is required; only the generic `Section`
+ * material pointer participates in model-wide state-size discovery.
+ */
 struct TestSection final : Section {
     void info() override {}
 
@@ -45,6 +59,13 @@ struct TestSection final : Section {
     }
 };
 
+/**
+ * @brief Minimal element exposing two integration points with two material points each.
+ *
+ * The fixed topology produces four globally enumerated material-state rows and
+ * thereby verifies element/IP/material-point ordering independently of a concrete
+ * structural element formulation.
+ */
 struct TestElement final : model::ElementInterface {
     explicit TestElement(ID id)
         : ElementInterface(id) {}

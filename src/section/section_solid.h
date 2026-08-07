@@ -43,7 +43,11 @@ struct SolidSection : Section {
     // Optional material orientation in the reference configuration
     cos::CoordinateSystem::Ptr orientation_ = nullptr;
 
-    // Constitutive evaluation in the global solid basis
+    // Evaluate infinitesimal solid response. Global engineering strain is
+    // transformed into the reference material basis composed from the optional
+    // section orientation and additional element rotation. The selected state
+    // row is passed directly to the material. Cauchy stress and the consistently
+    // transformed six-by-six tangent are returned in global coordinates.
     void evaluate(const Vec3&                   position_reference,
                   const Mat3&                   additional_rotation,
                   const VolumeStrainLinearized& strain_global,
@@ -51,6 +55,10 @@ struct SolidSection : Section {
                   VolumeStressCauchy&           stress_global,
                   Mat6&                         tangent_global) const;
 
+    // Evaluate Total-Lagrangian solid response with the same basis and state
+    // ownership convention. Green-Lagrange strain is transformed into material
+    // coordinates; second Piola-Kirchhoff stress and dS/dE are transformed back
+    // into the global reference basis without changing their stress measure.
     void evaluate(const Vec3&                      position_reference,
                   const Mat3&                      additional_rotation,
                   const VolumeStrainGreenLagrange& strain_global,
@@ -58,7 +66,11 @@ struct SolidSection : Section {
                   VolumeStressPK2&                 stress_global,
                   Mat6&                            tangent_global) const;
 
-    // Tangent derivatives with respect to the three additional material rotations
+    // Differentiate the globally transformed linear material tangent with
+    // respect to three supplied additional-rotation directions. The material
+    // tangent is evaluated at zero strain using the active state row and is
+    // assumed independent of the rotation parameters; only strain and stress
+    // transformation operators are differentiated.
     std::array<Mat6, 3> tangent_rotation_derivatives(
         const Vec3&                position_reference,
         const Mat3&                additional_rotation,
@@ -66,12 +78,14 @@ struct SolidSection : Section {
         Precision*                 state
     ) const;
 
-    // Section diagnostics
+    // Report material, region and optional orientation through the logger and a
+    // compact stable string representation.
     void info() override;
     std::string str() const override;
 
 private:
-    // Material basis at one reference position
+    // Evaluate the optional spatial coordinate system at one physical reference
+    // point. Without an orientation, return the global Cartesian basis.
     Mat3 section_orientation_basis(const Vec3& position_reference) const;
 };
 

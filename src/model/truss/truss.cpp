@@ -168,7 +168,23 @@ Precision T3::volume() {
     return get_section()->area_ * length_current();
 }
 
+/**
+ * Assembles the current Total-Lagrangian axial material stiffness.
+ *
+ * The current stretch defines Green-Lagrange strain. One constitutive call on
+ * the truss material-point state returns PK2 stress and tangent; this interface
+ * uses the tangent contribution
+ *
+ *     K_mat = A0 C lambda^2/L0 (n tensor n)
+ *
+ * in the current axial direction. Geometric stress stiffness is exposed
+ * separately by `stiffness_geom()`.
+ *
+ * @param buffer Caller-provided six-by-six element-matrix storage.
+ * @return Mapped material stiffness in global translational DOF ordering.
+ */
 MapMatrix T3::stiffness(Precision* buffer) {
+    // Construct the finite axial strain from reference and current lengths
     const Precision A0     = get_section()->area_;
     const Precision L0     = length_reference();
     const Precision lambda = stretch();
@@ -185,6 +201,7 @@ MapMatrix T3::stiffness(Precision* buffer) {
     logging::error(elasticity->supports_axial_green_lagrange(),
         "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
+    // Evaluate the single constitutive material point in place
     Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
     elasticity->evaluate(axial_strain, state, axial_stress, material_tangent);
 
@@ -192,6 +209,8 @@ MapMatrix T3::stiffness(Precision* buffer) {
     const Mat3 k = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
 
     StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
+
+    // Expand the axial three-by-three block with the two-node difference operator
     K.block(0, 0, 3, 3) =  k;
     K.block(0, 3, 3, 3) = -k;
     K.block(3, 0, 3, 3) = -k;
@@ -233,6 +252,13 @@ MapMatrix T3::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_s
  * geometric contribution `A0 S / L0` and the internal force
  * `A0 lambda S n`. This avoids the generic structural path, which would evaluate
  * an in-place material history separately for stress and material tangent.
+ *
+ * @param buffer Caller-provided six-by-six tangent storage.
+ * @param ip_stress_state Global integration-point field receiving axial PK2 stress.
+ * @param nodal_forces Global nodal internal-force field to increment.
+ * @param displacement Trial displacement field; current positions already carry
+ *                     the configuration used by the truss kinematics.
+ * @return Mapped complete material-plus-geometric tangent.
  */
 MapMatrix T3::stiffness_tangent(Precision*   buffer,
                                 Field&       ip_stress_state,
@@ -245,6 +271,7 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     logging::error(nodal_forces.components >= 3,
         "T3: nonlinear internal force requires at least three nodal components");
 
+    // Evaluate stretch, Green-Lagrange strain and one constitutive state update
     const Precision A0     = get_section()->area_;
     const Precision L0     = length_reference();
     const Precision lambda = stretch();
@@ -264,8 +291,10 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
     elasticity->evaluate(strain, state, stress, material_tangent);
 
+    // Preserve PK2 stress for state-based residual and geometric-stiffness paths
     ip_stress_state(this->ip_index(0), 0) = stress.value();
 
+    // Assemble material and stress-dependent blocks from the same constitutive result
     const Vec3 n = direction_current();
     const Mat3 material_block =
         (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
@@ -279,6 +308,7 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     tangent.block(3, 0, 3, 3) = -block;
     tangent.block(3, 3, 3, 3) =  block;
 
+    // Scatter the matching Total-Lagrangian axial internal force
     const Vec3 force = A0 * lambda * stress.value() * n;
     const Index node_0 = static_cast<Index>(node_ids[0]);
     const Index node_1 = static_cast<Index>(node_ids[1]);
@@ -385,6 +415,22 @@ void T3::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_te
     (void) ref_temp;
 }
 
+/**
+ * Recovers axial strain and Cauchy stress at requested truss output locations.
+ *
+ * Linearized recovery projects relative displacement onto the reference axis.
+ * Nonlinear recovery derives Green-Lagrange strain from stretch, evaluates PK2
+ * stress and pushes it forward as `sigma = lambda S` for physical output. The
+ * element has one constant axial state, so the same values are copied to every
+ * requested natural output coordinate.
+ *
+ * @param strain Optional output field receiving axial strain in component zero.
+ * @param stress Optional output field receiving axial Cauchy stress in component zero.
+ * @param displacement Global nodal displacement field for linearized recovery.
+ * @param rst Requested natural output coordinates.
+ * @param offset First output row belonging to this element.
+ * @param use_green_lagrange_nl Select finite-strain or linearized recovery.
+ */
 void T3::compute_stress_strain(Field*           strain,
                                Field*           stress,
                                const Field&     displacement,
@@ -400,6 +446,7 @@ void T3::compute_stress_strain(Field*           strain,
     Precision  stress_value = Precision(0);
     Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
 
+    // Evaluate finite-strain PK2 stress and convert it to physical Cauchy stress
     if (use_green_lagrange_nl) {
         const Precision lambda = stretch();
         const AxialStrainGreenLagrange axial_strain =
@@ -416,6 +463,7 @@ void T3::compute_stress_strain(Field*           strain,
         strain_value = axial_strain.value();
         stress_value = cauchy.value();
     } else {
+        // Evaluate infinitesimal axial strain and Cauchy stress on the reference axis
         const Precision L0 = length_reference();
 
         logging::error(L0 > Precision(0),
@@ -438,6 +486,7 @@ void T3::compute_stress_strain(Field*           strain,
         stress_value = axial_stress.value();
     }
 
+    // Replicate the constant axial state to all requested truss output points
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
         const Index row = static_cast<Index>(offset) + i;
 
@@ -457,6 +506,19 @@ void T3::compute_stress_strain(Field*           strain,
     }
 }
 
+/**
+ * Stores the axial stress measure required by subsequent element assembly.
+ *
+ * Nonlinear Total-Lagrangian recovery stores PK2 stress at the single truss
+ * integration point. Linearized recovery delegates to the ordinary Cauchy-
+ * stress output path. The active material state row may be updated in place by
+ * either constitutive evaluation.
+ *
+ * @param stress_state Global integration-point stress field to update.
+ * @param displacement Global nodal displacement field.
+ * @param offset First output row supplied by the caller.
+ * @param use_green_lagrange_nl Select PK2 or linearized Cauchy storage.
+ */
 void T3::compute_stress_state(Field&       stress_state,
                               const Field& displacement,
                               int          offset,
@@ -496,6 +558,16 @@ void T3::compute_stress_state(Field&       stress_state,
     );
 }
 
+/**
+ * Assembles Total-Lagrangian axial internal force from stored PK2 stress.
+ *
+ * The force magnitude is `A0 lambda S` and acts along the current truss axis
+ * with equal and opposite nodal contributions. No material evaluation occurs,
+ * so this recovery cannot advance material history.
+ *
+ * @param node_forces Global nodal internal-force field to increment.
+ * @param ip_stress Stored single-point axial PK2 stress field.
+ */
 void T3::compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) {
     logging::error(node_forces.domain == FieldDomain::NODE,
         "T3: nonlinear internal force output must use NODE domain");
@@ -533,6 +605,20 @@ void T3::compute_compliance(Field& displacement, Field& result) {
     result(static_cast<Index>(this->elem_id), 0) = u.dot(K * u);
 }
 
+/**
+ * Recovers the linearized axial section force for beam-style result output.
+ *
+ * Relative nodal displacement is projected onto the reference truss direction
+ * to obtain infinitesimal axial strain. The material is evaluated on the
+ * element's single state row, and Cauchy stress is multiplied by the reference
+ * area. The constant axial force is copied into component zero at both element
+ * nodes; all remaining section-force components are cleared.
+ *
+ * @param section_forces Element-nodal section-force output field.
+ * @param displacement Global nodal displacement field.
+ * @param offset First element-nodal output row belonging to this truss.
+ * @return Always `true` after both nodal result rows were written.
+ */
 bool T3::compute_beam_section_forces(Field&       section_forces,
                                      const Field& displacement,
                                      int          offset) {

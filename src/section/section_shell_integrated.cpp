@@ -53,6 +53,19 @@ constexpr std::array<Precision, 5> simpson_weights {
 
 } // namespace
 
+/**
+ * Constructs a five-point through-thickness integrated shell section.
+ *
+ * The base class validates thickness and orientation data. Constitutive support
+ * for the requested strain measure is checked at evaluation time because the
+ * owning material may provide only selected shell formulations.
+ *
+ * @param material Material evaluated at every through-thickness point.
+ * @param region Element region receiving the section.
+ * @param thickness Positive physical shell thickness.
+ * @param orientation Optional coordinate system defining the material basis.
+ * @param csys_axis Zero-based coordinate-system axis projected into the shell plane.
+ */
 IntegratedShellSection::IntegratedShellSection(
     material::Material::Ptr    material,
     model::ElementRegion::Ptr  region,
@@ -76,6 +89,22 @@ IntegratedShellSection::IntegratedShellSection(
  * integration point. Consecutive rows are separated by
  * `material_state_stride` scalar components and are passed directly to the
  * constitutive model without additional state ownership in the section.
+ *
+ * Generalized membrane strains and curvatures reconstruct the in-plane material
+ * strain as `epsilon(z) = epsilon_0 + z kappa`; transverse shear is constant and
+ * receives the Reissner-Mindlin factor `5/6`. Simpson integration returns
+ * membrane forces, bending moments, transverse shear forces and the consistent
+ * generalized tangent. Oriented responses are transformed back into the
+ * geometric shell basis required by element assembly.
+ *
+ * @param position_reference Physical reference position of the shell point.
+ * @param shell_basis_global Geometric shell basis in global coordinates.
+ * @param strain_shell Generalized strain in the geometric shell basis.
+ * @param material_state First of the five through-thickness state rows.
+ * @param material_state_stride Scalar distance between consecutive state rows.
+ * @param use_green_lagrange Select PK2 or linearized Cauchy material evaluation.
+ * @param resultants_shell Integrated resultants in the geometric shell basis.
+ * @param tangent_shell Consistent generalized tangent in the geometric shell basis.
  */
 void IntegratedShellSection::evaluate(
     const Vec3&                   position_reference,
@@ -290,6 +319,22 @@ void IntegratedShellSection::evaluate(
  * rows belonging to the in-plane shell integration point supplied by the
  * element. This keeps history attached to actual constitutive material points
  * while allowing physical stress recovery at arbitrary thickness coordinates.
+ *
+ * Material strain is reconstructed in the same section basis used during
+ * generalized integration. Linearized constitutive output is already Cauchy
+ * stress. Finite-strain output is evaluated as PK2 stress and pushed forward by
+ * the supplied deformation gradient before conversion to the configured output
+ * basis.
+ *
+ * @param position_reference Physical reference position of the shell point.
+ * @param shell_basis_global Geometric shell basis in global coordinates.
+ * @param strain_shell Generalized strain in the geometric shell basis.
+ * @param material_state First of the five through-thickness state rows.
+ * @param material_state_stride Scalar distance between consecutive state rows.
+ * @param z Physical thickness coordinate measured from the midsurface.
+ * @param use_green_lagrange Select PK2-to-Cauchy finite-strain recovery.
+ * @param deformation_gradient Three-dimensional deformation gradient at `z`.
+ * @return Physical Cauchy stress in the configured output basis.
  */
 VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     const Vec3&                   position_reference,

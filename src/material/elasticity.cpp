@@ -1,3 +1,18 @@
+/**
+ * @file elasticity.cpp
+ * @brief Implements default behavior of the elastic constitutive interface.
+ *
+ * The base implementation declares every kinematic formulation unsupported,
+ * defines a stateless material-point layout and rejects constitutive overloads
+ * that a concrete elasticity model has not implemented. This keeps unsupported
+ * stress measures from being substituted silently by elements or sections.
+ *
+ * @see Elasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "elasticity.h"
 
 #include "strain/axial_strain_green_lagrange.h"

@@ -17,6 +17,26 @@
 
 namespace fem::model {
 
+/**
+ * Recovers solid strain and Cauchy stress at requested natural coordinates.
+ *
+ * Linearized recovery uses the reference-configuration small-strain B matrix.
+ * Nonlinear recovery derives Green-Lagrange strain from the deformation
+ * gradient, evaluates PK2 stress and pushes it forward to Cauchy stress for
+ * output. Because requested coordinates may be nodal extrapolation points
+ * rather than constitutive integration points, each location reuses the state
+ * row of the nearest stiffness quadrature point in natural coordinates.
+ *
+ * Degenerate output mappings are skipped in the linearized path. At least one
+ * of the optional output fields must be supplied.
+ *
+ * @param strain Optional output field for linearized or Green-Lagrange strain.
+ * @param stress Optional output field for Cauchy stress.
+ * @param displacement Global nodal displacement field.
+ * @param rst Natural output coordinates, one point per row.
+ * @param offset First output row belonging to this element.
+ * @param use_green_lagrange_nl Select nonlinear Total-Lagrangian recovery.
+ */
 template<Index N>
 void SolidElement<N>::compute_stress_strain(Field* strain,
                                             Field* stress,
@@ -66,6 +86,8 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
 
         Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip), 0);
 
+        // Linearized recovery evaluates Cauchy stress directly from the
+        // infinitesimal reference-configuration strain field
         if (!use_green_lagrange_nl) {
             Precision det;
             StaticMatrix<n_strain, D * N> B =
@@ -88,6 +110,8 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
             continue;
         }
 
+        // Nonlinear recovery evaluates PK2 stress in the reference configuration
+        // and pushes it forward for physical Cauchy-stress output
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
         const VolumeStrainGreenLagrange green_lagrange =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
@@ -105,6 +129,20 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
     }
 }
 
+/**
+ * Evaluates and stores the constitutive stress measure required by element
+ * assembly at every solid integration point.
+ *
+ * Linearized evaluation stores Cauchy stress. The nonlinear Total-Lagrangian
+ * path stores second Piola-Kirchhoff stress without a Cauchy push-forward because
+ * subsequent internal-force and geometric-stiffness recovery require PK2. Each
+ * integration point uses its own globally enumerated material-state row.
+ *
+ * @param stress_state Global integration-point stress field to update.
+ * @param displacement Global nodal displacement field.
+ * @param offset First output stress row supplied by the caller.
+ * @param use_green_lagrange_nl Select PK2 or linearized Cauchy evaluation.
+ */
 template<Index N>
 void SolidElement<N>::compute_stress_state(Field& stress_state,
                                            const Field& displacement,
@@ -115,6 +153,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
         return;
     }
 
+    // Prepare element geometry and the displacement vector once for all points
     const auto reference_coords       = this->node_coords_reference();
     const auto current_coords         = this->node_coords_current();
     const auto local_displacement     = this->nodal_data<3>(displacement);
@@ -129,6 +168,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
         const Index     row = static_cast<Index>(offset + n);
         Precision*      state = &(*this->_model_data->material_state)(this->mp_index(static_cast<Index>(n)), 0);
 
+        // Store linearized Cauchy stress directly when small-strain recovery is requested
         if (!use_green_lagrange_nl) {
             Precision det = Precision(0);
             const StaticMatrix<n_strain, D * N> B =
@@ -150,6 +190,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
             continue;
         }
 
+        // Store PK2 stress for the Total-Lagrangian residual and geometric tangent
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
         const VolumeStrainGreenLagrange green_lagrange =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
@@ -267,9 +308,21 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
     return mapped;
 }
 
+/**
+ * Assembles the Total-Lagrangian internal force from a stored PK2 stress field.
+ *
+ * At each stiffness quadrature point the current deformation gradient builds
+ * the nonlinear strain-displacement matrix. The virtual-work contribution
+ * `B^T S dV0` is evaluated from the already stored stress so this recovery does
+ * not call the material model or advance material history.
+ *
+ * @param node_forces Global nodal internal-force field to increment.
+ * @param ip_stress Global integration-point PK2 stress field.
+ */
 template<Index N>
 void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
                                                        const Field& ip_stress) {
+    // Collect the two configurations and integration rule once for all points
     auto reference_coords = this->node_coords_reference();
     auto current_coords   = this->node_coords_current();
     auto scheme           = this->integration_scheme_stiffness();
@@ -281,18 +334,17 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
         const Precision w = scheme.get_point(n).w;
         const Index row = this->ip_index(n);
 
+        // Reconstruct the Total-Lagrangian B matrix in the reference configuration
         Precision det0;
-        // derivative of shape function w.r.t reference coordinates XYZ (N x 3)
         const auto dN_dX       = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
-        // deformation gradient at current position (3 x 3)
         const auto F           = this->deformation_gradient(reference_coords, current_coords, r, s, t);
-        // strain displacement relationship (6 x 3N)
         const auto B           = this->green_lagrange_strain_displacement(dN_dX, F);
-        // getting the current 2nd piola kirchhoff stress
+
+        // Integrate B^T S from the stored PK2 field without another material update
         const auto S_voigt     = ip_stress.row_vec6(row);
-        // getting local force of a volume element (B^T S)
         const auto local_force = B.transpose() * S_voigt * (det0 * w);
 
+        // Scatter the element contribution into global translational DOFs
         for (Index a = 0; a < N; ++a) {
             const Index node_id = static_cast<Index>(node_ids[a]);
             for (Index d = 0; d < D; ++d) {
@@ -302,9 +354,6 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
     }
 }
 
-//-----------------------------------------------------------------------------
-// compute_compliance
-//-----------------------------------------------------------------------------
 template<Index N>
 void SolidElement<N>::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[D * N * D * N];
@@ -351,6 +400,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         cos::RectangularSystem::derivative_rot_z(angles(0), angles(1), angles(2))
     };
 
+    // Collect the element displacement and both configurations once
     auto local_disp_mat     = StaticMatrix<3, N>(this->nodal_data<3>(displacement).transpose());
     auto local_displacement = Eigen::Map<StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
 
@@ -361,6 +411,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
     const Precision scaling    = element_stiffness_scale();
     Vec3            derivative = Vec3::Zero();
 
+    // Integrate the energy sensitivity for all three rotation parameters
     for (Index n = 0; n < scheme.count(); ++n) {
         const auto point = scheme.get_point(n);
         Precision det;
@@ -369,6 +420,8 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
             this->strain_displacements(current_coords, point.r, point.s, point.t, det);
         const StaticVector<n_strain> strain = B * local_displacement;
 
+        // Evaluate transformation derivatives at the physical reference point
+        // using the material state row of this integration point
         const Vec3 position_reference =
             this->interpolate<D>(reference_coords, point.r, point.s, point.t);
         Precision* state = &(*this->_model_data->material_state)(this->mp_index(n), 0);
@@ -380,6 +433,7 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
             state
         );
 
+        // Accumulate epsilon^T C'_tan epsilon with the physical volume measure
         for (Index i = 0; i < 3; ++i) {
             derivative(i) += scaling * point.w * strain.dot(tangent_derivatives[i] * strain) * det;
         }

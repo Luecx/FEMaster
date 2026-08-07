@@ -462,10 +462,13 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
     Precision r,
     Precision s
 ) const {
+    // Construct the zero-strain generalized query in the pointwise shell basis
     ShellGeneralizedStrain zero_strain(Vec8::Zero());
     ShellStressResultants  zero_resultants;
     Mat8                   H;
 
+    // Associate an arbitrary natural coordinate with the nearest in-plane
+    // constitutive integration point because output points own no separate state
     const auto& points = reference_data().ip_points;
     Index state_ip = 0;
     Precision state_distance =
@@ -482,6 +485,7 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
         }
     }
 
+    // Pass the first through-thickness row and common row stride to the section
     Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
 
     shell_section()->evaluate(

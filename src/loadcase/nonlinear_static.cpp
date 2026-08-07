@@ -200,7 +200,7 @@ void NonlinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
-    // perform important checks
+    // Validate path-control, solver and model settings before changing model state
     logging::error(max_increments > 0,
         "NONLINEARSTATIC requires MAX_INCREMENTS > 0");
     logging::error(initial_increment > Precision(0),
@@ -237,12 +237,13 @@ void NonlinearStatic::run() {
     logging::error(model->_data->positions_reference != nullptr,
         "NonlinearStatic: positions_reference field not initialized");
 
-    // create a copy of original and reference positions and reset them at the end
+    // Preserve the caller-visible position field and start the nonlinear step
+    // from the undeformed reference configuration
     const model::Field original_positions  = *model->_data->positions;
     const model::Field reference_positions = *model->_data->positions_reference;
     *model->_data->positions = reference_positions;
 
-    // assign sections so every element knows its section and the elements can prepare
+    // Bind element sections and initialize step-local element geometry/state caches
     model->assign_sections();
     model->step_begin();
 
@@ -250,7 +251,8 @@ void NonlinearStatic::run() {
     // the duration of this nonlinear solution.
     tools::NonlinearStateManager nonlinear_state(*model);
 
-    // compute general stuff needed below
+    // Build active DOFs, external loading and constraint groups shared by all
+    // nonlinear evaluations
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -271,17 +273,17 @@ void NonlinearStatic::run() {
         "building constraints"
     );
 
-    // report groups if desired by the user
+    // Report the semantic constraint groups before flattening them for algebraic use
     report_constraint_groups(groups);
 
-    // convert into actual equations (just flattening all the equation groups)
+    // Flatten semantic groups into the complete equation set used by the transformer
     auto equations = groups.flatten();
 
-    // track a few simple coefficients used below
+    // Cache global dimensions required by reduced-vector and nodal-field assembly
     const Index n_active  = active_dof_idx_mat.maxCoeff() + 1;
     const Index max_nodes = static_cast<Index>(model->_data->max_nodes);
 
-    // create the constraint transformer
+    // Construct the affine null-space transformation for prescribed and coupled DOFs
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::Options options;
@@ -742,10 +744,12 @@ void NonlinearStatic::run() {
         nonlinear_state.begin_contact_frozen_trial();
     };
 
+    // Promote the accepted candidate's contact geometry to its parent trial
     auto commit_line_search_trial = [&]() {
         nonlinear_state.commit_contact_trial();
     };
 
+    // Discard a rejected candidate without changing its parent contact state
     auto rollback_line_search_trial = [&]() {
         nonlinear_state.rollback_contact_trial();
     };
@@ -884,14 +888,18 @@ void NonlinearStatic::run() {
     logging::error(converged,
         "NONLINEARSTATIC failed: ", failure_reason);
 
+    // Restore the accepted configuration before independent final result evaluations
     update_positions();
 
+    // Each postprocessing path starts from committed material history because
+    // result recovery may call an in-place constitutive model
     nonlinear_state.reset_material_state();
     auto [final_stress, final_strain] = Timer::measure(
         [&]() { return model->compute_stress_nodal(displacement, true); },
         "computing final nonlinear nodal stress/strain"
     );
 
+    // Top/bottom shell recovery is independent of the preceding nodal recovery
     nonlinear_state.reset_material_state();
     auto [final_stress_top, final_stress_bot] = Timer::measure(
         [&]() { return model->compute_stress_top_bot(displacement, true); },
@@ -901,6 +909,7 @@ void NonlinearStatic::run() {
     final_internal = model::NodeData{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
     final_internal.set_zero();
 
+    // Reassemble the final tangent and matching internal force from committed history
     nonlinear_state.reset_material_state();
     auto final_Kt = Timer::measure(
         [&]() {
@@ -980,10 +989,10 @@ void NonlinearStatic::run() {
     writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
     writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get(), load_factor);
 
+    // Restore the caller-visible model configuration and release step-local caches
     *model->_data->positions = original_positions;
     model->step_end();
 }
 
 } // namespace loadcase
 } // namespace fem
-

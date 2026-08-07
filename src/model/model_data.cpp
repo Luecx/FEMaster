@@ -22,6 +22,17 @@
 namespace fem {
 namespace model {
 
+/**
+ * Returns the dense row count associated with one field domain.
+ *
+ * Node and element domains use their fixed model capacities. Flattened element-
+ * nodal, integration-point and material-point domains use the sentinel entry of
+ * their prefix-offset field and are therefore unavailable before topology
+ * enumeration. Unknown domains and empty offset-dependent domains are rejected.
+ *
+ * @param domain Semantic field domain whose row count is requested.
+ * @return Number of rows required by a field in that domain.
+ */
 Index ModelData::field_rows(FieldDomain domain) {
     switch (domain) {
         case FieldDomain::UNKNOWN:
@@ -54,12 +65,32 @@ Index ModelData::field_rows(FieldDomain domain) {
     return 0;
 }
 
+/**
+ * Enumerates all element-local nodal, integration-point and material-point rows.
+ *
+ * Three prefix-offset fields are built in global element-array order. Each
+ * existing element receives the first row of its contiguous span, and the final
+ * sentinel entry stores the total row count. Material points are ordered first
+ * by element, then by integration point and finally by the section-defined
+ * material point within that integration point.
+ *
+ * After enumeration, a one-component default material-state field is created
+ * for every material-point row. This guarantees valid direct addressing even
+ * for stateless materials. A nonlinear analysis may replace that binding with a
+ * wider trial field after querying the assigned constitutive state sizes.
+ *
+ * The topology must be complete and enumeration may run only once because
+ * element offsets become persistent addressing invariants.
+ */
 void ModelData::initialize_element_enumeration() {
+    // Reject repeated enumeration because existing fields may already depend on
+    // the established element-local row layout
     logging::error(element_nodal_offsets == nullptr &&
                    element_ip_offsets    == nullptr &&
                    element_mp_offsets    == nullptr,
                    "ModelData: element enumeration has already been initialized");
 
+    // Allocate prefix arrays with one terminal sentinel beyond the element range
     element_nodal_offsets = std::make_shared<Field>(
         "ELEMENT_NODAL_OFFSETS", FieldDomain::ELEMENT, static_cast<Index>(max_elems + 1), 1);
     element_ip_offsets = std::make_shared<Field>(
@@ -71,6 +102,7 @@ void ModelData::initialize_element_enumeration() {
     Index ip_offset    = 0;
     Index mp_offset    = 0;
 
+    // Assign every element the first row of each flattened local-data span
     for (Index row = 0; row < static_cast<Index>(max_elems); ++row) {
         (*element_nodal_offsets)(row) = static_cast<Precision>(nodal_offset);
         (*element_ip_offsets)(row)    = static_cast<Precision>(ip_offset);
@@ -88,6 +120,8 @@ void ModelData::initialize_element_enumeration() {
         }
     }
 
+    // Store total row counts in the sentinel entries and cache the resulting
+    // integration-point and material-point capacities
     const Index sentinel = static_cast<Index>(max_elems);
     (*element_nodal_offsets)(sentinel) = static_cast<Precision>(nodal_offset);
     (*element_ip_offsets)(sentinel)    = static_cast<Precision>(ip_offset);
@@ -122,6 +156,22 @@ Field::Ptr ModelData::get_field(const std::string& name) const {
     return it->second;
 }
 
+/**
+ * Creates field storage for one semantic domain and optionally registers it by
+ * name.
+ *
+ * Registered creation is idempotent: an existing field is returned after its
+ * domain and component count have been validated. Unregistered creation always
+ * produces independent temporary storage. New fields derive their row count
+ * from `field_rows()` and may be initialized with NaN to expose missing writes.
+ *
+ * @param name Non-empty field name.
+ * @param domain Semantic domain controlling the row count.
+ * @param components Number of scalar components stored in every row.
+ * @param fill_nan Initialize new storage with NaN when `true`.
+ * @param reg Register and reuse the field in the model field dictionary.
+ * @return Shared field storage.
+ */
 Field::Ptr ModelData::create_field(const std::string& name, FieldDomain domain, Index components, bool fill_nan, bool reg) {
     logging::error(!name.empty(), "Field name cannot be empty");
 
@@ -162,9 +212,25 @@ Field ModelData::create_field_(const std::string& name, FieldDomain domain, Inde
     return field;
 }
 
+/**
+ * Projects a flattened element-nodal field onto shared global nodes by weighted
+ * averaging.
+ *
+ * Every element contributes each of its local nodal rows with the scalar weight
+ * stored for that element. Contributions are accumulated component-wise in
+ * global node order and normalized by the sum of incident non-zero weights.
+ * Nodes without a contribution remain zero. Prefix-offset consistency and node
+ * identifiers are validated before accessing the flattened input rows.
+ *
+ * @param element_nodal Source field in `ELEMENT_NODAL` ordering.
+ * @param element_weights Scalar weight for every global element slot.
+ * @param name Name of the returned nodal field.
+ * @return Weighted nodal projection with the source component count.
+ */
 Field ModelData::element_nodal_to_nodal(const Field& element_nodal,
                                         const Field& element_weights,
                                         const std::string& name) const {
+    // Validate domains, dimensions and the element-nodal addressing metadata
     logging::error(element_nodal.domain == FieldDomain::ELEMENT_NODAL,
                    "ModelData: element_nodal_to_nodal requires ELEMENT_NODAL input field '",
                    element_nodal.name, "'");
@@ -187,10 +253,12 @@ Field ModelData::element_nodal_to_nodal(const Field& element_nodal,
                    "ModelData: ELEMENT_NODAL field '", element_nodal.name,
                    "' has ", element_nodal.rows, " rows, expected ", expected_rows);
 
+    // Initialize global accumulation and one scalar normalization weight per node
     Field nodal{name, FieldDomain::NODE, static_cast<Index>(max_nodes), element_nodal.components};
     nodal.set_zero();
     std::vector<Precision> weight_sum(static_cast<std::size_t>(max_nodes), Precision(0));
 
+    // Accumulate every active element-local node into its shared global node
     for (Index elem_idx = 0; elem_idx < static_cast<Index>(max_elems); ++elem_idx) {
         const ElementPtr& element = elements[elem_idx];
         if (!element) {
@@ -227,6 +295,7 @@ Field ModelData::element_nodal_to_nodal(const Field& element_nodal,
         }
     }
 
+    // Normalize only nodes that received at least one non-zero contribution
     for (Index node = 0; node < static_cast<Index>(max_nodes); ++node) {
         const Precision weight = weight_sum[static_cast<std::size_t>(node)];
         if (weight == Precision(0)) {

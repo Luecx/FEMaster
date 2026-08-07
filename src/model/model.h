@@ -1,3 +1,26 @@
+/**
+ * @file model.h
+ * @brief Declares the high-level finite-element model facade.
+ *
+ * `Model` builds and operates on the shared topology, fields, materials,
+ * sections, constraints and loads stored by `ModelData`. It provides the
+ * element lifecycle and the global assembly entry points used by load cases,
+ * while individual elements and sections retain their local kinematics and
+ * constitutive responsibilities.
+ *
+ * Material-point enumeration belongs to `ModelData`. This facade determines
+ * the state width required by assigned constitutive laws and initializes every
+ * enumerated material-point row; nonlinear trial ownership remains with the
+ * load-case state manager.
+ *
+ * @see ModelData
+ * @see Element
+ * @see loadcase::tools::NonlinearStateManager
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #pragma once
 
 #include "../bc/amplitude.h"
@@ -15,13 +38,28 @@
 
 namespace fem {
 namespace model{
+
+/**
+ * @brief High-level owner and assembly interface for one finite-element model.
+ *
+ * The model exposes construction operations for topology, coordinate systems,
+ * loads, constraints and sections, followed by global matrix, force and result
+ * assembly. Persistent entities and fields are held in the shared `ModelData`
+ * repository so elements, load cases and writers observe the same state.
+ *
+ * Step lifecycle calls prepare and release element-local caches. Material-point
+ * history fields are not owned here: the model only queries constitutive state
+ * sizes and initializes supplied storage in global element/material-point
+ * ordering.
+ */
 struct Model {
+    // Shared persistent model repository
     ModelDataPtr _data;
 
     // error out if not all elements have the same dimension (e.g. cannot use 1d, 2d and 3d elements at the same time)
     Dim element_dims = 0;
 
-    // constructor which defines max elements and max nodes
+    // Construction with fixed topology capacities and initialized position fields
     Model(ID max_nodes, ID max_elems, ID max_surfaces, ID max_integration_points = 0) :
         _data(std::make_shared<ModelData>(max_nodes, max_elems, max_surfaces, max_integration_points)) {
         auto positions           = _data->create_field("POSITION"          , FieldDomain::NODE, 6, false);
@@ -126,7 +164,8 @@ struct Model {
     // Builds smoothed element-nodal reference normals for shell directors.
     void build_shell_element_normals(Precision equalize_angle_degrees = Precision(20));
 
-    // Material-point state sizing and initialization.
+    // Material-point state sizing and reference-history initialization. State
+    // rows follow the global element/IP/material-point enumeration in ModelData.
     [[nodiscard]] Index maximum_material_state_size() const;
     void initialize_material_state(Field& state) const;
 

@@ -38,6 +38,10 @@ struct ABDShellSection : ShellSection {
     // Transverse-shear stiffness matrix in the section basis.
     Mat2 shear_ = Mat2::Zero();
 
+    // Construct a prescribed elastic section and validate that both generalized
+    // stiffness blocks are finite, symmetric and positive definite. thickness
+    // controls equivalent physical-stress recovery; orientation and csys_axis
+    // define the basis in which abd and shear are interpreted.
     ABDShellSection(
         material::Material::Ptr    material,
         model::ElementRegion::Ptr  region,
@@ -48,7 +52,12 @@ struct ABDShellSection : ShellSection {
         Index                      csys_axis = 0
     );
 
-    // Prescribed generalized response in the geometric shell basis
+    // Apply the constant ABD and transverse-shear operators. Generalized strain
+    // is rotated into the prescribed section basis and resultants/tangent are
+    // returned in the geometric shell basis. The formulation has no history:
+    // material_state and material_state_stride are accepted for interface
+    // uniformity but never read or modified, and the strain-measure selector
+    // does not alter the linear generalized law.
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
@@ -60,7 +69,11 @@ struct ABDShellSection : ShellSection {
         Mat8&                         tangent_shell
     ) const override;
 
-    // Equivalent through-thickness physical stress recovery
+    // Reconstruct one equivalent homogeneous-layer stress distribution from
+    // N/h + 12 z M/h^3 and Q/h. Linearized recovery is already Cauchy stress;
+    // finite-strain recovery treats the reconstructed tensor as PK2 stress and
+    // pushes it forward with deformation_gradient. Output follows the common
+    // global/section-local basis convention and remains state-neutral.
     [[nodiscard]] VolumeStressCauchy evaluate_output_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
@@ -72,7 +85,8 @@ struct ABDShellSection : ShellSection {
         const Mat3&                   deformation_gradient
     ) const override;
 
-    // One state slot keeps shell element MP addressing uniform; ABD does not use it.
+    // Reserve one state row per shell IP so element material-point addressing is
+    // uniform across section types. The prescribed ABD formulation does not use it.
     [[nodiscard]] Index num_mp_per_ip() const override { return 1; }
 };
 

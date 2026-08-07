@@ -53,7 +53,9 @@ struct T3 : StructuralElement {
     SurfacePtr surface(ID surface_id) override;
     std::string type_name() const override;
 
-    // Section, material and geometry
+    // Resolve the assigned truss section, material and elasticity, then expose
+    // reference/current length, stretch and unit directions. Reference geometry
+    // defines Green-Lagrange strain; current direction defines force orientation.
     TrussSection*         get_section();
     material::MaterialPtr get_material();
     material::Elasticity* get_elasticity();
@@ -69,7 +71,9 @@ struct T3 : StructuralElement {
     Precision length();
     Vec3      direction();
 
-    // Element matrices and nonlinear tangent
+    // Element matrices and nonlinear tangent. The complete tangent evaluates the
+    // single material-point state exactly once and reuses its PK2 stress for the
+    // geometric block, stored IP stress and matching internal force.
     Precision volume() override;
     MapMatrix stiffness(Precision* buffer) override;
     MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
@@ -96,7 +100,10 @@ struct T3 : StructuralElement {
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
-    // Stress, force and section-resultant recovery
+    // Recover strain and physical stress at requested output positions. The
+    // nonlinear path stores PK2 stress for Total-Lagrangian assembly but pushes
+    // it forward to axial Cauchy stress for user output. All constitutive calls
+    // use the element's single globally enumerated material-state row.
     void compute_stress_strain(Field*           strain,
                                Field*           stress,
                                const Field&     displacement,

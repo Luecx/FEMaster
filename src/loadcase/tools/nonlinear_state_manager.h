@@ -53,6 +53,8 @@ namespace tools {
  */
 class NonlinearStateManager {
 public:
+    // Construction binds solver-owned trial storage when at least one assigned
+    // material requires history; destruction restores the previous model binding.
     explicit NonlinearStateManager(model::Model& model);
     ~NonlinearStateManager();
 
@@ -76,6 +78,7 @@ private:
     // Bind the active material trial field exposed to element and material code
     void bind_material_state();
 
+    // Non-owning model whose contacts and active material-state binding are managed
     model::Model& model_;
 
     // Material state owned for the lifetime of this nonlinear solution

@@ -66,7 +66,9 @@ public:
 
     SurfacePtr surface(ID surface_id) override = 0;
 
-    // Element geometry and interpolation
+    // Element geometry and interpolation. Concrete topologies define natural
+    // node coordinates, shape functions and quadrature; the base gathers
+    // reference/current global coordinates from ModelData.
     virtual StaticMatrix<N, D> node_coords_local() = 0;
     virtual StaticMatrix<N, D> node_coords_reference();
     virtual StaticMatrix<N, D> node_coords_current();
@@ -79,15 +81,23 @@ public:
         return integration_scheme();
     }
 
-    // Section and constitutive response
+    // Resolve the assigned solid section and the optional element-level material
+    // rotation/stiffness scale used by every constitutive evaluation.
     SolidSection* get_section();
 
     Mat3      additional_material_rotation() const;
     Precision element_stiffness_scale() const;
     Vec3      material_position_reference(Precision r, Precision s, Precision t);
 
+    // Evaluate the zero-Green-Lagrange material tangent at one natural point.
+    // state is the caller-selected material-point row and may be touched by a
+    // history-dependent material, so auxiliary callers must preserve it when
+    // the query is intended to be state-neutral.
     Mat6 material_tangent_reference(Precision r, Precision s, Precision t, Precision* state);
 
+    // Evaluate linearized Cauchy stress and tangent in global coordinates. The
+    // active state row is forwarded directly through SolidSection, after which
+    // optional element stiffness scaling is applied to stress and tangent.
     void evaluate_material(Precision                     r,
                            Precision                     s,
                            Precision                     t,
@@ -96,6 +106,8 @@ public:
                            VolumeStressCauchy&           global_stress,
                            Mat6&                         global_tangent);
 
+    // Evaluate Total-Lagrangian PK2 stress and dS/dE in global reference
+    // coordinates with the same direct state-row and topology-scaling contract.
     void evaluate_material(Precision                        r,
                            Precision                        s,
                            Precision                        t,
@@ -151,7 +163,10 @@ public:
         bool                      check_det = true
     );
 
-    // Element matrices and nonlinear tangent assembly
+    // Element matrices and nonlinear tangent assembly. stiffness_tangent()
+    // performs exactly one in-place constitutive update per quadrature point and
+    // reuses the resulting PK2 stress for material tangent, geometric tangent,
+    // stored integration-point state and matching internal force.
     MapMatrix stiffness(Precision* buffer) override;
     MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
     MapMatrix stiffness_tangent(Precision* buffer,
@@ -179,7 +194,10 @@ public:
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
-    // Stress, force and sensitivity recovery
+    // Stress and strain recovery uses the nearest constitutive integration-point
+    // state for arbitrary output coordinates. Nonlinear stored stress remains
+    // PK2 for Total-Lagrangian force and geometric-stiffness recovery; user
+    // stress output is pushed forward to Cauchy stress.
     void compute_stress_strain(Field*           strain,
                                Field*           stress,
                                const Field&     displacement,

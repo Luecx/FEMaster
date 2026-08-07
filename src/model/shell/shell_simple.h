@@ -32,6 +32,26 @@
 
 namespace fem::model {
 
+/**
+ * @brief Legacy displacement-based shell element with one planar local basis.
+ *
+ * The template combines a topology-specific surface interpolation with a fixed
+ * quadrature rule. Membrane, bending and transverse-shear operators are formed
+ * in a Cartesian basis derived from the first three element nodes. Linear shell
+ * section tangents are integrated into material and drilling stiffness, while
+ * stresses and generalized resultants are recovered at requested natural points.
+ *
+ * Every in-plane quadrature point owns the section-defined number of contiguous
+ * material-point state rows. Direct integration calls pass the first row and the
+ * global component stride to `ShellSection`; arbitrary nodal or stress output
+ * coordinates reuse the nearest in-plane quadrature point. The element owns no
+ * constitutive state and never copies state rows locally.
+ *
+ * @tparam N Number of shell nodes.
+ * @tparam SFType Surface interpolation providing shape functions and geometry.
+ * @tparam INT_D Quadrature domain used for shell integration.
+ * @tparam INT_O Quadrature order used for shell integration.
+ */
 template<Index N, typename SFType, math::quadrature::Domain INT_D, math::quadrature::Order INT_O>
 struct DefaultShellElement : public ShellElement<N> {
     SFType                 geometry;
@@ -413,6 +433,9 @@ struct DefaultShellElement : public ShellElement<N> {
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
 
+        // The quadrature callback API provides coordinates but no point index.
+        // Track the membrane/bending and shear traversals independently so each
+        // section evaluation receives its corresponding material-state block.
         Index ip_abd = 0;
         Index ip_shear = 0;
 
@@ -432,6 +455,8 @@ struct DefaultShellElement : public ShellElement<N> {
                 ShellGeneralizedStrain zero_strain;
                 ShellStressResultants  zero_resultants;
                 Mat8                   tangent;
+
+                // Address the first through-thickness state row at this ABD point
                 Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip_abd++, 0), 0);
                 section->evaluate(
                     this->reference_point(r, s),
@@ -470,6 +495,8 @@ struct DefaultShellElement : public ShellElement<N> {
                 ShellGeneralizedStrain zero_strain;
                 ShellStressResultants  zero_resultants;
                 Mat8                   tangent;
+
+                // Address the first through-thickness state row at this shear point
                 Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip_shear++, 0), 0);
                 section->evaluate(
                     this->reference_point(r, s),
@@ -801,12 +828,12 @@ struct DefaultShellElement : public ShellElement<N> {
             topo_scale = (*scale_field)(static_cast<Index>(this->elem_id));
         }
 
-        // get the B matrices for membrane, bending and shear
+        // Build membrane, bending and transverse-shear operators at the output point
         auto B_membrane = this->strain_disp_membrane(shape_der, jac);
         auto B_bending  = this->strain_disp_bending(shape_der, jac);
         auto B_shear    = this->strain_disp_shear_at(r, s, xy_coords);
 
-        // compute the actual generalised strain values
+        // Recover the eight generalized strains in the element-local shell basis
         Vec3 eps_element   = B_membrane * disp_membrane;
         Vec3 kappa_element = B_bending  * disp_bending;
         Vec2 gamma_element = B_shear    * disp_shear;
@@ -826,6 +853,8 @@ struct DefaultShellElement : public ShellElement<N> {
 
         const Precision z = t * h / Precision(2);
 
+        // Output coordinates may differ from constitutive quadrature points;
+        // associate the requested point with the nearest stored state block
         const auto& scheme = this->integration_scheme();
         Index state_ip = 0;
         auto state_point = scheme.get_point(0);
@@ -844,6 +873,7 @@ struct DefaultShellElement : public ShellElement<N> {
             }
         }
 
+        // Pass the first through-thickness state row and common field stride
         Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
 
         VolumeStressCauchy stress = this->get_section()->evaluate_output_stress(
@@ -863,7 +893,7 @@ struct DefaultShellElement : public ShellElement<N> {
     bool compute_shell_section_forces(Field& resultants,
                                       Field& contribution_count,
                                       const Field& displacement) override {
-        // get local axes
+        // Construct the fixed element-local shell basis used by this legacy formulation
         Mat3 axes        = get_xyz_axes();
         Mat3 shell_basis = axes.transpose();
 
@@ -937,6 +967,8 @@ struct DefaultShellElement : public ShellElement<N> {
             generalized_strain.values().template segment<3>(curvature_start) = kappa_element;
             generalized_strain.values().template segment<2>(shear_start) = gamma_element;
 
+            // Natural nodal recovery reuses the nearest in-plane integration-
+            // point state because nodes own no independent material history
             Index state_ip = 0;
             auto state_point = scheme.get_point(0);
             Precision state_distance =
@@ -954,6 +986,7 @@ struct DefaultShellElement : public ShellElement<N> {
                 }
             }
 
+            // Pass the selected through-thickness state block to the section
             Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
 
             const ShellStressResultants output_resultants = this->get_section()->evaluate_output_resultants(

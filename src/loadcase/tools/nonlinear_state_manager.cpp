@@ -38,11 +38,14 @@ namespace tools {
 NonlinearStateManager::NonlinearStateManager(model::Model& model)
     : model_(model),
       previous_material_state_(model._data->material_state) {
+    // Stateless models retain the default material-state binding and require no
+    // solver-owned history buffers
     const Index state_size = model_.maximum_material_state_size();
     if (state_size == 0) {
         return;
     }
 
+    // Allocate accepted and active buffers with the common state-row width
     committed_material_state_ = model_._data->create_field(
         "MATERIAL_STATE_COMMITTED",
         model::FieldDomain::ELEMENT_MP,
@@ -59,6 +62,8 @@ NonlinearStateManager::NonlinearStateManager(model::Model& model)
         false
     );
 
+    // Initialize accepted history from each constitutive model, then expose an
+    // identical trial copy for the first nonlinear evaluation
     model_.initialize_material_state(*committed_material_state_);
     reset_material_state();
 }
@@ -84,10 +89,13 @@ NonlinearStateManager::~NonlinearStateManager() {
  * evaluation enforces that invariant.
  */
 void NonlinearStateManager::reset_material_state() {
+    // A missing committed buffer denotes an entirely stateless model
     if (!committed_material_state_) {
         return;
     }
 
+    // Every independent residual or tangent evaluation starts from the last
+    // accepted increment rather than from another candidate's in-place updates
     trial_material_state_->values = committed_material_state_->values;
     bind_material_state();
 }
@@ -100,10 +108,13 @@ void NonlinearStateManager::reset_material_state() {
  * later postprocessing or the next increment starts from the accepted state.
  */
 void NonlinearStateManager::commit_material_state() {
+    // A missing committed buffer denotes an entirely stateless model
     if (!committed_material_state_) {
         return;
     }
 
+    // Promote the converged buffer without copying, then synchronize the spare
+    // buffer for postprocessing and the next trial evaluation
     std::swap(committed_material_state_, trial_material_state_);
     trial_material_state_->values = committed_material_state_->values;
     bind_material_state();
@@ -117,6 +128,7 @@ void NonlinearStateManager::commit_material_state() {
  * first assembly in the trial and freezes them for subsequent assemblies.
  */
 void NonlinearStateManager::begin_contact_update_trial() {
+    // Apply one consistent outer-trial policy to every contact definition
     for (const auto& contact : model_._data->contacts) {
         contact.begin_update_trial();
     }
@@ -130,6 +142,7 @@ void NonlinearStateManager::begin_contact_update_trial() {
  * be reprojected on the already selected master surface.
  */
 void NonlinearStateManager::begin_contact_frozen_trial() {
+    // Nested predictor and line-search trials inherit fixed discrete ownership
     for (const auto& contact : model_._data->contacts) {
         contact.begin_frozen_trial();
     }
@@ -142,6 +155,7 @@ void NonlinearStateManager::begin_contact_frozen_trial() {
  * becomes the committed contact runtime state.
  */
 void NonlinearStateManager::commit_contact_trial() {
+    // Promote each contact child state at the same transaction boundary
     for (const auto& contact : model_._data->contacts) {
         contact.commit_trial();
     }
@@ -155,6 +169,7 @@ void NonlinearStateManager::commit_contact_trial() {
  * leave no persistent contact history behind.
  */
 void NonlinearStateManager::rollback_contact_trial() {
+    // Restore every contact to its parent state at the same transaction boundary
     for (const auto& contact : model_._data->contacts) {
         contact.rollback_trial();
     }
@@ -174,6 +189,7 @@ void NonlinearStateManager::rollback_contact_trial() {
 bool NonlinearStateManager::update_contact_active_set() {
     bool changed = false;
 
+    // Combine discrete partner and multiplier changes across all contacts
     for (const auto& contact : model_._data->contacts) {
         const bool partner_changed    = contact.partner_signature_changed();
         const bool multiplier_changed = contact.update_augmented_lagrange();
@@ -190,6 +206,7 @@ bool NonlinearStateManager::update_contact_active_set() {
  * inspection continue to distinguish accepted history from the active candidate.
  */
 void NonlinearStateManager::bind_material_state() {
+    // Buffer names describe their current roles after pointer swapping
     committed_material_state_->name = "MATERIAL_STATE_COMMITTED";
     trial_material_state_->name     = "MATERIAL_STATE";
     model_._data->material_state    = trial_material_state_;

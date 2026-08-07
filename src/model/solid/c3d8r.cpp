@@ -39,6 +39,15 @@ RowMatrix C3D8R::stress_strain_nodal_rst() {
     return RowMatrix::Zero(N, D);
 }
 
+/**
+ * Constructs the four primitive scalar hourglass modes at the C3D8 nodes.
+ *
+ * The natural-coordinate products `[s t, t r, r s, r s t]` span the non-affine
+ * zero-energy patterns of one-point hexahedral integration before projection
+ * against the physical affine coordinate field.
+ *
+ * @return Eight-by-four primitive modal matrix in element-node ordering.
+ */
 C3D8R::HourglassModes C3D8R::primitive_hourglass_modes() {
     // Primitive scalar modes gamma = [st, tr, rs, rst].
     const auto local_coords = node_coords_local();
@@ -59,6 +68,21 @@ C3D8R::HourglassModes C3D8R::primitive_hourglass_modes() {
     return modes;
 }
 
+/**
+ * Computes the volume-averaged reference shape-function gradients.
+ *
+ * A full two-by-two-by-two rule integrates the ordinary C3D8 gradients over the
+ * undeformed element:
+ *
+ *     D_bar = (1 / V0) integral_A0 D dV0.
+ *
+ * Positive finite point determinants and total reference volume are required.
+ * The result depends only on reference geometry and is independent of the
+ * one-point continuum quadrature used by the reduced element.
+ *
+ * @param reference_volume Physical reference volume returned to the caller.
+ * @return Mean reference gradient with one row per element node.
+ */
 C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume) {
     const auto reference_coords = node_coords_reference();
 
@@ -113,6 +137,8 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
  * @return Mean material shear diagonal `(C44 + C55 + C66) / 3`.
  */
 Precision C3D8R::hourglass_material_scale() {
+    // Preserve the complete physical center-point history around the auxiliary
+    // zero-strain tangent evaluation
     const Index state_row = this->mp_index(0);
     Field&      state_field = *this->_model_data->material_state;
 
@@ -139,6 +165,21 @@ Precision C3D8R::hourglass_material_scale() {
     return shear_scale;
 }
 
+/**
+ * Builds the constant reference hourglass stabilization tangent.
+ *
+ * Primitive modes are projected with `I - D_bar X^T` so affine displacement
+ * fields remain unstabilized. Their scalar stiffness uses the initial mean
+ * constitutive shear diagonal, reference volume and mean-gradient norm:
+ *
+ *     k_hg = alpha G_eff V0 sum_a ||grad_bar N_a||^2.
+ *
+ * The scalar nodal matrix `k_hg G G^T` is expanded independently into all three
+ * translational directions. The final matrix is symmetrized only to remove
+ * round-off asymmetry.
+ *
+ * @return Constant 24-by-24 hourglass tangent in node-major DOF ordering.
+ */
 C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     const auto reference_coords = node_coords_reference();
 
@@ -182,6 +223,11 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     return Precision(0.5) * (stiffness + stiffness.transpose());
 }
 
+/**
+ * Collects current element translations relative to the reference geometry.
+ *
+ * @return Twenty-four-component displacement vector in node-major XYZ ordering.
+ */
 C3D8R::Vector24 C3D8R::local_displacement() {
     const GradientMatrix reference_coords = node_coords_reference();
     const GradientMatrix current_coords   = node_coords_current();
@@ -198,6 +244,13 @@ C3D8R::Vector24 C3D8R::local_displacement() {
     return result;
 }
 
+/**
+ * Scatters one element-local translational force vector into the global nodal
+ * force field.
+ *
+ * @param node_forces Global nodal accumulator with at least XYZ components.
+ * @param local_force Element force in node-major XYZ ordering.
+ */
 void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force) {
     logging::error(node_forces.domain == FieldDomain::NODE,
         "C3D8R: internal force output must use NODE domain");
@@ -213,6 +266,18 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
     }
 }
 
+/**
+ * Assembles the one-point material stiffness with reference hourglass
+ * stabilization.
+ *
+ * The inherited solid stiffness uses this element's virtual one-point
+ * quadrature and advances the center-point state once. The auxiliary hourglass
+ * tangent evaluates its material scale state-neutrally, then adds the constant
+ * stabilization matrix.
+ *
+ * @param buffer Caller-provided dense 24-by-24 storage.
+ * @return Mapped symmetric continuum-plus-hourglass stiffness.
+ */
 MapMatrix C3D8R::stiffness(Precision* buffer) {
     // The inherited continuum stiffness uses this element's virtual one-point
     // integration rule. Add the state-neutral hourglass tangent afterwards.
@@ -232,6 +297,12 @@ MapMatrix C3D8R::stiffness(Precision* buffer) {
  * update exactly once. The auxiliary hourglass tangent is evaluated
  * state-neutrally and its matching linear force is added to the continuum
  * internal force.
+ *
+ * @param buffer Caller-provided dense 24-by-24 tangent storage.
+ * @param ip_stress_state Global center-point PK2 stress field to update.
+ * @param nodal_forces Global nodal internal-force field to increment.
+ * @param displacement Trial displacement defining the current configuration.
+ * @return Mapped consistent continuum-plus-hourglass tangent.
  */
 MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
                                    Field&       ip_stress_state,
@@ -249,6 +320,17 @@ MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
     return mapped;
 }
 
+/**
+ * Recovers nonlinear internal force from stored continuum stress and the
+ * current hourglass displacement.
+ *
+ * The inherited Total-Lagrangian residual uses stored center-point PK2 stress.
+ * The stabilization contribution is the exact derivative-compatible force
+ * `f_hg = K_hg u_e` from the constant reference hourglass tangent.
+ *
+ * @param node_forces Global nodal internal-force field to increment.
+ * @param ip_stress Stored center-point second Piola-Kirchhoff stress field.
+ */
 void C3D8R::compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) {
     // Continuum residual from the one-point Total-Lagrange formulation.
     C3D8::compute_internal_force_nonlinear(node_forces, ip_stress);

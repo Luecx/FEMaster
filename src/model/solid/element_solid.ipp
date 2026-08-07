@@ -1,12 +1,20 @@
 /**
  * @file element_solid.ipp
- * @brief Implementation of the SolidElement class template. This file contains
- * the definitions for methods declared in the SolidElement class, including
- * the computation of the strain-displacement matrix, Jacobian, stiffness and
- * mass matrices, and other element-level calculations.
+ * @brief Implements common solid geometry, interpolation and stiffness assembly.
  *
- * @date Created on 12.06.2023
+ * The template routines collect reference/current nodal geometry, construct
+ * linearized and Total-Lagrangian strain-displacement operators, transform
+ * constitutive response through `SolidSection` and integrate element matrices.
+ *
+ * Constitutive calls receive the globally enumerated material-point state row
+ * selected by their caller. The element applies optional topology stiffness
+ * scaling only after the section has returned stress and tangent.
+ *
+ * @see SolidElement
+ * @see SolidSection
+ *
  * @author Finn Eggers
+ * @date 07.08.2026
  */
 
 #pragma once
@@ -96,6 +104,22 @@ Vec3 SolidElement<N>::material_position_reference(Precision r, Precision s, Prec
     return this->interpolate<D>(this->node_coords_reference(), r, s, t);
 }
 
+/**
+ * Evaluates linearized solid constitutive response at one natural point.
+ *
+ * The physical reference position, optional additional material rotation and
+ * caller-selected state row are forwarded to `SolidSection`. Returned global
+ * Cauchy stress and tangent are then multiplied by the optional scalar topology
+ * stiffness field associated with this element.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @param global_strain Linearized strain in global coordinates.
+ * @param state Active material-point history row.
+ * @param global_stress Cauchy stress returned in global coordinates.
+ * @param global_tangent Consistent global material tangent.
+ */
 template<Index N>
 void SolidElement<N>::evaluate_material(Precision                     r,
                                         Precision                     s,
@@ -118,6 +142,22 @@ void SolidElement<N>::evaluate_material(Precision                     r,
     global_tangent        *= scaling;
 }
 
+/**
+ * Evaluates Total-Lagrangian solid constitutive response at one natural point.
+ *
+ * The selected state row is passed directly to the section and constitutive law.
+ * Green-Lagrange strain, returned PK2 stress and `dS/dE` are all expressed in
+ * global reference coordinates. Optional topology scaling is applied to both
+ * output quantities after constitutive evaluation.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @param global_strain Green-Lagrange strain in global reference coordinates.
+ * @param state Active material-point history row.
+ * @param global_stress PK2 stress returned in global reference coordinates.
+ * @param global_tangent Consistent global material tangent `dS/dE`.
+ */
 template<Index N>
 void SolidElement<N>::evaluate_material(Precision                        r,
                                         Precision                        s,
@@ -218,6 +258,20 @@ auto SolidElement<N>::green_lagrange_strain_displacement(const StaticMatrix<N, D
     return B;
 }
 
+/**
+ * Evaluates the zero-strain Total-Lagrangian material tangent at one natural
+ * coordinate.
+ *
+ * The provided state row follows the ordinary in-place constitutive contract.
+ * Callers performing an auxiliary tangent query, such as hourglass scaling,
+ * must save and restore it when the query must not advance physical history.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @param state Active material-point state row.
+ * @return Global material tangent at zero Green-Lagrange strain.
+ */
 template<Index N>
 auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t, Precision* state)
     -> StaticMatrix<n_strain, n_strain> {
@@ -338,17 +392,28 @@ SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) 
     return res;
 }
 
-//-----------------------------------------------------------------------------
-// stiffness
-//-----------------------------------------------------------------------------
+/**
+ * Integrates the current Total-Lagrangian material stiffness.
+ *
+ * Every stiffness quadrature point selects its globally enumerated material
+ * state, evaluates Green-Lagrange strain, PK2 stress and consistent tangent, and
+ * contributes `B^T C B dV0`. This interface returns the material part only;
+ * nonlinear geometric stiffness and matching internal force are assembled by
+ * `stiffness_tangent()`.
+ *
+ * @param buffer Caller-provided dense element-matrix storage.
+ * @return Mapped symmetric material stiffness.
+ */
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness(Precision* buffer) {
+    // Collect both configurations once for all stiffness integration points
     StaticMatrix<N, D> reference_coords = this->node_coords_reference();
     StaticMatrix<N, D> current_coords = this->node_coords_current();
 
     Index ip = 0;
 
+    // Evaluate one constitutive state row for every stiffness quadrature point
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, &reference_coords, &current_coords, &ip](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det0;
@@ -370,6 +435,8 @@ SolidElement<N>::stiffness(Precision* buffer) {
         };
 
     StaticMatrix<D * N, D * N> stiffness = integration_scheme_stiffness().integrate(func);
+
+    // Remove only numerical asymmetry from the analytically symmetric material tangent
     stiffness = 0.5 * (stiffness + stiffness.transpose()); // Symmetrize
 
     MapMatrix mapped{buffer, D * N, D * N};
