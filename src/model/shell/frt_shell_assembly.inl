@@ -76,6 +76,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
     ShellSection*   section = shell_section();
     const Precision scale   = topology_stiffness_scale();
     const auto&     points  = reference_data().ip_points;
+    const Index     state_stride = this->_model_data->material_state->components;
 
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
@@ -85,6 +86,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         ShellGeneralizedStrain strain(strain_values);
         ShellStressResultants  resultants;
         Mat8                   tangent;
+        Precision*             state = &(*this->_model_data->material_state)(this->mp_index(ip, 0), 0);
 
         // Construct the global pointwise material basis once for the section
         Mat3 basis = point.basis;
@@ -93,6 +95,8 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
             reference_position(point.r, point.s),
             basis,
             strain,
+            state,
+            state_stride,
             true,
             resultants,
             tangent
