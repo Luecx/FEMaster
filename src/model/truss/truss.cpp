@@ -1,3 +1,18 @@
+/**
+ * @file truss.cpp
+ * @brief Implements the three-dimensional two-node truss element.
+ *
+ * The truss evaluates axial material response at one material point shared by
+ * the linear and Total-Lagrangian element formulations. The globally enumerated
+ * material-point state is obtained directly from `ModelData::material_state` and
+ * passed unchanged to the constitutive law.
+ *
+ * @see T3
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "truss.h"
 
 #include <cmath>
@@ -82,8 +97,6 @@ material::Elasticity* T3::get_elasticity() {
     logging::error(mat->has_elasticity(),
                    "T3: material has no elasticity for element ",
                    this->elem_id);
-    logging::error(mat->elasticity()->state_size() == 0,
-                   "T3 does not yet provide integration-point material state storage");
     return mat->elasticity().get();
 }
 
@@ -140,7 +153,7 @@ Precision T3::stretch() const {
 Vec3 T3::direction_reference() const {
     const Precision L0 = length_reference();
     logging::error(L0 > Precision(0),
-                   "T3: zero reference length for element ",
+                   "T3: zero reference length in element ",
                    this->elem_id);
 
     return (node_position_reference(1) - node_position_reference(0)) / L0;
@@ -149,7 +162,7 @@ Vec3 T3::direction_reference() const {
 Vec3 T3::direction_current() const {
     const Precision l = length_current();
     logging::error(l > Precision(0),
-                   "T3: zero current length for element ",
+                   "T3: zero current length in element ",
                    this->elem_id);
 
     return (node_position_current(1) - node_position_current(0)) / l;
@@ -185,7 +198,9 @@ MapMatrix T3::stiffness(Precision* buffer) {
     logging::error(elasticity->supports_axial_green_lagrange(),
                    "T3: material does not support Green-Lagrange axial evaluation for element ",
                    this->elem_id);
-    elasticity->evaluate(axial_strain, nullptr, axial_stress, material_tangent);
+
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
+    elasticity->evaluate(axial_strain, state, axial_stress, material_tangent);
 
     const Vec3 n = direction_current();
     const Mat3 k = (A0 * material_tangent * lambda * lambda / L0)
@@ -356,6 +371,7 @@ void T3::compute_stress_strain(Field*           strain,
 
     Precision strain_value = Precision(0);
     Precision stress_value = Precision(0);
+    Precision* state       = &(*this->_model_data->material_state)(this->mp_index(0), 0);
 
     if (use_green_lagrange_nl) {
         const Precision lambda = stretch();
@@ -368,7 +384,7 @@ void T3::compute_stress_strain(Field*           strain,
         logging::error(elasticity->supports_axial_green_lagrange(),
                        "T3: material does not support Green-Lagrange axial evaluation for element ",
                        this->elem_id);
-        elasticity->evaluate(axial_strain, nullptr, axial_stress, tangent);
+        elasticity->evaluate(axial_strain, state, axial_stress, tangent);
 
         // Push PK2 forward using the current stretch and constant section area
         const AxialStressCauchy cauchy(lambda * axial_stress.value());
@@ -398,7 +414,7 @@ void T3::compute_stress_strain(Field*           strain,
         logging::error(elasticity->supports_axial_linearized(),
                        "T3: material does not support linearized axial evaluation for element ",
                        this->elem_id);
-        elasticity->evaluate(axial_strain, nullptr, axial_stress, tangent);
+        elasticity->evaluate(axial_strain, state, axial_stress, tangent);
 
         strain_value = axial_strain.value();
         stress_value = axial_stress.value();
@@ -441,7 +457,9 @@ void T3::compute_stress_state(Field&       stress_state,
         logging::error(elasticity->supports_axial_green_lagrange(),
                        "T3: material does not support Green-Lagrange axial evaluation for element ",
                        this->elem_id);
-        elasticity->evaluate(axial_strain, nullptr, axial_stress, tangent);
+
+        Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
+        elasticity->evaluate(axial_strain, state, axial_stress, tangent);
 
         const RowMatrix rst = stress_strain_ip_rst();
 
@@ -536,7 +554,9 @@ bool T3::compute_beam_section_forces(Field&       section_forces,
     logging::error(elasticity->supports_axial_linearized(),
                    "T3: material does not support linearized axial evaluation for element ",
                    this->elem_id);
-    elasticity->evaluate(axial_strain, nullptr, axial_stress, tangent);
+
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
+    elasticity->evaluate(axial_strain, state, axial_stress, tangent);
 
     const Precision axial_force = get_section()->area_ * axial_stress.value();
 
