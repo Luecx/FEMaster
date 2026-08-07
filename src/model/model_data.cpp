@@ -1,11 +1,19 @@
 /**
  * @file model_data.cpp
- * @brief Provides the translation unit companion for `ModelData`.
+ * @brief Implements model field allocation and element-local enumeration.
  *
- * Currently this file only includes the header to satisfy build systems that
- * expect a `.cpp` next to the declaration.
+ * `ModelData` derives dense model-field row counts from the active model
+ * domains and enumerates element-nodal, integration-point and material-point
+ * offsets. Material-point enumeration also creates the always-bound default
+ * `MATERIAL_STATE` field used by direct element-to-material state addressing;
+ * nonlinear analyses may temporarily replace this binding with their active
+ * trial buffer.
  *
- * @see src/model/model_data.h
+ * @see ModelData
+ * @see Field
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
  */
 
 #include "model_data.h"
@@ -224,7 +232,7 @@ Field ModelData::element_nodal_to_nodal(const Field& element_nodal,
         if (weight == Precision(0)) {
             continue;
         }
-        for (Index component = 0; component < nodal.components; ++component) {
+        for (Index component = 0; component < element_nodal.components; ++component) {
             nodal(node, component) /= weight;
         }
     }
