@@ -128,7 +128,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_node_coords() const {
         "FRTShell: POSITION_REFERENCE field is not set");
 
     const auto& positions = *this->_model_data->positions_reference;
-    MatN3       X;
+    MatN3      X;
 
     // Gather the global reference positions in local element-node ordering
     for (Index node = 0; node < num_nodes; ++node) {
@@ -450,7 +450,8 @@ Precision FRTShell<N>::topology_stiffness_scale() const {
  *
  * The physical reference position and pointwise material basis are supplied to
  * the section, and the current topology stiffness scale is applied to the
- * returned tangent.
+ * returned tangent. Arbitrary reference coordinates use the material-state rows
+ * of the closest shell integration point.
  *
  * @param r First natural coordinate.
  * @param s Second natural coordinate.
@@ -461,14 +462,38 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
     Precision r,
     Precision s
 ) const {
+    // Construct the zero-strain generalized query in the pointwise shell basis
     ShellGeneralizedStrain zero_strain(Vec8::Zero());
     ShellStressResultants  zero_resultants;
     Mat8                   H;
+
+    // Associate an arbitrary natural coordinate with the nearest in-plane
+    // constitutive integration point because output points own no separate state
+    const auto& points = reference_data().ip_points;
+    Index state_ip = 0;
+    Precision state_distance =
+        (r - points[0].r) * (r - points[0].r)
+        + (s - points[0].s) * (s - points[0].s);
+
+    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+        const Precision distance =
+            (r - points[static_cast<std::size_t>(ip)].r) * (r - points[static_cast<std::size_t>(ip)].r)
+            + (s - points[static_cast<std::size_t>(ip)].s) * (s - points[static_cast<std::size_t>(ip)].s);
+        if (distance < state_distance) {
+            state_ip       = ip;
+            state_distance = distance;
+        }
+    }
+
+    // Pass the first through-thickness row and common row stride to the section
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
 
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
         zero_strain,
+        state,
+        this->_model_data->material_state->components,
         false,
         zero_resultants,
         H

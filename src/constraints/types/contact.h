@@ -7,6 +7,9 @@
  * therefore be committed or rolled back without hidden global history. Active
  * or augmented contact points are tracked topologically across connected master
  * facets; only new or released contact points use a global closest-point search.
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
  */
 
 #pragma once
@@ -28,9 +31,31 @@ struct ModelData;
 
 namespace constraint {
 
+/**
+ * @brief Frictionless faceted node-to-surface augmented-Lagrange contact.
+ *
+ * The contact constraint owns all discrete runtime history required by the
+ * nonlinear solver: selected master partners, active slave nodes, normal
+ * multipliers and the geometry needed by the outer augmented-Lagrange update.
+ * Runtime history is transactional. Nested trials allow predictor and line-search
+ * evaluations to modify temporary contact state without changing their parent
+ * increment state.
+ *
+ * A partner-update trial allows one closest-surface or topological partner update
+ * and then freezes the selected master surfaces for the remaining Newton solve.
+ * A frozen trial immediately inherits and freezes the current partner ownership.
+ * `NonlinearStateManager` chooses between these two modes; the contact class owns
+ * the actual state stack and commit/rollback semantics.
+ */
 class Contact {
+    /**
+     * @brief Complete nonlinear state of one contact configuration.
+     *
+     * The state combines discrete partner ownership, active slaves, augmented
+     * normal multipliers and geometry recorded by the most recent assembly.
+     */
     struct AssemblyState {
-        // Discrete master ownership and active set.
+        // Discrete master ownership and active set
         std::unordered_map<ID, ID> partners;
         std::unordered_set<ID>     active_slaves;
 
@@ -44,18 +69,30 @@ class Contact {
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
 
-        std::uint64_t previous_signature     = 0;
-        Index         previous_active        = 0;
-        bool          last_signature_changed = false;
+        std::uint64_t previous_signature        = 0;
+        Index         previous_active           = 0;
+        bool          last_signature_changed    = false;
         bool          last_augmentation_changed = false;
     };
 
+    /**
+     * @brief One nested transactional contact state.
+     *
+     * The trial stores a complete child state and the partner-freezing policy
+     * used by subsequent contact assemblies within this transaction level.
+     */
     struct TrialState {
         AssemblyState state;
         bool          freeze_surface_partners = false;
         bool          freeze_after_update     = false;
     };
 
+    /**
+     * @brief Persistent and nested runtime data used by contact assembly.
+     *
+     * Geometry-independent topology and slave weights are initialized lazily and
+     * reused, while `committed` and `trials` contain the nonlinear history.
+     */
     struct RuntimeState {
         AssemblyState committed;
         std::vector<TrialState> trials;
@@ -74,6 +111,7 @@ class Contact {
         std::uint64_t call = 0;
     };
 
+    // Contact definition
     model::SurfaceRegion::Ptr master_surfaces;
     model::NodeRegion::Ptr    slave_nodes;
     model::SurfaceRegion::Ptr slave_surfaces;
@@ -83,7 +121,11 @@ class Contact {
     Precision clearance;
     bool      flip_normal;
 
+    // Persistent nonlinear runtime state
     mutable RuntimeState runtime_state;
+
+    // Low-level trial creation. Public callers use the semantic trial modes below.
+    void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
 
 public:
     Contact(model::SurfaceRegion::Ptr master,
@@ -100,14 +142,14 @@ public:
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Trial-state control. Line-search and predictor subtrials freeze the
-    // current partner state immediately. Increment and active-set trials may
-    // update partners once and freeze them afterwards.
-    void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
+    // Transactional contact state. Update trials may select partners once;
+    // frozen trials preserve the current discrete partner ownership immediately.
+    void begin_update_trial() const { begin_trial(false, true); }
+    void begin_frozen_trial() const { begin_trial(true); }
     void commit_trial() const;
     void rollback_trial() const;
 
-    // State changes detected after a converged Newton solve.
+    // State changes detected after a converged Newton solve
     bool partner_signature_changed() const;
     bool update_augmented_lagrange() const;
 

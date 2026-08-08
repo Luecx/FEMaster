@@ -1,10 +1,22 @@
 /**
  * @file section_solid.cpp
- * @brief Implements solid section reporting.
+ * @brief Implements oriented constitutive evaluation for solid sections.
  *
- * @see src/section/section_solid.h
+ * Global linearized or Green-Lagrange strains are transformed into the optional
+ * reference material basis, evaluated through the assigned elasticity model and
+ * returned as global Cauchy or second Piola-Kirchhoff stress with a consistently
+ * transformed tangent. The implementation also differentiates the transformed
+ * linear tangent with respect to additional material-rotation parameters.
+ *
+ * Material-point history remains owned by the active nonlinear solution. The
+ * section receives one selected state row and forwards it unchanged to the
+ * constitutive model.
+ *
+ * @see SolidSection
+ * @see material::Elasticity
+ *
  * @author Finn Eggers
- * @date 28.04.2026
+ * @date 07.08.2026
  */
 
 #include "section_solid.h"
@@ -14,6 +26,17 @@
 #include <sstream>
 
 namespace fem {
+
+/**
+ * Returns the reference material basis at one physical point.
+ *
+ * Spatial coordinate systems are evaluated at the point expressed in their own
+ * local coordinates. Without an assigned orientation, the global Cartesian
+ * basis is the material basis.
+ *
+ * @param position_reference Physical reference position of the material point.
+ * @return Material basis whose columns are expressed in global coordinates.
+ */
 Mat3 SolidSection::section_orientation_basis(const Vec3& position_reference) const {
     if (!orientation_) {
         return Mat3::Identity();
@@ -23,128 +46,147 @@ Mat3 SolidSection::section_orientation_basis(const Vec3& position_reference) con
     return orientation_->get_axes(point_local);
 }
 
+/**
+ * Evaluates linearized solid stress and tangent in global coordinates.
+ *
+ * The optional section orientation and additional element rotation define the
+ * current material axes in the reference configuration. Engineering strain is
+ * transformed from global to material coordinates, evaluated as Cauchy stress
+ * through the assigned elasticity and transformed back to global coordinates.
+ * The tangent follows the identical chain of stress and strain transformations.
+ *
+ * The selected material-point state row is passed directly to the constitutive
+ * law and may be updated in place by a history-dependent model.
+ *
+ * @param position_reference Physical reference position of the material point.
+ * @param additional_rotation Element-provided rotation applied after the section basis.
+ * @param strain_global Linearized engineering strain in global coordinates.
+ * @param state Active material-point state row.
+ * @param stress_global Cauchy stress returned in global coordinates.
+ * @param tangent_global Consistent global tangent mapping global strain to stress.
+ */
 void SolidSection::evaluate(const Vec3&                   position_reference,
                             const Mat3&                   additional_rotation,
                             const VolumeStrainLinearized& strain_global,
-                            VolumeStressCauchy&            stress_global,
-                            Mat6&                          tangent_global) const {
-
+                            Precision*                    state,
+                            VolumeStressCauchy&           stress_global,
+                            Mat6&                         tangent_global) const {
+    // Validate the requested constitutive formulation before transformation
     logging::error(material_ && material_->has_elasticity(),
         "SolidSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_volume_linearized(),
         "SolidSection material does not support linearized volume evaluation");
-    logging::error(material_->elasticity()->state_size() == 0           ,
-        "SolidSection does not yet provide integration-point material state storage");
 
-    // get the elastic material model from the material
+    // Resolve the elastic law assigned through the generic material definition
     auto elasticity = material_->elasticity();
 
-    // since the given strains are in global coordinates but we may have a local material orientation, we need to
-    // get the material basis. we add in the additional rotation
+    // Compose the spatial section orientation with the element-provided
+    // additional material rotation
     const Mat3 material_basis   = section_orientation_basis(position_reference) * additional_rotation;
 
-    // technically we can use strain_global.transformed() but we need the transformation later again
-    // so strain_transform can transform the strain to the material system and stress_transform can undo that.
+    // Retain both engineering-Voigt transformation operators because the same
+    // pair is required for the consistent global tangent
     const Mat6 strain_transform = VolumeStrain::get_transformation_matrix(Mat3::Identity(), material_basis);
     const Mat6 stress_transform = VolumeStress::get_transformation_matrix(material_basis, Mat3::Identity());
 
-    // actually transform strain to local material basis
+    // Transform global linearized strain into local material coordinates
     const Vec6                   strain_material_values = strain_transform * strain_global.voigt();
     const VolumeStrainLinearized strain_material(strain_material_values);
 
-    // prepare cauchy stress and tangent as output for the elasticity
+    // Evaluate Cauchy stress and the material tangent directly on the active
+    // material-point state row
     VolumeStressCauchy stress_material;
     Mat6               tangent_material;
-    // call into material model
-    elasticity->evaluate(
-        strain_material,
-        nullptr,
-        nullptr,
-        stress_material,
-        tangent_material
-    );
+    elasticity->evaluate(strain_material, state, stress_material, tangent_material);
 
-    // turn the stress back into global coordinates
+    // Transform stress and the complete tangent back into global coordinates:
+    // C_global = T_stress C_material T_strain
     const Vec6 stress_global_values = stress_transform * stress_material.voigt();
     stress_global  = VolumeStressCauchy(stress_global_values);
-    // Transform the material tangent from the local material basis to the global basis:
-    // C_global = T_stress * C_material * T_strain
-    tangent_global = stress_transform * tangent_material * strain_transform;
-}
-void SolidSection::evaluate(const Vec3&                      position_reference,
-                            const Mat3&                      additional_rotation,
-                            const VolumeStrainGreenLagrange& strain_global,
-                            VolumeStressPK2&                 stress_global,
-                            Mat6&                            tangent_global) const {
-
-    logging::error(material_ && material_->has_elasticity(),
-                   "SolidSection requires a material with elasticity");
-    logging::error(material_->elasticity()->supports_volume_green_lagrange(),
-        "SolidSection material does not support Green-Lagrange volume evaluation");
-    logging::error(material_->elasticity()->state_size() == 0,
-        "SolidSection does not yet provide integration-point material state storage");
-
-    // get the elastic material model from the material
-    auto elasticity = material_->elasticity();
-
-    // since the given strains are in global coordinates but we may have a local material orientation, we need to
-    // get the material basis. we add in the additional rotation
-    const Mat3 material_basis = section_orientation_basis(position_reference) * additional_rotation;
-
-    // technically we can use strain_global.transformed() but we need the transformation later again
-    // so strain_transform can transform the strain to the material system and stress_transform can undo that.
-    const Mat6 strain_transform = VolumeStrain::get_transformation_matrix(Mat3::Identity(), material_basis);
-    const Mat6 stress_transform = VolumeStress::get_transformation_matrix(material_basis, Mat3::Identity());
-
-    // actually transform Green-Lagrange strain to local material basis
-    const Vec6                      strain_material_values = strain_transform * strain_global.voigt();
-    const VolumeStrainGreenLagrange strain_material(strain_material_values);
-
-    // prepare PK2 stress and tangent as output for the elasticity
-    VolumeStressPK2 stress_material;
-    Mat6            tangent_material;
-    // call into material model
-    elasticity->evaluate(
-        strain_material,
-        nullptr,
-        nullptr,
-        stress_material,
-        tangent_material
-    );
-
-    // turn the stress back into global coordinates
-    const Vec6 stress_global_values = stress_transform * stress_material.voigt();
-    stress_global  = VolumeStressPK2(stress_global_values);
-    // Transform the material tangent from the local material basis to the global basis:
-    // C_global = T_stress * C_material * T_strain
     tangent_global = stress_transform * tangent_material * strain_transform;
 }
 
 /**
+ * Evaluates Total-Lagrangian solid stress and tangent in global coordinates.
  *
- * As stated in @SolidElement<N>::compute_compliance_angle_derivative, we need the derivative of the tangent stiffness
- * w.r.t to the 3 angles.
+ * Green-Lagrange strain is transformed from the global reference basis into the
+ * optional material basis. The constitutive law returns second Piola-Kirchhoff
+ * stress and `dS/dE`, which are transformed back into global reference
+ * coordinates. No Cauchy push-forward occurs at section level because PK2 is
+ * the stress measure required by Total-Lagrangian element assembly.
  *
+ * @param position_reference Physical reference position of the material point.
+ * @param additional_rotation Element-provided rotation applied after the section basis.
+ * @param strain_global Green-Lagrange strain in global reference coordinates.
+ * @param state Active material-point state row.
+ * @param stress_global PK2 stress returned in global reference coordinates.
+ * @param tangent_global Consistent global material tangent `dS/dE`.
+ */
+void SolidSection::evaluate(const Vec3&                      position_reference,
+                            const Mat3&                      additional_rotation,
+                            const VolumeStrainGreenLagrange& strain_global,
+                            Precision*                       state,
+                            VolumeStressPK2&                 stress_global,
+                            Mat6&                            tangent_global) const {
+    // Validate the requested constitutive formulation before transformation
+    logging::error(material_ && material_->has_elasticity(),
+                   "SolidSection requires a material with elasticity");
+    logging::error(material_->elasticity()->supports_volume_green_lagrange(),
+        "SolidSection material does not support Green-Lagrange volume evaluation");
+
+    // Resolve the elastic law assigned through the generic material definition
+    auto elasticity = material_->elasticity();
+
+    // Compose the spatial section orientation with the element-provided
+    // additional material rotation
+    const Mat3 material_basis = section_orientation_basis(position_reference) * additional_rotation;
+
+    // Retain both reference-basis transformation operators for the consistent
+    // material tangent
+    const Mat6 strain_transform = VolumeStrain::get_transformation_matrix(Mat3::Identity(), material_basis);
+    const Mat6 stress_transform = VolumeStress::get_transformation_matrix(material_basis, Mat3::Identity());
+
+    // Transform global Green-Lagrange strain into local material coordinates
+    const Vec6                      strain_material_values = strain_transform * strain_global.voigt();
+    const VolumeStrainGreenLagrange strain_material(strain_material_values);
+
+    // Evaluate PK2 stress and dS/dE directly on the active material-point row
+    VolumeStressPK2 stress_material;
+    Mat6            tangent_material;
+
+    elasticity->evaluate(strain_material, state, stress_material, tangent_material);
+
+    // Transform PK2 stress and tangent back into the global reference basis:
+    // C_global = T_stress C_material T_strain
+    const Vec6 stress_global_values = stress_transform * stress_material.voigt();
+    stress_global  = VolumeStressPK2(stress_global_values);
+    tangent_global = stress_transform * tangent_material * strain_transform;
+}
+
+/**
+ * As stated in `SolidElement<N>::compute_compliance_angle_derivative`, computes
+ * the derivative of the material tangent with respect to the three additional
+ * material-orientation angles.
  *
- * @param position_reference
- * @param additional_rotation
- * @param additional_rotation_derivatives
- * @return
+ * @param position_reference Reference position of the material point.
+ * @param additional_rotation Current additional material rotation.
+ * @param additional_rotation_derivatives Derivatives of the additional rotation.
+ * @param state Active material-point state selected by the element.
+ * @return Derivatives of the global tangent with respect to the three angles.
  */
 std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     const Vec3&                position_reference,
     const Mat3&                additional_rotation,
-    const std::array<Mat3, 3>& additional_rotation_derivatives
+    const std::array<Mat3, 3>& additional_rotation_derivatives,
+    Precision*                 state
 ) const {
-    // a few checks
+    // Validate the linear elastic constitutive response used by this sensitivity
     logging::error(material_ && material_->has_elasticity(),
         "SolidSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_volume_linearized(),
         "SolidSection material does not support linearized volume evaluation");
-    logging::error(material_->elasticity()->state_size() == 0,
-        "SolidSection does not yet provide integration-point material state storage");
 
-    // get the elastic material model from the material
+    // Resolve the material law once for the zero-strain tangent evaluation
     auto elasticity = material_->elasticity();
 
     // The global material tangent is obtained by transforming the local tangent:
@@ -157,13 +199,7 @@ std::array<Mat6, 3> SolidSection::tangent_rotation_derivatives(
     VolumeStrainLinearized zero_strain;
     VolumeStressCauchy     zero_stress;
     Mat6                   tangent_material;
-    elasticity->evaluate(
-        zero_strain,
-        nullptr,
-        nullptr,
-        zero_stress,
-        tangent_material
-    );
+    elasticity->evaluate(zero_strain, state, zero_stress, tangent_material);
 
     // The material basis is composed of the prescribed section orientation Q_section and an
     // additional rotation R:

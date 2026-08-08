@@ -1,3 +1,18 @@
+/**
+ * @file elasticity.cpp
+ * @brief Implements default behavior of the elastic constitutive interface.
+ *
+ * The base implementation declares every kinematic formulation unsupported,
+ * defines a stateless material-point layout and rejects constitutive overloads
+ * that a concrete elasticity model has not implemented. This keeps unsupported
+ * stress measures from being substituted silently by elements or sections.
+ *
+ * @see Elasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "elasticity.h"
 
 #include "strain/axial_strain_green_lagrange.h"
@@ -54,91 +69,77 @@ void Elasticity::initialize_state(Precision* state) const {
 }
 
 void Elasticity::evaluate(const AxialStrainLinearized& strain,
-                          const Precision*             state_old,
-                          Precision*                   state_new,
+                          Precision*                   state,
                           AxialStressCauchy&           stress,
                           Precision&                   tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) stress;
     (void) tangent;
     logging::error(false, "Elasticity model does not support linearized axial evaluation");
 }
 
 void Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
-                          const Precision*                state_old,
-                          Precision*                      state_new,
+                          Precision*                      state,
                           AxialStressPK2&                 stress,
                           Precision&                      tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) stress;
     (void) tangent;
     logging::error(false, "Elasticity model does not support Green-Lagrange axial evaluation");
 }
 
 void Elasticity::evaluate(const VolumeStrainLinearized& strain,
-                          const Precision*              state_old,
-                          Precision*                    state_new,
+                          Precision*                    state,
                           VolumeStressCauchy&           stress,
                           Mat6&                         tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) stress;
     (void) tangent;
     logging::error(false, "Elasticity model does not support linearized volume evaluation");
 }
 
 void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                          const Precision*                 state_old,
-                          Precision*                       state_new,
+                          Precision*                       state,
                           VolumeStressPK2&                 stress,
                           Mat6&                            tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) stress;
     (void) tangent;
     logging::error(false, "Elasticity model does not support Green-Lagrange volume evaluation");
 }
 
 void Elasticity::evaluate(const BeamGeneralizedStrain& strain,
-                          const Precision*             state_old,
-                          Precision*                   state_new,
+                          Precision*                   state,
                           BeamStressResultants&        resultants,
                           Mat6&                        tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) resultants;
     (void) tangent;
     logging::error(false, "Elasticity model does not support beam-resultant evaluation");
 }
 
 void Elasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                          const Precision*                     state_old,
-                          Precision*                           state_new,
+                          Precision*                           state,
                           ShellMaterialStressCauchy&            stress,
                           Mat5&                                 tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) stress;
     (void) tangent;
     logging::error(false, "Elasticity model does not support linearized shell integration");
 }
 
 void Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                          const Precision*                        state_old,
-                          Precision*                              state_new,
+                          Precision*                              state,
                           ShellMaterialStressPK2&                 stress,
                           Mat5&                                   tangent) const {
     (void) strain;
-    (void) state_old;
-    (void) state_new;
+    (void) state;
     (void) stress;
     (void) tangent;
     logging::error(false, "Elasticity model does not support Green-Lagrange shell integration");

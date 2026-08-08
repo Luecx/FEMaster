@@ -66,17 +66,26 @@ void FRTShell<N>::load_ip_resultants(
  * current consistent tangent is stored only when the caller requested B
  * matrices and therefore can consume a material tangent.
  *
+ * Each in-plane integration point owns a contiguous block of section material
+ * points in `ModelData::material_state`. The first row and the global field
+ * component count are passed as pointer and stride so integrated sections can
+ * update their through-thickness histories directly in place.
+ *
  * @param data Active thread-local evaluation view.
  */
 template<Index N>
 void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
+    // Generalized section response requires the compatible strain prepared by
+    // the kinematic evaluation
     logging::error(data.with_strain,
                    "FRTShell: material resultants require strain evaluation");
 
     ShellSection*   section = shell_section();
     const Precision scale   = topology_stiffness_scale();
     const auto&     points  = reference_data().ip_points;
+    const Index     state_stride = this->_model_data->material_state->components;
 
+    // Evaluate one generalized section response for every shell integration point
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
         const ReferencePoint& point = points[id];
@@ -86,13 +95,19 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         ShellStressResultants  resultants;
         Mat8                   tangent;
 
-        // Construct the global pointwise material basis once for the section
+        // Address the first through-thickness state row of this in-plane point;
+        // the section advances further rows using state_stride
+        Precision*             state = &(*this->_model_data->material_state)(this->mp_index(ip, 0), 0);
+
+        // Supply the same pointwise global basis used by the strain transformation
         Mat3 basis = point.basis;
 
         section->evaluate(
             reference_position(point.r, point.s),
             basis,
             strain,
+            state,
+            state_stride,
             true,
             resultants,
             tangent
@@ -100,6 +115,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
 
         data.ip_resultants[id] = scale * resultants.values();
 
+        // Retain the constitutive tangent only for caller paths that assemble B^T H B
         if (!data.ip_tangent.empty()) {
             data.ip_tangent[id] = scale * tangent;
         }

@@ -1,3 +1,19 @@
+/**
+ * @file test_reader.cpp
+ * @brief Verifies parser registration and selected material keyword mappings.
+ *
+ * The tests exercise rigid-body-motion command registration and parsing,
+ * orthotropic engineering-constant mapping, and shell shear-component ordering
+ * through the public reader and material interfaces. Temporary input and result
+ * files are removed before and after each parser scenario.
+ *
+ * @see io::reader::Parser
+ * @see material::OrthotropicElasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "../src/io/reader/parser.h"
 #include "../src/material/orthotropic_elasticity.h"
 #include "../src/material/strain/shell_material_strain_linearized.h"
@@ -87,7 +103,7 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     ShellMaterialStrainLinearized strain;
     ShellMaterialStressCauchy     stress;
     Mat5                          tangent;
-    ortho.evaluate(strain, nullptr, nullptr, stress, tangent);
+    ortho.evaluate(strain, nullptr, stress, tangent);
 
     const Mat2 shear = tangent.template block<2, 2>(3, 3);
 

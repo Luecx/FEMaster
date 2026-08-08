@@ -75,6 +75,10 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_strain_at(
  * strain. Linear output multiplies the zero-strain local section tangent by the
  * linearized generalized strain.
  *
+ * Arbitrary natural output coordinates do not own independent history. The
+ * nonlinear path therefore selects the closest in-plane integration point and
+ * passes the first state row of its through-thickness block to the section.
+ *
  * @param data Active evaluation data containing state and MITC tying values.
  * @param q Element displacement vector used by linear recovery.
  * @param r First natural output coordinate.
@@ -102,14 +106,39 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
         return resultant_stiffness(r, s) * strain_values;
     }
 
+    // Prepare generalized section output in the pointwise shell basis
     ShellGeneralizedStrain strain(strain_values);
     ShellStressResultants  resultants;
     Mat8                   tangent;
+
+    // Associate the arbitrary output coordinate with the nearest constitutive
+    // integration point in natural coordinates
+    const auto& points = reference_data().ip_points;
+    Index state_ip = 0;
+    Precision state_distance =
+        (r - points[0].r) * (r - points[0].r)
+        + (s - points[0].s) * (s - points[0].s);
+
+    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+        const Precision distance =
+            (r - point.r) * (r - point.r)
+            + (s - point.s) * (s - point.s);
+        if (distance < state_distance) {
+            state_ip       = ip;
+            state_distance = distance;
+        }
+    }
+
+    // Address the first through-thickness material state at the selected shell IP
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
 
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
         strain,
+        state,
+        this->_model_data->material_state->components,
         true,
         resultants,
         tangent
@@ -181,6 +210,12 @@ Mat3 FRTShell<N>::deformation_gradient_at(const CurrentState& state,
  * distribution for a homogeneous shell section. Transverse shear is assumed
  * constant through the thickness, consistent with the Reissner-Mindlin model.
  *
+ * The concrete section owns the physical recovery convention. The element
+ * supplies the closest in-plane integration-point state block because arbitrary
+ * output coordinates have no independent material history. Finite-strain
+ * recovery additionally supplies the three-dimensional deformation gradient so
+ * section PK2 stress can be pushed forward to Cauchy stress.
+ *
  * @param data Active evaluation data and current nodal state.
  * @param q Element displacement vector used by linear recovery.
  * @param r First natural output coordinate.
@@ -201,6 +236,8 @@ void FRTShell<N>::physical_stress_strain_at(
     Vec6&                 strain_out,
     Vec6&                 stress_out
 ) const {
+    // Recover generalized strain in the pointwise shell basis and reconstruct
+    // the requested physical thickness coordinate
     const Vec8 generalized_strain = generalized_strain_at(
         data,
         q,
@@ -241,10 +278,35 @@ void FRTShell<N>::physical_stress_strain_at(
     const Mat3 deformation_gradient = nonlinear
         ? deformation_gradient_at(data.state, r, s, z)
         : Mat3::Identity();
+
+    // Associate the arbitrary natural output coordinate with the nearest
+    // in-plane constitutive integration point
+    const auto& points = reference_data().ip_points;
+    Index state_ip = 0;
+    Precision state_distance =
+        (r - points[0].r) * (r - points[0].r)
+        + (s - points[0].s) * (s - points[0].s);
+
+    for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+        const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+        const Precision distance =
+            (r - point.r) * (r - point.r)
+            + (s - point.s) * (s - point.s);
+        if (distance < state_distance) {
+            state_ip       = ip;
+            state_distance = distance;
+        }
+    }
+
+    // Pass the first row of the selected through-thickness material-state block
+    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
     const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress(
         reference_position(r, s),
         reference_basis,
         ShellGeneralizedStrain(generalized_strain),
+        state,
+        this->_model_data->material_state->components,
         z,
         nonlinear,
         deformation_gradient
@@ -393,6 +455,10 @@ void FRTShell<N>::compute_stress_state(Field&       stress_state,
  * Averages generalized shell resultants from the element nodes into nodal
  * result fields.
  *
+ * Each natural nodal output coordinate reuses the closest in-plane integration-
+ * point state block. The section evaluates resultants in its configured output
+ * basis before they are accumulated for subsequent component-wise averaging.
+ *
  * @param resultants Global nodal generalized-resultant accumulator.
  * @param contribution_count Global nodal contribution counter.
  * @param displacement Global nodal displacement field.
@@ -418,7 +484,9 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
     const Vec6N q = element_displacement_vector(displacement);
     ShellSection* section = shell_section();
     const Precision scale = topology_stiffness_scale();
+    const auto& points = reference_data().ip_points;
 
+    // Recover one generalized resultant vector at every natural element node
     for (Index node = 0; node < num_nodes; ++node) {
         const Precision r = rst(node, 0);
         const Precision s = rst(node, 1);
@@ -431,10 +499,35 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             true
         );
         const ShellGeneralizedStrain strain(strain_values);
-        const ShellStressResultants  output_resultants = section->evaluate_output_resultants(
+
+        // Select the closest constitutive IP because natural nodal points own no
+        // independent through-thickness material history
+        Index state_ip = 0;
+        Precision state_distance =
+            (r - points[0].r) * (r - points[0].r)
+            + (s - points[0].s) * (s - points[0].s);
+
+        for (Index ip = 1; ip < static_cast<Index>(points.size()); ++ip) {
+            const ReferencePoint& point = points[static_cast<std::size_t>(ip)];
+            const Precision distance =
+                (r - point.r) * (r - point.r)
+                + (s - point.s) * (s - point.s);
+            if (distance < state_distance) {
+                state_ip       = ip;
+                state_distance = distance;
+            }
+        }
+
+        // Pass the selected state block through the common output-resultant path
+        Precision* material_state =
+            &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+
+        const ShellStressResultants output_resultants = section->evaluate_output_resultants(
             reference_position(r, s),
             reference_basis_global(r, s),
             strain,
+            material_state,
+            this->_model_data->material_state->components,
             true
         );
         const Vec8 values = scale * output_resultants.values();

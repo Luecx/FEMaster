@@ -1,3 +1,23 @@
+/**
+ * @file neo_hooke_elasticity.cpp
+ * @brief Implements compressible isotropic Neo-Hookean elasticity.
+ *
+ * The implementation evaluates the three-dimensional PK2 response from the
+ * right Cauchy-Green tensor and differentiates it analytically with respect to
+ * Green-Lagrange strain. Axial and shell plane-stress reductions determine the
+ * missing transverse deformation by Newton iteration and consistently condense
+ * the full material tangent.
+ *
+ * All constitutive calls are state-neutral because the Neo-Hookean law contains
+ * no history variables; the state pointer is accepted only through the common
+ * `Elasticity` interface.
+ *
+ * @see NeoHookeElasticity
+ *
+ * @author Finn Eggers
+ * @date 07.08.2026
+ */
+
 #include "neo_hooke_elasticity.h"
 
 #include "../core/logging.h"
@@ -21,6 +41,17 @@
 
 namespace fem::material {
 
+/**
+ * Constructs the compressible Neo-Hookean material and derives its infinitesimal
+ * elastic moduli.
+ *
+ * The potential parameters must be positive. They define `mu = 2 C10`,
+ * `K = 2/D1` and `lambda = K - 2 mu/3`, which are reused by the linearized
+ * response and plane-stress initial guesses.
+ *
+ * @param c10_in Isochoric energy coefficient.
+ * @param d1_in Volumetric penalty parameter.
+ */
 NeoHookeElasticity::NeoHookeElasticity(Precision c10_in, Precision d1_in)
     : c10(c10_in),
       d1 (d1_in) {
@@ -58,6 +89,12 @@ bool NeoHookeElasticity::supports_shell_integration_green_lagrange() const {
     return true;
 }
 
+/**
+ * Builds the infinitesimal three-dimensional tangent of the finite-strain
+ * potential at the undeformed state.
+ *
+ * @return Isotropic engineering-Voigt tangent defined by `lambda` and `mu`.
+ */
 Mat6 NeoHookeElasticity::linear_tangent() const {
     Mat6 tangent;
     const Precision C11 = lame_lambda + Precision(2) * mu;
@@ -71,6 +108,12 @@ Mat6 NeoHookeElasticity::linear_tangent() const {
     return tangent;
 }
 
+/**
+ * Builds the infinitesimal shell plane-stress tangent implied by the
+ * Neo-Hookean bulk and shear moduli.
+ *
+ * @return Five-component tangent ordered `[11,22,12,13,23]`.
+ */
 Mat5 NeoHookeElasticity::linear_shell_tangent() const {
     const Precision youngs  = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
     const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
@@ -89,25 +132,42 @@ Mat5 NeoHookeElasticity::linear_shell_tangent() const {
 }
 
 void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
-                                  const Precision*             state_old,
-                                  Precision*                   state_new,
+                                  Precision*                   state,
                                   AxialStressCauchy&           stress,
                                   Precision&                   tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     const Precision youngs = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
     tangent        = youngs;
     stress.value() = tangent * strain.value();
 }
 
+/**
+ * Evaluates the finite-strain uniaxial response with traction-free lateral
+ * surfaces.
+ *
+ * The supplied Green-Lagrange strain determines the axial right Cauchy-Green
+ * component `C11`. Isotropy permits both lateral components to share one
+ * logarithmic unknown. Newton iteration drives the lateral PK2 stress to zero,
+ * after which the axial tangent is condensed from the full three-dimensional
+ * material operator.
+ *
+ * The logarithmic lateral variable keeps the transverse stretch positive. A
+ * non-positive axial metric or a failed local plane-stress solve is reported as
+ * a material error. The Neo-Hookean model is stateless, so `state` is not
+ * modified.
+ *
+ * @param strain Axial Green-Lagrange strain in the material direction.
+ * @param state Unused material-point state row retained by the common interface.
+ * @param stress Axial second Piola-Kirchhoff stress.
+ * @param tangent Consistent derivative of axial PK2 stress with respect to the
+ *                axial Green-Lagrange strain.
+ */
 void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
-                                  const Precision*                state_old,
-                                  Precision*                      state_new,
+                                  Precision*                      state,
                                   AxialStressPK2&                 stress,
                                   Precision&                      tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     const Precision c       = Precision(1) + Precision(2) * strain.value();
     const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
@@ -122,6 +182,8 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
     Mat3 full_stress;
     Mat6 full_tangent;
 
+    // Solve the identical lateral metric components from the zero transverse-
+    // stress condition while preserving their positivity in logarithmic form
     for (Index i = 0; i < 30; ++i) {
         const Precision x = std::exp(log_x);
         Mat3 C            = Mat3::Zero();
@@ -144,6 +206,8 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
         }
     }
 
+    // Re-evaluate the converged three-dimensional state for output and
+    // consistent tangent condensation
     const Precision x = std::exp(log_x);
     Mat3 C            = Mat3::Zero();
     C(0, 0)           = c;
@@ -155,6 +219,7 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
                    std::abs(full_stress(1, 1)) <= Precision(1e-10) * (mu + bulk),
                    "NEO_HOOKE: axial plane-stress iteration did not converge");
 
+    // Condense both traction-free lateral components by their Schur complement
     const Mat2 lateral_tangent = full_tangent.template block<2, 2>(1, 1);
     const Vec2 axial_to_lateral(full_tangent(1, 0), full_tangent(2, 0));
     const Vec2 lateral_to_axial(full_tangent(0, 1), full_tangent(0, 2));
@@ -167,24 +232,33 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
 }
 
 void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                  const Precision*              state_old,
-                                  Precision*                    state_new,
+                                  Precision*                    state,
                                   VolumeStressCauchy&           stress,
                                   Mat6&                         tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     tangent        = linear_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
 
+/**
+ * Evaluates the full three-dimensional finite-strain material response.
+ *
+ * Green-Lagrange strain is converted to the right Cauchy-Green tensor through
+ * `C = I + 2 E`. The full constitutive kernel returns PK2 stress and the
+ * consistent material tangent in engineering-Voigt ordering. No dimensional
+ * reduction or stress transformation is applied here.
+ *
+ * @param strain Green-Lagrange strain in the material basis.
+ * @param state Unused material-point state row retained by the common interface.
+ * @param stress Second Piola-Kirchhoff stress in the material basis.
+ * @param tangent Consistent derivative `dS/dE`.
+ */
 void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                                  const Precision*                 state_old,
-                                  Precision*                       state_new,
+                                  Precision*                       state,
                                   VolumeStressPK2&                 stress,
                                   Mat6&                            tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     const Mat3 C = Mat3::Identity() + Precision(2) * strain.tensor();
     Mat3       full_stress;
@@ -194,24 +268,39 @@ void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 }
 
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                  const Precision*                     state_old,
-                                  Precision*                           state_new,
+                                  Precision*                           state,
                                   ShellMaterialStressCauchy&            stress,
                                   Mat5&                                 tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     tangent         = linear_shell_tangent();
     stress.values() = tangent * strain.values();
 }
 
+/**
+ * Evaluates the finite-strain shell material response under plane stress.
+ *
+ * The five supplied shell strain components define the in-plane and transverse-
+ * shear entries of the right Cauchy-Green tensor. The missing thickness metric
+ * is written as the minimum positive-definite value plus a positive logarithmic
+ * unknown. Newton iteration enforces `S33 = 0` without violating positive
+ * definiteness.
+ *
+ * After convergence, the shell PK2 components are extracted in the ordering
+ * `[S11,S22,S12,S13,S23]`. The corresponding five-by-five tangent is the Schur
+ * complement of the eliminated thickness component and is therefore consistent
+ * with the local plane-stress solve. The state row remains unchanged.
+ *
+ * @param strain Green-Lagrange shell material strain.
+ * @param state Unused material-point state row retained by the common interface.
+ * @param stress Plane-stress shell PK2 components.
+ * @param tangent Condensed consistent shell material tangent.
+ */
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                                  const Precision*                        state_old,
-                                  Precision*                              state_new,
+                                  Precision*                              state,
                                   ShellMaterialStressPK2&                 stress,
                                   Mat5&                                   tangent) const {
-    (void) state_old;
-    (void) state_new;
+    (void) state;
 
     Mat3 C = Mat3::Identity();
     C(0, 0) = Precision(1) + Precision(2) * strain.values()(0);
@@ -230,6 +319,8 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
     logging::error(det_in_plane > Precision(0),
                    "NEO_HOOKE: non-positive shell in-plane right Cauchy-Green determinant");
 
+    // The Schur complement of the in-plane block gives the smallest admissible
+    // C33 for a positive-definite right Cauchy-Green tensor
     const Precision min_c33 = (shear_column.transpose() * in_plane.inverse() * shear_column)(0, 0);
     const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
                             / (Precision(2) * (Precision(3) * bulk + mu));
@@ -240,6 +331,8 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
     Mat3 full_stress;
     Mat6 full_tangent;
 
+    // Solve the traction-free thickness condition in a positive logarithmic
+    // distance from the admissibility boundary
     for (Index i = 0; i < 30; ++i) {
         const Precision d = std::exp(log_d);
         C(2, 2)           = min_c33 + d;
@@ -257,6 +350,8 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
         }
     }
 
+    // Re-evaluate the converged three-dimensional response before extracting
+    // shell stresses and condensing the material tangent
     const Precision d   = std::exp(log_d);
     const Precision c33 = min_c33 + d;
 
@@ -273,6 +368,8 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
                        full_stress(0, 2),
                        full_stress(1, 2);
 
+    // Map the full engineering-Voigt components to shell ordering and eliminate
+    // the thickness normal component by a Schur complement
     const std::array<Index, 5> shell_rows { 0, 1, 5, 4, 3 };
     const std::array<Index, 5> shell_cols { 0, 1, 5, 4, 3 };
 
@@ -288,6 +385,23 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain
     }
 }
 
+/**
+ * Evaluates the full compressible Neo-Hookean PK2 response and tangent.
+ *
+ * The stress follows from the isochoric-volumetric split of
+ *
+ *     W = C10 (J^(-2/3) I1 - 3) + (J - 1)^2 / D1.
+ *
+ * The tangent is assembled column-wise by applying one unit Green-Lagrange
+ * variation in engineering-Voigt ordering. Shear basis variations contain
+ * one-half in each symmetric tensor position so the resulting columns are the
+ * derivatives with respect to engineering shear strain. The input tensor must
+ * be positive definite; a non-positive determinant is rejected.
+ *
+ * @param C Right Cauchy-Green tensor in the material basis.
+ * @param stress Second Piola-Kirchhoff stress tensor.
+ * @param tangent Consistent material tangent `dS/dE` in engineering-Voigt form.
+ */
 void NeoHookeElasticity::evaluate_full(const Mat3& C, Mat3& stress, Mat6& tangent) const {
     const Precision det_c = C.determinant();
 
@@ -301,9 +415,12 @@ void NeoHookeElasticity::evaluate_full(const Mat3& C, Mat3& stress, Mat6& tangen
     const Precision volumetric_scale = Precision(2) * J * (J - Precision(1)) / d1;
     const Mat3      C_inv             = C.inverse();
 
+    // Evaluate the isochoric and volumetric PK2 stress contributions
     stress = deviatoric_scale * (Mat3::Identity() - mean_invariant * C_inv)
            + volumetric_scale * C_inv;
 
+    // Differentiate the stress analytically for each independent
+    // Green-Lagrange strain component
     tangent.setZero();
     for (Index col = 0; col < 6; ++col) {
         Mat3 dE = Mat3::Zero();
