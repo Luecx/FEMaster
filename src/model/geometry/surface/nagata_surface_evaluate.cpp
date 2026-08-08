@@ -18,10 +18,209 @@
 #include "../../../core/logging.h"
 
 #include <Eigen/Geometry>
+#include <Eigen/QR>
 
+#include <cmath>
 #include <limits>
 
 namespace fem::model {
+
+/**
+ * @brief Rebuilds and evaluates one patch position from another coordinate field.
+ *
+ * Contact coordinate sensitivities perturb one nodal coordinate at a time. A
+ * complete `NagataSurface` reconstruction would unnecessarily rebuild all
+ * patches, adjacency and the global projection BVH. This operation instead
+ * reconstructs only the three positions and averaged normals controlling the
+ * addressed patch, derives its local C0 and G1 coefficients, and evaluates the
+ * position at the unchanged closest-point coordinates.
+ *
+ * Patch topology and incident source-surface entries are invariant under the
+ * coordinate perturbation and are reused from this reconstruction. The method
+ * therefore has work proportional to one local patch fan rather than the
+ * complete selected master surface.
+ *
+ * @param location Valid patch and reduced barycentric coordinates.
+ * @param node_coords Alternative finite nodal coordinate field.
+ * @return Reconstructed position for the alternative geometry.
+ */
+Vec3 NagataSurface::evaluate_position(const Location& location,
+                                      const Field&    node_coords) const {
+    // Validate the snapshot field and addressed patch before local rebuilding.
+    logging::error(valid(location),
+        "NagataSurface::evaluate_position received an invalid location");
+    logging::error(node_coords.domain == FieldDomain::NODE && node_coords.components >= 3,
+        "NagataSurface::evaluate_position requires a nodal coordinate field");
+
+    constexpr Precision normal_tolerance           = Precision(1e-12);
+    constexpr Precision coefficient_rank_tolerance = Precision(1e-4);
+
+    const Patch& patch = patches_[static_cast<std::size_t>(location.patch)];
+
+    std::array<Vec3, 3> position;
+    std::array<Vec3, 3> normal;
+    std::array<Vec3, 3> q;
+    std::array<Vec3, 3> gamma;
+
+    // Re-evaluate the three patch vertices and their smooth averaged normals.
+    // Each stored source entry identifies the exact FE nodal normal that
+    // contributed during construction of the baseline surface.
+    for (Index i = 0; i < 3; ++i) {
+        const Vertex& vertex = vertices_[static_cast<std::size_t>(
+            patch.vertices[static_cast<std::size_t>(i)])];
+
+        logging::error(vertex.source_surfaces.size() == vertex.source_local_nodes.size()
+                    && !vertex.source_surfaces.empty(),
+            "NagataSurface contains inconsistent vertex-normal sources");
+        logging::error(vertex.node_id >= 0
+                    && static_cast<Index>(vertex.node_id) < node_coords.rows,
+            "NagataSurface vertex lies outside the alternative coordinate field");
+
+        position[static_cast<std::size_t>(i)] =
+            node_coords.row_vec3(static_cast<Index>(vertex.node_id));
+        normal[static_cast<std::size_t>(i)].setZero();
+
+        logging::error(position[static_cast<std::size_t>(i)].allFinite(),
+            "NagataSurface encountered an invalid perturbed vertex position");
+
+        for (std::size_t source = 0; source < vertex.source_surfaces.size(); ++source) {
+            const Index surface_index = vertex.source_surfaces[source];
+            const Index local_node    = vertex.source_local_nodes[source];
+
+            logging::error(surface_index < static_cast<Index>(source_surfaces_.size()),
+                "NagataSurface contains an invalid vertex-normal source surface");
+
+            const SurfaceInterface::Ptr& surface =
+                source_surfaces_[static_cast<std::size_t>(surface_index)];
+            const DynamicMatrix natural_coords = surface->node_coords_natural();
+            const Vec2 local =
+                natural_coords.row(static_cast<Eigen::Index>(local_node)).transpose();
+
+            Vec3 source_normal = surface->normal(node_coords, local);
+
+            logging::error(source_normal.allFinite()
+                        && source_normal.norm() > normal_tolerance,
+                "NagataSurface encountered an invalid perturbed vertex normal");
+
+            normal[static_cast<std::size_t>(i)] += source_normal.normalized();
+        }
+
+        logging::error(normal[static_cast<std::size_t>(i)].norm() > normal_tolerance,
+            "NagataSurface cannot average a perturbed vertex normal");
+
+        normal[static_cast<std::size_t>(i)].normalize();
+    }
+
+    // Reconstruct the three quadratic edge coefficients from the perturbed
+    // positions and endpoint normals.
+    for (Index i = 0; i < 3; ++i) {
+        const Index j = (i + 1) % 3;
+        const Index k = (i + 2) % 3;
+        const Vec3 edge = position[static_cast<std::size_t>(k)]
+                        - position[static_cast<std::size_t>(j)];
+
+        logging::error(edge.norm() > normal_tolerance,
+            "NagataSurface perturbed patch contains a zero-length edge");
+
+        StaticMatrix<2, 3> system;
+        system.row(0) = normal[static_cast<std::size_t>(j)].transpose();
+        system.row(1) = normal[static_cast<std::size_t>(k)].transpose();
+
+        Vec2 rhs;
+        rhs(0) =  normal[static_cast<std::size_t>(j)].dot(edge);
+        rhs(1) = -normal[static_cast<std::size_t>(k)].dot(edge);
+
+        Eigen::CompleteOrthogonalDecomposition<StaticMatrix<2, 3>> decomposition(system);
+        decomposition.setThreshold(coefficient_rank_tolerance);
+
+        const Vec3 curvature = decomposition.solve(rhs);
+
+        logging::error(curvature.allFinite(),
+            "NagataSurface failed to reconstruct a perturbed C0 coefficient");
+
+        q[static_cast<std::size_t>(i)] =
+            position[static_cast<std::size_t>(j)]
+            + position[static_cast<std::size_t>(k)]
+            - curvature;
+    }
+
+    // Reconstruct the rational G1 correction using the same Nagata edge system
+    // and numerical rank convention as the complete surface constructor.
+    for (Index i = 0; i < 3; ++i) {
+        const Index j = (i + 1) % 3;
+        const Index k = (i + 2) % 3;
+
+        const Vec3& pj = position[static_cast<std::size_t>(j)];
+        const Vec3& pk = position[static_cast<std::size_t>(k)];
+        const Vec3& nj = normal[static_cast<std::size_t>(j)];
+        const Vec3& nk = normal[static_cast<std::size_t>(k)];
+        const Vec3& qi = q[static_cast<std::size_t>(i)];
+        const Vec3& qj = q[static_cast<std::size_t>(j)];
+        const Vec3& qk = q[static_cast<std::size_t>(k)];
+
+        const Vec3 t_ij = qi - Precision(2) * pj;
+        const Vec3 t_ik = qi - Precision(2) * pk;
+        const Vec3 s_ij = qi - qk;
+        const Vec3 s_ik = Precision(2) * pk - qj;
+
+        const Precision c = nk.dot(t_ij);
+        const Precision d = nj.dot(t_ik);
+
+        Precision c_hat = Precision(1);
+        Precision d_hat = Precision(1);
+
+        if (std::abs(c) + std::abs(d) > normal_tolerance) {
+            const Precision scale = Precision(1) / (std::abs(c) + std::abs(d));
+            c_hat = scale * c;
+            d_hat = scale * d;
+        }
+
+        const Precision edge_mismatch =
+            c_hat * nj.dot(s_ik) + d_hat * nk.dot(s_ij);
+
+        StaticMatrix<2, 3> system;
+        system.row(0) = c_hat * nj.transpose();
+        system.row(1) = d_hat * nk.transpose();
+
+        Eigen::CompleteOrthogonalDecomposition<StaticMatrix<2, 3>> decomposition(system);
+        decomposition.setThreshold(coefficient_rank_tolerance);
+
+        gamma[static_cast<std::size_t>(i)] =
+            decomposition.solve(Vec2::Constant(edge_mismatch));
+
+        logging::error(gamma[static_cast<std::size_t>(i)].allFinite(),
+            "NagataSurface failed to reconstruct a perturbed G1 coefficient");
+    }
+
+    // Evaluate the locally rebuilt position in reduced barycentric coordinates.
+    const Precision b0 = Precision(1) - location.local(0) - location.local(1);
+    const Precision b1 = location.local(0);
+    const Precision b2 = location.local(1);
+
+    Vec3 result =
+          position[0] * b0*b0
+        + position[1] * b1*b1
+        + position[2] * b2*b2
+        + q[0] * b1*b2
+        + q[1] * b2*b0
+        + q[2] * b0*b1;
+
+    const Precision denominator = b0*b1 + b1*b2 + b2*b0;
+
+    if (denominator > Precision(0)) {
+        const Vec3 numerator =
+              gamma[0] * b0*b1*b1*b2*b2
+            + gamma[1] * b0*b0*b1*b2*b2
+            + gamma[2] * b0*b0*b1*b1*b2;
+
+        result += numerator / denominator;
+    }
+
+    logging::error(result.allFinite(),
+        "NagataSurface produced an invalid locally reconstructed position");
+
+    return result;
+}
 
 /**
  * @brief Evaluates one reconstructed patch location and its first two derivatives.

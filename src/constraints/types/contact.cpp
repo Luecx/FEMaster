@@ -7,11 +7,13 @@
  * established points continue from their transactional locations and walk
  * continuously across internal triangular charts.
  *
- * The augmented-Lagrange law operates on the signed Nagata normal gap. Contact
- * forces are distributed to the originating finite-element surface through its
- * shape functions. The tangent is intentionally approximate: it retains only
- * the symmetric normal penalty term and neglects projection, normal, shape and
- * Nagata-coefficient sensitivities with respect to master degrees of freedom.
+ * The augmented-Lagrange law operates on the signed Nagata normal gap. Its
+ * slave gradient is the analytical closest-point normal. Master derivatives
+ * are evaluated from coordinate differences of the reconstructed position at
+ * the stationary surface location; the closest-point envelope property avoids
+ * differentiating or repeating the projection. Residual assembly uses this
+ * variational gap gradient and optional tangent assembly retains the symmetric
+ * positive-semidefinite Gauss-Newton term.
  *
  * @see Contact
  * @see model::NagataSurface
@@ -48,7 +50,7 @@ constexpr Precision augmentation_gap_absolute_tolerance        = Precision(1e-10
 constexpr Precision augmentation_multiplier_relative_tolerance = Precision(1e-6);
 constexpr Precision augmentation_multiplier_absolute_tolerance = Precision(1e-10);
 
-constexpr bool print_contact_summary = true;
+constexpr bool print_contact_summary = false;
 
 /**
  * @brief Diagnostic quantities collected during one Nagata contact assembly.
@@ -91,7 +93,9 @@ struct ContactDiagnostics {
  * @brief Local active-set value of the augmented frictionless normal law.
  *
  * `value` is the shifted signed gap used directly in the residual. `pressure`
- * is its non-negative compressive counterpart used for diagnostics.
+ * is its non-negative compressive counterpart used for diagnostics. During a
+ * frozen active-set continuation, `value` may become positive until the outer
+ * contact update releases the slave node.
  */
 struct ContactLaw {
     Precision value      = Precision(0);
@@ -240,7 +244,9 @@ std::unordered_map<ID, Precision> build_slave_tributary_areas(
  *
  * With signed normal gap `g`, multiplier `lambda >= 0` and penalty `k > 0`,
  * the shifted gap is `g_bar = g - lambda / k`. Contact is active for
- * `g_bar < 0`, producing compressive pressure `-k g_bar`.
+ * `g_bar <= 0`, producing compressive pressure `-k g_bar`. At equality the
+ * pressure vanishes while the normal tangent remains available for an
+ * initially closed contact configuration.
  *
  * @param gap Signed Nagata normal gap including clearance.
  * @param normal_multiplier Non-negative augmented normal multiplier.
@@ -252,7 +258,7 @@ ContactLaw evaluate_augmented_lagrange_law(Precision gap,
                                            Precision penalty) {
     const Precision shifted_gap = gap - normal_multiplier / penalty;
 
-    if (shifted_gap >= Precision(0)) {
+    if (shifted_gap > Precision(0)) {
         return {};
     }
 
@@ -265,20 +271,40 @@ ContactLaw evaluate_augmented_lagrange_law(Precision gap,
 }
 
 /**
- * @brief Adds a three-dimensional force to one nodal force row.
+ * @brief Continues one frozen branch of the augmented normal contact law.
  *
- * @param nodal_forces Global nodal force accumulator.
- * @param node_id Global node identifier and force-field row.
- * @param force Cartesian force contribution.
+ * Newton and line-search trials must evaluate one differentiable residual. An
+ * inherited inactive slave therefore remains inactive even if a trial step
+ * penetrates the master surface. An inherited active slave remains on
+ *
+ *     g_bar = g - lambda / k
+ *
+ * with unit derivative, even if a trial step temporarily opens the gap. The
+ * enclosing contact update subsequently reclassifies the active set from the
+ * accepted geometry and restarts Newton when that discrete state changes.
+ *
+ * @param gap Signed Nagata normal gap including clearance.
+ * @param normal_multiplier Non-negative augmented normal multiplier.
+ * @param penalty Positive penalty stiffness.
+ * @param active Frozen active-set membership inherited by the trial.
+ * @return Continued active or inactive branch of the normal contact law.
  */
-void add_translational_force(model::NodeData& nodal_forces,
-                             ID               node_id,
-                             const Vec3&      force) {
-    const Index row = static_cast<Index>(node_id);
-
-    for (Dim component = 0; component < 3; ++component) {
-        nodal_forces(row, component) += force(component);
+ContactLaw continue_augmented_lagrange_branch(Precision gap,
+                                              Precision normal_multiplier,
+                                              Precision penalty,
+                                              bool      active) {
+    if (!active) {
+        return {};
     }
+
+    const Precision shifted_gap = gap - normal_multiplier / penalty;
+
+    return {
+        shifted_gap,
+        Precision(1),
+        std::max(Precision(0), -penalty * shifted_gap),
+        true
+    };
 }
 
 /**
@@ -303,117 +329,193 @@ bool surface_contains_node(const model::SurfaceInterface& surface, ID node_id) {
 }
 
 /**
- * @brief Assembles one active Nagata contact residual and normal tangent.
+ * @brief Assembles one active variational Nagata contact pair.
  *
- * The slave receives `A_s k g_bar n`. Equal and opposite master forces are
- * distributed with the originating FE shape values `N_a`. This distribution
- * balances resultant force, but it is not the exact variational derivative of
- * the Nagata position because reconstructed normals and coefficients depend on
- * neighboring master nodes.
+ * For a stationary closest point, the derivative of signed distance with
+ * respect to the slave position is exactly the oriented master normal. The
+ * closest-point envelope property similarly removes the derivative of the
+ * projected surface coordinates from every master derivative:
  *
- * The approximate tangent freezes the closest-point location, Nagata normal and
- * FE shape values:
+ *     dg / dx_s = n,
+ *     dg / du_a = -n^T dx_N / du_a.
  *
- *     K_ij = A_s k (d g_bar / d g) w_i w_j (n tensor n),
+ * Only `dx_N / du_a` is currently evaluated by central differences. Both
+ * perturbed reconstructions are evaluated at the unperturbed Nagata location;
+ * no perturbed projection is necessary. The master stencil includes the source
+ * surfaces used to form all three averaged patch-vertex normals.
  *
- * with `w_slave = 1` and `w_master,a = -N_a`. It is symmetric and suitable as
- * a robust small-sliding Newton approximation, but it omits every geometric
- * stiffness and reconstructed-surface sensitivity.
+ * With the discrete gap gradient `B = dg/dq`, the augmented contact potential
+ * contributes
  *
- * @param surface Originating finite-element master surface.
- * @param shape Shape values at the mapped source-natural coordinate.
+ *     r_c = A_s k g_bar B
+ *
+ * and the symmetric Gauss-Newton tangent
+ *
+ *     K_c = A_s k (d g_bar / d g) B^T B.
+ *
+ * This retains the complete first-order Nagata geometry and closest-point
+ * sensitivity while omitting only the gap-Hessian term proportional to
+ * `g_bar`. The omitted term vanishes at exact contact and the retained matrix
+ * remains positive semidefinite for the LDLT solution path.
+ *
+ * @param node_coords Current global nodal coordinate field.
+ * @param master_geometry Nagata reconstruction at the unperturbed state.
+ * @param location Tracked closest-point location at the unperturbed state.
+ * @param normal Oriented unit normal at the unperturbed closest point.
  * @param slave_node_id Global slave node identifier.
- * @param normal Oriented unit Nagata normal.
  * @param contact_law Active augmented contact-law state.
  * @param penalty Positive penalty stiffness.
  * @param slave_weight Positive tributary slave area or one for nodal contact.
+ * @param characteristic_length Positive local length controlling perturbations.
  * @param system_nodal_dofs Global translational degree-of-freedom mapping.
  * @param nodal_forces Global nodal force accumulator.
  * @param triplets Global tangent triplet accumulator.
+ * @param assemble_tangent Whether to assemble the sparse Gauss-Newton block.
  * @param diagnostics Assembly diagnostics updated by this pair.
  */
-void assemble_contact_pair(const model::SurfaceInterface& surface,
-                           const DynamicVector&            shape,
-                           ID                              slave_node_id,
-                           const Vec3&                     normal,
-                           const ContactLaw&               contact_law,
-                           Precision                       penalty,
-                           Precision                       slave_weight,
-                           SystemDofIds&                   system_nodal_dofs,
-                           model::NodeData&                nodal_forces,
-                           TripletList&                    triplets,
-                           ContactDiagnostics&             diagnostics) {
+void assemble_contact_pair(const model::Field&                   node_coords,
+                           const model::NagataSurface&           master_geometry,
+                           const model::NagataSurface::Location& location,
+                           const Vec3&                           normal,
+                           ID                                    slave_node_id,
+                           const ContactLaw&                     contact_law,
+                           Precision                             penalty,
+                           Precision                             slave_weight,
+                           Precision                             characteristic_length,
+                           SystemDofIds&                         system_nodal_dofs,
+                           model::NodeData&                      nodal_forces,
+                           TripletList&                          triplets,
+                           bool                                  assemble_tangent,
+                           ContactDiagnostics&                   diagnostics) {
     const Precision contact_scale = slave_weight * penalty;
-    const Vec3      slave_force   = contact_scale * contact_law.value * normal;
 
-    // Assemble the approximate residual through the source FE interpolation.
-    add_translational_force(nodal_forces, slave_node_id, slave_force);
+    // Collect the exact local master stencil before adding the slave coordinate.
+    std::vector<ID> dependency_nodes = master_geometry.dependency_nodes(location);
+    const std::unordered_set<ID> master_dependency_nodes(
+        dependency_nodes.begin(), dependency_nodes.end());
 
-    for (Index master_node = 0; master_node < surface.n_nodes; ++master_node) {
-        add_translational_force(
-            nodal_forces,
-            surface.nodes()[master_node],
-            -shape(master_node) * slave_force);
+    if (master_dependency_nodes.find(slave_node_id) == master_dependency_nodes.end()) {
+        dependency_nodes.push_back(slave_node_id);
     }
 
-    // Collect local node IDs and their scalar normal-gap weights. This dynamic
-    // representation supports S3, S4, S6 and S8 through one geometric path.
-    const Index local_nodes = surface.n_nodes + 1;
+    std::sort(dependency_nodes.begin(), dependency_nodes.end());
 
-    std::vector<ID>        node_ids(static_cast<std::size_t>(local_nodes));
-    std::vector<Precision> weights(static_cast<std::size_t>(local_nodes));
+    const Index local_dofs = static_cast<Index>(dependency_nodes.size()) * 3;
 
-    node_ids[0] = slave_node_id;
-    weights[0]  = Precision(1);
+    std::vector<ID>        dof_nodes(static_cast<std::size_t>(local_dofs));
+    std::vector<Dim>       dof_components(static_cast<std::size_t>(local_dofs));
+    std::vector<int>       global_dofs(static_cast<std::size_t>(local_dofs));
+    std::vector<Precision> gap_gradient(static_cast<std::size_t>(local_dofs));
 
-    for (Index master_node = 0; master_node < surface.n_nodes; ++master_node) {
-        node_ids[static_cast<std::size_t>(master_node + 1)] = surface.nodes()[master_node];
-        weights [static_cast<std::size_t>(master_node + 1)] = -shape(master_node);
+    const Precision difference_step_scale =
+        std::cbrt(std::numeric_limits<Precision>::epsilon());
+
+    // Reuse one coordinate field for all perturbations. Every reconstruction
+    // observes exactly one changed master coordinate and the baseline value is
+    // restored before continuing with the next degree of freedom.
+    model::Field perturbed_coords = node_coords;
+
+    // Assemble the analytical slave gradient and the central-difference master
+    // position sensitivities. If one node participates on both sides, both
+    // contributions are accumulated in the same coordinate derivative.
+    Index local_dof = 0;
+
+    for (const ID node_id : dependency_nodes) {
+        for (Dim component = 0; component < 3; ++component) {
+            const Precision coordinate =
+                node_coords(static_cast<Index>(node_id), component);
+
+            const Precision step = difference_step_scale * std::max({
+                Precision(1),
+                characteristic_length,
+                std::abs(coordinate)
+            });
+
+            Precision derivative =
+                node_id == slave_node_id
+                    ? normal(component)
+                    : Precision(0);
+
+            if (master_dependency_nodes.find(node_id) != master_dependency_nodes.end()) {
+                perturbed_coords(static_cast<Index>(node_id), component) = coordinate + step;
+
+                const Vec3 position_plus =
+                    master_geometry.evaluate_position(location, perturbed_coords);
+
+                perturbed_coords(static_cast<Index>(node_id), component) = coordinate - step;
+
+                const Vec3 position_minus =
+                    master_geometry.evaluate_position(location, perturbed_coords);
+
+                perturbed_coords(static_cast<Index>(node_id), component) = coordinate;
+
+                derivative -= normal.dot(position_plus - position_minus)
+                            / (Precision(2) * step);
+            }
+
+            logging::error(std::isfinite(derivative),
+                "CONTACT produced a non-finite numerical Nagata gap sensitivity");
+
+            const std::size_t entry = static_cast<std::size_t>(local_dof);
+
+            dof_nodes[entry]      = node_id;
+            dof_components[entry] = component;
+            global_dofs[entry]    = system_nodal_dofs(node_id, component);
+            gap_gradient[entry]   = derivative;
+
+            ++local_dof;
+        }
     }
 
-    const Mat3 normal_stiffness =
-        contact_scale * contact_law.derivative * normal * normal.transpose();
+    // Assemble the variational residual of the shifted quadratic contact
+    // potential, including reactions at constrained dependency coordinates.
+    const Precision residual_scale = contact_scale * contact_law.value;
 
-    logging::error(normal_stiffness.allFinite(),
-        "CONTACT produced a non-finite approximate normal tangent");
+    for (Index row = 0; row < local_dofs; ++row) {
+        const std::size_t entry = static_cast<std::size_t>(row);
+        nodal_forces(
+            static_cast<Index>(dof_nodes[entry]),
+            dof_components[entry]) += residual_scale * gap_gradient[entry];
+    }
 
-    diagnostics.maximum_tangent_norm =
-        std::max(diagnostics.maximum_tangent_norm, normal_stiffness.norm());
+    if (!assemble_tangent) {
+        return;
+    }
 
-    // Scatter the dense local normal blocks while respecting constrained DOFs.
-    for (Index local_row = 0; local_row < local_nodes; ++local_row) {
-        const ID row_node = node_ids[static_cast<std::size_t>(local_row)];
+    // Assemble the symmetric positive-semidefinite Gauss-Newton contact block.
+    const Precision tangent_scale = contact_scale * contact_law.derivative;
+    Precision       free_gradient_squared_norm = Precision(0);
 
-        for (Index local_col = 0; local_col < local_nodes; ++local_col) {
-            const ID col_node = node_ids[static_cast<std::size_t>(local_col)];
-            const Precision block_weight =
-                weights[static_cast<std::size_t>(local_row)] *
-                weights[static_cast<std::size_t>(local_col)];
+    for (Index row = 0; row < local_dofs; ++row) {
+        const std::size_t row_entry = static_cast<std::size_t>(row);
+        const int         global_row = global_dofs[row_entry];
 
-            for (Dim row_component = 0; row_component < 3; ++row_component) {
-                const int global_row = system_nodal_dofs(row_node, row_component);
+        if (global_row < 0) {
+            continue;
+        }
 
-                if (global_row < 0) {
-                    continue;
-                }
+        free_gradient_squared_norm += gap_gradient[row_entry] * gap_gradient[row_entry];
 
-                for (Dim col_component = 0; col_component < 3; ++col_component) {
-                    const int global_col = system_nodal_dofs(col_node, col_component);
+        for (Index col = 0; col < local_dofs; ++col) {
+            const std::size_t col_entry = static_cast<std::size_t>(col);
+            const int         global_col = global_dofs[col_entry];
 
-                    if (global_col < 0) {
-                        continue;
-                    }
+            if (global_col < 0) {
+                continue;
+            }
 
-                    const Precision value =
-                        block_weight * normal_stiffness(row_component, col_component);
+            const Precision value =
+                tangent_scale * gap_gradient[row_entry] * gap_gradient[col_entry];
 
-                    if (std::abs(value) > Precision(1e-14)) {
-                        triplets.emplace_back(global_row, global_col, value);
-                    }
-                }
+            if (std::abs(value) > Precision(1e-14)) {
+                triplets.emplace_back(global_row, global_col, value);
             }
         }
     }
+
+    diagnostics.maximum_tangent_norm = std::max(
+        diagnostics.maximum_tangent_norm,
+        tangent_scale * free_gradient_squared_norm);
 
     ++diagnostics.approximate_tangents;
 }
@@ -483,8 +585,10 @@ Contact::Contact(model::SurfaceRegion::Ptr master,
  * @brief Pushes a complete child contact state onto the transactional stack.
  *
  * Frozen trials preserve the connected master component selected by the parent
- * while allowing tracked locations to cross internal charts. Update trials may
- * acquire a new component once and freeze it after their first assembly.
+ * while allowing tracked locations to cross internal charts. If no parent
+ * location exists yet, the first frozen evaluation acquires an initial chart
+ * without persisting it outside that transaction. Update trials may acquire a
+ * new component once and freeze it after their first assembly.
  *
  * @param freeze_components Whether current master components are immediately frozen.
  * @param freeze_after_update Whether to freeze after the first assembly update.
@@ -673,8 +777,8 @@ bool Contact::update_augmented_lagrange() const {
  * 2. Initialize deterministic slave membership and positive slave weights.
  * 3. Continue established locations or globally acquire released slave points.
  * 4. Evaluate Nagata position, normal and signed clearance gap.
- * 5. Map the location to its source FE surface and distribute the residual.
- * 6. Assemble the frozen-geometry symmetric normal penalty tangent.
+ * 5. Determine the local Nagata coordinate dependency stencil.
+ * 6. Differentiate the projected gap and assemble variational contributions.
  * 7. Replace the transactional locations, components and active-set geometry.
  *
  * A tracked projection remains on its connected component and may cross any
@@ -684,12 +788,14 @@ bool Contact::update_augmented_lagrange() const {
  * @param system_nodal_dofs Global nodal degree-of-freedom equation numbers.
  * @param model_data Current model topology and position field.
  * @param nodal_forces Global nodal residual-force accumulator.
- * @param triplets Global sparse tangent triplet accumulator.
+ * @param triplets Global sparse Gauss-Newton tangent triplet accumulator.
+ * @param assemble_tangent Whether to assemble the sparse Gauss-Newton block.
  */
 void Contact::assemble(SystemDofIds&     system_nodal_dofs,
                        model::ModelData& model_data,
                        model::NodeData&  nodal_forces,
-                       TripletList&      triplets) const {
+                       TripletList&      triplets,
+                       bool              assemble_tangent) const {
     // ---------------------------------------------------------------------
     // Validate current geometry and reconstruct the smooth master
     // ---------------------------------------------------------------------
@@ -811,15 +917,16 @@ void Contact::assemble(SystemDofIds&     system_nodal_dofs,
         bool                           has_location = false;
 
         // Established locations are continued on their connected component.
-        // Released points compete globally unless a frozen trial prohibits a
-        // discrete component acquisition.
+        // A frozen trial without inherited geometry must still acquire an
+        // initial chart. This occurs for the state-neutral predictor before the
+        // outer update trial has performed its first assembly.
         if (track_established_location) {
             location = master_geometry.project(
                 slave_position,
                 previous_location_iterator->second);
             has_location = true;
             ++diagnostics.tracked_projections;
-        } else if (!freeze_master_components) {
+        } else if (!freeze_master_components || !has_previous_location) {
             location = master_geometry.project(slave_position);
             has_location = true;
             ++diagnostics.global_projections;
@@ -879,13 +986,6 @@ void Contact::assemble(SystemDofIds&     system_nodal_dofs,
         const model::nagata::ComponentID component =
             master_geometry.component(location);
 
-        const DynamicVector shape =
-            evaluation.surface->shape_function(evaluation.element_local);
-
-        logging::error(static_cast<Index>(shape.rows()) == evaluation.surface->n_nodes
-                    && shape.allFinite(),
-            "CONTACT source FE shape evaluation is inconsistent with its topology");
-
         const auto slave_area_iterator = slave_tributary_areas.find(slave_node_id);
 
         const Precision slave_weight =
@@ -897,15 +997,28 @@ void Contact::assemble(SystemDofIds&     system_nodal_dofs,
             "CONTACT slave node ID ", slave_node_id,
             " has invalid tributary weight ", slave_weight);
 
+        const Precision characteristic_length =
+            std::sqrt(std::max(evaluation.surface->area(node_coords), Precision(0)));
+
+        logging::error(std::isfinite(characteristic_length)
+                    && characteristic_length > Precision(0),
+            "CONTACT source surface has an invalid characteristic length");
+
+        // Component and active-set decisions remain fixed inside Newton and
+        // line-search trials. The outer update performs the discrete contact
+        // classification and requests another Newton solve if it changes.
         const ContactLaw contact_law =
-            evaluate_augmented_lagrange_law(gap, normal_multiplier, penalty);
+            freeze_master_components
+                ? continue_augmented_lagrange_branch(
+                    gap, normal_multiplier, penalty, previously_active)
+                : evaluate_augmented_lagrange_law(
+                    gap, normal_multiplier, penalty);
 
         current_locations[slave_node_id]              = location;
         current_components[slave_node_id]             = component;
         current_multipliers[slave_node_id]            = normal_multiplier;
         current_gaps[slave_node_id]                   = gap;
-        current_characteristic_lengths[slave_node_id] =
-            std::sqrt(std::max(evaluation.surface->area(node_coords), Precision(0)));
+        current_characteristic_lengths[slave_node_id] = characteristic_length;
 
         diagnostics.maximum_closest_distance =
             std::max(diagnostics.maximum_closest_distance, closest_distance);
@@ -954,16 +1067,19 @@ void Contact::assemble(SystemDofIds&     system_nodal_dofs,
             static_cast<std::uint64_t>(component));
 
         assemble_contact_pair(
-            *evaluation.surface,
-            shape,
-            slave_node_id,
+            node_coords,
+            master_geometry,
+            location,
             normal,
+            slave_node_id,
             contact_law,
             penalty,
             slave_weight,
+            characteristic_length,
             system_nodal_dofs,
             nodal_forces,
             triplets,
+            assemble_tangent,
             diagnostics);
     }
 

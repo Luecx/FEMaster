@@ -7,11 +7,11 @@
  * transactional nonlinear state and followed continuously across internal
  * Nagata patches and originating finite-element surfaces.
  *
- * Contact forces are distributed to the source finite-element nodes through
- * their shape functions. The current tangent retains only the normal penalty
- * contribution and deliberately omits Nagata geometry and projection
- * sensitivities. Exact Nagata kinematic sensitivities remain a responsibility
- * of a later consistent-contact formulation.
+ * Contact residuals use the analytical slave gradient and locally reconstructed
+ * master-position sensitivities of the projected Nagata gap. The closest-point
+ * envelope property removes projection derivatives. The tangent is the
+ * symmetric Gauss-Newton part of the corresponding augmented contact potential
+ * and therefore omits only the gap-Hessian term.
  *
  * @see model::NagataSurface
  *
@@ -49,14 +49,16 @@ namespace constraint {
  * Runtime history is transactional. Nested predictor, Newton and line-search
  * trials inherit locations, connected master components, active slaves and
  * normal multipliers and may be committed or rolled back independently.
- * Partner freezing fixes only the connected master component; a Nagata patch is
- * a local chart and is never treated as a physical contact boundary.
+ * Frozen trials retain both the connected master component and the active-set
+ * branch so Newton and line search see one differentiable residual. A Nagata
+ * patch is a local chart and is never treated as a physical contact boundary.
  *
- * The assembled residual uses Nagata position and normal for projection and gap
- * evaluation, while source FE shape functions distribute equal and opposite
- * nodal forces. The symmetric tangent is an explicit approximation containing
- * only the derivative of the normal contact law with a frozen normal, frozen
- * projection and frozen shape functions.
+ * The assembled residual is the gradient of the shifted quadratic normal
+ * contact potential. Central differences of a locally rebuilt patch capture
+ * the dependence of Nagata positions and averaged normals on the master model
+ * coordinates; closest-point sensitivities follow from stationarity. The
+ * symmetric tangent retains the positive-semidefinite Gauss-Newton term
+ * required by the LDLT solver.
  */
 class Contact {
     /**
@@ -91,8 +93,10 @@ class Contact {
      * @brief One nested transactional contact state and its tracking policy.
      *
      * A frozen trial retains the previously selected connected master component
-     * while still allowing continuous projection across its internal charts.
-     * Update trials perform one component update before adopting that policy.
+     * and active-set branch while still allowing continuous projection across
+     * internal charts. Without an inherited location it may acquire an initial
+     * chart for the state-neutral evaluation. Update trials perform one
+     * component and active-set update before adopting the frozen policy.
      */
     struct TrialState {
         AssemblyState state;
@@ -161,11 +165,12 @@ public:
     bool partner_signature_changed() const;
     bool update_augmented_lagrange() const;
 
-    // Nagata projection, force residual and approximate normal tangent assembly
+    // Nagata projection, variational residual and Gauss-Newton tangent assembly
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,
-                  TripletList&      triplets) const;
+                  TripletList&      triplets,
+                  bool              assemble_tangent = true) const;
 };
 
 } // namespace constraint

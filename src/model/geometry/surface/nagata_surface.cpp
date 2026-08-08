@@ -86,13 +86,22 @@ NagataSurface::NagataSurface(
 
     constexpr Precision normal_tolerance = Precision(1e-12);
 
+    // Nearly parallel normal constraints represent one geometrically resolved
+    // direction. Truncating their small singular mode prevents infinitesimal
+    // coordinate changes from producing finite jumps in Nagata coefficients.
+    constexpr Precision coefficient_rank_tolerance = Precision(1e-4);
+
     std::unordered_map<ID, Index> vertex_by_node;
 
     // ---------------------------------------------------------------------
     // Gather reconstructed vertices and accumulate incident FE normals
     // ---------------------------------------------------------------------
 
-    for (const SurfaceInterface::Ptr& surface : source_surfaces_) {
+    for (Index surface_index = 0;
+         surface_index < static_cast<Index>(source_surfaces_.size());
+         ++surface_index) {
+        const SurfaceInterface::Ptr& surface =
+            source_surfaces_[static_cast<std::size_t>(surface_index)];
         const DynamicMatrix natural_coords = surface->node_coords_natural();
 
         logging::error(static_cast<Index>(natural_coords.rows()) == surface->n_nodes
@@ -137,7 +146,10 @@ NagataSurface::NagataSurface(
             // All incident surface normals contribute equally to the current
             // smooth-only vertex normal. Hard-edge grouping is intentionally
             // absent from this MVP.
-            vertices_[static_cast<std::size_t>(iterator->second)].normal += normal;
+            Vertex& vertex = vertices_[static_cast<std::size_t>(iterator->second)];
+            vertex.normal += normal;
+            vertex.source_surfaces.push_back(surface_index);
+            vertex.source_local_nodes.push_back(local_node);
         }
     }
 
@@ -362,8 +374,10 @@ NagataSurface::NagataSurface(
             rhs(0) =  normal[static_cast<std::size_t>(j)].dot(edge);
             rhs(1) = -normal[static_cast<std::size_t>(k)].dot(edge);
 
-            const Vec3 curvature =
-                system.completeOrthogonalDecomposition().solve(rhs);
+            Eigen::CompleteOrthogonalDecomposition<StaticMatrix<2, 3>> decomposition(system);
+            decomposition.setThreshold(coefficient_rank_tolerance);
+
+            const Vec3 curvature = decomposition.solve(rhs);
 
             logging::error(curvature.allFinite(),
                 "NagataSurface failed to construct C0 coefficient for patch ",
@@ -415,19 +429,14 @@ NagataSurface::NagataSurface(
 
             const Vec2 rhs = Vec2::Constant(edge_mismatch);
             Vec3& gamma = patch.gamma[static_cast<std::size_t>(i)];
-            gamma = system.completeOrthogonalDecomposition().solve(rhs);
+
+            Eigen::CompleteOrthogonalDecomposition<StaticMatrix<2, 3>> decomposition(system);
+            decomposition.setThreshold(coefficient_rank_tolerance);
+
+            gamma = decomposition.solve(rhs);
 
             logging::error(gamma.allFinite(),
                 "NagataSurface failed to construct G1 coefficient for patch ",
-                patch_id, " edge ", i);
-
-            const Vec2 residual = system * gamma - rhs;
-            const Precision residual_tolerance =
-                std::sqrt(std::numeric_limits<Precision>::epsilon())
-                * (Precision(1) + rhs.norm());
-
-            logging::error(residual.norm() <= residual_tolerance,
-                "NagataSurface cannot establish G1 continuity for patch ",
                 patch_id, " edge ", i);
         }
     }
@@ -450,6 +459,74 @@ NagataSurface::NagataSurface(
 
     logging::error(vertex_bvh_.valid(),
         "NagataSurface failed to construct the vertex BVH");
+}
+
+/**
+ * @brief Returns all global nodes controlling one Nagata patch.
+ *
+ * A patch depends directly on its three reconstructed vertex positions. Each
+ * vertex normal is additionally the normalized sum of normals from all selected
+ * source surfaces incident to that vertex. The complete dependency set is
+ * therefore the union of the nodes of those incident source surfaces.
+ *
+ * The returned IDs are sorted and unique. They form the local coordinate
+ * stencil required by contact sensitivity calculations without exposing the
+ * private Nagata patch representation. The stencil is constructed lazily and
+ * cached on first use so reconstructions used only for perturbed evaluation do
+ * not preprocess unused dependency information.
+ *
+ * @param location Valid location identifying the patch of interest.
+ * @return Sorted global node IDs controlling patch geometry and vertex normals.
+ */
+std::vector<ID> NagataSurface::dependency_nodes(const Location& location) const {
+    logging::error(valid(location),
+        "NagataSurface::dependency_nodes received an invalid location");
+
+    const Patch& patch = patches_[static_cast<std::size_t>(location.patch)];
+
+    if (!patch.dependency_nodes.empty()) {
+        return patch.dependency_nodes;
+    }
+
+    std::array<ID, 3> patch_node_ids{};
+
+    for (Index local_vertex = 0; local_vertex < 3; ++local_vertex) {
+        patch_node_ids[static_cast<std::size_t>(local_vertex)] =
+            vertices_[static_cast<std::size_t>(
+                patch.vertices[static_cast<std::size_t>(local_vertex)])].node_id;
+    }
+
+    // A vertex normal depends on every coordinate of every selected FE surface
+    // incident to that vertex. Merge those connectivities into one patch-local
+    // coordinate stencil.
+    for (const SurfaceInterface::Ptr& surface : source_surfaces_) {
+        bool incident = false;
+
+        for (Index local_node = 0; local_node < surface->n_nodes && !incident; ++local_node) {
+            incident = std::find(
+                patch_node_ids.begin(),
+                patch_node_ids.end(),
+                surface->nodes()[local_node]) != patch_node_ids.end();
+        }
+
+        if (!incident) {
+            continue;
+        }
+
+        for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
+            patch.dependency_nodes.push_back(surface->nodes()[local_node]);
+        }
+    }
+
+    std::sort(patch.dependency_nodes.begin(), patch.dependency_nodes.end());
+    patch.dependency_nodes.erase(
+        std::unique(patch.dependency_nodes.begin(), patch.dependency_nodes.end()),
+        patch.dependency_nodes.end());
+
+    logging::error(!patch.dependency_nodes.empty(),
+        "NagataSurface produced an empty patch dependency stencil");
+
+    return patch.dependency_nodes;
 }
 
 } // namespace fem::model

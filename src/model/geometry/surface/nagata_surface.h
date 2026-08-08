@@ -105,9 +105,16 @@ public:
     // Differential geometry and mapping to the originating FE surface
     [[nodiscard]] Evaluation evaluate(const Location& location) const;
 
+    // Position rebuilt locally from an alternative coordinate field
+    [[nodiscard]] Vec3 evaluate_position(const Location& location,
+                                         const Field&    node_coords) const;
+
     // Stable topology queries for tracked locations and connected components
     [[nodiscard]] bool valid(const Location& location) const;
     [[nodiscard]] nagata::ComponentID component(const Location& location) const;
+
+    // Global nodes controlling patch positions and averaged vertex normals
+    [[nodiscard]] std::vector<ID> dependency_nodes(const Location& location) const;
 
 private:
     static constexpr nagata::PatchID invalid_patch =
@@ -126,6 +133,10 @@ private:
         Vec3 normal   = Vec3::Zero();
 
         std::vector<nagata::PatchID> patches;
+
+        // Source-surface entries contributing to the averaged vertex normal
+        std::vector<Index> source_surfaces;
+        std::vector<Index> source_local_nodes;
     };
 
     /**
@@ -170,6 +181,9 @@ private:
             Vec3::Zero(),
             Vec3::Zero()
         };
+
+        // Lazily cached sorted nodes controlling positions and averaged normals
+        mutable std::vector<ID> dependency_nodes;
     };
 
     // Selected source FE surfaces retained for evaluation mapping and lifetime

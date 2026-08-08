@@ -568,9 +568,9 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
  * trial states. This routine therefore evaluates each structural element's
  * current stress or shell resultant state and scatters `f_int` directly into the
  * supplied nodal field. The same contact force contribution as tangent assembly
- * is retained so the residual equation remains unchanged; contact tangent
- * triplets are evaluated by the existing contact routine and intentionally
- * discarded here until contact owns a separate force-only assembly path.
+ * is retained so the residual equation remains unchanged. Contact is explicitly
+ * invoked in force-only mode, avoiding construction of unused sparse tangent
+ * entries during line-search evaluations.
  *
  * @param indices Active global degree-of-freedom ids used by contact assembly.
  * @param nodal_forces Nodal internal-force field to overwrite and fill.
@@ -612,12 +612,16 @@ void Model::build_internal_force_nonlinear(SystemDofIds& indices,
         );
     }
 
-    // Contact contributes to the same nonlinear residual. The existing contact
-    // API computes force and tangent together; the tangent triplets are ignored
-    // in this residual-only path so line-search acceptance remains correct.
+    // Contact contributes to the same nonlinear residual without constructing
+    // the Gauss-Newton matrix required only by a Newton tangent evaluation.
     TripletList discarded_contact_triplets;
     for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+        contact.assemble(
+            indices,
+            *_data,
+            nodal_forces,
+            discarded_contact_triplets,
+            false);
     }
 
     // Match the validation performed by tangent assembly before the nonlinear
