@@ -1,24 +1,30 @@
 /**
  * @file contact.h
- * @brief Declares frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Declares frictionless node-to-Nagata-surface augmented-Lagrange contact.
  *
- * Master partners and normal multipliers are stored in explicit per-contact
- * trial states. Increment, active-set, predictor and line-search evaluations can
- * therefore be committed or rolled back without hidden global history. Active
- * or augmented contact points are tracked topologically across connected master
- * facets; only new or released contact points use a global closest-point search.
+ * The contact constraint reconstructs the selected master region as one smooth
+ * Nagata surface for every assembly. Closest-point locations are stored in the
+ * transactional nonlinear state and followed continuously across internal
+ * Nagata patches and originating finite-element surfaces.
+ *
+ * Contact forces are distributed to the source finite-element nodes through
+ * their shape functions. The current tangent retains only the normal penalty
+ * contribution and deliberately omits Nagata geometry and projection
+ * sensitivities. Exact Nagata kinematic sensitivities remain a responsibility
+ * of a later consistent-contact formulation.
+ *
+ * @see model::NagataSurface
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 08.08.2026
  */
 
 #pragma once
 
 #include "../../data/field.h"
 #include "../../data/region.h"
-#include "../../model/geometry/surface/surface.h"
+#include "../../model/geometry/surface/nagata_surface.h"
 
-#include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
@@ -32,40 +38,46 @@ struct ModelData;
 namespace constraint {
 
 /**
- * @brief Frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Frictionless augmented-Lagrange contact against a smooth Nagata master.
  *
- * The contact constraint owns all discrete runtime history required by the
- * nonlinear solver: selected master partners, active slave nodes, normal
- * multipliers and the geometry needed by the outer augmented-Lagrange update.
- * Runtime history is transactional. Nested trials allow predictor and line-search
- * evaluations to modify temporary contact state without changing their parent
- * increment state.
+ * The selected finite-element master surfaces are reconstructed from the
+ * current nodal coordinate field during every assembly. Global projection is
+ * used for new or released slave nodes. Established contact points continue
+ * from their stored `NagataSurface::Location` and may cross arbitrary internal
+ * Nagata patch boundaries without changing physical partner ownership.
  *
- * A partner-update trial allows one closest-surface or topological partner update
- * and then freezes the selected master surfaces for the remaining Newton solve.
- * A frozen trial immediately inherits and freezes the current partner ownership.
- * `NonlinearStateManager` chooses between these two modes; the contact class owns
- * the actual state stack and commit/rollback semantics.
+ * Runtime history is transactional. Nested predictor, Newton and line-search
+ * trials inherit locations, connected master components, active slaves and
+ * normal multipliers and may be committed or rolled back independently.
+ * Partner freezing fixes only the connected master component; a Nagata patch is
+ * a local chart and is never treated as a physical contact boundary.
+ *
+ * The assembled residual uses Nagata position and normal for projection and gap
+ * evaluation, while source FE shape functions distribute equal and opposite
+ * nodal forces. The symmetric tangent is an explicit approximation containing
+ * only the derivative of the normal contact law with a frozen normal, frozen
+ * projection and frozen shape functions.
  */
 class Contact {
     /**
      * @brief Complete nonlinear state of one contact configuration.
      *
-     * The state combines discrete partner ownership, active slaves, augmented
-     * normal multipliers and geometry recorded by the most recent assembly.
+     * Locations address the reconstructed Nagata topology, whose patch ordering
+     * is deterministic for an unchanged master region. Components represent
+     * physical connected master regions and therefore define the discrete
+     * partner signature. Multipliers have pressure units before multiplication
+     * by the positive slave tributary area during residual assembly.
      */
     struct AssemblyState {
-        // Discrete master ownership and active set
-        std::unordered_map<ID, ID> partners;
-        std::unordered_set<ID>     active_slaves;
+        // Tracked Nagata charts and physical connected master components
+        std::unordered_map<ID, model::NagataSurface::Location> locations;
+        std::unordered_map<ID, model::nagata::ComponentID>      components;
+        std::unordered_set<ID>                                 active_slaves;
 
-        // Augmented-Lagrange state. The multiplier has the same units as
-        // PENALTY * gap; slave tributary weighting is applied only to force
-        // assembly and is therefore not included here.
+        // Augmented-Lagrange normal multipliers without slave-area weighting
         std::unordered_map<ID, Precision> normal_multipliers;
 
-        // Geometry recorded by the most recent assembly. These values are used
-        // only by the outer augmentation update after Newton convergence.
+        // Converged geometry used by the outer augmentation update
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
 
@@ -76,35 +88,34 @@ class Contact {
     };
 
     /**
-     * @brief One nested transactional contact state.
+     * @brief One nested transactional contact state and its tracking policy.
      *
-     * The trial stores a complete child state and the partner-freezing policy
-     * used by subsequent contact assemblies within this transaction level.
+     * A frozen trial retains the previously selected connected master component
+     * while still allowing continuous projection across its internal charts.
+     * Update trials perform one component update before adopting that policy.
      */
     struct TrialState {
         AssemblyState state;
-        bool          freeze_surface_partners = false;
-        bool          freeze_after_update     = false;
+        bool          freeze_master_components = false;
+        bool          freeze_after_update      = false;
     };
 
     /**
-     * @brief Persistent and nested runtime data used by contact assembly.
+     * @brief Persistent topology-independent data and nested nonlinear history.
      *
-     * Geometry-independent topology and slave weights are initialized lazily and
-     * reused, while `committed` and `trials` contain the nonlinear history.
+     * Slave membership and positive tributary weights depend only on the model
+     * definition and are initialized lazily. Nagata geometry itself is rebuilt
+     * from current coordinates in each assembly and is therefore not retained.
      */
     struct RuntimeState {
         AssemblyState committed;
         std::vector<TrialState> trials;
 
-        // Fixed positive slave weights initialized once from the first
-        // assembled geometry.
+        // Fixed slave membership collected from a node or surface region
         std::vector<ID> slave_node_ids;
         bool            slave_nodes_initialized = false;
 
-        std::vector<std::array<ID, 4>> master_edge_neighbors;
-        bool                           master_topology_initialized = false;
-
+        // Positive lumped areas for a slave surface region
         std::unordered_map<ID, Precision> slave_tributary_areas;
         bool                              slave_weights_initialized = false;
 
@@ -116,7 +127,6 @@ class Contact {
     model::NodeRegion::Ptr    slave_nodes;
     model::SurfaceRegion::Ptr slave_surfaces;
 
-    Precision distance;
     Precision penalty;
     Precision clearance;
     bool      flip_normal;
@@ -124,37 +134,34 @@ class Contact {
     // Persistent nonlinear runtime state
     mutable RuntimeState runtime_state;
 
-    // Low-level trial creation. Public callers use the semantic trial modes below.
-    void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
+    // Low-level trial creation used by the semantic public trial modes
+    void begin_trial(bool freeze_components, bool freeze_after_update = false) const;
 
 public:
+    // Contact definitions for nodal and surface-based slave regions
     Contact(model::SurfaceRegion::Ptr master,
             model::NodeRegion::Ptr    slave,
-            Precision                 search_distance,
             Precision                 penalty_stiffness,
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
     Contact(model::SurfaceRegion::Ptr master,
             model::SurfaceRegion::Ptr slave,
-            Precision                 search_distance,
             Precision                 penalty_stiffness,
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Transactional contact state. Update trials may select partners once;
-    // frozen trials preserve the current discrete partner ownership immediately.
+    // Transactional contact state and connected-component tracking policy
     void begin_update_trial() const { begin_trial(false, true); }
     void begin_frozen_trial() const { begin_trial(true); }
     void commit_trial() const;
     void rollback_trial() const;
 
-    // State changes detected after a converged Newton solve
+    // State changes detected after a converged inner Newton solve
     bool partner_signature_changed() const;
     bool update_augmented_lagrange() const;
 
-    // Assemble contact forces and the faceted contact tangent with fixed
-    // multipliers during the inner Newton solve.
+    // Nagata projection, force residual and approximate normal tangent assembly
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,

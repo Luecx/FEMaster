@@ -93,7 +93,6 @@ struct Model {
     void add_tie      (const std::string& master_set, const std::string& slave_set, Precision distance, bool adjust);
     void add_contact  (const std::string& master_set,
                        const std::string& slave_set,
-                       Precision distance,
                        Precision penalty,
                        Precision clearance,
                        bool flip_normal);

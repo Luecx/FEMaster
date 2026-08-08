@@ -3,7 +3,9 @@
  * @brief Implements the tie constraint used to couple slave nodes to master surfaces or lines.
  *
  * The implementation projects slave nodes onto candidate master geometries and
- * assembles the corresponding compatibility equations.
+ * assembles the corresponding compatibility equations. Tie owns the conversion
+ * from master surface or line nodes to conservative AABBs; the search BVH sees
+ * only opaque master IDs and completed boxes.
  *
  * Slave sets can be provided as:
  *  - node sets (direct node IDs)
@@ -11,14 +13,15 @@
  *
  * @see src/constraints/types/tie.h
  * @see src/constraints/types/equation.h
+ * @see model::BvhAabb
  * @author Finn Eggers
  * @date 06.03.2025
  */
 
 #include "tie.h"
 
+#include "../../model/geometry/bvh/bvh_aabb.h"
 #include "../../model/model_data.h"
-#include "bvh.h"
 
 #include <algorithm>
 #include <array>
@@ -114,10 +117,10 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
     auto&               surfaces    = model_data.surfaces;
 
     struct MasterPatch {
-        ID                  surface_id {};
-        std::array<Vec2, 3> local {};
-        std::array<Vec3, 3> global {};
-        BvhAabb::Aabb       box {};
+        ID                    surface_id {};
+        std::array<Vec2, 3>   local {};
+        std::array<Vec3, 3>   global {};
+        model::BvhAabb::Aabb box {};
     };
 
     struct MortarRow {
@@ -175,7 +178,7 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
     };
 
     auto make_surface_aabb = [&](const model::SurfaceInterface::Ptr& surface) {
-        BvhAabb::Aabb box = BvhAabb::Aabb::invalid();
+        model::BvhAabb::Aabb box = model::BvhAabb::Aabb::invalid();
 
         for (ID local_id = 0; local_id < static_cast<ID>(surface->n_nodes); ++local_id) {
             const ID node_id = surface->nodes()[local_id];
@@ -190,7 +193,7 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
             MasterPatch patch;
             patch.surface_id = surface_id;
             patch.local      = local;
-            patch.box        = BvhAabb::Aabb::invalid();
+            patch.box        = model::BvhAabb::Aabb::invalid();
 
             for (std::size_t i = 0; i < patch.local.size(); ++i) {
                 patch.global[i] = surface->local_to_global(patch.local[i], node_coords);
@@ -215,7 +218,7 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
     };
 
     std::vector<MasterPatch> master_patches {};
-    BvhAabb                  master_bvh;
+    model::BvhAabb           master_bvh;
 
     for (ID master_surface_id : *master_surfaces) {
         if (static_cast<std::size_t>(master_surface_id) >= surfaces.size()) {
@@ -273,7 +276,7 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
 
         logging::error(slave_area > tolerance, "TIE: slave surface ", slave_surface_id, " has zero mortar area");
 
-        BvhAabb::Aabb slave_box = make_surface_aabb(slave);
+        model::BvhAabb::Aabb slave_box = make_surface_aabb(slave);
         slave_box.inflate(distance);
 
         const auto&     candidates = master_bvh.query_aabb(slave_box, &candidate_patch_ids);
@@ -515,7 +518,27 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
 }
 
 /**
- * @copydoc Tie::get_equations
+ * @brief Projects slave nodes onto nearby master geometry and builds tie equations.
+ *
+ * The routine validates access to the current nodal coordinates, constructs one
+ * conservative AABB for every admissible master surface or line, and inserts
+ * only the master ID and box into `model::BvhAabb`. The configured tie
+ * distance inflates every primitive box and bounds the broadphase point query.
+ *
+ * For every unique slave node, surviving master candidates enter the existing
+ * exact surface or line projection. The closest projection inside the maximum
+ * distance supplies shape-function weights for translational and supported
+ * rotational compatibility equations. With `adjust` enabled, the slave position
+ * is moved to the selected master point before equation assembly.
+ *
+ * Invalid region IDs and null master interfaces are ignored consistently with
+ * the previous implementation. A master geometry without nodes contributes no
+ * BVH primitive. The returned equation set is empty when no admissible closest
+ * projection is found.
+ *
+ * @param system_nodal_dofs Global nodal degree-of-freedom numbering.
+ * @param model_data Current model geometry, regions and nodal positions.
+ * @return Compatibility equations for all successfully projected slave nodes.
  */
 Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
@@ -529,8 +552,26 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
     //     return get_surface_surface_equations(system_nodal_dofs, model_data);
     // }
 
-    // build the bvh for fast access to elements to not query all elements for every slave node
-    BvhAabb bvh(distance);
+    // Build conservative master-geometry boxes locally. The BVH receives only
+    // opaque IDs and finished AABBs and therefore remains independent of model
+    // fields, surface interfaces and line interfaces.
+    model::BvhAabb bvh(distance);
+
+    const auto add_master_aabb = [&](ID master_id, const ID* node_ids, Index node_count) {
+        if (node_ids == nullptr || node_count <= 0) {
+            return;
+        }
+
+        model::BvhAabb::Aabb box = model::BvhAabb::Aabb::invalid();
+
+        for (Index local_node = 0; local_node < node_count; ++local_node) {
+            const ID node_id = node_ids[local_node];
+            box.expand_point(node_coords.row_vec3(static_cast<Index>(node_id)));
+        }
+
+        bvh.add_aabb(master_id, box);
+    };
+
     if (master_surfaces) {
         for (ID s_id : *master_surfaces) {
             if (static_cast<std::size_t>(s_id) >= surfaces.size()) {
@@ -540,7 +581,8 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
             if (s_ptr == nullptr) {
                 continue;
             }
-            bvh.add_element(s_id, node_coords, s_ptr->nodes(), s_ptr->n_nodes);
+
+            add_master_aabb(s_id, s_ptr->nodes(), s_ptr->n_nodes);
         }
     } else if (master_lines) {
         for (ID l_id : *master_lines) {
@@ -551,7 +593,8 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
             if (l_ptr == nullptr) {
                 continue;
             }
-            bvh.add_element(l_id, node_coords, l_ptr->nodes(), l_ptr->n_nodes);
+
+            add_master_aabb(l_id, l_ptr->nodes(), l_ptr->n_nodes);
         }
     }
     bvh.finalize();

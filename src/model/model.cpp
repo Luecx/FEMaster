@@ -139,7 +139,6 @@ void Model::add_tie(const std::string& master_set,
 
 void Model::add_contact(const std::string& master_set,
                         const std::string& slave_set,
-                        Precision distance,
                         Precision penalty,
                         Precision clearance,
                         bool flip_normal) {
@@ -167,14 +166,12 @@ void Model::add_contact(const std::string& master_set,
     if (slave_node_ptr) {
         _data->contacts.emplace_back(master_ptr,
                                      slave_node_ptr,
-                                     distance,
                                      penalty,
                                      clearance,
                                      flip_normal);
     } else {
         _data->contacts.emplace_back(master_ptr,
                                      slave_surface_ptr,
-                                     distance,
                                      penalty,
                                      clearance,
                                      flip_normal);
