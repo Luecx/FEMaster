@@ -522,11 +522,16 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
     );
 
     // Add nonlinear contact contributions after the structural element matrix has
-    // been assembled. Contact assembly owns additional search state and is kept
-    // outside the generic element loop.
+    // been assembled. Explicit node slaves retain the existing node-to-surface
+    // path; surface slaves are integrated at the native slave-surface quadrature
+    // points and assembled consistently to their slave nodes.
     TripletList contact_triplets;
     for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, contact_triplets);
+        if (contact.uses_slave_surface()) {
+            contact.assemble_surface(indices, *_data, nodal_forces, contact_triplets);
+        } else {
+            contact.assemble(indices, *_data, nodal_forces, contact_triplets);
+        }
     }
 
     if (!contact_triplets.empty()) {
@@ -567,10 +572,9 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
  * The nonlinear Newton line search only needs the residual norm at temporary
  * trial states. This routine therefore evaluates each structural element's
  * current stress or shell resultant state and scatters `f_int` directly into the
- * supplied nodal field. The same contact force contribution as tangent assembly
- * is retained so the residual equation remains unchanged; contact tangent
- * triplets are evaluated by the existing contact routine and intentionally
- * discarded here until contact owns a separate force-only assembly path.
+ * supplied nodal field. Contact uses the same slave discretisation as tangent
+ * assembly so line-search residuals remain identical to the residual associated
+ * with the assembled tangent.
  *
  * @param indices Active global degree-of-freedom ids used by contact assembly.
  * @param nodal_forces Nodal internal-force field to overwrite and fill.
@@ -612,12 +616,15 @@ void Model::build_internal_force_nonlinear(SystemDofIds& indices,
         );
     }
 
-    // Contact contributes to the same nonlinear residual. The existing contact
-    // API computes force and tangent together; the tangent triplets are ignored
-    // in this residual-only path so line-search acceptance remains correct.
+    // Contact contributes to the same nonlinear residual. Tangent triplets are
+    // intentionally discarded in this residual-only path.
     TripletList discarded_contact_triplets;
     for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+        if (contact.uses_slave_surface()) {
+            contact.assemble_surface(indices, *_data, nodal_forces, discarded_contact_triplets);
+        } else {
+            contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+        }
     }
 
     // Match the validation performed by tangent assembly before the nonlinear
