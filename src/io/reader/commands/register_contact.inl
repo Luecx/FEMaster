@@ -12,8 +12,9 @@ inline void register_contact(fem::io::dsl::Registry& registry, model::Model& mod
     registry.command("CONTACT", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc(
-            "Define frictionless node-to-surface penalty contact. MASTER must be a surface set; "
-            "SLAVE may be a node set or surface set. Contact contributes only in NONLINEARSTATIC."
+            "Define frictionless augmented-Lagrange contact. MASTER must be a surface set. "
+            "A node-set SLAVE uses node-to-surface contact; a surface-set SLAVE is evaluated "
+            "at the native integration points of its surfaces. Contact contributes only in NONLINEARSTATIC."
         );
 
         command.keyword(
