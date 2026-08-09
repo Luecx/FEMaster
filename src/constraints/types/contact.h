@@ -1,17 +1,11 @@
 /**
  * @file contact.h
- * @brief Declares frictionless faceted augmented-Lagrange contact.
+ * @brief Declares frictionless augmented-Lagrange contact.
  *
- * Master partners and normal multipliers are stored in explicit per-contact
- * trial states. Increment, active-set, predictor and line-search evaluations can
- * therefore be committed or rolled back without hidden global history. Active
- * or augmented contact points are tracked topologically across connected master
- * facets; only new or released contact points use a global closest-point search.
- *
- * Explicit slave node regions retain the node-to-surface formulation. Slave
- * surface regions are evaluated at the native integration points of each slave
- * surface and their contact contributions are distributed consistently to the
- * slave nodes through the slave shape functions.
+ * Explicit slave node regions use node-to-surface contact. Slave surface regions
+ * use segment-to-segment mortar integration over the projected overlap of slave
+ * and master surface patches. Contact history is transactional so nonlinear
+ * predictor, line-search and increment trials can be committed or rolled back.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -41,42 +35,35 @@ struct ModelData;
 namespace constraint {
 
 /**
- * @brief Frictionless faceted augmented-Lagrange contact.
+ * @brief Frictionless augmented-Lagrange contact.
  *
- * The contact constraint owns all discrete runtime history required by the
- * nonlinear solver: selected master partners, active slave points, normal
- * multipliers and the geometry needed by the outer augmented-Lagrange update.
- * Runtime history is transactional. Nested trials allow predictor and line-search
- * evaluations to modify temporary contact state without changing their parent
- * increment state.
- *
- * A partner-update trial allows one closest-surface or topological partner update
- * and then freezes the selected master surfaces for the remaining Newton solve.
- * A frozen trial immediately inherits and freezes the current partner ownership.
- * `NonlinearStateManager` chooses between these two modes; the contact class owns
- * the actual state stack and commit/rollback semantics.
+ * NodeRegion slaves retain the faceted node-to-surface formulation. For a
+ * SurfaceRegion slave the unilateral normal constraint is represented by nodal
+ * mortar gaps obtained from integration over slave/master overlap segments.
+ * Normal multipliers are stored per constrained slave node and interpolated over
+ * the slave surface during contact-traction assembly.
  */
 class Contact {
     /**
      * @brief Complete nonlinear state of one contact configuration.
      *
-     * The state combines discrete master ownership, active slave points,
-     * augmented normal multipliers and geometry recorded by the most recent
-     * assembly. The map key is a node id for NodeRegion slaves and a stable
-     * integration-point id for SurfaceRegion slaves.
+     * The map key is a slave node id for both explicit NodeRegion contact and
+     * mortar SurfaceRegion contact. `partners` stores the selected master facet
+     * for node-to-surface contact and one representative master facet for mortar;
+     * mortar topology changes are detected from the unilateral nodal active set,
+     * not from facet-to-facet transfer inside the overlap integration.
      */
     struct AssemblyState {
-        // Discrete master ownership and active set
+        // Discrete master ownership and unilateral active set
         std::unordered_map<ID, ID> partners;
         std::unordered_set<ID>     active_slaves;
 
-        // Augmented-Lagrange state. The multiplier has the same units as
-        // PENALTY * gap; slave integration weighting is applied only to force
-        // assembly and is therefore not included here.
+        // Augmented normal multipliers. The multiplier has pressure-like units
+        // for surface contact; physical area weighting enters only assembly.
         std::unordered_map<ID, Precision> normal_multipliers;
 
-        // Geometry recorded by the most recent assembly. These values are used
-        // only by the outer augmentation update after Newton convergence.
+        // Projected normal gaps and geometric length scale used by the outer
+        // augmented-Lagrange convergence/update criterion.
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
 
@@ -88,9 +75,6 @@ class Contact {
 
     /**
      * @brief One nested transactional contact state.
-     *
-     * The trial stores a complete child state and the partner-freezing policy
-     * used by subsequent contact assemblies within this transaction level.
      */
     struct TrialState {
         AssemblyState state;
@@ -100,29 +84,25 @@ class Contact {
 
     /**
      * @brief Persistent and nested runtime data used by contact assembly.
-     *
-     * Geometry-independent topology and node-slave weights are initialized
-     * lazily and reused, while `committed` and `trials` contain nonlinear
-     * history for either nodal or surface-integration-point slaves.
      */
     struct RuntimeState {
         AssemblyState committed;
         std::vector<TrialState> trials;
 
         // NodeRegion path only: fixed slave node list and positive tributary
-        // areas used by the legacy nodal contact formulation.
+        // areas used by the nodal contact formulation.
         std::vector<ID> slave_node_ids;
         bool            slave_nodes_initialized = false;
 
+        // NodeRegion path only: connected master-facet topology for partner
+        // walking during sliding contact.
         std::vector<std::array<ID, 4>> master_edge_neighbors;
         bool                           master_topology_initialized = false;
 
         std::unordered_map<ID, Precision> slave_tributary_areas;
         bool                              slave_weights_initialized = false;
 
-        // Penalty adaptation is solver-level numerical state rather than contact
-        // history. It is reset when a nonlinear solution starts and increased
-        // only when a previous augmentation failed to reduce penetration.
+        // Solver-level numerical state for adaptive AL penalty escalation.
         Precision previous_augmentation_penetration = Precision(-1);
 
         std::uint64_t call = 0;
@@ -139,7 +119,6 @@ class Contact {
     Precision         clearance;
     bool              flip_normal;
 
-    // Persistent nonlinear runtime state
     mutable RuntimeState runtime_state;
 
     // Low-level trial creation. Public callers use the semantic trial modes below.
@@ -160,8 +139,9 @@ public:
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Transactional contact state. Update trials may select partners once;
-    // frozen trials preserve the current discrete partner ownership immediately.
+    // Transactional contact state. Node-contact update trials may select a new
+    // partner once and then freeze it. Mortar contact recomputes the continuous
+    // overlap geometry while retaining the same transaction/rollback semantics.
     void begin_update_trial() const { begin_trial(false, true); }
     void begin_frozen_trial() const { begin_trial(true); }
     void commit_trial() const;
@@ -174,8 +154,6 @@ public:
     // Reset the numerical penalty before a new nonlinear solution. If the last
     // outer augmentation changed multipliers but the converged penetration did
     // not decrease by at least 20%, increase the effective penalty by one decade.
-    // This keeps a deliberately low user penalty usable without allowing the AL
-    // loop to spend hundreds of restarts accumulating essentially the same gap.
     void reset_augmented_lagrange_penalty() const {
         penalty = initial_penalty;
         runtime_state.previous_augmentation_penetration = Precision(-1);
@@ -188,14 +166,17 @@ public:
                 : runtime_state.trials.back().state;
 
         Precision maximum_penetration = Precision(0);
-        for (const auto& [point_id, gap] : state.gaps) {
-            (void) point_id;
+        for (const auto& [node_id, gap] : state.gaps) {
+            (void) node_id;
             if (std::isfinite(gap)) {
-                maximum_penetration = std::max(maximum_penetration, std::max(Precision(0), -gap));
+                maximum_penetration =
+                    std::max(maximum_penetration, std::max(Precision(0), -gap));
             }
         }
 
-        if (state.last_signature_changed || !state.last_augmentation_changed || maximum_penetration <= Precision(0)) {
+        if (state.last_signature_changed ||
+            !state.last_augmentation_changed ||
+            maximum_penetration <= Precision(0)) {
             runtime_state.previous_augmentation_penetration = maximum_penetration;
             return false;
         }
@@ -203,12 +184,14 @@ public:
         const Precision previous = runtime_state.previous_augmentation_penetration;
         runtime_state.previous_augmentation_penetration = maximum_penetration;
 
-        if (previous <= Precision(0) || maximum_penetration < Precision(0.8) * previous) {
+        if (previous <= Precision(0) ||
+            maximum_penetration < Precision(0.8) * previous) {
             return false;
         }
 
         const Precision maximum_penalty = initial_penalty * Precision(1e6);
-        const Precision adapted_penalty = std::min(maximum_penalty, penalty * Precision(10));
+        const Precision adapted_penalty =
+            std::min(maximum_penalty, penalty * Precision(10));
 
         if (!(adapted_penalty > penalty) || !std::isfinite(adapted_penalty)) {
             return false;
@@ -220,19 +203,18 @@ public:
 
     [[nodiscard]] Precision current_penalty() const noexcept { return penalty; }
 
-    // Select the assembly discretisation from the resolved slave-region type.
     [[nodiscard]] bool uses_slave_surface() const noexcept {
         return static_cast<bool>(slave_surfaces);
     }
 
-    // Explicit NodeRegion slave: existing node-to-surface formulation.
+    // Explicit NodeRegion slave: node-to-surface contact.
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,
                   TripletList&      triplets) const;
 
-    // SurfaceRegion slave: evaluate contact at the surface integration points
-    // and distribute residual/tangent consistently to the slave surface nodes.
+    // SurfaceRegion slave: segment-to-segment mortar integration over projected
+    // slave/master overlap with nodal AL multipliers.
     void assemble_surface(SystemDofIds&     system_nodal_dofs,
                           model::ModelData& model_data,
                           model::NodeData&  nodal_forces,
