@@ -16,6 +16,7 @@
 
 #include "nonlinear_state_manager.h"
 
+#include "../../core/logging.h"
 #include "../../model/model.h"
 
 #include <utility>
@@ -23,27 +24,6 @@
 namespace fem {
 namespace loadcase {
 namespace tools {
-namespace {
-
-/*
- * The contact penalty controls the inner Newton tangent while the augmented
- * multiplier controls constraint enforcement between converged Newton solves.
- * For a deliberately moderate penalty, one classical multiplier update per
- * outer restart can reduce penetration only very slowly and makes every tiny
- * multiplier correction pay for another complete Newton solve and partner
- * refresh. Bundling several multiplier updates at the same converged geometry is
- * equivalent to an over-relaxed augmentation step while retaining the original
- * contact tangent for the following equilibrium solve.
- *
- * Eight substeps are deliberately conservative enough for the projected
- * multiplier update while reducing the number of expensive outer restarts by up
- * to the same factor. A discrete partner/active-set change is never bundled with
- * augmentation: Contact::update_augmented_lagrange() defers in that case and the
- * solver first re-equilibrates the new discrete contact problem.
- */
-constexpr Index contact_augmentation_substeps = 8;
-
-} // namespace
 
 /**
  * Creates the material history buffers required by the materials assigned to
@@ -59,6 +39,13 @@ constexpr Index contact_augmentation_substeps = 8;
 NonlinearStateManager::NonlinearStateManager(model::Model& model)
     : model_(model),
       previous_material_state_(model._data->material_state) {
+    // Every nonlinear solution starts from the user-specified contact penalty.
+    // Penalty escalation during one solution therefore never leaks into a later
+    // independent load case using the same model object.
+    for (const auto& contact : model_._data->contacts) {
+        contact.reset_augmented_lagrange_penalty();
+    }
+
     // Stateless models retain the default material-state binding and require no
     // solver-owned history buffers
     const Index state_size = model_.maximum_material_state_size();
@@ -200,12 +187,11 @@ void NonlinearStateManager::rollback_contact_trial() {
  * Updates the discrete and augmented contact state after Newton convergence.
  *
  * The caller must first open an update trial and assemble the converged geometry.
- * Partner-signature changes detect a different discrete contact problem and are
- * re-equilibrated before any multiplier update. For an unchanged discrete state,
- * several projected augmented-Lagrange updates are bundled at the same converged
- * geometry. This avoids paying for one complete Newton restart per small
- * multiplier increment when the configured contact penalty is intentionally
- * moderate.
+ * A changed partner signature is re-equilibrated before multiplier augmentation.
+ * If a previous augmentation required another Newton solve but reduced the
+ * maximum penetration by less than 20%, the effective penalty is increased by
+ * one decade before the next multiplier update. This prevents a too-small input
+ * penalty from producing hundreds of nearly identical outer AL iterations.
  *
  * @return `true` if neither partner ownership nor multipliers changed.
  */
@@ -215,21 +201,15 @@ bool NonlinearStateManager::update_contact_active_set() {
     for (const auto& contact : model_._data->contacts) {
         const bool partner_changed = contact.partner_signature_changed();
 
-        // Contact itself defers augmentation when the discrete signature changed.
-        // Calling it once keeps that policy and its diagnostics centralized.
-        bool multiplier_changed = contact.update_augmented_lagrange();
-
-        // Once the discrete problem is fixed, combine several AL updates before
-        // the next expensive equilibrium solve. Every additional call uses the
-        // same converged gap and therefore only updates the projected multiplier.
-        if (!partner_changed && multiplier_changed) {
-            for (Index substep = 1; substep < contact_augmentation_substeps; ++substep) {
-                if (!contact.update_augmented_lagrange()) {
-                    break;
-                }
-            }
+        if (!partner_changed && contact.adapt_augmented_lagrange_penalty()) {
+            logging::info(
+                true,
+                "CONTACT: penetration stagnated; increasing effective penalty to ",
+                contact.current_penalty()
+            );
         }
 
+        const bool multiplier_changed = contact.update_augmented_lagrange();
         changed = changed || partner_changed || multiplier_changed;
     }
 
