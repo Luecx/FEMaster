@@ -1,12 +1,17 @@
 /**
  * @file contact.h
- * @brief Declares frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Declares frictionless faceted augmented-Lagrange contact.
  *
  * Master partners and normal multipliers are stored in explicit per-contact
  * trial states. Increment, active-set, predictor and line-search evaluations can
  * therefore be committed or rolled back without hidden global history. Active
  * or augmented contact points are tracked topologically across connected master
  * facets; only new or released contact points use a global closest-point search.
+ *
+ * Explicit slave node regions retain the node-to-surface formulation. Slave
+ * surface regions are evaluated at the native integration points of each slave
+ * surface and their contact contributions are distributed consistently to the
+ * slave nodes through the slave shape functions.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -32,10 +37,10 @@ struct ModelData;
 namespace constraint {
 
 /**
- * @brief Frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Frictionless faceted augmented-Lagrange contact.
  *
  * The contact constraint owns all discrete runtime history required by the
- * nonlinear solver: selected master partners, active slave nodes, normal
+ * nonlinear solver: selected master partners, active slave points, normal
  * multipliers and the geometry needed by the outer augmented-Lagrange update.
  * Runtime history is transactional. Nested trials allow predictor and line-search
  * evaluations to modify temporary contact state without changing their parent
@@ -51,8 +56,10 @@ class Contact {
     /**
      * @brief Complete nonlinear state of one contact configuration.
      *
-     * The state combines discrete partner ownership, active slaves, augmented
-     * normal multipliers and geometry recorded by the most recent assembly.
+     * The state combines discrete master ownership, active slave points,
+     * augmented normal multipliers and geometry recorded by the most recent
+     * assembly. The map key is a node id for NodeRegion slaves and a stable
+     * integration-point id for SurfaceRegion slaves.
      */
     struct AssemblyState {
         // Discrete master ownership and active set
@@ -60,7 +67,7 @@ class Contact {
         std::unordered_set<ID>     active_slaves;
 
         // Augmented-Lagrange state. The multiplier has the same units as
-        // PENALTY * gap; slave tributary weighting is applied only to force
+        // PENALTY * gap; slave integration weighting is applied only to force
         // assembly and is therefore not included here.
         std::unordered_map<ID, Precision> normal_multipliers;
 
@@ -90,15 +97,16 @@ class Contact {
     /**
      * @brief Persistent and nested runtime data used by contact assembly.
      *
-     * Geometry-independent topology and slave weights are initialized lazily and
-     * reused, while `committed` and `trials` contain the nonlinear history.
+     * Geometry-independent topology and node-slave weights are initialized
+     * lazily and reused, while `committed` and `trials` contain nonlinear
+     * history for either nodal or surface-integration-point slaves.
      */
     struct RuntimeState {
         AssemblyState committed;
         std::vector<TrialState> trials;
 
-        // Fixed positive slave weights initialized once from the first
-        // assembled geometry.
+        // NodeRegion path only: fixed slave node list and positive tributary
+        // areas used by the legacy nodal contact formulation.
         std::vector<ID> slave_node_ids;
         bool            slave_nodes_initialized = false;
 
@@ -153,12 +161,23 @@ public:
     bool partner_signature_changed() const;
     bool update_augmented_lagrange() const;
 
-    // Assemble contact forces and the faceted contact tangent with fixed
-    // multipliers during the inner Newton solve.
+    // Select the assembly discretisation from the resolved slave-region type.
+    [[nodiscard]] bool uses_slave_surface() const noexcept {
+        return static_cast<bool>(slave_surfaces);
+    }
+
+    // Explicit NodeRegion slave: existing node-to-surface formulation.
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,
                   TripletList&      triplets) const;
+
+    // SurfaceRegion slave: evaluate contact at the surface integration points
+    // and distribute residual/tangent consistently to the slave surface nodes.
+    void assemble_surface(SystemDofIds&     system_nodal_dofs,
+                          model::ModelData& model_data,
+                          model::NodeData&  nodal_forces,
+                          TripletList&      triplets) const;
 };
 
 } // namespace constraint
