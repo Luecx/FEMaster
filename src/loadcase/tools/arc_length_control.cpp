@@ -99,7 +99,7 @@ bool ArcLengthControl::solve(
     logging::error(tolerance > Precision(0),
         "ArcLengthControl requires tolerance > 0");
     logging::error(initial_increment > Precision(0),
-        "ArcLengthControl requires INITIAL_INCREMENT > 0");
+        "ArcLengthControl requires initial_increment > 0");
     logging::error(minimum_increment > Precision(0),
         "ArcLengthControl requires minimum_increment > 0");
     logging::error(maximum_increment >= minimum_increment,
