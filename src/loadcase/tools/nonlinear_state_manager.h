@@ -67,6 +67,8 @@ private:
     model::Field::Ptr previous_material_state_  = nullptr;
     model::Field::Ptr committed_material_state_ = nullptr;
     model::Field::Ptr trial_material_state_     = nullptr;
+
+    Index contact_trial_depth_ = 0;
 };
 
 } // namespace tools
