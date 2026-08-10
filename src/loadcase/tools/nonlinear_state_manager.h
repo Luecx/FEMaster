@@ -48,15 +48,14 @@ public:
     void reset_material_state();
     void commit_material_state();
 
-    // Contact transactions. Update and frozen trials currently have identical
-    // state semantics; both names remain because the path controllers distinguish
-    // outer active-set refreshes from temporary predictor/line-search evaluations.
+    // Contact transactions. Surface mortar always recomputes geometry, so update
+    // and frozen trials differ only by their role in the nonlinear controller.
     void begin_contact_update_trial();
     void begin_contact_frozen_trial();
     void commit_contact_trial();
     void rollback_contact_trial();
 
-    // Post-Newton augmented-Lagrange multiplier update
+    // Post-Newton augmented-Lagrange multiplier and penalty update
     bool update_contact_active_set();
 
 private:
@@ -67,8 +66,6 @@ private:
     model::Field::Ptr previous_material_state_  = nullptr;
     model::Field::Ptr committed_material_state_ = nullptr;
     model::Field::Ptr trial_material_state_     = nullptr;
-
-    Index contact_trial_depth_ = 0;
 };
 
 } // namespace tools
