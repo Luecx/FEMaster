@@ -68,7 +68,7 @@ For every requested frequency FEMaster writes separate real and imaginary respon
 \item \val{STRAIN_REAL} and \val{STRAIN_IMAG}.
 \end{itemize}
 
-The frequency is stored as the frame value of the written result. Component-wise response magnitude and phase can be recovered from
+The harmonic loadcase passes the excitation frequency to the result writers as the frame value. The native \file{.res} writer currently does not encode this frame value in the field header, so harmonic \file{.res} blocks are associated with frequencies by their sweep order; see the Result Format chapter. Component-wise response magnitude and phase can be recovered from
 \[
 |\hat u|=\sqrt{u_\mathrm{real}^2+u_\mathrm{imag}^2},
 \qquad
