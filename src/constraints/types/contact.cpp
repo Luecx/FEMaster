@@ -9,6 +9,11 @@
  * surfaces are tested directly; no BVH, search radius or persistent master
  * ownership participates in the formulation.
  *
+ * Slave surfaces are processed independently in OpenMP workers when OpenMP is
+ * available. Every worker owns a private mortar-constraint map; the maps are
+ * reduced after the geometric integration so no locks are required in the
+ * quadrature-point hot path.
+ *
  * A local dual basis is constructed on every complete slave element. The overlap
  * integration accumulates one normalized normal-gap constraint and its frozen-
  * geometry gradient on every global slave mortar node. The unilateral law is
@@ -32,6 +37,7 @@
 
 #include "contact.h"
 
+#include "../../core/config.h"
 #include "../../core/logging.h"
 #include "../../math/quadrature.h"
 #include "../../model/geometry/surface/surface_polygon.h"
@@ -41,11 +47,19 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <exception>
 #include <limits>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
 
 namespace fem::constraint {
 namespace {
@@ -69,10 +83,6 @@ using PlaneTriangle = std::array<Vec2, 3>;
 
 /**
  * @brief One master subtriangle projected onto the active slave tangent plane.
- *
- * The local master triangle is retained so a common-plane quadrature point can
- * be mapped back to master natural coordinates. `overlap` is the clipped physical
- * polygon shared by this master triangle and the active slave subtriangle.
  */
 struct ProjectedSegment {
     ID                master_surface_id = ID(-1);
@@ -83,10 +93,6 @@ struct ProjectedSegment {
 
 /**
  * @brief Integrated data of one global slave mortar constraint.
- *
- * `support` is the full-element dual normalization S_i. `gap_integral` stores the
- * overlap integral of Phi_i g_n and `gradient` stores its frozen-normal first
- * derivative H_i with respect to all participating slave and master nodes.
  */
 struct MortarConstraint {
     Precision support               = Precision(0);
@@ -157,14 +163,6 @@ Vec2 interpolate_local(const LocalTriangle& triangle, const Vec3& lambda) {
            lambda(2) * triangle[2];
 }
 
-/**
- * Splits one supported surface topology into linear natural-coordinate
- * subtriangles used only for common-plane segmentation.
- *
- * S3 and S4 use the natural-domain polygon fan. S6 uses the four standard
- * midside subtriangles. S8 uses eight boundary-to-center triangles so every
- * quadratic edge is represented by its two linear halves in the segmentation.
- */
 std::vector<LocalTriangle> local_triangles(
     const model::SurfaceInterface::Ptr& surface
 ) {
@@ -226,26 +224,6 @@ std::vector<LocalTriangle> local_triangles(
     return triangles;
 }
 
-/**
- * Constructs the biorthogonal slave basis on one complete surface element.
- *
- * The consistent surface mass matrix is
- *
- *     M = int N_s N_s^T dA.
- *
- * For linear S3/S4 surfaces the dual support uses the row sums
- *
- *     D_i = sum_j M_ij = int N_i dA,
- *
- * which preserves constants exactly. Classical quadratic S6/S8 shape functions
- * have zero or negative row sums, so their current provisional positive support
- * uses the absolute mass diagonal normalized to the complete surface measure.
- * The dual interpolation is finally
- *
- *     Phi = D M^-1 N_s.
- *
- * @return True when the complete slave mass matrix and support are usable.
- */
 bool build_dual_basis(
     const model::SurfaceInterface::Ptr& surface,
     const model::Field&                 node_coords,
@@ -254,7 +232,6 @@ bool build_dual_basis(
     DynamicVector&                      support
 ) {
     const Index n = surface->n_nodes;
-
     DynamicMatrix mass = DynamicMatrix::Zero(n, n);
 
     surface->integrate_triangular(
@@ -286,6 +263,8 @@ bool build_dual_basis(
         return false;
     }
 
+    // Linear S3/S4 surfaces use D_i = int N_i dA. For quadratic S6/S8
+    // surfaces keep the existing positive full-area normalization.
     if (n == 3 || n == 4) {
         support = mass * DynamicVector::Ones(n);
     } else {
@@ -310,7 +289,6 @@ bool build_dual_basis(
         if (!(support(i) > Precision(1e-14) * scale) || !std::isfinite(support(i))) {
             return false;
         }
-
         dual.row(i) *= support(i);
     }
 
@@ -323,7 +301,6 @@ void add_translational_force(
     const Vec3&      force
 ) {
     const Index row = static_cast<Index>(node_id);
-
     for (Dim component = 0; component < 3; ++component) {
         nodal_forces(row, component) += force(component);
     }
@@ -368,9 +345,6 @@ void add_tangent_block(
 
 } // namespace
 
-/**
- * Constructs one surface-to-surface contact definition.
- */
 Contact::Contact(
     model::SurfaceRegion::Ptr master,
     model::SurfaceRegion::Ptr slave,
@@ -393,30 +367,16 @@ Contact::Contact(
         "CONTACT: CLEARANCE must be finite");
 }
 
-/**
- * Returns the contact state belonging to the innermost active nonlinear trial.
- */
 Contact::State& Contact::state() const {
     return trial_states.empty() ? committed_state : trial_states.back();
 }
 
-/**
- * Starts one nested transactional contact trial.
- *
- * Only nodal augmented-Lagrange data is copied. Contact geometry, projected
- * overlap and active constraints are reconstructed from the current coordinates
- * on every later assembly and therefore require no trial-specific freeze flags.
- */
 void Contact::begin_trial() const {
     trial_states.push_back(state());
 }
 
-/**
- * Accepts the innermost contact trial and promotes it to its parent state.
- */
 void Contact::commit_trial() const {
-    logging::error(!trial_states.empty(),
-        "CONTACT: no trial state to commit");
+    logging::error(!trial_states.empty(), "CONTACT: no trial state to commit");
 
     State accepted = std::move(trial_states.back());
     trial_states.pop_back();
@@ -428,38 +388,11 @@ void Contact::commit_trial() const {
     }
 }
 
-/**
- * Discards the innermost contact trial.
- */
 void Contact::rollback_trial() const {
-    logging::error(!trial_states.empty(),
-        "CONTACT: no trial state to roll back");
-
+    logging::error(!trial_states.empty(), "CONTACT: no trial state to roll back");
     trial_states.pop_back();
 }
 
-/**
- * Assembles the current dual-mortar contact residual and tangent.
- *
- * The routine follows the contact formulation directly from geometry to global
- * assembly:
- *
- * 1. Construct the complete-element dual basis of each slave surface.
- * 2. Split the slave surface into natural-coordinate subtriangles.
- * 3. Build one tangent plane from the current slave subtriangle center.
- * 4. Project that slave triangle and every opposing master subtriangle onto the
- *    same plane and clip their physical two-dimensional overlap.
- * 5. Integrate each overlap polygon with quartic triangle quadrature. At every
- *    quadrature point choose exactly one visible master layer by minimum current
- *    Euclidean distance among all projected candidates covering that point.
- * 6. Accumulate the dual nodal gap integral and frozen-normal gradient.
- * 7. Evaluate the augmented unilateral law and scatter residual and tangent.
- *
- * The common plane is slave-centered: its origin and normal are the current
- * position and normal at the slave subtriangle center. Master geometry does not
- * alter this plane; it is only projected onto it. Geometry and normals are held
- * fixed in the assembled tangent, matching the currently validated formulation.
- */
 void Contact::assemble(
     SystemDofIds&     system_nodal_dofs,
     model::ModelData& model_data,
@@ -467,7 +400,7 @@ void Contact::assemble(
     TripletList&      triplets
 ) const {
     // -------------------------------------------------------------------------
-    // 1. Validate current model state and reset current mortar evaluation
+    // 1. Validate model state and initialize thread-local mortar accumulation
     // -------------------------------------------------------------------------
     logging::error(master_surfaces != nullptr && slave_surfaces != nullptr,
         "CONTACT: surface regions are not defined");
@@ -486,417 +419,450 @@ void Contact::assemble(
         math::quadrature::ORDER_QUARTIC
     };
 
-    std::unordered_map<ID, MortarConstraint> constraints;
+    int num_threads = 1;
+#ifdef _OPENMP
+    num_threads = std::max(
+        1,
+        std::min(
+            static_cast<int>(global_config.max_threads),
+            static_cast<int>(slave_surfaces->size())
+        )
+    );
+#endif
+
+    std::vector<std::unordered_map<ID, MortarConstraint>> thread_constraints(
+        static_cast<std::size_t>(num_threads)
+    );
+
+    std::atomic_bool   assembly_failed{false};
+    std::exception_ptr assembly_exception = nullptr;
 
     // -------------------------------------------------------------------------
-    // 2. Traverse all complete slave surfaces and construct their dual bases
+    // 2. Process slave surfaces independently
     // -------------------------------------------------------------------------
-    for (ID slave_surface_id : *slave_surfaces) {
-        if (!valid_surface_id(slave_surface_id, surfaces)) {
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static) num_threads(num_threads)
+#endif
+    for (Index slave_index = 0;
+         slave_index < static_cast<Index>(slave_surfaces->size());
+         ++slave_index) {
+#ifdef _OPENMP
+        if (assembly_failed.load(std::memory_order_relaxed)) {
             continue;
         }
+        const int thread_id = omp_get_thread_num();
+#else
+        const int thread_id = 0;
+#endif
 
-        const auto& slave = surfaces[static_cast<std::size_t>(slave_surface_id)];
+        auto& constraints = thread_constraints[static_cast<std::size_t>(thread_id)];
 
-        DynamicMatrix dual;
-        DynamicVector local_support;
+        try {
+            const ID slave_surface_id =
+                slave_surfaces->at(static_cast<std::size_t>(slave_index));
 
-        logging::error(
-            build_dual_basis(slave, node_coords, quadrature, dual, local_support),
-            "CONTACT: failed to construct dual basis for slave surface ",
-            slave_surface_id
-        );
+            if (!valid_surface_id(slave_surface_id, surfaces)) {
+                continue;
+            }
 
-        const Precision slave_area   = std::max(slave->area(node_coords), Precision(0));
-        const Precision slave_length = std::sqrt(slave_area);
+            const auto& slave = surfaces[static_cast<std::size_t>(slave_surface_id)];
 
-        // S_i belongs to the complete slave element and is independent of how
-        // much of this element currently overlaps the master surface.
-        for (Index local_node = 0; local_node < slave->n_nodes; ++local_node) {
-            MortarConstraint& constraint = constraints[slave->nodes()[local_node]];
-            constraint.support += local_support(local_node);
-            constraint.characteristic_length =
-                std::max(constraint.characteristic_length, slave_length);
+            DynamicMatrix dual;
+            DynamicVector local_support;
+
+            if (!build_dual_basis(slave, node_coords, quadrature, dual, local_support)) {
+                throw std::runtime_error(
+                    "CONTACT: failed to construct dual basis for slave surface " +
+                    std::to_string(slave_surface_id)
+                );
+            }
+
+            const Precision slave_area   = std::max(slave->area(node_coords), Precision(0));
+            const Precision slave_length = std::sqrt(slave_area);
+
+            for (Index local_node = 0; local_node < slave->n_nodes; ++local_node) {
+                MortarConstraint& constraint = constraints[slave->nodes()[local_node]];
+                constraint.support += local_support(local_node);
+                constraint.characteristic_length =
+                    std::max(constraint.characteristic_length, slave_length);
+            }
+
+            // -----------------------------------------------------------------
+            // 3. Segment every slave subtriangle against every master surface
+            // -----------------------------------------------------------------
+            for (const LocalTriangle& slave_local : local_triangles(slave)) {
+                std::array<Vec3, 3> slave_global;
+                for (std::size_t i = 0; i < slave_global.size(); ++i) {
+                    slave_global[i] = slave->local_to_global(slave_local[i], node_coords);
+                }
+
+                const Vec2 slave_center =
+                    (slave_local[0] + slave_local[1] + slave_local[2]) / Precision(3);
+
+                const Vec3 plane_origin =
+                    slave->local_to_global(slave_center, node_coords);
+
+                Vec3 plane_normal = slave->normal(node_coords, slave_center);
+
+                if (!plane_origin.allFinite() || !plane_normal.allFinite() ||
+                    plane_normal.norm() <= geometry_tolerance) {
+                    continue;
+                }
+                plane_normal.normalize();
+
+                Vec3 first  = slave_global[1] - slave_global[0];
+                Vec3 second = slave_global[2] - slave_global[0];
+
+                first  -= first.dot(plane_normal)  * plane_normal;
+                second -= second.dot(plane_normal) * plane_normal;
+
+                Vec3 plane_tangent =
+                    first.squaredNorm() >= second.squaredNorm() ? first : second;
+
+                if (!plane_tangent.allFinite() ||
+                    plane_tangent.norm() <= geometry_tolerance) {
+                    continue;
+                }
+                plane_tangent.normalize();
+
+                Vec3 plane_binormal = plane_normal.cross(plane_tangent);
+                if (!plane_binormal.allFinite() ||
+                    plane_binormal.norm() <= geometry_tolerance) {
+                    continue;
+                }
+                plane_binormal.normalize();
+
+                auto project = [&](const Vec3& point) -> Vec2 {
+                    const Vec3 delta = point - plane_origin;
+                    return Vec2(delta.dot(plane_tangent), delta.dot(plane_binormal));
+                };
+
+                PlaneTriangle slave_plane {
+                    project(slave_global[0]),
+                    project(slave_global[1]),
+                    project(slave_global[2])
+                };
+
+                if (std::abs(cross_2d(
+                        slave_plane[1] - slave_plane[0],
+                        slave_plane[2] - slave_plane[0]
+                    )) <= area_tolerance) {
+                    continue;
+                }
+
+                SurfacePolygon<3> slave_polygon {
+                    slave_plane[0],
+                    slave_plane[1],
+                    slave_plane[2]
+                };
+                if (!slave_polygon.is_ccw()) {
+                    slave_polygon.flip();
+                }
+
+                std::vector<ProjectedSegment> segments;
+
+                for (ID master_surface_id : *master_surfaces) {
+                    if (!valid_surface_id(master_surface_id, surfaces)) {
+                        continue;
+                    }
+
+                    const auto& master = surfaces[static_cast<std::size_t>(master_surface_id)];
+                    if (surfaces_share_node(*slave, *master)) {
+                        continue;
+                    }
+
+                    for (const LocalTriangle& master_local : local_triangles(master)) {
+                        const Vec2 master_center =
+                            (master_local[0] + master_local[1] + master_local[2]) / Precision(3);
+
+                        Vec3 master_center_normal = master->normal(node_coords, master_center);
+                        if (flip_normal) {
+                            master_center_normal = -master_center_normal;
+                        }
+
+                        if (!master_center_normal.allFinite() ||
+                            master_center_normal.norm() <= geometry_tolerance) {
+                            continue;
+                        }
+                        master_center_normal.normalize();
+
+                        if (plane_normal.dot(master_center_normal) >
+                            maximum_opposing_normal_dot) {
+                            continue;
+                        }
+
+                        PlaneTriangle master_plane;
+                        for (std::size_t i = 0; i < master_plane.size(); ++i) {
+                            const Vec3 master_global =
+                                master->local_to_global(master_local[i], node_coords);
+                            master_plane[i] = project(master_global);
+                        }
+
+                        if (std::abs(cross_2d(
+                                master_plane[1] - master_plane[0],
+                                master_plane[2] - master_plane[0]
+                            )) <= area_tolerance) {
+                            continue;
+                        }
+
+                        SurfacePolygon<3> master_polygon {
+                            master_plane[0],
+                            master_plane[1],
+                            master_plane[2]
+                        };
+                        if (!master_polygon.is_ccw()) {
+                            master_polygon.flip();
+                        }
+
+                        const auto overlap = master_polygon.intersection(slave_polygon);
+                        if (overlap.size() < 3 || overlap.area() <= area_tolerance) {
+                            continue;
+                        }
+
+                        ProjectedSegment segment;
+                        segment.master_surface_id = master_surface_id;
+                        segment.master_local      = master_local;
+                        segment.master_plane      = master_plane;
+                        segment.overlap           = overlap;
+                        segments.push_back(std::move(segment));
+                    }
+                }
+
+                if (segments.empty()) {
+                    continue;
+                }
+
+                // -------------------------------------------------------------
+                // 4. Integrate overlap and choose one visible master layer
+                // -------------------------------------------------------------
+                for (std::size_t segment_id = 0; segment_id < segments.size(); ++segment_id) {
+                    const ProjectedSegment& segment = segments[segment_id];
+                    const Vec2 origin = segment.overlap[0];
+
+                    for (std::size_t fan = 1; fan + 1 < segment.overlap.size(); ++fan) {
+                        const Vec2 edge_r = segment.overlap[fan]     - origin;
+                        const Vec2 edge_s = segment.overlap[fan + 1] - origin;
+
+                        const Precision triangle_jacobian =
+                            std::abs(cross_2d(edge_r, edge_s));
+
+                        if (triangle_jacobian <= area_tolerance) {
+                            continue;
+                        }
+
+                        for (Index q = 0; q < quadrature.count(); ++q) {
+                            const auto qp = quadrature.get_point(q);
+
+                            const Vec2 plane_point =
+                                origin + qp.r * edge_r + qp.s * edge_s;
+                            const Precision weight = qp.w * triangle_jacobian;
+
+                            const Vec3 slave_lambda = barycentric(plane_point, slave_plane);
+                            if (!barycentric_inside(slave_lambda)) {
+                                continue;
+                            }
+
+                            const Vec2 slave_local_qp =
+                                interpolate_local(slave_local, slave_lambda);
+                            const Vec3 slave_global_qp =
+                                slave->local_to_global(slave_local_qp, node_coords);
+
+                            Vec3 slave_normal_qp = slave->normal(node_coords, slave_local_qp);
+                            if (!slave_global_qp.allFinite() ||
+                                !slave_normal_qp.allFinite() ||
+                                slave_normal_qp.norm() <= geometry_tolerance) {
+                                continue;
+                            }
+                            slave_normal_qp.normalize();
+
+                            std::size_t selected_segment = segments.size();
+                            Precision selected_distance =
+                                std::numeric_limits<Precision>::max();
+
+                            Vec2 selected_master_local  = Vec2::Zero();
+                            Vec3 selected_master_normal = Vec3::Zero();
+                            Precision selected_gap      = Precision(0);
+
+                            for (std::size_t candidate_id = 0;
+                                 candidate_id < segments.size();
+                                 ++candidate_id) {
+                                const ProjectedSegment& candidate = segments[candidate_id];
+                                const Vec3 master_lambda =
+                                    barycentric(plane_point, candidate.master_plane);
+
+                                if (!barycentric_inside(master_lambda) ||
+                                    !valid_surface_id(candidate.master_surface_id, surfaces)) {
+                                    continue;
+                                }
+
+                                const auto& master = surfaces[static_cast<std::size_t>(
+                                    candidate.master_surface_id
+                                )];
+
+                                const Vec2 master_local_qp =
+                                    interpolate_local(candidate.master_local, master_lambda);
+                                const Vec3 master_global_qp =
+                                    master->local_to_global(master_local_qp, node_coords);
+
+                                Vec3 master_normal_qp =
+                                    master->normal(node_coords, master_local_qp);
+                                if (flip_normal) {
+                                    master_normal_qp = -master_normal_qp;
+                                }
+
+                                if (!master_global_qp.allFinite() ||
+                                    !master_normal_qp.allFinite() ||
+                                    master_normal_qp.norm() <= geometry_tolerance) {
+                                    continue;
+                                }
+                                master_normal_qp.normalize();
+
+                                if (slave_normal_qp.dot(master_normal_qp) >
+                                    maximum_opposing_normal_dot) {
+                                    continue;
+                                }
+
+                                const Vec3 difference = slave_global_qp - master_global_qp;
+                                const Precision candidate_distance = difference.norm();
+                                const Precision candidate_gap =
+                                    difference.dot(master_normal_qp) - clearance;
+
+                                if (!std::isfinite(candidate_distance) ||
+                                    !std::isfinite(candidate_gap)) {
+                                    continue;
+                                }
+
+                                const bool better =
+                                    selected_segment == segments.size() ||
+                                    candidate_distance <
+                                        selected_distance - projection_selection_tolerance ||
+                                    (std::abs(candidate_distance - selected_distance) <=
+                                         projection_selection_tolerance &&
+                                     candidate_id < selected_segment);
+
+                                if (!better) {
+                                    continue;
+                                }
+
+                                selected_segment       = candidate_id;
+                                selected_distance      = candidate_distance;
+                                selected_master_local  = master_local_qp;
+                                selected_master_normal = master_normal_qp;
+                                selected_gap           = candidate_gap;
+                            }
+
+                            if (selected_segment != segment_id) {
+                                continue;
+                            }
+
+                            const auto& master = surfaces[static_cast<std::size_t>(
+                                segments[selected_segment].master_surface_id
+                            )];
+
+                            const DynamicVector Ns = slave->shape_function(slave_local_qp);
+                            const DynamicVector Nm = master->shape_function(selected_master_local);
+                            const DynamicVector Phi = dual * Ns;
+
+                            if (!Ns.allFinite() || !Nm.allFinite() || !Phi.allFinite() ||
+                                !std::isfinite(selected_gap) || !std::isfinite(weight) ||
+                                weight <= Precision(0)) {
+                                continue;
+                            }
+
+                            // -------------------------------------------------
+                            // 5. Accumulate thread-local nodal mortar constraints
+                            // -------------------------------------------------
+                            for (Index constraint_node = 0;
+                                 constraint_node < slave->n_nodes;
+                                 ++constraint_node) {
+                                const Precision phi = Phi(constraint_node);
+                                if (std::abs(phi) <= Precision(1e-14)) {
+                                    continue;
+                                }
+
+                                MortarConstraint& constraint =
+                                    constraints[slave->nodes()[constraint_node]];
+
+                                const Precision factor = weight * phi;
+
+                                constraint.overlap_measure += weight * std::abs(phi);
+                                constraint.gap_integral    += factor * selected_gap;
+                                constraint.minimum_geometric_gap =
+                                    std::min(constraint.minimum_geometric_gap, selected_gap);
+
+                                for (Index local_node = 0;
+                                     local_node < slave->n_nodes;
+                                     ++local_node) {
+                                    add_gradient(
+                                        constraint.gradient,
+                                        slave->nodes()[local_node],
+                                        factor * Ns(local_node) * selected_master_normal
+                                    );
+                                }
+
+                                for (Index local_node = 0;
+                                     local_node < master->n_nodes;
+                                     ++local_node) {
+                                    add_gradient(
+                                        constraint.gradient,
+                                        master->nodes()[local_node],
+                                        -factor * Nm(local_node) * selected_master_normal
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (...) {
+#ifdef _OPENMP
+            if (!assembly_failed.exchange(true, std::memory_order_relaxed)) {
+                #pragma omp critical(fem_contact_exception)
+                {
+                    assembly_exception = std::current_exception();
+                }
+            }
+#else
+            throw;
+#endif
         }
-
-        // ---------------------------------------------------------------------
-        // 3. Segment every slave subtriangle against every master surface
-        // ---------------------------------------------------------------------
-        for (const LocalTriangle& slave_local : local_triangles(slave)) {
-            std::array<Vec3, 3> slave_global;
-            for (std::size_t i = 0; i < slave_global.size(); ++i) {
-                slave_global[i] = slave->local_to_global(slave_local[i], node_coords);
-            }
-
-            const Vec2 slave_center =
-                (slave_local[0] + slave_local[1] + slave_local[2]) / Precision(3);
-
-            const Vec3 plane_origin =
-                slave->local_to_global(slave_center, node_coords);
-
-            Vec3 plane_normal = slave->normal(node_coords, slave_center);
-
-            if (!plane_origin.allFinite() || !plane_normal.allFinite() ||
-                plane_normal.norm() <= geometry_tolerance) {
-                continue;
-            }
-
-            plane_normal.normalize();
-
-            // Build one stable in-plane basis directly from the physical slave
-            // triangle. The longer projected edge is used as first tangent.
-            Vec3 first  = slave_global[1] - slave_global[0];
-            Vec3 second = slave_global[2] - slave_global[0];
-
-            first  -= first.dot(plane_normal)  * plane_normal;
-            second -= second.dot(plane_normal) * plane_normal;
-
-            Vec3 plane_tangent =
-                first.squaredNorm() >= second.squaredNorm() ? first : second;
-
-            if (!plane_tangent.allFinite() ||
-                plane_tangent.norm() <= geometry_tolerance) {
-                continue;
-            }
-
-            plane_tangent.normalize();
-
-            Vec3 plane_binormal = plane_normal.cross(plane_tangent);
-            if (!plane_binormal.allFinite() ||
-                plane_binormal.norm() <= geometry_tolerance) {
-                continue;
-            }
-
-            plane_binormal.normalize();
-
-            auto project = [&](const Vec3& point) -> Vec2 {
-                const Vec3 delta = point - plane_origin;
-                return Vec2(delta.dot(plane_tangent), delta.dot(plane_binormal));
-            };
-
-            PlaneTriangle slave_plane {
-                project(slave_global[0]),
-                project(slave_global[1]),
-                project(slave_global[2])
-            };
-
-            if (std::abs(cross_2d(
-                    slave_plane[1] - slave_plane[0],
-                    slave_plane[2] - slave_plane[0]
-                )) <= area_tolerance) {
-                continue;
-            }
-
-            SurfacePolygon<3> slave_polygon {
-                slave_plane[0],
-                slave_plane[1],
-                slave_plane[2]
-            };
-
-            if (!slave_polygon.is_ccw()) {
-                slave_polygon.flip();
-            }
-
-            std::vector<ProjectedSegment> segments;
-
-            // No spatial search is used at this stage. Every master surface and
-            // every one of its segmentation triangles is tested directly.
-            for (ID master_surface_id : *master_surfaces) {
-                if (!valid_surface_id(master_surface_id, surfaces)) {
-                    continue;
-                }
-
-                const auto& master = surfaces[static_cast<std::size_t>(master_surface_id)];
-
-                // Adjacent facets of the same body are not valid opposing contact
-                // partners for this simple surface-to-surface formulation.
-                if (surfaces_share_node(*slave, *master)) {
-                    continue;
-                }
-
-                for (const LocalTriangle& master_local : local_triangles(master)) {
-                    const Vec2 master_center =
-                        (master_local[0] + master_local[1] + master_local[2]) / Precision(3);
-
-                    Vec3 master_center_normal =
-                        master->normal(node_coords, master_center);
-
-                    if (flip_normal) {
-                        master_center_normal = -master_center_normal;
-                    }
-
-                    if (!master_center_normal.allFinite() ||
-                        master_center_normal.norm() <= geometry_tolerance) {
-                        continue;
-                    }
-
-                    master_center_normal.normalize();
-
-                    if (plane_normal.dot(master_center_normal) >
-                        maximum_opposing_normal_dot) {
-                        continue;
-                    }
-
-                    PlaneTriangle master_plane;
-
-                    for (std::size_t i = 0; i < master_plane.size(); ++i) {
-                        const Vec3 master_global =
-                            master->local_to_global(master_local[i], node_coords);
-                        master_plane[i] = project(master_global);
-                    }
-
-                    if (std::abs(cross_2d(
-                            master_plane[1] - master_plane[0],
-                            master_plane[2] - master_plane[0]
-                        )) <= area_tolerance) {
-                        continue;
-                    }
-
-                    SurfacePolygon<3> master_polygon {
-                        master_plane[0],
-                        master_plane[1],
-                        master_plane[2]
-                    };
-
-                    if (!master_polygon.is_ccw()) {
-                        master_polygon.flip();
-                    }
-
-                    const auto overlap = master_polygon.intersection(slave_polygon);
-                    if (overlap.size() < 3 || overlap.area() <= area_tolerance) {
-                        continue;
-                    }
-
-                    ProjectedSegment segment;
-                    segment.master_surface_id = master_surface_id;
-                    segment.master_local      = master_local;
-                    segment.master_plane      = master_plane;
-                    segment.overlap           = overlap;
-                    segments.push_back(std::move(segment));
-                }
-            }
-
-            if (segments.empty()) {
-                continue;
-            }
-
-            // -----------------------------------------------------------------
-            // 4. Integrate projected overlap and choose one visible master layer
-            // -----------------------------------------------------------------
-            for (std::size_t segment_id = 0; segment_id < segments.size(); ++segment_id) {
-                const ProjectedSegment& segment = segments[segment_id];
-                const Vec2 origin = segment.overlap[0];
-
-                for (std::size_t fan = 1; fan + 1 < segment.overlap.size(); ++fan) {
-                    const Vec2 edge_r = segment.overlap[fan]     - origin;
-                    const Vec2 edge_s = segment.overlap[fan + 1] - origin;
-
-                    const Precision triangle_jacobian =
-                        std::abs(cross_2d(edge_r, edge_s));
-
-                    if (triangle_jacobian <= area_tolerance) {
-                        continue;
-                    }
-
-                    for (Index q = 0; q < quadrature.count(); ++q) {
-                        const auto qp = quadrature.get_point(q);
-
-                        const Vec2 plane_point =
-                            origin + qp.r * edge_r + qp.s * edge_s;
-
-                        const Precision weight = qp.w * triangle_jacobian;
-
-                        const Vec3 slave_lambda = barycentric(plane_point, slave_plane);
-                        if (!barycentric_inside(slave_lambda)) {
-                            continue;
-                        }
-
-                        const Vec2 slave_local_qp =
-                            interpolate_local(slave_local, slave_lambda);
-
-                        const Vec3 slave_global_qp =
-                            slave->local_to_global(slave_local_qp, node_coords);
-
-                        Vec3 slave_normal_qp =
-                            slave->normal(node_coords, slave_local_qp);
-
-                        if (!slave_global_qp.allFinite() ||
-                            !slave_normal_qp.allFinite() ||
-                            slave_normal_qp.norm() <= geometry_tolerance) {
-                            continue;
-                        }
-
-                        slave_normal_qp.normalize();
-
-                        // Select the nearest admissible master among every
-                        // projected segment that contains this plane point.
-                        std::size_t selected_segment = segments.size();
-                        Precision selected_distance =
-                            std::numeric_limits<Precision>::max();
-
-                        Vec2 selected_master_local = Vec2::Zero();
-                        Vec3 selected_master_normal = Vec3::Zero();
-                        Precision selected_gap = Precision(0);
-
-                        for (std::size_t candidate_id = 0;
-                             candidate_id < segments.size();
-                             ++candidate_id) {
-                            const ProjectedSegment& candidate = segments[candidate_id];
-
-                            const Vec3 master_lambda =
-                                barycentric(plane_point, candidate.master_plane);
-
-                            if (!barycentric_inside(master_lambda) ||
-                                !valid_surface_id(candidate.master_surface_id, surfaces)) {
-                                continue;
-                            }
-
-                            const auto& master =
-                                surfaces[static_cast<std::size_t>(candidate.master_surface_id)];
-
-                            const Vec2 master_local_qp =
-                                interpolate_local(candidate.master_local, master_lambda);
-
-                            const Vec3 master_global_qp =
-                                master->local_to_global(master_local_qp, node_coords);
-
-                            Vec3 master_normal_qp =
-                                master->normal(node_coords, master_local_qp);
-
-                            if (flip_normal) {
-                                master_normal_qp = -master_normal_qp;
-                            }
-
-                            if (!master_global_qp.allFinite() ||
-                                !master_normal_qp.allFinite() ||
-                                master_normal_qp.norm() <= geometry_tolerance) {
-                                continue;
-                            }
-
-                            master_normal_qp.normalize();
-
-                            if (slave_normal_qp.dot(master_normal_qp) >
-                                maximum_opposing_normal_dot) {
-                                continue;
-                            }
-
-                            const Vec3 difference =
-                                slave_global_qp - master_global_qp;
-
-                            const Precision candidate_distance = difference.norm();
-                            const Precision candidate_gap =
-                                difference.dot(master_normal_qp) - clearance;
-
-                            if (!std::isfinite(candidate_distance) ||
-                                !std::isfinite(candidate_gap)) {
-                                continue;
-                            }
-
-                            const bool better =
-                                selected_segment == segments.size() ||
-                                candidate_distance <
-                                    selected_distance - projection_selection_tolerance ||
-                                (std::abs(candidate_distance - selected_distance) <=
-                                     projection_selection_tolerance &&
-                                 candidate_id < selected_segment);
-
-                            if (!better) {
-                                continue;
-                            }
-
-                            selected_segment       = candidate_id;
-                            selected_distance      = candidate_distance;
-                            selected_master_local  = master_local_qp;
-                            selected_master_normal = master_normal_qp;
-                            selected_gap           = candidate_gap;
-                        }
-
-                        // The same physical overlap can be represented by several
-                        // projected master layers. Integrate it only in the segment
-                        // selected as nearest at this quadrature point.
-                        if (selected_segment != segment_id) {
-                            continue;
-                        }
-
-                        const auto& master = surfaces[static_cast<std::size_t>(
-                            segments[selected_segment].master_surface_id
-                        )];
-
-                        const DynamicVector Ns =
-                            slave->shape_function(slave_local_qp);
-
-                        const DynamicVector Nm =
-                            master->shape_function(selected_master_local);
-
-                        const DynamicVector Phi = dual * Ns;
-
-                        if (!Ns.allFinite() || !Nm.allFinite() || !Phi.allFinite() ||
-                            !std::isfinite(selected_gap) || !std::isfinite(weight) ||
-                            weight <= Precision(0)) {
-                            continue;
-                        }
-
-                        // -----------------------------------------------------
-                        // 5. Accumulate nodal dual gap and frozen-normal gradient
-                        // -----------------------------------------------------
-                        for (Index constraint_node = 0;
-                             constraint_node < slave->n_nodes;
-                             ++constraint_node) {
-                            const Precision phi = Phi(constraint_node);
-
-                            if (std::abs(phi) <= Precision(1e-14)) {
-                                continue;
-                            }
-
-                            MortarConstraint& constraint =
-                                constraints[slave->nodes()[constraint_node]];
-
-                            const Precision factor = weight * phi;
-
-                            constraint.overlap_measure += weight * std::abs(phi);
-                            constraint.gap_integral    += factor * selected_gap;
-                            constraint.minimum_geometric_gap =
-                                std::min(
-                                    constraint.minimum_geometric_gap,
-                                    selected_gap
-                                );
-
-                            // H_i = int Phi_i B^T n dA. Under the frozen-normal
-                            // linearization the slave contribution is +Ns n and
-                            // the selected master contribution is -Nm n.
-                            for (Index local_node = 0;
-                                 local_node < slave->n_nodes;
-                                 ++local_node) {
-                                add_gradient(
-                                    constraint.gradient,
-                                    slave->nodes()[local_node],
-                                    factor * Ns(local_node) * selected_master_normal
-                                );
-                            }
-
-                            for (Index local_node = 0;
-                                 local_node < master->n_nodes;
-                                 ++local_node) {
-                                add_gradient(
-                                    constraint.gradient,
-                                    master->nodes()[local_node],
-                                    -factor * Nm(local_node) * selected_master_normal
-                                );
-                            }
-                        }
-                    }
-                }
+    }
+
+#ifdef _OPENMP
+    if (assembly_exception) {
+        std::rethrow_exception(assembly_exception);
+    }
+#endif
+
+    // -------------------------------------------------------------------------
+    // 6. Reduce thread-local constraints
+    // -------------------------------------------------------------------------
+    std::unordered_map<ID, MortarConstraint> constraints;
+
+    for (auto& local_constraints : thread_constraints) {
+        for (auto& [constraint_id, local] : local_constraints) {
+            MortarConstraint& constraint = constraints[constraint_id];
+
+            constraint.support         += local.support;
+            constraint.overlap_measure += local.overlap_measure;
+            constraint.gap_integral    += local.gap_integral;
+            constraint.characteristic_length =
+                std::max(constraint.characteristic_length, local.characteristic_length);
+            constraint.minimum_geometric_gap =
+                std::min(constraint.minimum_geometric_gap, local.minimum_geometric_gap);
+
+            for (const auto& [node_id, gradient] : local.gradient) {
+                add_gradient(constraint.gradient, node_id, gradient);
             }
         }
     }
 
     // -------------------------------------------------------------------------
-    // 6. Normalize nodal constraints and assemble unilateral contact response
+    // 7. Normalize constraints and assemble unilateral residual and tangent
     // -------------------------------------------------------------------------
     for (auto& [constraint_id, constraint] : constraints) {
         const Precision support_tolerance =
             Precision(1e-14) * std::max(constraint.support, Precision(1));
-
         const Precision overlap_tolerance =
             Precision(1e-12) * std::max(constraint.support, Precision(1e-16));
 
@@ -917,9 +883,6 @@ void Contact::assemble(
                 ? std::max(multiplier_it->second, Precision(0))
                 : Precision(0);
 
-        // A sign-changing dual basis must not create first contact while every
-        // selected physical quadrature point is still geometrically open. Once
-        // a multiplier exists, keep representing the constraint until it releases.
         const bool geometrically_closed =
             constraint.minimum_geometric_gap < -geometry_tolerance;
 
@@ -938,22 +901,10 @@ void Contact::assemble(
             continue;
         }
 
-        // Residual contribution:
-        //
-        //     f_i = -p_i H_i.
         for (const auto& [node_id, gradient] : constraint.gradient) {
-            add_translational_force(
-                nodal_forces,
-                node_id,
-                -pressure * gradient
-            );
+            add_translational_force(nodal_forces, node_id, -pressure * gradient);
         }
 
-        // Frozen-overlap/normal tangent:
-        //
-        //     dg_i = H_i^T du / S_i,
-        //     dp_i = -epsilon dg_i,
-        //     K_i  = epsilon / S_i H_i H_i^T.
         const Precision tangent_scale = penalty / constraint.support;
 
         for (const auto& [row_node, row_gradient] : constraint.gradient) {
@@ -970,25 +921,9 @@ void Contact::assemble(
     }
 }
 
-/**
- * Updates nodal augmented-Lagrange multipliers after a converged Newton solve.
- *
- * For every currently represented mortar constraint the update is
- *
- *     lambda_i <- max(0, lambda_i - epsilon g_i).
- *
- * Gaps inside the geometric tolerance leave the multiplier unchanged. Positive
- * opening gaps release existing multipliers, while constraints that disappeared
- * from the current projected overlap lose their multiplier immediately.
- *
- * @return True when at least one multiplier changed beyond the numerical update
- *         tolerance and another Newton solve is therefore required.
- */
 bool Contact::update_augmented_lagrange() const {
     State& current = state();
 
-    // A multiplier has no meaning once its mortar constraint is no longer
-    // represented by the current projected overlap.
     for (auto it = current.multipliers.begin(); it != current.multipliers.end();) {
         if (current.gaps.find(it->first) == current.gaps.end()) {
             it = current.multipliers.erase(it);
