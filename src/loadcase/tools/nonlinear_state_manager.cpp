@@ -3,9 +3,8 @@
  * @brief Implements nonlinear material and contact state management.
  *
  * Material history is represented by committed and trial material-point fields.
- * Contact history remains inside each contact object and is coordinated here so
- * nonlinear load cases do not need to traverse or manipulate contact state
- * directly.
+ * Surface-to-surface contact owns its augmented-Lagrange state internally and is
+ * coordinated here only through generic nested begin/commit/rollback operations.
  *
  * @see NonlinearStateManager
  * @see constraint::Contact
@@ -76,29 +75,27 @@ void NonlinearStateManager::commit_material_state() {
 }
 
 /**
- * Opens the outer contact trial for one attempted nonlinear increment or one
- * post-convergence contact refresh.
+ * Opens the outer contact trial of one attempted nonlinear increment or one
+ * post-convergence multiplier refresh.
  *
- * NodeRegion contact may select one new discrete master partner before freezing
- * it. SurfaceRegion mortar only copies transactional state; its overlap geometry
- * is recomputed on every assembly and is never frozen.
+ * Surface mortar has no discrete partner state. The operation therefore only
+ * copies the current augmented-Lagrange state transactionally.
  */
 void NonlinearStateManager::begin_contact_update_trial() {
     for (const auto& contact : model_._data->contacts) {
-        contact.begin_update_trial();
+        contact.begin_trial();
     }
 }
 
 /**
- * Opens a nested predictor/line-search trial.
+ * Opens one nested contact trial for predictor or line-search evaluation.
  *
- * NodeRegion partner ownership is frozen in the nested trial. SurfaceRegion
- * mortar again uses the trial only for commit/rollback and recomputes overlap at
- * the candidate geometry.
+ * This is intentionally identical to the outer contact trial operation because
+ * surface mortar always recomputes geometry from the active nodal positions.
  */
 void NonlinearStateManager::begin_contact_frozen_trial() {
     for (const auto& contact : model_._data->contacts) {
-        contact.begin_frozen_trial();
+        contact.begin_trial();
     }
 }
 
@@ -115,31 +112,16 @@ void NonlinearStateManager::rollback_contact_trial() {
 }
 
 /**
- * Updates contact state after a converged inner Newton solve.
+ * Updates augmented-Lagrange multipliers after a converged inner Newton solve.
  *
- * NodeRegion contact still owns a discrete master-facet state. A changed partner
- * signature is therefore re-equilibrated before its multiplier update. Dual
- * mortar contact has no discrete partner state: its nodal unilateral active set
- * is part of the semismooth Newton law, and the outer update acts only on the
- * converged nodal mortar multipliers.
- *
- * @return `true` when no discrete node-contact partner and no AL multiplier
- *         changed, otherwise `false` so the path controller repeats Newton.
+ * @return `true` when no multiplier changed, otherwise `false` so the path
+ *         controller repeats Newton at the same load factor.
  */
 bool NonlinearStateManager::update_contact_active_set() {
     bool changed = false;
 
     for (const auto& contact : model_._data->contacts) {
-        // Mortar coupling has no single master partner to freeze or refresh.
-        const bool partner_changed =
-            !contact.uses_slave_surface() && contact.partner_signature_changed();
-
-        const bool multiplier_changed =
-            contact.uses_slave_surface()
-                ? contact.update_augmented_lagrange_surface()
-                : contact.update_augmented_lagrange();
-
-        changed = changed || partner_changed || multiplier_changed;
+        changed = contact.update_augmented_lagrange() || changed;
     }
 
     return !changed;
