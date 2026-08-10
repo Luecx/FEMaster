@@ -14,8 +14,9 @@ inline void register_contact(fem::io::dsl::Registry& registry, model::Model& mod
         command.doc(
             "Define frictionless augmented-Lagrange contact. MASTER must be a surface set. "
             "A node-set SLAVE uses node-to-surface contact; a surface-set SLAVE uses "
-            "segment-to-segment mortar integration over slave/master overlap. "
-            "Contact contributes only in NONLINEARSTATIC."
+            "dual-mortar segment-to-segment integration with one unilateral constraint "
+            "and one normal multiplier per slave mortar node. Contact contributes only "
+            "in NONLINEARSTATIC."
         );
 
         command.keyword(
@@ -23,7 +24,7 @@ inline void register_contact(fem::io::dsl::Registry& registry, model::Model& mod
                 .key("MASTER")   .required()     .doc("Master surface set")
                 .key("SLAVE")    .required()     .doc("Slave node set or slave surface set")
                 .key("DISTANCE") .required()     .doc("Search distance for candidate master surfaces")
-                .key("PENALTY")  .required()     .doc("Normal penalty stiffness")
+                .key("PENALTY")  .required()     .doc("Normal mortar penalty stiffness (pressure per gap length for surface contact)")
                 .key("CLEARANCE").optional("0")  .doc("Allowed normal clearance before contact activates")
                 .key("FLIP")     .optional("NO") .doc("Flip master surface normals").allowed({"NO", "YES"})
         );
