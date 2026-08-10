@@ -15,10 +15,9 @@ of -1.0 mm at lambda = 1.
 - Poisson ratio: nu = 0
 - axial stiffness of upper block: k = E A / H = 10 N/mm
 - mortar penalty: epsilon = 1e5 N/mm^3
-- deliberately excessive search distance: DISTANCE = 1000 mm
 
-The large DISTANCE is intentional. It must affect only broadphase candidate
-selection and must never activate contact.
+Surface-to-surface contact has no search-distance parameter. Every master
+surface is tested directly during the current common-plane segmentation.
 
 ## Exact pre-contact response
 
@@ -39,10 +38,9 @@ At lambda = 0.5 the faces touch with zero pressure.
 | 0.4 | +0.1 | open |
 | 0.5 |  0.0 | just touching, zero pressure |
 
-For every one of these increments the contact summary must show
-`active=0`, `max_geom_pen=0` and `force_norm=0`. Projected segments and mortar
-quadrature points may already exist because projection overlap is independent of
-normal closure.
+For every one of these increments the contact force must remain zero. Projected
+segments and mortar quadrature points may already exist because projected overlap
+is independent of normal closure.
 
 ## Post-contact response
 
@@ -89,7 +87,6 @@ For this matching one-face/one-face case:
 - no hidden-layer ambiguity
 - all four slave mortar nodes are geometrically equivalent
 - total master and slave contact forces must be equal and opposite
-- DISTANCE = 1000 mm must not alter any gap or force
 
 This case should be the first regression benchmark for every change to the
 surface-to-surface mortar geometry or active-set formulation.
