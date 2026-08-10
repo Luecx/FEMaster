@@ -1,6 +1,6 @@
 \chapter{Surfaces}
 
-Surfaces describe loadable or connectable element sides. They are used for pressure loads, distributed surface loads, tie constraints, and surface couplings. A surface is a selection of element sides; it is not a material or section property.
+Surfaces describe loadable or connectable element sides. They are used for pressure loads, distributed surface loads, tie constraints, surface couplings, and surface-to-surface contact. A surface is a selection of element sides; it is not a material or section property.
 
 \section{Surface from one element side}
 
@@ -22,4 +22,10 @@ If the target is an element set, FEMaster creates surfaces for the selected side
 
 \section{Orientation and sign}
 
-Surface loads depend on the chosen side and its normal direction. If pressure or traction direction is unexpected, check the selected side, element orientation, and shell side. For shells, positive and negative sides share the same geometric midsurface but have opposite normals.
+Surface loads and contact depend on the chosen side and its normal direction. The normal follows the local face orientation implied by the element connectivity and selected side. If pressure or traction direction is unexpected, check the selected side, element orientation, and shell side. For shells, positive and negative sides share the same geometric midsurface but have opposite normals.
+
+Surface orientation is particularly important for \cmd{CONTACT}. The dual-mortar formulation uses current master and slave facet normals when constructing the common-plane segmentation and signed normal gap. A master surface that is oriented opposite to the intended contact direction can be corrected for the contact pair with \key{FLIP=YES}; this does not change the underlying element connectivity or surface definition.
+
+\begin{warningbox}[Contact surfaces]
+The current \cmd{CONTACT} interface requires both \key{MASTER} and \key{SLAVE} to be surface sets. Node-set slaves and the older search-distance form are not supported by the current dual-mortar contact DSL.
+\end{warningbox}
