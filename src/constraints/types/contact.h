@@ -2,13 +2,13 @@
  * @file contact.h
  * @brief Declares frictionless augmented-Lagrange contact.
  *
- * Explicit slave node regions use node-to-surface contact. Slave surface regions
- * use segment-to-segment mortar integration over the projected overlap of slave
- * and master surface patches. Contact history is transactional so nonlinear
- * predictor, line-search and increment trials can be committed or rolled back.
+ * Explicit slave node regions use faceted node-to-surface contact. Slave surface
+ * regions use dual-mortar segment-to-segment integration over the projected
+ * slave/master overlap. Contact history is transactional so nonlinear predictor,
+ * line-search and increment trials can be committed or rolled back cleanly.
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 10.08.2026
  */
 
 #pragma once
@@ -37,36 +37,35 @@ namespace constraint {
 /**
  * @brief Frictionless augmented-Lagrange contact.
  *
- * NodeRegion slaves retain the faceted node-to-surface formulation. For a
- * SurfaceRegion slave the unilateral normal constraint is represented by nodal
- * mortar gaps obtained from integration over slave/master overlap segments.
- * Normal multipliers are stored per constrained slave node and interpolated over
- * the slave surface during contact-traction assembly.
+ * NodeRegion slaves retain the legacy node-to-surface formulation with explicit
+ * master-facet ownership. SurfaceRegion slaves use a dual-mortar formulation:
+ * quadrature points only integrate the overlap, while normalized gap constraints,
+ * active-set state and augmented multipliers live on global slave mortar nodes.
  */
 class Contact {
     /**
-     * @brief Complete nonlinear state of one contact configuration.
+     * @brief Complete nonlinear state of one contact definition.
      *
-     * The map key is a slave node id for both explicit NodeRegion contact and
-     * mortar SurfaceRegion contact. `partners` stores the selected master facet
-     * for node-to-surface contact and one representative master facet for mortar;
-     * mortar topology changes are detected from the unilateral nodal active set,
-     * not from facet-to-facet transfer inside the overlap integration.
+     * For NodeRegion contact `partners` stores discrete master-facet ownership.
+     * For SurfaceRegion mortar contact `partners` remains empty; the current
+     * coupling is reconstructed continuously from overlap integration.
+     *
+     * `active_slaves`, `normal_multipliers`, `gaps` and
+     * `characteristic_lengths` are keyed by slave node id in both formulations.
      */
     struct AssemblyState {
-        // Discrete master ownership and unilateral active set
+        // NodeRegion only: discrete master ownership
         std::unordered_map<ID, ID> partners;
+
+        // Unilateral state represented on slave nodes / mortar constraints
         std::unordered_set<ID>     active_slaves;
-
-        // Augmented normal multipliers. The multiplier has pressure-like units
-        // for surface contact; physical area weighting enters only assembly.
         std::unordered_map<ID, Precision> normal_multipliers;
-
-        // Projected normal gaps and geometric length scale used by the outer
-        // augmented-Lagrange convergence/update criterion.
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
 
+        // NodeRegion partner signature. Mortar active-set changes are handled
+        // directly inside the semismooth Newton law and never set
+        // last_signature_changed.
         std::uint64_t previous_signature        = 0;
         Index         previous_active           = 0;
         bool          last_signature_changed    = false;
@@ -75,6 +74,9 @@ class Contact {
 
     /**
      * @brief One nested transactional contact state.
+     *
+     * The freeze flags are meaningful only for NodeRegion contact. SurfaceRegion
+     * mortar always recomputes overlap geometry in the current configuration.
      */
     struct TrialState {
         AssemblyState state;
@@ -121,7 +123,7 @@ class Contact {
 
     mutable RuntimeState runtime_state;
 
-    // Low-level trial creation. Public callers use the semantic trial modes below.
+    // Low-level trial creation. Freeze policy is used only by NodeRegion contact.
     void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
 
 public:
@@ -139,17 +141,38 @@ public:
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Transactional contact state. Node-contact update trials may select a new
-    // partner once and then freeze it. Mortar contact recomputes the continuous
-    // overlap geometry while retaining the same transaction/rollback semantics.
-    void begin_update_trial() const { begin_trial(false, true); }
-    void begin_frozen_trial() const { begin_trial(true); }
+    /**
+     * Opens a trial for the next nonlinear evaluation.
+     *
+     * NodeRegion contact may update its master partner once and freeze it for the
+     * subsequent Newton evaluations. SurfaceRegion mortar does not freeze any
+     * geometric partner; only a transactional copy of the mortar state is made.
+     */
+    void begin_update_trial() const {
+        begin_trial(false, !static_cast<bool>(slave_surfaces));
+    }
+
+    /**
+     * Opens a nested trial used by predictor and line-search evaluations.
+     *
+     * NodeRegion partner ownership is frozen. SurfaceRegion mortar again keeps
+     * only transactional state and recomputes the overlap at the trial geometry.
+     */
+    void begin_frozen_trial() const {
+        begin_trial(!static_cast<bool>(slave_surfaces));
+    }
+
     void commit_trial() const;
     void rollback_trial() const;
 
-    // State changes detected after a converged Newton solve
+    // NodeRegion discrete partner state after a converged Newton solve
     bool partner_signature_changed() const;
+
+    // Augmented-Lagrange updates. Surface mortar has its own update because it
+    // owns no representative master partner and iterates directly over mortar
+    // constraints.
     bool update_augmented_lagrange() const;
+    bool update_augmented_lagrange_surface() const;
 
     // Reset the numerical penalty before a new nonlinear solution. If the last
     // outer augmentation changed multipliers but the converged penetration did
@@ -213,8 +236,7 @@ public:
                   model::NodeData&  nodal_forces,
                   TripletList&      triplets) const;
 
-    // SurfaceRegion slave: segment-to-segment mortar integration over projected
-    // slave/master overlap with nodal AL multipliers.
+    // SurfaceRegion slave: dual-mortar segment-to-segment overlap integration.
     void assemble_surface(SystemDofIds&     system_nodal_dofs,
                           model::ModelData& model_data,
                           model::NodeData&  nodal_forces,
