@@ -1,0 +1,77 @@
+\section{Linear Harmonic}
+\label{sec:loadcase-linear-harmonic}
+
+\val{LINEARHARMONIC} computes the steady-state response of a linear structural model to a harmonic load over a prescribed frequency sweep. The load amplitudes are defined by the active load collectors and are currently interpreted as real-valued harmonic amplitudes.
+
+\subsection{Governing equation}
+
+At circular excitation frequency \(\omega\), the complex displacement amplitude \(\hat u\) satisfies
+\[
+\left(K-\omega^2 M+i\omega C\right)\hat u=\hat f .
+\]
+The complex response is written as
+\[
+\hat u=u_\mathrm{real}+i u_\mathrm{imag} .
+\]
+Rayleigh damping uses
+\[
+C=\alpha M+\beta K .
+\]
+
+FEMaster applies the active homogeneous constraints with the Nullspace transformation and solves the reduced frequency-domain problem. To reuse the existing real sparse solver backends, the complex system is written as the real block system
+\[
+\begin{bmatrix}
+A & -B\\
+B & A
+\end{bmatrix}
+\begin{bmatrix}
+u_\mathrm{real}\\
+u_\mathrm{imag}
+\end{bmatrix}
+=
+\begin{bmatrix}
+f\\0
+\end{bmatrix},
+\]
+with
+\[
+A=K-\omega^2M,
+\qquad
+B=\omega C .
+\]
+
+\subsection{Typical DSL}
+
+\begin{exampledeck}
+*LOADCASE, TYPE=LINEARHARMONIC, NAME=FREQUENCY_RESPONSE
+  *SUPPORTS
+  BC
+  *LOADS
+  EXCITATION
+  *SOLVER, DEVICE=CPU, METHOD=DIRECT
+  *CONSTRAINTMETHOD, TYPE=NULLSPACE
+  *FREQUENCIES, SCALE=LINEAR
+  0.0, 500.0, 201
+  *DAMPING, TYPE=RAYLEIGH
+  0.0, 1.0e-5
+\end{exampledeck}
+
+\cmd{FREQUENCIES} is required and is described in Section~\ref{sec:harmonic-controls}. The current implementation requires the direct solver, Nullspace constraint handling, and homogeneous supports and constraints.
+
+\subsection{Result fields}
+
+For every requested frequency FEMaster writes separate real and imaginary response fields:
+
+\begin{itemize}
+\item \val{DISPLACEMENT_REAL} and \val{DISPLACEMENT_IMAG},
+\item \val{STRESS_REAL} and \val{STRESS_IMAG},
+\item \val{STRAIN_REAL} and \val{STRAIN_IMAG}.
+\end{itemize}
+
+The frequency is stored as the frame value of the written result. Component-wise response magnitude and phase can be recovered from
+\[
+|\hat u|=\sqrt{u_\mathrm{real}^2+u_\mathrm{imag}^2},
+\qquad
+\varphi=\operatorname{atan2}(u_\mathrm{imag},u_\mathrm{real}) .
+\]
+The same interpretation applies to complex stress and strain components.
