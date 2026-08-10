@@ -1,6 +1,6 @@
 \chapter{Result Format}
 
-FEMaster writes two result formats by default. The native \file{.res} file is a text format that preserves all fields written by the loadcases. The \file{.frd} file is an ASCII CalculiX/CGX-style result file for mesh and nodal result visualization.
+FEMaster writes two result formats by default. The native \file{.res} file is a text format that preserves all fields written by the loadcases. The \file{.frd} file is an ASCII CalculiX/CGX-style result file for supported nodal result visualization.
 
 Both files use the same job base name. For example, an input deck \file{model.inp} produces \file{model.res} and \file{model.frd} unless \key{--output} changes the base name.
 
@@ -24,7 +24,7 @@ FIELD, NAME=<name>, TYPE=<type>, COLS=<cols>, ROWS=<rows>
 END FIELD
 \end{syntax}
 
-\key{TYPE} is always written and is one of \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, or \val{UNKNOWN}. \key{ROWS} gives the number of rows. \key{COLS} gives the number of values per row. For nodal fields, a row typically corresponds to a node-position row. For element fields, a row corresponds to an element-position row.
+\key{TYPE} is always written and is one of \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, \val{ELEMENT_MP}, or \val{UNKNOWN}. \key{ROWS} gives the number of rows. \key{COLS} gives the number of values per row. For nodal fields, a row typically corresponds to a node-position row. For element fields, a row corresponds to an element-position row.
 
 \subsection{Indexed fields}
 
@@ -34,7 +34,7 @@ FIELD, NAME=<name>, TYPE=<type>, INDEX_COLS=<i>, VALUE_COLS=<v>, ROWS=<rows>
 END FIELD
 \end{syntax}
 
-Some result quantities are not simple node or element fields. Indexed fields use index columns to identify element, integration point, section point, or local result location, followed by value columns. For \val{ELEMENT_NODAL} and \val{ELEMENT_IP} fields, the native writer uses two index columns: the element id and the local result-row number for that element.
+Element-local fields are written with explicit location indices. For \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP} fields, the native writer uses two index columns: the element ID and the zero-based local row number within that element. These are followed by the field values.
 
 \subsection{Common field names}
 
@@ -49,16 +49,19 @@ Nonlinear Static & Per accepted increment: \val{DISPLACEMENT_i}, \val{STRESS_i},
 Eigenfrequency & \val{MODE_SHAPE_i}, \val{PARTICIPATION_i}, \val{EIGENVALUES}, \val{EIGENFREQUENCIES}, \val{FREQUENCIES}. \\
 Linear Buckling & \val{BUCKLING_MODE_i}, \val{BUCKLING_FACTORS}. \\
 Linear Transient & \val{DISPLACEMENT_k}, \val{VELOCITY_k}, \val{ACCELERATION_k} for written time steps. \\
+Linear Harmonic & For every requested frequency: \val{DISPLACEMENT_REAL}, \val{DISPLACEMENT_IMAG}, \val{STRESS_REAL}, \val{STRESS_IMAG}, \val{STRAIN_REAL}, and \val{STRAIN_IMAG}. \\
 \bottomrule
 \end{longtable}
 
 A six-component nodal motion field uses \dofvec. A six-component stress or strain field uses the engineering order \(x,y,z,yz,zx,xy\). These conventions must not be confused.
 
+For \val{LINEARHARMONIC}, the native writer currently writes the real/imaginary field blocks in frequency-sweep order but does not encode the supplied frame value in the \file{.res} field header. The associated frequency is therefore determined from the \cmd{FREQUENCIES} sequence and the block order.
+
 \section{FRD files}
 
-The \file{.frd} writer emits the model mesh once and then writes supported nodal result blocks. It is intended for visualization in CalculiX/CGX-compatible tools. Element-local fields, integration-point fields, participation factors, eigenvalue tables, and scalar history fields remain available in the native \file{.res} file but are not written as FRD result blocks.
+The \file{.frd} writer emits the model mesh once and then writes supported nodal result blocks. It is intended for visualization in CalculiX/CGX-compatible tools. Element-local fields, integration-point fields, material-point fields, participation factors, eigenvalue tables, and scalar history fields remain available in the native \file{.res} file but are not written as FRD result blocks.
 
-FRD node and element numbers are normally the internal ids. If the mesh contains id 0, the FRD writer shifts those ids by one because FRD consumers generally expect positive numbering.
+FRD node and element numbers are normally the internal IDs. If the mesh contains ID 0, the FRD writer shifts those IDs by one because FRD consumers generally expect positive numbering.
 
 Supported structural elements are written with FRD element type codes for common solid, shell, beam, and truss topologies. Higher-order wedge and hexahedral connectivity is reordered to match the FRD convention before it is written.
 
@@ -81,6 +84,8 @@ Supported structural elements are written with FRD element type codes for common
 \val{SHELL_RESULTANTS} & \val{SHR} & \val{NXX}, \val{NYY}, \val{NXY}, \val{MXX}, \val{MYY}, \val{MXY}, \val{QX}, \val{QY}. \\
 \bottomrule
 \end{longtable}
+
+The harmonic names \val{DISPLACEMENT_REAL}, \val{DISPLACEMENT_IMAG}, \val{STRESS_REAL}, \val{STRESS_IMAG}, \val{STRAIN_REAL}, and \val{STRAIN_IMAG} are not currently registered as FRD field aliases. Use the native \file{.res} output for the complete harmonic real/imaginary response until dedicated FRD mappings are added.
 
 For shell resultants, an explicitly assigned \cmd{SHELLSECTION} orientation also defines the output basis. Without an orientation, FEMaster writes physical shell stresses in global Cartesian components and rotates shell resultants into a deterministic tangent basis obtained by projecting global \(X\) into the shell plane, falling back to global \(Y\) when necessary.
 
