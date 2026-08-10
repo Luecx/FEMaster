@@ -429,8 +429,32 @@ bool build_dual_basis(
         return false;
     }
 
-    support = mass.diagonal();
-    dual    = inverse;
+    // For linear S3/S4 surfaces the natural dual scaling is the row sum
+    //
+    //     D_i = sum_j M_ij = int_Gamma N_i dA,
+    //
+    // which gives sum_i D_i = area(Gamma). A constant multiplier therefore
+    // reproduces a constant traction and passes the matching-surface patch test.
+    // Quadratic S6/S8 shape functions can have zero or negative row integrals;
+    // until a dedicated quadratic dual multiplier space is introduced, keep a
+    // positive diagonal scaling but normalize it to the complete surface area.
+    if (n == 3 || n == 4) {
+        support = mass * DynamicVector::Ones(n);
+    } else {
+        support = mass.diagonal().cwiseAbs();
+
+        const Precision surface_measure = mass.sum();
+        const Precision support_measure = support.sum();
+        if (!(surface_measure > Precision(0)) ||
+            !(support_measure > Precision(0)) ||
+            !std::isfinite(surface_measure) ||
+            !std::isfinite(support_measure)) {
+            return false;
+        }
+        support *= surface_measure / support_measure;
+    }
+
+    dual = inverse;
 
     for (Index i = 0; i < n; ++i) {
         if (!(support(i) > Precision(1e-14) * scale) || !std::isfinite(support(i))) {
