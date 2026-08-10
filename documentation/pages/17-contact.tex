@@ -1,0 +1,103 @@
+\chapter{Contact}
+\label{chap:contact}
+
+Contact introduces unilateral interaction between separate surface regions. Unlike a tie constraint, contact can open and close during the nonlinear solution and transfers only compressive normal interaction in the current frictionless formulation. FEMaster currently exposes one contact formulation: frictionless dual-mortar surface-to-surface contact for \val{NONLINEARSTATIC} loadcases.
+
+\section{Contact definition}
+
+\begin{syntax}
+*CONTACT, MASTER=<master-surface>, SLAVE=<slave-surface>, PENALTY=<value>, CLEARANCE=<value>, FLIP=NO|YES
+\end{syntax}
+
+\key{MASTER}, \key{SLAVE}, and \key{PENALTY} are required. \key{CLEARANCE} defaults to 0 and \key{FLIP} defaults to \val{NO}. Both master and slave must refer to surface sets; node-set slaves and a geometric search-distance parameter are not part of the current contact interface.
+
+\cmd{CONTACT} is defined at model root level. The contact contribution is assembled only during \val{NONLINEARSTATIC}. A linear static, eigenfrequency, buckling, transient, or harmonic loadcase does not activate nonlinear contact.
+
+\section{Master and slave surfaces}
+
+The contact pair consists of one master surface region and one slave surface region. During assembly, current slave and master facets are projected to a common local plane and their physical overlap is segmented and integrated. The contact integration is therefore surface-to-surface rather than a node-to-surface collocation rule.
+
+The selected element side and its orientation matter. Surface normals follow the element-side convention described in Chapter~\ref{chap:elements} and the surface definitions described in the Surfaces chapter. If the master normal is opposite to the intended contact orientation, \key{FLIP=YES} reverses the master normal used by the contact formulation.
+
+\begin{warningbox}[Surface orientation]
+An incorrect side selection or reversed master normal can make an otherwise correct contact pair appear inactive or produce an unintended gap sign. Check element connectivity and surface-side numbering before increasing the penalty parameter to compensate for apparent non-contact.
+\end{warningbox}
+
+\section{Gap and clearance}
+
+Contact is unilateral. Separated surfaces carry no normal contact traction, while closed configurations can develop a compressive contact reaction. \key{CLEARANCE} modifies the normal gap used by the contact law and can be used to represent a prescribed normal offset without moving the mesh. The default is zero clearance.
+
+There is no \key{DISTANCE} or search-radius keyword in the current DSL. The active surface pair is supplied explicitly, and the current master facets are considered during mortar segmentation. Older input decks that used a node slave or \key{DISTANCE} must be updated to the current surface-to-surface syntax.
+
+\section{Dual-mortar discretization}
+
+For every overlapping master/slave facet pair, FEMaster constructs a common-plane segmentation and integrates the overlap with a mortar formulation. The slave interpolation is paired with a dual basis so the contact residual is distributed consistently over the participating slave nodes while the master side receives the equal and opposite contribution.
+
+This construction has several practical consequences:
+
+\begin{itemize}
+\item the slave region must be a surface set rather than a node set,
+\item contact force is integrated over projected surface overlap,
+\item contact can remain geometrically projected while still carrying zero force when the normal gap is open,
+\item master and slave contact resultants should be equal and opposite up to solver tolerance.
+\end{itemize}
+
+The method is frictionless; only normal contact is currently represented. Tangential frictional traction is not part of the exposed contact model.
+
+\section{Penalty and augmented-Lagrange update}
+
+\key{PENALTY} defines the starting normal mortar penalty stiffness. A larger value reduces penetration but also increases the stiffness contrast of the nonlinear system. The penalty should therefore be chosen large enough to control penetration without making the tangent unnecessarily ill-conditioned.
+
+FEMaster combines the penalty contribution with augmented-Lagrange normal multipliers. The multiplier state is transactional: rejected nonlinear increments and temporary line-search evaluations can be rolled back without modifying the last accepted contact state. Between converged nonlinear solves the effective penalty may be increased internally when penetration reduction stagnates. The user-provided \key{PENALTY} value is the starting value of this continuation procedure.
+
+\section{Nonlinear solution behaviour}
+
+Contact changes the tangent and residual as surfaces open and close, so it is solved together with the structural equilibrium iterations of \val{NONLINEARSTATIC}. Contact state participates in the same accepted-increment and rollback lifecycle as other nonlinear history data.
+
+The usual nonlinear controls in Section~\ref{sec:nonlinear-controls} therefore remain important. In particular, smaller increments can help when contact is first established or when the active overlap changes rapidly. If a model converges poorly, inspect the following before increasing iteration limits:
+
+\begin{itemize}
+\item master and slave surface orientation,
+\item initial gap and requested clearance,
+\item whether the intended surfaces actually overlap in projection,
+\item penalty magnitude relative to structural stiffness,
+\item support conditions and rigid-body freedom before contact closes.
+\end{itemize}
+
+\section{Current limitations}
+
+The current user-facing contact implementation is intentionally narrow:
+
+\begin{itemize}
+\item frictionless normal contact only,
+\item dual-mortar surface-to-surface pairs only,
+\item contact contributions only in \val{NONLINEARSTATIC},
+\item no node-to-surface slave definition,
+\item no user-facing geometric search-distance parameter,
+\item no tangential friction law.
+\end{itemize}
+
+These limitations should be treated as interface constraints of the present implementation, not as general limitations of the mortar method.
+
+\section{Minimal example}
+
+The following fragment defines one master and one slave face and applies surface-to-surface contact:
+
+\begin{exampledeck}
+*SURFACE, NAME=MASTER_FACE
+1, 1, S2
+*SURFACE, NAME=SLAVE_FACE
+2, 2, S1
+
+*CONTACT, MASTER=MASTER_FACE, SLAVE=SLAVE_FACE, PENALTY=1.0e5
+
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=CONTACT_STEP
+*SUPPORTS
+BC
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*NONLINEAR, CONTROL=LOAD, INITIAL_INCREMENT=0.1, MAXIMUM_INCREMENT=0.1, MAX_INCREMENTS=10
+*END
+\end{exampledeck}
+
+A complete two-block regression model is given in Chapter~\ref{chap:complete-examples} and in \file{examples/10_contact/103_contact_mortar_parallel_blocks_c3d8.inp}.
