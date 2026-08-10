@@ -1,0 +1,39 @@
+\section{Linear harmonic response controls}
+\label{sec:harmonic-controls}
+
+\subsection{Frequency sweep}
+
+\begin{syntax}
+*FREQUENCIES, SCALE=LINEAR
+<start-frequency>, <end-frequency>, <number-of-points>
+\end{syntax}
+
+\cmd{FREQUENCIES} defines the excitation frequencies of a \val{LINEARHARMONIC} loadcase. Frequencies are specified in cycles per unit time; the harmonic solver converts them internally to circular frequency with
+\[
+\omega = 2\pi f .
+\]
+
+The start frequency must be non-negative, the end frequency must be greater than or equal to the start frequency, and the number of points must be a positive integer. The current implementation supports a linearly spaced sweep. For more than one point, the increment is
+\[
+\Delta f = \frac{f_\mathrm{end}-f_\mathrm{start}}{n-1} .
+\]
+With one point, the single requested frequency is the start frequency.
+
+\subsection{Rayleigh damping in harmonic analysis}
+
+The existing Rayleigh damping command is available in both \val{LINEARTRANSIENT} and \val{LINEARHARMONIC} loadcases:
+
+\begin{syntax}
+*DAMPING, TYPE=RAYLEIGH
+<alpha>, <beta>
+\end{syntax}
+
+The damping matrix is
+\[
+C = \alpha M + \beta K .
+\]
+In harmonic analysis this matrix enters the frequency-domain operator through the term \(i\omega C\). The mass-proportional coefficient \(\alpha\) primarily affects the low-frequency range, while the stiffness-proportional coefficient \(\beta\) has increasing influence at higher frequencies.
+
+\begin{warningbox}[Current harmonic solver restrictions]
+The current \val{LINEARHARMONIC} implementation requires \key{METHOD=DIRECT}, \key{TYPE=NULLSPACE} for \cmd{CONSTRAINTMETHOD}, and a homogeneous constraint system. These restrictions belong to the present solver implementation rather than to the frequency-domain formulation itself.
+\end{warningbox}
