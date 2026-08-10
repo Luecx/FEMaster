@@ -22,6 +22,7 @@
 #include "../../data/field.h"
 #include "../../data/region.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 
@@ -60,9 +61,15 @@ class Contact {
     model::SurfaceRegion::Ptr master_surfaces;
     model::SurfaceRegion::Ptr slave_surfaces;
 
-    Precision penalty;
-    Precision clearance;
-    bool      flip_normal;
+    mutable Precision penalty;
+    Precision         clearance;
+    bool              flip_normal;
+
+    // Penalty continuation is reset for every new increment attempt. The user
+    // value remains the starting penalty and is increased only between converged
+    // Newton solves, never inside one Newton iteration.
+    mutable Precision initial_penalty     = Precision(0);
+    mutable Index     augmentation_count = 0;
 
     // Transactional nonlinear state. Nested copies are used by increment,
     // predictor and line-search trials; geometry itself is never frozen.
@@ -82,6 +89,31 @@ public:
     void begin_trial() const;
     void commit_trial() const;
     void rollback_trial() const;
+
+    // Penalty continuation used by the nonlinear state manager
+    void reset_penalty_continuation() const {
+        if (!(initial_penalty > Precision(0))) {
+            initial_penalty = penalty;
+        }
+        penalty = initial_penalty;
+        augmentation_count = 0;
+    }
+
+    void advance_penalty_continuation() const {
+        if (!(initial_penalty > Precision(0))) {
+            initial_penalty = penalty;
+        }
+
+        ++augmentation_count;
+        if (augmentation_count % 3 != 0) {
+            return;
+        }
+
+        penalty = std::min(
+            penalty * Precision(10),
+            initial_penalty * Precision(1e4)
+        );
+    }
 
     // Post-Newton augmented-Lagrange update
     bool update_augmented_lagrange() const;
