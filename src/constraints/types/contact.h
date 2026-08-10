@@ -1,27 +1,35 @@
 /**
  * @file contact.h
- * @brief Declares frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Declares frictionless dual-mortar surface-to-surface contact.
  *
- * Master partners and normal multipliers are stored in explicit per-contact
- * trial states. Increment, active-set, predictor and line-search evaluations can
- * therefore be committed or rolled back without hidden global history. Active
- * or augmented contact points are tracked topologically across connected master
- * facets; only new or released contact points use a global closest-point search.
+ * `Contact` represents one unilateral normal-contact pair between a slave and a
+ * master surface region. The physical overlap is reconstructed from the current
+ * configuration during every assembly; no search radius, persistent master
+ * partner, active-facet flag or quadrature-point history is stored.
+ *
+ * The contact law uses global slave-node augmented-Lagrange multipliers. Those
+ * multipliers are transactional so nonlinear increment and line-search trials
+ * can be committed or rolled back independently. The effective penalty is a
+ * numerical continuation parameter: it starts from the user-provided value and
+ * may increase between converged Newton solves when penetration stagnates.
+ *
+ * Geometric segmentation, dual-basis construction, residual/tangent assembly
+ * and penalty adaptation are implemented in `contact.cpp`.
+ *
+ * @see Contact
+ * @see model::SurfaceRegion
+ * @see loadcase::tools::NonlinearStateManager
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 10.08.2026
  */
 
 #pragma once
 
 #include "../../data/field.h"
 #include "../../data/region.h"
-#include "../../model/geometry/surface/surface.h"
 
-#include <array>
-#include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace fem {
@@ -32,129 +40,86 @@ struct ModelData;
 namespace constraint {
 
 /**
- * @brief Frictionless faceted node-to-surface augmented-Lagrange contact.
+ * @brief Frictionless dual-mortar surface-to-surface contact definition.
  *
- * The contact constraint owns all discrete runtime history required by the
- * nonlinear solver: selected master partners, active slave nodes, normal
- * multipliers and the geometry needed by the outer augmented-Lagrange update.
- * Runtime history is transactional. Nested trials allow predictor and line-search
- * evaluations to modify temporary contact state without changing their parent
- * increment state.
+ * Slave and master finite-element facets are projected onto one slave-centered
+ * common plane, clipped there and integrated over their physical overlap. A
+ * biorthogonal dual interpolation defines one normalized unilateral constraint
+ * per global slave mortar node. For a nodal gap `g_i`, multiplier `lambda_i` and
+ * effective penalty `epsilon`, the normal pressure coefficient is
  *
- * A partner-update trial allows one closest-surface or topological partner update
- * and then freezes the selected master surfaces for the remaining Newton solve.
- * A frozen trial immediately inherits and freezes the current partner ownership.
- * `NonlinearStateManager` chooses between these two modes; the contact class owns
- * the actual state stack and commit/rollback semantics.
+ *     p_i = max(0, lambda_i - epsilon g_i).
+ *
+ * The augmented-Lagrange multiplier is the only persistent physical contact
+ * history. Current gaps and characteristic lengths are stored only as accepted
+ * trial-evaluation data required by the subsequent post-Newton multiplier
+ * update. Contact geometry itself is always recomputed from current nodal
+ * positions and is therefore never committed, frozen or rolled back.
  */
 class Contact {
     /**
-     * @brief Complete nonlinear state of one contact configuration.
+     * @brief Transactional nodal state of one mortar contact definition.
      *
-     * The state combines discrete partner ownership, active slaves, augmented
-     * normal multipliers and geometry recorded by the most recent assembly.
+     * `multipliers` contains the persistent augmented-Lagrange normal
+     * multipliers. `gaps` and `characteristic_lengths` describe the most recent
+     * accepted mortar evaluation in the same nonlinear trial. They are consumed
+     * by the post-Newton augmentation and may be discarded on rollback together
+     * with the trial multiplier state.
      */
-    struct AssemblyState {
-        // Discrete master ownership and active set
-        std::unordered_map<ID, ID> partners;
-        std::unordered_set<ID>     active_slaves;
+    struct State {
+        // Persistent physical history on global slave mortar nodes
+        std::unordered_map<ID, Precision> multipliers;
 
-        // Augmented-Lagrange state. The multiplier has the same units as
-        // PENALTY * gap; slave tributary weighting is applied only to force
-        // assembly and is therefore not included here.
-        std::unordered_map<ID, Precision> normal_multipliers;
-
-        // Geometry recorded by the most recent assembly. These values are used
-        // only by the outer augmentation update after Newton convergence.
+        // Current accepted mortar evaluation used by the next AL update
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
-
-        std::uint64_t previous_signature        = 0;
-        Index         previous_active           = 0;
-        bool          last_signature_changed    = false;
-        bool          last_augmentation_changed = false;
     };
 
-    /**
-     * @brief One nested transactional contact state.
-     *
-     * The trial stores a complete child state and the partner-freezing policy
-     * used by subsequent contact assemblies within this transaction level.
-     */
-    struct TrialState {
-        AssemblyState state;
-        bool          freeze_surface_partners = false;
-        bool          freeze_after_update     = false;
-    };
-
-    /**
-     * @brief Persistent and nested runtime data used by contact assembly.
-     *
-     * Geometry-independent topology and slave weights are initialized lazily and
-     * reused, while `committed` and `trials` contain the nonlinear history.
-     */
-    struct RuntimeState {
-        AssemblyState committed;
-        std::vector<TrialState> trials;
-
-        // Fixed positive slave weights initialized once from the first
-        // assembled geometry.
-        std::vector<ID> slave_node_ids;
-        bool            slave_nodes_initialized = false;
-
-        std::vector<std::array<ID, 4>> master_edge_neighbors;
-        bool                           master_topology_initialized = false;
-
-        std::unordered_map<ID, Precision> slave_tributary_areas;
-        bool                              slave_weights_initialized = false;
-
-        std::uint64_t call = 0;
-    };
-
-    // Contact definition
+    // Surface-to-surface contact definition
     model::SurfaceRegion::Ptr master_surfaces;
-    model::NodeRegion::Ptr    slave_nodes;
     model::SurfaceRegion::Ptr slave_surfaces;
 
-    Precision distance;
-    Precision penalty;
-    Precision clearance;
-    bool      flip_normal;
+    Precision         initial_penalty;
+    mutable Precision penalty;
+    Precision         clearance;
+    bool              flip_normal;
 
-    // Persistent nonlinear runtime state
-    mutable RuntimeState runtime_state;
+    // Numerical penalty-adaptation state. The effective penalty persists across
+    // increments and is reset only when a new nonlinear analysis is initialized.
+    mutable Precision previous_augmentation_penetration = Precision(-1);
+    mutable bool      previous_augmentation_changed     = false;
 
-    // Low-level trial creation. Public callers use the semantic trial modes below.
-    void begin_trial(bool freeze_partners, bool freeze_after_update = false) const;
+    // Transactional multiplier/evaluation state. Nested copies are used by
+    // increment, predictor and line-search trials.
+    mutable State              committed_state;
+    mutable std::vector<State> trial_states;
+
+    // Access the innermost active trial, or committed state outside a trial
+    State& state() const;
 
 public:
-    Contact(model::SurfaceRegion::Ptr master,
-            model::NodeRegion::Ptr    slave,
-            Precision                 search_distance,
-            Precision                 penalty_stiffness,
-            Precision                 contact_clearance,
-            bool                      flip_master_normal);
-
+    // Contact construction and input parameters
     Contact(model::SurfaceRegion::Ptr master,
             model::SurfaceRegion::Ptr slave,
-            Precision                 search_distance,
             Precision                 penalty_stiffness,
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Transactional contact state. Update trials may select partners once;
-    // frozen trials preserve the current discrete partner ownership immediately.
-    void begin_update_trial() const { begin_trial(false, true); }
-    void begin_frozen_trial() const { begin_trial(true); }
+    // Transactional nonlinear multiplier/evaluation state
+    void begin_trial() const;
     void commit_trial() const;
     void rollback_trial() const;
 
-    // State changes detected after a converged Newton solve
-    bool partner_signature_changed() const;
+    // Numerical augmented-Lagrange penalty adaptation
+    void reset_penalty_adaptation() const;
+    bool adapt_penalty() const;
+    void finish_augmentation(bool changed) const;
+    [[nodiscard]] Precision current_penalty() const noexcept;
+
+    // Post-Newton augmented-Lagrange multiplier update
     bool update_augmented_lagrange() const;
 
-    // Assemble contact forces and the faceted contact tangent with fixed
-    // multipliers during the inner Newton solve.
+    // Current mortar residual and frozen-geometry contact tangent
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,

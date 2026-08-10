@@ -2,20 +2,16 @@
  * @file nonlinear_state_manager.h
  * @brief Defines nonlinear material and contact state management.
  *
- * The nonlinear state manager owns the material-point history buffers used by
- * nonlinear constitutive evaluations and coordinates the runtime trial states
- * maintained by contact constraints.
+ * The nonlinear state manager owns material-point history buffers and coordinates
+ * the transactional augmented-Lagrange state maintained by surface-to-surface
+ * contact. Contact geometry is always reconstructed from current nodal positions
+ * and is never frozen or stored between evaluations.
  *
- * Material history uses one committed and one active trial `ELEMENT_MP` field.
- * `ModelData::material_state` always points to the active trial field so element
- * and material implementations remain independent of solver-level ownership.
- * Every independent nonlinear evaluation resets this trial field from the last
- * accepted increment, while only an accepted increment promotes it to committed
- * history.
- *
- * Contact keeps its discrete partner, active-set and augmented-Lagrange state in
- * the contact implementation itself. The manager only applies the corresponding
- * update or frozen trial operation consistently to every contact in the model.
+ * Material history is committed per accepted physical increment. Contact
+ * multiplier trials follow the nested predictor, line-search and augmentation
+ * transactions of the nonlinear controller, while the numerical contact penalty
+ * is initialized once for the complete nonlinear analysis and subsequently
+ * managed by the contact definition itself.
  *
  * @see constraint::Contact
  * @see model::ModelData::material_state
@@ -23,7 +19,7 @@
  * @see tools::ArcLengthControl
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 10.08.2026
  */
 
 #pragma once
@@ -41,20 +37,18 @@ namespace tools {
 /**
  * @brief Owns nonlinear material history and coordinates contact trial state.
  *
- * Material and contact state intentionally retain separate lifecycle operations
- * because their numerical semantics differ. Material evaluations overwrite an
- * active trial field in place and therefore restart from committed history for
- * every residual or tangent evaluation. Contact instead requires nested trial
- * states so temporary predictor and line-search evaluations can be accepted or
- * discarded independently.
+ * Material evaluations overwrite an active trial field in place and therefore
+ * restart from committed history for every independent residual or tangent
+ * evaluation. Accepted increments promote the trial constitutive state to the
+ * committed field.
  *
- * The manager owns only the material buffers. Contact state remains owned by the
- * individual `Contact` objects and is accessed through their trial API.
+ * Surface contact retains its own nested augmented-Lagrange state. This manager
+ * only synchronizes contact begin/commit/rollback operations with the path
+ * controller and triggers the post-Newton penalty/multiplier update. No contact
+ * geometry or master-facet ownership is stored here.
  */
 class NonlinearStateManager {
 public:
-    // Construction binds solver-owned trial storage when at least one assigned
-    // material requires history; destruction restores the previous model binding.
     explicit NonlinearStateManager(model::Model& model);
     ~NonlinearStateManager();
 
@@ -65,23 +59,24 @@ public:
     void reset_material_state();
     void commit_material_state();
 
-    // Contact trials with either one partner update or immediately frozen partners
+    // Contact transactions. Surface mortar always recomputes geometry, so update
+    // and frozen trials differ only by their role in the nonlinear controller.
     void begin_contact_update_trial();
     void begin_contact_frozen_trial();
     void commit_contact_trial();
     void rollback_contact_trial();
 
-    // Contact active-set and augmented-Lagrange update after Newton convergence
+    // Post-Newton augmented-Lagrange multiplier and penalty update
     bool update_contact_active_set();
 
 private:
-    // Bind the active material trial field exposed to element and material code
+    // Publish the trial material field as the active ModelData state
     void bind_material_state();
 
-    // Non-owning model whose contacts and active material-state binding are managed
+    // Model whose nonlinear state is coordinated
     model::Model& model_;
 
-    // Material state owned for the lifetime of this nonlinear solution
+    // Caller-visible material state and manager-owned committed/trial buffers
     model::Field::Ptr previous_material_state_  = nullptr;
     model::Field::Ptr committed_material_state_ = nullptr;
     model::Field::Ptr trial_material_state_     = nullptr;

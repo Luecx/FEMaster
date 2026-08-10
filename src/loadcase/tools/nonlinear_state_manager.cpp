@@ -3,19 +3,29 @@
  * @brief Implements nonlinear material and contact state management.
  *
  * Material history is represented by committed and trial material-point fields.
- * Contact history remains inside each contact object and is coordinated here so
- * nonlinear load cases do not need to traverse or manipulate contact state
- * directly.
+ * Independent residual and tangent evaluations restart from committed material
+ * history and may overwrite the active trial field without modifying the last
+ * accepted constitutive state.
+ *
+ * Surface-to-surface contact owns its augmented-Lagrange multiplier history and
+ * nested trial stack internally. This manager only coordinates begin, commit and
+ * rollback operations with the nonlinear path controller. Contact geometry is
+ * not part of that history and is reconstructed from current nodal positions on
+ * every assembly. Penalty adaptation is initialized once per nonlinear analysis
+ * and then persists across accepted load increments.
  *
  * @see NonlinearStateManager
  * @see constraint::Contact
+ * @see LoadControl
+ * @see ArcLengthControl
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 10.08.2026
  */
 
 #include "nonlinear_state_manager.h"
 
+#include "../../core/logging.h"
 #include "../../model/model.h"
 
 #include <utility>
@@ -25,27 +35,37 @@ namespace loadcase {
 namespace tools {
 
 /**
- * Creates the material history buffers required by the materials assigned to
- * the current model.
+ * Creates the nonlinear state coordinator for one load-case execution.
  *
- * The committed field is initialized from the constitutive material definitions.
- * The active trial field is then reconstructed from that committed history and
- * exposed through `ModelData::material_state`. Stateless models allocate no
- * material fields; contact state remains available independently.
+ * The caller-visible material-state pointer is saved first and restored by the
+ * destructor. Contact penalty adaptation is reset once here, which returns each
+ * contact to its user-provided starting penalty while deliberately allowing later
+ * adaptations to persist across load increments and cutbacks within this
+ * analysis.
  *
- * @param model Model whose nonlinear material and contact state is managed.
+ * If assigned materials require history variables, matching committed and trial
+ * `ELEMENT_MP` fields are allocated and initialized in the global material-point
+ * enumeration owned by `ModelData`. Models without constitutive history avoid
+ * allocating those fields entirely.
+ *
+ * @param model Model whose material and contact state is coordinated.
  */
 NonlinearStateManager::NonlinearStateManager(model::Model& model)
     : model_(model),
       previous_material_state_(model._data->material_state) {
-    // Stateless models retain the default material-state binding and require no
-    // solver-owned history buffers
+    // Penalty continuation belongs to the complete nonlinear analysis, not to
+    // individual increments. Reset it exactly once when the manager is created.
+    for (const auto& contact : model_._data->contacts) {
+        contact.reset_penalty_adaptation();
+    }
+
     const Index state_size = model_.maximum_material_state_size();
     if (state_size == 0) {
         return;
     }
 
-    // Allocate accepted and active buffers with the common state-row width
+    // Allocate separate accepted and working constitutive history fields. Both
+    // use the same global element/material-point row ordering.
     committed_material_state_ = model_._data->create_field(
         "MATERIAL_STATE_COMMITTED",
         model::FieldDomain::ELEMENT_MP,
@@ -62,151 +82,137 @@ NonlinearStateManager::NonlinearStateManager(model::Model& model)
         false
     );
 
-    // Initialize accepted history from each constitutive model, then expose an
-    // identical trial copy for the first nonlinear evaluation
     model_.initialize_material_state(*committed_material_state_);
     reset_material_state();
 }
 
 /**
- * Restores the material-state binding that existed before this nonlinear solve.
- *
- * The committed and trial fields are solver-owned temporary storage and disappear
- * with the manager. Only the previous `ModelData::material_state` binding is
- * restored; contact runtime state remains owned by the contact objects.
+ * Restores the material-state field that was visible before this manager was
+ * created. The manager-owned committed/trial buffers then leave scope normally.
  */
 NonlinearStateManager::~NonlinearStateManager() {
     model_._data->material_state = previous_material_state_;
 }
 
 /**
- * Reconstructs the active material state from the last accepted increment.
+ * Restarts the active constitutive trial from the last committed material state.
  *
- * Constitutive updates operate in place on `ModelData::material_state`. Newton
- * iterations and line-search candidates are only alternative evaluations of the
- * same physical increment, so none may inherit material history generated by a
- * previous candidate. Copying the committed field before each independent
- * evaluation enforces that invariant.
+ * Independent Newton, predictor and line-search evaluations must not inherit
+ * in-place material updates from a previously rejected evaluation. Copying the
+ * committed values before rebinding the trial field provides that isolation.
  */
 void NonlinearStateManager::reset_material_state() {
-    // A missing committed buffer denotes an entirely stateless model
     if (!committed_material_state_) {
         return;
     }
 
-    // Every independent residual or tangent evaluation starts from the last
-    // accepted increment rather than from another candidate's in-place updates
     trial_material_state_->values = committed_material_state_->values;
     bind_material_state();
 }
 
 /**
- * Accepts the material history generated by the converged nonlinear increment.
+ * Accepts the current material trial as the new constitutive history.
  *
- * The current trial buffer becomes the new committed history. The other buffer
- * is immediately synchronized with it and rebound as the active trial field so
- * later postprocessing or the next increment starts from the accepted state.
+ * The committed and trial field objects are swapped instead of copying the
+ * accepted data twice. The new trial buffer is then initialized from the accepted
+ * state so the next independent evaluation starts from identical history.
  */
 void NonlinearStateManager::commit_material_state() {
-    // A missing committed buffer denotes an entirely stateless model
     if (!committed_material_state_) {
         return;
     }
 
-    // Promote the converged buffer without copying, then synchronize the spare
-    // buffer for postprocessing and the next trial evaluation
     std::swap(committed_material_state_, trial_material_state_);
     trial_material_state_->values = committed_material_state_->values;
     bind_material_state();
 }
 
 /**
- * Opens one contact trial in which partner ownership may be updated once.
+ * Opens a transactional contact trial for an increment or post-Newton update.
  *
- * This mode is used when entering an increment and when refreshing the contact
- * active set after Newton convergence. Contact determines partners during the
- * first assembly in the trial and freezes them for subsequent assemblies.
+ * Surface mortar has no discrete partner state to refresh. The operation therefore
+ * copies only multiplier/evaluation history while subsequent assemblies continue
+ * to reconstruct geometry from the current nodal configuration.
  */
 void NonlinearStateManager::begin_contact_update_trial() {
-    // Apply one consistent outer-trial policy to every contact definition
     for (const auto& contact : model_._data->contacts) {
-        contact.begin_update_trial();
+        contact.begin_trial();
     }
 }
 
 /**
- * Opens one nested contact trial with the current partner ownership frozen.
+ * Opens a nested transactional contact trial for predictor or line-search work.
  *
- * Predictor and line-search evaluations must not alter the discrete contact
- * problem selected by their parent state. Natural contact coordinates may still
- * be reprojected on the already selected master surface.
+ * The current surface-to-surface formulation gives this trial the same state
+ * semantics as an update trial. The separate method name is retained because the
+ * path controllers distinguish temporary candidate evaluations from outer
+ * increment/augmentation transactions.
  */
 void NonlinearStateManager::begin_contact_frozen_trial() {
-    // Nested predictor and line-search trials inherit fixed discrete ownership
     for (const auto& contact : model_._data->contacts) {
-        contact.begin_frozen_trial();
+        contact.begin_trial();
     }
 }
 
 /**
- * Accepts the current contact trial for every contact in the model.
- *
- * Nested trials are promoted to their parent trial; an outermost accepted trial
- * becomes the committed contact runtime state.
+ * Commits the innermost contact trial into its parent transaction or committed
+ * contact history. Geometry is not involved because it is never stored.
  */
 void NonlinearStateManager::commit_contact_trial() {
-    // Promote each contact child state at the same transaction boundary
     for (const auto& contact : model_._data->contacts) {
         contact.commit_trial();
     }
 }
 
 /**
- * Discards the current contact trial for every contact in the model.
- *
- * The parent trial or committed contact state remains unchanged, which allows
- * rejected predictors, line-search candidates and complete increment attempts to
- * leave no persistent contact history behind.
+ * Discards the innermost contact trial and restores the parent multiplier and
+ * accepted evaluation state. Current geometry requires no explicit restoration.
  */
 void NonlinearStateManager::rollback_contact_trial() {
-    // Restore every contact to its parent state at the same transaction boundary
     for (const auto& contact : model_._data->contacts) {
         contact.rollback_trial();
     }
 }
 
 /**
- * Updates the discrete and augmented contact state after Newton convergence.
+ * Updates contact after a converged inner Newton solve.
  *
- * The caller must first open an update trial and assemble the converged geometry.
- * Partner-signature changes detect a different discrete contact problem, while
- * the augmented-Lagrange update changes normal multipliers when the converged gap
- * still requires augmentation. Either change requires another Newton solve at
- * the same path-control state.
+ * Penalty adaptation is evaluated first from the penetration reached after the
+ * previous multiplier augmentation. If penetration did not decrease by at least
+ * 20 %, the effective penalty is increased by one decade. The following
+ * multiplier update then uses this adapted penalty. The effective penalty was
+ * reset only when this manager was constructed and therefore persists across
+ * accepted increments.
  *
- * @return `true` if neither partner ownership nor multipliers changed.
+ * The path controller interprets `false` as a request to repeat Newton at the
+ * same load factor with the updated contact history.
+ *
+ * @return `true` when no contact multiplier changed; `false` when at least one
+ *         contact requires another Newton equilibrium solve.
  */
 bool NonlinearStateManager::update_contact_active_set() {
     bool changed = false;
 
-    // Combine discrete partner and multiplier changes across all contacts
     for (const auto& contact : model_._data->contacts) {
-        const bool partner_changed    = contact.partner_signature_changed();
-        const bool multiplier_changed = contact.update_augmented_lagrange();
-        changed = changed || partner_changed || multiplier_changed;
+        if (contact.adapt_penalty()) {
+            logging::info(true,
+                "CONTACT: penetration stagnated; increasing effective penalty to ",
+                contact.current_penalty());
+        }
+
+        const bool contact_changed = contact.update_augmented_lagrange();
+        contact.finish_augmentation(contact_changed);
+        changed = contact_changed || changed;
     }
 
     return !changed;
 }
 
 /**
- * Exposes the mutable material trial buffer through the model data interface.
- *
- * Buffer names follow their current ownership so diagnostics and optional field
- * inspection continue to distinguish accepted history from the active candidate.
+ * Publishes the manager-owned trial material field as the active constitutive
+ * history and restores the semantic names of committed and trial buffers.
  */
 void NonlinearStateManager::bind_material_state() {
-    // Buffer names describe their current roles after pointer swapping
     committed_material_state_->name = "MATERIAL_STATE_COMMITTED";
     trial_material_state_->name     = "MATERIAL_STATE";
     model_._data->material_state    = trial_material_state_;
