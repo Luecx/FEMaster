@@ -23,6 +23,7 @@
 #include "../../data/region.h"
 
 #include <algorithm>
+#include <cmath>
 #include <unordered_map>
 #include <vector>
 
@@ -65,11 +66,12 @@ class Contact {
     Precision         clearance;
     bool              flip_normal;
 
-    // Penalty continuation is reset for every new increment attempt. The user
-    // value remains the starting penalty and is increased only between converged
-    // Newton solves, never inside one Newton iteration.
-    mutable Precision initial_penalty     = Precision(0);
-    mutable Index     augmentation_count = 0;
+    // Numerical AL penalty state. The user value is restored once at the start
+    // of a nonlinear analysis. Afterwards the effective penalty persists across
+    // increments and is increased only when penetration stagnates.
+    mutable Precision initial_penalty                   = Precision(0);
+    mutable Precision previous_augmentation_penetration = Precision(-1);
+    mutable bool      previous_augmentation_changed     = false;
 
     // Transactional nonlinear state. Nested copies are used by increment,
     // predictor and line-search trials; geometry itself is never frozen.
@@ -90,29 +92,62 @@ public:
     void commit_trial() const;
     void rollback_trial() const;
 
-    // Penalty continuation used by the nonlinear state manager
-    void reset_penalty_continuation() const {
+    // Penalty adaptation. The current penetration is compared with the
+    // penetration after the previous multiplier augmentation. If it did not
+    // decrease by at least 20%, the effective penalty is increased one decade.
+    void reset_penalty_adaptation() const {
         if (!(initial_penalty > Precision(0))) {
             initial_penalty = penalty;
         }
-        penalty = initial_penalty;
-        augmentation_count = 0;
+
+        penalty                           = initial_penalty;
+        previous_augmentation_penetration = Precision(-1);
+        previous_augmentation_changed     = false;
     }
 
-    void advance_penalty_continuation() const {
-        if (!(initial_penalty > Precision(0))) {
-            initial_penalty = penalty;
+    bool adapt_penalty() const {
+        State& current = state();
+
+        Precision maximum_penetration = Precision(0);
+        for (const auto& [constraint_id, gap] : current.gaps) {
+            (void) constraint_id;
+            if (std::isfinite(gap)) {
+                maximum_penetration =
+                    std::max(maximum_penetration, std::max(Precision(0), -gap));
+            }
         }
 
-        ++augmentation_count;
-        if (augmentation_count % 3 != 0) {
-            return;
+        if (!previous_augmentation_changed || maximum_penetration <= Precision(0)) {
+            previous_augmentation_penetration = maximum_penetration;
+            return false;
         }
 
-        penalty = std::min(
-            penalty * Precision(10),
-            initial_penalty * Precision(1e4)
-        );
+        const Precision previous = previous_augmentation_penetration;
+        previous_augmentation_penetration = maximum_penetration;
+
+        if (previous <= Precision(0) ||
+            maximum_penetration < Precision(0.8) * previous) {
+            return false;
+        }
+
+        const Precision maximum_penalty = initial_penalty * Precision(1e6);
+        const Precision adapted_penalty =
+            std::min(maximum_penalty, penalty * Precision(10));
+
+        if (!(adapted_penalty > penalty) || !std::isfinite(adapted_penalty)) {
+            return false;
+        }
+
+        penalty = adapted_penalty;
+        return true;
+    }
+
+    void finish_augmentation(bool changed) const {
+        previous_augmentation_changed = changed;
+    }
+
+    [[nodiscard]] Precision current_penalty() const noexcept {
+        return penalty;
     }
 
     // Post-Newton augmented-Lagrange update
