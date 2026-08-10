@@ -46,7 +46,8 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \midrule
 \endhead
 \cmd{POINTMASS} & Add concentrated mass, rotational inertia, and optional spring stiffness to node sets. \\
-\cmd{FIELD} & Define node, element, or integration-point data fields. \\
+\cmd{FIELD} & Define node, element, element-nodal, integration-point, or material-point data fields. \\
+\cmd{NORMAL} & Select a three-component element-nodal field for shell directors. \\
 \cmd{ORIENTATION} & Define a rectangular or cylindrical local coordinate system. \\
 \cmd{SUPPORT} & Add support entries to a support collector. \\
 \cmd{CLOAD} & Add concentrated nodal loads to a load collector. \\
@@ -60,6 +61,7 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \cmd{TIE} & Define tie constraints between slave nodes and master geometry. \\
 \cmd{CONNECTOR} & Define connector constraints between two node sets. \\
 \cmd{RBM} & Generate rigid-body-motion suppression equations. \\
+\cmd{CONTACT} & Define frictionless dual-mortar surface-to-surface contact for nonlinear static analysis. \\
 \bottomrule
 \end{longtable}
 
@@ -89,7 +91,8 @@ This chapter gives a compact overview of the DSL commands. The following chapter
 \cmd{TOPOEXPONENT} & Set the topology penalization exponent. \\
 \cmd{TIME} & Set transient time range and step size. \\
 \cmd{NEWMARK} & Set Newmark integration parameters. \\
-\cmd{DAMPING} & Set Rayleigh damping. \\
+\cmd{DAMPING} & Set Rayleigh damping for transient or harmonic analysis. \\
+\cmd{FREQUENCIES} & Define the excitation-frequency sweep for linear harmonic analysis. \\
 \cmd{WRITEEVERY} & Set transient output cadence. \\
 \cmd{INITIALVELOCITY} & Set transient initial velocity from a field. \\
 \cmd{CONSTRAINTSUMMARY} & Request generated-constraint diagnostics. \\
