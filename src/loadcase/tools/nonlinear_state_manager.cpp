@@ -15,6 +15,7 @@
 
 #include "nonlinear_state_manager.h"
 
+#include "../../core/logging.h"
 #include "../../model/model.h"
 
 #include <utility>
@@ -26,6 +27,10 @@ namespace tools {
 NonlinearStateManager::NonlinearStateManager(model::Model& model)
     : model_(model),
       previous_material_state_(model._data->material_state) {
+    for (const auto& contact : model_._data->contacts) {
+        contact.reset_penalty_adaptation();
+    }
+
     const Index state_size = model_.maximum_material_state_size();
     if (state_size == 0) {
         return;
@@ -74,51 +79,21 @@ void NonlinearStateManager::commit_material_state() {
     bind_material_state();
 }
 
-/**
- * Opens an update-capable contact trial.
- *
- * A trial opened at depth zero is the outer transaction of a new increment
- * attempt. Penalty continuation is reset there so every accepted increment and
- * every cutback restart begins with the user-specified penalty. Nested update
- * trials belong to augmented-Lagrange refreshes at the same load factor and keep
- * the current continuation level.
- */
 void NonlinearStateManager::begin_contact_update_trial() {
-    if (contact_trial_depth_ == 0) {
-        for (const auto& contact : model_._data->contacts) {
-            contact.reset_penalty_continuation();
-        }
-    }
-
     for (const auto& contact : model_._data->contacts) {
         contact.begin_trial();
     }
-
-    ++contact_trial_depth_;
 }
 
-/**
- * Opens one nested contact trial for predictor or line-search evaluation.
- *
- * Temporary evaluations never modify penalty continuation. They inherit the
- * penalty level of their surrounding increment transaction and are subsequently
- * committed or rolled back together with their multiplier state.
- */
 void NonlinearStateManager::begin_contact_frozen_trial() {
     for (const auto& contact : model_._data->contacts) {
         contact.begin_trial();
     }
-
-    ++contact_trial_depth_;
 }
 
 void NonlinearStateManager::commit_contact_trial() {
     for (const auto& contact : model_._data->contacts) {
         contact.commit_trial();
-    }
-
-    if (contact_trial_depth_ > 0) {
-        --contact_trial_depth_;
     }
 }
 
@@ -126,18 +101,16 @@ void NonlinearStateManager::rollback_contact_trial() {
     for (const auto& contact : model_._data->contacts) {
         contact.rollback_trial();
     }
-
-    if (contact_trial_depth_ > 0) {
-        --contact_trial_depth_;
-    }
 }
 
 /**
- * Updates augmented-Lagrange multipliers after a converged inner Newton solve.
+ * Updates contact after a converged inner Newton solve.
  *
- * Every third successful multiplier augmentation increases the effective contact
- * penalty by one decade. The continuation is local to the current increment and
- * capped inside Contact at 1e4 times the user-specified starting penalty.
+ * Penalty adaptation is evaluated first from the penetration reached after the
+ * previous multiplier augmentation. If penetration did not decrease by at least
+ * 20%, the effective penalty is increased by one decade. The following multiplier
+ * update then uses this adapted penalty. The effective penalty is reset only once
+ * at the start of the nonlinear analysis and therefore persists across increments.
  *
  * @return `true` when no multiplier changed, otherwise `false` so the path
  *         controller repeats Newton at the same load factor.
@@ -146,12 +119,16 @@ bool NonlinearStateManager::update_contact_active_set() {
     bool changed = false;
 
     for (const auto& contact : model_._data->contacts) {
-        const bool contact_changed = contact.update_augmented_lagrange();
-
-        if (contact_changed) {
-            contact.advance_penalty_continuation();
+        if (contact.adapt_penalty()) {
+            logging::info(
+                true,
+                "CONTACT: penetration stagnated; increasing effective penalty to ",
+                contact.current_penalty()
+            );
         }
 
+        const bool contact_changed = contact.update_augmented_lagrange();
+        contact.finish_augmentation(contact_changed);
         changed = contact_changed || changed;
     }
 
