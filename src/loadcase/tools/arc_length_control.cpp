@@ -13,10 +13,6 @@
  * augmented Newton system, cutback/growth decisions, active-set restarts and
  * state transaction wiring for nonlinear subsystems.
  *
- * Trial transactions are generic. Contact currently uses them for master
- * partner ownership and future nonlinear material models can use them for trial
- * stress states and committed internal variables.
- *
  * @see ArcLengthControl
  * @see NewtonSolver
  */
@@ -55,11 +51,9 @@ constexpr Index maximum_active_set_updates = 8;
  * committed only after the increment is accepted and rolled back for cutbacks,
  * failed Newton solves, failed final-load adjustments or callback exceptions.
  *
- * Line-search trial callbacks are forwarded to the Newton solver for consistency
- * with the load-control interface. The current arc-length implementation
- * disables line search because the generic Newton line search scales only the
- * explicit state vector, while arc-length corrections also contain an implicit
- * load-factor correction.
+ * The current arc-length implementation disables Newton line search because the
+ * generic line search scales only the explicit state vector while arc-length
+ * corrections also contain an implicit load-factor correction.
  *
  * After a converged augmented Newton solve, `update_active_set` may update
  * discontinuous nonlinear state at the converged configuration. A reported
@@ -78,7 +72,8 @@ constexpr Index maximum_active_set_updates = 8;
  * @param correction_norm Problem-specific correction-size measure.
  * @param on_iteration Optional per-Newton-iteration reporting callback.
  * @param on_increment Optional accepted-increment callback for result writing.
- * @param evaluate_residual Optional residual-only evaluation callback.
+ * @param evaluate_residual Reserved residual-only callback; currently unused
+ *                          because arc-length line search is disabled.
  *
  * @return `true` when the path reaches load factor one, otherwise `false`.
  */
@@ -95,6 +90,8 @@ bool ArcLengthControl::solve(
     const IncrementCallback& on_increment,
     const EvaluateResidual&  evaluate_residual
 ) {
+    (void) evaluate_residual;
+
     logging::error(maximum_increments > 0,
         "ArcLengthControl requires maximum_increments > 0");
     logging::error(maximum_iterations > 0,
@@ -102,7 +99,7 @@ bool ArcLengthControl::solve(
     logging::error(tolerance > Precision(0),
         "ArcLengthControl requires tolerance > 0");
     logging::error(initial_increment > Precision(0),
-        "ArcLengthControl requires initial_increment > 0");
+        "ArcLengthControl requires INITIAL_INCREMENT > 0");
     logging::error(minimum_increment > Precision(0),
         "ArcLengthControl requires minimum_increment > 0");
     logging::error(maximum_increment >= minimum_increment,
@@ -232,19 +229,6 @@ bool ArcLengthControl::solve(
             while (true) {
                 configure_newton_();
 
-                NewtonSolver::EvaluateResidual newton_evaluate_residual;
-                if (evaluate_residual) {
-                    newton_evaluate_residual =
-                        [&](const DynamicVector& current_q,
-                            DynamicVector&       residual) {
-                            evaluate_residual(
-                                current_q,
-                                lambda,
-                                residual
-                            );
-                        };
-                }
-
                 converged = newton_.solve(
                     q,
                     [&](const DynamicVector& current_q,
@@ -352,8 +336,7 @@ bool ArcLengthControl::solve(
                                 iteration_converged
                             );
                         }
-                    },
-                    newton_evaluate_residual
+                    }
                 );
 
                 if (!converged) {
@@ -562,11 +545,7 @@ void ArcLengthControl::configure_newton_() {
     // Scaling q while lambda already contains the full correction evaluates a
     // point away from the augmented arc-length linearization, so globalization
     // is left to the adaptive arc-length increment control.
-    newton_.line_search_enabled      = false;
-
-    newton_.begin_line_search_trial    = begin_line_search_trial;
-    newton_.commit_line_search_trial   = commit_line_search_trial;
-    newton_.rollback_line_search_trial = rollback_line_search_trial;
+    newton_.line_search_enabled = false;
 }
 
 void ArcLengthControl::adapt_increment_() {
