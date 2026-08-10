@@ -1,20 +1,6 @@
 /**
  * @file arc_length_control.cpp
- * @brief Implements arc-length control for nonlinear equilibrium paths.
- *
- * The implementation follows nonlinear static equilibrium paths by solving the
- * finite-element residual together with a scalar arc-length constraint. The path
- * radius is adapted between accepted increments, while each attempted increment
- * may be rolled back and retried when Newton convergence or final-load
- * adjustment fails.
- *
- * All finite-element-specific work is delegated to callbacks supplied by the
- * owning load case. This file only handles the reduced path-following algorithm,
- * augmented Newton system, cutback/growth decisions, active-set restarts and
- * state transaction wiring for nonlinear subsystems.
- *
- * @see ArcLengthControl
- * @see NewtonSolver
+ * @brief Implements nonlinear arc-length control.
  */
 
 #include "arc_length_control.h"
@@ -36,47 +22,6 @@ constexpr Index maximum_active_set_updates = 8;
 
 } // namespace
 
-/**
- * Solves the nonlinear equilibrium path with an arc-length constraint.
- *
- * Each attempted increment starts from the last accepted reduced state `q` and
- * load factor `lambda`. The first tangent predictor determines a load-direction
- * correction and the current radius. Subsequent Newton iterations solve an
- * augmented system containing both the reduced equilibrium residual and the
- * spherical path constraint
- *
- *     ||Delta q||^2 + psi^2 load_scale^2 Delta lambda^2 = radius^2.
- *
- * Increment trial callbacks wrap the complete attempted path increment. They are
- * committed only after the increment is accepted and rolled back for cutbacks,
- * failed Newton solves, failed final-load adjustments or callback exceptions.
- *
- * The current arc-length implementation disables Newton line search because the
- * generic line search scales only the explicit state vector while arc-length
- * corrections also contain an implicit load-factor correction.
- *
- * After a converged augmented Newton solve, `update_active_set` may update
- * discontinuous nonlinear state at the converged configuration. A reported
- * change restarts Newton on the same path increment using the new state.
- *
- * @param q Reduced nonlinear unknown vector. On success it contains the final
- *          accepted state. On failure it is restored to the last accepted state.
- * @param lambda Load factor associated with `q`.
- * @param reference_load Reduced reference load vector used by the arc-length
- *                       predictor and augmented Newton system.
- * @param evaluate Residual and tangent assembly at a supplied `q` and load
- *                 factor.
- * @param linear_solve Linearized solve with one right-hand side.
- * @param matrix_solve Linearized solve for the augmented system.
- * @param residual_norm Problem-specific equilibrium-residual measure.
- * @param correction_norm Problem-specific correction-size measure.
- * @param on_iteration Optional per-Newton-iteration reporting callback.
- * @param on_increment Optional accepted-increment callback for result writing.
- * @param evaluate_residual Reserved residual-only callback; currently unused
- *                          because arc-length line search is disabled.
- *
- * @return `true` when the path reaches load factor one, otherwise `false`.
- */
 bool ArcLengthControl::solve(
     DynamicVector&           q,
     Precision&               lambda,
@@ -87,11 +32,8 @@ bool ArcLengthControl::solve(
     const ResidualNorm&      residual_norm,
     const CorrectionNorm&    correction_norm,
     const IterationCallback& on_iteration,
-    const IncrementCallback& on_increment,
-    const EvaluateResidual&  evaluate_residual
+    const IncrementCallback& on_increment
 ) {
-    (void) evaluate_residual;
-
     logging::error(maximum_increments > 0,
         "ArcLengthControl requires maximum_increments > 0");
     logging::error(maximum_iterations > 0,
@@ -132,7 +74,6 @@ bool ArcLengthControl::solve(
         "ArcLengthControl requires a correction norm callback");
 
     reset_state_();
-
     previous_delta_q_ = DynamicVector::Zero(q.size());
 
     Index cutback_count = 0;
@@ -154,8 +95,6 @@ bool ArcLengthControl::solve(
         std::string attempt_error_message;
         Index       active_set_updates     = 0;
 
-        // Treat analysis failures inside this attempted increment like Newton
-        // non-convergence so adaptive arc-length control can reduce the radius.
         try {
             if (begin_increment_trial) {
                 begin_increment_trial();
@@ -164,17 +103,9 @@ bool ArcLengthControl::solve(
             DynamicVector predictor_residual;
             SparseMatrix  predictor_tangent;
 
-            evaluate(
-                q_accepted_,
-                lambda_accepted_,
-                predictor_residual,
-                predictor_tangent
-            );
+            evaluate(q_accepted_, lambda_accepted_, predictor_residual, predictor_tangent);
 
-            DynamicVector dq_load = linear_solve(
-                predictor_tangent,
-                reference_load
-            );
+            DynamicVector dq_load = linear_solve(predictor_tangent, reference_load);
 
             logging::error(dq_load.allFinite(),
                 "ArcLengthControl: predictor contains NaN/Inf entries");
@@ -188,14 +119,11 @@ bool ArcLengthControl::solve(
 
             if (radius_scale_ <= Precision(0)) {
                 load_scale2_  = current_load_scale2;
-                radius_scale_ = std::sqrt(
-                    current_load_scale2 + psi2 * load_scale2_
-                );
+                radius_scale_ = std::sqrt(current_load_scale2 + psi2 * load_scale2_);
             }
 
-            const Precision predictor_norm = std::sqrt(
-                current_load_scale2 + psi2 * load_scale2_
-            );
+            const Precision predictor_norm =
+                std::sqrt(current_load_scale2 + psi2 * load_scale2_);
 
             Precision path_sign = Precision(1);
 
@@ -209,9 +137,7 @@ bool ArcLengthControl::solve(
 
             arc_radius_ = increment_ * radius_scale_;
 
-            Precision predictor_delta_lambda =
-                path_sign * arc_radius_ / predictor_norm;
-
+            Precision predictor_delta_lambda = path_sign * arc_radius_ / predictor_norm;
             const Precision remaining_delta_lambda = Precision(1) - lambda_accepted_;
 
             if (path_sign > Precision(0) &&
@@ -270,7 +196,6 @@ bool ArcLengthControl::solve(
                             if (reference_load(i) != Precision(0)) {
                                 triplets.emplace_back(i, n, -reference_load(i));
                             }
-
                             if (delta_q(i) != Precision(0)) {
                                 triplets.emplace_back(n, i, Precision(2) * delta_q(i));
                             }
@@ -290,8 +215,7 @@ bool ArcLengthControl::solve(
 
                         const DynamicMatrix solution = matrix_solve(augmented, rhs);
 
-                        logging::error(solution.rows() == n + 1 &&
-                                       solution.cols() == 1,
+                        logging::error(solution.rows() == n + 1 && solution.cols() == 1,
                             "ArcLengthControl: augmented solve returned an invalid shape");
                         logging::error(solution.allFinite(),
                             "ArcLengthControl: correction contains NaN/Inf entries");
@@ -300,12 +224,10 @@ bool ArcLengthControl::solve(
                         const Precision     dlambda = solution(n, 0);
 
                         lambda += dlambda;
-
                         return dq;
                     },
                     [&](const DynamicVector& residual) {
                         current_equilibrium_norm = residual_norm(residual, lambda);
-
                         return std::max(
                             current_equilibrium_norm,
                             arc_constraint_norm_(q, lambda)
@@ -315,11 +237,9 @@ bool ArcLengthControl::solve(
                     [&](Index     iteration,
                         Precision current_residual_norm,
                         Precision current_correction_norm,
-                        Precision convergence_order,
                         Index     line_search_iterations,
                         Time      assembly_ms,
-                        Time      solve_ms,
-                        bool      iteration_converged) {
+                        Time      solve_ms) {
                         (void) current_residual_norm;
 
                         if (on_iteration) {
@@ -329,11 +249,9 @@ bool ArcLengthControl::solve(
                                 lambda,
                                 current_equilibrium_norm,
                                 current_correction_norm,
-                                convergence_order,
                                 line_search_iterations,
                                 assembly_ms,
-                                solve_ms,
-                                iteration_converged
+                                solve_ms
                             );
                         }
                     }
@@ -344,8 +262,7 @@ bool ArcLengthControl::solve(
                     break;
                 }
 
-                if (!update_active_set ||
-                    update_active_set(q, lambda)) {
+                if (!update_active_set || update_active_set(q, lambda)) {
                     break;
                 }
 
@@ -394,13 +311,9 @@ bool ArcLengthControl::solve(
             ++cutback_count;
 
             logging::info(true,
-                "Increment rejected at lambda = ",
-                rejected_lambda,
-                "; reason = ",
-                attempt_failure_reason,
-                "; reducing increment to ",
-                increment_
-            );
+                "Increment rejected at lambda = ", rejected_lambda,
+                "; reason = ", attempt_failure_reason,
+                "; reducing increment to ", increment_);
 
             if (increment_ < minimum_increment) {
                 failure_reason_ = attempt_error_message.empty()
@@ -419,13 +332,10 @@ bool ArcLengthControl::solve(
             continue;
         }
 
-        if (adjusting_final_step_ &&
-            std::abs(lambda - Precision(1)) > tolerance) {
+        if (adjusting_final_step_ && std::abs(lambda - Precision(1)) > tolerance) {
             const Precision reached_lambda         = lambda;
-            const Precision achieved_delta_lambda =
-                lambda - lambda_accepted_;
-            const Precision remaining_delta_lambda =
-                Precision(1) - lambda_accepted_;
+            const Precision achieved_delta_lambda = lambda - lambda_accepted_;
+            const Precision remaining_delta_lambda = Precision(1) - lambda_accepted_;
 
             if (achieved_delta_lambda <= Precision(0)) {
                 q               = q_accepted_;
@@ -435,7 +345,6 @@ bool ArcLengthControl::solve(
                 if (rollback_increment_trial) {
                     rollback_increment_trial();
                 }
-
                 return false;
             }
 
@@ -453,19 +362,14 @@ bool ArcLengthControl::solve(
             ++cutback_count;
 
             logging::info(true,
-                "Arc-length step reached lambda = ",
-                reached_lambda,
-                " instead of 1; adjusting increment from ",
-                previous_increment,
-                " to ",
-                increment_
-            );
+                "Arc-length step reached lambda = ", reached_lambda,
+                " instead of 1; adjusting increment from ", previous_increment,
+                " to ", increment_);
 
             if (increment_ < minimum_increment) {
                 failure_reason_ = "MINIMUM_INCREMENT";
                 return false;
             }
-
             if (cutback_count > maximum_cutbacks) {
                 failure_reason_ = "MAXIMUM_FINAL_ADJUSTMENTS";
                 return false;
@@ -492,11 +396,10 @@ bool ArcLengthControl::solve(
         adapt_increment_();
 
         logging::info(true,
-            "Accepted increment "   , accepted_increments_,
-            ": lambda = "           , lambda,
+            "Accepted increment ", accepted_increments_,
+            ": lambda = ", lambda,
             ", Newton iterations = ", newton_.iterations(),
-            ", next increment = "  , increment_
-        );
+            ", next increment = ", increment_);
     }
 
     if (lambda < Precision(1) - tolerance) {
@@ -505,14 +408,6 @@ bool ArcLengthControl::solve(
     }
 
     return true;
-}
-
-Index ArcLengthControl::accepted_increments() const {
-    return accepted_increments_;
-}
-
-Precision ArcLengthControl::increment() const {
-    return increment_;
 }
 
 const char* ArcLengthControl::failure_reason() const {
@@ -534,18 +429,12 @@ void ArcLengthControl::reset_state_() {
 }
 
 void ArcLengthControl::configure_newton_() {
-    newton_.maximum_iterations       = maximum_iterations;
-    newton_.residual_tolerance       = tolerance;
-    newton_.stagnation_tolerance     = Precision(1e-3) * tolerance;
-    newton_.check_finite             = true;
-    newton_.early_failure_detection  = true;
-
-    // Arc-length Newton corrections contain both dq and dlambda, but the
-    // generic Newton line search can scale only the explicit state vector q.
-    // Scaling q while lambda already contains the full correction evaluates a
-    // point away from the augmented arc-length linearization, so globalization
-    // is left to the adaptive arc-length increment control.
-    newton_.line_search_enabled = false;
+    newton_.maximum_iterations      = maximum_iterations;
+    newton_.residual_tolerance      = tolerance;
+    newton_.stagnation_tolerance    = Precision(1e-3) * tolerance;
+    newton_.check_finite            = true;
+    newton_.early_failure_detection = true;
+    newton_.line_search_enabled     = false;
 }
 
 void ArcLengthControl::adapt_increment_() {
@@ -560,11 +449,7 @@ void ArcLengthControl::adapt_increment_() {
         increment_ *= cutback_factor;
     }
 
-    increment_ = std::clamp(
-        increment_,
-        minimum_increment,
-        maximum_increment
-    );
+    increment_ = std::clamp(increment_, minimum_increment, maximum_increment);
 }
 
 Precision ArcLengthControl::arc_constraint_norm_(
