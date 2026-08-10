@@ -3,10 +3,9 @@
  * @brief Defines nonlinear material and contact state management.
  *
  * The nonlinear state manager owns material-point history buffers and coordinates
- * the transactional runtime state maintained by contact constraints. NodeRegion
- * contact may freeze discrete master ownership inside nested trials; SurfaceRegion
- * dual-mortar contact never freezes geometric overlap and uses trials only for
- * commit/rollback of nodal mortar state.
+ * the transactional augmented-Lagrange state maintained by surface-to-surface
+ * contact. Contact geometry is always reconstructed from the current nodal
+ * positions and is never frozen or stored between evaluations.
  *
  * @see constraint::Contact
  * @see model::ModelData::material_state
@@ -34,7 +33,7 @@ namespace tools {
  *
  * Material evaluations overwrite an active trial field in place and therefore
  * restart from committed history for every independent residual or tangent
- * evaluation. Contact instead owns nested trial states so temporary predictor and
+ * evaluation. Contact owns nested multiplier states so temporary predictor and
  * line-search evaluations can be accepted or discarded independently.
  */
 class NonlinearStateManager {
@@ -49,14 +48,15 @@ public:
     void reset_material_state();
     void commit_material_state();
 
-    // Contact transactions. "Frozen" affects only legacy NodeRegion partner
-    // ownership; mortar overlap geometry is always recomputed.
+    // Contact transactions. Update and frozen trials currently have identical
+    // state semantics; both names remain because the path controllers distinguish
+    // outer active-set refreshes from temporary predictor/line-search evaluations.
     void begin_contact_update_trial();
     void begin_contact_frozen_trial();
     void commit_contact_trial();
     void rollback_contact_trial();
 
-    // Post-Newton discrete-partner / augmented-Lagrange update
+    // Post-Newton augmented-Lagrange multiplier update
     bool update_contact_active_set();
 
 private:
