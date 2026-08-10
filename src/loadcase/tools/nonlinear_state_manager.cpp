@@ -16,7 +16,6 @@
 
 #include "nonlinear_state_manager.h"
 
-#include "../../core/logging.h"
 #include "../../model/model.h"
 
 #include <utility>
@@ -28,10 +27,6 @@ namespace tools {
 NonlinearStateManager::NonlinearStateManager(model::Model& model)
     : model_(model),
       previous_material_state_(model._data->material_state) {
-    for (const auto& contact : model_._data->contacts) {
-        contact.reset_augmented_lagrange_penalty();
-    }
-
     const Index state_size = model_.maximum_material_state_size();
     if (state_size == 0) {
         return;
@@ -128,9 +123,6 @@ void NonlinearStateManager::rollback_contact_trial() {
  * is part of the semismooth Newton law, and the outer update acts only on the
  * converged nodal mortar multipliers.
  *
- * Penalty adaptation is common to both formulations and is based on the gaps
- * stored by the corresponding discrete contact constraints.
- *
  * @return `true` when no discrete node-contact partner and no AL multiplier
  *         changed, otherwise `false` so the path controller repeats Newton.
  */
@@ -141,14 +133,6 @@ bool NonlinearStateManager::update_contact_active_set() {
         // Mortar coupling has no single master partner to freeze or refresh.
         const bool partner_changed =
             !contact.uses_slave_surface() && contact.partner_signature_changed();
-
-        if (!partner_changed && contact.adapt_augmented_lagrange_penalty()) {
-            logging::info(
-                true,
-                "CONTACT: penetration stagnated; increasing effective penalty to ",
-                contact.current_penalty()
-            );
-        }
 
         const bool multiplier_changed =
             contact.uses_slave_surface()
