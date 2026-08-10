@@ -33,8 +33,6 @@ Element-nodal fields use an element identifier and zero-based local node index i
 \bottomrule
 \end{longtable}
 
-The long aliases \val{ELEMENTNODAL}, \val{ELEMENTIP}, and \val{ELEMENTMP} are accepted by the domain parser; the underscore-separated forms are recommended in input decks.
-
 Enumeration-dependent domains require the corresponding element topology and local enumeration to exist. FEMaster therefore creates these fields after topology construction during its field parsing stage.
 
 Data lines may omit individual values; omitted values do not overwrite existing entries. The tokens \val{NAN}, \val{+NAN}, \val{-NAN}, \val{INF}, \val{+INF}, and \val{-INF} are accepted.
