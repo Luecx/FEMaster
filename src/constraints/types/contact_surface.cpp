@@ -13,9 +13,9 @@
  * Augmented multipliers and the unilateral active set live only on nodal mortar
  * constraints.
  *
- * DISTANCE is used only to bound the geometric search. It never activates
- * contact and it does not enter the signed normal gap. Surface mortar has no
- * persistent master-facet ownership and therefore no partner freezing.
+ * Master patches are currently tested directly against every slave patch. The
+ * mortar geometry therefore has no spatial-search radius and no BVH dependency.
+ * Surface mortar has no persistent master-facet ownership and no partner freeze.
  *
  * @author Finn Eggers
  * @date 10.08.2026
@@ -26,7 +26,6 @@
 #include "../../core/logging.h"
 #include "../../model/geometry/surface/surface_polygon.h"
 #include "../../model/model_data.h"
-#include "bvh.h"
 
 #include <Eigen/Cholesky>
 
@@ -53,7 +52,7 @@ constexpr Precision tangent_tolerance  = Precision(1e-14);
 
 // Facing solid surfaces have opposite outward normals. A weak threshold rejects
 // side/back faces while still allowing strongly curved opposing interfaces.
-constexpr Precision maximum_opposing_normal_dot = Precision(-0.1);
+constexpr Precision maximum_opposing_normal_dot    = Precision(-0.1);
 constexpr Precision projection_selection_tolerance = Precision(1e-10);
 
 constexpr Precision augmentation_gap_relative_tolerance        = Precision(1e-4);
@@ -61,7 +60,7 @@ constexpr Precision augmentation_gap_absolute_tolerance        = Precision(1e-10
 constexpr Precision augmentation_multiplier_relative_tolerance = Precision(1e-6);
 constexpr Precision augmentation_multiplier_absolute_tolerance = Precision(1e-10);
 
-constexpr bool print_contact_summary = true;
+constexpr bool print_contact_summary = false;
 
 using LocalTriangle = std::array<Vec2, 3>;
 using PlaneTriangle = std::array<Vec2, 3>;
@@ -70,15 +69,14 @@ struct SurfacePatch {
     ID                  surface_id = -1;
     LocalTriangle       local {};
     std::array<Vec3, 3> global {};
-    BvhAabb::Aabb       box = BvhAabb::Aabb::invalid();
 };
 
 struct CommonPlane {
-    Vec3 origin  = Vec3::Zero();
-    Vec3 normal  = Vec3::Zero();
-    Vec3 tangent = Vec3::Zero();
+    Vec3 origin   = Vec3::Zero();
+    Vec3 normal   = Vec3::Zero();
+    Vec3 tangent  = Vec3::Zero();
     Vec3 binormal = Vec3::Zero();
-    bool valid = false;
+    bool valid    = false;
 
     [[nodiscard]] Vec2 project(const Vec3& point) const {
         const Vec3 delta = point - origin;
@@ -104,12 +102,11 @@ struct SelectedMasterPoint {
 };
 
 struct MortarConstraintData {
-    Precision support               = Precision(0);
-    Precision overlap_measure       = Precision(0);
-    Precision gap_integral          = Precision(0);
-    Precision characteristic_length = Precision(0);
-    Precision minimum_geometric_gap = std::numeric_limits<Precision>::max();
-
+    Precision support                = Precision(0);
+    Precision overlap_measure        = Precision(0);
+    Precision gap_integral           = Precision(0);
+    Precision characteristic_length  = Precision(0);
+    Precision minimum_geometric_gap  = std::numeric_limits<Precision>::max();
     std::unordered_map<ID, Vec3> gradient;
 };
 
@@ -127,18 +124,17 @@ struct MortarDiagnostics {
     Index deactivations        = 0;
     Index self_rejections      = 0;
     Index normal_rejections    = 0;
-    Index distance_rejections  = 0;
     Index hidden_layer_rejects = 0;
     Index invalid_dual_bases   = 0;
 
-    Precision maximum_geometric_penetration = Precision(0);
-    Precision maximum_mortar_penetration    = Precision(0);
-    Precision maximum_pressure_coefficient  = Precision(0);
+    Precision maximum_geometric_penetration  = Precision(0);
+    Precision maximum_mortar_penetration     = Precision(0);
+    Precision maximum_pressure_coefficient   = Precision(0);
     Precision force_contribution_squared_sum = Precision(0);
 };
 
 bool valid_surface_id(
-    ID                                               surface_id,
+    ID                                                surface_id,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces
 ) {
     return surface_id >= 0 &&
@@ -260,20 +256,8 @@ SurfacePatch make_surface_patch(
 
     for (std::size_t i = 0; i < patch.local.size(); ++i) {
         patch.global[i] = surface->local_to_global(patch.local[i], node_coords);
-        patch.box.expand_point(patch.global[i]);
     }
     return patch;
-}
-
-BvhAabb::Aabb make_surface_aabb(
-    const model::SurfaceInterface::Ptr& surface,
-    const model::Field&                 node_coords
-) {
-    BvhAabb::Aabb box = BvhAabb::Aabb::invalid();
-    for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
-        box.expand_point(node_coords.row_vec3(static_cast<Index>(surface->nodes()[local_node])));
-    }
-    return box;
 }
 
 CommonPlane make_common_plane(
@@ -429,15 +413,9 @@ bool build_dual_basis(
         return false;
     }
 
-    // For linear S3/S4 surfaces the natural dual scaling is the row sum
-    //
-    //     D_i = sum_j M_ij = int_Gamma N_i dA,
-    //
-    // which gives sum_i D_i = area(Gamma). A constant multiplier therefore
-    // reproduces a constant traction and passes the matching-surface patch test.
-    // Quadratic S6/S8 shape functions can have zero or negative row integrals;
-    // until a dedicated quadratic dual multiplier space is introduced, keep a
-    // positive diagonal scaling but normalize it to the complete surface area.
+    // Linear S3/S4 surfaces use the row-sum scaling D_i = int N_i dA. For
+    // quadratic S6/S8 surfaces keep a positive scaling normalized to the full
+    // surface measure until a dedicated quadratic dual multiplier space exists.
     if (n == 3 || n == 4) {
         support = mass * DynamicVector::Ones(n);
     } else {
@@ -473,20 +451,14 @@ SelectedMasterPoint select_master_point(
     const std::vector<SurfacePatch>&                  master_patches,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces,
     const model::Field&                               node_coords,
-    Precision                                         search_radius,
     Precision                                         clearance,
-    bool                                              flip_normal,
-    MortarDiagnostics&                                diagnostics
+    bool                                              flip_normal
 ) {
     SelectedMasterPoint best;
 
     for (const ProjectedMasterPatch& projected : projected_patches) {
         const Vec3 lambda = barycentric(plane_point, projected.plane);
-        if (!barycentric_inside(lambda)) {
-            continue;
-        }
-
-        if (projected.patch_id < 0 ||
+        if (!barycentric_inside(lambda) || projected.patch_id < 0 ||
             static_cast<std::size_t>(projected.patch_id) >= master_patches.size()) {
             continue;
         }
@@ -517,9 +489,7 @@ SelectedMasterPoint select_master_point(
 
         const Vec3 difference = slave_global - master_global;
         const Precision candidate_distance = difference.norm();
-        if (!std::isfinite(candidate_distance) ||
-            candidate_distance > search_radius + geometry_tolerance) {
-            ++diagnostics.distance_rejections;
+        if (!std::isfinite(candidate_distance)) {
             continue;
         }
 
@@ -587,26 +557,19 @@ void Contact::assemble_surface(
             ? runtime_state.committed
             : runtime_state.trials.back().state;
 
-    const Precision search_radius = distance + std::max(clearance, Precision(0));
-
     std::vector<SurfacePatch> master_patches;
-    BvhAabb                  master_bvh;
-
     for (ID master_surface_id : *master_surfaces) {
         if (!valid_surface_id(master_surface_id, surfaces)) {
             continue;
         }
 
         const auto& master = surfaces[static_cast<std::size_t>(master_surface_id)];
-        for (const auto& local_triangle : local_triangles(master)) {
-            const ID patch_id = static_cast<ID>(master_patches.size());
+        for (const LocalTriangle& local_triangle : local_triangles(master)) {
             master_patches.push_back(
                 make_surface_patch(master_surface_id, master, local_triangle, node_coords)
             );
-            master_bvh.add_aabb(patch_id, master_patches.back().box);
         }
     }
-    master_bvh.finalize();
 
     const math::quadrature::Quadrature triangle_quadrature {
         math::quadrature::DOMAIN_ISO_TRI,
@@ -615,9 +578,6 @@ void Contact::assemble_surface(
 
     MortarDiagnostics diagnostics;
     std::unordered_map<ID, MortarConstraintData> constraints;
-
-    std::vector<ID> candidate_patch_ids;
-    candidate_patch_ids.reserve(64);
 
     for (ID slave_surface_id : *slave_surfaces) {
         if (!valid_surface_id(slave_surface_id, surfaces)) {
@@ -641,22 +601,13 @@ void Contact::assemble_surface(
         const Precision slave_length = std::sqrt(slave_area);
 
         for (Index local_node = 0; local_node < slave->n_nodes; ++local_node) {
-            const ID node_id = slave->nodes()[local_node];
-            MortarConstraintData& constraint = constraints[node_id];
+            MortarConstraintData& constraint = constraints[slave->nodes()[local_node]];
             constraint.support += local_support(local_node);
             constraint.characteristic_length =
                 std::max(constraint.characteristic_length, slave_length);
         }
 
-        if (!master_bvh.valid()) {
-            continue;
-        }
-
-        BvhAabb::Aabb slave_box = make_surface_aabb(slave, node_coords);
-        slave_box.inflate(search_radius);
-
-        const auto& candidates = master_bvh.query_aabb(slave_box, &candidate_patch_ids);
-        const Index candidate_count = static_cast<Index>(candidates.size());
+        const Index candidate_count = static_cast<Index>(master_patches.size());
         diagnostics.candidate_patches += candidate_count;
         diagnostics.maximum_candidates =
             std::max(diagnostics.maximum_candidates, candidate_count);
@@ -685,16 +636,11 @@ void Contact::assemble_surface(
             }
 
             std::vector<ProjectedMasterPatch> projected_patches;
-            projected_patches.reserve(static_cast<std::size_t>(candidate_count));
+            projected_patches.reserve(master_patches.size());
 
-            for (ID patch_id : candidates) {
-                if (patch_id < 0 ||
-                    static_cast<std::size_t>(patch_id) >= master_patches.size()) {
-                    continue;
-                }
-
-                const SurfacePatch& master_patch =
-                    master_patches[static_cast<std::size_t>(patch_id)];
+            for (std::size_t patch_index = 0; patch_index < master_patches.size(); ++patch_index) {
+                const ID patch_id = static_cast<ID>(patch_index);
+                const SurfacePatch& master_patch = master_patches[patch_index];
                 if (!valid_surface_id(master_patch.surface_id, surfaces)) {
                     continue;
                 }
@@ -751,9 +697,7 @@ void Contact::assemble_surface(
                 for (std::size_t fan = 1; fan + 1 < segment.overlap.size(); ++fan) {
                     const Vec2 edge_r = segment.overlap[fan]     - origin;
                     const Vec2 edge_s = segment.overlap[fan + 1] - origin;
-                    const Precision triangle_jacobian =
-                        std::abs(cross_2d(edge_r, edge_s));
-
+                    const Precision triangle_jacobian = std::abs(cross_2d(edge_r, edge_s));
                     if (triangle_jacobian <= area_tolerance) {
                         continue;
                     }
@@ -769,10 +713,8 @@ void Contact::assemble_surface(
                             continue;
                         }
 
-                        const Vec2 slave_local =
-                            interpolate_local(slave_patch.local, slave_lambda);
-                        const Vec3 slave_global =
-                            slave->local_to_global(slave_local, node_coords);
+                        const Vec2 slave_local = interpolate_local(slave_patch.local, slave_lambda);
+                        const Vec3 slave_global = slave->local_to_global(slave_local, node_coords);
                         Vec3 slave_normal = slave->normal(node_coords, slave_local);
 
                         if (!slave_global.allFinite() || !slave_normal.allFinite() ||
@@ -789,10 +731,8 @@ void Contact::assemble_surface(
                             master_patches,
                             surfaces,
                             node_coords,
-                            search_radius,
                             clearance,
-                            flip_normal,
-                            diagnostics
+                            flip_normal
                         );
 
                         if (!selected.valid || selected.patch_id != segment.patch_id) {
@@ -804,9 +744,9 @@ void Contact::assemble_surface(
 
                         const auto& master =
                             surfaces[static_cast<std::size_t>(selected.surface_id)];
-                        const DynamicVector Ns   = slave->shape_function(slave_local);
-                        const DynamicVector Nm   = master->shape_function(selected.local);
-                        const DynamicVector Phi  = dual * Ns;
+                        const DynamicVector Ns  = slave->shape_function(slave_local);
+                        const DynamicVector Nm  = master->shape_function(selected.local);
+                        const DynamicVector Phi = dual * Ns;
 
                         if (!Ns.allFinite() || !Nm.allFinite() || !Phi.allFinite() ||
                             !std::isfinite(selected.gap) || !std::isfinite(weight) ||
@@ -827,8 +767,8 @@ void Contact::assemble_surface(
                                 continue;
                             }
 
-                            const ID constraint_id = slave->nodes()[constraint_node];
-                            MortarConstraintData& constraint = constraints[constraint_id];
+                            MortarConstraintData& constraint =
+                                constraints[slave->nodes()[constraint_node]];
                             const Precision factor = weight * phi;
 
                             constraint.overlap_measure += weight * std::abs(phi);
@@ -904,8 +844,7 @@ void Contact::assemble_surface(
         }
 
         current_gaps[constraint_id] = gap;
-        current_characteristic_lengths[constraint_id] =
-            constraint.characteristic_length;
+        current_characteristic_lengths[constraint_id] = constraint.characteristic_length;
 
         const Precision pressure =
             std::max(Precision(0), normal_multiplier - penalty * gap);
@@ -960,9 +899,7 @@ void Contact::assemble_surface(
     const bool active_changed =
         diagnostics.activations > 0 || diagnostics.deactivations > 0;
 
-    std::vector<ID> active_node_ids(
-        current_active_slaves.begin(), current_active_slaves.end()
-    );
+    std::vector<ID> active_node_ids(current_active_slaves.begin(), current_active_slaves.end());
     std::sort(active_node_ids.begin(), active_node_ids.end());
 
     std::uint64_t signature = UINT64_C(1469598103934665603);
@@ -999,32 +936,31 @@ void Contact::assemble_surface(
             << std::scientific
             << std::setprecision(3)
             << "[CONTACT]"
-            << " call="          << runtime_state.call
+            << " call="           << runtime_state.call
             << " mode=MORTAR"
-            << " depth="         << runtime_state.trials.size()
-            << " surfaces="      << diagnostics.slave_surfaces
-            << " spatches="      << diagnostics.slave_patches
-            << " seg_raw="       << diagnostics.projected_segments
-            << " segments="      << diagnostics.overlap_segments
-            << " qpts="          << diagnostics.quadrature_points
-            << " constraints="   << diagnostics.constraints
-            << " active="        << diagnostics.active_constraints
-            << " activated="     << diagnostics.activations
-            << " deactivated="   << diagnostics.deactivations
-            << " active_changed="<< (active_changed ? 1 : 0)
-            << " cand_avg="      << average_candidates
-            << " cand_max="      << diagnostics.maximum_candidates
-            << " self_rej="      << diagnostics.self_rejections
-            << " normal_rej="    << diagnostics.normal_rejections
-            << " layer_rej="     << diagnostics.hidden_layer_rejects
-            << " dist_rej="      << diagnostics.distance_rejections
-            << " dual_fail="     << diagnostics.invalid_dual_bases
-            << " max_geom_pen="  << diagnostics.maximum_geometric_penetration
-            << " max_mortar_pen="<< diagnostics.maximum_mortar_penetration
-            << " max_pcoef="     << diagnostics.maximum_pressure_coefficient
-            << " force_norm="    << force_norm
-            << " triplets="      << added_triplets
-            << " ms="            << elapsed_ms
+            << " depth="          << runtime_state.trials.size()
+            << " surfaces="       << diagnostics.slave_surfaces
+            << " spatches="       << diagnostics.slave_patches
+            << " seg_raw="        << diagnostics.projected_segments
+            << " segments="       << diagnostics.overlap_segments
+            << " qpts="           << diagnostics.quadrature_points
+            << " constraints="    << diagnostics.constraints
+            << " active="         << diagnostics.active_constraints
+            << " activated="      << diagnostics.activations
+            << " deactivated="    << diagnostics.deactivations
+            << " active_changed=" << (active_changed ? 1 : 0)
+            << " cand_avg="       << average_candidates
+            << " cand_max="       << diagnostics.maximum_candidates
+            << " self_rej="       << diagnostics.self_rejections
+            << " normal_rej="     << diagnostics.normal_rejections
+            << " layer_rej="      << diagnostics.hidden_layer_rejects
+            << " dual_fail="      << diagnostics.invalid_dual_bases
+            << " max_geom_pen="   << diagnostics.maximum_geometric_penetration
+            << " max_mortar_pen=" << diagnostics.maximum_mortar_penetration
+            << " max_pcoef="      << diagnostics.maximum_pressure_coefficient
+            << " force_norm="     << force_norm
+            << " triplets="       << added_triplets
+            << " ms="             << elapsed_ms
             << '\n';
 
         std::cout.flags(previous_flags);
@@ -1077,24 +1013,16 @@ bool Contact::update_augmented_lagrange_surface() const {
         Precision new_multiplier = old_multiplier;
         if (gap < -gap_tolerance ||
             (gap > gap_tolerance && old_multiplier > Precision(0))) {
-            new_multiplier =
-                std::max(Precision(0), old_multiplier - penalty * gap);
+            new_multiplier = std::max(Precision(0), old_multiplier - penalty * gap);
         }
 
-        const Precision multiplier_change =
-            std::abs(new_multiplier - old_multiplier);
+        const Precision multiplier_change = std::abs(new_multiplier - old_multiplier);
         const Precision multiplier_scale =
-            std::max({
-                old_multiplier,
-                new_multiplier,
-                penalty * gap_tolerance,
-                Precision(1)
-            });
+            std::max({old_multiplier, new_multiplier,
+                      penalty * gap_tolerance, Precision(1)});
         const Precision multiplier_tolerance =
-            std::max(
-                augmentation_multiplier_absolute_tolerance,
-                augmentation_multiplier_relative_tolerance * multiplier_scale
-            );
+            std::max(augmentation_multiplier_absolute_tolerance,
+                     augmentation_multiplier_relative_tolerance * multiplier_scale);
 
         if (new_multiplier > Precision(0) || old_multiplier > Precision(0)) {
             state.normal_multipliers[constraint_id] = new_multiplier;
