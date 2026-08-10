@@ -6,9 +6,9 @@ The manual is organized as a user reference. Command tables summarize the availa
 
 \section{Model layers}
 
-A model starts with nodes. Nodes define global coordinates and provide the reference points for all other model entities. Elements connect nodes into line, surface, or volume discretizations. Surfaces describe element sides used by pressure loads, distributed loads, ties, and surface couplings. Sets group nodes, elements, or surfaces so that loads, supports, sections, and constraints can refer to meaningful names instead of long ID lists.
+A model starts with nodes. Nodes define global coordinates and provide the reference points for all other model entities. Elements connect nodes into line, surface, or volume discretizations. Surfaces describe element sides used by pressure loads, distributed loads, ties, surface couplings, and surface-to-surface contact. Sets group nodes, elements, or surfaces so that loads, supports, sections, and constraints can refer to meaningful names instead of long ID lists.
 
-Materials and sections give elements their physical meaning. An element by itself defines only topology and interpolation. A section assigns material, thickness, area, or profile data. Features such as point masses are additional model objects that contribute mass, inertia, or spring stiffness without being part of element connectivity.
+Materials and sections give elements their physical meaning. An element by itself defines only topology and interpolation. A section assigns material, thickness, area, or profile data. Features such as point masses are additional model objects that contribute mass, inertia, or spring stiffness without being part of element connectivity. Contact pairs connect explicitly selected master and slave surfaces and contribute unilateral normal interaction during nonlinear static analysis.
 
 Loads and supports are stored in named collectors. A loadcase decides which collectors are active. This allows one model to contain several analyses without repeating geometry, materials, sections, or load definitions.
 
@@ -21,10 +21,11 @@ Loads and supports are stored in named collectors. A loadcase decides which coll
 \endhead
 \val{LINEARSTATIC} & Small-displacement static equilibrium with linear material behaviour. \\
 \val{LINEARSTATICTOPO} & Static analysis with element-wise topology fields such as density, orientation, and penalization exponent. \\
-\val{NONLINEARSTATIC} & Incremental static equilibrium with geometric and material nonlinearity, load control, or arc-length path following. \\
+\val{NONLINEARSTATIC} & Incremental static equilibrium with geometric and material nonlinearity, load control, arc-length path following, and nonlinear surface contact. \\
 \val{EIGENFREQ} & Natural-frequency analysis of the linear constrained system. \\
 \val{LINEARBUCKLING} & Linear buckling analysis from a static preload and the resulting geometric stiffness. \\
 \val{LINEARTRANSIENT} & Linear time integration with Newmark parameters, optional Rayleigh damping, and controlled result cadence. \\
+\val{LINEARHARMONIC} & Direct steady-state harmonic response over a prescribed excitation-frequency sweep with optional Rayleigh damping. \\
 \bottomrule
 \end{longtable}
 
