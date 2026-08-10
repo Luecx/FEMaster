@@ -2,34 +2,38 @@
  * @file contact.cpp
  * @brief Implements frictionless dual-mortar surface-to-surface contact.
  *
- * The complete contact formulation is implemented in this translation unit.
- * Every current slave subfacet defines one tangent plane. The slave triangle and
- * every admissible master triangle are projected onto this common physical plane,
- * clipped there and integrated over the resulting overlap polygons. All master
- * surfaces are tested directly; no BVH, search radius or persistent master
- * ownership participates in the formulation.
+ * The complete mortar formulation is implemented in this translation unit.
+ * Every current slave subtriangle defines a slave-centered tangent plane. The
+ * slave triangle and all admissible master subtriangles are projected onto that
+ * plane, clipped in two dimensions and integrated over the resulting physical
+ * overlap polygons. All master surfaces are tested directly; no BVH, search
+ * radius or persistent master-facet ownership participates in the formulation.
  *
- * Slave surfaces are processed independently in OpenMP workers when OpenMP is
- * available. Every worker owns a private mortar-constraint map; the maps are
- * reduced after the geometric integration so no locks are required in the
- * quadrature-point hot path.
- *
- * A local dual basis is constructed on every complete slave element. The overlap
- * integration accumulates one normalized normal-gap constraint and its frozen-
- * geometry gradient on every global slave mortar node. The unilateral law is
+ * A dual interpolation is constructed on each complete slave element from the
+ * full-slave mass matrix. Overlap integration accumulates one normalized nodal
+ * gap constraint and its frozen-geometry gradient on every global slave mortar
+ * node. For multiplier `lambda_i`, normalized gap `g_i`, support `S_i` and
+ * effective penalty `epsilon`, the implemented unilateral law is
  *
  *     p_i = max(0, lambda_i - epsilon g_i),
  *
- * and the corresponding residual and tangent contributions are
+ * with contact residual and frozen-geometry tangent
  *
  *     f_c = -sum_i p_i H_i,
  *     K_c =  sum_i epsilon / S_i H_i H_i^T.
  *
- * Augmented-Lagrange multipliers are the only persistent physical contact
- * history. Transactional copies support nonlinear increment and line-search
- * rollback while the geometric overlap is always recomputed.
+ * Slave surfaces are processed independently by OpenMP workers when available.
+ * Each worker owns a private mortar-constraint map which is reduced only after
+ * geometric integration, so the quadrature-point hot path requires no locks.
+ * Augmented-Lagrange multipliers are the only persistent physical history;
+ * current gaps are transactional evaluation data used by the post-Newton
+ * augmentation. The effective penalty persists across accepted increments and
+ * is increased only when penetration stagnates between converged Newton solves.
  *
  * @see Contact
+ * @see model::SurfaceInterface
+ * @see model::SurfacePolygon
+ * @see loadcase::tools::NonlinearStateManager
  *
  * @author Finn Eggers
  * @date 10.08.2026
@@ -64,6 +68,8 @@
 namespace fem::constraint {
 namespace {
 
+// Geometric tolerances operate in the projected contact construction. They are
+// intentionally independent of the nonlinear AL convergence tolerances below.
 constexpr Precision geometry_tolerance = Precision(1e-12);
 constexpr Precision area_tolerance     = Precision(1e-16);
 constexpr Precision tangent_tolerance  = Precision(1e-14);
@@ -73,6 +79,9 @@ constexpr Precision tangent_tolerance  = Precision(1e-14);
 constexpr Precision maximum_opposing_normal_dot    = Precision(-0.1);
 constexpr Precision projection_selection_tolerance = Precision(1e-10);
 
+// Post-Newton augmented-Lagrange convergence tolerances. The gap tolerance uses
+// a characteristic slave length, while the multiplier tolerance is scaled by
+// the current multiplier and the penalty force associated with that gap scale.
 constexpr Precision augmentation_gap_relative_tolerance        = Precision(1e-4);
 constexpr Precision augmentation_gap_absolute_tolerance        = Precision(1e-10);
 constexpr Precision augmentation_multiplier_relative_tolerance = Precision(1e-6);
@@ -82,7 +91,12 @@ using LocalTriangle = std::array<Vec2, 3>;
 using PlaneTriangle = std::array<Vec2, 3>;
 
 /**
- * @brief One master subtriangle projected onto the active slave tangent plane.
+ * @brief One master subtriangle represented on the current slave tangent plane.
+ *
+ * Natural master coordinates are retained together with their projected plane
+ * coordinates so a common-plane quadrature point can be mapped back to the
+ * physical master surface. `overlap` is the clipped polygon shared with the
+ * active slave subtriangle.
  */
 struct ProjectedSegment {
     ID                master_surface_id = ID(-1);
@@ -92,7 +106,13 @@ struct ProjectedSegment {
 };
 
 /**
- * @brief Integrated data of one global slave mortar constraint.
+ * @brief Integrated data of one global slave-node mortar constraint.
+ *
+ * `support` is the complete slave dual support `S_i`. `gap_integral` stores the
+ * overlap integral `c_i = int Phi_i g_n dA`, and `gradient` stores the assembled
+ * frozen-geometry vector `H_i`. `minimum_geometric_gap` is a physical
+ * quadrature-point penetration gate that prevents sign-changing dual functions
+ * from activating a completely open interface.
  */
 struct MortarConstraint {
     Precision support               = Precision(0);
@@ -104,6 +124,17 @@ struct MortarConstraint {
     std::unordered_map<ID, Vec3> gradient;
 };
 
+/**
+ * Checks whether a surface id addresses an existing surface object.
+ *
+ * Contact regions store ids rather than owning the corresponding surfaces. The
+ * check therefore guards all later geometry access against sparse or invalid
+ * entries in `ModelData::surfaces`.
+ *
+ * @param surface_id Candidate global surface id.
+ * @param surfaces Global surface repository.
+ * @return `true` when the id is in range and references a non-null surface.
+ */
 bool valid_surface_id(
     ID                                                surface_id,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces
@@ -113,6 +144,16 @@ bool valid_surface_id(
            static_cast<bool>(surfaces[static_cast<std::size_t>(surface_id)]);
 }
 
+/**
+ * Tests whether two surface facets share at least one global node.
+ *
+ * Shared-node slave/master pairs are excluded from contact segmentation to avoid
+ * self-contact contributions between coincident facets of the same local mesh.
+ *
+ * @param first First surface facet.
+ * @param second Second surface facet.
+ * @return `true` when both facets reference the same global node id.
+ */
 bool surfaces_share_node(
     const model::SurfaceInterface& first,
     const model::SurfaceInterface& second
@@ -127,10 +168,27 @@ bool surfaces_share_node(
     return false;
 }
 
+/**
+ * Evaluates the signed two-dimensional cross product.
+ *
+ * The scalar result is used for projected triangle orientation, area and
+ * barycentric-coordinate calculations in the common plane.
+ */
 Precision cross_2d(const Vec2& a, const Vec2& b) {
     return a(0) * b(1) - a(1) * b(0);
 }
 
+/**
+ * Computes barycentric coordinates of a point in a projected triangle.
+ *
+ * All quantities are expressed in the active two-dimensional common plane. A
+ * degenerate triangle returns NaNs instead of dividing by a near-zero projected
+ * area; callers reject such coordinates through `barycentric_inside()`.
+ *
+ * @param point Point in common-plane coordinates.
+ * @param triangle Projected triangle in the same coordinate system.
+ * @return Barycentric weights `(lambda_0, lambda_1, lambda_2)`.
+ */
 Vec3 barycentric(const Vec2& point, const PlaneTriangle& triangle) {
     const Vec2 edge_r = triangle[1] - triangle[0];
     const Vec2 edge_s = triangle[2] - triangle[0];
@@ -149,6 +207,12 @@ Vec3 barycentric(const Vec2& point, const PlaneTriangle& triangle) {
     return lambda;
 }
 
+/**
+ * Checks whether barycentric coordinates represent a point inside a triangle.
+ *
+ * A small tolerance admits points on numerically clipped polygon boundaries.
+ * Non-finite coordinates are always rejected.
+ */
 bool barycentric_inside(const Vec3& lambda) {
     constexpr Precision tolerance = Precision(1e-10);
 
@@ -157,12 +221,29 @@ bool barycentric_inside(const Vec3& lambda) {
            lambda.maxCoeff() <= Precision(1) + tolerance;
 }
 
+/**
+ * Interpolates a surface natural coordinate from triangle barycentric weights.
+ *
+ * @param triangle Natural coordinates of the subtriangle vertices.
+ * @param lambda Barycentric weights in the corresponding projected triangle.
+ * @return Natural two-dimensional surface coordinate.
+ */
 Vec2 interpolate_local(const LocalTriangle& triangle, const Vec3& lambda) {
     return lambda(0) * triangle[0] +
            lambda(1) * triangle[1] +
            lambda(2) * triangle[2];
 }
 
+/**
+ * Triangulates the natural domain of a supported surface facet.
+ *
+ * Linear surfaces use a fan of their natural-domain polygon. Quadratic S6 and
+ * S8 surfaces use explicit subtriangulations that include midside locations so
+ * curved geometry is sampled consistently by the common-plane segmentation.
+ *
+ * @param surface Surface whose natural domain is subdivided.
+ * @return Natural-coordinate subtriangles covering the surface domain.
+ */
 std::vector<LocalTriangle> local_triangles(
     const model::SurfaceInterface::Ptr& surface
 ) {
@@ -224,6 +305,28 @@ std::vector<LocalTriangle> local_triangles(
     return triangles;
 }
 
+/**
+ * Constructs the local dual mortar interpolation on a complete slave surface.
+ *
+ * The full-slave mass matrix
+ *
+ *     M = int_Gamma_s N_s N_s^T dA
+ *
+ * is integrated in the current configuration and factorized by LDLT. For linear
+ * S3/S4 surfaces the nodal support is `D_i = int N_i dA = (M 1)_i`, yielding the
+ * dual interpolation `Phi = D M^-1 N_s`. Quadratic S6/S8 currently retain the
+ * established positive diagonal support normalized to the complete surface area.
+ *
+ * Degenerate, non-finite or singular mass matrices are rejected before the dual
+ * basis is used by overlap integration.
+ *
+ * @param surface Complete slave surface facet.
+ * @param node_coords Current global nodal positions.
+ * @param quadrature Triangle quadrature used for full-slave integration.
+ * @param dual Output matrix multiplying the primal slave shape vector.
+ * @param support Output complete-slave nodal support `S_i`.
+ * @return `true` when a finite dual basis could be constructed.
+ */
 bool build_dual_basis(
     const model::SurfaceInterface::Ptr& surface,
     const model::Field&                 node_coords,
@@ -234,6 +337,7 @@ bool build_dual_basis(
     const Index n = surface->n_nodes;
     DynamicMatrix mass = DynamicMatrix::Zero(n, n);
 
+    // Integrate the full-slave mortar mass matrix in physical surface measure.
     surface->integrate_triangular(
         node_coords,
         surface->local_domain_polygon(),
@@ -244,6 +348,7 @@ bool build_dual_basis(
         }
     );
 
+    // Use the largest diagonal entry as a local scale for degeneracy checks.
     Precision scale = Precision(0);
     for (Index i = 0; i < n; ++i) {
         scale = std::max(scale, std::abs(mass(i, i)));
@@ -263,8 +368,9 @@ bool build_dual_basis(
         return false;
     }
 
-    // Linear S3/S4 surfaces use D_i = int N_i dA. For quadratic S6/S8
-    // surfaces keep the existing positive full-area normalization.
+    // Linear S3/S4 surfaces use D_i = int N_i dA. Quadratic S6/S8 surfaces
+    // retain the existing positive full-area normalization until a dedicated
+    // higher-order dual multiplier space is introduced.
     if (n == 3 || n == 4) {
         support = mass * DynamicVector::Ones(n);
     } else {
@@ -283,6 +389,7 @@ bool build_dual_basis(
         support *= surface_measure / support_measure;
     }
 
+    // Scale each row of M^-1 by its nodal support so dual * N_s evaluates Phi.
     dual = inverse;
 
     for (Index i = 0; i < n; ++i) {
@@ -295,6 +402,12 @@ bool build_dual_basis(
     return dual.allFinite();
 }
 
+/**
+ * Adds one translational nodal force contribution to a six-DOF nodal field.
+ *
+ * Rotational entries are intentionally untouched because frictionless mortar
+ * contact acts only through translational normal forces.
+ */
 void add_translational_force(
     model::NodeData& nodal_forces,
     ID               node_id,
@@ -306,6 +419,12 @@ void add_translational_force(
     }
 }
 
+/**
+ * Accumulates one node block of a mortar constraint gradient.
+ *
+ * Multiple slave/master interpolation contributions may address the same global
+ * node, so insertion and accumulation are performed in one place.
+ */
 void add_gradient(
     std::unordered_map<ID, Vec3>& gradient,
     ID                            node_id,
@@ -316,6 +435,13 @@ void add_gradient(
     it->second += value;
 }
 
+/**
+ * Scatters one 3x3 translational contact tangent block into sparse triplets.
+ *
+ * Inactive global DOFs are skipped according to `system_nodal_dofs`. Numerically
+ * negligible entries are omitted to avoid filling the sparse matrix with roundoff
+ * noise from outer products of constraint gradients.
+ */
 void add_tangent_block(
     ID            row_node,
     ID            col_node,
@@ -345,6 +471,14 @@ void add_tangent_block(
 
 } // namespace
 
+/**
+ * Constructs one surface-to-surface mortar contact definition.
+ *
+ * The supplied penalty is stored both as the immutable analysis starting value
+ * and as the mutable effective penalty used by the current AL continuation. No
+ * geometric preprocessing is performed here because overlap is reconstructed
+ * from the current configuration during every assembly.
+ */
 Contact::Contact(
     model::SurfaceRegion::Ptr master,
     model::SurfaceRegion::Ptr slave,
@@ -354,6 +488,7 @@ Contact::Contact(
 )
     : master_surfaces(std::move(master)),
       slave_surfaces(std::move(slave)),
+      initial_penalty(penalty_stiffness),
       penalty(penalty_stiffness),
       clearance(contact_clearance),
       flip_normal(flip_master_normal) {
@@ -367,16 +502,38 @@ Contact::Contact(
         "CONTACT: CLEARANCE must be finite");
 }
 
+/**
+ * Returns the innermost active transactional contact state.
+ *
+ * Outside any trial the committed state is returned. The method is `const`
+ * because trial/history storage is numerical solver state rather than part of
+ * the immutable contact definition.
+ */
 Contact::State& Contact::state() const {
     return trial_states.empty() ? committed_state : trial_states.back();
 }
 
+/**
+ * Opens one nested transactional contact trial.
+ *
+ * The current multiplier and accepted evaluation state are copied. Contact
+ * geometry is not copied or frozen; each subsequent assembly reconstructs it
+ * directly from the nodal positions supplied through `ModelData`.
+ */
 void Contact::begin_trial() const {
     trial_states.push_back(state());
 }
 
+/**
+ * Commits the innermost contact trial into its parent transaction.
+ *
+ * A top-level commit promotes the accepted multiplier/evaluation state to the
+ * persistent committed state. Nested commits replace the parent trial, which is
+ * used for accepted line-search candidates and post-Newton AL refreshes.
+ */
 void Contact::commit_trial() const {
-    logging::error(!trial_states.empty(), "CONTACT: no trial state to commit");
+    logging::error(!trial_states.empty(),
+        "CONTACT: no trial state to commit");
 
     State accepted = std::move(trial_states.back());
     trial_states.pop_back();
@@ -388,11 +545,135 @@ void Contact::commit_trial() const {
     }
 }
 
+/**
+ * Discards the innermost transactional contact trial.
+ *
+ * The parent or committed state remains unchanged. Because geometry has no
+ * persistent state, rollback consists only of dropping the trial multiplier and
+ * accepted gap data.
+ */
 void Contact::rollback_trial() const {
-    logging::error(!trial_states.empty(), "CONTACT: no trial state to roll back");
+    logging::error(!trial_states.empty(),
+        "CONTACT: no trial state to roll back");
+
     trial_states.pop_back();
 }
 
+/**
+ * Resets the numerical AL penalty state for a new nonlinear analysis.
+ *
+ * The effective penalty returns to the user-provided `initial_penalty`, and the
+ * penetration history used to detect stagnation is cleared. This operation is
+ * intentionally performed once per nonlinear analysis rather than once per load
+ * increment, so a useful adapted penalty persists along the accepted load path.
+ */
+void Contact::reset_penalty_adaptation() const {
+    penalty                           = initial_penalty;
+    previous_augmentation_penetration = Precision(-1);
+    previous_augmentation_changed     = false;
+}
+
+/**
+ * Adapts the effective contact penalty after a converged inner Newton solve.
+ *
+ * The maximum represented penetration
+ *
+ *     d_k = max_i max(0, -g_i)
+ *
+ * is compared with the penetration stored after the previous successful
+ * multiplier augmentation. If that augmentation changed at least one multiplier
+ * but reduced penetration by less than 20 %, i.e.
+ *
+ *     d_k >= 0.8 d_(k-1),
+ *
+ * the effective penalty is increased by one decade. The value is capped at
+ * `1e6 * initial_penalty`. The comparison is evaluated before the next multiplier
+ * update so that update immediately uses the adapted penalty.
+ *
+ * @return `true` only when the effective penalty was increased.
+ */
+bool Contact::adapt_penalty() const {
+    State& current = state();
+
+    Precision maximum_penetration = Precision(0);
+    for (const auto& [constraint_id, gap] : current.gaps) {
+        (void) constraint_id;
+        if (std::isfinite(gap)) {
+            maximum_penetration =
+                std::max(maximum_penetration, std::max(Precision(0), -gap));
+        }
+    }
+
+    // Establish a new reference penetration when no preceding augmentation
+    // changed the multiplier state or the interface is currently penetration-free.
+    if (!previous_augmentation_changed || maximum_penetration <= Precision(0)) {
+        previous_augmentation_penetration = maximum_penetration;
+        return false;
+    }
+
+    const Precision previous = previous_augmentation_penetration;
+    previous_augmentation_penetration = maximum_penetration;
+
+    if (previous <= Precision(0) ||
+        maximum_penetration < Precision(0.8) * previous) {
+        return false;
+    }
+
+    const Precision maximum_penalty = initial_penalty * Precision(1e6);
+    const Precision adapted_penalty =
+        std::min(maximum_penalty, penalty * Precision(10));
+
+    if (!(adapted_penalty > penalty) || !std::isfinite(adapted_penalty)) {
+        return false;
+    }
+
+    penalty = adapted_penalty;
+    return true;
+}
+
+/**
+ * Records whether the most recent AL multiplier update changed contact history.
+ *
+ * The flag controls whether the next converged penetration is eligible for the
+ * stagnation test in `adapt_penalty()`.
+ */
+void Contact::finish_augmentation(bool changed) const {
+    previous_augmentation_changed = changed;
+}
+
+/**
+ * Returns the effective penalty currently used by contact residual, tangent and
+ * multiplier updates. The value may exceed the user input after stagnation-based
+ * continuation.
+ */
+Precision Contact::current_penalty() const noexcept {
+    return penalty;
+}
+
+/**
+ * Assembles the current dual-mortar contact residual and frozen-geometry tangent.
+ *
+ * The algorithm proceeds directly from current nodal positions:
+ *
+ * 1. construct a complete-slave dual basis and nodal support,
+ * 2. split each slave facet into natural-coordinate subtriangles,
+ * 3. build one tangent plane from the current slave subtriangle,
+ * 4. project and clip every admissible master subtriangle on that plane,
+ * 5. integrate overlap polygons and select the nearest physical master layer at
+ *    every quadrature point,
+ * 6. accumulate thread-local nodal gap integrals and gradients,
+ * 7. reduce worker maps and evaluate the unilateral AL law,
+ * 8. scatter `f_c` and the symmetric frozen-geometry tangent `K_c`.
+ *
+ * The master/slave geometry and normals are recomputed every call. Derivatives of
+ * segmentation, closest-layer selection and normals are deliberately omitted from
+ * the tangent; only the fixed-current-geometry gap derivative is represented.
+ *
+ * @param system_nodal_dofs Global active-DOF ids used for tangent scattering.
+ * @param model_data Model repository providing current positions and surfaces.
+ * @param nodal_forces Nodal internal-force field receiving contact forces.
+ * @param triplets Sparse triplet list receiving contact tangent entries.
+ */
 void Contact::assemble(
     SystemDofIds&     system_nodal_dofs,
     model::ModelData& model_data,
@@ -400,7 +681,7 @@ void Contact::assemble(
     TripletList&      triplets
 ) const {
     // -------------------------------------------------------------------------
-    // 1. Validate model state and initialize thread-local mortar accumulation
+    // 1. Validate current model state and prepare thread-local accumulation
     // -------------------------------------------------------------------------
     logging::error(master_surfaces != nullptr && slave_surfaces != nullptr,
         "CONTACT: surface regions are not defined");
@@ -411,6 +692,8 @@ void Contact::assemble(
     auto&               surfaces    = model_data.surfaces;
     State&              current     = state();
 
+    // Gaps and characteristic lengths belong to the current evaluation. The
+    // multiplier map remains untouched until the post-Newton AL update.
     current.gaps.clear();
     current.characteristic_lengths.clear();
 
@@ -430,6 +713,9 @@ void Contact::assemble(
     );
 #endif
 
+    // Every worker accumulates complete mortar constraints independently. This
+    // avoids locks around unordered-map and gradient updates in the nested
+    // slave/master/overlap/quadrature loops.
     std::vector<std::unordered_map<ID, MortarConstraint>> thread_constraints(
         static_cast<std::size_t>(num_threads)
     );
@@ -438,7 +724,7 @@ void Contact::assemble(
     std::exception_ptr assembly_exception = nullptr;
 
     // -------------------------------------------------------------------------
-    // 2. Process slave surfaces independently
+    // 2. Process complete slave surfaces independently
     // -------------------------------------------------------------------------
 #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(num_threads)
@@ -467,6 +753,8 @@ void Contact::assemble(
 
             const auto& slave = surfaces[static_cast<std::size_t>(slave_surface_id)];
 
+            // The dual basis and support are defined on the complete slave
+            // element, not separately on the later overlap segments.
             DynamicMatrix dual;
             DynamicVector local_support;
 
@@ -496,6 +784,9 @@ void Contact::assemble(
                     slave_global[i] = slave->local_to_global(slave_local[i], node_coords);
                 }
 
+                // The common plane is deliberately slave-centered: origin and
+                // normal are evaluated at the natural center of this current
+                // slave subtriangle. Master geometry does not alter the plane.
                 const Vec2 slave_center =
                     (slave_local[0] + slave_local[1] + slave_local[2]) / Precision(3);
 
@@ -510,6 +801,9 @@ void Contact::assemble(
                 }
                 plane_normal.normalize();
 
+                // Build an orthonormal in-plane basis from the better-conditioned
+                // projected slave edge. Both slave and master vertices are then
+                // represented in this same two-dimensional coordinate system.
                 Vec3 first  = slave_global[1] - slave_global[0];
                 Vec3 second = slave_global[2] - slave_global[0];
 
@@ -561,6 +855,9 @@ void Contact::assemble(
 
                 std::vector<ProjectedSegment> segments;
 
+                // Brute-force all explicitly paired master facets. This is the
+                // parameter-free correctness baseline: there is no DISTANCE gate
+                // and no persistent spatial-search or partner state.
                 for (ID master_surface_id : *master_surfaces) {
                     if (!valid_surface_id(master_surface_id, surfaces)) {
                         continue;
@@ -633,12 +930,15 @@ void Contact::assemble(
                 }
 
                 // -------------------------------------------------------------
-                // 4. Integrate overlap and choose one visible master layer
+                // 4. Integrate overlap and select one physical master layer
                 // -------------------------------------------------------------
                 for (std::size_t segment_id = 0; segment_id < segments.size(); ++segment_id) {
                     const ProjectedSegment& segment = segments[segment_id];
                     const Vec2 origin = segment.overlap[0];
 
+                    // A clipped convex polygon is integrated by a triangle fan
+                    // around its first vertex. The stored quadrature is defined
+                    // on the reference triangle and scaled by the 2D Jacobian.
                     for (std::size_t fan = 1; fan + 1 < segment.overlap.size(); ++fan) {
                         const Vec2 edge_r = segment.overlap[fan]     - origin;
                         const Vec2 edge_s = segment.overlap[fan + 1] - origin;
@@ -657,6 +957,9 @@ void Contact::assemble(
                                 origin + qp.r * edge_r + qp.s * edge_s;
                             const Precision weight = qp.w * triangle_jacobian;
 
+                            // Recover slave natural coordinates from the current
+                            // plane point and evaluate its physical position and
+                            // outward normal in the deformed configuration.
                             const Vec3 slave_lambda = barycentric(plane_point, slave_plane);
                             if (!barycentric_inside(slave_lambda)) {
                                 continue;
@@ -675,6 +978,10 @@ void Contact::assemble(
                             }
                             slave_normal_qp.normalize();
 
+                            // Several projected master layers can cover the same
+                            // plane point. Select the physically nearest opposing
+                            // layer; deterministic segment-id tie breaking avoids
+                            // non-repeatable ownership at equal distance.
                             std::size_t selected_segment = segments.size();
                             Precision selected_distance =
                                 std::numeric_limits<Precision>::max();
@@ -751,6 +1058,8 @@ void Contact::assemble(
                                 selected_gap           = candidate_gap;
                             }
 
+                            // Each plane point is integrated exactly once by the
+                            // segment selected as the nearest physical master.
                             if (selected_segment != segment_id) {
                                 continue;
                             }
@@ -785,11 +1094,17 @@ void Contact::assemble(
 
                                 const Precision factor = weight * phi;
 
+                                // c_i = int Phi_i g_n dA. `overlap_measure`
+                                // uses |Phi_i| only as a coverage gate; it does
+                                // not enter the normalized mortar equation.
                                 constraint.overlap_measure += weight * std::abs(phi);
                                 constraint.gap_integral    += factor * selected_gap;
                                 constraint.minimum_geometric_gap =
                                     std::min(constraint.minimum_geometric_gap, selected_gap);
 
+                                // H_i = int Phi_i B^T n dA. Slave translation
+                                // enters with +Ns n and master translation with
+                                // -Nm n for g_n = (x_s - x_m)^T n_m - clearance.
                                 for (Index local_node = 0;
                                      local_node < slave->n_nodes;
                                      ++local_node) {
@@ -816,6 +1131,8 @@ void Contact::assemble(
             }
         } catch (...) {
 #ifdef _OPENMP
+            // Exceptions may not escape an OpenMP worker. Record the first one
+            // and rethrow it after the parallel region has completed.
             if (!assembly_failed.exchange(true, std::memory_order_relaxed)) {
                 #pragma omp critical(fem_contact_exception)
                 {
@@ -835,7 +1152,7 @@ void Contact::assemble(
 #endif
 
     // -------------------------------------------------------------------------
-    // 6. Reduce thread-local constraints
+    // 6. Reduce thread-local constraints into global slave-node constraints
     // -------------------------------------------------------------------------
     std::unordered_map<ID, MortarConstraint> constraints;
 
@@ -872,6 +1189,8 @@ void Contact::assemble(
             continue;
         }
 
+        // Normalize the integrated dual gap by the complete slave support:
+        // g_i = c_i / S_i.
         const Precision gap = constraint.gap_integral / constraint.support;
         if (!std::isfinite(gap)) {
             continue;
@@ -883,6 +1202,10 @@ void Contact::assemble(
                 ? std::max(multiplier_it->second, Precision(0))
                 : Precision(0);
 
+        // A sign-changing dual basis can produce a negative normalized gap on a
+        // physically open partial overlap. New contact therefore requires at
+        // least one physically penetrating quadrature point. Existing positive
+        // multiplier history may persist while the interface unloads.
         const bool geometrically_closed =
             constraint.minimum_geometric_gap < -geometry_tolerance;
 
@@ -894,6 +1217,7 @@ void Contact::assemble(
         current.characteristic_lengths[constraint_id] =
             constraint.characteristic_length;
 
+        // Semismooth unilateral AL law p_i = max(0, lambda_i - epsilon g_i).
         const Precision pressure =
             std::max(Precision(0), multiplier - penalty * gap);
 
@@ -901,10 +1225,15 @@ void Contact::assemble(
             continue;
         }
 
+        // Contact residual f_c = -sum_i p_i H_i.
         for (const auto& [node_id, gradient] : constraint.gradient) {
             add_translational_force(nodal_forces, node_id, -pressure * gradient);
         }
 
+        // Frozen-geometry derivative:
+        //   dg_i = H_i^T du / S_i,
+        //   dp_i = -epsilon dg_i,
+        //   K_i  = epsilon / S_i H_i H_i^T.
         const Precision tangent_scale = penalty / constraint.support;
 
         for (const auto& [row_node, row_gradient] : constraint.gradient) {
@@ -921,9 +1250,27 @@ void Contact::assemble(
     }
 }
 
+/**
+ * Updates global slave-node augmented-Lagrange multipliers after Newton convergence.
+ *
+ * Constraints absent from the accepted current overlap lose obsolete multiplier
+ * history. For every represented nodal constraint, the update
+ *
+ *     lambda_i <- max(0, lambda_i - epsilon g_i)
+ *
+ * is applied only when the gap lies outside the characteristic-length-scaled
+ * tolerance. Positive multipliers may therefore unload to zero for an opening
+ * interface. The return value reports whether any multiplier changed beyond the
+ * corresponding numerical multiplier tolerance and is used to request another
+ * Newton solve at the same load factor.
+ *
+ * @return `true` when at least one multiplier changed meaningfully.
+ */
 bool Contact::update_augmented_lagrange() const {
     State& current = state();
 
+    // Remove history for mortar constraints that are no longer represented by
+    // the current accepted overlap geometry.
     for (auto it = current.multipliers.begin(); it != current.multipliers.end();) {
         if (current.gaps.find(it->first) == current.gaps.end()) {
             it = current.multipliers.erase(it);
