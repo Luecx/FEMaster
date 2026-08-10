@@ -521,17 +521,11 @@ SparseMatrix Model::build_tangent_stiffness_matrix(SystemDofIds& indices,
         &nodal_forces
     );
 
-    // Add nonlinear contact contributions after the structural element matrix has
-    // been assembled. Explicit node slaves retain the existing node-to-surface
-    // path; surface slaves are integrated at the native slave-surface quadrature
-    // points and assembled consistently to their slave nodes.
+    // Add the surface-to-surface mortar residual and tangent after structural
+    // element assembly.
     TripletList contact_triplets;
     for (const auto& contact : _data->contacts) {
-        if (contact.uses_slave_surface()) {
-            contact.assemble_surface(indices, *_data, nodal_forces, contact_triplets);
-        } else {
-            contact.assemble(indices, *_data, nodal_forces, contact_triplets);
-        }
+        contact.assemble(indices, *_data, nodal_forces, contact_triplets);
     }
 
     if (!contact_triplets.empty()) {
@@ -620,11 +614,7 @@ void Model::build_internal_force_nonlinear(SystemDofIds& indices,
     // intentionally discarded in this residual-only path.
     TripletList discarded_contact_triplets;
     for (const auto& contact : _data->contacts) {
-        if (contact.uses_slave_surface()) {
-            contact.assemble_surface(indices, *_data, nodal_forces, discarded_contact_triplets);
-        } else {
-            contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
-        }
+        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
     }
 
     // Match the validation performed by tangent assembly before the nonlinear
