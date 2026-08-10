@@ -55,7 +55,35 @@ Linear Harmonic & For every requested frequency: \val{DISPLACEMENT_REAL}, \val{D
 
 A six-component nodal motion field uses \dofvec. A six-component stress or strain field uses the engineering order \(x,y,z,yz,zx,xy\). These conventions must not be confused.
 
-For \val{LINEARHARMONIC}, the native writer currently writes the real/imaginary field blocks in frequency-sweep order but does not encode the supplied frame value in the \file{.res} field header. The associated frequency is therefore determined from the \cmd{FREQUENCIES} sequence and the block order.
+\subsection{Linear harmonic result fields}
+
+A \val{LINEARHARMONIC} loadcase writes the complex steady-state response as separate real and imaginary nodal fields for every requested excitation frequency. If a harmonic response quantity is written as
+\[
+\hat q = q_\mathrm{real} + i q_\mathrm{imag},
+\]
+then the corresponding \val{*_REAL} and \val{*_IMAG} fields contain these two components of the complex amplitude.
+
+\begin{longtable}{@{}p{0.29\linewidth}p{0.13\linewidth}p{0.48\linewidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Domain} & \textbf{Components} \\
+\midrule
+\endhead
+\val{DISPLACEMENT_REAL} & \val{NODE} & Real part of the harmonic nodal displacement amplitude in the mechanical nodal order \dofvec. \\
+\val{DISPLACEMENT_IMAG} & \val{NODE} & Imaginary part of the harmonic nodal displacement amplitude in the mechanical nodal order \dofvec. \\
+\val{STRESS_REAL} & \val{NODE} & Real part of the recovered harmonic nodal stress amplitude in engineering order \(x,y,z,yz,zx,xy\). \\
+\val{STRESS_IMAG} & \val{NODE} & Imaginary part of the recovered harmonic nodal stress amplitude in engineering order \(x,y,z,yz,zx,xy\). \\
+\val{STRAIN_REAL} & \val{NODE} & Real part of the recovered harmonic nodal strain amplitude in engineering order \(x,y,z,yz,zx,xy\). \\
+\val{STRAIN_IMAG} & \val{NODE} & Imaginary part of the recovered harmonic nodal strain amplitude in engineering order \(x,y,z,yz,zx,xy\). \\
+\bottomrule
+\end{longtable}
+
+For any scalar component, amplitude and phase can be reconstructed from the stored real and imaginary values as
+\[
+|\hat q|=\sqrt{q_\mathrm{real}^2+q_\mathrm{imag}^2},
+\qquad
+\varphi=\operatorname{atan2}(q_\mathrm{imag},q_\mathrm{real}) .
+\]
+FEMaster currently writes the real/imaginary field blocks in frequency-sweep order, but the native \file{.res} writer does not encode the supplied frequency frame value in the field header. The associated excitation frequency is therefore determined from the \cmd{FREQUENCIES} sequence and the block order.
 
 \section{FRD files}
 
