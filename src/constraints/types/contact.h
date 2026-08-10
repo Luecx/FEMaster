@@ -17,9 +17,7 @@
 #include "../../data/region.h"
 #include "../../model/geometry/surface/surface.h"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <type_traits>
@@ -104,9 +102,6 @@ class Contact {
         std::unordered_map<ID, Precision> slave_tributary_areas;
         bool                              slave_weights_initialized = false;
 
-        // Solver-level numerical state for adaptive AL penalty escalation.
-        Precision previous_augmentation_penetration = Precision(-1);
-
         std::uint64_t call = 0;
     };
 
@@ -115,11 +110,10 @@ class Contact {
     model::NodeRegion::Ptr    slave_nodes;
     model::SurfaceRegion::Ptr slave_surfaces;
 
-    Precision         distance;
-    mutable Precision penalty;
-    Precision         initial_penalty = penalty;
-    Precision         clearance;
-    bool              flip_normal;
+    Precision distance;
+    Precision penalty;
+    Precision clearance;
+    bool      flip_normal;
 
     mutable RuntimeState runtime_state;
 
@@ -173,58 +167,6 @@ public:
     // constraints.
     bool update_augmented_lagrange() const;
     bool update_augmented_lagrange_surface() const;
-
-    // Reset the numerical penalty before a new nonlinear solution. If the last
-    // outer augmentation changed multipliers but the converged penetration did
-    // not decrease by at least 20%, increase the effective penalty by one decade.
-    void reset_augmented_lagrange_penalty() const {
-        penalty = initial_penalty;
-        runtime_state.previous_augmentation_penetration = Precision(-1);
-    }
-
-    bool adapt_augmented_lagrange_penalty() const {
-        AssemblyState& state =
-            runtime_state.trials.empty()
-                ? runtime_state.committed
-                : runtime_state.trials.back().state;
-
-        Precision maximum_penetration = Precision(0);
-        for (const auto& [node_id, gap] : state.gaps) {
-            (void) node_id;
-            if (std::isfinite(gap)) {
-                maximum_penetration =
-                    std::max(maximum_penetration, std::max(Precision(0), -gap));
-            }
-        }
-
-        if (state.last_signature_changed ||
-            !state.last_augmentation_changed ||
-            maximum_penetration <= Precision(0)) {
-            runtime_state.previous_augmentation_penetration = maximum_penetration;
-            return false;
-        }
-
-        const Precision previous = runtime_state.previous_augmentation_penetration;
-        runtime_state.previous_augmentation_penetration = maximum_penetration;
-
-        if (previous <= Precision(0) ||
-            maximum_penetration < Precision(0.8) * previous) {
-            return false;
-        }
-
-        const Precision maximum_penalty = initial_penalty * Precision(1e6);
-        const Precision adapted_penalty =
-            std::min(maximum_penalty, penalty * Precision(10));
-
-        if (!(adapted_penalty > penalty) || !std::isfinite(adapted_penalty)) {
-            return false;
-        }
-
-        penalty = adapted_penalty;
-        return true;
-    }
-
-    [[nodiscard]] Precision current_penalty() const noexcept { return penalty; }
 
     [[nodiscard]] bool uses_slave_surface() const noexcept {
         return static_cast<bool>(slave_surfaces);
