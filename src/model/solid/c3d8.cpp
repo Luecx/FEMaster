@@ -79,8 +79,10 @@ StaticMatrix<8, 3> C3D8::node_coords_local() {
 }
 SurfacePtr C3D8::surface(ID surface_id) {
     switch (surface_id) {
+        // Keep all solid-face normals outward. S1 is the t=-1 face and must
+        // therefore use the opposite winding from the t=+1 face S2.
         case 1:
-            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[1], node_ids[2], node_ids[3]});
+            return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[0], node_ids[3], node_ids[2], node_ids[1]});
         case 2:
             return std::make_shared<Surface4>(std::array<ID, 4> {node_ids[4], node_ids[5], node_ids[6], node_ids[7]});
         case 3:
