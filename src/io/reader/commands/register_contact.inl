@@ -1,4 +1,15 @@
-// register_contact.inl - registers *CONTACT
+/**
+ * @file register_contact.inl
+ * @brief Registers the surface-to-surface dual-mortar `*CONTACT` command.
+ *
+ * The command resolves one master and one slave surface set and forwards the
+ * prescribed normal penalty, clearance and optional master-normal orientation to
+ * the model contact definition. Contact has no geometric search-distance input;
+ * current master surfaces are tested directly during mortar segmentation.
+ *
+ * @author Finn Eggers
+ * @date 10.08.2026
+ */
 
 #include <string>
 
