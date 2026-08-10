@@ -237,15 +237,22 @@ void NonlinearStatic::run() {
     logging::error(model->_data->positions_reference != nullptr,
         "NonlinearStatic: positions_reference field not initialized");
 
+    // Preserve the caller-visible position field and start the nonlinear step
+    // from the undeformed reference configuration
     const model::Field original_positions  = *model->_data->positions;
     const model::Field reference_positions = *model->_data->positions_reference;
     *model->_data->positions = reference_positions;
 
+    // Bind element sections and initialize step-local element geometry/state caches
     model->assign_sections();
     model->step_begin();
 
+    // Own material history buffers and coordinate all contact trial states for
+    // the duration of this nonlinear solution.
     tools::NonlinearStateManager nonlinear_state(*model);
 
+    // Build active DOFs, external loading and constraint groups shared by all
+    // nonlinear evaluations
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -266,12 +273,17 @@ void NonlinearStatic::run() {
         "building constraints"
     );
 
+    // Report the semantic constraint groups before flattening them for algebraic use
     report_constraint_groups(groups);
+
+    // Flatten semantic groups into the complete equation set used by the transformer
     auto equations = groups.flatten();
 
+    // Cache global dimensions required by reduced-vector and nodal-field assembly
     const Index n_active  = active_dof_idx_mat.maxCoeff() + 1;
     const Index max_nodes = static_cast<Index>(model->_data->max_nodes);
 
+    // Construct the affine null-space transformation for prescribed and coupled DOFs
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::Options options;
@@ -337,6 +349,8 @@ void NonlinearStatic::run() {
     logging::info(true, " inc iter      lambda        rel_res          du_norm   ls   asm_ms solve_ms");
     logging::info(true, "----------------------------------------------------------------------------");
 
+    // Stream converged increment frames as they become available. This keeps
+    // the accepted path in the result file even if a later increment fails.
     writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
     Index last_converged_increment = 0;
@@ -346,9 +360,16 @@ void NonlinearStatic::run() {
                               DynamicVector&       residual,
                               SparseMatrix&        tangent,
                               SparseMatrix*        full_tangent) {
+        // Every independent nonlinear evaluation starts from the material
+        // history of the last accepted physical increment.
         nonlinear_state.reset_material_state();
 
-        const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
+        // Evaluate the supplied solver state without modifying q_total. This is
+        // essential because line-search trial states must not modify the actual
+        // Newton iterate.
+        const DynamicVector u_evaluation =
+            recover_total_displacement(q, lambda);
+
         const model::Field displacement_evaluation =
             mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
 
@@ -380,6 +401,7 @@ void NonlinearStatic::run() {
             if (logging_was_enabled) {
                 logging::enable();
             }
+
             throw;
         }
 
@@ -388,11 +410,17 @@ void NonlinearStatic::run() {
         }
 
         if (regularize_zero_stiffness_rows) {
-            regularise_stiffness(Kt, zero_stiffness_regularization_alpha);
+            regularise_stiffness(
+                Kt,
+                zero_stiffness_regularization_alpha
+            );
         }
 
         const DynamicVector internal_force =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
+            mattools::reduce_mat_to_vec(
+                active_dof_idx_mat,
+                internal_mat
+            );
 
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
@@ -405,23 +433,38 @@ void NonlinearStatic::run() {
 
         tangent = transformer->assemble_system_matrix(Kt);
 
-        logging::error(residual.allFinite(),
-            "Reduced residual contains NaN/Inf entries");
+        logging::error(
+            residual.allFinite(),
+            "Reduced residual contains NaN/Inf entries"
+        );
     };
 
     auto evaluate = [&](const DynamicVector& q,
                         Precision            lambda,
                         DynamicVector&       residual,
                         SparseMatrix&        tangent) {
-        assemble_state(q, lambda, residual, tangent, nullptr);
+        assemble_state(
+            q,
+            lambda,
+            residual,
+            tangent,
+            nullptr
+        );
     };
 
     auto evaluate_residual = [&](const DynamicVector& q,
                                  Precision            lambda,
                                  DynamicVector&       residual) {
+        // Line-search candidates are independent material evaluations of the
+        // same physical increment and therefore restart from committed history.
         nonlinear_state.reset_material_state();
 
-        const DynamicVector u_evaluation = recover_total_displacement(q, lambda);
+        // Evaluate the same nonlinear residual as the full tangent assembly,
+        // but avoid constructing the material and geometric element tangents.
+        // Line-search acceptance only uses the projected residual norm.
+        const DynamicVector u_evaluation =
+            recover_total_displacement(q, lambda);
+
         const model::Field displacement_evaluation =
             mattools::expand_vec_to_mat(active_dof_idx_mat, u_evaluation);
 
@@ -451,6 +494,7 @@ void NonlinearStatic::run() {
             if (logging_was_enabled) {
                 logging::enable();
             }
+
             throw;
         }
 
@@ -459,7 +503,10 @@ void NonlinearStatic::run() {
         }
 
         const DynamicVector internal_force =
-            mattools::reduce_mat_to_vec(active_dof_idx_mat, internal_mat);
+            mattools::reduce_mat_to_vec(
+                active_dof_idx_mat,
+                internal_mat
+            );
 
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
@@ -470,7 +517,7 @@ void NonlinearStatic::run() {
             "Reduced residual contains NaN/Inf entries");
     };
 
-    auto linear_solve = [&](const SparseMatrix& tangent,
+    auto linear_solve = [&](const SparseMatrix&  tangent,
                             const DynamicVector& rhs) {
         SparseMatrix matrix = tangent;
 
@@ -500,11 +547,26 @@ void NonlinearStatic::run() {
             return;
         }
 
+        /*
+         * Assemble the tangent at the last accepted equilibrium state. For
+         *
+         *     u(lambda, q) = lambda * u_p + T q
+         *
+         * the equilibrium-path tangent follows from
+         *
+         *     T^T K_t T dq/dlambda = T^T (f - K_t u_p).
+         *
+         * ConstraintTransformer::assemble_system_rhs() already evaluates the
+         * right-hand side T^T (f - K_t u_p), so the same predictor handles
+         * force loading, prescribed displacements and arbitrary mixtures.
+         */
         DynamicVector accepted_residual;
         SparseMatrix  accepted_tangent;
         SparseMatrix  accepted_full_tangent;
 
-        // The predictor assembly is a nested state-neutral contact trial.
+        // The predictor assembly is a nested state-neutral contact trial. Contact
+        // geometry is reconstructed from the supplied positions and is not part
+        // of the transactional state.
         nonlinear_state.begin_contact_trial();
 
         try {
@@ -523,13 +585,21 @@ void NonlinearStatic::run() {
         nonlinear_state.rollback_contact_trial();
 
         const DynamicVector predictor_rhs =
-            transformer->assemble_system_rhs(accepted_full_tangent, f_total);
+            transformer->assemble_system_rhs(
+                accepted_full_tangent,
+                f_total
+            );
 
-        const DynamicVector dq_dlambda = linear_solve(accepted_tangent, predictor_rhs);
+        const DynamicVector dq_dlambda =
+            linear_solve(
+                accepted_tangent,
+                predictor_rhs
+            );
+
         q += (target_lambda - lambda) * dq_dlambda;
     };
 
-    auto matrix_solve = [&](const SparseMatrix& tangent,
+    auto matrix_solve = [&](const SparseMatrix&  tangent,
                             const DynamicMatrix& rhs) {
         SparseMatrix matrix = tangent;
 
@@ -561,12 +631,14 @@ void NonlinearStatic::run() {
     auto residual_norm = [&](const DynamicVector& residual,
                              Precision            lambda) {
         const DynamicVector reduced_external = lambda * reduced_total_load;
+
         return calculate_relative_residual(residual, reduced_external);
     };
 
     auto correction_norm = [&](const DynamicVector& q,
                                const DynamicVector& dq) {
         (void) q;
+
         const DynamicVector du = transformer->recover_increment(dq);
         return du.norm();
     };
@@ -623,43 +695,51 @@ void NonlinearStatic::run() {
             lambda
         );
 
-        model::Field lambda_field{
-            "LAMBDA_" + std::to_string(increment),
-            model::FieldDomain::UNKNOWN,
-            1,
-            1
-        };
+        model::Field lambda_field{"LAMBDA_" + std::to_string(increment), model::FieldDomain::UNKNOWN, 1, 1};
         lambda_field(0) = lambda;
+
         writer->write_field(lambda_field, lambda_field.name, nullptr);
     };
 
+    // Start a complete increment attempt. Material history is reset to the last
+    // accepted increment and contact multiplier/evaluation history is copied to
+    // a nested trial.
     auto begin_increment_trial = [&]() {
         nonlinear_state.reset_material_state();
         nonlinear_state.begin_contact_trial();
     };
 
+    // Accept the converged material history and the outer contact trial.
     auto commit_increment_trial = [&]() {
         nonlinear_state.commit_contact_trial();
         nonlinear_state.commit_material_state();
     };
 
+    // Reject the complete increment attempt and restore both state subsystems to
+    // the last accepted physical increment.
     auto rollback_increment_trial = [&]() {
         nonlinear_state.rollback_contact_trial();
         nonlinear_state.reset_material_state();
     };
 
+    // Open a temporary contact trial for one line-search candidate. Material
+    // history is reset by evaluate_residual() immediately before assembly.
     auto begin_line_search_trial = [&]() {
         nonlinear_state.begin_contact_trial();
     };
 
+    // Promote the accepted candidate's contact state to its parent trial.
     auto commit_line_search_trial = [&]() {
         nonlinear_state.commit_contact_trial();
     };
 
+    // Discard a rejected candidate without changing its parent contact state.
     auto rollback_line_search_trial = [&]() {
         nonlinear_state.rollback_contact_trial();
     };
 
+    // Refresh augmented-Lagrange contact state after Newton convergence. A
+    // multiplier change requests another Newton solve at the same load factor.
     auto update_active_set = [&](const DynamicVector& q,
                                  Precision            lambda) {
         if (model->_data->contacts.empty()) {
@@ -692,9 +772,17 @@ void NonlinearStatic::run() {
     bool        converged      = false;
     std::string failure_reason = "NONE";
 
-    const Index configured_max_iterations = static_cast<Index>(max_iterations);
-    const Index configured_max_increments = static_cast<Index>(max_increments);
-    const Index configured_slow_iterations = static_cast<Index>(slow_iterations);
+    // Use the nonlinear controls exactly as configured. The trial callbacks
+    // below manage stateful nonlinear subsystems without changing increment or
+    // iteration limits based on which subsystem is present.
+    const Index configured_max_iterations =
+        static_cast<Index>(max_iterations);
+
+    const Index configured_max_increments =
+        static_cast<Index>(max_increments);
+
+    const Index configured_slow_iterations =
+        static_cast<Index>(slow_iterations);
 
     if (control == NonlinearControl::LoadControl) {
         tools::LoadControl load_control;
@@ -756,7 +844,8 @@ void NonlinearStatic::run() {
         arc_length_control.begin_increment_trial    = begin_increment_trial;
         arc_length_control.commit_increment_trial   = commit_increment_trial;
         arc_length_control.rollback_increment_trial = rollback_increment_trial;
-        arc_length_control.update_active_set        = update_active_set;
+
+        arc_length_control.update_active_set = update_active_set;
 
         converged = arc_length_control.solve(
             q_total,
@@ -777,28 +866,28 @@ void NonlinearStatic::run() {
     logging::error(converged,
         "NONLINEARSTATIC failed: ", failure_reason);
 
+    // Restore the accepted configuration before independent final result evaluations
     update_positions();
 
+    // Each postprocessing path starts from committed material history because
+    // result recovery may call an in-place constitutive model
     nonlinear_state.reset_material_state();
     auto [final_stress, final_strain] = Timer::measure(
         [&]() { return model->compute_stress_nodal(displacement, true); },
         "computing final nonlinear nodal stress/strain"
     );
 
+    // Top/bottom shell recovery is independent of the preceding nodal recovery
     nonlinear_state.reset_material_state();
     auto [final_stress_top, final_stress_bot] = Timer::measure(
         [&]() { return model->compute_stress_top_bot(displacement, true); },
         "computing final nonlinear top/bottom stress"
     );
 
-    model::NodeData final_internal{
-        "INTERNAL_FORCES",
-        model::FieldDomain::NODE,
-        max_nodes,
-        6
-    };
+    model::NodeData final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
     final_internal.set_zero();
 
+    // Reassemble the final tangent and matching internal force from committed history
     nonlinear_state.reset_material_state();
     auto final_Kt = Timer::measure(
         [&]() {
@@ -824,7 +913,7 @@ void NonlinearStatic::run() {
 
     auto global_load_final = global_load_total;
     global_load_final *= load_factor;
-    auto reaction_full = subtract_field(
+    auto reaction_full     = subtract_field(
         final_internal,
         global_load_final,
         "REACTION_FORCES_RAW"
@@ -878,6 +967,7 @@ void NonlinearStatic::run() {
     writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
     writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get(), load_factor);
 
+    // Restore the caller-visible model configuration and release step-local caches
     *model->_data->positions = original_positions;
     model->step_end();
 }
