@@ -569,13 +569,16 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
  *                     contributions.
  * @param displacement Current total displacement field used by nonlinear elements.
  * @param stiffness_scalar Optional one-component element stiffness scale field.
+ * @param assemble_contact Whether the established augmented-Lagrange contact
+ *                         contribution is included by this assembly.
  * @return Global sparse tangent matrix for the current nonlinear configuration.
  */
 SparseMatrix Model::build_tangent_stiffness_matrix(
     SystemDofIds& indices,
     NodeData&     nodal_forces,
     const Field&  displacement,
-    const Field*  stiffness_scalar
+    const Field*  stiffness_scalar,
+    bool          assemble_contact
 ) {
     // ---------------------------------------------------------------------
     // Validate nonlinear force output and prepare current IP result storage
@@ -633,8 +636,10 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     // Add current surface-to-surface mortar residual and tangent
     // ---------------------------------------------------------------------
     TripletList contact_triplets;
-    for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, contact_triplets);
+    if (assemble_contact) {
+        for (const auto& contact : _data->contacts) {
+            contact.assemble(indices, *_data, nodal_forces, contact_triplets);
+        }
     }
 
     if (!contact_triplets.empty()) {
@@ -678,16 +683,20 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
  * current stress or shell resultant state and scatters `f_int` directly into the
  * supplied nodal field. Contact uses the same slave discretisation as tangent
  * assembly so line-search residuals remain identical to the residual associated
- * with the assembled tangent.
+ * with the assembled tangent, while its expensive local tangent differentiation
+ * is skipped for these residual-only evaluations.
  *
  * @param indices Active global degree-of-freedom ids used by contact assembly.
  * @param nodal_forces Nodal internal-force field to overwrite and fill.
  * @param displacement Trial displacement defining the current configuration.
+ * @param assemble_contact Whether the established augmented-Lagrange contact
+ *                         residual is included by this assembly.
  */
 void Model::build_internal_force_nonlinear(
     SystemDofIds& indices,
     NodeData&     nodal_forces,
-    const Field&  displacement
+    const Field&  displacement,
+    bool          assemble_contact
 ) {
     // ---------------------------------------------------------------------
     // Validate output field and initialize current residual state
@@ -729,8 +738,10 @@ void Model::build_internal_force_nonlinear(
     // Add mortar contact residual and validate assembled force field
     // ---------------------------------------------------------------------
     TripletList discarded_contact_triplets;
-    for (const auto& contact : _data->contacts) {
-        contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
+    if (assemble_contact) {
+        for (const auto& contact : _data->contacts) {
+            contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets, false);
+        }
     }
 
     for (Index i = 0; i < nodal_forces.rows; ++i) {

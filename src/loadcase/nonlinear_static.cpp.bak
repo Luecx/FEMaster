@@ -13,20 +13,15 @@
  *
  *     u(lambda, q) = lambda * u_particular + T q.
  *
- * When surface contact is present under load control, an experimental
- * monolithic formulation appends one pressure multiplier per slave mortar node.
- * Support-scaled Fischer--Burmeister equations enforce normal complementarity
- * in the same Newton system as structural equilibrium.
- *
  * The load case wires stateful nonlinear subsystems into the generic trial
- * callbacks owned by the path controllers. `NonlinearStateManager` owns the
- * material history buffers and coordinates contact trial state, while the
- * nonlinear solver remains independent of both state implementations.
+ * callbacks owned by the path controllers. Contact is the only current
+ * participant, but the callback names and transaction levels are deliberately
+ * subsystem-independent so later nonlinear material history states can use the
+ * same increment and line-search lifecycle.
  *
  * @see NonlinearStatic
  * @see tools::LoadControl
  * @see tools::ArcLengthControl
- * @see tools::NonlinearStateManager
  */
 
 #include "nonlinear_static.h"
@@ -40,7 +35,6 @@
 #include "../io/writer/write_mtx.h"
 #include "tools/arc_length_control.h"
 #include "tools/load_control.h"
-#include "tools/nonlinear_state_manager.h"
 #include "tools/regularise_stiffness.h"
 
 #include <algorithm>
@@ -205,7 +199,7 @@ void NonlinearStatic::run() {
     logging::info(true, "===============================================================================================");
     logging::info(true, "");
 
-    // Validate path-control, solver and model settings before changing model state
+    // perform important checks
     logging::error(max_increments > 0,
         "NONLINEARSTATIC requires MAX_INCREMENTS > 0");
     logging::error(initial_increment > Precision(0),
@@ -242,22 +236,16 @@ void NonlinearStatic::run() {
     logging::error(model->_data->positions_reference != nullptr,
         "NonlinearStatic: positions_reference field not initialized");
 
-    // Preserve the caller-visible position field and start the nonlinear step
-    // from the undeformed reference configuration
+    // create a copy of original and reference positions and reset them at the end
     const model::Field original_positions  = *model->_data->positions;
     const model::Field reference_positions = *model->_data->positions_reference;
     *model->_data->positions = reference_positions;
 
-    // Bind element sections and initialize step-local element geometry/state caches
+    // assign sections so every element knows its section and the elements can prepare
     model->assign_sections();
     model->step_begin();
 
-    // Own material history buffers and coordinate all contact trial states for
-    // the duration of this nonlinear solution.
-    tools::NonlinearStateManager nonlinear_state(*model);
-
-    // Build active DOFs, external loading and constraint groups shared by all
-    // nonlinear evaluations
+    // compute general stuff needed below
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
@@ -278,17 +266,17 @@ void NonlinearStatic::run() {
         "building constraints"
     );
 
-    // Report the semantic constraint groups before flattening them for algebraic use
+    // report groups if desired by the user
     report_constraint_groups(groups);
 
-    // Flatten semantic groups into the complete equation set used by the transformer
+    // convert into actual equations (just flattening all the equation groups)
     auto equations = groups.flatten();
 
-    // Cache global dimensions required by reduced-vector and nodal-field assembly
+    // track a few simple coefficients used below
     const Index n_active  = active_dof_idx_mat.maxCoeff() + 1;
     const Index max_nodes = static_cast<Index>(model->_data->max_nodes);
 
-    // Construct the affine null-space transformation for prescribed and coupled DOFs
+    // create the constraint transformer
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::Options options;
@@ -317,95 +305,20 @@ void NonlinearStatic::run() {
     logging::info(!transformer->feasible(), "residual ||C u - d|| : ", transformer->report().residual_norm);
     logging::down();
 
-    // The monolithic contact proof of concept appends one scalar normal-pressure
-    // unknown per unique slave mortar node to the reduced displacement vector.
-    // Linear kinematic constraints remain represented by the existing affine
-    // null-space map and are not rebuilt for the contact saddle-point system.
-    const bool  monolithic_contact       = !model->_data->contacts.empty();
-    const Index n_displacement_unknowns  = transformer->unknowns();
-
-    std::vector<std::vector<ID>> contact_multiplier_nodes;
-    std::vector<Index>           contact_multiplier_offsets;
-    Index                        n_contact_unknowns = 0;
-
-    for (const auto& contact : model->_data->contacts) {
-        contact_multiplier_offsets.push_back(n_contact_unknowns);
-        contact_multiplier_nodes.push_back(contact.multiplier_nodes(*model->_data));
-        n_contact_unknowns += static_cast<Index>(contact_multiplier_nodes.back().size());
-    }
-
-    logging::error(!monolithic_contact || transformer->has_reduced_map(),
-        "NONLINEARSTATIC monolithic contact requires a reduced constraint method");
-    logging::error(!monolithic_contact || control == NonlinearControl::LoadControl,
-        "NONLINEARSTATIC monolithic contact PoC currently supports LOAD CONTROL only");
-
-    const Index n_solver_unknowns =
-        n_displacement_unknowns + n_contact_unknowns;
-
-    logging::info(monolithic_contact,
-        "Monolithic contact multipliers: ", n_contact_unknowns,
-        ", total solver unknowns: ", n_solver_unknowns);
-
-    DynamicVector q_total = DynamicVector::Zero(n_solver_unknowns);
-
-    const DynamicVector zero_displacement_coordinates =
-        DynamicVector::Zero(n_displacement_unknowns);
-    const DynamicVector u_particular =
-        transformer->recover_displacement(zero_displacement_coordinates);
+    DynamicVector       q_total      = DynamicVector::Zero(transformer->unknowns());
+    const DynamicVector u_particular = transformer->recover_displacement(q_total);
 
     logging::error(control != NonlinearControl::ArcLength || transformer->homogeneous(),
         "NONLINEARSTATIC ARC LENGTH does not support prescribed displacements");
 
     auto recover_total_displacement = [&](const DynamicVector& q, Precision lambda) -> DynamicVector {
-        return lambda * u_particular +
-               transformer->recover_increment(q.head(n_displacement_unknowns));
+        return lambda * u_particular + transformer->recover_increment(q);
     };
 
     DynamicVector u_total = recover_total_displacement(q_total, Precision(0));
 
-    DynamicVector reduced_displacement_load;
-    transformer->project_vector(f_total, reduced_displacement_load);
-
-    DynamicVector reduced_total_load = DynamicVector::Zero(n_solver_unknowns);
-    reduced_total_load.head(n_displacement_unknowns) = reduced_displacement_load;
-
-    // Extend u = T q by an identity map for the contact multipliers. This map
-    // projects the full displacement/contact Jacobian into the solver space.
-    SparseMatrix augmented_transformation(
-        n_active + n_contact_unknowns,
-        n_solver_unknowns
-    );
-
-    TripletList augmented_transformation_triplets;
-    const SparseMatrix& displacement_transformation =
-        transformer->reduced_map().T;
-
-    for (Index column = 0;
-         column < static_cast<Index>(displacement_transformation.outerSize());
-         ++column) {
-        for (SparseMatrix::InnerIterator it(displacement_transformation, column); it; ++it) {
-            augmented_transformation_triplets.emplace_back(
-                it.row(),
-                it.col(),
-                it.value()
-            );
-        }
-    }
-
-    for (Index contact_unknown = 0;
-         contact_unknown < n_contact_unknowns;
-         ++contact_unknown) {
-        augmented_transformation_triplets.emplace_back(
-            n_active + contact_unknown,
-            n_displacement_unknowns + contact_unknown,
-            Precision(1)
-        );
-    }
-
-    augmented_transformation.setFromTriplets(
-        augmented_transformation_triplets.begin(),
-        augmented_transformation_triplets.end()
-    );
+    DynamicVector reduced_total_load;
+    transformer->project_vector(f_total, reduced_total_load);
 
     model::Field displacement = mattools::expand_vec_to_mat(active_dof_idx_mat, u_total);
 
@@ -443,10 +356,6 @@ void NonlinearStatic::run() {
                               DynamicVector&       residual,
                               SparseMatrix&        tangent,
                               SparseMatrix*        full_tangent) {
-        // Every independent nonlinear evaluation starts from the material
-        // history of the last accepted physical increment.
-        nonlinear_state.reset_material_state();
-
         // Evaluate the supplied solver state without modifying q_total. This is
         // essential because line-search trial states must not modify the actual
         // Newton iterate.
@@ -478,9 +387,7 @@ void NonlinearStatic::run() {
             Kt = model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
                 internal_mat,
-                displacement_evaluation,
-                nullptr,
-                !monolithic_contact
+                displacement_evaluation
             );
         } catch (...) {
             if (logging_was_enabled) {
@@ -501,40 +408,6 @@ void NonlinearStatic::run() {
             );
         }
 
-        // Assemble the monolithic contact force, complementarity residual and
-        // full displacement/multiplier saddle-point blocks at the same state.
-        DynamicVector contact_residual =
-            DynamicVector::Zero(n_contact_unknowns);
-        TripletList contact_triplets;
-
-        if (monolithic_contact) {
-            for (Index contact_index = 0;
-                 contact_index < static_cast<Index>(model->_data->contacts.size());
-                 ++contact_index) {
-                const Index local_offset =
-                    contact_multiplier_offsets[static_cast<std::size_t>(contact_index)];
-                const Index local_size = static_cast<Index>(
-                    contact_multiplier_nodes[static_cast<std::size_t>(contact_index)].size()
-                );
-
-                const DynamicVector multiplier_values =
-                    q.segment(n_displacement_unknowns + local_offset, local_size);
-                DynamicVector local_residual = DynamicVector::Zero(local_size);
-
-                model->_data->contacts[static_cast<std::size_t>(contact_index)].assemble_monolithic(
-                    active_dof_idx_mat,
-                    *model->_data,
-                    multiplier_values,
-                    n_active + local_offset,
-                    internal_mat,
-                    local_residual,
-                    contact_triplets
-                );
-
-                contact_residual.segment(local_offset, local_size) = local_residual;
-            }
-        }
-
         const DynamicVector internal_force =
             mattools::reduce_mat_to_vec(
                 active_dof_idx_mat,
@@ -544,39 +417,13 @@ void NonlinearStatic::run() {
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
 
-        DynamicVector reduced_displacement_residual;
-        transformer->project_vector(full_residual, reduced_displacement_residual);
-
-        residual = DynamicVector::Zero(n_solver_unknowns);
-        residual.head(n_displacement_unknowns) = reduced_displacement_residual;
-        residual.tail(n_contact_unknowns)       = contact_residual;
+        transformer->project_vector(full_residual, residual);
 
         if (full_tangent) {
             *full_tangent = Kt;
         }
 
-        // Embed the structural displacement tangent and monolithic contact
-        // blocks in full coordinates, then apply diag(T, I) by congruence.
-        TripletList augmented_triplets = std::move(contact_triplets);
-
-        for (Index column = 0; column < static_cast<Index>(Kt.outerSize()); ++column) {
-            for (SparseMatrix::InnerIterator it(Kt, column); it; ++it) {
-                augmented_triplets.emplace_back(it.row(), it.col(), it.value());
-            }
-        }
-
-        SparseMatrix augmented_full(
-            n_active + n_contact_unknowns,
-            n_active + n_contact_unknowns
-        );
-        augmented_full.setFromTriplets(
-            augmented_triplets.begin(),
-            augmented_triplets.end()
-        );
-
-        tangent = augmented_transformation.transpose() *
-                  augmented_full *
-                  augmented_transformation;
+        tangent = transformer->assemble_system_matrix(Kt);
 
         final_internal = internal_mat;
 
@@ -602,10 +449,6 @@ void NonlinearStatic::run() {
     auto evaluate_residual = [&](const DynamicVector& q,
                                  Precision            lambda,
                                  DynamicVector&       residual) {
-        // Line-search candidates are independent material evaluations of the
-        // same physical increment and therefore restart from committed history.
-        nonlinear_state.reset_material_state();
-
         // Evaluate the same nonlinear residual as the full tangent assembly,
         // but avoid constructing the material and geometric element tangents.
         // Line-search acceptance only uses the projected residual norm.
@@ -635,8 +478,7 @@ void NonlinearStatic::run() {
             model->build_internal_force_nonlinear(
                 active_dof_idx_mat,
                 internal_mat,
-                displacement_evaluation,
-                !monolithic_contact
+                displacement_evaluation
             );
         } catch (...) {
             if (logging_was_enabled) {
@@ -650,42 +492,6 @@ void NonlinearStatic::run() {
             logging::enable();
         }
 
-        // Residual-only line-search evaluations use the identical monolithic
-        // complementarity law while omitting its Jacobian construction.
-        DynamicVector contact_residual =
-            DynamicVector::Zero(n_contact_unknowns);
-
-        if (monolithic_contact) {
-            TripletList discarded_contact_triplets;
-
-            for (Index contact_index = 0;
-                 contact_index < static_cast<Index>(model->_data->contacts.size());
-                 ++contact_index) {
-                const Index local_offset =
-                    contact_multiplier_offsets[static_cast<std::size_t>(contact_index)];
-                const Index local_size = static_cast<Index>(
-                    contact_multiplier_nodes[static_cast<std::size_t>(contact_index)].size()
-                );
-
-                const DynamicVector multiplier_values =
-                    q.segment(n_displacement_unknowns + local_offset, local_size);
-                DynamicVector local_residual = DynamicVector::Zero(local_size);
-
-                model->_data->contacts[static_cast<std::size_t>(contact_index)].assemble_monolithic(
-                    active_dof_idx_mat,
-                    *model->_data,
-                    multiplier_values,
-                    n_active + local_offset,
-                    internal_mat,
-                    local_residual,
-                    discarded_contact_triplets,
-                    false
-                );
-
-                contact_residual.segment(local_offset, local_size) = local_residual;
-            }
-        }
-
         const DynamicVector internal_force =
             mattools::reduce_mat_to_vec(
                 active_dof_idx_mat,
@@ -695,12 +501,7 @@ void NonlinearStatic::run() {
         const DynamicVector external_force = lambda * f_total;
         const DynamicVector full_residual  = external_force - internal_force;
 
-        DynamicVector reduced_displacement_residual;
-        transformer->project_vector(full_residual, reduced_displacement_residual);
-
-        residual = DynamicVector::Zero(n_solver_unknowns);
-        residual.head(n_displacement_unknowns) = reduced_displacement_residual;
-        residual.tail(n_contact_unknowns)       = contact_residual;
+        transformer->project_vector(full_residual, residual);
 
         final_internal = internal_mat;
 
@@ -755,32 +556,15 @@ void NonlinearStatic::run() {
         SparseMatrix  accepted_tangent;
         SparseMatrix  accepted_full_tangent;
 
-        /*
-         * The outer increment trial is deliberately still unfrozen here. The
-         * predictor tangent is evaluated at the last accepted configuration,
-         * but it must not select and freeze the partners that Newton will use
-         * at the predicted target configuration. A nested frozen trial makes
-         * this assembly completely state-neutral and is always rolled back.
-         */
-        nonlinear_state.begin_contact_frozen_trial();
+        assemble_state(
+            q,
+            lambda,
+            accepted_residual,
+            accepted_tangent,
+            &accepted_full_tangent
+        );
 
-        try {
-            assemble_state(
-                q,
-                lambda,
-                accepted_residual,
-                accepted_tangent,
-                &accepted_full_tangent
-            );
-        } catch (...) {
-            nonlinear_state.rollback_contact_trial();
-            throw;
-        }
-
-        nonlinear_state.rollback_contact_trial();
-
-        DynamicVector predictor_rhs = DynamicVector::Zero(n_solver_unknowns);
-        predictor_rhs.head(n_displacement_unknowns) =
+        const DynamicVector predictor_rhs =
             transformer->assemble_system_rhs(
                 accepted_full_tangent,
                 f_total
@@ -835,9 +619,7 @@ void NonlinearStatic::run() {
                                const DynamicVector& dq) {
         (void) q;
 
-        const DynamicVector du = transformer->recover_increment(
-            dq.head(n_displacement_unknowns)
-        );
+        const DynamicVector du = transformer->recover_increment(dq);
         return du.norm();
     };
 
@@ -904,53 +686,51 @@ void NonlinearStatic::run() {
         writer->write_field(lambda_field, lambda_field.name, nullptr);
     };
 
-    // Start a complete increment attempt. Material history is reset to the last
-    // accepted increment and contact may update partner ownership once before
-    // freezing the discrete contact problem for Newton.
+    // Open a complete attempted-increment transaction for every stateful
+    // nonlinear subsystem. Contact updates its partner state once during this
+    // trial and then freezes the selected surface for the Newton solve.
     auto begin_increment_trial = [&]() {
-        nonlinear_state.reset_material_state();
-        nonlinear_state.begin_contact_update_trial();
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(false, true);
+        }
     };
 
-    // Accept the converged material history and the outer contact trial.
-    auto commit_increment_trial = [&]() {
-        nonlinear_state.commit_contact_trial();
-        nonlinear_state.commit_material_state();
-    };
-
-    // Reject the complete increment attempt and restore both state subsystems to
-    // the last accepted physical increment.
-    auto rollback_increment_trial = [&]() {
-        nonlinear_state.rollback_contact_trial();
-        nonlinear_state.reset_material_state();
-    };
-
-    // Open a temporary contact trial for one line-search candidate. Material
-    // history is reset by evaluate_residual() immediately before assembly.
+    // Open a temporary residual-evaluation transaction nested inside the active
+    // increment. Line-search trials freeze discontinuous ownership immediately
+    // so rejected step lengths cannot modify the accepted nonlinear state.
     auto begin_line_search_trial = [&]() {
-        nonlinear_state.begin_contact_frozen_trial();
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(true);
+        }
     };
 
-    // Promote the accepted candidate's contact geometry to its parent trial
-    auto commit_line_search_trial = [&]() {
-        nonlinear_state.commit_contact_trial();
+    // Accept the most recently evaluated trial state. This callback is used for
+    // both increment-level and line-search-level transactions.
+    auto commit_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.commit_trial();
+        }
     };
 
-    // Discard a rejected candidate without changing its parent contact state
-    auto rollback_line_search_trial = [&]() {
-        nonlinear_state.rollback_contact_trial();
+    // Restore the state that existed before the most recent trial transaction.
+    auto rollback_trial = [&]() {
+        for (const auto& contact : model->_data->contacts) {
+            contact.rollback_trial();
+        }
     };
 
-    // Refresh discontinuous contact state after Newton convergence. The update
-    // trial evaluates the converged geometry with partner updates enabled once;
-    // a changed partner signature or multiplier requests another Newton solve.
+    // Refresh discontinuous nonlinear state after Newton has converged at the
+    // current trial configuration. If the state changes, the path controller
+    // restarts Newton at the same load factor or arc-length radius.
     auto update_active_set = [&](const DynamicVector& q,
                                  Precision            lambda) {
-        if (monolithic_contact) {
+        if (model->_data->contacts.empty()) {
             return true;
         }
 
-        nonlinear_state.begin_contact_update_trial();
+        for (const auto& contact : model->_data->contacts) {
+            contact.begin_trial(false, true);
+        }
 
         try {
             DynamicVector active_set_residual;
@@ -964,13 +744,21 @@ void NonlinearStatic::run() {
                 nullptr
             );
         } catch (...) {
-            nonlinear_state.rollback_contact_trial();
+            for (const auto& contact : model->_data->contacts) {
+                contact.rollback_trial();
+            }
+
             throw;
         }
 
-        const bool unchanged = nonlinear_state.update_contact_active_set();
-        nonlinear_state.commit_contact_trial();
-        return unchanged;
+        bool changed = false;
+
+        for (const auto& contact : model->_data->contacts) {
+            changed = changed || contact.partner_signature_changed();
+            contact.commit_trial();
+        }
+
+        return !changed;
     };
 
     bool        converged      = false;
@@ -1005,12 +793,12 @@ void NonlinearStatic::run() {
         load_control.adaptive           = adaptive_increments;
 
         load_control.begin_increment_trial    = begin_increment_trial;
-        load_control.commit_increment_trial   = commit_increment_trial;
-        load_control.rollback_increment_trial = rollback_increment_trial;
+        load_control.commit_increment_trial   = commit_trial;
+        load_control.rollback_increment_trial = rollback_trial;
 
         load_control.begin_line_search_trial    = begin_line_search_trial;
-        load_control.commit_line_search_trial   = commit_line_search_trial;
-        load_control.rollback_line_search_trial = rollback_line_search_trial;
+        load_control.commit_line_search_trial   = commit_trial;
+        load_control.rollback_line_search_trial = rollback_trial;
 
         load_control.update_active_set = update_active_set;
 
@@ -1046,12 +834,12 @@ void NonlinearStatic::run() {
         arc_length_control.adaptive           = adaptive_increments;
 
         arc_length_control.begin_increment_trial    = begin_increment_trial;
-        arc_length_control.commit_increment_trial   = commit_increment_trial;
-        arc_length_control.rollback_increment_trial = rollback_increment_trial;
+        arc_length_control.commit_increment_trial   = commit_trial;
+        arc_length_control.rollback_increment_trial = rollback_trial;
 
         arc_length_control.begin_line_search_trial    = begin_line_search_trial;
-        arc_length_control.commit_line_search_trial   = commit_line_search_trial;
-        arc_length_control.rollback_line_search_trial = rollback_line_search_trial;
+        arc_length_control.commit_line_search_trial   = commit_trial;
+        arc_length_control.rollback_line_search_trial = rollback_trial;
 
         arc_length_control.update_active_set = update_active_set;
 
@@ -1075,19 +863,13 @@ void NonlinearStatic::run() {
     logging::error(converged,
         "NONLINEARSTATIC failed: ", failure_reason);
 
-    // Restore the accepted configuration before independent final result evaluations
     update_positions();
 
-    // Each postprocessing path starts from committed material history because
-    // result recovery may call an in-place constitutive model
-    nonlinear_state.reset_material_state();
     auto [final_stress, final_strain] = Timer::measure(
         [&]() { return model->compute_stress_nodal(displacement, true); },
         "computing final nonlinear nodal stress/strain"
     );
 
-    // Top/bottom shell recovery is independent of the preceding nodal recovery
-    nonlinear_state.reset_material_state();
     auto [final_stress_top, final_stress_bot] = Timer::measure(
         [&]() { return model->compute_stress_top_bot(displacement, true); },
         "computing final nonlinear top/bottom stress"
@@ -1096,52 +878,16 @@ void NonlinearStatic::run() {
     final_internal = model::NodeData{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
     final_internal.set_zero();
 
-    // Reassemble the final tangent and matching internal force from committed history
-    nonlinear_state.reset_material_state();
     auto final_Kt = Timer::measure(
         [&]() {
             return model->build_tangent_stiffness_matrix(
                 active_dof_idx_mat,
                 final_internal,
-                displacement,
-                nullptr,
-                !monolithic_contact
+                displacement
             );
         },
         "assembling final nonlinear tangent stiffness K_t and internal force"
     );
-
-    // Recover the converged monolithic contact force for reactions and output.
-    if (monolithic_contact) {
-        TripletList discarded_contact_triplets;
-
-        for (Index contact_index = 0;
-             contact_index < static_cast<Index>(model->_data->contacts.size());
-             ++contact_index) {
-            const Index local_offset =
-                contact_multiplier_offsets[static_cast<std::size_t>(contact_index)];
-            const Index local_size = static_cast<Index>(
-                contact_multiplier_nodes[static_cast<std::size_t>(contact_index)].size()
-            );
-
-            const DynamicVector multiplier_values = q_total.segment(
-                n_displacement_unknowns + local_offset,
-                local_size
-            );
-            DynamicVector discarded_residual = DynamicVector::Zero(local_size);
-
-            model->_data->contacts[static_cast<std::size_t>(contact_index)].assemble_monolithic(
-                active_dof_idx_mat,
-                *model->_data,
-                multiplier_values,
-                n_active + local_offset,
-                final_internal,
-                discarded_residual,
-                discarded_contact_triplets,
-                false
-            );
-        }
-    }
 
     if (!stiffness_file.empty()) {
         if (regularize_zero_stiffness_rows) {
@@ -1210,7 +956,6 @@ void NonlinearStatic::run() {
     writer->write_field(final_internal   , "INTERNAL_FORCES" + suffix, model->_data.get(), load_factor);
     writer->write_field(reaction_masked  , "REACTION_FORCES" + suffix, model->_data.get(), load_factor);
 
-    // Restore the caller-visible model configuration and release step-local caches
     *model->_data->positions = original_positions;
     model->step_end();
 }

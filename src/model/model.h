@@ -190,7 +190,8 @@ struct Model {
         SystemDofIds& indices,
         NodeData& nodal_forces,
         const Field& displacement,
-        const Field* stiffness_scalar = nullptr);
+        const Field* stiffness_scalar = nullptr,
+        bool assemble_contact = true);
     SparseMatrix build_geom_stiffness_matrix(
         SystemDofIds& indices,
         const Field& ip_stress,
@@ -198,7 +199,8 @@ struct Model {
     void build_internal_force_nonlinear(
         SystemDofIds& indices,
         NodeData& nodal_forces,
-        const Field& displacement);
+        const Field& displacement,
+        bool assemble_contact = true);
     SparseMatrix build_lumped_mass_matrix(
         SystemDofIds& indices);
 

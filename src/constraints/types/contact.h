@@ -13,8 +13,9 @@
  * numerical continuation parameter: it starts from the user-provided value and
  * may increase between converged Newton solves when penetration stagnates.
  *
- * Geometric segmentation, dual-basis construction, residual/tangent assembly
- * and penalty adaptation are implemented in `contact.cpp`.
+ * Geometric segmentation, dual-basis construction, piecewise-consistent
+ * residual/tangent assembly and penalty adaptation are implemented in
+ * `contact.cpp`.
  *
  * @see Contact
  * @see model::SurfaceRegion
@@ -55,6 +56,11 @@ namespace constraint {
  * trial-evaluation data required by the subsequent post-Newton multiplier
  * update. Contact geometry itself is always recomputed from current nodal
  * positions and is therefore never committed, frozen or rolled back.
+ *
+ * The experimental monolithic interface bypasses this history and accepts its
+ * nodal pressure multipliers directly from the nonlinear solver state. It adds
+ * support-scaled Fischer--Burmeister equations and their saddle-point Jacobian
+ * blocks without changing the established augmented-Lagrange API.
  */
 class Contact {
     /**
@@ -62,9 +68,8 @@ class Contact {
      *
      * `multipliers` contains the persistent augmented-Lagrange normal
      * multipliers. `gaps` and `characteristic_lengths` describe the most recent
-     * accepted mortar evaluation in the same nonlinear trial. They are consumed
-     * by the post-Newton augmentation and may be discarded on rollback together
-     * with the trial multiplier state.
+     * accepted mortar evaluation in the same nonlinear trial. All entries
+     * participate in the same commit/rollback transaction.
      */
     struct State {
         // Persistent physical history on global slave mortar nodes
@@ -73,6 +78,7 @@ class Contact {
         // Current accepted mortar evaluation used by the next AL update
         std::unordered_map<ID, Precision> gaps;
         std::unordered_map<ID, Precision> characteristic_lengths;
+
     };
 
     // Surface-to-surface contact definition
@@ -119,11 +125,24 @@ public:
     // Post-Newton augmented-Lagrange multiplier update
     bool update_augmented_lagrange() const;
 
-    // Current mortar residual and frozen-geometry contact tangent
+    // Current mortar residual and piecewise-consistent geometric tangent
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,
-                  TripletList&      triplets) const;
+                  TripletList&      triplets,
+                  bool              assemble_tangent = true) const;
+
+    // Experimental monolithic complementarity formulation. One multiplier is
+    // assigned to every unique slave mortar node in the returned stable order.
+    std::vector<ID> multiplier_nodes(const model::ModelData& model_data) const;
+    void assemble_monolithic(SystemDofIds&          system_nodal_dofs,
+                             model::ModelData&      model_data,
+                             const DynamicVector&   multipliers,
+                             Index                  multiplier_dof_offset,
+                             model::NodeData&       nodal_forces,
+                             DynamicVector&         complementarity_residual,
+                             TripletList&           triplets,
+                             bool                   assemble_tangent = true) const;
 };
 
 } // namespace constraint

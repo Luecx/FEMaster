@@ -59,8 +59,8 @@ public:
     void reset_material_state();
     void commit_material_state();
 
-    // Contact transactions. Surface mortar always recomputes geometry, so update
-    // and frozen trials differ only by their role in the nonlinear controller.
+    // Contact transactions isolate multiplier and accepted gap history while
+    // every candidate recomputes current geometry and unilateral activity.
     void begin_contact_update_trial();
     void begin_contact_frozen_trial();
     void commit_contact_trial();

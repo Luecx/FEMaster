@@ -31,7 +31,7 @@ namespace loadcase {
 namespace tools {
 namespace {
 
-constexpr Index maximum_active_set_updates = 8;
+constexpr Index maximum_active_set_updates = 25;
 
 } // namespace
 

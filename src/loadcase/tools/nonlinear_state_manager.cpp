@@ -143,10 +143,10 @@ void NonlinearStateManager::begin_contact_update_trial() {
 /**
  * Opens a nested transactional contact trial for predictor or line-search work.
  *
- * The current surface-to-surface formulation gives this trial the same state
- * semantics as an update trial. The separate method name is retained because the
- * path controllers distinguish temporary candidate evaluations from outer
- * increment/augmentation transactions.
+ * The legacy method name reflects the former partner-freezing implementation.
+ * Current mortar geometry and unilateral activity are evaluated directly for
+ * every candidate; the nested transaction isolates only multiplier and gap
+ * history from rejected line-search states.
  */
 void NonlinearStateManager::begin_contact_frozen_trial() {
     for (const auto& contact : model_._data->contacts) {
@@ -195,13 +195,18 @@ bool NonlinearStateManager::update_contact_active_set() {
 
     for (const auto& contact : model_._data->contacts) {
         if (contact.adapt_penalty()) {
-            logging::info(true,
-                "CONTACT: penetration stagnated; increasing effective penalty to ",
-                contact.current_penalty());
+            logging::info(
+                true,
+                "CONTACT: adapting effective penalty to ",
+                contact.current_penalty()
+            );
         }
 
-        const bool contact_changed = contact.update_augmented_lagrange();
+        const bool contact_changed =
+            contact.update_augmented_lagrange();
+
         contact.finish_augmentation(contact_changed);
+
         changed = contact_changed || changed;
     }
 
