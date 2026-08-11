@@ -1,36 +1,24 @@
 /**
  * @file contact.h
- * @brief Declares frictionless dual-mortar surface-to-surface contact.
+ * @brief Declares frictionless node-to-surface penalty contact.
  *
- * `Contact` represents one unilateral normal-contact pair between a slave and a
- * master surface region. The physical overlap is reconstructed from the current
- * configuration during every assembly; no search radius, persistent master
- * partner, active-facet flag or quadrature-point history is stored.
- *
- * The contact law uses global slave-node augmented-Lagrange multipliers. Those
- * multipliers are transactional so nonlinear increment and line-search trials
- * can be committed or rolled back independently. The effective penalty is a
- * numerical continuation parameter: it starts from the user-provided value and
- * may increase between converged Newton solves when penetration stagnates.
- *
- * Geometric segmentation, dual-basis construction, residual/tangent assembly
- * and penalty adaptation are implemented in `contact.cpp`.
+ * The contact definition stores one master surface region and one slave surface
+ * region. Slave surface nodes are treated as contact nodes; every current master
+ * face is tested directly during assembly. No BVH, mortar segmentation,
+ * augmented-Lagrange history, formulation switching or persistent partner state
+ * is used.
  *
  * @see Contact
  * @see model::SurfaceRegion
- * @see loadcase::tools::NonlinearStateManager
  *
  * @author Finn Eggers
- * @date 10.08.2026
+ * @date 11.08.2026
  */
 
 #pragma once
 
 #include "../../data/field.h"
 #include "../../data/region.h"
-
-#include <unordered_map>
-#include <vector>
 
 namespace fem {
 namespace model {
@@ -40,90 +28,64 @@ struct ModelData;
 namespace constraint {
 
 /**
- * @brief Frictionless dual-mortar surface-to-surface contact definition.
+ * @brief Frictionless node-to-surface penalty contact definition.
  *
- * Slave and master finite-element facets are projected onto one slave-centered
- * common plane, clipped there and integrated over their physical overlap. A
- * biorthogonal dual interpolation defines one normalized unilateral constraint
- * per global slave mortar node. For a nodal gap `g_i`, multiplier `lambda_i` and
- * effective penalty `epsilon`, the normal pressure coefficient is
+ * Each unique node of the slave surface region receives a representative area
+ * assembled from its incident slave facets. For every slave node, all master
+ * facets are projected directly and the physically closest bounded projection is
+ * selected. The signed normal gap is
  *
- *     p_i = max(0, lambda_i - epsilon g_i).
+ *     g = (x_s - x_m)^T n_m - clearance.
  *
- * The augmented-Lagrange multiplier is the only persistent physical contact
- * history. Current gaps and characteristic lengths are stored only as accepted
- * trial-evaluation data required by the subsequent post-Newton multiplier
- * update. Contact geometry itself is always recomputed from current nodal
- * positions and is therefore never committed, frozen or rolled back.
+ * The normal law follows the regularized linear node-to-face law used by
+ * CalculiX:
+ *
+ *     f_n = epsilon A_s g [1/2 + atan(-g/delta)/pi].
+ *
+ * Here `epsilon` is the penalty stiffness, `A_s` the representative slave area
+ * and `delta` a small smoothing length proportional to `sqrt(A_s)`. The law is
+ * evaluated up to a small positive-gap cutoff, so the transition through zero
+ * gap remains smooth instead of being truncated by a hard active-set switch.
+ *
+ * The slave contribution is `f_n n_m`; the opposite force is distributed to the
+ * master nodes with the master shape functions at the closest point. For the
+ * selected master face the tangent is analytically linearized from the
+ * closest-point orthogonality equations. It includes derivatives of the local
+ * projection coordinates, master shape functions, surface normal, gap and smooth
+ * pressure-overclosure law. The discrete master-face choice and representative
+ * slave area are held fixed during one tangent evaluation, matching the
+ * CalculiX node-to-face contact linearization.
  */
 class Contact {
-    /**
-     * @brief Transactional nodal state of one mortar contact definition.
-     *
-     * `multipliers` contains the persistent augmented-Lagrange normal
-     * multipliers. `gaps` and `characteristic_lengths` describe the most recent
-     * accepted mortar evaluation in the same nonlinear trial. They are consumed
-     * by the post-Newton augmentation and may be discarded on rollback together
-     * with the trial multiplier state.
-     */
-    struct State {
-        // Persistent physical history on global slave mortar nodes
-        std::unordered_map<ID, Precision> multipliers;
-
-        // Current accepted mortar evaluation used by the next AL update
-        std::unordered_map<ID, Precision> gaps;
-        std::unordered_map<ID, Precision> characteristic_lengths;
-    };
-
-    // Surface-to-surface contact definition
+    // Explicit node-to-surface contact definition
     model::SurfaceRegion::Ptr master_surfaces;
     model::SurfaceRegion::Ptr slave_surfaces;
 
-    Precision         initial_penalty;
-    mutable Precision penalty;
-    Precision         clearance;
-    bool              flip_normal;
-
-    // Numerical penalty-adaptation state. The effective penalty persists across
-    // increments and is reset only when a new nonlinear analysis is initialized.
-    mutable Precision previous_augmentation_penetration = Precision(-1);
-    mutable bool      previous_augmentation_changed     = false;
-
-    // Transactional multiplier/evaluation state. Nested copies are used by
-    // increment, predictor and line-search trials.
-    mutable State              committed_state;
-    mutable std::vector<State> trial_states;
-
-    // Access the innermost active trial, or committed state outside a trial
-    State& state() const;
+    Precision penalty;
+    Precision clearance;
+    bool      flip_normal;
 
 public:
-    // Contact construction and input parameters
     Contact(model::SurfaceRegion::Ptr master,
             model::SurfaceRegion::Ptr slave,
             Precision                 penalty_stiffness,
             Precision                 contact_clearance,
             bool                      flip_master_normal);
 
-    // Transactional nonlinear multiplier/evaluation state
-    void begin_trial() const;
-    void commit_trial() const;
-    void rollback_trial() const;
-
-    // Numerical augmented-Lagrange penalty adaptation
-    void reset_penalty_adaptation() const;
-    bool adapt_penalty() const;
-    void finish_augmentation(bool changed) const;
-    [[nodiscard]] Precision current_penalty() const noexcept;
-
-    // Post-Newton augmented-Lagrange multiplier update
-    bool update_augmented_lagrange() const;
-
-    // Current mortar residual and frozen-geometry contact tangent
+    // Assemble current node-to-surface residual and, optionally, its tangent.
     void assemble(SystemDofIds&     system_nodal_dofs,
                   model::ModelData& model_data,
                   model::NodeData&  nodal_forces,
-                  TripletList&      triplets) const;
+                  TripletList*      triplets = nullptr) const;
+
+    // Existing model assembly passes tangent storage by reference. Keep this
+    // convenience overload without introducing a second contact formulation.
+    void assemble(SystemDofIds&     system_nodal_dofs,
+                  model::ModelData& model_data,
+                  model::NodeData&  nodal_forces,
+                  TripletList&      triplets) const {
+        assemble(system_nodal_dofs, model_data, nodal_forces, &triplets);
+    }
 };
 
 } // namespace constraint

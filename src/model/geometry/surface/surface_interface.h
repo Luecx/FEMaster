@@ -99,10 +99,13 @@ struct SurfaceInterface {
     // integration regions.
     virtual Polygon local_domain_polygon() const = 0;
 
-    // Evaluate the element shape functions at one natural-coordinate point.
-    // The dynamic return type allows generic surface algorithms to consume
-    // different interpolation orders through the common interface.
-    virtual DynamicVector shape_function(const Vec2& local) const = 0;
+    // Shape interpolation and its natural derivatives. First-derivative columns
+    // are dN/dr and dN/ds. Second-derivative columns are d2N/dr2, d2N/ds2 and
+    // d2N/(dr ds). Dynamic storage keeps generic geometry/contact algorithms
+    // independent of the concrete interpolation order.
+    virtual DynamicVector shape_function         (const Vec2& local) const = 0;
+    virtual DynamicMatrix shape_derivative       (const Vec2& local) const = 0;
+    virtual DynamicMatrix shape_second_derivative(const Vec2& local) const = 0;
 
     // Natural coordinates of the surface nodes in shape-function order.
     virtual DynamicMatrix node_coords_natural() const = 0;

@@ -46,12 +46,12 @@ EXCITATION
 *END
 \end{exampledeck}
 
-\section{Dual-mortar contact between two C3D8 blocks}
+\section{Node-to-surface contact between two C3D8 blocks}
 
-This regression model isolates the current surface-to-surface contact formulation. The lower block is fixed. The upper block starts with a 0.5 gap, is guided laterally, and receives a prescribed downward displacement at its top face. Contact begins when the initial gap has closed; before that point the upper block can translate without developing a normal contact reaction.
+This regression model isolates the current node-to-surface penalty formulation. The lower block is fixed. The upper block starts with a 0.5 gap, is guided laterally, and receives a prescribed downward displacement at its top face. The four nodes of the upper-block S1 face are the slave contact nodes; the lower-block S2 face is the master face. Contact begins when the initial gap has closed.
 
 \begin{exampledeck}
-*MODEL, NAME=CONTACT_MORTAR_PARALLEL_BLOCKS_C3D8
+*MODEL, NAME=CONTACT_NODE_SURFACE_PARALLEL_BLOCKS_C3D8
 *NODE, NSET=NALL
 1,  0.0, 0.0,  -1.0
 2,  1.0, 0.0,  -1.0
@@ -100,7 +100,7 @@ LOWER_ALL, 0.0, 0.0, 0.0, NAN, NAN, NAN
 UPPER_ALL, 0.0, 0.0, NAN, NAN, NAN, NAN
 UPPER_TOP, NAN, NAN, -1.0, NAN, NAN, NAN
 
-*LOADCASE, TYPE=NONLINEARSTATIC, NAME=MORTAR_BENCHMARK
+*LOADCASE, TYPE=NONLINEARSTATIC, NAME=NODE_SURFACE_BENCHMARK
 *SUPPORTS
 BC
 *SOLVER, DEVICE=CPU, METHOD=DIRECT
@@ -109,4 +109,4 @@ BC
 *END
 \end{exampledeck}
 
-For this one-face/one-face benchmark the projected overlap area is 1, contact must remain inactive while the gap is positive, and total master and slave contact resultants must be equal and opposite. The repository additionally contains \file{examples/10_contact/103_contact_mortar_parallel_blocks_c3d8_expected.md} with the analytic pre-contact and penalty-response checks used for regression testing.
+For this one-face benchmark each slave node has tributary area 0.25. Contact must remain inactive while the gap is positive, and the total master and slave contact resultants must be equal and opposite. The complete input deck is stored in \file{examples/10_contact/103_contact_node_surface_parallel_blocks_c3d8.inp}.

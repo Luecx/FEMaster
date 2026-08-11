@@ -32,14 +32,29 @@ Surface<N>::Surface(const std::array<ID, N>& node_ids)
  *
  * Concrete surfaces implement the fixed-size two-coordinate overload. This
  * adapter exposes those shape functions through the common dynamic interface.
- *
- * @param local Natural surface coordinates `(r,s)`.
- *
- * @return Dynamically sized vector containing all shape-function values.
  */
 template<Index N>
 DynamicVector Surface<N>::shape_function(const Vec2& local) const {
     return DynamicVector(shape_function(local(0), local(1)));
+}
+
+/**
+ * @brief Evaluates first natural shape-function derivatives dynamically.
+ */
+template<Index N>
+DynamicMatrix Surface<N>::shape_derivative(const Vec2& local) const {
+    return DynamicMatrix(shape_derivative(local(0), local(1)));
+}
+
+/**
+ * @brief Evaluates second natural shape-function derivatives dynamically.
+ *
+ * Columns contain d2N/dr2, d2N/ds2 and d2N/(dr ds), matching the fixed-size
+ * surface implementations.
+ */
+template<Index N>
+DynamicMatrix Surface<N>::shape_second_derivative(const Vec2& local) const {
+    return DynamicMatrix(shape_second_derivative(local(0), local(1)));
 }
 
 /**
@@ -71,12 +86,6 @@ StaticVector<M> Surface<N>::interpolate(
  *
  * Multiplying the global nodal coordinates by the shape-function derivatives
  * produces the two physical tangent vectors `dx/dr` and `dx/ds`.
- *
- * @param node_coords Global coordinates of the surface nodes.
- * @param r First natural coordinate.
- * @param s Second natural coordinate.
- *
- * @return Matrix whose columns contain the two physical surface tangents.
  */
 template<Index N>
 StaticMatrix<3, 2> Surface<N>::jacobian(
@@ -89,16 +98,6 @@ StaticMatrix<3, 2> Surface<N>::jacobian(
 
 /**
  * @brief Returns the polygon of the natural element domain.
- *
- * Triangular surfaces use the reference triangle with corners `(0,0)`,
- * `(1,0)`, and `(0,1)`. Quadrilateral surfaces use the reference square
- * `[-1,1] x [-1,1]`.
- *
- * Only corner coordinates are required because the polygon describes the
- * natural integration domain rather than the potentially curved physical
- * element boundary.
- *
- * @return Counter-clockwise polygon of the natural element domain.
  */
 template<Index N>
 SurfaceInterface::Polygon Surface<N>::local_domain_polygon() const {
@@ -120,14 +119,6 @@ SurfaceInterface::Polygon Surface<N>::local_domain_polygon() const {
 
 /**
  * @brief Maps natural surface coordinates into physical space.
- *
- * The physical position is obtained by interpolating the global coordinates
- * of all surface nodes with the shape functions evaluated at `local`.
- *
- * @param local Natural coordinates `(r,s)`.
- * @param node_coords Global nodal coordinate field.
- *
- * @return Physical position corresponding to the supplied natural coordinates.
  */
 template<Index N>
 Vec3 Surface<N>::local_to_global(const Vec2& local, const Field& node_coords) const {
@@ -137,13 +128,6 @@ Vec3 Surface<N>::local_to_global(const Vec2& local, const Field& node_coords) co
 
 /**
  * @brief Returns the natural coordinates of all surface nodes dynamically.
- *
- * The concrete surface provides the fixed-size natural nodal coordinates used
- * by its shape functions. This wrapper exposes the same data through the
- * polymorphic surface interface for algorithms that operate on arbitrary
- * triangular and quadrilateral shell topologies.
- *
- * @return Dynamic matrix with one `(r,s)` coordinate row per surface node.
  */
 template<Index N>
 DynamicMatrix Surface<N>::node_coords_natural() const {
@@ -152,15 +136,6 @@ DynamicMatrix Surface<N>::node_coords_natural() const {
 
 /**
  * @brief Computes the normalized physical surface normal.
- *
- * The cross product of the two Jacobian columns gives a vector perpendicular
- * to the local surface tangents. Its direction follows the surface node
- * ordering.
- *
- * @param node_coords Global nodal coordinate field.
- * @param local Natural coordinates `(r,s)`.
- *
- * @return Unit normal at the requested surface point.
  */
 template<Index N>
 Vec3 Surface<N>::normal(const Field& node_coords, const Vec2& local) const {
@@ -172,19 +147,11 @@ Vec3 Surface<N>::normal(const Field& node_coords, const Vec2& local) const {
 
 /**
  * @brief Collects the global coordinates of all nodes attached to the surface.
- *
- * The global coordinate field is accessed using the stored global node
- * identifiers and transferred into fixed-size contiguous storage.
- *
- * @param node_coords Global nodal coordinate field.
- *
- * @return Matrix containing one global node position per row.
  */
 template<Index N>
 StaticMatrix<N, 3> Surface<N>::node_coords_global(const Field& node_coords) const {
     StaticMatrix<N, 3> coordinates{};
 
-    // Gather the global coordinate row belonging to every local surface node
     for (Index local_id = 0; local_id < N; ++local_id) {
         const Index node_id = static_cast<Index>(nodeIds[local_id]);
         coordinates.row(local_id) = node_coords.row_vec3(node_id).transpose();
@@ -195,30 +162,18 @@ StaticMatrix<N, 3> Surface<N>::node_coords_global(const Field& node_coords) cons
 
 /**
  * @brief Returns a mutable pointer to the first global node identifier.
- *
- * The fixed-size `std::array` stores all identifiers contiguously, which allows
- * the surface to provide the pointer-based connectivity interface expected by
- * `SurfaceInterface`.
- *
- * @return Pointer to the first node identifier.
  */
 template<Index N>
 ID* Surface<N>::nodes() {
     return nodeIds.data();
 }
+
 /**
  * @brief Returns a const pointer to the first global node identifier.
- *
- * The fixed-size `std::array` stores all identifiers contiguously, which allows
- * the surface to provide the pointer-based connectivity interface expected by
- * `SurfaceInterface`.
- *
- * @return Pointer to the first node identifier.
  */
 template<Index N>
 const ID* Surface<N>::nodes() const {
     return nodeIds.data();
 }
-
 
 } // namespace fem::model
