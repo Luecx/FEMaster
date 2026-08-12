@@ -8,6 +8,8 @@
  * analytic contact tangent against finite differences of the assembled residual.
  * Two adjacent master faces additionally verify the CalculiX-style search graph,
  * frozen line-search connectivity and post-Newton topology-change detection.
+ * Frozen trials also verify that retained contact elements keep both their
+ * tributary slave area and their existence across the positive-gap cutoff.
  *
  * @author Finn Eggers
  * @date 12.08.2026
@@ -126,6 +128,12 @@ struct ParallelContactFixture {
             (*data.positions)(lower, 1) = xy[static_cast<std::size_t>(local)](1);
             (*data.positions)(upper, 0) = xy[static_cast<std::size_t>(local)](0);
             (*data.positions)(upper, 1) = xy[static_cast<std::size_t>(local)](1);
+        }
+    }
+
+    void shift_slave_z(Precision dz) {
+        for (ID node = 8; node <= 15; ++node) {
+            (*data.positions)(node, 2) += dz;
         }
     }
 
@@ -356,6 +364,66 @@ TEST(NodeSurfaceContact, FrozenTrialKeepsNewtonMasterFaceUntilTopologyUpdate) {
     EXPECT_TRUE(contact.contact_topology_changed());
     EXPECT_GT(updated_forces(0, 2), Precision(0));
     EXPECT_GT(updated_forces(3, 2), Precision(0));
+
+    contact.rollback_trial();
+    contact.rollback_trial();
+}
+
+TEST(NodeSurfaceContact, FrozenTrialKeepsStoredSlaveArea) {
+    ParallelContactFixture fixture(Precision(-0.05));
+    fixture.make_slave_face_interior(Precision(0.2), Precision(0.8));
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
+
+    contact.begin_update_trial();
+    auto initial_forces = fixture.forces();
+    TripletList tangent;
+    contact.assemble(fixture.dofs, fixture.data, initial_forces, tangent);
+
+    const Precision initial_force = initial_forces(8, 2);
+    ASSERT_LT(initial_force, Precision(0));
+
+    // Shrink the physical slave face from area 0.36 to 0.04. The frozen trial
+    // must still use the tributary area stored when the contact element was
+    // generated, so its scalar slave force remains unchanged at identical gap.
+    fixture.make_slave_face_interior(Precision(0.4), Precision(0.6));
+    contact.begin_frozen_trial();
+
+    auto frozen_forces = fixture.forces();
+    contact.assemble(fixture.dofs, fixture.data, frozen_forces, nullptr);
+
+    EXPECT_NEAR(frozen_forces(8, 2), initial_force,
+                Precision(1e-10) * std::max(Precision(1), std::abs(initial_force)));
+
+    contact.rollback_trial();
+    contact.rollback_trial();
+}
+
+TEST(NodeSurfaceContact, FrozenTrialKeepsElementBeyondGenerationCutoff) {
+    constexpr Precision initial_gap = Precision(-1e-4);
+    constexpr Precision frozen_gap  = Precision(1e-3);
+
+    ParallelContactFixture fixture(initial_gap);
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
+
+    contact.begin_update_trial();
+    auto initial_forces = fixture.forces();
+    TripletList tangent;
+    contact.assemble(fixture.dofs, fixture.data, initial_forces, tangent);
+    ASSERT_LT(initial_forces(8, 2), Precision(0));
+
+    // For A_s=0.25 the generation cutoff is 5e-4. Move the already generated
+    // contact element to g=1e-3: a topology update would remove it, but a frozen
+    // line-search trial must keep evaluating the same element on the smooth
+    // positive-gap branch.
+    fixture.shift_slave_z(frozen_gap - initial_gap);
+    contact.begin_frozen_trial();
+
+    auto frozen_forces = fixture.forces();
+    contact.assemble(fixture.dofs, fixture.data, frozen_forces, nullptr);
+
+    const Precision expected = expected_slave_force(frozen_gap);
+    ASSERT_GT(expected, Precision(0));
+    EXPECT_NEAR(frozen_forces(8, 2), expected, 1e-10);
 
     contact.rollback_trial();
     contact.rollback_trial();
