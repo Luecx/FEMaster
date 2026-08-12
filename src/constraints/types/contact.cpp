@@ -11,17 +11,16 @@
  * The search triangulation is used only for robust master-face ownership; force
  * and tangent evaluation remain on the complete finite-element master face.
  *
- * Discrete contact-element connectivity is updated by Newton tangent evaluations
- * and frozen for nested line-search residual evaluations. The stored connectivity
- * contains only slave nodes retained by the positive-gap cutoff. A topology
- * update at the converged geometry can therefore request a discontinuity Newton
- * iteration without allowing face switching inside the line search that tests a
- * fixed Newton direction.
+ * Discrete contact elements are updated by Newton tangent evaluations and frozen
+ * for nested line-search residual evaluations. Every retained element stores its
+ * master face and representative slave area. The positive-gap cutoff is applied
+ * only while regenerating the contact elements; a frozen line search therefore
+ * evaluates the same discrete contact system that produced the Newton tangent.
  *
  * Following CalculiX N2F contact, contact-element regeneration is allowed through
  * the first eight Newton tangent evaluations of one increment attempt and is
  * frozen afterwards. Continuous closest-point geometry on every retained master
- * face remains current even while the discrete connectivity is frozen.
+ * face remains current even while the discrete contact elements are frozen.
  *
  * The normal contact law follows the regularized linear node-to-face law used by
  * CalculiX. Around zero gap the linear penalty is multiplied by an arctangent
@@ -29,10 +28,11 @@
  * the open side.
  *
  * The tangent follows the analytic node-to-face linearization used by CalculiX.
- * The selected master face is fixed during one tangent evaluation, while the
- * closest-point coordinates, shape functions, surface normal, gap and force law
- * are differentiated consistently from the closest-point orthogonality
- * equations. The frictionless tangent is symmetrized after local assembly.
+ * The selected master face and representative slave area are fixed during one
+ * tangent evaluation, while the closest-point coordinates, shape functions,
+ * surface normal, gap and force law are differentiated consistently from the
+ * closest-point orthogonality equations. The frictionless tangent is symmetrized
+ * after local assembly.
  *
  * @see Contact
  * @see model::SurfaceInterface
@@ -996,15 +996,24 @@ void Contact::assemble(
     model::Field& node_coords = *model_data.positions;
     auto& surfaces = model_data.surfaces;
 
-    const auto slave_areas = build_slave_nodal_areas(*slave_surfaces, surfaces, node_coords);
     const bool update_topology = allow_partner_updates;
+    std::unordered_map<ID, Precision> slave_areas;
+
+    if (update_topology) {
+        slave_areas = build_slave_nodal_areas(*slave_surfaces, surfaces, node_coords);
+    } else {
+        slave_areas.reserve(partners.size());
+        for (const auto& [slave_node, element] : partners) {
+            slave_areas.emplace(slave_node, element.slave_area);
+        }
+    }
 
     std::optional<MasterSearchGraph> search_graph;
     if (update_topology) {
         search_graph.emplace(*master_surfaces, surfaces, node_coords);
     }
 
-    std::unordered_map<ID, ID> updated_partners;
+    std::unordered_map<ID, ContactElement> updated_partners;
     if (update_topology) {
         updated_partners.reserve(partners.size() + 8);
     }
@@ -1055,7 +1064,7 @@ void Contact::assemble(
 
             projection = project_master_surface(
                 slave_node,
-                partner->second,
+                partner->second.surface_id,
                 slave_position,
                 surfaces,
                 node_coords
@@ -1086,13 +1095,17 @@ void Contact::assemble(
         min_gap = std::min(min_gap, pair.gap);
         max_gap = std::max(max_gap, pair.gap);
 
-        if (!pair.active) {
+        // The cutoff decides which contact elements are generated. Once a
+        // Newton tangent has fixed the discrete contact system, every stored
+        // element remains present throughout its frozen line-search trials and
+        // the smooth positive-gap branch carries its force continuously to zero.
+        if (update_topology && !pair.active) {
             continue;
         }
         ++active_count;
 
         if (update_topology) {
-            updated_partners[slave_node] = projection->surface_id;
+            updated_partners[slave_node] = ContactElement{projection->surface_id, slave_area};
         }
 
         const Precision penetration = std::max(Precision(0), -pair.gap);
@@ -1192,7 +1205,16 @@ void Contact::assemble(
     }
 
     if (update_topology) {
-        topology_changed = updated_partners != partners;
+        topology_changed = updated_partners.size() != partners.size();
+        if (!topology_changed) {
+            for (const auto& [slave_node, element] : updated_partners) {
+                const auto previous = partners.find(slave_node);
+                if (previous == partners.end() || previous->second.surface_id != element.surface_id) {
+                    topology_changed = true;
+                    break;
+                }
+            }
+        }
         partners = std::move(updated_partners);
 
         if (triplets != nullptr) {
