@@ -6,12 +6,16 @@
  * regularized positive gap and uniform penetration. A second configuration puts
  * the slave face strictly inside the master face and compares the production
  * analytic contact tangent against finite differences of the assembled residual.
+ * Two adjacent master faces additionally verify that the CalculiX-style search
+ * graph can start on one search triangle, walk across their common edge and
+ * evaluate contact on the neighboring complete finite-element face.
  *
  * @author Finn Eggers
- * @date 11.08.2026
+ * @date 12.08.2026
  */
 
 #include "../src/constraints/types/contact.h"
+#include "../src/model/geometry/surface/surface4.h"
 #include "../src/model/model_data.h"
 #include "../src/model/solid/c3d8.h"
 
@@ -136,6 +140,65 @@ struct ParallelContactFixture {
     }
 };
 
+struct AdjacentMasterFixture {
+    static constexpr ID node_count = 10;
+
+    model::ModelData data{node_count, 0, 3};
+    std::shared_ptr<model::SurfaceRegion> master = std::make_shared<model::SurfaceRegion>("MASTER");
+    std::shared_ptr<model::SurfaceRegion> slave  = std::make_shared<model::SurfaceRegion>("SLAVE");
+    SystemDofIds dofs{node_count, 6};
+
+    AdjacentMasterFixture() {
+        data.surfaces[0] = std::make_shared<model::Surface4>(std::array<ID, 4>{0, 1, 4, 3});
+        data.surfaces[1] = std::make_shared<model::Surface4>(std::array<ID, 4>{1, 2, 5, 4});
+        data.surfaces[2] = std::make_shared<model::Surface4>(std::array<ID, 4>{6, 7, 8, 9});
+
+        master->add(0);
+        master->add(1);
+        slave->add(2);
+
+        data.positions = std::make_shared<model::Field>(
+            "POSITION",
+            model::FieldDomain::NODE,
+            node_count,
+            6
+        );
+        data.positions->set_zero();
+
+        const std::array<Vec3, node_count> coordinates {
+            Vec3(0.0,   0.0,   0.0),
+            Vec3(1.0,   0.0,   0.0),
+            Vec3(2.0,   0.0,   0.0),
+            Vec3(0.0,   1.0,   0.0),
+            Vec3(1.0,   1.0,   0.0),
+            Vec3(2.0,   1.0,   0.0),
+            Vec3(1.005, 0.895, -0.1),
+            Vec3(1.015, 0.895, -0.1),
+            Vec3(1.015, 0.905, -0.1),
+            Vec3(1.005, 0.905, -0.1)
+        };
+
+        for (ID node = 0; node < node_count; ++node) {
+            for (Dim component = 0; component < 3; ++component) {
+                (*data.positions)(node, component) = coordinates[static_cast<std::size_t>(node)](component);
+            }
+        }
+
+        dofs.fill(-1);
+    }
+
+    model::NodeData forces() const {
+        model::NodeData result{
+            "CONTACT_FORCE",
+            model::FieldDomain::NODE,
+            node_count,
+            6
+        };
+        result.set_zero();
+        return result;
+    }
+};
+
 Precision expected_slave_force(Precision gap, Precision penalty = Precision(100)) {
     constexpr Precision slave_area = Precision(0.25);
     constexpr Precision slave_length = Precision(0.5);
@@ -243,6 +306,36 @@ TEST(NodeSurfaceContact, UniformPenetrationBalancesMasterAndSlaveResultants) {
     EXPECT_NEAR(master_resultant(2), -Precision(4) * expected, 1e-10);
 
     EXPECT_NEAR((master_resultant + slave_resultant).norm(), Precision(0), 1e-10);
+}
+
+TEST(NodeSurfaceContact, SearchGraphWalksAcrossSharedMasterEdge) {
+    AdjacentMasterFixture fixture;
+    constraint::Contact contact(
+        fixture.master,
+        fixture.slave,
+        Precision(100),
+        Precision(0),
+        false
+    );
+
+    auto forces = fixture.forces();
+    contact.assemble(fixture.dofs, fixture.data, forces, nullptr);
+
+    // All slave nodes lie slightly to the right of x=1. Their nearest search
+    // triangle centroid is still on the left face, so the CalculiX-style search
+    // must cross the common x=1 edge before the complete FE-face projection.
+    // A bounded projection on the left face would place the point exactly on
+    // x=1 and could not generate reaction on the right-face-only nodes 2 and 5.
+    EXPECT_GT(forces(2, 2), Precision(0));
+    EXPECT_GT(forces(5, 2), Precision(0));
+    EXPECT_NEAR(forces(0, 2), Precision(0), 1e-12);
+    EXPECT_NEAR(forces(3, 2), Precision(0), 1e-12);
+
+    Vec3 total = Vec3::Zero();
+    for (ID node = 0; node < AdjacentMasterFixture::node_count; ++node) {
+        total += forces.row_vec3(node);
+    }
+    EXPECT_NEAR(total.norm(), Precision(0), 1e-10);
 }
 
 TEST(NodeSurfaceContact, AnalyticTangentMatchesResidualFiniteDifference) {
