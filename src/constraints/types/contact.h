@@ -62,8 +62,10 @@ namespace constraint {
 class Contact {
     struct TrialState {
         std::unordered_map<ID, ID> partners;
-        bool allow_partner_updates = true;
-        bool topology_changed      = false;
+        bool  allow_partner_updates = true;
+        bool  regeneration_frozen   = false;
+        bool  topology_changed      = false;
+        Index update_iterations     = 0;
     };
 
     // Explicit node-to-surface contact definition
@@ -77,8 +79,10 @@ class Contact {
     // Discrete CalculiX-style contact-element connectivity. The map contains
     // only slave nodes currently retained by the positive-gap contact cutoff.
     mutable std::unordered_map<ID, ID> partners;
-    mutable bool allow_partner_updates = true;
-    mutable bool topology_changed      = false;
+    mutable bool  allow_partner_updates = true;
+    mutable bool  regeneration_frozen   = false;
+    mutable bool  topology_changed      = false;
+    mutable Index update_iterations     = 0;
     mutable std::vector<TrialState> trial_stack;
 
 public:
