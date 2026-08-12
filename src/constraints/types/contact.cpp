@@ -2,17 +2,20 @@
  * @file contact.cpp
  * @brief Implements frictionless node-to-surface penalty contact.
  *
- * Slave surface nodes are assigned representative tributary areas. For each
- * slave node every master facet is tested directly using the bounded
- * closest-point projection provided by the surface geometry classes. The nearest
- * master facet owns the current contact evaluation. No spatial acceleration,
- * mortar integration, augmented-Lagrange state or formulation switching is
- * present in this implementation.
+ * The master surface is converted into the same topological search
+ * triangulation used by CalculiX: 3/4/6/8-node faces become 1/2/4/6 search
+ * triangles, neighboring triangles are connected through common edges and each
+ * edge receives a common bordering plane constructed from averaged nodal master
+ * normals. A slave node starts at the nearest search-triangle centroid and walks
+ * across violated bordering planes until its owning search triangle is found.
+ * The search triangulation is used only for robust master-face ownership; force
+ * and tangent evaluation remain on the complete finite-element master face.
  *
- * The normal contact law follows the regularized linear node-to-face law used by
- * CalculiX. Around zero gap the linear penalty is multiplied by an arctangent
- * transition, giving a smooth force response and a very small tensile branch on
- * the open side. Contact evaluation is retained up to a small positive cutoff
+ * Slave surface nodes are assigned representative tributary areas. The normal
+ * contact law follows the regularized linear node-to-face law used by CalculiX.
+ * Around zero gap the linear penalty is multiplied by an arctangent transition,
+ * giving a smooth force response and a very small tensile branch on the open
+ * side. Contact evaluation is retained up to a small positive cutoff
  * proportional to the slave nodal characteristic length.
  *
  * The tangent follows the analytic node-to-face linearization used by CalculiX.
@@ -21,16 +24,15 @@
  * are differentiated consistently from the closest-point orthogonality
  * equations. The frictionless tangent is symmetrized after local assembly.
  *
- * Compact diagnostics report the current active contact set, gap range, force
- * range and local closest-point tangent quality. Diagnostics are written directly
- * to stdout so they remain visible while the normal FEMaster logging is disabled
- * during nonlinear iterations.
+ * Compact diagnostics report the current search ownership, active contact set,
+ * gap range, force range and local closest-point tangent quality. No persistent
+ * partner history, BVH, mortar state or augmented-Lagrange state is used.
  *
  * @see Contact
  * @see model::SurfaceInterface
  *
  * @author Finn Eggers
- * @date 11.08.2026
+ * @date 12.08.2026
  */
 
 #include "contact.h"
@@ -40,11 +42,13 @@
 #include "../../model/model_data.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -55,20 +59,24 @@ constexpr Precision geometry_tolerance     = Precision(1e-12);
 constexpr Precision tangent_tolerance      = Precision(1e-14);
 constexpr Precision smoothing_length_ratio = Precision(1e-6);
 constexpr Precision contact_cutoff_ratio   = Precision(1e-3);
+constexpr Precision search_border_ratio    = Precision(1e-3);
 constexpr Precision pi                     = Precision(3.141592653589793238462643383279502884L);
 
 constexpr bool contact_diagnostics      = true;
 constexpr bool contact_pair_diagnostics = true;
 
 /**
- * @brief Closest bounded projection of one slave node onto one master face.
+ * @brief Master-face ownership obtained from the search triangulation.
  */
 struct MasterProjection {
-    ID                           surface_id = ID(-1);
+    ID                           surface_id      = ID(-1);
+    ID                           search_triangle = ID(-1);
+    Index                        walk_steps      = 0;
+    bool                         between         = false;
     model::SurfaceInterface::Ptr surface;
-    Vec2                         local       = Vec2::Zero();
-    Vec3                         point       = Vec3::Zero();
-    Precision                    distance_sq = std::numeric_limits<Precision>::max();
+    Vec2                         local           = Vec2::Zero();
+    Vec3                         point           = Vec3::Zero();
+    Precision                    distance_sq     = std::numeric_limits<Precision>::max();
 };
 
 /**
@@ -106,6 +114,402 @@ bool surface_contains_node(const model::SurfaceInterface& surface, ID node_id) {
 }
 
 /**
+ * @brief CalculiX-style topological master search graph.
+ *
+ * The topology reproduces `triangucont` and `trianeighbor`. Geometry is rebuilt
+ * from the current nodal coordinates like `updatecontpen`: master normals are
+ * evaluated at every face node, accumulated over incident faces and normalized.
+ * Each triangle edge then receives the common bordering plane used for the
+ * triangle walk in `gencontelem_n2f`.
+ */
+class MasterSearchGraph {
+    struct BorderPlane {
+        Vec3      normal = Vec3::Zero();
+        Precision offset = Precision(0);
+        bool      valid  = false;
+
+        Precision distance(const Vec3& point) const {
+            return normal.dot(point) + offset;
+        }
+    };
+
+    struct Triangle {
+        ID                           surface_id = ID(-1);
+        model::SurfaceInterface::Ptr surface;
+        std::array<ID, 3>            nodes     {ID(-1), ID(-1), ID(-1)};
+        std::array<ID, 3>            neighbors {ID(-1), ID(-1), ID(-1)};
+        std::array<BorderPlane, 3>   borders;
+        Vec3                         center = Vec3::Zero();
+        bool                         valid  = false;
+    };
+
+    struct EdgeKey {
+        ID first  = ID(-1);
+        ID second = ID(-1);
+
+        bool operator==(const EdgeKey& other) const {
+            return first == other.first && second == other.second;
+        }
+    };
+
+    struct EdgeKeyHash {
+        std::size_t operator()(const EdgeKey& edge) const {
+            std::size_t seed = std::hash<ID>{}(edge.first);
+            seed ^= std::hash<ID>{}(edge.second) + std::size_t(0x9e3779b9) + (seed << 6) + (seed >> 2);
+            return seed;
+        }
+    };
+
+    struct EdgeOwner {
+        ID    triangle = ID(-1);
+        Index opposite = 0;
+    };
+
+public:
+    struct Location {
+        ID    triangle_id = ID(-1);
+        ID    surface_id  = ID(-1);
+        Index steps       = 0;
+        bool  between     = false;
+    };
+
+private:
+    std::vector<Triangle> triangles;
+
+    static std::vector<std::array<Index, 3>> triangle_pattern(Index n_nodes) {
+        switch (n_nodes) {
+            case 3:
+                return {{0, 1, 2}};
+            case 4:
+                return {{0, 1, 3}, {1, 2, 3}};
+            case 6:
+                return {{0, 3, 5}, {3, 1, 4}, {5, 4, 2}, {3, 4, 5}};
+            case 8:
+                return {{0, 4, 7}, {4, 1, 5}, {6, 5, 2}, {7, 6, 3}, {7, 4, 6}, {4, 5, 6}};
+            default:
+                return {};
+        }
+    }
+
+    static EdgeKey edge_key(ID first, ID second) {
+        if (second < first) {
+            std::swap(first, second);
+        }
+        return {first, second};
+    }
+
+    static std::pair<Index, Index> edge_nodes(Index opposite) {
+        switch (opposite) {
+            case 0: return {1, 2};
+            case 1: return {2, 0};
+            default: return {0, 1};
+        }
+    }
+
+    static BorderPlane build_border_plane(
+        const Vec3& opposite_point,
+        const Vec3& first_point,
+        const Vec3& second_point,
+        const Vec3& first_normal,
+        const Vec3& second_normal
+    ) {
+        BorderPlane result;
+
+        const Vec3 edge = second_point - first_point;
+        const Precision edge_length_sq = edge.squaredNorm();
+        if (!(edge_length_sq > geometry_tolerance * geometry_tolerance)) {
+            return result;
+        }
+
+        Vec3 projected_first  = first_normal  - edge * (first_normal.dot(edge)  / edge_length_sq);
+        Vec3 projected_second = second_normal - edge * (second_normal.dot(edge) / edge_length_sq);
+
+        const Precision first_length  = projected_first.norm();
+        const Precision second_length = projected_second.norm();
+        if (!(first_length > geometry_tolerance) || !(second_length > geometry_tolerance)) {
+            return result;
+        }
+
+        projected_first  /= first_length;
+        projected_second /= second_length;
+
+        Vec3 representative_normal = projected_first + projected_second;
+        const Precision representative_length = representative_normal.norm();
+        if (!(representative_length > geometry_tolerance)) {
+            return result;
+        }
+        representative_normal /= representative_length;
+
+        Vec3 plane_normal = edge.cross(representative_normal);
+        const Precision plane_length = plane_normal.norm();
+        if (!(plane_length > geometry_tolerance)) {
+            return result;
+        }
+        plane_normal /= plane_length;
+
+        Precision offset = -plane_normal.dot(first_point);
+
+        // `straighteq3dpen` orients every bordering-plane normal outwards.
+        // Enforce the same invariant explicitly: the opposite triangle vertex
+        // must lie on the non-positive side of its opposing edge plane.
+        if (plane_normal.dot(opposite_point) + offset > Precision(0)) {
+            plane_normal = -plane_normal;
+            offset       = -offset;
+        }
+
+        result.normal = plane_normal;
+        result.offset = offset;
+        result.valid  = true;
+        return result;
+    }
+
+    static std::unordered_map<ID, Vec3> build_nodal_normals(
+        const model::SurfaceRegion&                       master_region,
+        const std::vector<model::SurfaceInterface::Ptr>& surfaces,
+        const model::Field&                               node_coords
+    ) {
+        std::unordered_map<ID, Vec3> normals;
+
+        for (ID surface_id : master_region) {
+            if (!valid_surface_id(surface_id, surfaces)) {
+                continue;
+            }
+
+            const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
+            const DynamicMatrix natural = surface->node_coords_natural();
+            if (natural.rows() != surface->n_nodes || natural.cols() != 2 || !natural.allFinite()) {
+                continue;
+            }
+
+            for (Index local_node = 0; local_node < surface->n_nodes; ++local_node) {
+                const Vec2 local = natural.row(local_node).transpose();
+                Vec3 normal = surface->normal(node_coords, local);
+                const Precision length = normal.norm();
+                if (!normal.allFinite() || !(length > geometry_tolerance)) {
+                    continue;
+                }
+
+                const ID node = surface->nodes()[local_node];
+                auto [entry, inserted] = normals.try_emplace(node, Vec3::Zero());
+                (void)inserted;
+                entry->second += normal / length;
+            }
+        }
+
+        for (auto& [node, normal] : normals) {
+            (void)node;
+            const Precision length = normal.norm();
+            if (length > geometry_tolerance) {
+                normal /= length;
+            }
+        }
+
+        return normals;
+    }
+
+    void build_triangles(
+        const model::SurfaceRegion&                       master_region,
+        const std::vector<model::SurfaceInterface::Ptr>& surfaces
+    ) {
+        for (ID surface_id : master_region) {
+            if (!valid_surface_id(surface_id, surfaces)) {
+                continue;
+            }
+
+            const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
+            const auto pattern = triangle_pattern(surface->n_nodes);
+            logging::error(!pattern.empty(),
+                "CONTACT: master search supports only 3/4/6/8-node surfaces");
+
+            for (const auto& local_nodes : pattern) {
+                Triangle triangle;
+                triangle.surface_id = surface_id;
+                triangle.surface    = surface;
+                for (Index local = 0; local < 3; ++local) {
+                    triangle.nodes[local] = surface->nodes()[local_nodes[local]];
+                }
+                triangles.push_back(std::move(triangle));
+            }
+        }
+    }
+
+    void build_neighbors() {
+        std::unordered_map<EdgeKey, EdgeOwner, EdgeKeyHash> edges;
+        edges.reserve(triangles.size() * 3);
+
+        for (ID triangle_id = 0; triangle_id < static_cast<ID>(triangles.size()); ++triangle_id) {
+            auto& triangle = triangles[static_cast<std::size_t>(triangle_id)];
+
+            for (Index opposite = 0; opposite < 3; ++opposite) {
+                const auto [first_local, second_local] = edge_nodes(opposite);
+                const EdgeKey key = edge_key(triangle.nodes[first_local], triangle.nodes[second_local]);
+                const auto owner = edges.find(key);
+
+                if (owner == edges.end()) {
+                    edges.emplace(key, EdgeOwner{triangle_id, opposite});
+                    continue;
+                }
+
+                auto& other = triangles[static_cast<std::size_t>(owner->second.triangle)];
+                logging::error(other.neighbors[owner->second.opposite] < 0,
+                    "CONTACT: non-manifold master search edge shared by more than two triangles");
+
+                triangle.neighbors[opposite] = owner->second.triangle;
+                other.neighbors[owner->second.opposite] = triangle_id;
+            }
+        }
+    }
+
+    void update_geometry(
+        const model::Field&                    node_coords,
+        const std::unordered_map<ID, Vec3>& nodal_normals
+    ) {
+        for (auto& triangle : triangles) {
+            std::array<Vec3, 3> points;
+            std::array<Vec3, 3> normals;
+
+            bool valid = true;
+            for (Index local = 0; local < 3; ++local) {
+                points[local] = node_coords.row_vec3(triangle.nodes[local]);
+                const auto normal = nodal_normals.find(triangle.nodes[local]);
+                if (!points[local].allFinite() || normal == nodal_normals.end() ||
+                    !normal->second.allFinite() || normal->second.norm() <= geometry_tolerance) {
+                    valid = false;
+                    break;
+                }
+                normals[local] = normal->second;
+            }
+
+            if (!valid) {
+                continue;
+            }
+
+            triangle.center = (points[0] + points[1] + points[2]) / Precision(3);
+            triangle.valid = true;
+
+            for (Index opposite = 0; opposite < 3; ++opposite) {
+                const auto [first_local, second_local] = edge_nodes(opposite);
+                triangle.borders[opposite] = build_border_plane(
+                    points[opposite],
+                    points[first_local],
+                    points[second_local],
+                    normals[first_local],
+                    normals[second_local]
+                );
+                triangle.valid = triangle.valid && triangle.borders[opposite].valid;
+            }
+        }
+    }
+
+public:
+    MasterSearchGraph(
+        const model::SurfaceRegion&                       master_region,
+        const std::vector<model::SurfaceInterface::Ptr>& surfaces,
+        const model::Field&                               node_coords
+    ) {
+        build_triangles(master_region, surfaces);
+        build_neighbors();
+        update_geometry(node_coords, build_nodal_normals(master_region, surfaces, node_coords));
+    }
+
+    std::size_t size() const {
+        return triangles.size();
+    }
+
+    std::optional<Location> locate(
+        ID          slave_node,
+        const Vec3& point,
+        Precision   border_tolerance
+    ) const {
+        ID seed = ID(-1);
+        Precision best_distance_sq = std::numeric_limits<Precision>::max();
+
+        for (ID triangle_id = 0; triangle_id < static_cast<ID>(triangles.size()); ++triangle_id) {
+            const auto& triangle = triangles[static_cast<std::size_t>(triangle_id)];
+            if (!triangle.valid || !triangle.center.allFinite() || !triangle.surface ||
+                surface_contains_node(*triangle.surface, slave_node)) {
+                continue;
+            }
+
+            const Precision distance_sq = (point - triangle.center).squaredNorm();
+            if (!std::isfinite(distance_sq)) {
+                continue;
+            }
+
+            if (seed < 0 || distance_sq < best_distance_sq - geometry_tolerance ||
+                (std::abs(distance_sq - best_distance_sq) <= geometry_tolerance && triangle_id < seed)) {
+                seed = triangle_id;
+                best_distance_sq = distance_sq;
+            }
+        }
+
+        if (seed < 0) {
+            return std::nullopt;
+        }
+
+        ID current  = seed;
+        ID previous = ID(-1);
+        std::unordered_set<ID> visited;
+        visited.reserve(std::min<std::size_t>(triangles.size(), std::size_t(100)));
+        visited.insert(current);
+
+        constexpr Index maximum_walk_steps = 100;
+
+        for (Index step = 0; step < maximum_walk_steps; ++step) {
+            const auto& triangle = triangles[static_cast<std::size_t>(current)];
+            bool crossed = false;
+
+            for (Index opposite = 0; opposite < 3; ++opposite) {
+                const BorderPlane& border = triangle.borders[opposite];
+                if (!border.valid) {
+                    return std::nullopt;
+                }
+
+                if (border.distance(point) <= border_tolerance) {
+                    continue;
+                }
+
+                const ID next = triangle.neighbors[opposite];
+                if (next < 0) {
+                    return std::nullopt;
+                }
+
+                const auto& next_triangle = triangles[static_cast<std::size_t>(next)];
+                if (!next_triangle.surface || surface_contains_node(*next_triangle.surface, slave_node)) {
+                    return std::nullopt;
+                }
+
+                // CalculiX accepts the current triangle when the walk would
+                // immediately return to the previous triangle: the slave lies
+                // in the common bordering region between the two triangles.
+                if (next == previous) {
+                    return Location{current, triangle.surface_id, step + 1, true};
+                }
+
+                // Longer loops are treated as a circular search path and do not
+                // define a valid master partner.
+                if (visited.find(next) != visited.end()) {
+                    return std::nullopt;
+                }
+
+                visited.insert(next);
+                previous = current;
+                current  = next;
+                crossed  = true;
+                break;
+            }
+
+            if (!crossed) {
+                const auto& owner = triangles[static_cast<std::size_t>(current)];
+                return Location{current, owner.surface_id, step, false};
+            }
+        }
+
+        return std::nullopt;
+    }
+};
+
+/**
  * @brief CalculiX-like positive tributary-area weight of one slave facet node.
  */
 Precision slave_area_weight(Index n_nodes, Index local_node) {
@@ -115,7 +519,7 @@ Precision slave_area_weight(Index n_nodes, Index local_node) {
         case 4:
             return Precision(1) / Precision(4);
         case 6:
-            return local_node < 3 ? Precision(0) : Precision(1) / Precision(3);
+            return local_node < 3 ? Precision(1) / Precision(999) : Precision(332) / Precision(999);
         case 8:
             return local_node < 4 ? Precision(0.01) : Precision(0.24);
         default:
@@ -133,6 +537,10 @@ Precision smoothing_length(Precision slave_area) {
 
 Precision contact_cutoff(Precision slave_area) {
     return contact_cutoff_ratio * slave_characteristic_length(slave_area);
+}
+
+Precision search_border_tolerance(Precision slave_area) {
+    return search_border_ratio * slave_characteristic_length(slave_area);
 }
 
 /**
@@ -206,56 +614,43 @@ std::unordered_map<ID, Precision> build_slave_nodal_areas(
 
 std::optional<MasterProjection> find_master_projection(
     ID                                                slave_node,
+    Precision                                         slave_area,
     const Vec3&                                       slave_position,
-    const model::SurfaceRegion&                       master_region,
+    const MasterSearchGraph&                          search_graph,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces,
     const model::Field&                               node_coords
 ) {
-    std::optional<MasterProjection> best;
-
-    for (ID surface_id : master_region) {
-        if (!valid_surface_id(surface_id, surfaces)) {
-            continue;
-        }
-
-        const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
-        if (surface_contains_node(*surface, slave_node)) {
-            continue;
-        }
-
-        const Vec2 local = surface->global_to_local(slave_position, node_coords, true);
-        if (!local.allFinite() || !surface->in_bounds(local)) {
-            continue;
-        }
-
-        const Vec3 point = surface->local_to_global(local, node_coords);
-        if (!point.allFinite()) {
-            continue;
-        }
-
-        const Precision distance_sq = (slave_position - point).squaredNorm();
-        if (!std::isfinite(distance_sq)) {
-            continue;
-        }
-
-        const bool better =
-            !best.has_value() ||
-            distance_sq < best->distance_sq - geometry_tolerance ||
-            (std::abs(distance_sq - best->distance_sq) <= geometry_tolerance &&
-             surface_id < best->surface_id);
-
-        if (better) {
-            MasterProjection projection;
-            projection.surface_id  = surface_id;
-            projection.surface     = surface;
-            projection.local       = local;
-            projection.point       = point;
-            projection.distance_sq = distance_sq;
-            best = std::move(projection);
-        }
+    const auto location = search_graph.locate(slave_node, slave_position, search_border_tolerance(slave_area));
+    if (!location.has_value() || !valid_surface_id(location->surface_id, surfaces)) {
+        return std::nullopt;
     }
 
-    return best;
+    const auto& surface = surfaces[static_cast<std::size_t>(location->surface_id)];
+    const Vec2 local = surface->global_to_local(slave_position, node_coords, true);
+    if (!local.allFinite() || !surface->in_bounds(local)) {
+        return std::nullopt;
+    }
+
+    const Vec3 point = surface->local_to_global(local, node_coords);
+    if (!point.allFinite()) {
+        return std::nullopt;
+    }
+
+    const Precision distance_sq = (slave_position - point).squaredNorm();
+    if (!std::isfinite(distance_sq)) {
+        return std::nullopt;
+    }
+
+    MasterProjection projection;
+    projection.surface_id      = location->surface_id;
+    projection.search_triangle = location->triangle_id;
+    projection.walk_steps      = location->steps;
+    projection.between         = location->between;
+    projection.surface         = surface;
+    projection.local           = local;
+    projection.point           = point;
+    projection.distance_sq     = distance_sq;
+    return projection;
 }
 
 PairEvaluation evaluate_pair(
@@ -399,7 +794,7 @@ DynamicMatrix analytic_pair_tangent(
 
     for (Index col_node = 0; col_node < local_nodes; ++col_node) {
         const bool slave_column = col_node == 0;
-        const Index master_col  = col_node - 1;
+        const Index master_col  = slave_column ? Index(0) : col_node - 1;
 
         for (Dim component = 0; component < 3; ++component) {
             Vec3 direction = Vec3::Zero();
@@ -525,11 +920,14 @@ void Contact::assemble(
     auto& surfaces = model_data.surfaces;
 
     const auto slave_areas = build_slave_nodal_areas(*slave_surfaces, surfaces, node_coords);
+    const MasterSearchGraph search_graph(*master_surfaces, surfaces, node_coords);
 
     Index projected_count       = 0;
     Index valid_count           = 0;
     Index active_count          = 0;
+    Index between_count         = 0;
     Index tangent_failure_count = 0;
+    Index maximum_walk_steps    = 0;
 
     Precision min_gap         = std::numeric_limits<Precision>::max();
     Precision max_gap         = -std::numeric_limits<Precision>::max();
@@ -537,9 +935,10 @@ void Contact::assemble(
     Precision max_force       = Precision(0);
     Vec3 slave_resultant      = Vec3::Zero();
 
-    ID worst_slave = ID(-1);
-    ID worst_face  = ID(-1);
-    Vec2 worst_local = Vec2::Zero();
+    ID worst_slave    = ID(-1);
+    ID worst_face     = ID(-1);
+    ID worst_triangle = ID(-1);
+    Vec2 worst_local  = Vec2::Zero();
     Precision worst_area  = Precision(0);
     Precision worst_gap   = Precision(0);
     Precision worst_force = Precision(0);
@@ -552,8 +951,9 @@ void Contact::assemble(
         const Vec3 slave_position = node_coords.row_vec3(slave_node);
         const auto projection = find_master_projection(
             slave_node,
+            slave_area,
             slave_position,
-            *master_surfaces,
+            search_graph,
             surfaces,
             node_coords
         );
@@ -561,6 +961,8 @@ void Contact::assemble(
             continue;
         }
         ++projected_count;
+        between_count += projection->between ? 1 : 0;
+        maximum_walk_steps = std::max(maximum_walk_steps, projection->walk_steps);
 
         const PairEvaluation pair = evaluate_pair(
             slave_node,
@@ -591,12 +993,13 @@ void Contact::assemble(
         slave_resultant += pair.slave_force;
 
         if (penetration >= std::max(Precision(0), -worst_gap)) {
-            worst_slave = slave_node;
-            worst_face  = projection->surface_id;
-            worst_local = pair.local;
-            worst_area  = slave_area;
-            worst_gap   = pair.gap;
-            worst_force = pair.force_scalar;
+            worst_slave    = slave_node;
+            worst_face     = projection->surface_id;
+            worst_triangle = projection->search_triangle;
+            worst_local    = pair.local;
+            worst_area     = slave_area;
+            worst_gap      = pair.gap;
+            worst_force    = pair.force_scalar;
         }
 
         add_force(nodal_forces, pair.node_ids[0], pair.slave_force);
@@ -626,6 +1029,7 @@ void Contact::assemble(
                 ++tangent_failure_count;
                 std::cout << "[CONTACT] tangent invalid: slave=" << slave_node
                           << " face=" << projection->surface_id
+                          << " tri=" << projection->search_triangle
                           << " local=(" << pair.local(0) << ", " << pair.local(1) << ")"
                           << " gap=" << pair.gap
                           << " area=" << slave_area
@@ -635,6 +1039,9 @@ void Contact::assemble(
             if (contact_pair_diagnostics) {
                 std::cout << "[CONTACT] pair: slave=" << slave_node
                           << " face=" << projection->surface_id
+                          << " tri=" << projection->search_triangle
+                          << " walk=" << projection->walk_steps
+                          << " between=" << (projection->between ? "yes" : "no")
                           << " local=(" << pair.local(0) << ", " << pair.local(1) << ")"
                           << " gap=" << pair.gap
                           << " area=" << slave_area
@@ -665,6 +1072,9 @@ void Contact::assemble(
         } else if (contact_pair_diagnostics) {
             std::cout << "[CONTACT] pair: slave=" << slave_node
                       << " face=" << projection->surface_id
+                      << " tri=" << projection->search_triangle
+                      << " walk=" << projection->walk_steps
+                      << " between=" << (projection->between ? "yes" : "no")
                       << " local=(" << pair.local(0) << ", " << pair.local(1) << ")"
                       << " gap=" << pair.gap
                       << " area=" << slave_area
@@ -675,9 +1085,12 @@ void Contact::assemble(
     const bool have_valid_gap = valid_count > 0;
     if (contact_diagnostics) {
         std::cout << "[CONTACT] summary: slaves=" << slave_areas.size()
+                  << " search_triangles=" << search_graph.size()
                   << " projected=" << projected_count
                   << " valid=" << valid_count
                   << " active=" << active_count
+                  << " between=" << between_count
+                  << " max_walk=" << maximum_walk_steps
                   << " min_gap=" << (have_valid_gap ? min_gap : Precision(0))
                   << " max_gap=" << (have_valid_gap ? max_gap : Precision(0))
                   << " max_pen=" << max_penetration
@@ -690,6 +1103,7 @@ void Contact::assemble(
     if (contact_diagnostics && active_count > 0) {
         std::cout << "[CONTACT] worst: slave=" << worst_slave
                   << " face=" << worst_face
+                  << " tri=" << worst_triangle
                   << " local=(" << worst_local(0) << ", " << worst_local(1) << ")"
                   << " gap=" << worst_gap
                   << " area=" << worst_area
