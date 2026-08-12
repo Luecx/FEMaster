@@ -6,9 +6,8 @@
  * regularized positive gap and uniform penetration. A second configuration puts
  * the slave face strictly inside the master face and compares the production
  * analytic contact tangent against finite differences of the assembled residual.
- * Two adjacent master faces additionally verify that the CalculiX-style search
- * graph can start on one search triangle, walk across their common edge and
- * evaluate contact on the neighboring complete finite-element face.
+ * Two adjacent master faces additionally verify the CalculiX-style search graph,
+ * frozen line-search connectivity and post-Newton topology-change detection.
  *
  * @author Finn Eggers
  * @date 12.08.2026
@@ -197,6 +196,12 @@ struct AdjacentMasterFixture {
         result.set_zero();
         return result;
     }
+
+    void shift_slave_x(Precision dx) {
+        for (ID node = 6; node <= 9; ++node) {
+            (*data.positions)(node, 0) += dx;
+        }
+    }
 };
 
 Precision expected_slave_force(Precision gap, Precision penalty = Precision(100)) {
@@ -204,9 +209,7 @@ Precision expected_slave_force(Precision gap, Precision penalty = Precision(100)
     constexpr Precision slave_length = Precision(0.5);
     constexpr Precision smoothing_length = Precision(1e-6) * slave_length;
 
-    const Precision factor =
-        Precision(0.5) + std::atan(-gap / smoothing_length) / pi;
-
+    const Precision factor = Precision(0.5) + std::atan(-gap / smoothing_length) / pi;
     return penalty * slave_area * gap * factor;
 }
 
@@ -228,13 +231,7 @@ DynamicVector contact_force_vector(const ParallelContactFixture& fixture,
 
 TEST(NodeSurfaceContact, SeparatedFacesCarryNoForce) {
     ParallelContactFixture fixture(Precision(0.5));
-    constraint::Contact contact(
-        fixture.master,
-        fixture.slave,
-        Precision(100),
-        Precision(0),
-        false
-    );
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
 
     auto forces = fixture.forces();
     contact.assemble(fixture.dofs, fixture.data, forces, nullptr);
@@ -250,13 +247,7 @@ TEST(NodeSurfaceContact, SmallPositiveGapUsesSmoothTensileBranch) {
     constexpr Precision gap = Precision(2.5e-7);
 
     ParallelContactFixture fixture(gap);
-    constraint::Contact contact(
-        fixture.master,
-        fixture.slave,
-        Precision(100),
-        Precision(0),
-        false
-    );
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
 
     auto forces = fixture.forces();
     contact.assemble(fixture.dofs, fixture.data, forces, nullptr);
@@ -273,13 +264,7 @@ TEST(NodeSurfaceContact, UniformPenetrationBalancesMasterAndSlaveResultants) {
     constexpr Precision gap = Precision(-0.1);
 
     ParallelContactFixture fixture(gap);
-    constraint::Contact contact(
-        fixture.master,
-        fixture.slave,
-        Precision(100),
-        Precision(0),
-        false
-    );
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
 
     auto forces = fixture.forces();
     contact.assemble(fixture.dofs, fixture.data, forces, nullptr);
@@ -304,19 +289,12 @@ TEST(NodeSurfaceContact, UniformPenetrationBalancesMasterAndSlaveResultants) {
     EXPECT_NEAR(master_resultant(0), Precision(0), 1e-12);
     EXPECT_NEAR(master_resultant(1), Precision(0), 1e-12);
     EXPECT_NEAR(master_resultant(2), -Precision(4) * expected, 1e-10);
-
     EXPECT_NEAR((master_resultant + slave_resultant).norm(), Precision(0), 1e-10);
 }
 
 TEST(NodeSurfaceContact, SearchGraphWalksAcrossSharedMasterEdge) {
     AdjacentMasterFixture fixture;
-    constraint::Contact contact(
-        fixture.master,
-        fixture.slave,
-        Precision(100),
-        Precision(0),
-        false
-    );
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
 
     auto forces = fixture.forces();
     contact.assemble(fixture.dofs, fixture.data, forces, nullptr);
@@ -324,8 +302,6 @@ TEST(NodeSurfaceContact, SearchGraphWalksAcrossSharedMasterEdge) {
     // All slave nodes lie slightly to the right of x=1. Their nearest search
     // triangle centroid is still on the left face, so the CalculiX-style search
     // must cross the common x=1 edge before the complete FE-face projection.
-    // A bounded projection on the left face would place the point exactly on
-    // x=1 and could not generate reaction on the right-face-only nodes 2 and 5.
     EXPECT_GT(forces(2, 2), Precision(0));
     EXPECT_GT(forces(5, 2), Precision(0));
     EXPECT_NEAR(forces(0, 2), Precision(0), 1e-12);
@@ -338,18 +314,59 @@ TEST(NodeSurfaceContact, SearchGraphWalksAcrossSharedMasterEdge) {
     EXPECT_NEAR(total.norm(), Precision(0), 1e-10);
 }
 
+TEST(NodeSurfaceContact, FrozenTrialKeepsNewtonMasterFaceUntilTopologyUpdate) {
+    AdjacentMasterFixture fixture;
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
+
+    // Outer increment trial: the tangent-side update selects the right master
+    // face and stores that discrete connectivity for all nested line-search
+    // residuals.
+    contact.begin_update_trial();
+    auto initial_forces = fixture.forces();
+    TripletList tangent;
+    contact.assemble(fixture.dofs, fixture.data, initial_forces, tangent);
+
+    EXPECT_TRUE(contact.contact_topology_changed());
+    EXPECT_GT(initial_forces(2, 2), Precision(0));
+    EXPECT_GT(initial_forces(5, 2), Precision(0));
+
+    // Move the slave clearly to the left side of the shared edge. A fresh
+    // search would now select face 0, but the frozen line-search transaction
+    // must retain face 1 and can therefore react only through the shared edge.
+    fixture.shift_slave_x(Precision(-0.03));
+    contact.begin_frozen_trial();
+
+    auto frozen_forces = fixture.forces();
+    contact.assemble(fixture.dofs, fixture.data, frozen_forces, nullptr);
+
+    EXPECT_NEAR(frozen_forces(0, 2), Precision(0), 1e-12);
+    EXPECT_NEAR(frozen_forces(3, 2), Precision(0), 1e-12);
+    EXPECT_GT(frozen_forces(1, 2), Precision(0));
+    EXPECT_GT(frozen_forces(4, 2), Precision(0));
+
+    contact.rollback_trial();
+
+    // The post-Newton update is allowed to search again. It must move the
+    // connectivity to the left face and report a discrete topology change so
+    // the nonlinear controller can request a discontinuity Newton iteration.
+    contact.begin_update_trial();
+    auto updated_forces = fixture.forces();
+    contact.assemble(fixture.dofs, fixture.data, updated_forces, nullptr);
+
+    EXPECT_TRUE(contact.contact_topology_changed());
+    EXPECT_GT(updated_forces(0, 2), Precision(0));
+    EXPECT_GT(updated_forces(3, 2), Precision(0));
+
+    contact.rollback_trial();
+    contact.rollback_trial();
+}
+
 TEST(NodeSurfaceContact, AnalyticTangentMatchesResidualFiniteDifference) {
     ParallelContactFixture fixture(Precision(-0.05));
     fixture.make_slave_face_interior();
     fixture.assign_contact_dofs();
 
-    constraint::Contact contact(
-        fixture.master,
-        fixture.slave,
-        Precision(100),
-        Precision(0),
-        false
-    );
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
 
     auto base_forces = fixture.forces();
     TripletList triplets;
@@ -384,8 +401,7 @@ TEST(NodeSurfaceContact, AnalyticTangentMatchesResidualFiniteDifference) {
                  contact_force_vector(fixture, minus_forces)) /
                 (Precision(2) * step);
 
-            const Precision error =
-                (analytic.col(column) - finite_difference).norm();
+            const Precision error = (analytic.col(column) - finite_difference).norm();
             const Precision scale = std::max(Precision(1), finite_difference.norm());
 
             EXPECT_LT(error / scale, Precision(2e-5))
