@@ -27,9 +27,19 @@ For each slave node, the search starts at the master search triangle with the ne
 
 where \(A_s\) is the representative slave nodal area, the search crosses that edge to the neighboring triangle and continues there. If no bordering plane is violated, the current triangle owns the slave point. If a step would immediately return to the previously visited triangle, FEMaster follows the CalculiX ``solution in between triangles'' rule and accepts the current triangle. A longer circular walk is treated as an invalid search result.
 
-After a search triangle has been selected, its associated complete master face is used for the ordinary bounded finite-element closest-point projection. During one tangent evaluation this discrete master-face choice is held fixed, while the closest-point coordinates on that face are linearized analytically.
+After a search triangle has been selected, its associated complete master face is used for the ordinary bounded finite-element closest-point projection. The resulting slave-to-master connectivity is retained only when the pair satisfies the positive-gap contact cutoff described below.
 
-The graph construction and current search geometry are rebuilt from the current nodal positions whenever contact is assembled. No persistent master partner or distance-based partner-switch hysteresis is stored.
+\section{Contact topology during Newton iteration}
+
+The search graph determines a discrete contact-element topology: every retained slave node stores the identifier of its current master face. A Newton residual/tangent evaluation may regenerate this topology. The analytic tangent is then formed with exactly those master faces held fixed.
+
+All line-search residual evaluations belonging to that Newton direction reuse the stored topology. They update the continuous closest-point coordinates, gap, normal, force, and master shape functions on the retained face, but they do not run the master search again. Consequently, a slave node cannot switch from one neighboring master face to another while the line search is testing different values of the same Newton correction.
+
+After Newton convergence, the existing nonlinear active-set callback performs one topology-update evaluation at the converged geometry. If the resulting slave-to-master signature differs from the topology used by Newton, the increment is not accepted immediately. Instead, Newton is restarted at the same load factor with the updated contact topology. This is the contact-discontinuity iteration used to make the discrete search state consistent with the converged equilibrium state.
+
+Following CalculiX node-to-face contact, regeneration is allowed through the first eight Newton tangent evaluations of one attempted increment. After the eighth update assembly, the discrete slave-to-master connectivity is frozen for the remaining Newton iterations of that attempt. Continuous geometry and the analytic tangent on each retained master face remain fully current. A cutback rolls the topology back to the last accepted increment and starts the eight-iteration update window again.
+
+The contact state is transactional. A rejected line-search trial restores its parent topology, an accepted line-search trial keeps the same frozen connectivity, and a rejected increment restores the topology from the last accepted physical increment. No distance-based partner-switch hysteresis is used.
 
 \section{Gap and normal}
 
@@ -88,7 +98,7 @@ The contact pair is retained only while
     c_0 = 10^{-3}\ell_s.
 \]
 
-Outside this positive-gap cutoff the pair contributes no force. The cutoff is deliberately much wider than the smoothing zone, so the arctangent branch has already decayed to a negligible value before the pair is discarded.
+Outside this positive-gap cutoff the pair contributes no force and is not retained in the discrete contact-element topology. A node that closes from outside this cutoff during a frozen line-search trial is therefore introduced by the next topology-update evaluation rather than changing the discrete problem inside the line search.
 
 The equal and opposite force is distributed to the master-face nodes using the master shape functions at the closest point:
 
@@ -144,7 +154,7 @@ The resulting local-coordinate derivatives are propagated through the relative v
 
 Thus the tangent contains the same geometric terms represented by \(d\xi\), \(d\eta\), the changing surface normal and the changing shape functions in CalculiX \texttt{springstiff\_n2f}. The discrete choice of master face and the representative slave area are not differentiated. In the absence of friction the completed local tangent is symmetrized before sparse assembly, again following the CalculiX node-to-face implementation.
 
-A regression test independently finite-differences the assembled contact residual and compares it with this analytic production tangent for a slave face whose nodes project into the interior of a C3D8 master face. A separate graph-search regression places slave nodes just across the common edge of two master faces while their nearest search-triangle centroid remains on the first face; the resulting reaction verifies that the search walks to the neighboring face before the finite-element projection is evaluated.
+Regression tests independently finite-difference the assembled contact residual against the analytic tangent, verify graph walking across a shared master edge, and verify that a frozen line-search trial keeps the Newton master face while a subsequent topology-update trial detects the corresponding partner switch.
 
 \section{Current limitations}
 
@@ -160,7 +170,7 @@ The current contact implementation is intentionally narrow:
 \item no surface-to-surface or mortar formulation,
 \item no augmented-Lagrange multipliers,
 \item no BVH or other spatial acceleration structure,
-\item no persistent partner switching or contact-history state,
+\item no distance-based partner-switch hysteresis,
 \item no tangential friction law.
 \end{itemize}
 
