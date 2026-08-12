@@ -361,6 +361,35 @@ TEST(NodeSurfaceContact, FrozenTrialKeepsNewtonMasterFaceUntilTopologyUpdate) {
     contact.rollback_trial();
 }
 
+TEST(NodeSurfaceContact, AnalyticTangentAcceptsSmallWellConditionedSurface) {
+    ParallelContactFixture fixture(Precision(-0.05));
+    fixture.make_slave_face_interior();
+    fixture.assign_contact_dofs();
+
+    // Uniformly scaling the complete geometry by 1e-3 reduces det(H) by 1e-12.
+    // The local closest-point system remains equally well conditioned, so the
+    // analytic tangent must not be rejected by an absolute determinant cutoff.
+    constexpr Precision geometry_scale = Precision(1e-3);
+    for (ID node = 0; node < ParallelContactFixture::node_count; ++node) {
+        for (Dim component = 0; component < 3; ++component) {
+            (*fixture.data.positions)(node, component) *= geometry_scale;
+        }
+    }
+
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
+
+    auto forces = fixture.forces();
+    TripletList triplets;
+    contact.assemble(fixture.dofs, fixture.data, forces, triplets);
+
+    Precision tangent_norm = Precision(0);
+    for (const auto& triplet : triplets) {
+        tangent_norm += std::abs(triplet.value());
+    }
+
+    EXPECT_GT(tangent_norm, Precision(0));
+}
+
 TEST(NodeSurfaceContact, AnalyticTangentMatchesResidualFiniteDifference) {
     ParallelContactFixture fixture(Precision(-0.05));
     fixture.make_slave_face_interior();
