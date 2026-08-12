@@ -22,8 +22,9 @@
  * equations. The frictionless tangent is symmetrized after local assembly.
  *
  * Compact diagnostics report the current active contact set, gap range, force
- * range and local closest-point tangent quality. Pair-level diagnostics can be
- * disabled independently from the one-line assembly summary below.
+ * range and local closest-point tangent quality. Diagnostics are written directly
+ * to stdout so they remain visible while the normal FEMaster logging is disabled
+ * during nonlinear iterations.
  *
  * @see Contact
  * @see model::SurfaceInterface
@@ -40,6 +41,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -55,8 +57,6 @@ constexpr Precision smoothing_length_ratio = Precision(1e-6);
 constexpr Precision contact_cutoff_ratio   = Precision(1e-3);
 constexpr Precision pi                     = Precision(3.141592653589793238462643383279502884L);
 
-// Temporary diagnostics for the reduced node-to-surface contact formulation.
-// The normal global logging switch still suppresses these messages.
 constexpr bool contact_diagnostics      = true;
 constexpr bool contact_pair_diagnostics = true;
 
@@ -381,19 +381,14 @@ DynamicMatrix analytic_pair_tangent(
     }
     const Vec3 normal = normal_vector / normal_length;
 
-    // Hessian of the closest-point orthogonality equations. This is the same
-    // 2x2 system denoted a11/a12/a22 in CalculiX springstiff_n2f.f.
     const Precision a11 = -xr.dot(xr) + pair.relative.dot(xrr);
     const Precision a12 = -xr.dot(xs) + pair.relative.dot(xrs);
     const Precision a22 = -xs.dot(xs) + pair.relative.dot(xss);
     const Precision determinant = a11 * a22 - a12 * a12;
     determinant_out = determinant;
 
-    const Precision determinant_scale = std::max({
-        Precision(1), std::abs(a11 * a22), a12 * a12
-    });
-    if (!std::isfinite(determinant) ||
-        std::abs(determinant) <= geometry_tolerance * determinant_scale) {
+    const Precision determinant_scale = std::max({Precision(1), std::abs(a11 * a22), a12 * a12});
+    if (!std::isfinite(determinant) || std::abs(determinant) <= geometry_tolerance * determinant_scale) {
         return tangent;
     }
 
@@ -417,10 +412,8 @@ DynamicMatrix analytic_pair_tangent(
                 b1 = -xr(component);
                 b2 = -xs(component);
             } else {
-                b1 = pair.shape(master_col) * xr(component)
-                   - dshape(master_col, 0) * pair.relative(component);
-                b2 = pair.shape(master_col) * xs(component)
-                   - dshape(master_col, 1) * pair.relative(component);
+                b1 = pair.shape(master_col) * xr(component) - dshape(master_col, 0) * pair.relative(component);
+                b2 = pair.shape(master_col) * xs(component) - dshape(master_col, 1) * pair.relative(component);
             }
 
             const Precision dr_local = c11 * b1 + c12 * b2;
@@ -441,13 +434,10 @@ DynamicMatrix analytic_pair_tangent(
             }
 
             const Vec3 dnormal_vector = orientation * (dxr.cross(xs) + xr.cross(dxs));
-            const Vec3 dnormal =
-                (dnormal_vector - normal * normal.dot(dnormal_vector)) / normal_length;
+            const Vec3 dnormal = (dnormal_vector - normal * normal.dot(dnormal_vector)) / normal_length;
 
             const Precision dgap = drelative.dot(normal) + pair.relative.dot(dnormal);
-            const Vec3 dslave_force =
-                dq_dg * dgap * normal + pair.force_scalar * dnormal;
-
+            const Vec3 dslave_force = dq_dg * dgap * normal + pair.force_scalar * dnormal;
             const Index col = Index(3) * col_node + component;
 
             for (Dim row_component = 0; row_component < 3; ++row_component) {
@@ -455,13 +445,8 @@ DynamicMatrix analytic_pair_tangent(
             }
 
             for (Index row_master = 0; row_master < master_nodes; ++row_master) {
-                const Precision dN =
-                    dshape(row_master, 0) * dr_local +
-                    dshape(row_master, 1) * ds_local;
-
-                const Vec3 dmaster_force =
-                    -dN * pair.slave_force - pair.shape(row_master) * dslave_force;
-
+                const Precision dN = dshape(row_master, 0) * dr_local + dshape(row_master, 1) * ds_local;
+                const Vec3 dmaster_force = -dN * pair.slave_force - pair.shape(row_master) * dslave_force;
                 const Index row_node = row_master + 1;
                 for (Dim row_component = 0; row_component < 3; ++row_component) {
                     tangent(Index(3) * row_node + row_component, col) = dmaster_force(row_component);
@@ -546,11 +531,11 @@ void Contact::assemble(
     Index active_count          = 0;
     Index tangent_failure_count = 0;
 
-    Precision min_gap       = std::numeric_limits<Precision>::max();
-    Precision max_gap       = -std::numeric_limits<Precision>::max();
+    Precision min_gap         = std::numeric_limits<Precision>::max();
+    Precision max_gap         = -std::numeric_limits<Precision>::max();
     Precision max_penetration = Precision(0);
     Precision max_force       = Precision(0);
-    Vec3 slave_resultant       = Vec3::Zero();
+    Vec3 slave_resultant      = Vec3::Zero();
 
     ID worst_slave = ID(-1);
     ID worst_face  = ID(-1);
@@ -616,11 +601,9 @@ void Contact::assemble(
 
         add_force(nodal_forces, pair.node_ids[0], pair.slave_force);
         for (Index master_node = 0; master_node < projection->surface->n_nodes; ++master_node) {
-            add_force(
-                nodal_forces,
+            add_force(nodal_forces,
                 pair.node_ids[static_cast<std::size_t>(master_node + 1)],
-                -pair.shape(master_node) * pair.slave_force
-            );
+                -pair.shape(master_node) * pair.slave_force);
         }
 
         Precision tangent_determinant = Precision(0);
@@ -641,29 +624,24 @@ void Contact::assemble(
 
             if (!tangent_valid) {
                 ++tangent_failure_count;
+                std::cout << "[CONTACT] tangent invalid: slave=" << slave_node
+                          << " face=" << projection->surface_id
+                          << " local=(" << pair.local(0) << ", " << pair.local(1) << ")"
+                          << " gap=" << pair.gap
+                          << " area=" << slave_area
+                          << " detH=" << tangent_determinant << '\n';
             }
 
-            logging::warning(
-                tangent_valid,
-                "CONTACT tangent invalid: slave=", slave_node,
-                " face=", projection->surface_id,
-                " local=(`", pair.local(0), ", ", pair.local(1), ")",
-                " gap=", pair.gap,
-                " area=", slave_area,
-                " detH=", tangent_determinant
-            );
-
-            logging::info(
-                contact_pair_diagnostics,
-                "CONTACT pair: slave=", slave_node,
-                " face=", projection->surface_id,
-                " local=(`", pair.local(0), ", ", pair.local(1), ")",
-                " gap=", pair.gap,
-                " area=", slave_area,
-                " fn=", pair.force_scalar,
-                " detH=", tangent_determinant,
-                " |Kt|=", tangent.norm()
-            );
+            if (contact_pair_diagnostics) {
+                std::cout << "[CONTACT] pair: slave=" << slave_node
+                          << " face=" << projection->surface_id
+                          << " local=(" << pair.local(0) << ", " << pair.local(1) << ")"
+                          << " gap=" << pair.gap
+                          << " area=" << slave_area
+                          << " fn=" << pair.force_scalar
+                          << " detH=" << tangent_determinant
+                          << " |Kt|=" << tangent.norm() << '\n';
+            }
 
             const Index local_nodes = static_cast<Index>(pair.node_ids.size());
             for (Index row_node = 0; row_node < local_nodes; ++row_node) {
@@ -684,45 +662,38 @@ void Contact::assemble(
                     }
                 }
             }
-        } else {
-            logging::info(
-                contact_pair_diagnostics,
-                "CONTACT pair: slave=", slave_node,
-                " face=", projection->surface_id,
-                " local=(`", pair.local(0), ", ", pair.local(1), ")",
-                " gap=", pair.gap,
-                " area=", slave_area,
-                " fn=", pair.force_scalar
-            );
+        } else if (contact_pair_diagnostics) {
+            std::cout << "[CONTACT] pair: slave=" << slave_node
+                      << " face=" << projection->surface_id
+                      << " local=(" << pair.local(0) << ", " << pair.local(1) << ")"
+                      << " gap=" << pair.gap
+                      << " area=" << slave_area
+                      << " fn=" << pair.force_scalar << '\n';
         }
     }
 
     const bool have_valid_gap = valid_count > 0;
-    logging::info(
-        contact_diagnostics,
-        "CONTACT summary: slaves=", slave_areas.size(),
-        " projected=", projected_count,
-        " valid=", valid_count,
-        " active=", active_count,
-        " min_gap=", have_valid_gap ? min_gap : Precision(0),
-        " max_gap=", have_valid_gap ? max_gap : Precision(0),
-        " max_pen=", max_penetration,
-        " max|fn|=", max_force,
-        " slave_resultant=(`", slave_resultant(0), ", ", slave_resultant(1), ", ", slave_resultant(2), ")",
-        " tangent_failures=", tangent_failure_count,
-        " tangent=", triplets != nullptr ? "yes" : "no"
-    );
+    if (contact_diagnostics) {
+        std::cout << "[CONTACT] summary: slaves=" << slave_areas.size()
+                  << " projected=" << projected_count
+                  << " valid=" << valid_count
+                  << " active=" << active_count
+                  << " min_gap=" << (have_valid_gap ? min_gap : Precision(0))
+                  << " max_gap=" << (have_valid_gap ? max_gap : Precision(0))
+                  << " max_pen=" << max_penetration
+                  << " max|fn|=" << max_force
+                  << " slave_resultant=(" << slave_resultant(0) << ", " << slave_resultant(1) << ", " << slave_resultant(2) << ")"
+                  << " tangent_failures=" << tangent_failure_count
+                  << " tangent=" << (triplets != nullptr ? "yes" : "no") << '\n';
+    }
 
-    if (active_count > 0) {
-        logging::info(
-            contact_diagnostics,
-            "CONTACT worst: slave=", worst_slave,
-            " face=", worst_face,
-            " local=(`", worst_local(0), ", ", worst_local(1), ")",
-            " gap=", worst_gap,
-            " area=", worst_area,
-            " fn=", worst_force
-        );
+    if (contact_diagnostics && active_count > 0) {
+        std::cout << "[CONTACT] worst: slave=" << worst_slave
+                  << " face=" << worst_face
+                  << " local=(" << worst_local(0) << ", " << worst_local(1) << ")"
+                  << " gap=" << worst_gap
+                  << " area=" << worst_area
+                  << " fn=" << worst_force << '\n';
     }
 }
 
