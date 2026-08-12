@@ -16,6 +16,7 @@
 
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
+#include "../../../core/logging.h"
 #include "../../../model/model.h"
 
 #include <string>
@@ -59,6 +60,15 @@ inline void register_contact(fem::io::dsl::Registry& registry, model::Model& mod
             const bool           flip   = keys.get<bool>("FLIP");
 
             model.add_contact(master, slave, k, c, flip);
+
+            logging::info(
+                true,
+                "CONTACT created: master=", master,
+                " slave=", slave,
+                " penalty=", k,
+                " clearance=", c,
+                " flip=", flip ? "YES" : "NO"
+            );
         });
 
         command.variant(fem::io::dsl::Variant::make());
