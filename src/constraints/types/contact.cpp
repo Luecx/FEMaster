@@ -11,22 +11,28 @@
  * The search triangulation is used only for robust master-face ownership; force
  * and tangent evaluation remain on the complete finite-element master face.
  *
- * Slave surface nodes are assigned representative tributary areas. The normal
- * contact law follows the regularized linear node-to-face law used by CalculiX.
- * Around zero gap the linear penalty is multiplied by an arctangent transition,
- * giving a smooth force response and a very small tensile branch on the open
- * side. Contact evaluation is retained up to a small positive cutoff
- * proportional to the slave nodal characteristic length.
+ * Discrete contact-element connectivity is updated by Newton tangent evaluations
+ * and frozen for nested line-search residual evaluations. The stored connectivity
+ * contains only slave nodes retained by the positive-gap cutoff. A topology
+ * update at the converged geometry can therefore request a discontinuity Newton
+ * iteration without allowing face switching inside the line search that tests a
+ * fixed Newton direction.
+ *
+ * Following CalculiX N2F contact, contact-element regeneration is allowed through
+ * the first eight Newton tangent evaluations of one increment attempt and is
+ * frozen afterwards. Continuous closest-point geometry on every retained master
+ * face remains current even while the discrete connectivity is frozen.
+ *
+ * The normal contact law follows the regularized linear node-to-face law used by
+ * CalculiX. Around zero gap the linear penalty is multiplied by an arctangent
+ * transition, giving a smooth force response and a very small tensile branch on
+ * the open side.
  *
  * The tangent follows the analytic node-to-face linearization used by CalculiX.
  * The selected master face is fixed during one tangent evaluation, while the
  * closest-point coordinates, shape functions, surface normal, gap and force law
  * are differentiated consistently from the closest-point orthogonality
  * equations. The frictionless tangent is symmetrized after local assembly.
- *
- * Compact diagnostics report the current search ownership, active contact set,
- * gap range, force range and local closest-point tangent quality. No persistent
- * partner history, BVH, mortar state or augmented-Lagrange state is used.
  *
  * @see Contact
  * @see model::SurfaceInterface
@@ -61,6 +67,7 @@ constexpr Precision smoothing_length_ratio = Precision(1e-6);
 constexpr Precision contact_cutoff_ratio   = Precision(1e-3);
 constexpr Precision search_border_ratio    = Precision(1e-3);
 constexpr Precision pi                     = Precision(3.141592653589793238462643383279502884L);
+constexpr Index     contact_update_iterations = 8;
 
 constexpr bool contact_diagnostics      = true;
 constexpr bool contact_pair_diagnostics = true;
@@ -250,8 +257,6 @@ private:
         Precision offset = -plane_normal.dot(first_point);
 
         // `straighteq3dpen` orients every bordering-plane normal outwards.
-        // Enforce the same invariant explicitly: the opposite triangle vertex
-        // must lie on the non-positive side of its opposing edge plane.
         if (plane_normal.dot(opposite_point) + offset > Precision(0)) {
             plane_normal = -plane_normal;
             offset       = -offset;
@@ -480,14 +485,12 @@ public:
                 }
 
                 // CalculiX accepts the current triangle when the walk would
-                // immediately return to the previous triangle: the slave lies
-                // in the common bordering region between the two triangles.
+                // immediately return to the previous triangle.
                 if (next == previous) {
                     return Location{current, triangle.surface_id, step + 1, true};
                 }
 
-                // Longer loops are treated as a circular search path and do not
-                // define a valid master partner.
+                // Longer loops are treated as a circular search path.
                 if (visited.find(next) != visited.end()) {
                     return std::nullopt;
                 }
@@ -557,13 +560,6 @@ Precision smooth_contact_factor(Precision gap, Precision slave_area) {
 
 /**
  * @brief Derivative of the regularized scalar slave force with respect to gap.
- *
- * For
- *
- *     q(g) = K A g [1/2 + atan(-g/eps)/pi]
- *
- * this returns dq/dg with the representative slave area held fixed, matching
- * the CalculiX contact-spring linearization.
  */
 Precision smooth_force_derivative(
     Precision gap,
@@ -612,20 +608,22 @@ std::unordered_map<ID, Precision> build_slave_nodal_areas(
     return areas;
 }
 
-std::optional<MasterProjection> find_master_projection(
+std::optional<MasterProjection> project_master_surface(
     ID                                                slave_node,
-    Precision                                         slave_area,
+    ID                                                surface_id,
     const Vec3&                                       slave_position,
-    const MasterSearchGraph&                          search_graph,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces,
     const model::Field&                               node_coords
 ) {
-    const auto location = search_graph.locate(slave_node, slave_position, search_border_tolerance(slave_area));
-    if (!location.has_value() || !valid_surface_id(location->surface_id, surfaces)) {
+    if (!valid_surface_id(surface_id, surfaces)) {
         return std::nullopt;
     }
 
-    const auto& surface = surfaces[static_cast<std::size_t>(location->surface_id)];
+    const auto& surface = surfaces[static_cast<std::size_t>(surface_id)];
+    if (surface_contains_node(*surface, slave_node)) {
+        return std::nullopt;
+    }
+
     const Vec2 local = surface->global_to_local(slave_position, node_coords, true);
     if (!local.allFinite() || !surface->in_bounds(local)) {
         return std::nullopt;
@@ -642,14 +640,41 @@ std::optional<MasterProjection> find_master_projection(
     }
 
     MasterProjection projection;
-    projection.surface_id      = location->surface_id;
-    projection.search_triangle = location->triangle_id;
-    projection.walk_steps      = location->steps;
-    projection.between         = location->between;
-    projection.surface         = surface;
-    projection.local           = local;
-    projection.point           = point;
-    projection.distance_sq     = distance_sq;
+    projection.surface_id  = surface_id;
+    projection.surface     = surface;
+    projection.local       = local;
+    projection.point       = point;
+    projection.distance_sq = distance_sq;
+    return projection;
+}
+
+std::optional<MasterProjection> find_master_projection(
+    ID                                                slave_node,
+    Precision                                         slave_area,
+    const Vec3&                                       slave_position,
+    const MasterSearchGraph&                          search_graph,
+    const std::vector<model::SurfaceInterface::Ptr>& surfaces,
+    const model::Field&                               node_coords
+) {
+    const auto location = search_graph.locate(slave_node, slave_position, search_border_tolerance(slave_area));
+    if (!location.has_value()) {
+        return std::nullopt;
+    }
+
+    auto projection = project_master_surface(
+        slave_node,
+        location->surface_id,
+        slave_position,
+        surfaces,
+        node_coords
+    );
+    if (!projection.has_value()) {
+        return std::nullopt;
+    }
+
+    projection->search_triangle = location->triangle_id;
+    projection->walk_steps      = location->steps;
+    projection->between         = location->between;
     return projection;
 }
 
@@ -715,20 +740,6 @@ PairEvaluation evaluate_pair(
 
 /**
  * @brief Builds the CalculiX-style analytic tangent for one fixed master face.
- *
- * The closest point satisfies
- *
- *     r . x_r = 0,    r . x_s = 0.
- *
- * Differentiating these two equations gives d(r,s)/du from a 2x2 system. The
- * resulting parameter derivatives are then propagated through the relative
- * vector, both surface tangents, the normalized normal, the normal gap and the
- * master shape functions. The representative slave area and discrete master
- * face choice are held fixed during this linearization, as in CalculiX.
- *
- * `determinant_out` exposes the determinant of the closest-point 2x2 system for
- * diagnostics. `valid_out` is false whenever the local linearization cannot be
- * formed safely.
  */
 DynamicMatrix analytic_pair_tangent(
     const PairEvaluation&               pair,
@@ -905,6 +916,65 @@ Contact::Contact(
         "CONTACT: CLEARANCE must be finite");
 }
 
+void Contact::begin_update_trial() {
+    const bool outer_trial = trial_stack.empty();
+    trial_stack.push_back({partners, allow_partner_updates, regeneration_frozen, topology_changed, update_iterations});
+
+    if (outer_trial) {
+        regeneration_frozen = false;
+        update_iterations   = 0;
+    }
+
+    allow_partner_updates = !regeneration_frozen;
+    topology_changed      = false;
+}
+
+void Contact::begin_frozen_trial() {
+    trial_stack.push_back({partners, allow_partner_updates, regeneration_frozen, topology_changed, update_iterations});
+    allow_partner_updates = false;
+    topology_changed      = false;
+}
+
+void Contact::commit_trial() {
+    logging::error(!trial_stack.empty(), "CONTACT: commit without active trial");
+    if (trial_stack.empty()) {
+        return;
+    }
+
+    TrialState parent = std::move(trial_stack.back());
+    trial_stack.pop_back();
+
+    allow_partner_updates = parent.allow_partner_updates;
+    regeneration_frozen   = parent.regeneration_frozen;
+    topology_changed      = parent.topology_changed;
+    update_iterations     = parent.update_iterations;
+}
+
+void Contact::rollback_trial() {
+    logging::error(!trial_stack.empty(), "CONTACT: rollback without active trial");
+    if (trial_stack.empty()) {
+        return;
+    }
+
+    TrialState parent = std::move(trial_stack.back());
+    trial_stack.pop_back();
+
+    partners              = std::move(parent.partners);
+    allow_partner_updates = parent.allow_partner_updates;
+    regeneration_frozen   = parent.regeneration_frozen;
+    topology_changed      = parent.topology_changed;
+    update_iterations     = parent.update_iterations;
+}
+
+void Contact::freeze_partner_updates() {
+    regeneration_frozen = true;
+    allow_partner_updates = false;
+}
+
+bool Contact::contact_topology_changed() const {
+    return topology_changed;
+}
+
 void Contact::assemble(
     SystemDofIds&     system_nodal_dofs,
     model::ModelData& model_data,
@@ -920,7 +990,17 @@ void Contact::assemble(
     auto& surfaces = model_data.surfaces;
 
     const auto slave_areas = build_slave_nodal_areas(*slave_surfaces, surfaces, node_coords);
-    const MasterSearchGraph search_graph(*master_surfaces, surfaces, node_coords);
+    const bool update_topology = allow_partner_updates;
+
+    std::optional<MasterSearchGraph> search_graph;
+    if (update_topology) {
+        search_graph.emplace(*master_surfaces, surfaces, node_coords);
+    }
+
+    std::unordered_map<ID, ID> updated_partners;
+    if (update_topology) {
+        updated_partners.reserve(partners.size() + 8);
+    }
 
     Index projected_count       = 0;
     Index valid_count           = 0;
@@ -949,14 +1029,32 @@ void Contact::assemble(
         }
 
         const Vec3 slave_position = node_coords.row_vec3(slave_node);
-        const auto projection = find_master_projection(
-            slave_node,
-            slave_area,
-            slave_position,
-            search_graph,
-            surfaces,
-            node_coords
-        );
+        std::optional<MasterProjection> projection;
+
+        if (update_topology) {
+            projection = find_master_projection(
+                slave_node,
+                slave_area,
+                slave_position,
+                *search_graph,
+                surfaces,
+                node_coords
+            );
+        } else {
+            const auto partner = partners.find(slave_node);
+            if (partner == partners.end()) {
+                continue;
+            }
+
+            projection = project_master_surface(
+                slave_node,
+                partner->second,
+                slave_position,
+                surfaces,
+                node_coords
+            );
+        }
+
         if (!projection.has_value()) {
             continue;
         }
@@ -985,6 +1083,10 @@ void Contact::assemble(
             continue;
         }
         ++active_count;
+
+        if (update_topology) {
+            updated_partners[slave_node] = projection->surface_id;
+        }
 
         const Precision penetration = std::max(Precision(0), -pair.gap);
         const Precision force_abs   = std::abs(pair.force_scalar);
@@ -1082,13 +1184,32 @@ void Contact::assemble(
         }
     }
 
+    if (update_topology) {
+        topology_changed = updated_partners != partners;
+        partners = std::move(updated_partners);
+
+        if (triplets != nullptr) {
+            ++update_iterations;
+            if (update_iterations >= contact_update_iterations && !regeneration_frozen) {
+                regeneration_frozen = true;
+                allow_partner_updates = false;
+                std::cout << "[CONTACT] topology frozen after " << update_iterations
+                          << " Newton update assemblies\n";
+            }
+        }
+    }
+
     const bool have_valid_gap = valid_count > 0;
     if (contact_diagnostics) {
         std::cout << "[CONTACT] summary: slaves=" << slave_areas.size()
-                  << " search_triangles=" << search_graph.size()
+                  << " search_triangles=" << (search_graph.has_value() ? search_graph->size() : std::size_t(0))
                   << " projected=" << projected_count
                   << " valid=" << valid_count
                   << " active=" << active_count
+                  << " stored=" << partners.size()
+                  << " topology=" << (update_topology ? "update" : "frozen")
+                  << " changed=" << (topology_changed ? "yes" : "no")
+                  << " updates=" << update_iterations
                   << " between=" << between_count
                   << " max_walk=" << maximum_walk_steps
                   << " min_gap=" << (have_valid_gap ? min_gap : Precision(0))
