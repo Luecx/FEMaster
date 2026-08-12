@@ -4,13 +4,12 @@
  *
  * Material history is committed per accepted physical increment. Node-to-surface
  * contact additionally owns discrete slave-to-master connectivity. That topology
- * is updated once per Newton residual/tangent evaluation, frozen for nested line
- * search evaluations and checked after convergence for a discontinuity update.
+ * is updated by Newton tangent evaluations, frozen for nested line-search
+ * evaluations and checked after convergence for a discontinuity update.
  *
- * Following CalculiX N2F contact, contact-element regeneration is disabled after
- * eight completed Newton iterations of one increment attempt. Continuous contact
- * geometry on the retained master faces is still evaluated at the current nodal
- * positions.
+ * The Contact object itself counts CalculiX N2F regeneration iterations and
+ * freezes its discrete connectivity after the eighth Newton update assembly.
+ * This manager only forwards the existing generic nonlinear trial lifecycle.
  *
  * @see model::ModelData::material_state
  * @see tools::LoadControl
@@ -33,16 +32,7 @@ namespace loadcase {
 namespace tools {
 
 /**
- * @brief Owns nonlinear material history and coordinates contact topology.
- *
- * Material evaluations overwrite an active trial field in place and therefore
- * restart from committed history for every independent residual or tangent
- * evaluation. Accepted increments promote the trial constitutive state to the
- * committed field.
- *
- * Contact keeps its own transactional partner map. This manager only coordinates
- * when those maps may update, when nested evaluations must freeze them and when
- * the CalculiX iteration-limit freeze becomes active.
+ * @brief Owns nonlinear material history and coordinates contact transactions.
  */
 class NonlinearStateManager {
 public:
@@ -57,12 +47,10 @@ public:
     void commit_material_state();
 
     // Contact topology lifecycle used by nonlinear path control
-    void begin_contact_increment_trial();
     void begin_contact_update_trial();
     void begin_contact_frozen_trial();
     void commit_contact_trial();
     void rollback_contact_trial();
-    void finish_contact_iteration();
     bool update_contact_active_set();
 
 private:
@@ -76,11 +64,6 @@ private:
     model::Field::Ptr previous_material_state_  = nullptr;
     model::Field::Ptr committed_material_state_ = nullptr;
     model::Field::Ptr trial_material_state_     = nullptr;
-
-    // CalculiX N2F regenerates contact elements through iteration 8 and freezes
-    // their discrete connectivity for later iterations of the same attempt.
-    Index contact_iterations_ = 0;
-    bool  contact_frozen_     = false;
 };
 
 } // namespace tools
