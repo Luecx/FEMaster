@@ -793,8 +793,15 @@ DynamicMatrix analytic_pair_tangent(
     const Precision determinant = a11 * a22 - a12 * a12;
     determinant_out = determinant;
 
-    const Precision determinant_scale = std::max({Precision(1), std::abs(a11 * a22), a12 * a12});
-    if (!std::isfinite(determinant) || std::abs(determinant) <= geometry_tolerance * determinant_scale) {
+    // The closest-point system scales with the square of the local surface
+    // length. Its determinant therefore scales with length^4. Compare the
+    // determinant only against a quantity with the same dimensions instead of
+    // an absolute unit-scale floor, so small but well-conditioned faces are not
+    // falsely classified as singular.
+    const Precision determinant_scale = a11 * a11 + Precision(2) * a12 * a12 + a22 * a22;
+    if (!std::isfinite(determinant) || !std::isfinite(determinant_scale) ||
+        determinant_scale <= Precision(0) ||
+        std::abs(determinant) <= geometry_tolerance * determinant_scale) {
         return tangent;
     }
 
