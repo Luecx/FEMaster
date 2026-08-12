@@ -4,9 +4,10 @@
  *
  * The contact definition stores one master and one slave surface region. Master
  * ownership is updated through the CalculiX-style search triangulation during a
- * Newton iteration and held fixed for all nested line-search evaluations. This
- * keeps the residual used by line search consistent with the discrete master
- * face used to build the Newton tangent.
+ * Newton iteration and held fixed for all nested line-search evaluations. The
+ * retained contact element also stores its representative slave area, so the
+ * complete discrete contact definition used by the tangent remains fixed during
+ * line search.
  *
  * Contact partner state is transactional: complete increment attempts can be
  * rolled back, line-search trials can freeze the current topology, and a
@@ -41,8 +42,10 @@ namespace constraint {
  * Each unique slave node receives a representative tributary area. During an
  * update evaluation, the CalculiX-style master search graph selects one master
  * face for every contact pair retained by the positive-gap cutoff. During a
- * frozen evaluation, the stored slave-to-master connectivity is reused and only
+ * frozen evaluation, the stored master face and slave area are reused and only
  * the continuous closest-point geometry on that finite-element face is updated.
+ * The positive-gap cutoff is therefore a contact-element generation criterion,
+ * not an additional switch inside a frozen Newton/line-search evaluation.
  *
  * The signed normal gap is
  *
@@ -60,8 +63,13 @@ namespace constraint {
  * representative slave area are held fixed during that linearization.
  */
 class Contact {
+    struct ContactElement {
+        ID        surface_id = ID(-1);
+        Precision slave_area = Precision(0);
+    };
+
     struct TrialState {
-        std::unordered_map<ID, ID> partners;
+        std::unordered_map<ID, ContactElement> partners;
         bool  allow_partner_updates = true;
         bool  regeneration_frozen   = false;
         bool  topology_changed      = false;
@@ -76,9 +84,9 @@ class Contact {
     Precision clearance;
     bool      flip_normal;
 
-    // Discrete CalculiX-style contact-element connectivity. The map contains
-    // only slave nodes currently retained by the positive-gap contact cutoff.
-    mutable std::unordered_map<ID, ID> partners;
+    // Discrete CalculiX-style contact elements. Each retained slave stores both
+    // its master face and tributary area until the next topology regeneration.
+    mutable std::unordered_map<ID, ContactElement> partners;
     mutable bool  allow_partner_updates = true;
     mutable bool  regeneration_frozen   = false;
     mutable bool  topology_changed      = false;
