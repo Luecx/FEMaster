@@ -15,9 +15,21 @@ Contact introduces unilateral interaction between a set of slave nodes and a mas
 
 \section{Node-to-surface search}
 
-For every slave node, FEMaster iterates directly over all faces in the master surface region. No BVH, search tree, search radius, mortar segmentation, or persistent master partner is used. For every master face, the physically closest point is computed on the bounded finite-element face. The closest point may therefore lie in the face interior, on an edge, or at a corner.
+FEMaster follows the topological master search used by CalculiX node-to-face contact. The complete finite-element master faces are first represented by an auxiliary search triangulation. Three-, four-, six-, and eight-node faces are subdivided into 1, 2, 4, and 6 search triangles, respectively. Every search triangle stores the finite-element master face from which it originated. The triangulation is used only for master-face ownership; the final closest-point projection, gap, force, and tangent are evaluated on the complete finite-element face.
 
-The master face with the smallest physical point-to-face distance is selected for the current contact evaluation. The search is repeated from the current nodal positions whenever contact is assembled. During one tangent evaluation the selected master face is held fixed, while the closest-point coordinates on that face are linearized analytically.
+Search triangles are connected through common edges. At every master-face node, the normals of the incident master faces are evaluated at that node, accumulated, and normalized. For each search-triangle edge, the normals at its two end nodes are projected perpendicular to the edge and averaged to obtain a representative edge normal. Together with the edge direction, this defines a bordering plane through the edge. The plane normal is oriented outwards from the search triangle. Neighboring triangles sharing an edge therefore use the same geometric separation between their search regions.
+
+For each slave node, the search starts at the master search triangle with the nearest current centroid. The point is tested against the three bordering planes of the current triangle. If it lies outside one plane by more than
+
+\[
+    d_\mathrm{search} = 10^{-3}\sqrt{A_s},
+\]
+
+where \(A_s\) is the representative slave nodal area, the search crosses that edge to the neighboring triangle and continues there. If no bordering plane is violated, the current triangle owns the slave point. If a step would immediately return to the previously visited triangle, FEMaster follows the CalculiX ``solution in between triangles'' rule and accepts the current triangle. A longer circular walk is treated as an invalid search result.
+
+After a search triangle has been selected, its associated complete master face is used for the ordinary bounded finite-element closest-point projection. During one tangent evaluation this discrete master-face choice is held fixed, while the closest-point coordinates on that face are linearized analytically.
+
+The graph construction and current search geometry are rebuilt from the current nodal positions whenever contact is assembled. No persistent master partner or distance-based partner-switch hysteresis is stored.
 
 \section{Gap and normal}
 
@@ -27,7 +39,7 @@ Let \(\mathbf{x}_s\) denote the current slave-node position, \(\mathbf{x}_m(\xi,
     g = \left(\mathbf{x}_s-\mathbf{x}_m\right)\cdot\mathbf{n}_m-c,
 \]
 
-where \(c\) is the prescribed \key{CLEARANCE}. Negative gap corresponds to penetration. The master normal comes from the actual finite-element face interpolation at the closest point. No smoothed search normal or separate edge normal is used. If the master normal is opposite to the intended orientation, \key{FLIP=YES} reverses it for the contact pair.
+where \(c\) is the prescribed \key{CLEARANCE}. Negative gap corresponds to penetration. The contact normal comes from the actual finite-element face interpolation at the closest point. The averaged nodal normals used by the search graph affect only search-region ownership and do not replace the contact normal. If the master normal is opposite to the intended orientation, \key{FLIP=YES} reverses it for the contact pair.
 
 \begin{warningbox}[Surface orientation]
 The signed gap depends directly on the master surface orientation. Check the selected element side and its outward normal before changing the penalty parameter. In particular, opposite faces of a solid element must use opposite node winding.
@@ -35,7 +47,7 @@ The signed gap depends directly on the master surface orientation. Check the sel
 
 \section{Slave nodal area}
 
-The penalty parameter is interpreted as a pressure-overclosure stiffness. Each slave node therefore receives a representative tributary area assembled from the slave faces that contain it. Linear triangles and quadrilaterals use equal positive nodal shares. Quadratic faces use positive contact-area weights chosen to avoid the tensile corner-force issue of equivalent nodal loading.
+The penalty parameter is interpreted as a pressure-overclosure stiffness. Each slave node therefore receives a representative tributary area assembled from the slave faces that contain it. Linear triangles and quadrilaterals use equal positive nodal shares. For six-node faces the CalculiX weights \(1/999\) at corner nodes and \(332/999\) at midside nodes are used. Eight-node faces use \(1/100\) at corner nodes and \(24/100\) at midside nodes. These positive quadratic-face weights avoid zero or negative representative contact areas.
 
 The nodal characteristic length is
 
@@ -43,7 +55,7 @@ The nodal characteristic length is
     \ell_s = \sqrt{A_s}.
 \]
 
-It defines the narrow smoothing and positive-gap cutoff scales used by the normal law. The representative area is held fixed during one contact tangent evaluation, matching the CalculiX contact-spring linearization.
+It defines the search-border tolerance, narrow smoothing, and positive-gap cutoff scales used by the contact formulation. The representative area is held fixed during one contact tangent evaluation, matching the CalculiX contact-spring linearization.
 
 \section{Regularized penalty force}
 
@@ -132,7 +144,7 @@ The resulting local-coordinate derivatives are propagated through the relative v
 
 Thus the tangent contains the same geometric terms represented by \(d\xi\), \(d\eta\), the changing surface normal and the changing shape functions in CalculiX \texttt{springstiff\_n2f}. The discrete choice of master face and the representative slave area are not differentiated. In the absence of friction the completed local tangent is symmetrized before sparse assembly, again following the CalculiX node-to-face implementation.
 
-A regression test independently finite-differences the assembled contact residual and compares it with this analytic production tangent for a slave face whose nodes project into the interior of a C3D8 master face.
+A regression test independently finite-differences the assembled contact residual and compares it with this analytic production tangent for a slave face whose nodes project into the interior of a C3D8 master face. A separate graph-search regression places slave nodes just across the common edge of two master faces while their nearest search-triangle centroid remains on the first face; the resulting reaction verifies that the search walks to the neighboring face before the finite-element projection is evaluated.
 
 \section{Current limitations}
 
@@ -142,7 +154,7 @@ The current contact implementation is intentionally narrow:
 \item frictionless normal contact only,
 \item slave nodes obtained from a slave surface set,
 \item master finite-element faces obtained from a master surface set,
-\item brute-force master-face search,
+\item CalculiX-style topological search triangulation without a spatial acceleration structure,
 \item regularized penalty enforcement only,
 \item contact contributions only in \val{NONLINEARSTATIC},
 \item no surface-to-surface or mortar formulation,
