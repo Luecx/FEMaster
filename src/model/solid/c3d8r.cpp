@@ -6,8 +6,9 @@
  * state. Hourglass control follows the Belytschko-Bindeman assumed-strain
  * stiffness form: projected Flanagan-Belytschko modes are weighted by physical
  * reference-geometry coefficients and the initial isotropic-equivalent shear
- * stiffness. No user hourglass coefficient or bulk-modulus singularity enters
- * the stabilization.
+ * stiffness. The stabilization is formed in an element-fixed referential frame
+ * and rotated back to global DOFs. No user hourglass coefficient or bulk-modulus
+ * singularity enters the formulation.
  *
  * @author Finn Eggers
  * @date 13.08.2026
@@ -104,42 +105,34 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient() {
 }
 
 /**
- * Computes the closed-form physical geometry coefficients of the assumed-strain
- * stabilization.
+ * Builds an orientation-preserving element-fixed frame from the center Jacobian.
  *
- * In the element-fixed reference frame the Belytschko-Bindeman coefficients are
- *
- *     H_ii = (1/3) (L_j L_k / L_i),
- *     H_ij = (1/3) L_k,                  i != j != k,
- *
- * with `L_i = Lambda_i^T x_i`. `Lambda_i` is the nodal natural-coordinate sign
- * vector and `x_i` is the corresponding nodal coordinate in the referential
- * element frame. The frame is formed from the center-Jacobian covariant axes by
- * an orientation-preserving Gram-Schmidt construction. This makes the geometry
- * coefficients invariant to a global rigid rotation while retaining the exact
- * parallelepiped expressions used by the physical stabilization.
+ * The first covariant reference axis defines `e1`; the second is orthogonalized
+ * against it, and `e3 = e1 x e2`. The sign is chosen to agree with the third
+ * covariant axis. This frame is constant for the element reference geometry.
  */
-Mat3 C3D8R::hourglass_geometry_integrals() {
+Mat3 C3D8R::hourglass_reference_frame() {
     const auto reference_coords = node_coords_reference();
-    const auto local_coords     = node_coords_local();
-    const Mat3 center_jacobian  = jacobian(
-        reference_coords, Precision(0), Precision(0), Precision(0));
+    const Mat3 J0 = jacobian(reference_coords, Precision(0), Precision(0), Precision(0));
 
-    Vec3 axis_1 = center_jacobian.row(0).transpose();
-    Vec3 axis_2 = center_jacobian.row(1).transpose();
-    Vec3 axis_3 = center_jacobian.row(2).transpose();
+    logging::error(std::isfinite(J0.determinant()) && J0.determinant() > Precision(0),
+        "C3D8R: invalid center reference Jacobian in element ", elem_id,
+        "\nJ0: ", J0);
 
-    logging::error(axis_1.allFinite() && axis_2.allFinite() && axis_3.allFinite(),
-        "C3D8R: non-finite reference axes in element ", elem_id);
+    Vec3 axis_1 = J0.row(0).transpose();
+    Vec3 axis_2 = J0.row(1).transpose();
+    const Vec3 axis_3 = J0.row(2).transpose();
+
     logging::error(axis_1.norm() > Precision(0),
         "C3D8R: degenerate first reference axis in element ", elem_id);
-
     const Vec3 e1 = axis_1.normalized();
+
     axis_2 -= e1 * e1.dot(axis_2);
     logging::error(axis_2.norm() > Precision(0),
         "C3D8R: degenerate second reference axis in element ", elem_id);
     Vec3 e2 = axis_2.normalized();
     Vec3 e3 = e1.cross(e2);
+
     logging::error(e3.norm() > Precision(0),
         "C3D8R: degenerate third reference axis in element ", elem_id);
     e3.normalize();
@@ -149,12 +142,36 @@ Mat3 C3D8R::hourglass_geometry_integrals() {
         e3 = -e3;
     }
 
-    StaticMatrix<D, D> frame = StaticMatrix<D, D>::Zero();
+    Mat3 frame = Mat3::Zero();
     frame.col(0) = e1;
     frame.col(1) = e2;
     frame.col(2) = e3;
 
+    logging::error(frame.allFinite() && frame.determinant() > Precision(0),
+        "C3D8R: invalid physical hourglass frame in element ", elem_id,
+        "\nframe: ", frame);
+    return frame;
+}
+
+/**
+ * Computes the closed-form physical geometry coefficients of the assumed-strain
+ * stabilization in the referential element frame.
+ *
+ * With `L_i = Lambda_i^T x_i`, where `Lambda_i` is the nodal natural-coordinate
+ * sign vector and `x_i` is the corresponding referential coordinate component,
+ *
+ *     H_ii = (1/3) L_j L_k / L_i,
+ *     H_ij = (1/3) L_k,                 i != j != k.
+ *
+ * These are the closed-form geometry expressions used by the physical
+ * stabilization and recover the exact rectangular/parallelepiped limit without
+ * numerical hourglass integration.
+ */
+Mat3 C3D8R::hourglass_geometry_integrals(const Mat3& frame) {
+    const auto reference_coords = node_coords_reference();
+    const auto local_coords     = node_coords_local();
     const GradientMatrix local_reference_coords = reference_coords * frame;
+
     StaticVector<D> generalized_lengths = StaticVector<D>::Zero();
     for (Dim i = 0; i < D; ++i) {
         generalized_lengths(i) = local_coords.col(i).dot(local_reference_coords.col(i));
@@ -174,7 +191,7 @@ Mat3 C3D8R::hourglass_geometry_integrals() {
 
     for (Dim i = 0; i < D; ++i) {
         for (Dim j = i + 1; j < D; ++j) {
-            const Dim k = Precision(3) - i - j;
+            const Dim k = D - i - j;
             H(i, j) = Precision(1) / Precision(3) * generalized_lengths(k);
             H(j, i) = H(i, j);
         }
@@ -223,8 +240,7 @@ StaticVector<2> C3D8R::hourglass_material_parameters() {
         tangent(0, 2) + tangent(2, 0) +
         tangent(1, 2) + tangent(2, 1)
     ) / Precision(6);
-    const Precision denominator = Precision(2) * (lame_lambda + mu);
-    const Precision nu = lame_lambda / denominator;
+    const Precision nu = lame_lambda / (Precision(2) * (lame_lambda + mu));
 
     logging::error(std::isfinite(mu) && mu > Precision(0),
         "C3D8R: invalid initial shear stiffness in element ", elem_id,
@@ -248,8 +264,8 @@ StaticVector<2> C3D8R::hourglass_material_parameters() {
  *
  *     gamma = (I - D_bar X^T) Gamma
  *
- * annihilate constant-gradient displacement fields. With `i,j,k` cyclic, the
- * eight-by-eight displacement blocks are
+ * annihilate constant-gradient displacement fields. In the referential element
+ * frame, with `i,j,k` cyclic, the eight-by-eight displacement blocks are
  *
  *     k_ii = H_ii [(1+nu)/(1-nu) (gamma_j gamma_j^T + gamma_k gamma_k^T)
  *                   + (1/3) gamma_4 gamma_4^T]
@@ -258,11 +274,11 @@ StaticVector<2> C3D8R::hourglass_material_parameters() {
  *     k_ij = H_ij [nu/(1-nu) gamma_j gamma_i^T
  *                   + (1/2) gamma_i gamma_j^T],
  *
- *     K_hg = 2 mu [k_ij].
+ *     K_hg_local = 2 mu [k_ij].
  *
- * No term contains `1/(1-2 nu)`, so the stabilization remains bounded as the
- * continuum approaches incompressibility. The matrix depends only on reference
- * geometry and the initial material tangent and is cached.
+ * Every nodal 3x3 block is then transformed as `R K_local R^T`, where `R`
+ * contains the referential frame axes. No term contains `1/(1-2 nu)`, so the
+ * stabilization remains bounded as the continuum approaches incompressibility.
  */
 C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     if (hourglass_stiffness_cached) {
@@ -275,14 +291,15 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
         StaticMatrix<N, N>::Identity() - mean_gradient * reference_coords.transpose();
     const HourglassModes gamma = affine_projector * primitive_hourglass_modes();
 
-    const Mat3 H = hourglass_geometry_integrals();
+    const Mat3 frame = hourglass_reference_frame();
+    const Mat3 H = hourglass_geometry_integrals(frame);
     const StaticVector<2> parameters = hourglass_material_parameters();
     const Precision mu = parameters(0);
     const Precision nu = parameters(1);
     const Precision normal_factor  = (Precision(1) + nu) / (Precision(1) - nu);
     const Precision poisson_factor = nu / (Precision(1) - nu);
 
-    Matrix24 stiffness = Matrix24::Zero();
+    Matrix24 local_stiffness = Matrix24::Zero();
 
     for (Dim i = 0; i < D; ++i) {
         const Dim j = (i + 1) % D;
@@ -301,7 +318,7 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
 
         for (Index node_a = 0; node_a < N; ++node_a) {
             for (Index node_b = 0; node_b < N; ++node_b) {
-                stiffness(D * node_a + i, D * node_b + i) = block(node_a, node_b);
+                local_stiffness(D * node_a + i, D * node_b + i) = block(node_a, node_b);
             }
         }
     }
@@ -319,15 +336,35 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
 
             for (Index node_a = 0; node_a < N; ++node_a) {
                 for (Index node_b = 0; node_b < N; ++node_b) {
-                    stiffness(D * node_a + i, D * node_b + j) = block(node_a, node_b);
+                    local_stiffness(D * node_a + i, D * node_b + j) = block(node_a, node_b);
                 }
             }
         }
     }
 
-    hourglass_stiffness_cache = Precision(2) * mu * stiffness;
+    local_stiffness *= Precision(2) * mu;
+
+    Matrix24 global_stiffness = Matrix24::Zero();
+    for (Index node_a = 0; node_a < N; ++node_a) {
+        for (Index node_b = 0; node_b < N; ++node_b) {
+            Mat3 local_block = Mat3::Zero();
+            for (Dim i = 0; i < D; ++i) {
+                for (Dim j = 0; j < D; ++j) {
+                    local_block(i, j) = local_stiffness(D * node_a + i, D * node_b + j);
+                }
+            }
+
+            const Mat3 global_block = frame * local_block * frame.transpose();
+            for (Dim i = 0; i < D; ++i) {
+                for (Dim j = 0; j < D; ++j) {
+                    global_stiffness(D * node_a + i, D * node_b + j) = global_block(i, j);
+                }
+            }
+        }
+    }
+
     hourglass_stiffness_cache = Precision(0.5) *
-        (hourglass_stiffness_cache + hourglass_stiffness_cache.transpose());
+        (global_stiffness + global_stiffness.transpose());
 
     logging::error(hourglass_stiffness_cache.allFinite(),
         "C3D8R: non-finite physical hourglass stiffness in element ", elem_id);
