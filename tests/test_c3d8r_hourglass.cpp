@@ -1,6 +1,6 @@
 /**
  * @file test_c3d8r_hourglass.cpp
- * @brief Tests the parameter-free projected C3D8R hourglass stabilization.
+ * @brief Tests the parameter-free physical C3D8R hourglass stabilization.
  *
  * @author Finn Eggers
  * @date 13.08.2026
@@ -60,7 +60,7 @@ StaticVector<24> affine_displacement() {
 }
 
 StaticVector<24> shear_hourglass_displacement() {
-    // u_x = s*t: zero center strain, trace-free fully integrated strain.
+    // u_x = s*t is gamma_1: zero center strain and a pure hourglass mode.
     static const Precision st[8] = {1, 1, -1, -1, -1, -1, 1, 1};
 
     StaticVector<24> u = StaticVector<24>::Zero();
@@ -76,7 +76,7 @@ Precision quadratic_energy(const DynamicMatrix& stiffness, const StaticVector<24
 
 } // namespace
 
-TEST(Elements_C3D8R, ProjectedHourglassDoesNotChangeAffineResponse) {
+TEST(Elements_C3D8R, PhysicalHourglassDoesNotChangeAffineResponse) {
     auto full_model = build_unit_cube<model::C3D8>(1000.0, 0.3);
     auto reduced_model = build_unit_cube<model::C3D8R>(1000.0, 0.3);
 
@@ -97,24 +97,52 @@ TEST(Elements_C3D8R, ProjectedHourglassDoesNotChangeAffineResponse) {
                 Precision(1e-10) * std::max(Precision(1), std::abs(full_energy)));
 }
 
-TEST(Elements_C3D8R, ProjectedHourglassRecoversPureShearHourglassEnergy) {
-    auto full_model = build_unit_cube<model::C3D8>(1000.0, 0.3);
-    auto reduced_model = build_unit_cube<model::C3D8R>(1000.0, 0.3);
+TEST(Elements_C3D8R, PhysicalHourglassMatchesUnitCubeAssumedStrainEnergy) {
+    constexpr Precision youngs_modulus = 1000.0;
+    constexpr Precision poisson_ratio  = 0.3;
+    const Precision shear_modulus =
+        youngs_modulus / (Precision(2) * (Precision(1) + poisson_ratio));
 
-    auto* full = full_model._data->elements[0]->as<model::C3D8>();
+    auto reduced_model = build_unit_cube<model::C3D8R>(youngs_modulus, poisson_ratio);
     auto* reduced = reduced_model._data->elements[0]->as<model::C3D8R>();
-    ASSERT_NE(full, nullptr);
     ASSERT_NE(reduced, nullptr);
 
-    Precision full_storage[24 * 24] {};
     Precision reduced_storage[24 * 24] {};
-    const DynamicMatrix K_full = full->stiffness(full_storage);
     const DynamicMatrix K_reduced = reduced->stiffness(reduced_storage);
     const StaticVector<24> u = shear_hourglass_displacement();
 
-    const Precision full_energy = quadratic_energy(K_full, u);
+    // For the unit cube H_11 = H_22 = H_33 = 4/3 and gamma_1^T gamma_1 = 8.
+    // The x-displacement gamma_1 mode therefore has
+    //
+    //   u^T K_hg u = 2 mu (4/3) (8)^2 = (512/3) mu.
+    const Precision expected_energy =
+        Precision(512) / Precision(3) * shear_modulus;
     const Precision reduced_energy = quadratic_energy(K_reduced, u);
-    EXPECT_GT(full_energy, Precision(0));
-    EXPECT_NEAR(reduced_energy, full_energy,
-                Precision(1e-10) * std::max(Precision(1), std::abs(full_energy)));
+
+    EXPECT_GT(reduced_energy, Precision(0));
+    EXPECT_NEAR(reduced_energy, expected_energy,
+                Precision(1e-10) * std::max(Precision(1), std::abs(expected_energy)));
+}
+
+TEST(Elements_C3D8R, PhysicalHourglassRemainsBoundedNearIncompressibility) {
+    constexpr Precision shear_modulus = 1000.0;
+    constexpr Precision poisson_ratio = 0.4999;
+    const Precision youngs_modulus =
+        Precision(2) * shear_modulus * (Precision(1) + poisson_ratio);
+
+    auto reduced_model = build_unit_cube<model::C3D8R>(youngs_modulus, poisson_ratio);
+    auto* reduced = reduced_model._data->elements[0]->as<model::C3D8R>();
+    ASSERT_NE(reduced, nullptr);
+
+    Precision reduced_storage[24 * 24] {};
+    const DynamicMatrix K_reduced = reduced->stiffness(reduced_storage);
+    const StaticVector<24> u = shear_hourglass_displacement();
+
+    const Precision expected_energy =
+        Precision(512) / Precision(3) * shear_modulus;
+    const Precision reduced_energy = quadratic_energy(K_reduced, u);
+
+    EXPECT_TRUE(std::isfinite(reduced_energy));
+    EXPECT_NEAR(reduced_energy, expected_energy,
+                Precision(1e-9) * std::max(Precision(1), std::abs(expected_energy)));
 }
