@@ -1,14 +1,15 @@
 /**
  * @file c3d8r.cpp
- * @brief Implements the reduced-integration C3D8 solid and hourglass stabilization.
+ * @brief Implements the reduced-integration C3D8 solid and projected hourglass stabilization.
  *
  * The one-point continuum contribution uses the common solid material-point
- * state. Hourglass stiffness is obtained from a zero-strain constitutive tangent
- * without changing that physical history state, and the same hourglass matrix
- * supplies the residual and tangent contributions.
+ * state. Hourglass stiffness is obtained from the fully integrated deviatoric
+ * zero-strain reference tangent projected onto the twelve non-affine element
+ * modes. The resulting constant matrix supplies matching residual and tangent
+ * contributions without an empirical stabilization coefficient.
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 13.08.2026
  */
 
 #include "c3d8r.h"
@@ -49,7 +50,6 @@ RowMatrix C3D8R::stress_strain_nodal_rst() {
  * @return Eight-by-four primitive modal matrix in element-node ordering.
  */
 C3D8R::HourglassModes C3D8R::primitive_hourglass_modes() {
-    // Primitive scalar modes gamma = [st, tr, rs, rst].
     const auto local_coords = node_coords_local();
 
     HourglassModes modes = HourglassModes::Zero();
@@ -76,26 +76,21 @@ C3D8R::HourglassModes C3D8R::primitive_hourglass_modes() {
  *
  *     D_bar = (1 / V0) integral_A0 D dV0.
  *
- * Positive finite point determinants and total reference volume are required.
- * The result depends only on reference geometry and is independent of the
- * one-point continuum quadrature used by the reduced element.
+ * The mean gradient is used only to remove physical affine displacement fields
+ * from the primitive hourglass basis.
  *
- * @param reference_volume Physical reference volume returned to the caller.
  * @return Mean reference gradient with one row per element node.
  */
-C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume) {
+C3D8R::GradientMatrix C3D8R::mean_reference_gradient() {
     const auto reference_coords = node_coords_reference();
 
-    // Integrate the ordinary C3D8 reference gradients with a full 2x2x2 rule:
-    //
-    //     D_bar = (1 / V0) integral(D dV0).
     static const math::quadrature::Quadrature full_quadrature{
         math::quadrature::DOMAIN_ISO_HEX,
         math::quadrature::ORDER_QUADRATIC
     };
 
     GradientMatrix integrated_gradient = GradientMatrix::Zero();
-    reference_volume                   = Precision(0);
+    Precision reference_volume = Precision(0);
 
     for (Index q = 0; q < full_quadrature.count(); ++q) {
         const auto point = full_quadrature.get_point(q);
@@ -126,101 +121,139 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
 }
 
 /**
- * Evaluates the zero-strain constitutive shear scale without advancing the
- * physical material-point history.
+ * Builds the parameter-free reference hourglass stabilization tangent.
  *
- * The hourglass modulus is an auxiliary stabilization quantity rather than a
- * constitutive update of the current continuum state. The complete active state
- * row is therefore saved, the zero-strain tangent is evaluated through the same
- * material API, and the row is restored immediately afterwards.
+ * The projected Flanagan-Belytschko modes span the four scalar non-affine nodal
+ * patterns. Their orthogonal scalar projector is expanded independently into the
+ * three displacement directions, giving the twelve-dimensional projector
+ * `P_hg`.
  *
- * @return Mean material shear diagonal `(C44 + C55 + C66) / 3`.
+ * A full two-by-two-by-two rule then integrates the zero-strain reference
+ * stiffness using only the deviatoric part of the constitutive tangent:
+ *
+ *     K_dev^(8GP) = integral B^T P_dev^T C0 P_dev B dV0.
+ *
+ * Finally,
+ *
+ *     K_hg = P_hg K_dev^(8GP) P_hg.
+ *
+ * Consequently no bulk stiffness and no empirical hourglass coefficient enter
+ * the stabilization. `K_hg` is constant in the reference configuration and is
+ * cached after the first evaluation.
+ *
+ * @return Constant 24-by-24 projected hourglass tangent.
  */
-Precision C3D8R::hourglass_material_scale() {
-    // Preserve the complete physical center-point history around the auxiliary
-    // zero-strain tangent evaluation
+C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
+    if (hourglass_stiffness_cached) {
+        return hourglass_stiffness_cache;
+    }
+
+    const auto reference_coords = node_coords_reference();
+    const GradientMatrix mean_gradient = mean_reference_gradient();
+
+    // Remove physical affine scalar fields from the primitive modes.
+    const StaticMatrix<N, N> affine_projector =
+        StaticMatrix<N, N>::Identity() - mean_gradient * reference_coords.transpose();
+    const HourglassModes modes = affine_projector * primitive_hourglass_modes();
+
+    // Orthogonal projector onto the four scalar non-affine modes:
+    //
+    //     P_s = G (G^T G)^-1 G^T.
+    const StaticMatrix<4, 4> gram = modes.transpose() * modes;
+    logging::error(std::isfinite(gram.determinant()) && std::abs(gram.determinant()) > Precision(1e-12),
+        "C3D8R: singular projected hourglass basis in element ", elem_id,
+        "\ndet(G^T G): ", gram.determinant());
+
+    const StaticMatrix<N, N> scalar_projector =
+        modes * gram.inverse() * modes.transpose();
+
+    Matrix24 hourglass_projector = Matrix24::Zero();
+    for (Index node_a = 0; node_a < N; ++node_a) {
+        for (Index node_b = 0; node_b < N; ++node_b) {
+            for (Dim dof = 0; dof < D; ++dof) {
+                hourglass_projector(D * node_a + dof, D * node_b + dof) =
+                    scalar_projector(node_a, node_b);
+            }
+        }
+    }
+
+    // Deviatoric projector in the solid engineering-Voigt convention
+    // [11,22,33,23,13,12]. Normal strains are made trace-free while engineering
+    // shear strains remain unchanged.
+    Mat6 deviatoric_projector = Mat6::Zero();
+    for (Dim i = 0; i < 3; ++i) {
+        for (Dim j = 0; j < 3; ++j) {
+            deviatoric_projector(i, j) =
+                (i == j ? Precision(1) : Precision(0)) - Precision(1) / Precision(3);
+        }
+    }
+    deviatoric_projector(3, 3) = Precision(1);
+    deviatoric_projector(4, 4) = Precision(1);
+    deviatoric_projector(5, 5) = Precision(1);
+
+    // Preserve the physical center-point material state around all auxiliary
+    // zero-strain tangent evaluations. Each quadrature point starts from exactly
+    // the same saved state, and the original row is restored afterwards.
     const Index state_row = this->mp_index(0);
-    Field&      state_field = *this->_model_data->material_state;
+    Field& state_field = *this->_model_data->material_state;
 
     std::vector<Precision> saved_state(static_cast<std::size_t>(state_field.components));
     for (Index component = 0; component < state_field.components; ++component) {
         saved_state[static_cast<std::size_t>(component)] = state_field(state_row, component);
     }
 
-    Precision* state = &state_field(state_row, 0);
-    const Mat6 material_tangent = material_tangent_reference(
-        Precision(0), Precision(0), Precision(0), state);
-
-    for (Index component = 0; component < state_field.components; ++component) {
-        state_field(state_row, component) = saved_state[static_cast<std::size_t>(component)];
-    }
-
-    const Precision shear_scale =
-        (material_tangent(3, 3) + material_tangent(4, 4) + material_tangent(5, 5)) / Precision(3);
-
-    logging::error(std::isfinite(shear_scale) && shear_scale > Precision(0),
-        "C3D8R: invalid initial mean shear stiffness in element ", elem_id,
-        "\nscale: ", shear_scale);
-
-    return shear_scale;
-}
-
-/**
- * Builds the constant reference hourglass stabilization tangent.
- *
- * Primitive modes are projected with `I - D_bar X^T` so affine displacement
- * fields remain unstabilized. Their scalar stiffness uses the initial mean
- * constitutive shear diagonal, reference volume and mean-gradient norm:
- *
- *     k_hg = alpha G_eff V0 sum_a ||grad_bar N_a||^2.
- *
- * The scalar nodal matrix `k_hg G G^T` is expanded independently into all three
- * translational directions. The final matrix is symmetrized only to remove
- * round-off asymmetry.
- *
- * @return Constant 24-by-24 hourglass tangent in node-major DOF ordering.
- */
-C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
-    const auto reference_coords = node_coords_reference();
-
-    Precision reference_volume = Precision(0);
-    const GradientMatrix mean_gradient = mean_reference_gradient(reference_volume);
-
-    // Flanagan-Belytschko projection against the affine coordinate field:
-    //
-    //     G = (I - D_bar X^T) gamma.
-    const StaticMatrix<N, N> projector =
-        StaticMatrix<N, N>::Identity() - mean_gradient * reference_coords.transpose();
-    const HourglassModes modes = projector * primitive_hourglass_modes();
-
-    // Reference stabilization scale
-    //
-    //     k_hg = alpha G_eff V0 sum_a ||grad_bar N_a||^2.
-    const Precision material_scale  = hourglass_material_scale();
-    const Precision gradient_scale  = mean_gradient.array().square().sum();
-    const Precision hourglass_scale =
-        default_hourglass_coefficient * material_scale * reference_volume * gradient_scale;
-
-    logging::error(std::isfinite(hourglass_scale) && hourglass_scale > Precision(0),
-        "C3D8R: invalid hourglass stiffness in element ", elem_id,
-        "\nscale: ", hourglass_scale);
-
-    const StaticMatrix<N, N> scalar_stiffness =
-        hourglass_scale * modes * modes.transpose();
-
-    Matrix24 stiffness = Matrix24::Zero();
-
-    // Expand the scalar matrix as K_hg = kron(H, I3).
-    for (Index node_a = 0; node_a < N; ++node_a) {
-        for (Index node_b = 0; node_b < N; ++node_b) {
-            for (Dim dof = 0; dof < D; ++dof) {
-                stiffness(D * node_a + dof, D * node_b + dof) =
-                    scalar_stiffness(node_a, node_b);
-            }
+    auto restore_state = [&]() {
+        for (Index component = 0; component < state_field.components; ++component) {
+            state_field(state_row, component) = saved_state[static_cast<std::size_t>(component)];
         }
+    };
+
+    Precision* state = &state_field(state_row, 0);
+
+    static const math::quadrature::Quadrature full_quadrature{
+        math::quadrature::DOMAIN_ISO_HEX,
+        math::quadrature::ORDER_QUADRATIC
+    };
+
+    Matrix24 deviatoric_reference_stiffness = Matrix24::Zero();
+
+    for (Index q = 0; q < full_quadrature.count(); ++q) {
+        const auto point = full_quadrature.get_point(q);
+
+        Precision det0 = Precision(0);
+        const auto gradient = shape_derivatives_reference(
+            reference_coords,
+            point.r,
+            point.s,
+            point.t,
+            det0
+        );
+        const auto B = strain_displacement(gradient);
+
+        restore_state();
+        const Mat6 material_tangent = material_tangent_reference(
+            point.r,
+            point.s,
+            point.t,
+            state
+        );
+        const Mat6 deviatoric_tangent =
+            deviatoric_projector.transpose() * material_tangent * deviatoric_projector;
+
+        const Precision measure = det0 * point.w;
+        deviatoric_reference_stiffness +=
+            B.transpose() * (deviatoric_tangent * B) * measure;
     }
 
-    return Precision(0.5) * (stiffness + stiffness.transpose());
+    restore_state();
+
+    hourglass_stiffness_cache =
+        hourglass_projector * deviatoric_reference_stiffness * hourglass_projector;
+    hourglass_stiffness_cache =
+        Precision(0.5) * (hourglass_stiffness_cache + hourglass_stiffness_cache.transpose());
+    hourglass_stiffness_cached = true;
+
+    return hourglass_stiffness_cache;
 }
 
 /**
@@ -267,20 +300,13 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
 }
 
 /**
- * Assembles the one-point material stiffness with reference hourglass
+ * Assembles the one-point material stiffness with projected reference hourglass
  * stabilization.
- *
- * The inherited solid stiffness uses this element's virtual one-point
- * quadrature and advances the center-point state once. The auxiliary hourglass
- * tangent evaluates its material scale state-neutrally, then adds the constant
- * stabilization matrix.
  *
  * @param buffer Caller-provided dense 24-by-24 storage.
  * @return Mapped symmetric continuum-plus-hourglass stiffness.
  */
 MapMatrix C3D8R::stiffness(Precision* buffer) {
-    // The inherited continuum stiffness uses this element's virtual one-point
-    // integration rule. Add the state-neutral hourglass tangent afterwards.
     MapMatrix mapped{buffer, ndof, ndof};
 
     C3D8::stiffness(buffer);
@@ -291,12 +317,12 @@ MapMatrix C3D8R::stiffness(Precision* buffer) {
 }
 
 /**
- * Assembles the one-point continuum tangent and matching hourglass contribution.
+ * Assembles the one-point continuum tangent and matching projected hourglass
+ * contribution.
  *
  * The common solid tangent performs the physical center-point constitutive
- * update exactly once. The auxiliary hourglass tangent is evaluated
- * state-neutrally and its matching linear force is added to the continuum
- * internal force.
+ * update exactly once. The constant reference hourglass tangent adds its exact
+ * matching linear force.
  *
  * @param buffer Caller-provided dense 24-by-24 tangent storage.
  * @param ip_stress_state Global center-point PK2 stress field to update.
@@ -322,20 +348,14 @@ MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
 
 /**
  * Recovers nonlinear internal force from stored continuum stress and the
- * current hourglass displacement.
- *
- * The inherited Total-Lagrangian residual uses stored center-point PK2 stress.
- * The stabilization contribution is the exact derivative-compatible force
- * `f_hg = K_hg u_e` from the constant reference hourglass tangent.
+ * current projected hourglass displacement.
  *
  * @param node_forces Global nodal internal-force field to increment.
  * @param ip_stress Stored center-point second Piola-Kirchhoff stress field.
  */
 void C3D8R::compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) {
-    // Continuum residual from the one-point Total-Lagrange formulation.
     C3D8::compute_internal_force_nonlinear(node_forces, ip_stress);
 
-    // Matching constant reference hourglass force f_hg = K_hg u_e.
     const Matrix24 hourglass = hourglass_stiffness();
     assemble_local_force(node_forces, hourglass * local_displacement());
 }
