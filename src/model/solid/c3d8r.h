@@ -40,7 +40,7 @@ public:
     using Matrix24       = StaticMatrix<ndof, ndof>;
     using Vector24       = StaticVector<ndof>;
 
-    static constexpr Precision default_hourglass_coefficient = Precision(3.0);
+    static constexpr Precision default_hourglass_coefficient = Precision(0.03);
 
     C3D8R(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8R() override = default;
