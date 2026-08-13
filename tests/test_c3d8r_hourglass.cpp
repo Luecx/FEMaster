@@ -41,6 +41,29 @@ model::Model build_unit_cube(Precision youngs_modulus, Precision poisson_ratio) 
     return model;
 }
 
+model::Model build_rotated_unit_cube(Precision youngs_modulus, Precision poisson_ratio) {
+    model::Model model(8, 1, 0);
+    static const Precision xyz[8][3] = {
+        {0,0,0}, {1,0,0}, {1,1,0}, {0,1,0},
+        {0,0,1}, {1,0,1}, {1,1,1}, {0,1,1}
+    };
+
+    // Rigid +90 degree rotation about global z followed by translation.
+    for (Index node = 0; node < 8; ++node) {
+        const Precision x = xyz[node][0];
+        const Precision y = xyz[node][1];
+        const Precision z = xyz[node][2];
+        model.set_node(node, Precision(2) - y, Precision(3) + x, Precision(4) + z);
+    }
+
+    model.set_element<model::C3D8R>(0, 0, 1, 2, 3, 4, 5, 6, 7);
+    auto material = model._data->materials.activate("MAT");
+    material->set_elasticity<material::IsotropicElasticity>(youngs_modulus, poisson_ratio);
+    model.solid_section("EALL", "MAT");
+    model.assign_sections();
+    return model;
+}
+
 StaticVector<24> affine_displacement() {
     static const Precision xyz[8][3] = {
         {0,0,0}, {1,0,0}, {1,1,0}, {0,1,0},
@@ -59,13 +82,12 @@ StaticVector<24> affine_displacement() {
     return u;
 }
 
-StaticVector<24> shear_hourglass_displacement() {
-    // u_x = s*t is gamma_1: zero center strain and a pure hourglass mode.
+StaticVector<24> shear_hourglass_displacement(Dim direction = 0) {
     static const Precision st[8] = {1, 1, -1, -1, -1, -1, 1, 1};
 
     StaticVector<24> u = StaticVector<24>::Zero();
     for (Index node = 0; node < 8; ++node) {
-        u(3 * node) = st[node];
+        u(3 * node + direction) = st[node];
     }
     return u;
 }
@@ -111,10 +133,8 @@ TEST(Elements_C3D8R, PhysicalHourglassMatchesUnitCubeAssumedStrainEnergy) {
     const DynamicMatrix K_reduced = reduced->stiffness(reduced_storage);
     const StaticVector<24> u = shear_hourglass_displacement();
 
-    // For the unit cube H_11 = H_22 = H_33 = 4/3 and gamma_1^T gamma_1 = 8.
-    // The x-displacement gamma_1 mode therefore has
-    //
-    //   u^T K_hg u = 2 mu (4/3) (8)^2 = (512/3) mu.
+    // Unit cube: H_11 = H_22 = H_33 = 4/3 and gamma_1^T gamma_1 = 8.
+    // For u_x = gamma_1, u^T K_hg u = 2 mu (4/3) (8)^2.
     const Precision expected_energy =
         Precision(512) / Precision(3) * shear_modulus;
     const Precision reduced_energy = quadratic_energy(K_reduced, u);
@@ -122,6 +142,32 @@ TEST(Elements_C3D8R, PhysicalHourglassMatchesUnitCubeAssumedStrainEnergy) {
     EXPECT_GT(reduced_energy, Precision(0));
     EXPECT_NEAR(reduced_energy, expected_energy,
                 Precision(1e-10) * std::max(Precision(1), std::abs(expected_energy)));
+}
+
+TEST(Elements_C3D8R, PhysicalHourglassIsInvariantToRigidElementOrientation) {
+    constexpr Precision youngs_modulus = 1000.0;
+    constexpr Precision poisson_ratio  = 0.3;
+
+    auto reference_model = build_unit_cube<model::C3D8R>(youngs_modulus, poisson_ratio);
+    auto rotated_model   = build_rotated_unit_cube(youngs_modulus, poisson_ratio);
+    auto* reference = reference_model._data->elements[0]->as<model::C3D8R>();
+    auto* rotated   = rotated_model._data->elements[0]->as<model::C3D8R>();
+    ASSERT_NE(reference, nullptr);
+    ASSERT_NE(rotated, nullptr);
+
+    Precision reference_storage[24 * 24] {};
+    Precision rotated_storage[24 * 24] {};
+    const DynamicMatrix K_reference = reference->stiffness(reference_storage);
+    const DynamicMatrix K_rotated   = rotated->stiffness(rotated_storage);
+
+    // Local x rotates to global y under the +90 degree rigid rotation.
+    const Precision reference_energy =
+        quadratic_energy(K_reference, shear_hourglass_displacement(0));
+    const Precision rotated_energy =
+        quadratic_energy(K_rotated, shear_hourglass_displacement(1));
+
+    EXPECT_NEAR(rotated_energy, reference_energy,
+                Precision(1e-10) * std::max(Precision(1), std::abs(reference_energy)));
 }
 
 TEST(Elements_C3D8R, PhysicalHourglassRemainsBoundedNearIncompressibility) {
