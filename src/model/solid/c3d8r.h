@@ -1,10 +1,10 @@
 /**
  * @file c3d8r.h
- * @brief Declares the reduced-integration C3D8 solid with physical hourglass stabilization.
+ * @brief Declares the reduced-integration C3D8 solid with finite-strain physical hourglass stabilization.
  *
  * The continuum response is evaluated at the element center. The twelve
- * non-affine hourglass modes are stabilized by a parameter-free assumed-strain
- * stiffness following the Belytschko-Bindeman physical stabilization form.
+ * non-affine hourglass modes use a parameter-free Belytschko-Bindeman physical
+ * stiffness embedded in an objective Total-Lagrangian modal potential.
  *
  * @author Finn Eggers
  * @date 13.08.2026
@@ -23,23 +23,30 @@ namespace fem::model {
  * Hourglass stabilization uses the four Flanagan-Belytschko scalar modes after
  * projection against affine displacement fields. Geometry-dependent physical
  * coefficients and the initial isotropic-equivalent shear modulus and Poisson
- * ratio define the Belytschko-Bindeman assumed-strain stabilization matrix
- * without a user hourglass coefficient or bulk-modulus singularity.
+ * ratio define the Belytschko-Bindeman modal stiffness without a user hourglass
+ * coefficient or bulk-modulus singularity.
  *
- * The stabilization is formed in an element-fixed referential frame and rotated
- * back to global translational DOFs. The resulting matrix is constant in the
- * reference configuration and supplies the matching force `f_hg = K_hg u_e`.
+ * For finite deformation the modal displacement vectors are pulled back by the
+ * mean deformation gradient before entering the referential stabilization
+ * potential. Residual and tangent are exact first and second derivatives of the
+ * same potential, while the undeformed tangent is exactly the physical
+ * Belytschko-Bindeman stiffness.
  */
 class C3D8R final : public C3D8 {
 public:
-    static constexpr Index N    = 8;
-    static constexpr Dim   D    = 3;
-    static constexpr Index ndof = N * D;
+    static constexpr Index N         = 8;
+    static constexpr Dim   D         = 3;
+    static constexpr Index n_hg_mode = 4;
+    static constexpr Index ndof      = N * D;
+    static constexpr Index n_hg_dof  = D * n_hg_mode;
 
     using GradientMatrix = StaticMatrix<N, D>;
-    using HourglassModes = StaticMatrix<N, 4>;
+    using HourglassModes = StaticMatrix<N, n_hg_mode>;
     using Matrix24       = StaticMatrix<ndof, ndof>;
     using Vector24       = StaticVector<ndof>;
+    using ModalMatrix    = StaticMatrix<n_hg_dof, n_hg_dof>;
+    using ModalVector    = StaticVector<n_hg_dof>;
+    using ModalJacobian  = StaticMatrix<n_hg_dof, ndof>;
 
     C3D8R(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8R() override = default;
@@ -58,19 +65,26 @@ public:
     void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override;
 
 private:
-    // Hourglass basis, referential frame, geometry factors and material parameters
+    // Reference physical stabilization data
     HourglassModes  primitive_hourglass_modes();
     GradientMatrix  mean_reference_gradient();
     Mat3            hourglass_reference_frame();
     Mat3            hourglass_geometry_integrals(const Mat3& frame);
     StaticVector<2> hourglass_material_parameters();
+    void            build_hourglass_reference_data();
     Matrix24        hourglass_stiffness();
 
-    Matrix24 hourglass_stiffness_cache = Matrix24::Zero();
-    bool     hourglass_stiffness_cached = false;
+    // Objective finite-strain Total-Lagrangian hourglass response
+    void hourglass_response(Vector24& force, Matrix24* tangent);
 
-    // Element-local displacement and global force scattering
-    Vector24 local_displacement();
+    GradientMatrix mean_gradient_cache   = GradientMatrix::Zero();
+    HourglassModes hourglass_modes_cache = HourglassModes::Zero();
+    Mat3           hourglass_frame_cache = Mat3::Identity();
+    ModalMatrix    modal_stiffness_cache = ModalMatrix::Zero();
+    Matrix24       hourglass_stiffness_cache = Matrix24::Zero();
+    bool           hourglass_reference_cached = false;
+
+    // Global force scattering
     void assemble_local_force(Field& node_forces, const Vector24& local_force);
 };
 
