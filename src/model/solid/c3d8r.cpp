@@ -1,12 +1,13 @@
 /**
  * @file c3d8r.cpp
- * @brief Implements the reduced-integration C3D8 solid and projected hourglass stabilization.
+ * @brief Implements the reduced-integration C3D8 solid and physical hourglass stabilization.
  *
  * The one-point continuum contribution uses the common solid material-point
- * state. Hourglass stiffness is obtained from the fully integrated deviatoric
- * zero-strain reference tangent projected onto the twelve non-affine element
- * modes. The resulting constant matrix supplies matching residual and tangent
- * contributions without an empirical stabilization coefficient.
+ * state. Hourglass control follows the Belytschko-Bindeman assumed-strain
+ * stiffness form: projected Flanagan-Belytschko modes are weighted by exact
+ * reference-geometry integrals and the initial isotropic-equivalent shear
+ * stiffness. No user hourglass coefficient or bulk-modulus singularity enters
+ * the stabilization.
  *
  * @author Finn Eggers
  * @date 13.08.2026
@@ -43,9 +44,10 @@ RowMatrix C3D8R::stress_strain_nodal_rst() {
 /**
  * Constructs the four primitive scalar hourglass modes at the C3D8 nodes.
  *
- * The natural-coordinate products `[s t, t r, r s, r s t]` span the non-affine
- * zero-energy patterns of one-point hexahedral integration before projection
- * against the physical affine coordinate field.
+ * The natural-coordinate products `[s t, t r, r s, r s t]` are the four
+ * trilinear fields omitted by one-point integration. This ordering is the
+ * physical-stabilization convention `[h1, h2, h3, h4]`, where `h1` omits `r`,
+ * `h2` omits `s`, and `h3` omits `t`.
  *
  * @return Eight-by-four primitive modal matrix in element-node ordering.
  */
@@ -71,13 +73,12 @@ C3D8R::HourglassModes C3D8R::primitive_hourglass_modes() {
 /**
  * Computes the volume-averaged reference shape-function gradients.
  *
- * A full two-by-two-by-two rule integrates the ordinary C3D8 gradients over the
- * undeformed element:
+ * A full two-by-two-by-two rule evaluates
  *
- *     D_bar = (1 / V0) integral_A0 D dV0.
+ *     D_bar = (1 / V0) integral D dV0.
  *
- * The mean gradient is used only to remove physical affine displacement fields
- * from the primitive hourglass basis.
+ * These mean gradients define the Flanagan-Belytschko correction that removes
+ * all affine displacement fields from the primitive hourglass vectors.
  *
  * @return Mean reference gradient with one row per element node.
  */
@@ -121,27 +122,178 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient() {
 }
 
 /**
- * Builds the parameter-free reference hourglass stabilization tangent.
+ * Computes the geometry coefficients of the assumed-strain stabilization.
  *
- * The projected Flanagan-Belytschko modes span the four scalar non-affine nodal
- * patterns. Their orthogonal scalar projector is expanded independently into the
- * three displacement directions, giving the twelve-dimensional projector
- * `P_hg`.
+ * The natural hourglass fields are
  *
- * A full two-by-two-by-two rule then integrates the zero-strain reference
- * stiffness using only the deviatoric part of the constitutive tangent:
+ *     h1 = s t,  h2 = t r,  h3 = r s,  h4 = r s t.
  *
- *     K_dev^(8GP) = integral B^T P_dev^T C0 P_dev B dV0.
+ * Belytschko-Bindeman physical stabilization uses the length-valued coefficients
  *
- * Finally,
+ *     H_ii = integral (h_j,i)^2 dV
+ *          = integral (h_k,i)^2 dV
+ *          = 3 integral (h_4,i)^2 dV,
  *
- *     K_hg = P_hg K_dev^(8GP) P_hg.
+ *     H_ij = integral h_i,j h_j,i dV.
  *
- * Consequently no bulk stiffness and no empirical hourglass coefficient enter
- * the stabilization. `K_hg` is constant in the reference configuration and is
- * cached after the first evaluation.
+ * The three equivalent expressions for `H_ii` coincide for the associated
+ * parallelepiped. For a general trilinear C3D8 geometry their symmetric average
+ * is integrated numerically with the full two-by-two-by-two rule; this avoids a
+ * coordinate-direction preference while retaining the physical dimensions and
+ * exact parallelepiped limit of the assumed-strain formula.
  *
- * @return Constant 24-by-24 projected hourglass tangent.
+ * @return Symmetric three-by-three matrix of physical geometry coefficients.
+ */
+Mat3 C3D8R::hourglass_geometry_integrals() {
+    const auto reference_coords = node_coords_reference();
+
+    static const math::quadrature::Quadrature full_quadrature{
+        math::quadrature::DOMAIN_ISO_HEX,
+        math::quadrature::ORDER_QUADRATIC
+    };
+
+    Mat3 H = Mat3::Zero();
+
+    for (Index q = 0; q < full_quadrature.count(); ++q) {
+        const auto point = full_quadrature.get_point(q);
+        const Mat3 J0 = jacobian(reference_coords, point.r, point.s, point.t);
+        const Precision det0 = J0.determinant();
+
+        logging::error(std::isfinite(det0) && det0 > Precision(0),
+            "C3D8R: invalid reference determinant in hourglass geometry for element ", elem_id,
+            "\ndet(J0): ", det0);
+
+        StaticMatrix<4, D> dh_dxi = StaticMatrix<4, D>::Zero();
+        dh_dxi(0, 1) = point.t;
+        dh_dxi(0, 2) = point.s;
+        dh_dxi(1, 0) = point.t;
+        dh_dxi(1, 2) = point.r;
+        dh_dxi(2, 0) = point.s;
+        dh_dxi(2, 1) = point.r;
+        dh_dxi(3, 0) = point.s * point.t;
+        dh_dxi(3, 1) = point.r * point.t;
+        dh_dxi(3, 2) = point.r * point.s;
+
+        const StaticMatrix<4, D> dh_dx =
+            (J0.inverse() * dh_dxi.transpose()).transpose();
+        const Precision measure = det0 * point.w;
+
+        for (Dim i = 0; i < D; ++i) {
+            const Dim j = (i + 1) % D;
+            const Dim k = (i + 2) % D;
+
+            const Precision hii = (
+                dh_dx(j, i) * dh_dx(j, i) +
+                dh_dx(k, i) * dh_dx(k, i) +
+                Precision(3) * dh_dx(3, i) * dh_dx(3, i)
+            ) / Precision(3);
+
+            H(i, i) += hii * measure;
+
+            for (Dim m = i + 1; m < D; ++m) {
+                const Precision hij = dh_dx(i, m) * dh_dx(m, i) * measure;
+                H(i, m) += hij;
+                H(m, i) += hij;
+            }
+        }
+    }
+
+    logging::error(H.allFinite(),
+        "C3D8R: non-finite physical hourglass geometry in element ", elem_id);
+    logging::error(H(0, 0) > Precision(0) && H(1, 1) > Precision(0) && H(2, 2) > Precision(0),
+        "C3D8R: non-positive physical hourglass geometry in element ", elem_id,
+        "\nH: ", H);
+
+    return H;
+}
+
+/**
+ * Extracts isotropic-equivalent initial material parameters state-neutrally.
+ *
+ * The Belytschko-Bindeman solid stabilization is written in terms of shear
+ * modulus `mu` and Poisson ratio `nu`. FEMaster obtains both from the initial
+ * six-by-six constitutive tangent so hyperelastic materials use their exact
+ * infinitesimal tangent without a separate material-type dependency:
+ *
+ *     mu     = mean(C44, C55, C66),
+ *     lambda = mean(C12, C13, C23),
+ *     nu     = lambda / (2 (lambda + mu)).
+ *
+ * The complete material-point state row is restored after the auxiliary tangent
+ * evaluation. For an isotropic or initially isotropic hyperelastic law these are
+ * the exact initial Lamé-equivalent parameters; for a more general tangent they
+ * are its isotropic projection used only by the stabilization.
+ *
+ * @return Vector `[mu, nu]`.
+ */
+StaticVector<2> C3D8R::hourglass_material_parameters() {
+    const Index state_row = this->mp_index(0);
+    Field& state_field = *this->_model_data->material_state;
+
+    std::vector<Precision> saved_state(static_cast<std::size_t>(state_field.components));
+    for (Index component = 0; component < state_field.components; ++component) {
+        saved_state[static_cast<std::size_t>(component)] = state_field(state_row, component);
+    }
+
+    Precision* state = &state_field(state_row, 0);
+    const Mat6 tangent = material_tangent_reference(
+        Precision(0), Precision(0), Precision(0), state);
+
+    for (Index component = 0; component < state_field.components; ++component) {
+        state_field(state_row, component) = saved_state[static_cast<std::size_t>(component)];
+    }
+
+    const Precision mu =
+        (tangent(3, 3) + tangent(4, 4) + tangent(5, 5)) / Precision(3);
+    const Precision lame_lambda = (
+        tangent(0, 1) + tangent(1, 0) +
+        tangent(0, 2) + tangent(2, 0) +
+        tangent(1, 2) + tangent(2, 1)
+    ) / Precision(6);
+    const Precision denominator = Precision(2) * (lame_lambda + mu);
+    const Precision nu = lame_lambda / denominator;
+
+    logging::error(std::isfinite(mu) && mu > Precision(0),
+        "C3D8R: invalid initial shear stiffness in element ", elem_id,
+        "\nmu: ", mu);
+    logging::error(std::isfinite(nu) && nu > Precision(-1) && nu < Precision(0.5),
+        "C3D8R: invalid isotropic-equivalent Poisson ratio in element ", elem_id,
+        "\nnu: ", nu,
+        "\nlambda: ", lame_lambda,
+        "\nmu: ", mu);
+
+    StaticVector<2> result = StaticVector<2>::Zero();
+    result(0) = mu;
+    result(1) = nu;
+    return result;
+}
+
+/**
+ * Builds the parameter-free Belytschko-Bindeman reference stabilization.
+ *
+ * The corrected scalar modes are
+ *
+ *     gamma = (I - D_bar X^T) Gamma,
+ *
+ * so constant-gradient displacement fields remain exactly unstabilized. With
+ * `i,j,k` denoting cyclic physical directions, the eight-by-eight displacement
+ * blocks follow the assumed-strain physical stabilization form
+ *
+ *     k_ii = H_ii [ (1+nu)/(1-nu) (gamma_j gamma_j^T + gamma_k gamma_k^T)
+ *                    + 1/3 gamma_4 gamma_4^T ]
+ *            + 1/2 (H_jj + H_kk) gamma_i gamma_i^T,
+ *
+ *     k_ij = H_ij [ nu/(1-nu) gamma_j gamma_i^T
+ *                    + 1/2 gamma_i gamma_j^T ],
+ *
+ *     K_hg = 2 mu [k_ij].
+ *
+ * There is no factor containing `1/(1-2 nu)`, so the stabilization remains
+ * bounded as the continuum material approaches incompressibility. No empirical
+ * hourglass coefficient is used. The matrix depends only on reference geometry
+ * and the initial material tangent and is therefore cached.
+ *
+ * @return Constant 24-by-24 physical hourglass tangent.
  */
 C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     if (hourglass_stiffness_cached) {
@@ -151,108 +303,70 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
     const auto reference_coords = node_coords_reference();
     const GradientMatrix mean_gradient = mean_reference_gradient();
 
-    // Remove physical affine scalar fields from the primitive modes.
     const StaticMatrix<N, N> affine_projector =
         StaticMatrix<N, N>::Identity() - mean_gradient * reference_coords.transpose();
-    const HourglassModes modes = affine_projector * primitive_hourglass_modes();
+    const HourglassModes gamma = affine_projector * primitive_hourglass_modes();
 
-    // Orthogonal projector onto the four scalar non-affine modes:
-    //
-    //     P_s = G (G^T G)^-1 G^T.
-    const StaticMatrix<4, 4> gram = modes.transpose() * modes;
-    logging::error(std::isfinite(gram.determinant()) && std::abs(gram.determinant()) > Precision(1e-12),
-        "C3D8R: singular projected hourglass basis in element ", elem_id,
-        "\ndet(G^T G): ", gram.determinant());
+    const Mat3 H = hourglass_geometry_integrals();
+    const StaticVector<2> parameters = hourglass_material_parameters();
+    const Precision mu = parameters(0);
+    const Precision nu = parameters(1);
+    const Precision one_minus_nu = Precision(1) - nu;
+    const Precision normal_factor = (Precision(1) + nu) / one_minus_nu;
+    const Precision poisson_factor = nu / one_minus_nu;
 
-    const StaticMatrix<N, N> scalar_projector =
-        modes * gram.inverse() * modes.transpose();
+    Matrix24 stiffness = Matrix24::Zero();
 
-    Matrix24 hourglass_projector = Matrix24::Zero();
-    for (Index node_a = 0; node_a < N; ++node_a) {
-        for (Index node_b = 0; node_b < N; ++node_b) {
-            for (Dim dof = 0; dof < D; ++dof) {
-                hourglass_projector(D * node_a + dof, D * node_b + dof) =
-                    scalar_projector(node_a, node_b);
+    for (Dim i = 0; i < D; ++i) {
+        const Dim j = (i + 1) % D;
+        const Dim k = (i + 2) % D;
+
+        const StaticMatrix<N, N> block =
+            H(i, i) * (
+                normal_factor * (
+                    gamma.col(j) * gamma.col(j).transpose() +
+                    gamma.col(k) * gamma.col(k).transpose()
+                ) +
+                Precision(1) / Precision(3) *
+                    gamma.col(3) * gamma.col(3).transpose()
+            ) +
+            Precision(0.5) * (H(j, j) + H(k, k)) *
+                gamma.col(i) * gamma.col(i).transpose();
+
+        for (Index node_a = 0; node_a < N; ++node_a) {
+            for (Index node_b = 0; node_b < N; ++node_b) {
+                stiffness(D * node_a + i, D * node_b + i) = block(node_a, node_b);
             }
         }
     }
 
-    // Deviatoric projector in the solid engineering-Voigt convention
-    // [11,22,33,23,13,12]. Normal strains are made trace-free while engineering
-    // shear strains remain unchanged.
-    Mat6 deviatoric_projector = Mat6::Zero();
-    for (Dim i = 0; i < 3; ++i) {
-        for (Dim j = 0; j < 3; ++j) {
-            deviatoric_projector(i, j) =
-                (i == j ? Precision(1) : Precision(0)) - Precision(1) / Precision(3);
+    for (Dim i = 0; i < D; ++i) {
+        for (Dim j = 0; j < D; ++j) {
+            if (i == j) {
+                continue;
+            }
+
+            const StaticMatrix<N, N> block = H(i, j) * (
+                poisson_factor * gamma.col(j) * gamma.col(i).transpose() +
+                Precision(0.5) * gamma.col(i) * gamma.col(j).transpose()
+            );
+
+            for (Index node_a = 0; node_a < N; ++node_a) {
+                for (Index node_b = 0; node_b < N; ++node_b) {
+                    stiffness(D * node_a + i, D * node_b + j) = block(node_a, node_b);
+                }
+            }
         }
     }
-    deviatoric_projector(3, 3) = Precision(1);
-    deviatoric_projector(4, 4) = Precision(1);
-    deviatoric_projector(5, 5) = Precision(1);
 
-    // Preserve the physical center-point material state around all auxiliary
-    // zero-strain tangent evaluations. Each quadrature point starts from exactly
-    // the same saved state, and the original row is restored afterwards.
-    const Index state_row = this->mp_index(0);
-    Field& state_field = *this->_model_data->material_state;
+    hourglass_stiffness_cache = Precision(2) * mu * stiffness;
+    hourglass_stiffness_cache = Precision(0.5) *
+        (hourglass_stiffness_cache + hourglass_stiffness_cache.transpose());
 
-    std::vector<Precision> saved_state(static_cast<std::size_t>(state_field.components));
-    for (Index component = 0; component < state_field.components; ++component) {
-        saved_state[static_cast<std::size_t>(component)] = state_field(state_row, component);
-    }
+    logging::error(hourglass_stiffness_cache.allFinite(),
+        "C3D8R: non-finite physical hourglass stiffness in element ", elem_id);
 
-    auto restore_state = [&]() {
-        for (Index component = 0; component < state_field.components; ++component) {
-            state_field(state_row, component) = saved_state[static_cast<std::size_t>(component)];
-        }
-    };
-
-    Precision* state = &state_field(state_row, 0);
-
-    static const math::quadrature::Quadrature full_quadrature{
-        math::quadrature::DOMAIN_ISO_HEX,
-        math::quadrature::ORDER_QUADRATIC
-    };
-
-    Matrix24 deviatoric_reference_stiffness = Matrix24::Zero();
-
-    for (Index q = 0; q < full_quadrature.count(); ++q) {
-        const auto point = full_quadrature.get_point(q);
-
-        Precision det0 = Precision(0);
-        const auto gradient = shape_derivatives_reference(
-            reference_coords,
-            point.r,
-            point.s,
-            point.t,
-            det0
-        );
-        const auto B = strain_displacement(gradient);
-
-        restore_state();
-        const Mat6 material_tangent = material_tangent_reference(
-            point.r,
-            point.s,
-            point.t,
-            state
-        );
-        const Mat6 deviatoric_tangent =
-            deviatoric_projector.transpose() * material_tangent * deviatoric_projector;
-
-        const Precision measure = det0 * point.w;
-        deviatoric_reference_stiffness +=
-            B.transpose() * (deviatoric_tangent * B) * measure;
-    }
-
-    restore_state();
-
-    hourglass_stiffness_cache =
-        hourglass_projector * deviatoric_reference_stiffness * hourglass_projector;
-    hourglass_stiffness_cache =
-        Precision(0.5) * (hourglass_stiffness_cache + hourglass_stiffness_cache.transpose());
     hourglass_stiffness_cached = true;
-
     return hourglass_stiffness_cache;
 }
 
@@ -300,8 +414,7 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
 }
 
 /**
- * Assembles the one-point material stiffness with projected reference hourglass
- * stabilization.
+ * Assembles the one-point material stiffness with physical hourglass control.
  *
  * @param buffer Caller-provided dense 24-by-24 storage.
  * @return Mapped symmetric continuum-plus-hourglass stiffness.
@@ -317,12 +430,12 @@ MapMatrix C3D8R::stiffness(Precision* buffer) {
 }
 
 /**
- * Assembles the one-point continuum tangent and matching projected hourglass
+ * Assembles the one-point continuum tangent and matching physical hourglass
  * contribution.
  *
- * The common solid tangent performs the physical center-point constitutive
- * update exactly once. The constant reference hourglass tangent adds its exact
- * matching linear force.
+ * The stabilization matrix is reference-constant. Consequently the force
+ * `K_hg u_e` and tangent `K_hg` are exact derivatives of the same quadratic
+ * stabilization energy and do not introduce a missing material-derivative term.
  *
  * @param buffer Caller-provided dense 24-by-24 tangent storage.
  * @param ip_stress_state Global center-point PK2 stress field to update.
@@ -348,7 +461,7 @@ MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
 
 /**
  * Recovers nonlinear internal force from stored continuum stress and the
- * current projected hourglass displacement.
+ * current physical hourglass displacement.
  *
  * @param node_forces Global nodal internal-force field to increment.
  * @param ip_stress Stored center-point second Piola-Kirchhoff stress field.
