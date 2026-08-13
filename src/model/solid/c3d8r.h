@@ -21,14 +21,14 @@ namespace fem::model {
  *
  * The continuum contribution uses one material point at the element center.
  * Hourglass stabilization uses the four Flanagan-Belytschko scalar modes after
- * projection against affine displacement fields. Geometry-dependent integrals
- * and the initial isotropic-equivalent shear modulus and Poisson ratio define
- * the Belytschko-Bindeman assumed-strain stabilization matrix without a user
- * hourglass coefficient or bulk-modulus singularity.
+ * projection against affine displacement fields. Geometry-dependent physical
+ * coefficients and the initial isotropic-equivalent shear modulus and Poisson
+ * ratio define the Belytschko-Bindeman assumed-strain stabilization matrix
+ * without a user hourglass coefficient or bulk-modulus singularity.
  *
- * The resulting matrix is constant in the reference configuration and supplies
- * the matching force `f_hg = K_hg u_e`, so residual and tangent remain exactly
- * consistent for the stabilization contribution.
+ * The stabilization is formed in an element-fixed referential frame and rotated
+ * back to global translational DOFs. The resulting matrix is constant in the
+ * reference configuration and supplies the matching force `f_hg = K_hg u_e`.
  */
 class C3D8R final : public C3D8 {
 public:
@@ -58,10 +58,11 @@ public:
     void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override;
 
 private:
-    // Hourglass basis, physical geometry factors and material parameters
+    // Hourglass basis, referential frame, geometry factors and material parameters
     HourglassModes  primitive_hourglass_modes();
     GradientMatrix  mean_reference_gradient();
-    Mat3            hourglass_geometry_integrals();
+    Mat3            hourglass_reference_frame();
+    Mat3            hourglass_geometry_integrals(const Mat3& frame);
     StaticVector<2> hourglass_material_parameters();
     Matrix24        hourglass_stiffness();
 
