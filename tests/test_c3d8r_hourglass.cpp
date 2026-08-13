@@ -11,6 +11,8 @@
 #include "../src/model/solid/c3d8.h"
 #include "../src/model/solid/c3d8r.h"
 
+#include <algorithm>
+#include <cmath>
 #include <gtest/gtest.h>
 
 using namespace fem;
