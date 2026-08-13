@@ -1,10 +1,10 @@
 /**
  * @file c3d8r.h
- * @brief Declares the reduced-integration C3D8 solid with projected hourglass stabilization.
+ * @brief Declares the reduced-integration C3D8 solid with physical hourglass stabilization.
  *
  * The continuum response is evaluated at the element center. The twelve
- * non-affine hourglass modes are stabilized by the fully integrated deviatoric
- * reference stiffness projected onto their subspace.
+ * non-affine hourglass modes are stabilized by a parameter-free assumed-strain
+ * stiffness following the Belytschko-Bindeman physical stabilization form.
  *
  * @author Finn Eggers
  * @date 13.08.2026
@@ -20,15 +20,15 @@ namespace fem::model {
  * @brief Eight-node reduced-integration hexahedral solid.
  *
  * The continuum contribution uses one material point at the element center.
- * Hourglass stabilization is parameter-free and acts only on the non-affine
- * displacement subspace through
+ * Hourglass stabilization uses the four Flanagan-Belytschko scalar modes after
+ * projection against affine displacement fields. Geometry-dependent integrals
+ * and the initial isotropic-equivalent shear modulus and Poisson ratio define
+ * the Belytschko-Bindeman assumed-strain stabilization matrix without a user
+ * hourglass coefficient or bulk-modulus singularity.
  *
- *     K_hg = P_hg K_dev^(8GP) P_hg,
- *
- * where `P_hg` is the orthogonal projector onto the twelve projected hourglass
- * modes and `K_dev^(8GP)` is the fully integrated deviatoric reference stiffness.
  * The resulting matrix is constant in the reference configuration and supplies
- * the matching force `f_hg = K_hg u_e`.
+ * the matching force `f_hg = K_hg u_e`, so residual and tangent remain exactly
+ * consistent for the stabilization contribution.
  */
 class C3D8R final : public C3D8 {
 public:
@@ -58,10 +58,12 @@ public:
     void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override;
 
 private:
-    // Hourglass basis and parameter-free projected reference stiffness
-    HourglassModes primitive_hourglass_modes();
-    GradientMatrix mean_reference_gradient();
-    Matrix24       hourglass_stiffness();
+    // Hourglass basis, physical geometry factors and material parameters
+    HourglassModes  primitive_hourglass_modes();
+    GradientMatrix  mean_reference_gradient();
+    Mat3            hourglass_geometry_integrals();
+    StaticVector<2> hourglass_material_parameters();
+    Matrix24        hourglass_stiffness();
 
     Matrix24 hourglass_stiffness_cache = Matrix24::Zero();
     bool     hourglass_stiffness_cached = false;
