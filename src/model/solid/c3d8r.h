@@ -3,11 +3,12 @@
  * @brief Declares the reduced-integration C3D8 solid with hourglass stabilization.
  *
  * The continuum response is evaluated at the element center. Four projected
- * Flanagan-Belytschko hourglass modes add a reference-configuration
- * stabilization tangent and matching internal force.
+ * Flanagan-Belytschko hourglass modes add a reference-geometry stabilization
+ * whose material scale follows the current center-point C1111 tangent, matching
+ * the CalculiX C3D8R strategy.
  *
  * @author Finn Eggers
- * @date 07.08.2026
+ * @date 14.08.2026
  */
 
 #pragma once
@@ -25,9 +26,12 @@ namespace fem::model {
  *
  *     K_hg = k_hg kron(G G^T, I_3),
  *
- * with matching force `f_hg = K_hg u_e`. Auxiliary zero-strain evaluation of
- * the hourglass modulus is state-neutral; the physical center-point material
- * state is advanced only by the continuum constitutive update.
+ * with matching force `f_hg = K_hg u_e`. The scalar scale uses the current
+ * constitutive C1111 component and the same 0.005 factor used by CalculiX:
+ *
+ *     k_hg = 0.005 C1111 V0 sum_a ||grad_bar N_a||^2.
+ *
+ * The auxiliary current-tangent evaluation is state-neutral.
  */
 class C3D8R final : public C3D8 {
 public:
@@ -40,7 +44,7 @@ public:
     using Matrix24       = StaticMatrix<ndof, ndof>;
     using Vector24       = StaticVector<ndof>;
 
-    static constexpr Precision default_hourglass_coefficient = Precision(0.03);
+    static constexpr Precision calculix_hourglass_coefficient = Precision(0.005);
 
     C3D8R(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8R() override = default;
@@ -59,7 +63,7 @@ public:
     void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override;
 
 private:
-    // Hourglass modes, reference gradients and material scaling
+    // Hourglass modes, reference gradients and current material scaling
     HourglassModes primitive_hourglass_modes();
     GradientMatrix mean_reference_gradient(Precision& reference_volume);
     Precision      hourglass_material_scale();
