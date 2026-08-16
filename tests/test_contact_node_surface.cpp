@@ -322,7 +322,7 @@ TEST(NodeSurfaceContact, SearchGraphWalksAcrossSharedMasterEdge) {
     EXPECT_NEAR(total.norm(), Precision(0), 1e-10);
 }
 
-TEST(NodeSurfaceContact, FrozenTrialKeepsNewtonMasterFaceUntilTopologyUpdate) {
+TEST(NodeSurfaceContact, FrozenTrialKeepsNewtonMasterFaceUntilCalculixRegeneration) {
     AdjacentMasterFixture fixture;
     constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
 
@@ -354,18 +354,51 @@ TEST(NodeSurfaceContact, FrozenTrialKeepsNewtonMasterFaceUntilTopologyUpdate) {
 
     contact.rollback_trial();
 
-    // The post-Newton update is allowed to search again. It must move the
-    // connectivity to the left face and report a discrete topology change so
-    // the nonlinear controller can request a discontinuity Newton iteration.
+    // A later Newton regeneration is allowed to search again and moves the
+    // connectivity to the left face. CalculiX iflagact depends on the NUMBER of
+    // generated contact elements, so a pure face switch at unchanged count does
+    // not request a discontinuity iteration.
     contact.begin_update_trial();
     auto updated_forces = fixture.forces();
     contact.assemble(fixture.dofs, fixture.data, updated_forces, nullptr);
 
-    EXPECT_TRUE(contact.contact_topology_changed());
+    EXPECT_FALSE(contact.contact_topology_changed());
     EXPECT_GT(updated_forces(0, 2), Precision(0));
     EXPECT_GT(updated_forces(3, 2), Precision(0));
 
     contact.rollback_trial();
+    contact.rollback_trial();
+}
+
+TEST(NodeSurfaceContact, CalculixTopologyFlagTracksContactElementCount) {
+    constexpr Precision initial_gap = Precision(-1e-4);
+    constexpr Precision open_gap    = Precision(1e-3);
+
+    ParallelContactFixture fixture(initial_gap);
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
+
+    contact.begin_update_trial();
+
+    auto initial_forces = fixture.forces();
+    TripletList initial_tangent;
+    contact.assemble(fixture.dofs, fixture.data, initial_forces, initial_tangent);
+    EXPECT_TRUE(contact.contact_topology_changed());
+
+    // Regenerating the same contact-element count clears iflagact.
+    auto stable_forces = fixture.forces();
+    TripletList stable_tangent;
+    contact.assemble(fixture.dofs, fixture.data, stable_forces, stable_tangent);
+    EXPECT_FALSE(contact.contact_topology_changed());
+
+    // Moving all slave nodes beyond the generation cutoff removes the stored
+    // contact elements. With the CalculiX default delcon=0.001 this count change
+    // is significant and sets iflagact.
+    fixture.shift_slave_z(open_gap - initial_gap);
+    auto open_forces = fixture.forces();
+    TripletList open_tangent;
+    contact.assemble(fixture.dofs, fixture.data, open_forces, open_tangent);
+    EXPECT_TRUE(contact.contact_topology_changed());
+
     contact.rollback_trial();
 }
 

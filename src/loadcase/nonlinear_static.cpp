@@ -183,9 +183,9 @@ NonlinearStatic::NonlinearStatic(ID id, io::writer::ResultWriters* writer, model
  *   committed only after the path controller accepts the increment,
  * - line-search trials cover temporary residual evaluations inside Newton and
  *   are committed only when the step length is accepted,
- * - active-set updates allow discontinuous nonlinear state to be refreshed after
- *   a converged Newton solve and can request a Newton restart at the same load
- *   factor.
+ * - the contact convergence callback checks the CalculiX-style contact-element
+ *   count flag produced by the converged Newton iteration and can request a
+ *   Newton restart at the same load factor.
  *
  * Solver controls such as maximum increments, maximum iterations and adaptive
  * iteration thresholds are forwarded exactly as configured by the load case. The
@@ -754,36 +754,16 @@ void NonlinearStatic::run() {
         nonlinear_state.rollback_contact_trial();
     };
 
-    // Refresh discontinuous contact state after Newton convergence. The update
-    // trial evaluates the converged geometry with partner updates enabled once;
-    // a changed partner signature or multiplier requests another Newton solve.
+    // CalculiX requires mechanical convergence only when iflagact == 0 in the
+    // current iteration. The Newton evaluation that just converged already ran
+    // the large-sliding contact regeneration, so query that result directly. A
+    // second search at the same geometry would erase a count change by comparing
+    // the newly generated list with itself.
     auto update_active_set = [&](const DynamicVector& q,
                                  Precision            lambda) {
-        if (model->_data->contacts.empty()) {
-            return true;
-        }
-
-        nonlinear_state.begin_contact_update_trial();
-
-        try {
-            DynamicVector active_set_residual;
-            SparseMatrix  active_set_tangent;
-
-            assemble_state(
-                q,
-                lambda,
-                active_set_residual,
-                active_set_tangent,
-                nullptr
-            );
-        } catch (...) {
-            nonlinear_state.rollback_contact_trial();
-            throw;
-        }
-
-        const bool unchanged = nonlinear_state.update_contact_active_set();
-        nonlinear_state.commit_contact_trial();
-        return unchanged;
+        (void)q;
+        (void)lambda;
+        return nonlinear_state.update_contact_active_set();
     };
 
     bool        converged      = false;

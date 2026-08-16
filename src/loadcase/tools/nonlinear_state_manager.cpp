@@ -135,9 +135,9 @@ void NonlinearStateManager::rollback_contact_trial() {
 }
 
 /**
- * Reports whether the post-Newton update reproduced the topology used by the
- * converged Newton solve. A changed signature requests a discontinuity restart
- * at the same load factor through the existing path-controller callback.
+ * Reports the CalculiX-style contact-element count flag produced by the most
+ * recent Newton regeneration. A significant count change requests another
+ * Newton iteration at the same load factor.
  */
 bool NonlinearStateManager::update_contact_active_set() {
     bool unchanged = true;

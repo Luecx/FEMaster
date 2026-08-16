@@ -11,8 +11,8 @@
  *
  * Contact partner state is transactional: complete increment attempts can be
  * rolled back, line-search trials can freeze the current topology, and a
- * post-Newton update can detect a discrete topology change and request a
- * discontinuity iteration at the same load factor.
+ * the CalculiX-style contact-element count flag from the last Newton
+ * regeneration can request a discontinuity iteration at the same load factor.
  *
  * @see Contact
  * @see model::SurfaceRegion
@@ -124,8 +124,8 @@ public:
     // iterations. Continuous geometry on each retained face remains current.
     void freeze_partner_updates();
 
-    // Reports whether the most recent update evaluation changed the discrete
-    // slave-to-master contact-element topology.
+    // CalculiX-style iflagact: reports a significant change in the number of
+    // generated contact elements during the most recent Newton regeneration.
     bool contact_topology_changed() const;
 };
 

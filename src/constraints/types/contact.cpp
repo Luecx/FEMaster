@@ -67,6 +67,7 @@ constexpr Precision tangent_tolerance      = Precision(1e-14);
 constexpr Precision smoothing_length_ratio = Precision(1e-6);
 constexpr Precision contact_cutoff_ratio   = Precision(1e-3);
 constexpr Precision search_border_ratio    = Precision(1e-3);
+constexpr Precision contact_change_ratio   = Precision(1e-3);
 constexpr Precision pi                     = Precision(3.141592653589793238462643383279502884L);
 constexpr Index     contact_update_iterations = 8;
 
@@ -655,8 +656,7 @@ std::optional<MasterProjection> find_master_projection(
     const Vec3&                                       slave_position,
     const MasterSearchGraph&                          search_graph,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces,
-    const model::Field&                               node_coords,
-    std::optional<ID>                                 previous_surface_id = std::nullopt
+    const model::Field&                               node_coords
 ) {
     const auto location = search_graph.locate(
         slave_node, slave_position, search_border_tolerance(slave_area));
@@ -673,26 +673,6 @@ std::optional<MasterProjection> find_master_projection(
     projection->search_triangle = location->triangle_id;
     projection->walk_steps      = location->steps;
     projection->between         = location->between;
-
-    if (previous_surface_id.has_value() &&
-        *previous_surface_id != projection->surface_id) {
-        auto previous = project_master_surface(
-            slave_node, *previous_surface_id, slave_position, surfaces, node_coords);
-        if (previous.has_value()) {
-            const Precision tolerance = search_border_tolerance(slave_area);
-            const Precision new_distance =
-                std::sqrt(std::max(projection->distance_sq, Precision(0)));
-            const Precision old_distance =
-                std::sqrt(std::max(previous->distance_sq, Precision(0)));
-            if (std::isfinite(new_distance) && std::isfinite(old_distance) &&
-                old_distance <= new_distance + tolerance) {
-                previous->search_triangle = projection->search_triangle;
-                previous->walk_steps      = projection->walk_steps;
-                previous->between         = true;
-                return previous;
-            }
-        }
-    }
     return projection;
 }
 
@@ -1152,6 +1132,14 @@ void Contact::assemble(
     auto& surfaces = model_data.surfaces;
 
     const bool update_topology = allow_partner_updates;
+
+    // CalculiX freezes large-sliding N2F regeneration from Newton iteration 9
+    // onward. A frozen tangent evaluation therefore has iflagact = 0: the
+    // contact-element count cannot change while the stored topology is reused.
+    if (!update_topology && triplets != nullptr) {
+        topology_changed = false;
+    }
+
     std::unordered_map<ID, Precision> slave_areas;
 
     if (update_topology) {
@@ -1180,6 +1168,12 @@ void Contact::assemble(
     Index tangent_failure_count = 0;
     Index maximum_walk_steps    = 0;
 
+    const Index topology_previous_count = static_cast<Index>(partners.size());
+    Index topology_current_count  = topology_previous_count;
+    Index topology_added_count    = 0;
+    Index topology_removed_count  = 0;
+    Index topology_switched_count = 0;
+
     Precision min_gap         = std::numeric_limits<Precision>::max();
     Precision max_gap         = -std::numeric_limits<Precision>::max();
     Precision max_penetration = Precision(0);
@@ -1203,19 +1197,13 @@ void Contact::assemble(
         std::optional<MasterProjection> projection;
 
         if (update_topology) {
-            std::optional<ID> previous_surface_id;
-            const auto previous_partner = partners.find(slave_node);
-            if (previous_partner != partners.end()) {
-                previous_surface_id = previous_partner->second.surface_id;
-            }
             projection = find_master_projection(
                 slave_node,
                 slave_area,
                 slave_position,
                 *search_graph,
                 surfaces,
-                node_coords,
-                previous_surface_id
+                node_coords
             );
         } else {
             const auto partner = partners.find(slave_node);
@@ -1366,16 +1354,34 @@ void Contact::assemble(
     }
 
     if (update_topology) {
-        topology_changed = updated_partners.size() != partners.size();
-        if (!topology_changed) {
-            for (const auto& [slave_node, element] : updated_partners) {
-                const auto previous = partners.find(slave_node);
-                if (previous == partners.end() || previous->second.surface_id != element.surface_id) {
-                    topology_changed = true;
-                    break;
-                }
+        topology_current_count = static_cast<Index>(updated_partners.size());
+
+        for (const auto& [slave_node, element] : updated_partners) {
+            const auto previous = partners.find(slave_node);
+            if (previous == partners.end()) {
+                ++topology_added_count;
+            } else if (previous->second.surface_id != element.surface_id) {
+                ++topology_switched_count;
             }
         }
+        for (const auto& [slave_node, element] : partners) {
+            (void)element;
+            if (updated_partners.find(slave_node) == updated_partners.end()) {
+                ++topology_removed_count;
+            }
+        }
+
+        // CalculiX iflagact is based on a significant change in the NUMBER of
+        // generated contact elements, not on master-face identity. The default
+        // *CONTROLS,PARAMETERS=CONTACT value is delcon = 0.001. A count
+        // difference equal to the allowed threshold is still admissible.
+        const Precision count_change = std::abs(
+            static_cast<Precision>(topology_current_count) -
+            static_cast<Precision>(topology_previous_count));
+        const Precision allowed_change =
+            contact_change_ratio * static_cast<Precision>(topology_previous_count);
+        topology_changed = count_change > allowed_change;
+
         partners = std::move(updated_partners);
 
         if (triplets != nullptr) {
@@ -1397,9 +1403,20 @@ void Contact::assemble(
                   << " valid=" << valid_count
                   << " active=" << active_count
                   << " stored=" << partners.size()
-                  << " topology=" << (update_topology ? "update" : "frozen")
-                  << " changed=" << (topology_changed ? "yes" : "no")
-                  << " updates=" << update_iterations
+                  << " topology=" << (update_topology ? "update" : "frozen");
+
+        if (update_topology) {
+            std::cout << " changed=" << (topology_changed ? "yes" : "no")
+                      << " previous=" << topology_previous_count
+                      << " current=" << topology_current_count
+                      << " added=" << topology_added_count
+                      << " removed=" << topology_removed_count
+                      << " switched=" << topology_switched_count;
+        } else {
+            std::cout << " changed=n/a";
+        }
+
+        std::cout << " updates=" << update_iterations
                   << " between=" << between_count
                   << " max_walk=" << maximum_walk_steps
                   << " min_gap=" << (have_valid_gap ? min_gap : Precision(0))
