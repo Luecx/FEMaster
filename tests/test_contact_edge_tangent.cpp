@@ -175,4 +175,49 @@ TEST(NodeSurfaceContact, BoundedEdgeTangentMatchesResidualFiniteDifference) {
     contact.rollback_trial();
 }
 
+
+TEST(NodeSurfaceContact, BoundedCornerTangentMatchesResidualFiniteDifference) {
+    EdgeContactFixture fixture;
+    constraint::Contact contact(fixture.master, fixture.slave, Precision(100), Precision(0), false);
+    contact.begin_update_trial();
+    auto initial_forces = fixture.forces();
+    TripletList initial_tangent;
+    contact.assemble(fixture.dofs, fixture.data, initial_forces, initial_tangent);
+    fixture.shift_slave_x(Precision(0.3));
+    for (ID node = 4; node <= 7; ++node) {
+        (*fixture.data.positions)(node, 1) += Precision(0.7);
+    }
+    contact.begin_frozen_trial();
+    auto base_forces = fixture.forces();
+    TripletList triplets;
+    contact.assemble(fixture.dofs, fixture.data, base_forces, triplets);
+    DynamicMatrix analytic = DynamicMatrix::Zero(24, 24);
+    for (const auto& triplet : triplets) {
+        analytic(triplet.row(), triplet.col()) += triplet.value();
+    }
+    constexpr Precision step = Precision(1e-7);
+    for (ID node = 0; node <= 3; ++node) {
+        for (Dim component = 0; component < 3; ++component) {
+            const int column = fixture.dofs(node, component);
+            const Precision original = (*fixture.data.positions)(node, component);
+            (*fixture.data.positions)(node, component) = original + step;
+            auto plus_forces = fixture.forces();
+            contact.assemble(fixture.dofs, fixture.data, plus_forces, nullptr);
+            (*fixture.data.positions)(node, component) = original - step;
+            auto minus_forces = fixture.forces();
+            contact.assemble(fixture.dofs, fixture.data, minus_forces, nullptr);
+            (*fixture.data.positions)(node, component) = original;
+            const DynamicVector finite_difference =
+                (fixture.force_vector(plus_forces) - fixture.force_vector(minus_forces)) /
+                (Precision(2) * step);
+            const Precision error = (analytic.col(column) - finite_difference).norm();
+            const Precision scale = std::max(Precision(1), finite_difference.norm());
+            EXPECT_LT(error / scale, Precision(2e-5))
+                << "master node " << node << ", component " << component;
+        }
+    }
+    contact.rollback_trial();
+    contact.rollback_trial();
+}
+
 } // namespace

@@ -31,8 +31,9 @@
  * The selected master face and representative slave area are fixed during one
  * tangent evaluation, while the closest-point coordinates, shape functions,
  * surface normal, gap and force law are differentiated consistently from the
- * closest-point orthogonality equations. The frictionless tangent is symmetrized
- * after local assembly.
+ * active closest-point equations. Interior projections retain the historical
+ * symmetrization; bounded edge and corner branches keep the exact residual
+ * Jacobian because those constrained projections are generally nonsymmetric.
  *
  * @see Contact
  * @see model::SurfaceInterface
@@ -654,20 +655,17 @@ std::optional<MasterProjection> find_master_projection(
     const Vec3&                                       slave_position,
     const MasterSearchGraph&                          search_graph,
     const std::vector<model::SurfaceInterface::Ptr>& surfaces,
-    const model::Field&                               node_coords
+    const model::Field&                               node_coords,
+    std::optional<ID>                                 previous_surface_id = std::nullopt
 ) {
-    const auto location = search_graph.locate(slave_node, slave_position, search_border_tolerance(slave_area));
+    const auto location = search_graph.locate(
+        slave_node, slave_position, search_border_tolerance(slave_area));
     if (!location.has_value()) {
         return std::nullopt;
     }
 
     auto projection = project_master_surface(
-        slave_node,
-        location->surface_id,
-        slave_position,
-        surfaces,
-        node_coords
-    );
+        slave_node, location->surface_id, slave_position, surfaces, node_coords);
     if (!projection.has_value()) {
         return std::nullopt;
     }
@@ -675,6 +673,26 @@ std::optional<MasterProjection> find_master_projection(
     projection->search_triangle = location->triangle_id;
     projection->walk_steps      = location->steps;
     projection->between         = location->between;
+
+    if (previous_surface_id.has_value() &&
+        *previous_surface_id != projection->surface_id) {
+        auto previous = project_master_surface(
+            slave_node, *previous_surface_id, slave_position, surfaces, node_coords);
+        if (previous.has_value()) {
+            const Precision tolerance = search_border_tolerance(slave_area);
+            const Precision new_distance =
+                std::sqrt(std::max(projection->distance_sq, Precision(0)));
+            const Precision old_distance =
+                std::sqrt(std::max(previous->distance_sq, Precision(0)));
+            if (std::isfinite(new_distance) && std::isfinite(old_distance) &&
+                old_distance <= new_distance + tolerance) {
+                previous->search_triangle = projection->search_triangle;
+                previous->walk_steps      = projection->walk_steps;
+                previous->between         = true;
+                return previous;
+            }
+        }
+    }
     return projection;
 }
 
@@ -739,11 +757,31 @@ PairEvaluation evaluate_pair(
 }
 
 /**
+ * @brief Detects a bounded closest-point projection at a master corner.
+ */
+bool bounded_corner_projection(const Vec2& local, Index master_nodes) {
+    constexpr Precision boundary_tolerance = Precision(100) * geometry_tolerance;
+    const Precision r = local(0);
+    const Precision s = local(1);
+    if (master_nodes == 3 || master_nodes == 6) {
+        const bool on_r_zero  = std::abs(r) <= boundary_tolerance;
+        const bool on_s_zero  = std::abs(s) <= boundary_tolerance;
+        const bool on_sum_one = std::abs(r + s - Precision(1)) <= boundary_tolerance;
+        return Index(on_r_zero) + Index(on_s_zero) + Index(on_sum_one) >= 2;
+    }
+    if (master_nodes == 4 || master_nodes == 8) {
+        const bool on_r = std::abs(std::abs(r) - Precision(1)) <= boundary_tolerance;
+        const bool on_s = std::abs(std::abs(s) - Precision(1)) <= boundary_tolerance;
+        return on_r && on_s;
+    }
+    return false;
+}
+
+/**
  * @brief Returns the free natural-coordinate direction of a bounded edge projection.
  *
- * Only projections with exactly one active natural boundary constraint are
- * classified as edge projections. Corner projections deliberately fall back to
- * the existing two-parameter linearization so this change isolates edge behavior.
+ * Exactly one active natural boundary constraint identifies an edge. Corner
+ * projections are handled separately with both natural-coordinate derivatives fixed.
  */
 std::optional<Vec2> bounded_edge_direction(const Vec2& local, Index master_nodes) {
     constexpr Precision boundary_tolerance = Precision(100) * geometry_tolerance;
@@ -839,7 +877,9 @@ DynamicMatrix analytic_pair_tangent(
     }
     const Vec3 normal = normal_vector / normal_length;
 
-    const std::optional<Vec2> edge_direction = bounded_edge_direction(pair.local, master_nodes);
+    const bool corner_projection = bounded_corner_projection(pair.local, master_nodes);
+    const std::optional<Vec2> edge_direction =
+        corner_projection ? std::nullopt : bounded_edge_direction(pair.local, master_nodes);
 
     Precision c11 = Precision(0);
     Precision c12 = Precision(0);
@@ -848,7 +888,9 @@ DynamicMatrix analytic_pair_tangent(
     Vec2 edge = Vec2::Zero();
     Vec3 edge_tangent = Vec3::Zero();
 
-    if (edge_direction.has_value()) {
+    if (corner_projection) {
+        determinant_out = Precision(1);
+    } else if (edge_direction.has_value()) {
         edge = *edge_direction;
         edge_tangent = xr * edge(0) + xs * edge(1);
         const Vec3 edge_second =
@@ -907,7 +949,10 @@ DynamicMatrix analytic_pair_tangent(
             Precision dr_local = Precision(0);
             Precision ds_local = Precision(0);
 
-            if (edge_direction.has_value()) {
+            if (corner_projection) {
+                dr_local = Precision(0);
+                ds_local = Precision(0);
+            } else if (edge_direction.has_value()) {
                 Precision edge_rhs;
                 if (slave_column) {
                     edge_rhs = -edge_tangent(component);
@@ -976,7 +1021,7 @@ DynamicMatrix analytic_pair_tangent(
         }
     }
 
-    if (!edge_direction.has_value()) {
+    if (!corner_projection && !edge_direction.has_value()) {
         tangent = Precision(0.5) * (tangent + tangent.transpose()).eval();
     }
     valid_out = tangent.allFinite();
@@ -1158,13 +1203,19 @@ void Contact::assemble(
         std::optional<MasterProjection> projection;
 
         if (update_topology) {
+            std::optional<ID> previous_surface_id;
+            const auto previous_partner = partners.find(slave_node);
+            if (previous_partner != partners.end()) {
+                previous_surface_id = previous_partner->second.surface_id;
+            }
             projection = find_master_projection(
                 slave_node,
                 slave_area,
                 slave_position,
                 *search_graph,
                 surfaces,
-                node_coords
+                node_coords,
+                previous_surface_id
             );
         } else {
             const auto partner = partners.find(slave_node);
