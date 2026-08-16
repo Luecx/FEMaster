@@ -976,7 +976,9 @@ DynamicMatrix analytic_pair_tangent(
         }
     }
 
-    tangent = Precision(0.5) * (tangent + tangent.transpose()).eval();
+    if (!edge_direction.has_value()) {
+        tangent = Precision(0.5) * (tangent + tangent.transpose()).eval();
+    }
     valid_out = tangent.allFinite();
     return tangent;
 }

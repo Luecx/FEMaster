@@ -128,7 +128,7 @@ TEST(NodeSurfaceContact, BoundedEdgeTangentMatchesResidualFiniteDifference) {
 
     // Keep the selected master face, but move the complete slave face beyond
     // x=1. The bounded closest-point projection now lies on the master edge.
-    fixture.shift_slave_x(Precision(0.2));
+    fixture.shift_slave_x(Precision(0.3));
     contact.begin_frozen_trial();
 
     auto base_forces = fixture.forces();
