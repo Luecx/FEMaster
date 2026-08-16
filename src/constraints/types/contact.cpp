@@ -739,6 +739,58 @@ PairEvaluation evaluate_pair(
 }
 
 /**
+ * @brief Returns the free natural-coordinate direction of a bounded edge projection.
+ *
+ * Only projections with exactly one active natural boundary constraint are
+ * classified as edge projections. Corner projections deliberately fall back to
+ * the existing two-parameter linearization so this change isolates edge behavior.
+ */
+std::optional<Vec2> bounded_edge_direction(const Vec2& local, Index master_nodes) {
+    constexpr Precision boundary_tolerance = Precision(100) * geometry_tolerance;
+
+    const Precision r = local(0);
+    const Precision s = local(1);
+
+    if (master_nodes == 3 || master_nodes == 6) {
+        const bool on_r_zero = std::abs(r) <= boundary_tolerance;
+        const bool on_s_zero = std::abs(s) <= boundary_tolerance;
+        const bool on_sum_one = std::abs(r + s - Precision(1)) <= boundary_tolerance;
+        const Index active_constraints =
+            Index(on_r_zero) + Index(on_s_zero) + Index(on_sum_one);
+
+        if (active_constraints != 1) {
+            return std::nullopt;
+        }
+        if (on_r_zero) {
+            return Vec2(Precision(0), Precision(1));
+        }
+        if (on_s_zero) {
+            return Vec2(Precision(1), Precision(0));
+        }
+        return Vec2(Precision(1), Precision(-1));
+    }
+
+    if (master_nodes == 4 || master_nodes == 8) {
+        const bool on_r_min = std::abs(r + Precision(1)) <= boundary_tolerance;
+        const bool on_r_max = std::abs(r - Precision(1)) <= boundary_tolerance;
+        const bool on_s_min = std::abs(s + Precision(1)) <= boundary_tolerance;
+        const bool on_s_max = std::abs(s - Precision(1)) <= boundary_tolerance;
+        const Index active_constraints =
+            Index(on_r_min) + Index(on_r_max) + Index(on_s_min) + Index(on_s_max);
+
+        if (active_constraints != 1) {
+            return std::nullopt;
+        }
+        if (on_r_min || on_r_max) {
+            return Vec2(Precision(0), Precision(1));
+        }
+        return Vec2(Precision(1), Precision(0));
+    }
+
+    return std::nullopt;
+}
+
+/**
  * @brief Builds the CalculiX-style analytic tangent for one fixed master face.
  */
 DynamicMatrix analytic_pair_tangent(
@@ -787,27 +839,61 @@ DynamicMatrix analytic_pair_tangent(
     }
     const Vec3 normal = normal_vector / normal_length;
 
-    const Precision a11 = -xr.dot(xr) + pair.relative.dot(xrr);
-    const Precision a12 = -xr.dot(xs) + pair.relative.dot(xrs);
-    const Precision a22 = -xs.dot(xs) + pair.relative.dot(xss);
-    const Precision determinant = a11 * a22 - a12 * a12;
-    determinant_out = determinant;
+    const std::optional<Vec2> edge_direction = bounded_edge_direction(pair.local, master_nodes);
 
-    // The closest-point system scales with the square of the local surface
-    // length. Its determinant therefore scales with length^4. Compare the
-    // determinant only against a quantity with the same dimensions instead of
-    // an absolute unit-scale floor, so small but well-conditioned faces are not
-    // falsely classified as singular.
-    const Precision determinant_scale = a11 * a11 + Precision(2) * a12 * a12 + a22 * a22;
-    if (!std::isfinite(determinant) || !std::isfinite(determinant_scale) ||
-        determinant_scale <= Precision(0) ||
-        std::abs(determinant) <= geometry_tolerance * determinant_scale) {
-        return tangent;
+    Precision c11 = Precision(0);
+    Precision c12 = Precision(0);
+    Precision c22 = Precision(0);
+    Precision edge_inverse = Precision(0);
+    Vec2 edge = Vec2::Zero();
+    Vec3 edge_tangent = Vec3::Zero();
+
+    if (edge_direction.has_value()) {
+        edge = *edge_direction;
+        edge_tangent = xr * edge(0) + xs * edge(1);
+        const Vec3 edge_second =
+            xrr * edge(0) * edge(0) +
+            xss * edge(1) * edge(1) +
+            Precision(2) * xrs * edge(0) * edge(1);
+
+        const Precision edge_jacobian =
+            -edge_tangent.dot(edge_tangent) + pair.relative.dot(edge_second);
+        const Precision edge_scale =
+            edge_tangent.squaredNorm() + std::abs(pair.relative.dot(edge_second));
+        determinant_out = edge_jacobian;
+
+        if (!std::isfinite(edge_jacobian) || !std::isfinite(edge_scale) ||
+            !(edge_scale > Precision(0)) ||
+            std::abs(edge_jacobian) <= geometry_tolerance * edge_scale) {
+            return tangent;
+        }
+
+        edge_inverse = Precision(1) / edge_jacobian;
+    } else {
+        const Precision a11 = -xr.dot(xr) + pair.relative.dot(xrr);
+        const Precision a12 = -xr.dot(xs) + pair.relative.dot(xrs);
+        const Precision a22 = -xs.dot(xs) + pair.relative.dot(xss);
+        const Precision determinant = a11 * a22 - a12 * a12;
+        determinant_out = determinant;
+
+        // The closest-point system scales with the square of the local surface
+        // length. Its determinant therefore scales with length^4. Compare the
+        // determinant only against a quantity with the same dimensions instead of
+        // an absolute unit-scale floor, so small but well-conditioned faces are not
+        // falsely classified as singular.
+        const Precision determinant_scale =
+            a11 * a11 + Precision(2) * a12 * a12 + a22 * a22;
+        if (!std::isfinite(determinant) || !std::isfinite(determinant_scale) ||
+            determinant_scale <= Precision(0) ||
+            std::abs(determinant) <= geometry_tolerance * determinant_scale) {
+            return tangent;
+        }
+
+        c11 =  a22 / determinant;
+        c12 = -a12 / determinant;
+        c22 =  a11 / determinant;
     }
 
-    const Precision c11 =  a22 / determinant;
-    const Precision c12 = -a12 / determinant;
-    const Precision c22 =  a11 / determinant;
     const Precision dq_dg = smooth_force_derivative(pair.gap, slave_area, penalty);
 
     for (Index col_node = 0; col_node < local_nodes; ++col_node) {
@@ -818,19 +904,41 @@ DynamicMatrix analytic_pair_tangent(
             Vec3 direction = Vec3::Zero();
             direction(component) = Precision(1);
 
-            Precision b1;
-            Precision b2;
+            Precision dr_local = Precision(0);
+            Precision ds_local = Precision(0);
 
-            if (slave_column) {
-                b1 = -xr(component);
-                b2 = -xs(component);
+            if (edge_direction.has_value()) {
+                Precision edge_rhs;
+                if (slave_column) {
+                    edge_rhs = -edge_tangent(component);
+                } else {
+                    const Precision dshape_edge =
+                        dshape(master_col, 0) * edge(0) + dshape(master_col, 1) * edge(1);
+                    edge_rhs =
+                        pair.shape(master_col) * edge_tangent(component) -
+                        dshape_edge * pair.relative(component);
+                }
+
+                const Precision d_edge = edge_inverse * edge_rhs;
+                dr_local = edge(0) * d_edge;
+                ds_local = edge(1) * d_edge;
             } else {
-                b1 = pair.shape(master_col) * xr(component) - dshape(master_col, 0) * pair.relative(component);
-                b2 = pair.shape(master_col) * xs(component) - dshape(master_col, 1) * pair.relative(component);
-            }
+                Precision b1;
+                Precision b2;
 
-            const Precision dr_local = c11 * b1 + c12 * b2;
-            const Precision ds_local = c12 * b1 + c22 * b2;
+                if (slave_column) {
+                    b1 = -xr(component);
+                    b2 = -xs(component);
+                } else {
+                    b1 = pair.shape(master_col) * xr(component) -
+                         dshape(master_col, 0) * pair.relative(component);
+                    b2 = pair.shape(master_col) * xs(component) -
+                         dshape(master_col, 1) * pair.relative(component);
+                }
+
+                dr_local = c11 * b1 + c12 * b2;
+                ds_local = c12 * b1 + c22 * b2;
+            }
 
             Vec3 drelative = -xr * dr_local - xs * ds_local;
             if (slave_column) {
