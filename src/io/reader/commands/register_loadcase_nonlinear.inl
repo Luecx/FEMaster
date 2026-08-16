@@ -11,10 +11,12 @@ namespace fem::io::reader::commands {
 inline void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("NONLINEAR", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
-        command.doc("Configure NONLINEARSTATIC increment and iteration controls.");
+        command.doc("Configure NONLINEARSTATIC kinematics, increment and iteration controls.");
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
+                .key("NLGEOM").optional("ON")
+                    .doc("Enable geometric nonlinearity. OFF retains material nonlinearity with infinitesimal solid kinematics.")
                 .key("INCREMENTS").optional()
                     .doc("Legacy increment count; sets INITIAL_INCREMENT to 1 / INCREMENTS.")
                 .key("MAX_INCREMENTS").optional()
@@ -57,6 +59,8 @@ inline void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser
             if (!lc) {
                 throw std::runtime_error("NONLINEAR is only supported for NONLINEARSTATIC loadcases");
             }
+
+            lc->set_geometric_nonlinearity(keys.get<bool>("NLGEOM"));
 
             if (keys.has("INCREMENTS")) {
                 const int increments = keys.get<int>("INCREMENTS");

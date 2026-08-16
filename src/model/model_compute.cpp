@@ -25,6 +25,8 @@ void check_field_finite(const Field& field, const std::string& label) {
 } // namespace
 
 Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_nl) {
+    use_green_lagrange_nl = use_green_lagrange_nl && _data->geometric_nonlinearity;
+
     logging::error(_data->element_ip_offsets != nullptr,
                    "element IP offset field has not been initialized");
     const auto& ip_enum = *_data->element_ip_offsets;
@@ -61,6 +63,8 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
 }
 
 std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl) {
+    use_green_lagrange_nl = use_green_lagrange_nl && _data->geometric_nonlinearity;
+
     logging::error(_data->element_nodal_offsets != nullptr,
                    "element nodal offset field has not been initialized");
     const auto& nodal_offsets = *_data->element_nodal_offsets;
@@ -125,6 +129,8 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
 }
 
 std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl) {
+    use_green_lagrange_nl = use_green_lagrange_nl && _data->geometric_nonlinearity;
+
     logging::error(_data->element_nodal_offsets != nullptr,
                    "element nodal offset field has not been initialized");
     const auto& nodal_offsets = *_data->element_nodal_offsets;

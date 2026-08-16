@@ -8,9 +8,10 @@
  *
  * Element-local data is flattened into dense `ELEMENT_NODAL`, `ELEMENT_IP` and
  * `ELEMENT_MP` domains. Prefix-offset fields map each element to its contiguous
- * rows. `material_state` is the active material-point history binding used by
- * element constitutive calls; nonlinear load cases may replace the default
- * state field temporarily with their trial buffer.
+ * rows. Nonlinear constitutive updates expose committed and trial material-state
+ * bindings explicitly through `material_state_old` and `material_state_new`.
+ * `material_state` remains a compatibility alias to the active trial buffer for
+ * elasticity-only element paths that have not yet migrated to the new contract.
  *
  * @see src/model/model_data.cpp
  * @see src/model/model.h
@@ -66,9 +67,9 @@ namespace model {
  * These offsets remain invariant for the lifetime of the assembled topology.
  *
  * Cached semantic field pointers provide fast access to positions, optional
- * scaling/orientation data and the currently active material state. The active
- * material state may be rebound by a nonlinear solve, but the field dimensions
- * must continue to match the enumerated `ELEMENT_MP` domain.
+ * scaling/orientation data and the active constitutive state bindings. A
+ * nonlinear solve may rebind committed/trial material state, but field
+ * dimensions must continue to match the enumerated `ELEMENT_MP` domain.
  */
 struct ModelData {
     // Capacity information -----------------------------------------------------
@@ -98,11 +99,19 @@ struct ModelData {
     Field::Ptr positions_reference         = nullptr;
     Field::Ptr element_stiffness_scale     = nullptr;
     Field::Ptr material_orientation        = nullptr;
-    Field::Ptr material_state              = nullptr;
+    Field::Ptr material_state_old          = nullptr;
+    Field::Ptr material_state_new          = nullptr;
+    Field::Ptr material_state              = nullptr; // compatibility alias to trial state
     Field::Ptr shell_element_nodal_normals = nullptr;
     Field::Ptr element_nodal_offsets       = nullptr;
     Field::Ptr element_ip_offsets          = nullptr;
     Field::Ptr element_mp_offsets          = nullptr;
+
+    // Nonlinear kinematics -----------------------------------------------------
+    // Existing nonlinear analyses remain geometrically nonlinear by default.
+    // NLGEOM=OFF keeps constitutive nonlinearity but selects infinitesimal solid
+    // kinematics and suppresses geometric stiffness.
+    bool geometric_nonlinearity = true;
 
     // Region registries --------------------------------------------------------
     Sets<NodeRegion   > node_sets   {SET_NODE_ALL};

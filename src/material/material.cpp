@@ -2,13 +2,8 @@
  * @file material.cpp
  * @brief Implements the material property container.
  *
- * Provides storage for scalar properties and the associated elasticity model,
- * along with diagnostic logging helpers.
- *
- * @see src/material/material.h
- * @see src/material/elasticity.h
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 16.08.2026
  */
 
 #include "material.h"
@@ -17,27 +12,34 @@
 
 #include <utility>
 
-namespace fem {
-namespace material {
+namespace fem::material {
 
-/**
- * @copydoc Material::Material
- */
 Material::Material(std::string name)
     : Namable(std::move(name)) {}
 
-/**
- * @copydoc Material::has_elasticity
- */
 bool Material::has_elasticity() const {
-    return m_elastic != nullptr;
+    return m_constitutive.has_elasticity();
 }
 
-/**
- * @copydoc Material::elasticity
- */
+bool Material::has_plasticity() const {
+    return m_constitutive.has_plasticity();
+}
+
 ElasticityPtr Material::elasticity() const {
-    return m_elastic;
+    logging::error(!has_plasticity(),
+        "Direct elasticity access is invalid for plastic material '", name,
+        "'; use ConstitutiveLaw for solver evaluation");
+    return m_constitutive.elasticity();
+}
+
+ElasticityPtr Material::elastic_backbone() const {
+    logging::error(has_elasticity(),
+        "Material '", name, "' has no elastic backbone");
+    return m_constitutive.elasticity();
+}
+
+PlasticityPtr Material::plasticity() const {
+    return m_constitutive.plasticity();
 }
 
 void Material::set_density(Precision value) {
@@ -45,15 +47,13 @@ void Material::set_density(Precision value) {
     m_density = value;
 }
 
-/**
- * @copydoc Material::info
- */
 void Material::info() const {
     logging::info(true, "Material: ", name);
     logging::info(true, "   Elasticity          : ", (has_elasticity() ? "YES" : "NO"));
+    logging::info(true, "   Plasticity          : ", (has_plasticity() ? "YES" : "NO"));
     logging::info(true, "   Thermal Capacity    : ", (has_thermal_capacity() ? std::to_string(m_thermal_capacity) : "NO"));
     logging::info(true, "   Thermal Expansion   : ", (has_thermal_expansion() ? std::to_string(m_thermal_expansion) : "NO"));
     logging::info(true, "   Density             : ", (has_density() ? std::to_string(m_density) : "NO"));
 }
-} // namespace material
-} // namespace fem
+
+} // namespace fem::material

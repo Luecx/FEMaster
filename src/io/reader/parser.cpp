@@ -2,24 +2,8 @@
  * @file parser.cpp
  * @brief Implements staged FEMaster input-deck parsing and command registration.
  *
- * The parser executes several passes over the same deck. Identifier counting
- * determines model capacities, topology construction creates nodes and elements,
- * field parsing creates enumeration-dependent fields, and the final data pass
- * executes the remaining model and load-case commands.
- *
- * The dedicated field pass is required because `ELEMENT_NODAL` field sizes are
- * known only after element enumeration. It also ensures that `*NORMAL` selects
- * the shell-normal field before `Model::build_shell_element_normals()` completes
- * missing entries and performs angular equalisation.
- *
- * Individual keyword layouts remain implemented by the registration helpers in
- * `src/io/reader/commands`.
- *
- * @see Parser
- * @see model::Model::build_shell_element_normals
- *
  * @author Finn Eggers
- * @date 30.07.2026
+ * @date 16.08.2026
  */
 
 #include "parser.h"
@@ -39,7 +23,6 @@
 #include <stdexcept>
 #include <utility>
 
-// Command registration helpers
 #include "commands/register_node_count.inl"
 #include "commands/register_element_count.inl"
 #include "commands/register_surface_count.inl"
@@ -54,6 +37,7 @@
 #include "commands/register_material.inl"
 #include "commands/register_elastic.inl"
 #include "commands/register_hyperelastic.inl"
+#include "commands/register_plastic.inl"
 #include "commands/register_density.inl"
 #include "commands/register_thermalexpansion.inl"
 #include "commands/register_cload.inl"
@@ -93,8 +77,6 @@
 #include "commands/register_loadcase_topoexponent.inl"
 #include "commands/register_loadcase_constraintsummary.inl"
 #include "commands/register_loadcase_nonlinear.inl"
-
-// NEW transient-related commands
 #include "commands/register_loadcase_time.inl"
 #include "commands/register_loadcase_write_every.inl"
 #include "commands/register_loadcase_damping.inl"
@@ -106,53 +88,22 @@
 namespace fem::io::reader {
 
 Parser::Parser()
-    : m_model(std::make_shared<model::Model>(1, 1, 1)) // tiny placeholder
-    , m_writer("")                                      // opened later in run()
-{
-    // Commands available right away (for documentation mode).
+    : m_model(std::make_shared<model::Model>(1, 1, 1)), m_writer("") {
     register_documentation_commands();
 }
 
 Parser::~Parser() = default;
 
-// ----------------- Public API -----------------
-
-/**
- * Parses one FEMaster input deck and executes all requested load cases.
- *
- * The deck is processed in four dependency-ordered stages:
- *
- * 1. determine allocation capacities from the highest identifiers,
- * 2. construct topology, assign sections and enumerate element-local data,
- * 3. create generic fields and select an optional shell-normal field,
- * 4. complete shell normals and execute the remaining data commands.
- *
- * Re-reading the deck is intentional. Commands that do not belong to the active
- * stage are consumed without invoking hooks or data bindings.
- *
- * @param input_path Input-deck path.
- * @param output_path Optional output base path.
- * @param writer_formats Requested result-writer formats.
- */
-void Parser::run(const std::string&                   input_path,
-                 const std::string&                   output_path,
+void Parser::run(const std::string& input_path,
+                 const std::string& output_path,
                  const io::writer::WriterFileFormats& writer_formats) {
-    // Determine the model capacities before allocating ModelData.
     CountData count = run_count_stage(input_path);
     allocate_model(count);
-
-    // Build topology and all enumeration data required to size generic fields.
     run_topology_stage(input_path);
     m_model->assign_sections();
     m_model->_data->initialize_element_enumeration();
-
-    // Create enumeration-dependent fields and select the optional normal field
-    // before model-side shell-normal construction fills unspecified rows.
     run_field_stage(input_path);
     m_model->build_shell_element_normals();
-
-    // Execute all remaining model and load-case commands. FIELD and NORMAL are
-    // consumed here because they were already applied in the previous stage.
     run_data_stage(input_path, output_path, writer_formats);
 }
 
@@ -160,78 +111,56 @@ void Parser::document(const DocOptions& opts) const {
     using A = DocOptions::Action;
     using F = DocOptions::Format;
     using V = DocOptions::Verbosity;
-
-    // For now, only "text" is implemented. Others can route to same text or be extended later.
-    const bool as_text = (opts.format == F::Text);
-
-    if (!as_text) {
+    if (opts.format != F::Text) {
         std::cout << "(Note) Only text output is implemented currently. Falling back to text.\n\n";
     }
-
     switch (opts.action) {
-        case A::List:
-            m_registry.print_index();
-            break;
-
+        case A::List: m_registry.print_index(); break;
         case A::Show:
-            if (opts.verbosity == V::Compact) m_registry.print_help(opts.cmd, /*compact=*/true);
-            else                              m_registry.print_help(opts.cmd, /*compact=*/false);
+            m_registry.print_help(opts.cmd, opts.verbosity == V::Compact);
             break;
-
-        case A::Tokens:
-            m_registry.print_tokens(opts.cmd);
-            break;
-
-        case A::Variants:
-            m_registry.print_variants(opts.cmd);
-            break;
-
-        case A::Search:
-            m_registry.print_search(opts.query, opts.regex);
-            break;
-
-        case A::WhereToken:
-            m_registry.print_where_token(opts.query);
-            break;
-
-        case A::All:
-            m_registry.print_help(/*filter=*/{}, /*compact=*/false);
-            break;
+        case A::Tokens: m_registry.print_tokens(opts.cmd); break;
+        case A::Variants: m_registry.print_variants(opts.cmd); break;
+        case A::Search: m_registry.print_search(opts.query, opts.regex); break;
+        case A::WhereToken: m_registry.print_where_token(opts.query); break;
+        case A::All: m_registry.print_help({}, false); break;
     }
 }
-
-// ----------------- Accessors -----------------
 
 model::Model& Parser::model() {
     if (!m_model) throw std::runtime_error("Model not initialized.");
     return *m_model;
 }
+
 const model::Model& Parser::model() const {
     if (!m_model) throw std::runtime_error("Model not initialized.");
     return *m_model;
 }
+
 io::writer::ResultWriters& Parser::writer() { return m_writer; }
 const io::writer::ResultWriters& Parser::writer() const { return m_writer; }
 io::dsl::Registry& Parser::registry() { return m_registry; }
 const io::dsl::Registry& Parser::registry() const { return m_registry; }
 
-// ----------------- Loadcase bookkeeping -----------------
-
 int Parser::next_loadcase_id() { return m_next_loadcase_id++; }
 
-void Parser::set_active_loadcase(std::unique_ptr<loadcase::LoadCase> lc, std::string type) {
-    m_active_loadcase      = std::move(lc);
+void Parser::set_active_loadcase(std::unique_ptr<loadcase::LoadCase> lc,
+                                 std::string type) {
+    m_active_loadcase = std::move(lc);
     m_active_loadcase_type = std::move(type);
 }
+
 loadcase::LoadCase* Parser::active_loadcase() { return m_active_loadcase.get(); }
 const loadcase::LoadCase* Parser::active_loadcase() const { return m_active_loadcase.get(); }
-void Parser::clear_active_loadcase() { m_active_loadcase.reset(); m_active_loadcase_type.clear(); }
+void Parser::clear_active_loadcase() {
+    m_active_loadcase.reset();
+    m_active_loadcase_type.clear();
+}
+
 const std::string& Parser::active_loadcase_type() const {
     static const std::string empty;
     return m_active_loadcase_type.empty() ? empty : m_active_loadcase_type;
 }
-
-// ----------------- Parser stages -----------------
 
 Parser::CountData Parser::run_count_stage(const std::string& input_path) {
     CountData count;
@@ -239,16 +168,13 @@ Parser::CountData Parser::run_count_stage(const std::string& input_path) {
     register_count_commands(registry, count);
     register_set_commands(registry);
     register_analysis_commands(registry);
-
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("NODE", io::dsl::ActiveMode::Active);
     registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
     registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
-
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
-
     return count;
 }
 
@@ -256,73 +182,48 @@ void Parser::run_topology_stage(const std::string& input_path) {
     io::dsl::Registry registry;
     register_topology_commands(registry);
     register_analysis_commands(registry);
-
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NSET", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELSET", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SFSET", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
-
+    for (const char* name : {
+            "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
+            "MATERIAL", "ELASTIC", "PLASTIC", "DENSITY",
+            "ORIENTATION", "SHELLSECTION"}) {
+        registry.set_active_mode(name, io::dsl::ActiveMode::Active);
+    }
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
 }
 
-/**
- * Executes field definitions after element-local enumeration is available.
- *
- * All commands are registered because the DSL engine must understand and
- * consume the complete deck. The registry is then switched to `ConsumeOnly`,
- * and only `*FIELD` and `*NORMAL` are activated. This creates correctly sized
- * generic fields and publishes the selected shell-normal field without running
- * materials, loads or load cases prematurely.
- *
- * @param input_path Input-deck path parsed by this stage.
- */
 void Parser::run_field_stage(const std::string& input_path) {
     io::dsl::Registry registry;
     register_topology_commands(registry);
     register_analysis_commands(registry);
-
-    // Consume the complete deck while executing only field-related commands.
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("FIELD", io::dsl::ActiveMode::Active);
     registry.set_active_mode("NORMAL", io::dsl::ActiveMode::Active);
-
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
 }
 
-// ----------------- Model & registration -----------------
-
 void Parser::allocate_model(const CountData& count) {
-    const int n_nodes    = count.highest_node_id    + 1;
-    const int n_elems    = count.highest_element_id + 1;
+    const int n_nodes = count.highest_node_id + 1;
+    const int n_elems = count.highest_element_id + 1;
     const int n_surfaces = count.highest_surface_id + 1;
-
     m_model = std::make_shared<model::Model>(n_nodes, n_elems, n_surfaces);
-
-    // Reset state bound to an old model
     m_active_loadcase.reset();
     m_active_loadcase_type.clear();
     m_next_loadcase_id = 1;
 }
 
-void Parser::run_data_stage(const std::string&                   input_path,
-                            const std::string&                   output_path,
+void Parser::run_data_stage(const std::string& input_path,
+                            const std::string& output_path,
                             const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
-    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
-        if (writer_base.size() >= ext.size() &&
-            writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
+    for (const std::string& ext : {
+            std::string(".res"), std::string(".frd"), std::string(".inp")}) {
+        if (writer_base.size() >= ext.size()
+            && writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
             writer_base.resize(writer_base.size() - ext.size());
             break;
         }
@@ -334,29 +235,17 @@ void Parser::run_data_stage(const std::string&                   input_path,
     io::dsl::Registry registry;
     register_topology_commands(registry);
     register_analysis_commands(registry);
-
     registry.set_active_mode(io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NODE", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NSET", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELSET", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SFSET", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
-
-    // These commands were executed in run_field_stage() and must not recreate
-    // or reselect fields while the remaining data commands are processed.
-    registry.set_active_mode("FIELD", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::ConsumeOnly);
+    for (const char* name : {
+            "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
+            "MATERIAL", "ELASTIC", "PLASTIC", "DENSITY",
+            "ORIENTATION", "SHELLSECTION", "FIELD", "NORMAL"}) {
+        registry.set_active_mode(name, io::dsl::ActiveMode::ConsumeOnly);
+    }
 
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
-
     m_writer.close();
 }
 
@@ -381,7 +270,6 @@ void Parser::register_count_commands(io::dsl::Registry& reg, CountData& count) {
 
 void Parser::register_set_commands(io::dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
-
     auto& mdl = *m_model;
     commands::register_nset(reg, mdl);
     commands::register_elset(reg, mdl);
@@ -390,7 +278,6 @@ void Parser::register_set_commands(io::dsl::Registry& reg) {
 
 void Parser::register_topology_commands(io::dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
-
     auto& mdl = *m_model;
     commands::register_node(reg, mdl);
     commands::register_element(reg, mdl);
@@ -402,10 +289,8 @@ void Parser::register_topology_commands(io::dsl::Registry& reg) {
 
 void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     if (!m_model) throw std::runtime_error("Model must exist before registering commands");
-
     auto& mdl = *m_model;
 
-    // Structural commands
     reg.command("MODEL", [](io::dsl::Command& command) {
         command.allow_if(io::dsl::Condition::parent_is("ROOT"));
         command.doc("Begin a model definition.");
@@ -418,17 +303,16 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
         command.variant(io::dsl::Variant::make());
     });
 
-    // Base model/sections/materials
     commands::register_heading(reg);
     commands::register_field(reg, mdl);
     commands::register_normal(reg, mdl);
     commands::register_material(reg, mdl);
     commands::register_elastic(reg, mdl);
     commands::register_hyperelastic(reg, mdl);
+    commands::register_plastic(reg, mdl);
     commands::register_density(reg, mdl);
     commands::register_thermal_expansion(reg, mdl);
 
-    // Loads & BCs
     commands::register_cload(reg, mdl);
     commands::register_dload(reg, mdl);
     commands::register_pload(reg, mdl);
@@ -439,14 +323,12 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     commands::register_support(reg, mdl);
     commands::register_amplitude(reg, mdl);
 
-    // Orientations & connectors/constraints
     commands::register_orientation(reg, mdl);
     commands::register_connector(reg, mdl);
     commands::register_coupling(reg, mdl);
     commands::register_tie(reg, mdl);
     commands::register_contact(reg, mdl);
 
-    // Profiles & sections & elements
     commands::register_profile(reg, mdl);
     commands::register_solid_section(reg, mdl);
     commands::register_beam_section(reg, mdl);
@@ -455,7 +337,6 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     commands::register_point_mass(reg, mdl);
     commands::register_overview(reg, mdl);
 
-    // Loadcase scaffold
     commands::register_loadcase_begin(reg, *this);
     commands::register_loadcase_supports(reg, *this);
     commands::register_loadcase_loads(reg, *this);
@@ -472,7 +353,6 @@ void Parser::register_analysis_commands(io::dsl::Registry& reg) {
     commands::register_loadcase_constraintsummary(reg, *this);
     commands::register_loadcase_nonlinear(reg, *this);
 
-    // NEW: Transient-specific loadcase commands
     commands::register_loadcase_time(reg, *this);
     commands::register_loadcase_write_every(reg, *this);
     commands::register_loadcase_damping(reg, *this);

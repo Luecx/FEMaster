@@ -50,6 +50,15 @@ struct ElementInterface {
     /// Short type tag (e.g., "C3D8", "S4", "B33"). Override in derived types.
     virtual std::string type_name() const { return std::string{}; }
 
+    /**
+     * @brief Reports whether this element family has a plastic constitutive path.
+     *
+     * Plasticity must never silently fall back to the elastic backbone. Element
+     * families therefore opt in explicitly once their kinematics, material-point
+     * state and consistent tangent path support inelastic updates.
+     */
+    virtual bool supports_material_plasticity() const { return false; }
+
     /// Iterator access over nodal identifiers.
     const ID* begin() const { return nodes(); }
     const ID* end  () const { return nodes() + n_nodes(); }
@@ -69,8 +78,22 @@ struct ElementInterface {
         return dynamic_cast<T*>(this);
     }
 
-    /// Assigns the section used by the element.
+    /**
+     * @brief Assigns the section and validates plastic constitutive support.
+     *
+     * The check is performed when sections are bound to concrete elements, where
+     * the actual element family is known. This prevents a material carrying
+     * Plasticity from being consumed through an older elasticity-only beam,
+     * truss or shell path.
+     */
     void set_section(Section::Ptr section) {
+        if (section && section->material_ && section->material_->has_plasticity()) {
+            logging::error(
+                supports_material_plasticity(),
+                "Plasticity is not supported by element ", elem_id,
+                " of type ", type_name()
+            );
+        }
         _section = std::move(section);
     }
 

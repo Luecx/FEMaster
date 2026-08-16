@@ -89,6 +89,23 @@ struct NonlinearStatic : public LoadCase {
     std::string stiffness_file;
 
     /**
+     * @brief Selects geometric nonlinearity for the shared model assembly.
+     *
+     * ModelData is the single source of truth because element assembly and result
+     * recovery both read the kinematic mode there. Disabling geometric
+     * nonlinearity retains Newton iterations and constitutive history but selects
+     * infinitesimal solid strain, Cauchy stress and no geometric stiffness. The
+     * initial small-strain J2 implementation requires this mode.
+     */
+    void set_geometric_nonlinearity(bool enabled) {
+        model->_data->geometric_nonlinearity = enabled;
+    }
+
+    bool geometric_nonlinearity() const {
+        return model->_data->geometric_nonlinearity;
+    }
+
+    /**
      * @brief Maximum number of accepted nonlinear increments.
      *
      * For LoadControl this is mostly a safety limit because the analysis stops
@@ -199,7 +216,7 @@ struct NonlinearStatic : public LoadCase {
      * @brief Constructs a nonlinear static load case.
      *
      * @param id Load case id.
-     * @param writer Result writer used for output fields.
+     * @param writer Result writer used for logging or output fields.
      * @param model FEM model on which the load case operates.
      */
     NonlinearStatic(ID id,

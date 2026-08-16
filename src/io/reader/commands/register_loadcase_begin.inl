@@ -43,6 +43,9 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             if (type == "LINEARSTATIC") {
                 lc = std::make_unique<loadcase::LinearStatic>(id, &wrt, &mdl);
             } else if (type == "NONLINEARSTATIC") {
+                // Default nonlinear behavior remains geometrically nonlinear;
+                // *NONLINEAR, NLGEOM=OFF may switch this before execution.
+                mdl._data->geometric_nonlinearity = true;
                 lc = std::make_unique<loadcase::NonlinearStatic>(id, &wrt, &mdl);
             } else if (type == "LINEARBUCKLING") {
                 lc = std::make_unique<loadcase::LinearBuckling>(id, &wrt, &mdl, 10);
@@ -61,13 +64,9 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             parser.set_active_loadcase(std::move(lc), type);
         });
 
-        // When the LOADCASE scope exits, run and clear it.
         command.on_exit([&parser](const fem::io::dsl::Keys&) {
             auto* lc = parser.active_loadcase();
-            if (!lc) {
-                // Nothing to do (either already cleared, or mis-scoped END).
-                return;
-            }
+            if (!lc) return;
             try {
                 lc->run();
             } catch (const std::exception& e) {
