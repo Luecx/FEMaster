@@ -31,6 +31,7 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../bc/amplitude.h"
 #include "../../../core/types_eig.h"
 #include "../../../core/types_num.h"
 #include "../../../model/model.h"
@@ -45,6 +46,10 @@ namespace fem::io::reader::commands_abq {
  * by `*TRANSFORM` is copied to the resulting FEMaster load object rather than
  * changing the model's global nodal coordinate basis.
  *
+ * `OP=NEW` and follower concentrated loads are rejected because FEMaster's
+ * independent step collectors do not currently model Abaqus history removal or
+ * load-direction updates with the current nodal rotation.
+ *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing step and transform state.
  */
@@ -58,14 +63,18 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
-                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
-                    .doc("Accepted for the independent current-step collector")
+                .key("OP").optional("MOD").allowed({"MOD"})
+                    .doc("Only additive/modifying current-step loads are supported")
+                .flag("FOLLOWER").doc("Unsupported follower concentrated-load flag")
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             if (!state.step_active || !parser.active_loadcase()) {
                 throw std::runtime_error("CLOAD must appear after a supported procedure inside STEP");
+            }
+            if (keys.has("FOLLOWER")) {
+                throw std::runtime_error("CLOAD FOLLOWER is not supported");
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
