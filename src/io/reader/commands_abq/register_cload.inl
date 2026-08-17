@@ -39,7 +39,8 @@ namespace fem::io::reader::commands_abq {
  * Each data line uses `node-or-nset, dof, magnitude`. The logical identity is
  * the original target token together with the generalized DOF, so a later
  * `OP=MOD` line replaces the corresponding active definition instead of adding
- * a second FEMaster load to it.
+ * a second FEMaster load to it. An empty `OP=NEW` block is valid and removes all
+ * active concentrated loads without defining replacements.
  *
  * Follower and imaginary harmonic loads remain unsupported. `OP` must be
  * consistent across all `*CLOAD` cards in one step.
@@ -101,7 +102,7 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
+                .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Node set or node identifier")
                     .one<int>().name("DOF").desc("Abaqus generalized degree of freedom 1--6")
