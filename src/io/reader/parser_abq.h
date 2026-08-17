@@ -8,11 +8,11 @@
  * enumeration, shell-normal construction and result-writer setup identical for
  * native and Abaqus input decks.
  *
- * The supported Abaqus syntax is intentionally introduced incrementally. The
- * reader currently covers basic topology and sets, element- and node-based
- * surfaces, core elastic material properties, rectangular material orientations
- * and homogeneous solid/truss/shell sections. Unsupported Abaqus keywords remain
- * hard parser errors.
+ * The Abaqus reader also owns the small amount of syntax state that has no
+ * persistent FEMaster model counterpart. In particular, `*TRANSFORM` associates
+ * coordinate systems with nodes for later load/support creation and `*STEP`
+ * holds the currently parsed analysis procedure and its generated collector
+ * names until `*END STEP` executes the corresponding FEMaster load case.
  *
  * @see Parser
  * @see commands::register_elastic
@@ -28,7 +28,48 @@
 
 #include "parser.h"
 
+#include <string>
+#include <unordered_map>
+
 namespace fem::io::reader {
+
+/**
+ * @brief Transient syntax state required while reading one Abaqus deck.
+ *
+ * FEMaster stores coordinate systems on individual load/support objects rather
+ * than attaching a transformed degree-of-freedom basis to nodes. The
+ * `node_transforms` map therefore retains the Abaqus `*TRANSFORM` association
+ * until step-local `*CLOAD` and `*BOUNDARY` records are converted to FEMaster
+ * objects.
+ *
+ * The remaining members describe the currently open Abaqus step. Every step is
+ * translated to one independent FEMaster load case. Loads and supports created
+ * inside the step are collected under generated names and attached to that load
+ * case when `*END STEP` is reached.
+ */
+struct ParserAbqState {
+    // Abaqus nodal transform assignment retained between topology and data passes
+    std::unordered_map<ID, std::string> node_transforms;
+
+    // Monotonic identifier used to construct collision-resistant internal names
+    int next_step_index = 1;
+
+    // Currently open Abaqus step
+    bool        step_active = false;
+    int         step_index  = 0;
+    int         max_increments = 100;
+    bool        nlgeom = false;
+    Precision   step_period = Precision(1);
+    std::string step_name;
+    std::string step_amplitude;
+    std::string procedure;
+
+    // FEMaster collectors generated for the current step
+    std::string load_collector;
+    std::string support_collector;
+    bool        load_collector_used    = false;
+    bool        support_collector_used = false;
+};
 
 /**
  * @brief Abaqus syntax specialization of the common staged input parser.
@@ -41,18 +82,25 @@ namespace fem::io::reader {
  * Native registrations are reused where Abaqus input maps without semantic
  * changes, including `HEADING`, `NODE`, `NSET`, `ELSET`, `MATERIAL`, constant
  * `DENSITY`, `ELASTIC` and Neo-Hooke `HYPERELASTIC`. Abaqus-specific
- * registrations handle element labels, surfaces, coordinate-defined rectangular
- * orientations, thermal expansion and homogeneous section syntax where the
- * external representation differs from FEMaster.
+ * registrations handle element labels, surfaces, coordinate/orientation input,
+ * thermal expansion, homogeneous sections and supported analysis/history data.
  *
- * Parts, assemblies, analysis steps, loads and boundary conditions remain
- * deliberately outside the current supported subset.
+ * Parts, assemblies and unsupported Abaqus procedures remain deliberately
+ * outside the current subset.
  */
 class ParserAbq : public Parser {
+private:
+    // Syntax-only state shared by Abaqus command callbacks in different passes
+    ParserAbqState m_abq_state;
+
 public:
     // Construction and destruction
     ParserAbq() = default;
     ~ParserAbq() override = default;
+
+    // Mutable syntax state used by the dedicated Abaqus command registrations
+    ParserAbqState& abaqus_state();
+    const ParserAbqState& abaqus_state() const;
 
 protected:
     // Stage-specific Abaqus command registration. The common Parser executes
