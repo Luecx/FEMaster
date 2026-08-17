@@ -9,11 +9,14 @@
  * native and Abaqus input decks.
  *
  * The supported Abaqus syntax is intentionally introduced incrementally. The
- * reader currently accepts only the small model-definition subset registered in
- * `parser_abq.cpp`; unsupported Abaqus keywords remain hard parser errors.
+ * reader currently covers basic topology and sets, element- and node-based
+ * surfaces, core elastic material properties and homogeneous solid/truss/shell
+ * sections. Unsupported Abaqus keywords remain hard parser errors.
  *
  * @see Parser
  * @see commands_abq::register_element
+ * @see commands_abq::register_surface
+ * @see commands_abq::register_elastic
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -33,13 +36,14 @@ namespace fem::io::reader {
  * finalization between them. This specialization only defines which commands
  * are known in each pass and which of those commands are active.
  *
- * At the current implementation stage `HEADING`, `NODE`, `NSET` and `ELSET`
- * reuse the native FEMaster command definitions. `ELEMENT` is registered through
- * the Abaqus-specific command implementation because Abaqus element labels need
- * an explicit mapping onto FEMaster element formulations.
+ * Native registrations are reused where Abaqus input maps without semantic
+ * changes, including `HEADING`, `NODE`, `NSET`, `ELSET`, `MATERIAL`, constant
+ * `DENSITY` and Neo-Hooke `HYPERELASTIC`. Abaqus-specific registrations handle
+ * element labels, surfaces, linear elasticity, thermal expansion and homogeneous
+ * section syntax where the external representation differs from FEMaster.
  *
- * The class contains no Abaqus part, assembly, step, load or material state yet;
- * those concepts are deliberately outside the current supported syntax.
+ * Parts, assemblies, analysis steps, loads and boundary conditions remain
+ * deliberately outside the current supported subset.
  */
 class ParserAbq : public Parser {
 public:
