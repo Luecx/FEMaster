@@ -24,8 +24,8 @@
 
 #pragma once
 
-#include <algorithm>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -59,6 +59,10 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Define a rectangular Abaqus material orientation from points a, b and optional c.");
 
+        // Preserve the orientation name until the following data row constructs
+        // the coordinate system
+        auto name = std::make_shared<std::string>();
+
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("NAME")
@@ -73,6 +77,10 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                     .allowed({"RECTANGULAR"})
                     .doc("Local coordinate-system type")
         );
+
+        command.on_enter([name](const fem::io::dsl::Keys& keys) {
+            *name = keys.raw("NAME");
+        });
 
         // Read the coordinate-defined Abaqus points on exactly one data line.
         // Point c defaults to the global origin when its coordinates are omitted.
@@ -93,15 +101,15 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                     .one<fem::Precision>().name("C3").desc("Point c, global z")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
-                .bind([&model](fem::Precision a1,
-                               fem::Precision a2,
-                               fem::Precision a3,
-                               fem::Precision b1,
-                               fem::Precision b2,
-                               fem::Precision b3,
-                               fem::Precision c1,
-                               fem::Precision c2,
-                               fem::Precision c3) {
+                .bind([&model, name](fem::Precision a1,
+                                     fem::Precision a2,
+                                     fem::Precision a3,
+                                     fem::Precision b1,
+                                     fem::Precision b2,
+                                     fem::Precision b3,
+                                     fem::Precision c1,
+                                     fem::Precision c2,
+                                     fem::Precision c3) {
                     const fem::Vec3 a{a1, a2, a3};
                     const fem::Vec3 b{b1, b2, b3};
                     const fem::Vec3 c{c1, c2, c3};
@@ -121,10 +129,9 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                         throw std::runtime_error("ORIENTATION requires distinct, non-collinear points a, b and c");
                     }
 
-                    const std::string& name = model._data->coordinate_systems.get() != nullptr
-                        ? model._data->coordinate_systems.get()->name
-                        : std::string{};
-                    (void) name;
+                    // RectangularSystem orthogonalizes the in-plane direction
+                    // against axis 1 and completes the right-handed basis
+                    model.add_coordinate_system<cos::RectangularSystem>(*name, axis_1, in_plane);
                 })
             )
         );
