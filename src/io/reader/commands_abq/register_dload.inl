@@ -42,7 +42,8 @@ namespace fem::io::reader::commands_abq {
  * Registers Abaqus gravity loading on an element set, element id or the complete
  * model. The blank Abaqus target is mapped to FEMaster's built-in `EALL` region.
  * `OP=NEW` is rejected because Abaqus cross-step load removal is not represented
- * by the current independent FEMaster load-case mapping.
+ * by the current independent FEMaster load-case mapping. Real harmonic
+ * amplitudes are retained and evaluated at the current sweep frequency.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing current step state.
@@ -59,12 +60,20 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
                 .key("OP").optional("MOD").allowed({"MOD"})
                     .doc("Only additive/modifying current-step loads are supported")
+                .flag("REAL").doc("Real harmonic load component")
+                .flag("IMAGINARY").doc("Unsupported imaginary harmonic load component")
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             if (!state.step_active || !parser.active_loadcase()) {
                 throw std::runtime_error("DLOAD must appear after a supported procedure inside STEP");
+            }
+            if (keys.has("REAL") && keys.has("IMAGINARY")) {
+                throw std::runtime_error("DLOAD REAL and IMAGINARY are mutually exclusive");
+            }
+            if (keys.has("IMAGINARY")) {
+                throw std::runtime_error("DLOAD IMAGINARY is not supported by the real-load harmonic solver");
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
@@ -102,7 +111,8 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                             throw std::runtime_error("DLOAD references unknown amplitude '" + *amplitude + "'");
                         }
 
-                        if (state.procedure == "LINEARTRANSIENT") {
+                        if (state.procedure == "LINEARTRANSIENT" ||
+                            state.procedure == "LINEARHARMONIC") {
                             stored_amplitude = *amplitude;
                         } else if (state.procedure == "LINEARSTATIC" ||
                                    state.procedure == "LINEARBUCKLING") {
@@ -112,8 +122,6 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                             throw std::runtime_error(
                                 "DLOAD AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
                             );
-                        } else if (state.procedure == "LINEARHARMONIC") {
-                            throw std::runtime_error("DLOAD AMPLITUDE is not supported for harmonic response");
                         }
                     } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
                         const std::string generated = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
