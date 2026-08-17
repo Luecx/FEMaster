@@ -45,14 +45,17 @@ namespace fem::io::reader {
  * The remaining members describe the currently open Abaqus step. Every step is
  * translated to one independent FEMaster load case. Loads and supports created
  * inside the step are collected under generated names and attached to that load
- * case when `*END STEP` is reached.
+ * case when `*END STEP` is reached. Abaqus' persistent NLGEOM switch is retained
+ * separately from the current-step flag because enabling geometric nonlinearity
+ * affects all subsequent steps in an Abaqus/Standard analysis.
  */
 struct ParserAbqState {
     // Abaqus nodal transform assignment retained between topology and data passes
     std::unordered_map<ID, std::string> node_transforms;
 
-    // Monotonic identifier used to construct collision-resistant internal names
-    int next_step_index = 1;
+    // Deck-persistent syntax state
+    int  next_step_index = 1;
+    bool nlgeom_active   = false;
 
     // Currently open Abaqus step
     bool        step_active = false;
