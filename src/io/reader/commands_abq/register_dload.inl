@@ -31,6 +31,7 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../bc/amplitude.h"
 #include "../../../core/types_eig.h"
 #include "../../../core/types_num.h"
 #include "../../../model/model.h"
@@ -112,10 +113,19 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         } else if (state.procedure == "LINEARHARMONIC") {
                             throw std::runtime_error("DLOAD AMPLITUDE is not supported for harmonic response");
                         }
-                    } else if (state.procedure == "LINEARTRANSIENT" &&
-                               !state.step_amplitude.empty() &&
-                               state.step_amplitude != "STEP") {
-                        stored_amplitude = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
+                    } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
+                        const std::string generated = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
+                        if (!model._data->amplitudes.has(generated)) {
+                            model.define_amplitude(generated, bc::Interpolation::Linear);
+                            model.add_amplitude_sample(generated, fem::Precision(0), fem::Precision(0));
+                            model.add_amplitude_sample(generated, state.step_period, fem::Precision(1));
+                        }
+                        stored_amplitude = generated;
+                    } else if ((state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS") &&
+                               state.step_amplitude == "STEP") {
+                        throw std::runtime_error(
+                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
+                        );
                     }
 
                     const fem::Vec3 gravity = scale * magnitude * fem::Vec3{
