@@ -121,64 +121,66 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
             // -----------------------------------------------------------------
             // Boundary-condition snapshot
             // -----------------------------------------------------------------
-            if (!state.boundaries.empty()) {
-                model._data->supp_cols.activate(state.support_collector);
-                state.support_collector_used = true;
+            // Always attach an explicit step-local collector, even when it is
+            // empty. FEMaster interprets an empty support-name list as the global
+            // ALL collector, which would otherwise reactivate supports created
+            // for earlier Abaqus steps after BOUNDARY, OP=NEW.
+            model._data->supp_cols.activate(state.support_collector);
+            state.support_collector_used = true;
 
-                for (const auto& record : state.boundaries) {
-                    Precision magnitude = record.magnitude;
+            for (const auto& record : state.boundaries) {
+                Precision magnitude = record.magnitude;
 
-                    if (record.modified_step == state.step_index &&
-                        !record.amplitude.empty() && magnitude != Precision(0)) {
-                        if (!model._data->amplitudes.has(record.amplitude)) {
-                            throw std::runtime_error(
-                                "BOUNDARY references unknown amplitude '" + record.amplitude + "'"
-                            );
-                        }
-                        if (state.procedure != "LINEARSTATIC") {
-                            throw std::runtime_error(
-                                "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are time-independent"
-                            );
-                        }
-                        magnitude *= model._data->amplitudes.get(record.amplitude)->evaluate(state.step_period);
-                    }
-
-                    if (magnitude != Precision(0) &&
-                        state.procedure != "LINEARSTATIC" &&
-                        state.procedure != "NONLINEARSTATIC" &&
-                        state.procedure != "STATIC_RIKS") {
+                if (record.modified_step == state.step_index &&
+                    !record.amplitude.empty() && magnitude != Precision(0)) {
+                    if (!model._data->amplitudes.has(record.amplitude)) {
                         throw std::runtime_error(
-                            "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures"
+                            "BOUNDARY references unknown amplitude '" + record.amplitude + "'"
                         );
                     }
-
-                    StaticVector<6> values;
-                    values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
-                    values[record.dof - 1] = magnitude;
-
-                    const auto add_to_node = [&](ID node_id) {
-                        std::string orientation;
-                        const auto transform = state.node_transforms.find(node_id);
-                        if (transform != state.node_transforms.end()) {
-                            orientation = transform->second;
-                        }
-                        model.add_support(node_id, values, orientation);
-                    };
-
-                    if (model._data->node_sets.has(record.target)) {
-                        for (const ID node_id : *model._data->node_sets.get(record.target)) {
-                            add_to_node(node_id);
-                        }
-                    } else {
-                        std::size_t parsed = 0;
-                        const long value = std::stol(record.target, &parsed);
-                        if (parsed != record.target.size()) {
-                            throw std::runtime_error(
-                                "BOUNDARY target '" + record.target + "' is not a node set or node id"
-                            );
-                        }
-                        add_to_node(static_cast<ID>(value));
+                    if (state.procedure != "LINEARSTATIC") {
+                        throw std::runtime_error(
+                            "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are time-independent"
+                        );
                     }
+                    magnitude *= model._data->amplitudes.get(record.amplitude)->evaluate(state.step_period);
+                }
+
+                if (magnitude != Precision(0) &&
+                    state.procedure != "LINEARSTATIC" &&
+                    state.procedure != "NONLINEARSTATIC" &&
+                    state.procedure != "STATIC_RIKS") {
+                    throw std::runtime_error(
+                        "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures"
+                    );
+                }
+
+                StaticVector<6> values;
+                values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
+                values[record.dof - 1] = magnitude;
+
+                const auto add_to_node = [&](ID node_id) {
+                    std::string orientation;
+                    const auto transform = state.node_transforms.find(node_id);
+                    if (transform != state.node_transforms.end()) {
+                        orientation = transform->second;
+                    }
+                    model.add_support(node_id, values, orientation);
+                };
+
+                if (model._data->node_sets.has(record.target)) {
+                    for (const ID node_id : *model._data->node_sets.get(record.target)) {
+                        add_to_node(node_id);
+                    }
+                } else {
+                    std::size_t parsed = 0;
+                    const long value = std::stol(record.target, &parsed);
+                    if (parsed != record.target.size()) {
+                        throw std::runtime_error(
+                            "BOUNDARY target '" + record.target + "' is not a node set or node id"
+                        );
+                    }
+                    add_to_node(static_cast<ID>(value));
                 }
             }
 
@@ -324,9 +326,15 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                             );
                         }
 
-                        const Vec3 direction{
+                        Vec3 direction{
                             record.direction[0], record.direction[1], record.direction[2]
                         };
+                        const Precision norm = direction.norm();
+                        if (!(norm > Precision(0)) || !std::isfinite(norm)) {
+                            throw std::runtime_error("Stored DSLOAD TRVEC direction is invalid");
+                        }
+                        direction /= norm;
+
                         model.add_dload(
                             record.surface,
                             magnitude * direction,
@@ -361,21 +369,20 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
             }
 
             // Attach only the fresh snapshot collector to this independent load
-            // case. Older FEMaster collectors remain stored but are never reused.
-            if (state.support_collector_used) {
-                if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
-                    lc->supps.push_back(state.support_collector);
-                } else if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
-                    lc->supps.push_back(state.support_collector);
-                } else if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
-                    lc->supps.push_back(state.support_collector);
-                } else if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
-                    lc->supps.push_back(state.support_collector);
-                } else if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
-                    lc->supps.push_back(state.support_collector);
-                } else if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
-                    lc->supps.push_back(state.support_collector);
-                }
+            // case. The explicit support collector is attached even when empty
+            // so the native global-ALL fallback is suppressed for Abaqus steps.
+            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+                lc->supps.push_back(state.support_collector);
+            } else if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+                lc->supps.push_back(state.support_collector);
+            } else if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
+                lc->supps.push_back(state.support_collector);
+            } else if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
+                lc->supps.push_back(state.support_collector);
+            } else if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
+                lc->supps.push_back(state.support_collector);
+            } else if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+                lc->supps.push_back(state.support_collector);
             }
 
             if (state.load_collector_used) {
