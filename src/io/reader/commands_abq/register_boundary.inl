@@ -46,9 +46,11 @@ namespace fem::io::reader::commands_abq {
  * represented by assigning the corresponding FEMaster coordinate system to each
  * generated support rather than modifying global nodal coordinates.
  *
- * `OP=NEW` is rejected because the current Abaqus reader intentionally maps each
- * step to an independent FEMaster load case and does not emulate Abaqus history
- * removal/propagation between steps.
+ * In Abaqus/Standard a prescribed displacement without an explicit amplitude is
+ * ramped over the step. FEMaster nonlinear static analysis applies prescribed
+ * support values proportionally with the load factor, so that default maps
+ * directly. `OP=NEW` remains unsupported because cross-step history removal is
+ * not represented by the current independent load-case mapping.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing step and transform state.
@@ -127,13 +129,6 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                         state.procedure != "STATIC_RIKS") {
                         throw std::runtime_error(
                             "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures"
-                        );
-                    }
-                    if (magnitude != fem::Precision(0) &&
-                        (state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS") &&
-                        state.step_amplitude == "STEP") {
-                        throw std::runtime_error(
-                            "STEP, AMPLITUDE=STEP cannot be represented for nonzero nonlinear prescribed BOUNDARY values"
                         );
                     }
 
