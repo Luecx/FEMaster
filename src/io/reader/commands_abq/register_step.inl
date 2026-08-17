@@ -3,16 +3,17 @@
  * @brief Registers supported Abaqus analysis steps and procedure cards.
  *
  * Every Abaqus `*STEP` is translated to one independent FEMaster load case.
- * Supported procedures are general/static Riks analysis, eigenfrequency
- * extraction, linear eigenvalue buckling, implicit linear transient dynamics and
- * direct steady-state harmonic dynamics. `*END STEP` attaches the generated
- * step-local load/support collectors, executes the load case and clears the
- * active parser state.
+ * Supported procedures are static/general and Riks analysis, linear static
+ * perturbation, eigenfrequency extraction, linear eigenvalue buckling, direct
+ * implicit linear transient dynamics, and direct steady-state harmonic dynamics.
+ * `*END STEP` attaches the generated step-local load/support collectors, executes
+ * the FEMaster load case, and clears the active parser state.
  *
- * FEMaster currently does not propagate converged state between load cases, so
- * Abaqus history continuation and `OP=MOD` persistence across multiple steps are
- * deliberately not emulated here. Each supported step starts from the FEMaster
- * model reference state.
+ * FEMaster currently does not propagate converged state between load cases. The
+ * reader therefore does not emulate Abaqus base-state/history continuation,
+ * prestressed perturbation steps, or `OP=MOD` persistence across multiple steps.
+ * Abaqus' deck-persistent `NLGEOM` switch is retained syntactically, but every
+ * translated FEMaster load case still starts from its own reference state.
  *
  * @see ParserAbqState
  * @see loadcase::LinearStatic
@@ -50,14 +51,17 @@
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers the Abaqus step block, supported procedure cards and `*END STEP`.
+ * Registers the Abaqus step block, supported procedure cards, and `*END STEP`.
  *
- * `NLGEOM=YES` selects FEMaster nonlinear static analysis for a general static
- * step. `*STATIC, RIKS` selects the arc-length controller regardless of the
- * explicit NLGEOM setting. Procedure data are reduced to the controls that have
- * direct FEMaster counterparts; unsupported termination criteria or adaptive
- * dynamic time stepping are rejected or intentionally not represented rather
- * than introducing new solver semantics in the input reader.
+ * A general `*STATIC` step is mapped to FEMaster linear static analysis while
+ * `NLGEOM=YES` selects `NonlinearStatic`. `*STATIC, RIKS` selects the arc-length
+ * controller. `*STEP, PERTURBATION` with `*STATIC` maps explicitly to
+ * `LinearStatic`; because FEMaster load cases are independent, no preceding
+ * Abaqus base state is imported into that perturbation analysis.
+ *
+ * Abaqus automatic implicit-dynamic time incrementation has no direct FEMaster
+ * counterpart, so only `*DYNAMIC, DIRECT` is accepted. Direct steady-state
+ * dynamics maps frequency ranges to FEMaster's direct harmonic sweep.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser owning active load-case and step state.
@@ -73,11 +77,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("NAME").optional().doc("Optional Abaqus step name")
-                .key("NLGEOM").optional("NO").allowed({"YES", "NO"})
-                    .doc("Enable geometric nonlinearity for supported static analysis")
+                .key("NLGEOM").optional().allowed({"YES", "NO"})
+                    .doc("Enable geometric nonlinearity for this and subsequent steps")
                 .key("INC").optional("100").doc("Maximum number of increments")
                 .key("AMPLITUDE").optional().allowed({"RAMP", "STEP"})
                     .doc("Default Abaqus step amplitude mode")
+                .flag("PERTURBATION").doc("Linear perturbation step")
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
@@ -91,17 +96,28 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 throw std::runtime_error("STEP requires INC > 0");
             }
 
-            state.step_active = true;
-            state.step_index  = state.next_step_index++;
-            state.max_increments = max_increments;
-            state.nlgeom = keys.raw("NLGEOM") == "YES";
-            state.step_period = fem::Precision(1);
-            state.step_name = keys.has("NAME") ? keys.raw("NAME") : std::string{};
-            state.step_amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
+            if (keys.has("NLGEOM")) {
+                if (keys.raw("NLGEOM") == "YES") {
+                    state.nlgeom_active = true;
+                } else if (state.nlgeom_active) {
+                    throw std::runtime_error(
+                        "Abaqus NLGEOM cannot be disabled after it has been enabled in a previous step"
+                    );
+                }
+            }
+
+            state.step_active     = true;
+            state.step_index      = state.next_step_index++;
+            state.max_increments  = max_increments;
+            state.nlgeom          = state.nlgeom_active;
+            state.perturbation    = keys.has("PERTURBATION");
+            state.step_period     = fem::Precision(1);
+            state.step_name       = keys.has("NAME") ? keys.raw("NAME") : std::string{};
+            state.step_amplitude  = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
             state.procedure.clear();
-            state.load_collector = "__ABQ_STEP_" + std::to_string(state.step_index) + "_LOADS";
+            state.load_collector    = "__ABQ_STEP_" + std::to_string(state.step_index) + "_LOADS";
             state.support_collector = "__ABQ_STEP_" + std::to_string(state.step_index) + "_SUPPORTS";
-            state.load_collector_used = false;
+            state.load_collector_used    = false;
             state.support_collector_used = false;
         });
 
@@ -117,11 +133,11 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     });
 
     // ---------------------------------------------------------------------
-    // General static and Riks static procedure
+    // Static/general, linear perturbation, and Riks procedures
     // ---------------------------------------------------------------------
     registry.command("STATIC", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Map Abaqus general static or Riks analysis to FEMaster static analysis.");
+        command.doc("Map Abaqus static/general, perturbation, or Riks analysis to FEMaster static analysis.");
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
@@ -137,21 +153,22 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
 
             const bool riks   = keys.has("RIKS");
             const bool direct = keys.has("DIRECT");
-            const int id = parser.next_loadcase_id();
+            if (riks && state.perturbation) {
+                throw std::runtime_error("STATIC, RIKS cannot be used in a PERTURBATION step");
+            }
 
-            if (riks || state.nlgeom) {
+            const int id = parser.next_loadcase_id();
+            if (!state.perturbation && (riks || state.nlgeom)) {
                 auto loadcase = std::make_unique<loadcase::NonlinearStatic>(
                     id, &parser.writer(), &parser.model()
                 );
 
-                // Abaqus defaults correspond to one complete normalized step
-                // with a minimum automatic increment of 1e-5 of the step scale.
-                // Riks has no default upper bound; general load control never
-                // needs a normalized increment larger than the complete step.
-                loadcase->max_increments    = state.max_increments;
-                loadcase->initial_increment = fem::Precision(1);
-                loadcase->minimum_increment = fem::Precision(1e-5);
-                loadcase->maximum_increment = riks
+                // Defaults are represented in the normalized FEMaster load-factor
+                // scale. Riks has no finite default maximum arc increment.
+                loadcase->max_increments      = state.max_increments;
+                loadcase->initial_increment   = fem::Precision(1);
+                loadcase->minimum_increment   = fem::Precision(1e-5);
+                loadcase->maximum_increment   = riks
                     ? std::numeric_limits<fem::Precision>::max()
                     : fem::Precision(1);
                 loadcase->adaptive_increments = !direct;
@@ -173,8 +190,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             }
         });
 
-        // Riks accepts up to eight values, while FEMaster consumes the arc-length
-        // increment controls represented by the first four.
+        // Riks accepts up to eight values. FEMaster maps the first four arc
+        // controls; Abaqus LPF/displacement termination criteria are not stored.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::key_present("RIKS"))
             .segment(fem::io::dsl::Segment::make()
@@ -205,9 +222,6 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         ? std::min(initial, fem::Precision(1e-5) * period) : data[2];
                     const bool maximum_omitted = std::isnan(data[3]) || data[3] == fem::Precision(0);
 
-                    // FEMaster's arc-length controls are normalized to an
-                    // equivalent load-factor scale, while Abaqus supplies arc
-                    // lengths relative to its total arc-length scale.
                     parser.abaqus_state().step_period = period;
                     loadcase->initial_increment = initial / period;
                     loadcase->minimum_increment = minimum / period;
@@ -218,9 +232,9 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             )
         );
 
-        // General static data map directly to FEMaster load-control increment
-        // limits when NLGEOM selects the nonlinear solver. Linear static retains
-        // only the step period for final amplitude evaluation.
+        // General static data map to load-control increment limits only when the
+        // selected FEMaster procedure is nonlinear. Linear static retains the
+        // total step period for end-of-step amplitude evaluation.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::negate(
                 fem::io::dsl::Condition::key_present("RIKS")
@@ -234,6 +248,17 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_empty  (std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
                 .bind([&parser](const std::array<fem::Precision, 4>& data) {
+                    if (parser.abaqus_state().perturbation) {
+                        for (const fem::Precision value : data) {
+                            if (!std::isnan(value)) {
+                                throw std::runtime_error(
+                                    "STATIC in a PERTURBATION step does not accept general-step increment data"
+                                );
+                            }
+                        }
+                        return;
+                    }
+
                     const fem::Precision period = std::isnan(data[1]) || data[1] == fem::Precision(0)
                         ? fem::Precision(1) : data[1];
                     const fem::Precision initial = std::isnan(data[0]) || data[0] == fem::Precision(0)
@@ -347,24 +372,32 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     });
 
     // ---------------------------------------------------------------------
-    // Implicit transient dynamics
+    // Direct implicit transient dynamics
     // ---------------------------------------------------------------------
     registry.command("DYNAMIC", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Map Abaqus implicit transient dynamics to FEMaster linear Newmark analysis.");
+        command.doc("Map Abaqus DYNAMIC, DIRECT to FEMaster linear Newmark analysis.");
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .flag("DIRECT").doc("Abaqus fixed-increment request")
+                .flag("DIRECT").doc("Required fixed-increment Abaqus dynamics mode")
         );
 
-        command.on_enter([&parser](const fem::io::dsl::Keys&) {
+        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             if (!state.step_active || parser.active_loadcase()) {
                 throw std::runtime_error("STEP must contain exactly one supported procedure card");
             }
+            if (!keys.has("DIRECT")) {
+                throw std::runtime_error(
+                    "Only DYNAMIC, DIRECT is supported because FEMaster transient analysis uses a fixed time increment"
+                );
+            }
             if (state.nlgeom) {
                 throw std::runtime_error("DYNAMIC with NLGEOM=YES is not supported by FEMaster's linear transient solver");
+            }
+            if (state.perturbation) {
+                throw std::runtime_error("DYNAMIC in a PERTURBATION step is not mapped to FEMaster's direct transient solver");
             }
 
             parser.set_active_loadcase(
@@ -381,19 +414,19 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
                     .fixed<fem::Precision, 4>().name("DATA")
-                        .desc("Initial increment, period, minimum increment, maximum increment")
+                        .desc("Fixed increment, period, unused minimum, unused maximum")
                         .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
                 .bind([&parser](const std::array<fem::Precision, 4>& data) {
                     if (std::isnan(data[0]) || data[0] <= fem::Precision(0) ||
                         std::isnan(data[1]) || data[1] <= fem::Precision(0)) {
-                        throw std::runtime_error("DYNAMIC requires positive initial increment and step period");
+                        throw std::runtime_error("DYNAMIC, DIRECT requires positive increment and step period");
                     }
 
                     auto* loadcase = parser.active_loadcase_as<loadcase::Transient>();
                     loadcase->dt      = data[0];
-                    loadcase->t_start = 0.0;
+                    loadcase->t_start = fem::Precision(0);
                     loadcase->t_end   = data[1];
                     parser.abaqus_state().step_period = data[1];
                 })
@@ -428,7 +461,9 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 throw std::runtime_error("Only STEADY STATE DYNAMICS, DIRECT is supported");
             }
             if (state.nlgeom) {
-                throw std::runtime_error("STEADY STATE DYNAMICS does not support NLGEOM in FEMaster");
+                throw std::runtime_error(
+                    "STEADY STATE DYNAMICS about a geometrically nonlinear Abaqus base state is not supported"
+                );
             }
 
             *frequency_scale = keys.raw("FREQUENCYSCALE");
@@ -455,7 +490,9 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     if (!loadcase || std::isnan(data[0]) || data[0] < fem::Precision(0)) {
                         throw std::runtime_error("STEADY STATE DYNAMICS requires a non-negative lower frequency");
                     }
-                    if (!std::isnan(data[3]) && std::abs(data[3] - fem::Precision(1)) > fem::Precision(1e-12)) {
+
+                    const fem::Precision bias = std::isnan(data[3]) ? fem::Precision(1) : data[3];
+                    if (std::abs(bias - fem::Precision(1)) > fem::Precision(1e-12)) {
                         throw std::runtime_error("Biased steady-state frequency spacing is not supported");
                     }
                     if (!std::isnan(data[4]) && std::abs(data[4] - fem::Precision(1)) > fem::Precision(1e-12)) {
@@ -468,13 +505,19 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         loadcase->frequencies.push_back(lower);
                         return;
                     }
-                    if (upper < lower || std::isnan(data[2])) {
-                        throw std::runtime_error("Steady-state frequency range requires upper >= lower and a point count");
+                    if (upper < lower) {
+                        throw std::runtime_error("Steady-state frequency range requires upper >= lower");
                     }
 
-                    const int count = static_cast<int>(std::llround(data[2]));
-                    if (count < 2 || std::abs(data[2] - static_cast<fem::Precision>(count)) > fem::Precision(1e-12)) {
-                        throw std::runtime_error("Steady-state frequency point count must be an integer >= 2");
+                    int count = 20;
+                    if (!std::isnan(data[2])) {
+                        const int requested = static_cast<int>(std::llround(data[2]));
+                        if (std::abs(data[2] - static_cast<fem::Precision>(requested)) > fem::Precision(1e-12)) {
+                            throw std::runtime_error("Steady-state frequency point count must be an integer");
+                        }
+                        if (requested >= 2) {
+                            count = requested;
+                        }
                     }
 
                     if (*frequency_scale == "LOGARITHMIC" && lower <= fem::Precision(0)) {
@@ -550,6 +593,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             } catch (const std::exception& error) {
                 parser.clear_active_loadcase();
                 state.step_active = false;
+                state.procedure.clear();
                 throw std::runtime_error(std::string("Abaqus STEP execution failed: ") + error.what());
             }
 
