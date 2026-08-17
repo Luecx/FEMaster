@@ -3,31 +3,28 @@
  * @brief Implements Abaqus-specific command registration for the common parser stages.
  *
  * The Abaqus reader reuses native FEMaster registrations whenever the accepted
- * syntax and resulting model operation are identical. `ELASTIC` now uses the
- * shared command because the native syntax follows the Abaqus type meanings.
- * Format-specific handlers remain only where the external representation differs,
- * currently for `ELEMENT`, `SURFACE`, `ORIENTATION`, `EXPANSION`, `SOLID SECTION`
- * and `SHELL SECTION`.
+ * syntax and resulting model operation are identical. Format-specific handlers
+ * remain only where the external representation or Abaqus history semantics
+ * differ.
  *
- * The supported material subset consists of `MATERIAL`, constant `DENSITY`,
- * isotropic or orthotropic `ELASTIC`, Neo-Hooke `HYPERELASTIC`, and constant
- * isotropic `EXPANSION`. Basic coordinate-defined rectangular orientations and
- * homogeneous solid, truss and shell sections are constructed in the topology
- * pass before the common parser assigns sections and enumerates element-local
- * data.
+ * Model-definition data are constructed in the topology pass. This includes
+ * nodes/elements/sets/surfaces, materials and sections, tabular amplitudes,
+ * material orientations and nodal `*TRANSFORM` coordinate systems. Analysis
+ * steps and their loads/supports execute only in the final data pass, after the
+ * common parser has assigned sections and initialized all element-local data.
  *
- * No separate parsing pipeline is implemented here. The four passes, model
- * allocation, section assignment, element-local enumeration, shell-normal
- * construction and final data stage remain owned by `Parser`.
+ * Supported step procedures currently map to FEMaster linear/nonlinear static,
+ * Riks arc-length, eigenfrequency, linear buckling, linear implicit transient
+ * and direct harmonic response load cases. Each Abaqus step is intentionally an
+ * independent FEMaster load case; cross-step Abaqus history propagation is not
+ * emulated by the reader.
  *
  * @see Parser
+ * @see ParserAbqState
  * @see commands::register_elastic
- * @see commands_abq::register_element
- * @see commands_abq::register_surface
- * @see commands_abq::register_orientation
- * @see commands_abq::register_expansion
- * @see commands_abq::register_solid_section
- * @see commands_abq::register_shell_section
+ * @see commands_abq::register_step
+ * @see commands_abq::register_transform
+ * @see commands_abq::register_amplitude
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -44,31 +41,45 @@
 #include "commands/register_node.inl"
 #include "commands/register_node_count.inl"
 #include "commands/register_nset.inl"
+#include "commands_abq/register_amplitude.inl"
+#include "commands_abq/register_boundary.inl"
+#include "commands_abq/register_cload.inl"
+#include "commands_abq/register_dload.inl"
+#include "commands_abq/register_dsload.inl"
 #include "commands_abq/register_element.inl"
 #include "commands_abq/register_expansion.inl"
 #include "commands_abq/register_orientation.inl"
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
+#include "commands_abq/register_step.inl"
 #include "commands_abq/register_surface.inl"
+#include "commands_abq/register_transform.inl"
 
 #include <algorithm>
 
 namespace fem::io::reader {
 
+ParserAbqState& ParserAbq::abaqus_state() {
+    return m_abq_state;
+}
+
+const ParserAbqState& ParserAbq::abaqus_state() const {
+    return m_abq_state;
+}
+
 /**
- * Configures the allocation pass for the currently supported Abaqus syntax.
+ * Configures the allocation pass for the supported Abaqus syntax.
  *
  * `NODE` and `ELEMENT` are the only active commands because model capacities
- * depend on their highest identifiers. All other supported keywords are still
- * registered in consume mode so a complete supported deck can be read without
- * mutating the temporary placeholder model. Abaqus surfaces use generated
- * internal surface identifiers and therefore require no surface count pass.
+ * depend on their highest identifiers. Every other supported keyword is still
+ * registered in consume mode so complete supported decks can be traversed
+ * without mutating the placeholder count-stage model.
  *
  * @param registry Stage-local command registry.
  * @param count Allocation counters updated from parsed node and element ids.
  */
 void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& count) {
-    // Register every keyword currently accepted by the Abaqus reader
+    // Model-definition syntax
     commands::register_heading(registry);
     commands::register_node_count(registry, [&count](ID id) {
         count.highest_node_id = std::max(count.highest_node_id, static_cast<int>(id));
@@ -85,27 +96,39 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
+    commands_abq::register_transform(registry, *this);
+    commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Execute only commands required to determine model allocation capacities
+    // Analysis/history syntax is recognized but inert during allocation
+    commands_abq::register_step(registry, *this);
+    commands_abq::register_cload(registry, *this);
+    commands_abq::register_boundary(registry, *this);
+    commands_abq::register_dload(registry, *this);
+    commands_abq::register_dsload(registry, *this);
+
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("NODE"   , io::dsl::ActiveMode::Active);
     registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
 }
 
 /**
- * Configures the topology pass for the currently supported Abaqus syntax.
+ * Configures the topology pass for the supported Abaqus syntax.
  *
- * Nodes, elements, sets and surfaces are constructed together with material,
- * orientation and section definitions required before the common
- * section-assignment and element-enumeration steps. Material child commands
- * execute while their active `MATERIAL` parent selects the target material.
+ * All persistent model data required by later load cases are built here,
+ * including amplitudes and nodal transforms. Abaqus step/history commands remain
+ * consume-only until the final pass so no solver state is created before model
+ * topology, sections and element-local enumeration are complete.
  *
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
-    // Register the supported model-definition commands
+    // A ParserAbq instance may parse more than one deck during its lifetime.
+    // Reset all format-only state before constructing the new model.
+    m_abq_state = ParserAbqState{};
+
+    // Persistent model-definition syntax
     commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
@@ -118,39 +141,48 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
+    commands_abq::register_transform(registry, *this);
+    commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Construct all model data required before section assignment and element
-    // enumeration. HEADING remains a recognized consume-only no-op.
+    // History syntax must still be registered so the topology pass can traverse
+    // complete Abaqus decks without executing a load case.
+    commands_abq::register_step(registry, *this);
+    commands_abq::register_cload(registry, *this);
+    commands_abq::register_boundary(registry, *this);
+    commands_abq::register_dload(registry, *this);
+    commands_abq::register_dsload(registry, *this);
+
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE"        , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT"     , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NSET"        , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELSET"       , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE"     , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("MATERIAL"    , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("DENSITY"     , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("HYPERELASTIC", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("EXPANSION"   , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ORIENTATION" , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SOLIDSECTION", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NODE"          , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT"       , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NSET"          , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELSET"         , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE"       , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("MATERIAL"      , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DENSITY"       , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELASTIC"       , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("HYPERELASTIC"  , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("EXPANSION"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ORIENTATION"   , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("TRANSFORM"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("AMPLITUDE"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SOLIDSECTION"  , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SHELLSECTION"  , io::dsl::ActiveMode::Active);
 }
 
 /**
- * Configures the field pass for the currently supported Abaqus syntax.
+ * Configures the field pass for the supported Abaqus syntax.
  *
- * No Abaqus field-like keyword is supported yet. All known commands are
- * registered only in consume mode so the common field pass retains its position
- * between element enumeration and shell-normal construction without reapplying
- * topology, material, orientation or section mutations.
+ * No currently supported Abaqus keyword creates an enumeration-dependent field.
+ * Every known command is registered only in consume mode so the common field
+ * pass retains its dependency position without replaying topology or history
+ * mutations.
  *
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
-    // Register the supported syntax so the complete deck can be consumed
     commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
@@ -163,25 +195,31 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
+    commands_abq::register_transform(registry, *this);
+    commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
+    commands_abq::register_step(registry, *this);
+    commands_abq::register_cload(registry, *this);
+    commands_abq::register_boundary(registry, *this);
+    commands_abq::register_dload(registry, *this);
+    commands_abq::register_dsload(registry, *this);
 
-    // No currently supported Abaqus keyword executes in the field pass
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
 }
 
 /**
- * Configures the final data pass for the currently supported Abaqus syntax.
+ * Configures the final Abaqus analysis/history pass.
  *
- * The currently supported Abaqus subset contains only model-definition data,
- * all of which has already executed in the topology pass. Every command is
- * therefore consumed without execution while the common data-stage writer setup
- * completes. Loads, boundary conditions and analysis steps remain unsupported.
+ * Persistent model-definition keywords are consumed without execution because
+ * they have already been applied in topology. Step/procedure cards, concentrated
+ * and distributed loads, and displacement boundary conditions execute here and
+ * create/run FEMaster load cases through the common parser writer/model state.
  *
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
-    // Register the supported syntax so the complete deck can be consumed
+    // Persistent model syntax remains recognized but inert
     commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
@@ -194,11 +232,30 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
+    commands_abq::register_transform(registry, *this);
+    commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // No currently supported Abaqus keyword executes in the final data pass
+    // Analysis/history syntax executes only after model finalization
+    commands_abq::register_step(registry, *this);
+    commands_abq::register_cload(registry, *this);
+    commands_abq::register_boundary(registry, *this);
+    commands_abq::register_dload(registry, *this);
+    commands_abq::register_dsload(registry, *this);
+
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("STEP"               , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("STATIC"             , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("FREQUENCY"          , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("BUCKLE"             , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DYNAMIC"            , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("STEADYSTATEDYNAMICS", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("CLOAD"              , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("BOUNDARY"           , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DLOAD"              , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DSLOAD"             , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ENDSTEP"            , io::dsl::ActiveMode::Active);
 }
 
 } // namespace fem::io::reader
