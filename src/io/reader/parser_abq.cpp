@@ -5,13 +5,13 @@
  * The Abaqus reader reuses native FEMaster registrations whenever the accepted
  * syntax and resulting model operation are identical. Format-specific handlers
  * are used only where Abaqus semantics differ, currently for `ELEMENT`,
- * `SURFACE`, `ELASTIC` and `SHELL SECTION`.
+ * `SURFACE`, `ELASTIC`, `SOLID SECTION` and `SHELL SECTION`.
  *
  * The supported material subset consists of `MATERIAL`, constant `DENSITY`,
- * isotropic or engineering-constant `ELASTIC`, and Neo-Hooke `HYPERELASTIC`.
- * Homogeneous `SOLID SECTION` and `SHELL SECTION` definitions are constructed in
- * the topology pass before the common parser assigns sections and enumerates
- * element-local data.
+ * isotropic or orthotropic `ELASTIC`, and Neo-Hooke `HYPERELASTIC`.
+ * Homogeneous solid, truss and shell sections are constructed in the topology
+ * pass before the common parser assigns sections and enumerates element-local
+ * data.
  *
  * No separate parsing pipeline is implemented here. The four passes, model
  * allocation, section assignment, element-local enumeration, shell-normal
@@ -21,6 +21,7 @@
  * @see commands_abq::register_element
  * @see commands_abq::register_surface
  * @see commands_abq::register_elastic
+ * @see commands_abq::register_solid_section
  * @see commands_abq::register_shell_section
  *
  * @author Finn Eggers
@@ -37,10 +38,10 @@
 #include "commands/register_node.inl"
 #include "commands/register_node_count.inl"
 #include "commands/register_nset.inl"
-#include "commands/register_solid_section.inl"
 #include "commands_abq/register_elastic.inl"
 #include "commands_abq/register_element.inl"
 #include "commands_abq/register_shell_section.inl"
+#include "commands_abq/register_solid_section.inl"
 #include "commands_abq/register_surface.inl"
 
 #include <algorithm>
@@ -75,7 +76,7 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     commands::register_density(registry, model());
     commands_abq::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
-    commands::register_solid_section(registry, model());
+    commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
     // Execute only commands required to determine model allocation capacities
@@ -106,7 +107,7 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     commands::register_density(registry, model());
     commands_abq::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
-    commands::register_solid_section(registry, model());
+    commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
     // Construct all model data required before section assignment and element
@@ -147,7 +148,7 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
     commands::register_density(registry, model());
     commands_abq::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
-    commands::register_solid_section(registry, model());
+    commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
     // No currently supported Abaqus keyword executes in the field pass
@@ -176,7 +177,7 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands::register_density(registry, model());
     commands_abq::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
-    commands::register_solid_section(registry, model());
+    commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
     // No currently supported Abaqus keyword executes in the final data pass
