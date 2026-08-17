@@ -10,13 +10,15 @@
  *
  * The supported Abaqus syntax is intentionally introduced incrementally. The
  * reader currently covers basic topology and sets, element- and node-based
- * surfaces, core elastic material properties and homogeneous solid/truss/shell
- * sections. Unsupported Abaqus keywords remain hard parser errors.
+ * surfaces, core elastic material properties, rectangular material orientations
+ * and homogeneous solid/truss/shell sections. Unsupported Abaqus keywords remain
+ * hard parser errors.
  *
  * @see Parser
+ * @see commands::register_elastic
  * @see commands_abq::register_element
  * @see commands_abq::register_surface
- * @see commands_abq::register_elastic
+ * @see commands_abq::register_orientation
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -38,9 +40,10 @@ namespace fem::io::reader {
  *
  * Native registrations are reused where Abaqus input maps without semantic
  * changes, including `HEADING`, `NODE`, `NSET`, `ELSET`, `MATERIAL`, constant
- * `DENSITY` and Neo-Hooke `HYPERELASTIC`. Abaqus-specific registrations handle
- * element labels, surfaces, linear elasticity, thermal expansion and homogeneous
- * section syntax where the external representation differs from FEMaster.
+ * `DENSITY`, `ELASTIC` and Neo-Hooke `HYPERELASTIC`. Abaqus-specific
+ * registrations handle element labels, surfaces, coordinate-defined rectangular
+ * orientations, thermal expansion and homogeneous section syntax where the
+ * external representation differs from FEMaster.
  *
  * Parts, assemblies, analysis steps, loads and boundary conditions remain
  * deliberately outside the current supported subset.
