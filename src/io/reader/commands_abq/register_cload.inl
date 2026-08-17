@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -115,10 +116,19 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                                 "CLOAD AMPLITUDE is not supported for harmonic response because FEMaster amplitudes are time histories, not frequency functions"
                             );
                         }
-                    } else if (state.procedure == "LINEARTRANSIENT" &&
-                               !state.step_amplitude.empty() &&
-                               state.step_amplitude != "STEP") {
-                        stored_amplitude = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
+                    } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
+                        const std::string generated = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
+                        if (!model._data->amplitudes.has(generated)) {
+                            model.define_amplitude(generated, bc::Interpolation::Linear);
+                            model.add_amplitude_sample(generated, fem::Precision(0), fem::Precision(0));
+                            model.add_amplitude_sample(generated, state.step_period, fem::Precision(1));
+                        }
+                        stored_amplitude = generated;
+                    } else if ((state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS") &&
+                               state.step_amplitude == "STEP") {
+                        throw std::runtime_error(
+                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
+                        );
                     }
 
                     fem::Vec6 load = fem::Vec6::Zero();
