@@ -1,18 +1,17 @@
 /**
  * @file register_history.inl
- * @brief Applies FEMaster's independent-step semantics to Abaqus load/BC history.
+ * @brief Materializes persistent Abaqus load/BC definitions at *END STEP.
  *
- * Abaqus load and boundary-condition definitions are propagated between steps,
- * while FEMaster mechanical solution state is deliberately not. This adapter
- * overrides only the `*STEP` entry and `*END STEP` finalization hooks installed
- * by `register_step`: each step starts from the FEMaster reference state, but its
- * load/support collectors are materialized from the current logical Abaqus
- * definition snapshot after `OP=MOD`/`OP=NEW` processing.
+ * FEMaster load cases remain mechanically independent, while Abaqus load and
+ * boundary-condition definitions are propagated logically between steps by the
+ * dedicated command handlers. This adapter converts the complete active snapshot
+ * into fresh FEMaster load/support collectors immediately before the current
+ * load case is executed.
  *
- * Step-time amplitudes attached to records modified in the current step are used
- * during that step. After successful execution their end value becomes the
- * constant propagated magnitude for later steps, matching Abaqus propagation of
- * unchanged step-time-amplitude loads without carrying solver state.
+ * Step-time amplitudes on records modified in the current step are active only
+ * for that step. After successful execution their end value is stored as the
+ * constant propagated magnitude used by later steps unless the record is
+ * modified again.
  *
  * @see ParserAbqState
  * @see commands_abq::register_step
@@ -30,7 +29,6 @@
 #include <utility>
 
 #include "../parser_abq.h"
-#include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
 #include "../../../bc/amplitude.h"
 #include "../../../loadcase/linear_buckling.h"
@@ -44,78 +42,20 @@
 namespace fem::io::reader::commands_abq {
 
 /**
- * Overrides Abaqus step entry/finalization with FEMaster's independent mechanical
- * state and persistent logical load/BC definition history.
+ * Replaces the structural `*END STEP` callback from `register_step` with logical
+ * Abaqus history materialization and FEMaster load-case execution.
  *
- * The function is registered after `register_step` in the final parser pass. It
- * deliberately reuses that command's variants/procedure parsing and replaces
- * only the two hooks whose semantics depend on cross-step history.
+ * Only definition history is persistent. Previous FEMaster collectors are never
+ * attached to a later load case; instead, every step receives a new collector
+ * containing the current active snapshot after `OP=MOD`/`OP=NEW` processing.
+ * Nodal targets are expanded only here so `*TRANSFORM` can be resolved per node.
  *
- * @param registry Final-stage DSL registry containing the STEP commands.
+ * @param registry Final-stage DSL registry containing the ENDSTEP command.
  * @param parser Abaqus parser owning logical history and active load-case state.
  */
 inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser) {
-    // ---------------------------------------------------------------------
-    // Independent STEP entry
-    // ---------------------------------------------------------------------
-    registry.command("STEP", [&](fem::io::dsl::Command& command) {
-        command.doc(
-            "Begin one mechanically independent FEMaster load case while preserving Abaqus load/BC definitions."
-        );
-
-        command.keyword(
-            fem::io::dsl::KeywordSpec::make()
-                .key("NAME").optional().doc("Optional Abaqus step name")
-                .key("NLGEOM").optional("NO").allowed({"YES", "NO"})
-                    .doc("Enable geometric nonlinearity for this step only")
-                .key("INC").optional("100").doc("Maximum number of increments")
-                .key("AMPLITUDE").optional().allowed({"RAMP", "STEP"})
-                    .doc("Default amplitude mode for loads modified in this step")
-                .flag("PERTURBATION").doc("Linear perturbation procedure mapped independently")
-        );
-
-        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
-            if (state.step_active || parser.active_loadcase()) {
-                throw std::runtime_error("Nested or unfinished Abaqus STEP blocks are not supported");
-            }
-
-            const int max_increments = std::stoi(keys.raw("INC"));
-            if (max_increments <= 0) {
-                throw std::runtime_error("STEP requires INC > 0");
-            }
-
-            // Mechanical state is intentionally local to this step. In
-            // particular NLGEOM is not inherited from any preceding Abaqus step.
-            state.step_active     = true;
-            state.step_index      = state.next_step_index++;
-            state.max_increments  = max_increments;
-            state.nlgeom          = keys.raw("NLGEOM") == "YES";
-            state.perturbation    = keys.has("PERTURBATION");
-            state.step_period     = Precision(1);
-            state.step_name       = keys.has("NAME") ? keys.raw("NAME") : std::string{};
-            state.step_amplitude  = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            state.procedure.clear();
-
-            // OP applies independently to each Abaqus load/BC category. The
-            // active logical definitions themselves deliberately survive.
-            state.cload_op.clear();
-            state.boundary_op.clear();
-            state.dload_op.clear();
-            state.dsload_op.clear();
-
-            state.load_collector    = "__ABQ_STEP_" + std::to_string(state.step_index) + "_LOADS";
-            state.support_collector = "__ABQ_STEP_" + std::to_string(state.step_index) + "_SUPPORTS";
-            state.load_collector_used    = false;
-            state.support_collector_used = false;
-        });
-    });
-
-    // ---------------------------------------------------------------------
-    // Snapshot materialization and execution at END STEP
-    // ---------------------------------------------------------------------
     registry.command("ENDSTEP", [&](fem::io::dsl::Command& command) {
-        command.doc("Materialize the active Abaqus definitions and execute the independent FEMaster step.");
+        command.doc("Materialize active Abaqus load/BC definitions and execute the independent FEMaster step.");
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto& model = parser.model();
@@ -127,11 +67,11 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
 
             const bool nonlinear = state.procedure == "NONLINEARSTATIC" ||
                                    state.procedure == "STATIC_RIKS";
-            const bool use_loads = state.procedure != "EIGENFREQ";
+            const bool use_loads  = state.procedure != "EIGENFREQ";
 
-            // A record modified in the current step uses its current amplitude.
-            // Propagated records have already been frozen to their prior end
-            // value and therefore materialize without an amplitude.
+            // A record modified in this step uses the current step amplitude.
+            // Propagated records were frozen after their defining/modifying step
+            // and therefore enter this step as constant total values.
             const auto resolve_load_amplitude = [&](const std::string& amplitude,
                                                      int modified_step)
                 -> std::pair<Precision, std::string> {
@@ -141,7 +81,7 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
 
                 if (!amplitude.empty()) {
                     if (!model._data->amplitudes.has(amplitude)) {
-                        throw std::runtime_error("Unknown propagated Abaqus amplitude '" + amplitude + "'");
+                        throw std::runtime_error("Unknown Abaqus amplitude '" + amplitude + "'");
                     }
 
                     if (state.procedure == "LINEARTRANSIENT" ||
@@ -162,8 +102,9 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                     }
                 }
 
-                // FEMaster transient analysis can represent the current-step
-                // RAMP default directly as one generated linear amplitude.
+                // For a transient load newly defined/modified in this step, the
+                // explicit STEP default RAMP is represented by one generated
+                // linear FEMaster amplitude. Propagated loads bypass this path.
                 if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
                     const std::string generated =
                         "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
@@ -185,7 +126,7 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
             };
 
             // -----------------------------------------------------------------
-            // Materialize active boundary conditions
+            // Boundary-condition snapshot
             // -----------------------------------------------------------------
             if (!state.boundaries.empty()) {
                 model._data->supp_cols.activate(state.support_collector);
@@ -249,7 +190,7 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
             }
 
             // -----------------------------------------------------------------
-            // Materialize the complete active load snapshot
+            // Load snapshot
             // -----------------------------------------------------------------
             if (use_loads &&
                 (!state.cloads.empty() || !state.dloads.empty() || !state.dsloads.empty())) {
@@ -344,8 +285,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 }
             }
 
-            // Attach exactly the newly materialized snapshot. Previous FEMaster
-            // collectors remain stored but are never inherited by this load case.
+            // Attach only the fresh snapshot collector to this independent load
+            // case. Older FEMaster collectors remain stored but are never reused.
             if (state.support_collector_used) {
                 if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
                     lc->supps.push_back(state.support_collector);
@@ -387,10 +328,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 throw std::runtime_error(std::string("Abaqus STEP execution failed: ") + error.what());
             }
 
-            // Step-time amplitude references do not restart when an unchanged
-            // load propagates to the next Abaqus step. Freeze every definition
-            // modified here to its end-of-step value and clear the amplitude
-            // before the next logical snapshot is materialized.
+            // Freeze current-step amplitudes to the end value used when the same
+            // logical definition propagates unchanged into the next step.
             Precision end_coordinate = state.step_period;
             if (auto* harmonic = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
                 if (!harmonic->frequencies.empty()) {
