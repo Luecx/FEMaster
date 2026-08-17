@@ -40,11 +40,16 @@ namespace fem::io::reader {
  * load by the same node/node-set specification and generalized degree of
  * freedom when a later `OP=MOD` record changes it. Expansion to individual
  * FEMaster nodes is deferred until the current step is executed.
+ *
+ * `previous_magnitude` stores the total value at the end of the preceding step
+ * when this record is redefined. It is used only to reproduce the Abaqus default
+ * `RAMP` transition for time-dependent load cases; it is not mechanical state.
  */
 struct ParserAbqCLoad {
     std::string target;
     int         dof = 0;
     Precision   magnitude = Precision(0);
+    Precision   previous_magnitude = Precision(0);
     std::string amplitude;
     int         modified_step = 0;
 };
@@ -67,12 +72,15 @@ struct ParserAbqBoundary {
  * @brief Logical supported Abaqus element-based distributed-load definition.
  *
  * The current reader supports `GRAV`; the type string is nevertheless retained
- * as part of the Abaqus load identity used by `OP=MOD`.
+ * as part of the Abaqus load identity used by `OP=MOD`. `previous_magnitude`
+ * retains the prior total magnitude for default `RAMP` interpolation when the
+ * load is redefined in a later transient step.
  */
 struct ParserAbqDLoad {
     std::string              target;
     std::string              type;
     Precision                magnitude = Precision(0);
+    Precision                previous_magnitude = Precision(0);
     std::array<Precision, 3> direction{Precision(0), Precision(0), Precision(0)};
     std::string              amplitude;
     int                      modified_step = 0;
@@ -84,11 +92,14 @@ struct ParserAbqDLoad {
  * Pressure and general traction share the same history container but remain
  * distinct through `type`. Tractions additionally retain their reference
  * direction, optional orientation and follower setting until materialization.
+ * `previous_magnitude` holds the prior total scalar load magnitude for default
+ * `RAMP` interpolation after a later redefinition.
  */
 struct ParserAbqDSLoad {
     std::string              surface;
     std::string              type;
     Precision                magnitude = Precision(0);
+    Precision                previous_magnitude = Precision(0);
     std::array<Precision, 3> direction{Precision(0), Precision(0), Precision(0)};
     std::string              amplitude;
     std::string              orientation;
