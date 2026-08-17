@@ -7,9 +7,9 @@
  * `OP=NEW` clears the complete active DSLOAD category before replacement data
  * are read.
  *
- * Materialization to FEMaster `PLoad`/`DLoad` objects is deferred until
- * `*END STEP`, where procedure-dependent amplitude and follower restrictions are
- * resolved for the current independent FEMaster load case.
+ * Repeated definitions of the same surface/load type in one step remain
+ * separate and therefore add during materialization. A propagated ambiguous
+ * multi-definition must be replaced with `OP=NEW` rather than modified.
  *
  * @see ParserAbqState
  * @see ParserAbqDSLoad
@@ -40,13 +40,13 @@ namespace fem::io::reader::commands_abq {
  * Registers supported Abaqus surface-load history records.
  *
  * The logical identity is the original surface name together with `P` or
- * `TRVEC`. General-traction direction is normalized when the record is read;
- * orientation, follower setting and amplitude remain attached to the logical
- * definition until the step snapshot is materialized. An empty `OP=NEW` block
- * removes all active DSLOADs without replacements.
+ * `TRVEC`. One propagated definition can be redefined with `OP=MOD`; repeated
+ * definitions in the current step are stored as additive load conditions.
+ * General-traction directions are normalized when read.
  *
- * `OP` must be consistent across all `*DSLOAD` cards in one step. Imaginary
- * harmonic loads remain unsupported.
+ * An empty `OP=NEW` block removes all active DSLOADs. `OP` must be consistent
+ * across all `*DSLOAD` cards in one step. Imaginary harmonic loads remain
+ * unsupported.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser retaining active surface-load definitions.
@@ -157,29 +157,49 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                         throw std::runtime_error("DSLOAD supports only P and TRVEC load labels");
                     }
 
-                    auto record = std::find_if(
-                        state.dsloads.begin(), state.dsloads.end(),
-                        [&](const ParserAbqDSLoad& item) {
-                            return item.surface == surface && item.type == type;
+                    auto first = state.dsloads.end();
+                    int matches = 0;
+                    bool defined_this_step = false;
+
+                    for (auto it = state.dsloads.begin(); it != state.dsloads.end(); ++it) {
+                        if (it->surface != surface || it->type != type) {
+                            continue;
                         }
-                    );
-
-                    const ParserAbqDSLoad value{
-                        surface,
-                        type,
-                        magnitude,
-                        stored_direction,
-                        *amplitude,
-                        *orientation,
-                        *follower,
-                        state.step_index
-                    };
-
-                    if (record == state.dsloads.end()) {
-                        state.dsloads.push_back(value);
-                    } else {
-                        *record = value;
+                        if (first == state.dsloads.end()) {
+                            first = it;
+                        }
+                        ++matches;
+                        defined_this_step = defined_this_step || it->modified_step == state.step_index;
                     }
+
+                    if (defined_this_step || matches == 0) {
+                        state.dsloads.push_back(ParserAbqDSLoad{
+                            surface,
+                            type,
+                            magnitude,
+                            fem::Precision(0),
+                            stored_direction,
+                            *amplitude,
+                            *orientation,
+                            *follower,
+                            state.step_index
+                        });
+                        return;
+                    }
+                    if (matches > 1) {
+                        throw std::runtime_error(
+                            "Multiple active DSLOADs use surface '" + surface +
+                            "' and type '" + type + "'; use OP=NEW to redefine them"
+                        );
+                    }
+
+                    first->previous_magnitude = first->magnitude;
+                    first->magnitude          = magnitude;
+                    first->direction          = stored_direction;
+                    first->amplitude          = *amplitude;
+                    first->orientation        = *orientation;
+                    first->follower           = *follower;
+                    first->modified_step      = state.step_index;
                 })
             )
         );
