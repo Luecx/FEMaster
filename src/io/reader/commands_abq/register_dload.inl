@@ -1,20 +1,14 @@
 /**
  * @file register_dload.inl
- * @brief Registers the supported Abaqus *DLOAD gravity form.
+ * @brief Registers supported step-dependent Abaqus *DLOAD definitions.
  *
- * The initial element-based distributed-load reader supports `GRAV` only. The
- * Abaqus gravity magnitude and vector components map directly to FEMaster's
- * density-scaled `VLoad`, whose element integration multiplies the supplied
- * acceleration field by material density and volume measure.
+ * The current element-based distributed-load subset supports `GRAV`. Definitions
+ * are retained logically across steps so `OP=MOD` can update an existing target
+ * and `OP=NEW` can replace the complete active DLOAD category without carrying
+ * any mechanical solver state between FEMaster load cases.
  *
- * Element-face pressure/traction labels are intentionally left to `*SURFACE`
- * plus `*DSLOAD` for now. Creating new geometric surfaces during the final data
- * pass would occur after FEMaster's topology finalization and result-model write,
- * so doing that implicitly inside `*DLOAD` would violate the staged parser
- * architecture.
- *
- * @see bc::VLoad
- * @see commands_abq::register_dsload
+ * @see ParserAbqState
+ * @see ParserAbqDLoad
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -22,6 +16,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <stdexcept>
@@ -31,35 +26,33 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
-#include "../../../bc/amplitude.h"
-#include "../../../core/types_eig.h"
-#include "../../../core/types_num.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers Abaqus gravity loading on an element set, element id or the complete
- * model. The blank Abaqus target is mapped to FEMaster's built-in `EALL` region.
- * `OP=NEW` is rejected because Abaqus cross-step load removal is not represented
- * by the current independent FEMaster load-case mapping. Real harmonic
- * amplitudes are retained and evaluated at the current sweep frequency.
+ * Registers Abaqus gravity-load history records.
+ *
+ * The logical identity consists of the original element/element-set target and
+ * the Abaqus load type. Materialization to FEMaster `VLoad` objects is deferred
+ * until `*END STEP`. `OP` must be consistent across all `*DLOAD` cards in one
+ * step.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser providing current step state.
+ * @param parser Abaqus parser retaining active distributed-load definitions.
  */
 inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("DLOAD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Apply Abaqus GRAV body loading in the current step.");
+        command.doc("Define or modify active Abaqus GRAV distributed loads.");
 
         auto amplitude = std::make_shared<std::string>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
-                .key("OP").optional("MOD").allowed({"MOD"})
-                    .doc("Only additive/modifying current-step loads are supported")
+                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+                    .doc("MOD preserves active DLOADs; NEW replaces the complete DLOAD category")
                 .flag("REAL").doc("Real harmonic load component")
                 .flag("IMAGINARY").doc("Unsupported imaginary harmonic load component")
         );
@@ -69,6 +62,9 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             if (!state.step_active || !parser.active_loadcase()) {
                 throw std::runtime_error("DLOAD must appear after a supported procedure inside STEP");
             }
+            if (state.procedure == "EIGENFREQ") {
+                throw std::runtime_error("DLOAD is not supported in a FREQUENCY step");
+            }
             if (keys.has("REAL") && keys.has("IMAGINARY")) {
                 throw std::runtime_error("DLOAD REAL and IMAGINARY are mutually exclusive");
             }
@@ -76,9 +72,21 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 throw std::runtime_error("DLOAD IMAGINARY is not supported by the real-load harmonic solver");
             }
 
+            const std::string op = keys.raw("OP");
+            if (!state.dload_op.empty() && state.dload_op != op) {
+                throw std::runtime_error("All DLOAD cards in one STEP must use the same OP value");
+            }
+            if (state.dload_op.empty()) {
+                state.dload_op = op;
+                if (op == "NEW") {
+                    state.dloads.clear();
+                }
+            }
+
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            parser.model()._data->load_cols.activate(state.load_collector);
-            state.load_collector_used = true;
+            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
+                throw std::runtime_error("DLOAD references unknown amplitude '" + *amplitude + "'");
+            }
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -101,58 +109,28 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         );
                     }
 
-                    auto& model = parser.model();
                     auto& state = parser.abaqus_state();
-                    std::string stored_amplitude;
-                    fem::Precision scale = fem::Precision(1);
-
-                    if (!amplitude->empty()) {
-                        if (!model._data->amplitudes.has(*amplitude)) {
-                            throw std::runtime_error("DLOAD references unknown amplitude '" + *amplitude + "'");
+                    auto record = std::find_if(
+                        state.dloads.begin(), state.dloads.end(),
+                        [&](const ParserAbqDLoad& item) {
+                            return item.target == target && item.type == type;
                         }
+                    );
 
-                        if (state.procedure == "LINEARTRANSIENT" ||
-                            state.procedure == "LINEARHARMONIC") {
-                            stored_amplitude = *amplitude;
-                        } else if (state.procedure == "LINEARSTATIC" ||
-                                   state.procedure == "LINEARBUCKLING") {
-                            scale = model._data->amplitudes.get(*amplitude)->evaluate(state.step_period);
-                        } else if (state.procedure == "NONLINEARSTATIC" ||
-                                   state.procedure == "STATIC_RIKS") {
-                            throw std::runtime_error(
-                                "DLOAD AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
-                            );
-                        }
-                    } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
-                        const std::string generated = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
-                        if (!model._data->amplitudes.has(generated)) {
-                            model.define_amplitude(generated, bc::Interpolation::Linear);
-                            model.add_amplitude_sample(generated, fem::Precision(0), fem::Precision(0));
-                            model.add_amplitude_sample(generated, state.step_period, fem::Precision(1));
-                        }
-                        stored_amplitude = generated;
-                    } else if ((state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS") &&
-                               state.step_amplitude == "STEP") {
-                        throw std::runtime_error(
-                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
-                        );
-                    }
-
-                    const fem::Vec3 gravity = scale * magnitude * fem::Vec3{
-                        direction[0], direction[1], direction[2]
+                    const ParserAbqDLoad value{
+                        target,
+                        type,
+                        magnitude,
+                        direction,
+                        *amplitude,
+                        state.step_index
                     };
 
-                    if (model._data->elem_sets.has(target)) {
-                        model.add_vload(target, gravity, "", stored_amplitude);
-                        return;
+                    if (record == state.dloads.end()) {
+                        state.dloads.push_back(value);
+                    } else {
+                        *record = value;
                     }
-
-                    std::size_t parsed = 0;
-                    const long value = std::stol(target, &parsed);
-                    if (parsed != target.size()) {
-                        throw std::runtime_error("DLOAD target '" + target + "' is not an element set or element id");
-                    }
-                    model.add_vload(static_cast<fem::ID>(value), gravity, "", stored_amplitude);
                 })
             )
         );
