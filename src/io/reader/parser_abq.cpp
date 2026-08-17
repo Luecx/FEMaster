@@ -10,21 +10,20 @@
  * Model-definition data are constructed in the topology pass. This includes
  * nodes/elements/sets/surfaces, materials and sections, tabular amplitudes,
  * material orientations and nodal `*TRANSFORM` coordinate systems. Analysis
- * steps and their loads/supports execute only in the final data pass, after the
- * common parser has assigned sections and initialized all element-local data.
+ * steps and their load/support histories execute only in the final data pass,
+ * after the common parser has assigned sections and initialized all element-local
+ * data.
  *
- * Supported step procedures currently map to FEMaster linear/nonlinear static,
- * Riks arc-length, eigenfrequency, linear buckling, linear implicit transient
- * and direct harmonic response load cases. Each Abaqus step is intentionally an
- * independent FEMaster load case; cross-step Abaqus history propagation is not
- * emulated by the reader.
+ * Supported steps remain mechanically independent FEMaster load cases. Abaqus
+ * load and boundary-condition definitions nevertheless propagate logically
+ * between steps and are materialized as a fresh collector snapshot at each
+ * `*END STEP`, so `OP=MOD` and `OP=NEW` do not require solver-state propagation.
  *
  * @see Parser
  * @see ParserAbqState
- * @see commands::register_elastic
  * @see commands_abq::register_step
+ * @see commands_abq::register_history
  * @see commands_abq::register_transform
- * @see commands_abq::register_amplitude
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -48,6 +47,7 @@
 #include "commands_abq/register_dsload.inl"
 #include "commands_abq/register_element.inl"
 #include "commands_abq/register_expansion.inl"
+#include "commands_abq/register_history.inl"
 #include "commands_abq/register_orientation.inl"
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
@@ -118,8 +118,9 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
  *
  * All persistent model data required by later load cases are built here,
  * including amplitudes and nodal transforms. Abaqus step/history commands remain
- * consume-only until the final pass so no solver state is created before model
- * topology, sections and element-local enumeration are complete.
+ * consume-only until the final pass so no solver or logical history state is
+ * changed before model topology, sections and element-local enumeration are
+ * complete.
  *
  * @param registry Stage-local command registry.
  */
@@ -212,9 +213,10 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
  * Configures the final Abaqus analysis/history pass.
  *
  * Persistent model-definition keywords are consumed without execution because
- * they have already been applied in topology. Step/procedure cards, concentrated
- * and distributed loads, and displacement boundary conditions execute here and
- * create/run FEMaster load cases through the common parser writer/model state.
+ * they have already been applied in topology. Step/procedure cards update the
+ * logical Abaqus load/BC history; `register_history` then materializes the active
+ * snapshot into one fresh FEMaster collector at `*END STEP` and executes the
+ * mechanically independent load case.
  *
  * @param registry Stage-local command registry.
  */
@@ -243,6 +245,10 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands_abq::register_boundary(registry, *this);
     commands_abq::register_dload(registry, *this);
     commands_abq::register_dsload(registry, *this);
+
+    // Replace only STEP entry/ENDSTEP finalization semantics. Procedure variants
+    // from register_step remain unchanged.
+    commands_abq::register_history(registry, *this);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("STEP"               , io::dsl::ActiveMode::Active);
