@@ -7,9 +7,10 @@
  * `OP=NEW` clears the complete active DSLOAD category before replacement data
  * are read.
  *
- * Repeated definitions of the same surface/load type in one step remain
- * separate and therefore add during materialization. A propagated ambiguous
- * multi-definition must be replaced with `OP=NEW` rather than modified.
+ * Abaqus identifies a general traction by surface, load type and specified load
+ * direction. The unnormalized input direction is therefore retained for history
+ * matching; FEMaster normalization is deferred until materialization. Repeated
+ * definitions of one identity in a step remain separate additive conditions.
  *
  * @see ParserAbqState
  * @see ParserAbqDSLoad
@@ -20,7 +21,6 @@
 
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -39,14 +39,13 @@ namespace fem::io::reader::commands_abq {
 /**
  * Registers supported Abaqus surface-load history records.
  *
- * The logical identity is the original surface name together with `P` or
- * `TRVEC`. One propagated definition can be redefined with `OP=MOD`; repeated
- * definitions in the current step are stored as additive load conditions.
- * General-traction directions are normalized when read.
+ * Pressure identity is surface plus `P`. General-traction identity additionally
+ * includes the supplied direction components and orientation name because these
+ * determine the physical traction direction. One propagated definition can be
+ * redefined with `OP=MOD`; repeated definitions in the current step are additive.
  *
- * An empty `OP=NEW` block removes all active DSLOADs. `OP` must be consistent
- * across all `*DSLOAD` cards in one step. Imaginary harmonic loads remain
- * unsupported.
+ * An empty `OP=NEW` block removes all active DSLOADs. Imaginary harmonic loads
+ * remain unsupported.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser retaining active surface-load definitions.
@@ -134,7 +133,6 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                     std::array<fem::Precision, 3> stored_direction{
                         fem::Precision(0), fem::Precision(0), fem::Precision(0)
                     };
-
                     if (type == "P") {
                         if (!std::isnan(direction[0]) || !std::isnan(direction[1]) || !std::isnan(direction[2])) {
                             throw std::runtime_error("DSLOAD P accepts no traction direction components");
@@ -144,25 +142,32 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                             throw std::runtime_error("DSLOAD TRVEC requires three direction components");
                         }
 
-                        fem::Vec3 unit_direction{direction[0], direction[1], direction[2]};
-                        const fem::Precision norm = unit_direction.norm();
+                        const fem::Vec3 traction_direction{direction[0], direction[1], direction[2]};
+                        const fem::Precision norm = traction_direction.norm();
                         if (!(norm > fem::Precision(0)) || !std::isfinite(norm)) {
                             throw std::runtime_error("DSLOAD TRVEC direction must be finite and nonzero");
                         }
-                        unit_direction /= norm;
-                        stored_direction = {
-                            unit_direction[0], unit_direction[1], unit_direction[2]
-                        };
+                        stored_direction = direction;
                     } else {
                         throw std::runtime_error("DSLOAD supports only P and TRVEC load labels");
                     }
+
+                    const auto same_identity = [&](const ParserAbqDSLoad& item) {
+                        if (item.surface != surface || item.type != type) {
+                            return false;
+                        }
+                        if (type == "P") {
+                            return true;
+                        }
+                        return item.direction == stored_direction && item.orientation == *orientation;
+                    };
 
                     auto first = state.dsloads.end();
                     int matches = 0;
                     bool defined_this_step = false;
 
                     for (auto it = state.dsloads.begin(); it != state.dsloads.end(); ++it) {
-                        if (it->surface != surface || it->type != type) {
+                        if (!same_identity(*it)) {
                             continue;
                         }
                         if (first == state.dsloads.end()) {
@@ -188,16 +193,13 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                     }
                     if (matches > 1) {
                         throw std::runtime_error(
-                            "Multiple active DSLOADs use surface '" + surface +
-                            "' and type '" + type + "'; use OP=NEW to redefine them"
+                            "Multiple active DSLOADs use the same surface, type and direction; use OP=NEW to redefine them"
                         );
                     }
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
-                    first->direction          = stored_direction;
                     first->amplitude          = *amplitude;
-                    first->orientation        = *orientation;
                     first->follower           = *follower;
                     first->modified_step      = state.step_index;
                 })
