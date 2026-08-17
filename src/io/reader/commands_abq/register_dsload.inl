@@ -42,7 +42,8 @@ namespace fem::io::reader::commands_abq {
  * The logical identity is the original surface name together with `P` or
  * `TRVEC`. General-traction direction is normalized when the record is read;
  * orientation, follower setting and amplitude remain attached to the logical
- * definition until the step snapshot is materialized.
+ * definition until the step snapshot is materialized. An empty `OP=NEW` block
+ * removes all active DSLOADs without replacements.
  *
  * `OP` must be consistent across all `*DSLOAD` cards in one step. Imaginary
  * harmonic loads remain unsupported.
@@ -111,7 +112,7 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
+                .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("SURFACE").desc("Abaqus surface name")
                     .one<std::string>().name("TYPE").desc("Supported labels P or TRVEC")
