@@ -58,7 +58,8 @@ struct ParserAbqState {
     bool        step_active = false;
     int         step_index  = 0;
     int         max_increments = 100;
-    bool        nlgeom = false;
+    bool        nlgeom       = false;
+    bool        perturbation = false;
     Precision   step_period = Precision(1);
     std::string step_name;
     std::string step_amplitude;
