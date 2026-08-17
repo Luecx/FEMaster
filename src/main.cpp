@@ -8,6 +8,7 @@
 #include "core/timer.h"
 #include "core/logging.h"
 #include "io/reader/parser.h"
+#include "io/reader/parser_abq.h"
 
 int main(int argc, char** argv) {
     auto timer = fem::Timer();
@@ -28,6 +29,11 @@ int main(int argc, char** argv) {
     program.add_argument("--output")
         .default_value(std::string{})
         .help("Override output filename (default: input with .res extension)");
+
+    program.add_argument("--format")
+        .default_value(std::string{"femaster"})
+        .choices("femaster", "abaqus")
+        .help("Input deck syntax (default: femaster).");
 
     program.add_argument("--no-res")
         .flag()
@@ -87,6 +93,7 @@ int main(int argc, char** argv) {
     const int ncpus         = program.get<int>("--ncpus");
     std::string input_file  = program.get<std::string>("input_file");
     std::string output_file = program.get<std::string>("--output");
+    const std::string format = program.get<std::string>("--format");
     const bool doc_mode     = program.get<bool>("--document");
 
     fem::io::writer::WriterFileFormats writer_formats;
@@ -95,10 +102,9 @@ int main(int argc, char** argv) {
 
     fem::global_config.max_threads = ncpus;
 
-    // Single parser instance; ctor registers commands for doc mode immediately.
-    fem::io::reader::Parser parser;
-
     if (doc_mode) {
+        fem::io::reader::Parser parser;
+
         // Enforce exactly one action
         int actions = 0;
         actions += program.get<bool>("--doc-list") ? 1 : 0;
@@ -195,13 +201,20 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "");
     fem::logging::info(true, "Input file : ", input_path.string());
     fem::logging::info(true, "Output file: ", output_file);
+    fem::logging::info(true, "Format     : ", format);
     fem::logging::info(true, "CPU(s)     : ", ncpus);
     fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
     fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
     fem::logging::info(true, "");
 
     try {
-        parser.run(input_path.string(), output_file, writer_formats);
+        if (format == "abaqus") {
+            fem::io::reader::ParserAbq parser;
+            parser.run(input_path.string(), output_file, writer_formats);
+        } else {
+            fem::io::reader::Parser parser;
+            parser.run(input_path.string(), output_file, writer_formats);
+        }
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
