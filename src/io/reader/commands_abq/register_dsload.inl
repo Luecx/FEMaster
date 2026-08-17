@@ -8,10 +8,10 @@
  * Optional `ORIENTATION` names reuse FEMaster coordinate systems created by
  * `*ORIENTATION` and are stored directly on the traction load.
  *
- * Named amplitudes follow the same supported procedure semantics as concentrated
- * loads: transient histories remain attached, linear static/buckling loads are
- * reduced to their final step value, and unsupported nonlinear/harmonic history
- * interpretations are rejected.
+ * FEMaster's current nonlinear static solver assembles the external load vector
+ * once in the reference configuration and subsequently scales it by the load
+ * factor. Consequently true Abaqus follower pressure/traction semantics cannot
+ * be reproduced in geometrically nonlinear steps and are rejected explicitly.
  *
  * @see bc::DLoad
  * @see bc::PLoad
@@ -44,10 +44,11 @@ namespace fem::io::reader::commands_abq {
  * Registers uniform Abaqus surface pressure and general traction records.
  *
  * `P` accepts `surface, P, magnitude`. `TRVEC` additionally requires three
- * direction components and normalizes that direction as Abaqus does. Follower
- * traction semantics are intentionally rejected because FEMaster's vector
- * surface load currently stores a reference/global or named-coordinate-system
- * direction without an Abaqus follower flag.
+ * direction components and normalizes that direction as Abaqus does. General
+ * traction is follower by default in Abaqus; nonlinear FEMaster steps therefore
+ * require `FOLLOWER=NO`. Pressure is intrinsically normal to the current surface
+ * in Abaqus and is rejected entirely for nonlinear static/Riks until FEMaster
+ * reassembles external follower loads and their load stiffness consistently.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing current step state.
@@ -59,27 +60,27 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
 
         auto amplitude   = std::make_shared<std::string>();
         auto orientation = std::make_shared<std::string>();
+        auto follower    = std::make_shared<std::string>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
                 .key("ORIENTATION").optional().doc("Optional traction coordinate system")
-                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
-                    .doc("Accepted for the independent current-step collector")
-                .flag("FOLLOWER").doc("Unsupported Abaqus follower traction flag")
+                .key("OP").optional("MOD").allowed({"MOD"})
+                    .doc("Only additive/modifying current-step loads are supported")
+                .key("FOLLOWER").optional("YES").allowed({"YES", "NO"})
+                    .doc("Abaqus general-traction follower setting")
         );
 
-        command.on_enter([&parser, amplitude, orientation](const fem::io::dsl::Keys& keys) {
+        command.on_enter([&parser, amplitude, orientation, follower](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             if (!state.step_active || !parser.active_loadcase()) {
                 throw std::runtime_error("DSLOAD must appear after a supported procedure inside STEP");
             }
-            if (keys.has("FOLLOWER")) {
-                throw std::runtime_error("DSLOAD FOLLOWER is not supported");
-            }
 
             *amplitude   = keys.has("AMPLITUDE")   ? keys.raw("AMPLITUDE")   : std::string{};
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
+            *follower    = keys.raw("FOLLOWER");
 
             if (!orientation->empty() && !parser.model()._data->coordinate_systems.has(*orientation)) {
                 throw std::runtime_error("DSLOAD references unknown orientation '" + *orientation + "'");
@@ -100,10 +101,10 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                         .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
-                .bind([&parser, amplitude, orientation](const std::string& surface,
-                                                        const std::string& type,
-                                                        fem::Precision magnitude,
-                                                        const std::array<fem::Precision, 3>& direction) {
+                .bind([&parser, amplitude, orientation, follower](const std::string& surface,
+                                                                  const std::string& type,
+                                                                  fem::Precision magnitude,
+                                                                  const std::array<fem::Precision, 3>& direction) {
                     auto& model = parser.model();
                     auto& state = parser.abaqus_state();
                     if (!model._data->surface_sets.has(surface)) {
@@ -145,9 +146,17 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                         );
                     }
 
+                    const bool nonlinear = state.procedure == "NONLINEARSTATIC" ||
+                                           state.procedure == "STATIC_RIKS";
+
                     if (type == "P") {
                         if (!std::isnan(direction[0]) || !std::isnan(direction[1]) || !std::isnan(direction[2])) {
                             throw std::runtime_error("DSLOAD P accepts no traction direction components");
+                        }
+                        if (nonlinear) {
+                            throw std::runtime_error(
+                                "DSLOAD P is a follower pressure in Abaqus and is not yet supported in nonlinear FEMaster steps"
+                            );
                         }
                         model.add_pload(surface, scale * magnitude, stored_amplitude);
                         return;
@@ -155,6 +164,11 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
 
                     if (type != "TRVEC") {
                         throw std::runtime_error("DSLOAD supports only P and TRVEC load labels");
+                    }
+                    if (nonlinear && *follower != "NO") {
+                        throw std::runtime_error(
+                            "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented"
+                        );
                     }
                     if (std::isnan(direction[0]) || std::isnan(direction[1]) || std::isnan(direction[2])) {
                         throw std::runtime_error("DSLOAD TRVEC requires three direction components");
