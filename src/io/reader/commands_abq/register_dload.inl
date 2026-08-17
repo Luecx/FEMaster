@@ -7,6 +7,10 @@
  * and `OP=NEW` can replace the complete active DLOAD category without carrying
  * any mechanical solver state between FEMaster load cases.
  *
+ * Repeated definitions of the same target/load type inside one step are stored
+ * separately and therefore add during materialization. A propagated ambiguous
+ * multi-definition must be replaced with `OP=NEW` rather than modified.
+ *
  * @see ParserAbqState
  * @see ParserAbqDLoad
  *
@@ -34,10 +38,11 @@ namespace fem::io::reader::commands_abq {
  * Registers Abaqus gravity-load history records.
  *
  * The logical identity consists of the original element/element-set target and
- * the Abaqus load type. Materialization to FEMaster `VLoad` objects is deferred
- * until `*END STEP`. An empty `OP=NEW` block removes every active DLOAD without
- * defining replacements. `OP` must be consistent across all `*DLOAD` cards in
- * one step.
+ * the Abaqus load type. One propagated definition can be redefined with
+ * `OP=MOD`; repeated definitions in the current step remain separate additive
+ * load conditions. An empty `OP=NEW` block removes every active DLOAD.
+ *
+ * `OP` must be consistent across all `*DLOAD` cards in one step.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser retaining active distributed-load definitions.
@@ -111,27 +116,45 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     }
 
                     auto& state = parser.abaqus_state();
-                    auto record = std::find_if(
-                        state.dloads.begin(), state.dloads.end(),
-                        [&](const ParserAbqDLoad& item) {
-                            return item.target == target && item.type == type;
+                    auto first = state.dloads.end();
+                    int matches = 0;
+                    bool defined_this_step = false;
+
+                    for (auto it = state.dloads.begin(); it != state.dloads.end(); ++it) {
+                        if (it->target != target || it->type != type) {
+                            continue;
                         }
-                    );
-
-                    const ParserAbqDLoad value{
-                        target,
-                        type,
-                        magnitude,
-                        direction,
-                        *amplitude,
-                        state.step_index
-                    };
-
-                    if (record == state.dloads.end()) {
-                        state.dloads.push_back(value);
-                    } else {
-                        *record = value;
+                        if (first == state.dloads.end()) {
+                            first = it;
+                        }
+                        ++matches;
+                        defined_this_step = defined_this_step || it->modified_step == state.step_index;
                     }
+
+                    if (defined_this_step || matches == 0) {
+                        state.dloads.push_back(ParserAbqDLoad{
+                            target,
+                            type,
+                            magnitude,
+                            Precision(0),
+                            direction,
+                            *amplitude,
+                            state.step_index
+                        });
+                        return;
+                    }
+                    if (matches > 1) {
+                        throw std::runtime_error(
+                            "Multiple active DLOADs use target '" + target +
+                            "' and type '" + type + "'; use OP=NEW to redefine them"
+                        );
+                    }
+
+                    first->previous_magnitude = first->magnitude;
+                    first->magnitude          = magnitude;
+                    first->direction          = direction;
+                    first->amplitude          = *amplitude;
+                    first->modified_step      = state.step_index;
                 })
             )
         );
