@@ -1,20 +1,17 @@
 /**
  * @file register_boundary.inl
- * @brief Registers step-local Abaqus *BOUNDARY displacement constraints.
+ * @brief Registers step-dependent Abaqus *BOUNDARY definitions.
  *
- * The direct Abaqus boundary format is converted to FEMaster `Support` objects.
- * Node sets are expanded to individual nodes so `*TRANSFORM` can supply the
- * local translational/rotational basis for each constrained node. Only structural
- * displacement/rotation DOFs 1--6 are represented.
+ * Boundary conditions are retained as logical target/DOF records across steps.
+ * `OP=MOD` updates or adds those records; `OP=NEW` clears the complete active
+ * boundary-condition set before the current step supplies its replacements.
  *
- * FEMaster supports fixed prescribed values but does not currently carry a
- * time-dependent amplitude on constraint equations. Named amplitudes are
- * therefore reduced to their end-of-step value for linear static analysis and
- * rejected for nonzero constraints in transient, harmonic and nonlinear path
- * analyses where that reduction would alter the requested history.
+ * The original target spelling is preserved until `*END STEP`, where node sets
+ * are expanded and nodal `*TRANSFORM` coordinate systems are copied to the
+ * generated FEMaster supports.
  *
  * @see ParserAbqState
- * @see bc::Support
+ * @see ParserAbqBoundary
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -22,7 +19,7 @@
 
 #pragma once
 
-#include <limits>
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -31,34 +28,28 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
-#include "../../../core/types_eig.h"
-#include "../../../core/types_num.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers Abaqus direct displacement boundary-condition records.
+ * Registers direct Abaqus displacement boundary-condition history records.
  *
- * Data use `target, first_dof, last_dof, magnitude`; omitted `last_dof` selects
- * only the first DOF and omitted magnitude prescribes zero. The same magnitude
- * is applied to every DOF in the inclusive range. Abaqus transformed DOFs are
- * represented by assigning the corresponding FEMaster coordinate system to each
- * generated support rather than modifying global nodal coordinates.
+ * Data use `target, first_dof, last_dof, magnitude`. Ranges are split into one
+ * logical record per DOF, making subsequent `OP=MOD` replacement unambiguous.
+ * Time-dependent prescribed displacements are validated when the active snapshot
+ * is materialized because FEMaster constraints do not currently carry amplitude
+ * objects.
  *
- * In Abaqus/Standard a prescribed displacement without an explicit amplitude is
- * ramped over the step. FEMaster nonlinear static analysis applies prescribed
- * support values proportionally with the load factor, so that default maps
- * directly. `OP=NEW` remains unsupported because cross-step history removal is
- * not represented by the current independent load-case mapping.
+ * `OP` must be consistent across all `*BOUNDARY` cards in one step.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser providing step and transform state.
+ * @param parser Abaqus parser retaining active boundary definitions.
  */
 inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("BOUNDARY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Apply Abaqus displacement/rotation boundary conditions in the current step.");
+        command.doc("Define or modify active Abaqus displacement boundary conditions.");
 
         auto amplitude = std::make_shared<std::string>();
 
@@ -67,8 +58,8 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                 .key("TYPE").optional("DISPLACEMENT").allowed({"DISPLACEMENT"})
                     .doc("Only displacement-type boundary conditions are supported")
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
-                .key("OP").optional("MOD").allowed({"MOD"})
-                    .doc("Only additive/modifying current-step constraints are supported")
+                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+                    .doc("MOD preserves active boundaries; NEW replaces the complete boundary set")
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
@@ -77,9 +68,21 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                 throw std::runtime_error("BOUNDARY must appear after a supported procedure inside STEP");
             }
 
+            const std::string op = keys.raw("OP");
+            if (!state.boundary_op.empty() && state.boundary_op != op) {
+                throw std::runtime_error("All BOUNDARY cards in one STEP must use the same OP value");
+            }
+            if (state.boundary_op.empty()) {
+                state.boundary_op = op;
+                if (op == "NEW") {
+                    state.boundaries.clear();
+                }
+            }
+
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            parser.model()._data->supp_cols.activate(state.support_collector);
-            state.support_collector_used = true;
+            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
+                throw std::runtime_error("BOUNDARY references unknown amplitude '" + *amplitude + "'");
+            }
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -105,61 +108,29 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                         throw std::runtime_error("BOUNDARY supports only structural DOFs 1 through 6");
                     }
 
-                    auto& model = parser.model();
                     auto& state = parser.abaqus_state();
-                    fem::Precision scale = fem::Precision(1);
-
-                    if (!amplitude->empty() && magnitude != fem::Precision(0)) {
-                        if (!model._data->amplitudes.has(*amplitude)) {
-                            throw std::runtime_error("BOUNDARY references unknown amplitude '" + *amplitude + "'");
-                        }
-
-                        if (state.procedure == "LINEARSTATIC") {
-                            scale = model._data->amplitudes.get(*amplitude)->evaluate(state.step_period);
-                        } else {
-                            throw std::runtime_error(
-                                "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are currently time-independent"
-                            );
-                        }
-                    }
-
-                    if (magnitude != fem::Precision(0) &&
-                        state.procedure != "LINEARSTATIC" &&
-                        state.procedure != "NONLINEARSTATIC" &&
-                        state.procedure != "STATIC_RIKS") {
-                        throw std::runtime_error(
-                            "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures"
-                        );
-                    }
-
-                    fem::StaticVector<6> values;
-                    values.setConstant(std::numeric_limits<fem::Precision>::quiet_NaN());
                     for (int dof = first_dof; dof <= last_dof; ++dof) {
-                        values[dof - 1] = scale * magnitude;
-                    }
+                        auto record = std::find_if(
+                            state.boundaries.begin(), state.boundaries.end(),
+                            [&](const ParserAbqBoundary& item) {
+                                return item.target == target && item.dof == dof;
+                            }
+                        );
 
-                    const auto add_to_node = [&](fem::ID node_id) {
-                        std::string orientation;
-                        auto transform = state.node_transforms.find(node_id);
-                        if (transform != state.node_transforms.end()) {
-                            orientation = transform->second;
+                        if (record == state.boundaries.end()) {
+                            state.boundaries.push_back(ParserAbqBoundary{
+                                target,
+                                dof,
+                                magnitude,
+                                *amplitude,
+                                state.step_index
+                            });
+                        } else {
+                            record->magnitude     = magnitude;
+                            record->amplitude     = *amplitude;
+                            record->modified_step = state.step_index;
                         }
-                        model.add_support(node_id, values, orientation);
-                    };
-
-                    if (model._data->node_sets.has(target)) {
-                        for (const fem::ID node_id : *model._data->node_sets.get(target)) {
-                            add_to_node(node_id);
-                        }
-                        return;
                     }
-
-                    std::size_t parsed = 0;
-                    const long value = std::stol(target, &parsed);
-                    if (parsed != target.size()) {
-                        throw std::runtime_error("BOUNDARY target '" + target + "' is not a node set or node id");
-                    }
-                    add_to_node(static_cast<fem::ID>(value));
                 })
             )
         );
