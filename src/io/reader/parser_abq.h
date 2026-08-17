@@ -1,10 +1,9 @@
 /**
  * @file parser_abq.h
- * @brief Declares the staged Abaqus input-deck parser.
+ * @brief Declares the Abaqus input-deck parser.
  *
- * The Abaqus reader follows the same four-pass model-construction order as the
- * native FEMaster reader. Only a deliberately small initial keyword subset is
- * registered; unsupported Abaqus keywords remain hard errors.
+ * The Abaqus reader reuses the native four-stage parser pipeline and replaces
+ * only the command registration for each stage.
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -12,49 +11,24 @@
 
 #pragma once
 
-#include "../writer/writers.h"
+#include "parser.h"
 
-#include <memory>
-#include <string>
-
-namespace fem {
-namespace model { struct Model; }
-
-namespace io::reader {
+namespace fem::io::reader {
 
 /**
  * @class ParserAbq
- * @brief Executes the staged Abaqus input-deck workflow.
+ * @brief Abaqus syntax specialization of the staged input parser.
  */
-class ParserAbq {
+class ParserAbq : public Parser {
 public:
-    ParserAbq();
-    ~ParserAbq();
+    ParserAbq() = default;
+    ~ParserAbq() override = default;
 
-    void run(const std::string&                   input_path,
-             const std::string&                   output_path,
-             const io::writer::WriterFileFormats& writer_formats = io::writer::WriterFileFormats());
-
-private:
-    struct CountData {
-        int highest_node_id    = -1;
-        int highest_element_id = -1;
-        int highest_surface_id = -1;
-    };
-
-    CountData run_count_stage(const std::string& input_path);
-    void run_topology_stage(const std::string& input_path);
-    void run_field_stage(const std::string& input_path);
-    void run_data_stage(const std::string&                   input_path,
-                        const std::string&                   output_path,
-                        const io::writer::WriterFileFormats& writer_formats);
-
-    void allocate_model(const CountData& count);
-
-private:
-    std::shared_ptr<model::Model> m_model;
-    io::writer::ResultWriters     m_writer;
+protected:
+    void configure_count_stage(io::dsl::Registry& registry, CountData& count) override;
+    void configure_topology_stage(io::dsl::Registry& registry) override;
+    void configure_field_stage(io::dsl::Registry& registry) override;
+    void configure_data_stage(io::dsl::Registry& registry) override;
 };
 
-} // namespace io::reader
-} // namespace fem
+} // namespace fem::io::reader
