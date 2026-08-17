@@ -25,8 +25,6 @@
 #include <limits>
 #include <stdexcept>
 
-#include <Eigen/LU>
-
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
@@ -145,17 +143,23 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                         throw std::runtime_error("ELASTIC requires an active material context");
                     }
 
-                    // Assemble and invert the normal stiffness block to recover
-                    // the symmetric engineering compliance coefficients
+                    // Assemble the symmetric normal stiffness block and reject
+                    // singular input using a determinant tolerance scaled by its
+                    // characteristic stiffness magnitude
                     fem::Mat3 normal_stiffness;
                     normal_stiffness << data[0], data[1], data[3],
                                         data[1], data[2], data[4],
                                         data[3], data[4], data[5];
 
+                    const fem::Precision scale       = normal_stiffness.cwiseAbs().maxCoeff();
                     const fem::Precision determinant = normal_stiffness.determinant();
-                    if (std::abs(determinant) <= std::numeric_limits<fem::Precision>::epsilon()) {
+                    const fem::Precision tolerance   = std::numeric_limits<fem::Precision>::epsilon() * scale * scale * scale;
+                    if (scale <= fem::Precision(0) || std::abs(determinant) <= tolerance) {
                         throw std::runtime_error("ELASTIC TYPE=ORTHOTROPIC has a singular normal stiffness block");
                     }
+
+                    // Invert the normal block to recover directional engineering
+                    // constants while shear coefficients map directly
                     const fem::Mat3 compliance = normal_stiffness.inverse();
 
                     const fem::Precision E1   = fem::Precision(1) / compliance(0, 0);
