@@ -135,7 +135,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 throw std::runtime_error("STEP must contain exactly one supported procedure card");
             }
 
-            const bool riks = keys.has("RIKS");
+            const bool riks   = keys.has("RIKS");
+            const bool direct = keys.has("DIRECT");
             const int id = parser.next_loadcase_id();
 
             if (riks || state.nlgeom) {
@@ -145,12 +146,15 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
 
                 // Abaqus defaults correspond to one complete normalized step
                 // with a minimum automatic increment of 1e-5 of the step scale.
-                // Set them here because an omitted STATIC data line has no
-                // segment callback in the DSL engine.
+                // Riks has no default upper bound; general load control never
+                // needs a normalized increment larger than the complete step.
                 loadcase->max_increments    = state.max_increments;
                 loadcase->initial_increment = fem::Precision(1);
                 loadcase->minimum_increment = fem::Precision(1e-5);
-                loadcase->maximum_increment = fem::Precision(1);
+                loadcase->maximum_increment = riks
+                    ? std::numeric_limits<fem::Precision>::max()
+                    : fem::Precision(1);
+                loadcase->adaptive_increments = !direct;
                 loadcase->control = riks
                     ? loadcase::NonlinearControl::ArcLength
                     : loadcase::NonlinearControl::LoadControl;
@@ -199,8 +203,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         ? period : data[0];
                     const fem::Precision minimum = std::isnan(data[2]) || data[2] == fem::Precision(0)
                         ? std::min(initial, fem::Precision(1e-5) * period) : data[2];
-                    const fem::Precision maximum = std::isnan(data[3]) || data[3] == fem::Precision(0)
-                        ? period : data[3];
+                    const bool maximum_omitted = std::isnan(data[3]) || data[3] == fem::Precision(0);
 
                     // FEMaster's arc-length controls are normalized to an
                     // equivalent load-factor scale, while Abaqus supplies arc
@@ -208,7 +211,9 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     parser.abaqus_state().step_period = period;
                     loadcase->initial_increment = initial / period;
                     loadcase->minimum_increment = minimum / period;
-                    loadcase->maximum_increment = maximum / period;
+                    loadcase->maximum_increment = maximum_omitted
+                        ? std::numeric_limits<fem::Precision>::max()
+                        : data[3] / period;
                 })
             )
         );
