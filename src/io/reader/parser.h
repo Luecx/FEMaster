@@ -70,17 +70,14 @@ struct DocOptions {
  * because field sizes depend on the element-node, integration-point and
  * material-point enumeration generated after topology construction.
  *
- * The field stage executes `*FIELD` and `*NORMAL` after element enumeration but
- * before `Model::build_shell_element_normals()`. Consequently, a selected
- * element-nodal field already exists when model-side shell normals are completed
- * and equalised. All other passes consume these commands without executing them
- * again.
+ * Derived readers may replace only the command registration and activation for
+ * each stage while retaining the common four-stage execution order.
  */
 class Parser {
 public:
     // Construction and destruction
     Parser();
-    ~Parser();
+    virtual ~Parser();
 
     // High-level parsing and documentation operations
     void run(const std::string&                   input_path,
@@ -106,7 +103,7 @@ public:
     void clear_active_loadcase();
     const std::string& active_loadcase_type() const;
 
-private:
+protected:
     /**
      * @struct CountData
      * @brief Stores the highest identifiers found during the allocation pass.
@@ -117,6 +114,13 @@ private:
         int highest_surface_id = -1;
     };
 
+    // Format-specific command registration and stage activation
+    virtual void configure_count_stage(io::dsl::Registry& registry, CountData& count);
+    virtual void configure_topology_stage(io::dsl::Registry& registry);
+    virtual void configure_field_stage(io::dsl::Registry& registry);
+    virtual void configure_data_stage(io::dsl::Registry& registry);
+
+private:
     // Ordered parser stages
     CountData run_count_stage(const std::string& input_path);
     void run_topology_stage(const std::string& input_path);
@@ -125,7 +129,7 @@ private:
                         const std::string&                   output_path,
                         const io::writer::WriterFileFormats& writer_formats);
 
-    // Model allocation and command registration
+    // Model allocation and native FEMaster command registration
     void allocate_model(const CountData& count);
     void register_count_commands(io::dsl::Registry& registry, CountData& count);
     void register_set_commands(io::dsl::Registry& registry);
