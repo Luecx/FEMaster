@@ -35,8 +35,9 @@ namespace fem::io::reader::commands_abq {
  *
  * The logical identity consists of the original element/element-set target and
  * the Abaqus load type. Materialization to FEMaster `VLoad` objects is deferred
- * until `*END STEP`. `OP` must be consistent across all `*DLOAD` cards in one
- * step.
+ * until `*END STEP`. An empty `OP=NEW` block removes every active DLOAD without
+ * defining replacements. `OP` must be consistent across all `*DLOAD` cards in
+ * one step.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser retaining active distributed-load definitions.
@@ -91,7 +92,7 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
+                .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Element set, element id or blank for all elements")
                         .on_empty(std::string{"EALL"})
