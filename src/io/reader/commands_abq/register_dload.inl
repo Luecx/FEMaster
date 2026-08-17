@@ -3,12 +3,13 @@
  * @brief Registers supported step-dependent Abaqus *DLOAD definitions.
  *
  * The current element-based distributed-load subset supports `GRAV`. Definitions
- * are retained logically across steps so `OP=MOD` can update an existing target
+ * are retained logically across steps so `OP=MOD` can update an existing load
  * and `OP=NEW` can replace the complete active DLOAD category without carrying
  * any mechanical solver state between FEMaster load cases.
  *
- * Repeated definitions of the same target/load type inside one step are stored
- * separately and therefore add during materialization. A propagated ambiguous
+ * Abaqus identifies a gravity load by target, load type and specified load
+ * direction. Repeated definitions of that same identity inside one step are
+ * stored separately and add during materialization; an ambiguous propagated
  * multi-definition must be replaced with `OP=NEW` rather than modified.
  *
  * @see ParserAbqState
@@ -20,7 +21,6 @@
 
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <memory>
 #include <stdexcept>
@@ -37,12 +37,11 @@ namespace fem::io::reader::commands_abq {
 /**
  * Registers Abaqus gravity-load history records.
  *
- * The logical identity consists of the original element/element-set target and
- * the Abaqus load type. One propagated definition can be redefined with
- * `OP=MOD`; repeated definitions in the current step remain separate additive
- * load conditions. An empty `OP=NEW` block removes every active DLOAD.
- *
- * `OP` must be consistent across all `*DLOAD` cards in one step.
+ * The logical identity consists of the original element/element-set target,
+ * `GRAV` type and the three supplied gravity-vector components. One propagated
+ * definition can be redefined with `OP=MOD`; repeated definitions in the current
+ * step remain separate additive load conditions. An empty `OP=NEW` block removes
+ * every active DLOAD.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser retaining active distributed-load definitions.
@@ -121,7 +120,7 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     bool defined_this_step = false;
 
                     for (auto it = state.dloads.begin(); it != state.dloads.end(); ++it) {
-                        if (it->target != target || it->type != type) {
+                        if (it->target != target || it->type != type || it->direction != direction) {
                             continue;
                         }
                         if (first == state.dloads.end()) {
@@ -145,14 +144,12 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     }
                     if (matches > 1) {
                         throw std::runtime_error(
-                            "Multiple active DLOADs use target '" + target +
-                            "' and type '" + type + "'; use OP=NEW to redefine them"
+                            "Multiple active DLOADs use the same target, type and direction; use OP=NEW to redefine them"
                         );
                     }
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
-                    first->direction          = direction;
                     first->amplitude          = *amplitude;
                     first->modified_step      = state.step_index;
                 })
