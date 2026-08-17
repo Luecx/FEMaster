@@ -37,11 +37,12 @@ namespace fem::io::reader::commands_abq {
  *
  * Data use `target, first_dof, last_dof, magnitude`. Ranges are split into one
  * logical record per DOF, making subsequent `OP=MOD` replacement unambiguous.
+ * An empty `OP=NEW` block removes every active boundary condition without adding
+ * replacements.
+ *
  * Time-dependent prescribed displacements are validated when the active snapshot
  * is materialized because FEMaster constraints do not currently carry amplitude
- * objects.
- *
- * `OP` must be consistent across all `*BOUNDARY` cards in one step.
+ * objects. `OP` must be consistent across all `*BOUNDARY` cards in one step.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser retaining active boundary definitions.
@@ -87,7 +88,7 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
+                .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Node set or node identifier")
                     .one<int>().name("FIRST_DOF").desc("First constrained DOF")
