@@ -94,13 +94,13 @@ bool OrthotropicElasticity::supports_shell_integration_green_lagrange() const {
  * @return Constant tangent ordered `[11,22,12]`.
  */
 Mat3 OrthotropicElasticity::plane_stress_tangent() const {
-    const Precision nu21 = nu12 * E2 / E1;
+    const Precision nu21  = nu12 * E2 / E1;
     const Precision denom = Precision(1) - nu12 * nu21;
 
     Mat3 tangent;
-    tangent << E1 / denom,        nu12 * E2 / denom, Precision(0),
+    tangent << E1 / denom,         nu12 * E2 / denom, Precision(0),
                nu21 * E1 / denom, E2 / denom,        Precision(0),
-               Precision(0),      Precision(0),       G12;
+               Precision(0),       Precision(0),       G12;
     return tangent;
 }
 
