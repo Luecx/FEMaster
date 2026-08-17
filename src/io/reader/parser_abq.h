@@ -8,17 +8,15 @@
  * enumeration, shell-normal construction and result-writer setup identical for
  * native and Abaqus input decks.
  *
- * The Abaqus reader also owns the small amount of syntax state that has no
- * persistent FEMaster model counterpart. In particular, `*TRANSFORM` associates
- * coordinate systems with nodes for later load/support creation and `*STEP`
- * holds the currently parsed analysis procedure and its generated collector
- * names until `*END STEP` executes the corresponding FEMaster load case.
+ * The Abaqus reader retains only syntax state that has no persistent FEMaster
+ * model counterpart. Nodal `*TRANSFORM` definitions are remembered until loads
+ * and supports are materialized, while active load and boundary-condition
+ * records are propagated between Abaqus steps independently of the mechanical
+ * solution state.
  *
  * @see Parser
- * @see commands::register_elastic
- * @see commands_abq::register_element
- * @see commands_abq::register_surface
- * @see commands_abq::register_orientation
+ * @see commands_abq::register_transform
+ * @see commands_abq::register_step
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -28,34 +26,107 @@
 
 #include "parser.h"
 
+#include <array>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace fem::io::reader {
 
 /**
- * @brief Transient syntax state required while reading one Abaqus deck.
+ * @brief Logical Abaqus concentrated-load definition retained between steps.
  *
- * FEMaster stores coordinate systems on individual load/support objects rather
- * than attaching a transformed degree-of-freedom basis to nodes. The
- * `node_transforms` map therefore retains the Abaqus `*TRANSFORM` association
- * until step-local `*CLOAD` and `*BOUNDARY` records are converted to FEMaster
- * objects.
+ * The original target spelling is preserved deliberately: Abaqus identifies a
+ * load by the same node/node-set specification and generalized degree of
+ * freedom when a later `OP=MOD` record changes it. Expansion to individual
+ * FEMaster nodes is deferred until the current step is executed.
+ */
+struct ParserAbqCLoad {
+    std::string target;
+    int         dof = 0;
+    Precision   magnitude = Precision(0);
+    std::string amplitude;
+    int         modified_step = 0;
+};
+
+/**
+ * @brief Logical Abaqus displacement boundary condition retained between steps.
  *
- * The remaining members describe the currently open Abaqus step. Every step is
- * translated to one independent FEMaster load case. Loads and supports created
- * inside the step are collected under generated names and attached to that load
- * case when `*END STEP` is reached. Abaqus' persistent NLGEOM switch is retained
- * separately from the current-step flag because enabling geometric nonlinearity
- * affects all subsequent steps in an Abaqus/Standard analysis.
+ * Ranged `*BOUNDARY` input is stored as one record per generalized degree of
+ * freedom so later modifications replace exactly the affected target/DOF pair.
+ */
+struct ParserAbqBoundary {
+    std::string target;
+    int         dof = 0;
+    Precision   magnitude = Precision(0);
+    std::string amplitude;
+    int         modified_step = 0;
+};
+
+/**
+ * @brief Logical supported Abaqus element-based distributed-load definition.
+ *
+ * The current reader supports `GRAV`; the type string is nevertheless retained
+ * as part of the Abaqus load identity used by `OP=MOD`.
+ */
+struct ParserAbqDLoad {
+    std::string              target;
+    std::string              type;
+    Precision                magnitude = Precision(0);
+    std::array<Precision, 3> direction{Precision(0), Precision(0), Precision(0)};
+    std::string              amplitude;
+    int                      modified_step = 0;
+};
+
+/**
+ * @brief Logical supported Abaqus surface-load definition retained between steps.
+ *
+ * Pressure and general traction share the same history container but remain
+ * distinct through `type`. Tractions additionally retain their reference
+ * direction, optional orientation and follower setting until materialization.
+ */
+struct ParserAbqDSLoad {
+    std::string              surface;
+    std::string              type;
+    Precision                magnitude = Precision(0);
+    std::array<Precision, 3> direction{Precision(0), Precision(0), Precision(0)};
+    std::string              amplitude;
+    std::string              orientation;
+    std::string              follower;
+    int                      modified_step = 0;
+};
+
+/**
+ * @brief Syntax state required while reading one Abaqus deck.
+ *
+ * FEMaster load cases remain mechanically independent: every supported Abaqus
+ * step starts from FEMaster's reference configuration and does not inherit
+ * displacement, stress, material, contact or other converged solver state.
+ *
+ * Load and boundary-condition definitions are intentionally different. Abaqus
+ * `OP=MOD` propagates and updates the corresponding logical records, while
+ * `OP=NEW` clears that complete record category before the step supplies its new
+ * definitions. At `*END STEP` the active snapshot is converted to a fresh
+ * FEMaster collector for that one independent load case.
  */
 struct ParserAbqState {
     // Abaqus nodal transform assignment retained between topology and data passes
     std::unordered_map<ID, std::string> node_transforms;
 
-    // Deck-persistent syntax state
-    int  next_step_index = 1;
-    bool nlgeom_active   = false;
+    // Active Abaqus load/BC definitions propagated independently of solver state
+    std::vector<ParserAbqCLoad>    cloads;
+    std::vector<ParserAbqBoundary> boundaries;
+    std::vector<ParserAbqDLoad>    dloads;
+    std::vector<ParserAbqDSLoad>   dsloads;
+
+    // OP consistency within the currently open step
+    std::string cload_op;
+    std::string boundary_op;
+    std::string dload_op;
+    std::string dsload_op;
+
+    // Monotonic identifier used for generated step-local FEMaster collectors
+    int next_step_index = 1;
 
     // Currently open Abaqus step
     bool        step_active = false;
@@ -68,7 +139,7 @@ struct ParserAbqState {
     std::string step_amplitude;
     std::string procedure;
 
-    // FEMaster collectors generated for the current step
+    // FEMaster collectors materialized from the current active snapshot
     std::string load_collector;
     std::string support_collector;
     bool        load_collector_used    = false;
@@ -89,8 +160,8 @@ struct ParserAbqState {
  * registrations handle element labels, surfaces, coordinate/orientation input,
  * thermal expansion, homogeneous sections and supported analysis/history data.
  *
- * Parts, assemblies and unsupported Abaqus procedures remain deliberately
- * outside the current subset.
+ * Parts, assemblies and mechanical state propagation between steps remain
+ * deliberately outside the supported subset.
  */
 class ParserAbq : public Parser {
 private:
