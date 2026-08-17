@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -141,10 +142,19 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 auto loadcase = std::make_unique<loadcase::NonlinearStatic>(
                     id, &parser.writer(), &parser.model()
                 );
-                loadcase->max_increments = state.max_increments;
+
+                // Abaqus defaults correspond to one complete normalized step
+                // with a minimum automatic increment of 1e-5 of the step scale.
+                // Set them here because an omitted STATIC data line has no
+                // segment callback in the DSL engine.
+                loadcase->max_increments    = state.max_increments;
+                loadcase->initial_increment = fem::Precision(1);
+                loadcase->minimum_increment = fem::Precision(1e-5);
+                loadcase->maximum_increment = fem::Precision(1);
                 loadcase->control = riks
                     ? loadcase::NonlinearControl::ArcLength
                     : loadcase::NonlinearControl::LoadControl;
+
                 parser.set_active_loadcase(
                     std::move(loadcase),
                     riks ? "STATIC_RIKS" : "NONLINEARSTATIC"
@@ -192,10 +202,13 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     const fem::Precision maximum = std::isnan(data[3]) || data[3] == fem::Precision(0)
                         ? period : data[3];
 
+                    // FEMaster's arc-length controls are normalized to an
+                    // equivalent load-factor scale, while Abaqus supplies arc
+                    // lengths relative to its total arc-length scale.
                     parser.abaqus_state().step_period = period;
-                    loadcase->initial_increment = initial;
-                    loadcase->minimum_increment = minimum;
-                    loadcase->maximum_increment = maximum;
+                    loadcase->initial_increment = initial / period;
+                    loadcase->minimum_increment = minimum / period;
+                    loadcase->maximum_increment = maximum / period;
                 })
             )
         );
@@ -390,16 +403,18 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
         command.doc("Map direct Abaqus steady-state dynamics to FEMaster harmonic response.");
 
+        auto frequency_scale = std::make_shared<std::string>();
+
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .flag("DIRECT").doc("Require direct physical-DOF harmonic analysis")
                 .key("INTERVAL").optional("RANGE").allowed({"RANGE"})
                     .doc("Only direct frequency ranges are supported")
-                .key("FREQUENCYSCALE").optional("LINEAR").allowed({"LINEAR"})
-                    .doc("Only linear frequency spacing is supported")
+                .key("FREQUENCYSCALE").optional("LOGARITHMIC").allowed({"LOGARITHMIC", "LINEAR"})
+                    .doc("Frequency spacing, logarithmic by Abaqus default")
         );
 
-        command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
+        command.on_enter([&parser, frequency_scale](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             if (!state.step_active || parser.active_loadcase()) {
                 throw std::runtime_error("STEP must contain exactly one supported procedure card");
@@ -411,6 +426,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 throw std::runtime_error("STEADY STATE DYNAMICS does not support NLGEOM in FEMaster");
             }
 
+            *frequency_scale = keys.raw("FREQUENCYSCALE");
             parser.set_active_loadcase(
                 std::make_unique<loadcase::LinearHarmonic>(
                     parser.next_loadcase_id(), &parser.writer(), &parser.model()
@@ -429,7 +445,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
                         .on_empty  (std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
-                .bind([&parser](const std::array<fem::Precision, 5>& data) {
+                .bind([&parser, frequency_scale](const std::array<fem::Precision, 5>& data) {
                     auto* loadcase = parser.active_loadcase_as<loadcase::LinearHarmonic>();
                     if (!loadcase || std::isnan(data[0]) || data[0] < fem::Precision(0)) {
                         throw std::runtime_error("STEADY STATE DYNAMICS requires a non-negative lower frequency");
@@ -456,10 +472,20 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         throw std::runtime_error("Steady-state frequency point count must be an integer >= 2");
                     }
 
+                    if (*frequency_scale == "LOGARITHMIC" && lower <= fem::Precision(0)) {
+                        throw std::runtime_error("Logarithmic steady-state frequency ranges require a positive lower frequency");
+                    }
+
                     for (int i = 0; i < count; ++i) {
                         const fem::Precision xi = static_cast<fem::Precision>(i) /
                                                   static_cast<fem::Precision>(count - 1);
-                        loadcase->frequencies.push_back(lower + xi * (upper - lower));
+                        if (*frequency_scale == "LINEAR") {
+                            loadcase->frequencies.push_back(lower + xi * (upper - lower));
+                        } else {
+                            loadcase->frequencies.push_back(std::exp(
+                                std::log(lower) + xi * (std::log(upper) - std::log(lower))
+                            ));
+                        }
                     }
                 })
             )
