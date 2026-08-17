@@ -1,20 +1,18 @@
 /**
  * @file register_dsload.inl
- * @brief Registers supported Abaqus *DSLOAD surface loads.
+ * @brief Registers supported step-dependent Abaqus *DSLOAD definitions.
  *
- * Uniform surface pressure (`P`) maps to FEMaster `PLoad`, while uniform general
- * surface traction (`TRVEC`) maps to `DLoad`. Abaqus traction direction vectors
- * are normalized before multiplication by the supplied reference magnitude.
- * Optional `ORIENTATION` names reuse FEMaster coordinate systems created by
- * `*ORIENTATION` and are stored directly on the traction load.
+ * Uniform pressure (`P`) and general traction (`TRVEC`) are retained as logical
+ * surface-load records across steps. `OP=MOD` updates or adds records while
+ * `OP=NEW` clears the complete active DSLOAD category before replacement data
+ * are read.
  *
- * FEMaster's current nonlinear static solver assembles the external load vector
- * once in the reference configuration and subsequently scales it by the load
- * factor. Consequently true Abaqus follower pressure/traction semantics cannot
- * be reproduced in geometrically nonlinear steps and are rejected explicitly.
+ * Materialization to FEMaster `PLoad`/`DLoad` objects is deferred until
+ * `*END STEP`, where procedure-dependent amplitude and follower restrictions are
+ * resolved for the current independent FEMaster load case.
  *
- * @see bc::DLoad
- * @see bc::PLoad
+ * @see ParserAbqState
+ * @see ParserAbqDSLoad
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -22,6 +20,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -33,34 +32,28 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
-#include "../../../bc/amplitude.h"
-#include "../../../core/types_eig.h"
-#include "../../../core/types_num.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers uniform Abaqus surface pressure and general traction records.
+ * Registers supported Abaqus surface-load history records.
  *
- * `P` accepts `surface, P, magnitude`. `TRVEC` additionally requires three
- * direction components and normalizes that direction as Abaqus does. General
- * traction is follower by default in Abaqus; nonlinear FEMaster steps therefore
- * require `FOLLOWER=NO`. Pressure is intrinsically normal to the current surface
- * in Abaqus and is rejected entirely for nonlinear static/Riks until FEMaster
- * reassembles external follower loads and their load stiffness consistently.
+ * The logical identity is the original surface name together with `P` or
+ * `TRVEC`. General-traction direction is normalized when the record is read;
+ * orientation, follower setting and amplitude remain attached to the logical
+ * definition until the step snapshot is materialized.
  *
- * Real harmonic load amplitudes are retained and evaluated at each sweep
- * frequency. Imaginary load components remain unsupported by the current
- * real-reference-load harmonic solver.
+ * `OP` must be consistent across all `*DSLOAD` cards in one step. Imaginary
+ * harmonic loads remain unsupported.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser providing current step state.
+ * @param parser Abaqus parser retaining active surface-load definitions.
  */
 inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("DSLOAD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Apply uniform Abaqus pressure or general traction to a named surface.");
+        command.doc("Define or modify active Abaqus pressure/general traction loads.");
 
         auto amplitude   = std::make_shared<std::string>();
         auto orientation = std::make_shared<std::string>();
@@ -70,8 +63,8 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
             fem::io::dsl::KeywordSpec::make()
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
                 .key("ORIENTATION").optional().doc("Optional traction coordinate system")
-                .key("OP").optional("MOD").allowed({"MOD"})
-                    .doc("Only additive/modifying current-step loads are supported")
+                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+                    .doc("MOD preserves active DSLOADs; NEW replaces the complete DSLOAD category")
                 .key("FOLLOWER").optional("YES").allowed({"YES", "NO"})
                     .doc("Abaqus general-traction follower setting")
                 .flag("REAL").doc("Real harmonic load component")
@@ -83,6 +76,9 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
             if (!state.step_active || !parser.active_loadcase()) {
                 throw std::runtime_error("DSLOAD must appear after a supported procedure inside STEP");
             }
+            if (state.procedure == "EIGENFREQ") {
+                throw std::runtime_error("DSLOAD is not supported in a FREQUENCY step");
+            }
             if (keys.has("REAL") && keys.has("IMAGINARY")) {
                 throw std::runtime_error("DSLOAD REAL and IMAGINARY are mutually exclusive");
             }
@@ -90,16 +86,27 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                 throw std::runtime_error("DSLOAD IMAGINARY is not supported by the real-load harmonic solver");
             }
 
+            const std::string op = keys.raw("OP");
+            if (!state.dsload_op.empty() && state.dsload_op != op) {
+                throw std::runtime_error("All DSLOAD cards in one STEP must use the same OP value");
+            }
+            if (state.dsload_op.empty()) {
+                state.dsload_op = op;
+                if (op == "NEW") {
+                    state.dsloads.clear();
+                }
+            }
+
             *amplitude   = keys.has("AMPLITUDE")   ? keys.raw("AMPLITUDE")   : std::string{};
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             *follower    = keys.raw("FOLLOWER");
 
+            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
+                throw std::runtime_error("DSLOAD references unknown amplitude '" + *amplitude + "'");
+            }
             if (!orientation->empty() && !parser.model()._data->coordinate_systems.has(*orientation)) {
                 throw std::runtime_error("DSLOAD references unknown orientation '" + *orientation + "'");
             }
-
-            parser.model()._data->load_cols.activate(state.load_collector);
-            state.load_collector_used = true;
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -123,81 +130,55 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                         throw std::runtime_error("DSLOAD references unknown surface '" + surface + "'");
                     }
 
-                    std::string stored_amplitude;
-                    fem::Precision scale = fem::Precision(1);
-                    if (!amplitude->empty()) {
-                        if (!model._data->amplitudes.has(*amplitude)) {
-                            throw std::runtime_error("DSLOAD references unknown amplitude '" + *amplitude + "'");
-                        }
-
-                        if (state.procedure == "LINEARTRANSIENT" ||
-                            state.procedure == "LINEARHARMONIC") {
-                            stored_amplitude = *amplitude;
-                        } else if (state.procedure == "LINEARSTATIC" ||
-                                   state.procedure == "LINEARBUCKLING") {
-                            scale = model._data->amplitudes.get(*amplitude)->evaluate(state.step_period);
-                        } else if (state.procedure == "NONLINEARSTATIC" ||
-                                   state.procedure == "STATIC_RIKS") {
-                            throw std::runtime_error(
-                                "DSLOAD AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
-                            );
-                        }
-                    } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
-                        const std::string generated = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
-                        if (!model._data->amplitudes.has(generated)) {
-                            model.define_amplitude(generated, bc::Interpolation::Linear);
-                            model.add_amplitude_sample(generated, fem::Precision(0), fem::Precision(0));
-                            model.add_amplitude_sample(generated, state.step_period, fem::Precision(1));
-                        }
-                        stored_amplitude = generated;
-                    } else if ((state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS") &&
-                               state.step_amplitude == "STEP") {
-                        throw std::runtime_error(
-                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
-                        );
-                    }
-
-                    const bool nonlinear = state.procedure == "NONLINEARSTATIC" ||
-                                           state.procedure == "STATIC_RIKS";
+                    std::array<fem::Precision, 3> stored_direction{
+                        fem::Precision(0), fem::Precision(0), fem::Precision(0)
+                    };
 
                     if (type == "P") {
                         if (!std::isnan(direction[0]) || !std::isnan(direction[1]) || !std::isnan(direction[2])) {
                             throw std::runtime_error("DSLOAD P accepts no traction direction components");
                         }
-                        if (nonlinear) {
-                            throw std::runtime_error(
-                                "DSLOAD P is a follower pressure in Abaqus and is not yet supported in nonlinear FEMaster steps"
-                            );
+                    } else if (type == "TRVEC") {
+                        if (std::isnan(direction[0]) || std::isnan(direction[1]) || std::isnan(direction[2])) {
+                            throw std::runtime_error("DSLOAD TRVEC requires three direction components");
                         }
-                        model.add_pload(surface, scale * magnitude, stored_amplitude);
-                        return;
-                    }
 
-                    if (type != "TRVEC") {
+                        fem::Vec3 unit_direction{direction[0], direction[1], direction[2]};
+                        const fem::Precision norm = unit_direction.norm();
+                        if (!(norm > fem::Precision(0)) || !std::isfinite(norm)) {
+                            throw std::runtime_error("DSLOAD TRVEC direction must be finite and nonzero");
+                        }
+                        unit_direction /= norm;
+                        stored_direction = {
+                            unit_direction[0], unit_direction[1], unit_direction[2]
+                        };
+                    } else {
                         throw std::runtime_error("DSLOAD supports only P and TRVEC load labels");
                     }
-                    if (nonlinear && *follower != "NO") {
-                        throw std::runtime_error(
-                            "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented"
-                        );
-                    }
-                    if (std::isnan(direction[0]) || std::isnan(direction[1]) || std::isnan(direction[2])) {
-                        throw std::runtime_error("DSLOAD TRVEC requires three direction components");
-                    }
 
-                    fem::Vec3 unit_direction{direction[0], direction[1], direction[2]};
-                    const fem::Precision norm = unit_direction.norm();
-                    if (!(norm > fem::Precision(0)) || !std::isfinite(norm)) {
-                        throw std::runtime_error("DSLOAD TRVEC direction must be finite and nonzero");
-                    }
-                    unit_direction /= norm;
-
-                    model.add_dload(
-                        surface,
-                        scale * magnitude * unit_direction,
-                        *orientation,
-                        stored_amplitude
+                    auto record = std::find_if(
+                        state.dsloads.begin(), state.dsloads.end(),
+                        [&](const ParserAbqDSLoad& item) {
+                            return item.surface == surface && item.type == type;
+                        }
                     );
+
+                    const ParserAbqDSLoad value{
+                        surface,
+                        type,
+                        magnitude,
+                        stored_direction,
+                        *amplitude,
+                        *orientation,
+                        *follower,
+                        state.step_index
+                    };
+
+                    if (record == state.dsloads.end()) {
+                        state.dsloads.push_back(value);
+                    } else {
+                        *record = value;
+                    }
                 })
             )
         );
