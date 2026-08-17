@@ -8,11 +8,11 @@
  * collector. Node-set targets are expanded to individual nodes so an Abaqus
  * `*TRANSFORM` can be resolved independently for every target node.
  *
- * Named amplitudes are preserved for linear transient analysis. Linear static
- * and buckling analyses use the amplitude value at the end of the step because
- * only the final load state is solved. Custom amplitude paths are rejected for
- * nonlinear static/Riks and harmonic procedures where the current FEMaster
- * solvers cannot reproduce the Abaqus history/frequency semantics exactly.
+ * Named amplitudes are preserved for linear transient and harmonic analysis.
+ * Linear static and buckling analyses use the amplitude value at the end of the
+ * step because only the final load state is solved. Custom amplitude paths are
+ * rejected for nonlinear static/Riks where FEMaster currently uses one
+ * proportional reference load vector.
  *
  * @see ParserAbqState
  * @see bc::CLoad
@@ -46,9 +46,9 @@ namespace fem::io::reader::commands_abq {
  * by `*TRANSFORM` is copied to the resulting FEMaster load object rather than
  * changing the model's global nodal coordinate basis.
  *
- * `OP=NEW` and follower concentrated loads are rejected because FEMaster's
- * independent step collectors do not currently model Abaqus history removal or
- * load-direction updates with the current nodal rotation.
+ * `OP=NEW`, follower concentrated loads and imaginary harmonic loads are
+ * rejected because the corresponding Abaqus history/follower/complex-load
+ * semantics are not represented by the current FEMaster load object.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing step and transform state.
@@ -66,6 +66,8 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 .key("OP").optional("MOD").allowed({"MOD"})
                     .doc("Only additive/modifying current-step loads are supported")
                 .flag("FOLLOWER").doc("Unsupported follower concentrated-load flag")
+                .flag("REAL").doc("Real harmonic load component")
+                .flag("IMAGINARY").doc("Unsupported imaginary harmonic load component")
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
@@ -75,6 +77,12 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             }
             if (keys.has("FOLLOWER")) {
                 throw std::runtime_error("CLOAD FOLLOWER is not supported");
+            }
+            if (keys.has("REAL") && keys.has("IMAGINARY")) {
+                throw std::runtime_error("CLOAD REAL and IMAGINARY are mutually exclusive");
+            }
+            if (keys.has("IMAGINARY")) {
+                throw std::runtime_error("CLOAD IMAGINARY is not supported by the real-load harmonic solver");
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
@@ -100,9 +108,9 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     auto& model = parser.model();
                     auto& state = parser.abaqus_state();
 
-                    // Resolve amplitude semantics before expanding the target.
-                    // Transient analysis evaluates the stored amplitude at every
-                    // time step; static/buckling only need its final scalar value.
+                    // Transient and harmonic procedures evaluate the named
+                    // amplitude at the current time/frequency. Static and
+                    // buckling procedures need only the final step value.
                     std::string stored_amplitude;
                     fem::Precision scale = fem::Precision(1);
                     if (!amplitude->empty()) {
@@ -110,7 +118,8 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                             throw std::runtime_error("CLOAD references unknown amplitude '" + *amplitude + "'");
                         }
 
-                        if (state.procedure == "LINEARTRANSIENT") {
+                        if (state.procedure == "LINEARTRANSIENT" ||
+                            state.procedure == "LINEARHARMONIC") {
                             stored_amplitude = *amplitude;
                         } else if (state.procedure == "LINEARSTATIC" ||
                                    state.procedure == "LINEARBUCKLING") {
@@ -119,10 +128,6 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                                    state.procedure == "STATIC_RIKS") {
                             throw std::runtime_error(
                                 "CLOAD AMPLITUDE is not supported for nonlinear static/Riks because FEMaster currently uses proportional load-factor control"
-                            );
-                        } else if (state.procedure == "LINEARHARMONIC") {
-                            throw std::runtime_error(
-                                "CLOAD AMPLITUDE is not supported for harmonic response because FEMaster amplitudes are time histories, not frequency functions"
                             );
                         }
                     } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
