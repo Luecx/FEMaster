@@ -7,9 +7,10 @@
  * adds target/DOF records; `OP=NEW` clears all active concentrated loads before
  * the current step supplies its replacement definitions.
  *
- * Deferring materialization preserves the original node/node-set identity needed
- * by Abaqus modification semantics. At `*END STEP` node sets are expanded and
- * any nodal `*TRANSFORM` is copied to the concrete FEMaster `CLoad` objects.
+ * Multiple definitions of the same Abaqus load condition inside one step are
+ * retained separately and therefore add during materialization. Such an active
+ * multi-definition cannot be modified unambiguously in a later step and must be
+ * replaced using `OP=NEW`, matching Abaqus load-history semantics.
  *
  * @see ParserAbqState
  * @see ParserAbqCLoad
@@ -37,11 +38,11 @@ namespace fem::io::reader::commands_abq {
  * Registers standard Abaqus concentrated-load history records.
  *
  * Each data line uses `node-or-nset, dof, magnitude`. The logical identity is
- * the original target token together with the generalized DOF, so a later
- * `OP=MOD` line replaces the corresponding active definition instead of adding
- * a second FEMaster load to it. An empty `OP=NEW` block is valid and removes all
- * active concentrated loads without defining replacements.
+ * the original target token together with the generalized DOF. One propagated
+ * definition can be redefined by `OP=MOD`; repeated definitions of the same
+ * identity in the current step are stored separately and act additively.
  *
+ * An empty `OP=NEW` block is valid and removes all active concentrated loads.
  * Follower and imaginary harmonic loads remain unsupported. `OP` must be
  * consistent across all `*CLOAD` cards in one step.
  *
@@ -116,26 +117,47 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     }
 
                     auto& state = parser.abaqus_state();
-                    auto record = std::find_if(
-                        state.cloads.begin(), state.cloads.end(),
-                        [&](const ParserAbqCLoad& item) {
-                            return item.target == target && item.dof == dof;
-                        }
-                    );
+                    auto first = state.cloads.end();
+                    int matches = 0;
+                    bool defined_this_step = false;
 
-                    if (record == state.cloads.end()) {
+                    for (auto it = state.cloads.begin(); it != state.cloads.end(); ++it) {
+                        if (it->target != target || it->dof != dof) {
+                            continue;
+                        }
+                        if (first == state.cloads.end()) {
+                            first = it;
+                        }
+                        ++matches;
+                        defined_this_step = defined_this_step || it->modified_step == state.step_index;
+                    }
+
+                    // A repeated definition in the same step is a second load
+                    // condition and therefore adds to the first one. If several
+                    // such conditions propagated from an earlier step, Abaqus no
+                    // longer has a unique record for OP=MOD redefinition.
+                    if (defined_this_step || matches == 0) {
                         state.cloads.push_back(ParserAbqCLoad{
                             target,
                             dof,
                             magnitude,
+                            Precision(0),
                             *amplitude,
                             state.step_index
                         });
-                    } else {
-                        record->magnitude     = magnitude;
-                        record->amplitude     = *amplitude;
-                        record->modified_step = state.step_index;
+                        return;
                     }
+                    if (matches > 1) {
+                        throw std::runtime_error(
+                            "Multiple active CLOADs use target '" + target +
+                            "' and the same DOF; use OP=NEW to redefine them"
+                        );
+                    }
+
+                    first->previous_magnitude = first->magnitude;
+                    first->magnitude          = magnitude;
+                    first->amplitude          = *amplitude;
+                    first->modified_step      = state.step_index;
                 })
             )
         );
