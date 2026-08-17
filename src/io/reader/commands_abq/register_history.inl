@@ -11,7 +11,9 @@
  * Step-time amplitudes on records modified in the current step are active only
  * for that step. After successful execution their end value is stored as the
  * constant propagated magnitude used by later steps unless the record is
- * modified again.
+ * modified again. For an explicitly requested default `RAMP`, a transient load
+ * redefinition is decomposed into its previous constant total value plus a
+ * linearly ramped difference to the new total value.
  *
  * @see ParserAbqState
  * @see commands_abq::register_step
@@ -67,62 +69,53 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
 
             const bool nonlinear = state.procedure == "NONLINEARSTATIC" ||
                                    state.procedure == "STATIC_RIKS";
-            const bool use_loads  = state.procedure != "EIGENFREQ";
+            const bool transient = state.procedure == "LINEARTRANSIENT";
+            const bool use_loads = state.procedure != "EIGENFREQ";
 
-            // A record modified in this step uses the current step amplitude.
-            // Propagated records were frozen after their defining/modifying step
-            // and therefore enter this step as constant total values.
-            const auto resolve_load_amplitude = [&](const std::string& amplitude,
-                                                     int modified_step)
+            // Explicit named amplitudes can be retained only by procedures that
+            // evaluate loads repeatedly. Static/buckling calculations need only
+            // the end-of-step total value; nonlinear proportional loading cannot
+            // reproduce an arbitrary independent amplitude history.
+            const auto resolve_explicit_amplitude = [&](const std::string& amplitude,
+                                                         int modified_step)
                 -> std::pair<Precision, std::string> {
-                if (modified_step != state.step_index) {
+                if (modified_step != state.step_index || amplitude.empty()) {
                     return {Precision(1), std::string{}};
                 }
-
-                if (!amplitude.empty()) {
-                    if (!model._data->amplitudes.has(amplitude)) {
-                        throw std::runtime_error("Unknown Abaqus amplitude '" + amplitude + "'");
-                    }
-
-                    if (state.procedure == "LINEARTRANSIENT" ||
-                        state.procedure == "LINEARHARMONIC") {
-                        return {Precision(1), amplitude};
-                    }
-                    if (state.procedure == "LINEARSTATIC" ||
-                        state.procedure == "LINEARBUCKLING") {
-                        return {
-                            model._data->amplitudes.get(amplitude)->evaluate(state.step_period),
-                            std::string{}
-                        };
-                    }
-                    if (nonlinear) {
-                        throw std::runtime_error(
-                            "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
-                        );
-                    }
+                if (!model._data->amplitudes.has(amplitude)) {
+                    throw std::runtime_error("Unknown Abaqus amplitude '" + amplitude + "'");
                 }
 
-                // For a transient load newly defined/modified in this step, the
-                // explicit STEP default RAMP is represented by one generated
-                // linear FEMaster amplitude. Propagated loads bypass this path.
-                if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
-                    const std::string generated =
-                        "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
-                    if (!model._data->amplitudes.has(generated)) {
-                        model.define_amplitude(generated, bc::Interpolation::Linear);
-                        model.add_amplitude_sample(generated, Precision(0), Precision(0));
-                        model.add_amplitude_sample(generated, state.step_period, Precision(1));
-                    }
-                    return {Precision(1), generated};
+                if (state.procedure == "LINEARTRANSIENT" ||
+                    state.procedure == "LINEARHARMONIC") {
+                    return {Precision(1), amplitude};
                 }
-
-                if (nonlinear && state.step_amplitude == "STEP") {
+                if (state.procedure == "LINEARSTATIC" ||
+                    state.procedure == "LINEARBUCKLING") {
+                    return {
+                        model._data->amplitudes.get(amplitude)->evaluate(state.step_period),
+                        std::string{}
+                    };
+                }
+                if (nonlinear) {
                     throw std::runtime_error(
-                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
+                        "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
                     );
                 }
-
                 return {Precision(1), std::string{}};
+            };
+
+            // Lazily create the one unit ramp shared by every load that is
+            // redefined without an explicit amplitude in this transient step.
+            const auto ramp_amplitude = [&]() -> std::string {
+                const std::string name =
+                    "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
+                if (!model._data->amplitudes.has(name)) {
+                    model.define_amplitude(name, bc::Interpolation::Linear);
+                    model.add_amplitude_sample(name, Precision(0), Precision(0));
+                    model.add_amplitude_sample(name, state.step_period, Precision(1));
+                }
+                return name;
             };
 
             // -----------------------------------------------------------------
@@ -198,90 +191,172 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 state.load_collector_used = true;
 
                 for (const auto& record : state.cloads) {
-                    const auto [scale, amplitude] =
-                        resolve_load_amplitude(record.amplitude, record.modified_step);
-
-                    Vec6 load = Vec6::Zero();
-                    load[record.dof - 1] = scale * record.magnitude;
-
-                    const auto add_to_node = [&](ID node_id) {
-                        std::string orientation;
-                        const auto transform = state.node_transforms.find(node_id);
-                        if (transform != state.node_transforms.end()) {
-                            orientation = transform->second;
+                    const auto add_record = [&](Precision magnitude,
+                                                const std::string& amplitude) {
+                        if (magnitude == Precision(0)) {
+                            return;
                         }
-                        model.add_cload(node_id, load, orientation, amplitude);
+
+                        Vec6 load = Vec6::Zero();
+                        load[record.dof - 1] = magnitude;
+
+                        const auto add_to_node = [&](ID node_id) {
+                            std::string orientation;
+                            const auto transform = state.node_transforms.find(node_id);
+                            if (transform != state.node_transforms.end()) {
+                                orientation = transform->second;
+                            }
+                            model.add_cload(node_id, load, orientation, amplitude);
+                        };
+
+                        if (model._data->node_sets.has(record.target)) {
+                            for (const ID node_id : *model._data->node_sets.get(record.target)) {
+                                add_to_node(node_id);
+                            }
+                        } else {
+                            std::size_t parsed = 0;
+                            const long value = std::stol(record.target, &parsed);
+                            if (parsed != record.target.size()) {
+                                throw std::runtime_error(
+                                    "CLOAD target '" + record.target + "' is not a node set or node id"
+                                );
+                            }
+                            add_to_node(static_cast<ID>(value));
+                        }
                     };
 
-                    if (model._data->node_sets.has(record.target)) {
-                        for (const ID node_id : *model._data->node_sets.get(record.target)) {
-                            add_to_node(node_id);
-                        }
-                    } else {
-                        std::size_t parsed = 0;
-                        const long value = std::stol(record.target, &parsed);
-                        if (parsed != record.target.size()) {
-                            throw std::runtime_error(
-                                "CLOAD target '" + record.target + "' is not a node set or node id"
-                            );
-                        }
-                        add_to_node(static_cast<ID>(value));
-                    }
-                }
-
-                for (const auto& record : state.dloads) {
-                    const auto [scale, amplitude] =
-                        resolve_load_amplitude(record.amplitude, record.modified_step);
-                    const Vec3 gravity = scale * record.magnitude * Vec3{
-                        record.direction[0], record.direction[1], record.direction[2]
-                    };
-
-                    if (model._data->elem_sets.has(record.target)) {
-                        model.add_vload(record.target, gravity, "", amplitude);
-                    } else {
-                        std::size_t parsed = 0;
-                        const long value = std::stol(record.target, &parsed);
-                        if (parsed != record.target.size()) {
-                            throw std::runtime_error(
-                                "DLOAD target '" + record.target + "' is not an element set or element id"
-                            );
-                        }
-                        model.add_vload(static_cast<ID>(value), gravity, "", amplitude);
-                    }
-                }
-
-                for (const auto& record : state.dsloads) {
-                    const auto [scale, amplitude] =
-                        resolve_load_amplitude(record.amplitude, record.modified_step);
-
-                    if (record.type == "P") {
-                        if (nonlinear) {
-                            throw std::runtime_error(
-                                "DSLOAD P is a follower pressure in Abaqus and is not supported in nonlinear FEMaster steps"
-                            );
-                        }
-                        model.add_pload(record.surface, scale * record.magnitude, amplitude);
+                    if (record.modified_step == state.step_index &&
+                        record.amplitude.empty() && transient &&
+                        state.step_amplitude == "RAMP") {
+                        add_record(record.previous_magnitude, std::string{});
+                        add_record(
+                            record.magnitude - record.previous_magnitude,
+                            ramp_amplitude()
+                        );
                         continue;
                     }
 
-                    if (record.type != "TRVEC") {
-                        throw std::runtime_error("Unsupported propagated DSLOAD type '" + record.type + "'");
-                    }
-                    if (nonlinear && record.follower != "NO") {
+                    if (record.modified_step == state.step_index &&
+                        record.amplitude.empty() && nonlinear &&
+                        state.step_amplitude == "STEP") {
                         throw std::runtime_error(
-                            "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented"
+                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
                         );
                     }
 
-                    const Vec3 direction{
-                        record.direction[0], record.direction[1], record.direction[2]
+                    const auto [scale, amplitude] =
+                        resolve_explicit_amplitude(record.amplitude, record.modified_step);
+                    add_record(scale * record.magnitude, amplitude);
+                }
+
+                for (const auto& record : state.dloads) {
+                    const auto add_record = [&](Precision magnitude,
+                                                const std::string& amplitude) {
+                        if (magnitude == Precision(0)) {
+                            return;
+                        }
+
+                        const Vec3 gravity = magnitude * Vec3{
+                            record.direction[0], record.direction[1], record.direction[2]
+                        };
+
+                        if (model._data->elem_sets.has(record.target)) {
+                            model.add_vload(record.target, gravity, "", amplitude);
+                        } else {
+                            std::size_t parsed = 0;
+                            const long value = std::stol(record.target, &parsed);
+                            if (parsed != record.target.size()) {
+                                throw std::runtime_error(
+                                    "DLOAD target '" + record.target + "' is not an element set or element id"
+                                );
+                            }
+                            model.add_vload(static_cast<ID>(value), gravity, "", amplitude);
+                        }
                     };
-                    model.add_dload(
-                        record.surface,
-                        scale * record.magnitude * direction,
-                        record.orientation,
-                        amplitude
-                    );
+
+                    if (record.modified_step == state.step_index &&
+                        record.amplitude.empty() && transient &&
+                        state.step_amplitude == "RAMP") {
+                        add_record(record.previous_magnitude, std::string{});
+                        add_record(
+                            record.magnitude - record.previous_magnitude,
+                            ramp_amplitude()
+                        );
+                        continue;
+                    }
+
+                    if (record.modified_step == state.step_index &&
+                        record.amplitude.empty() && nonlinear &&
+                        state.step_amplitude == "STEP") {
+                        throw std::runtime_error(
+                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
+                        );
+                    }
+
+                    const auto [scale, amplitude] =
+                        resolve_explicit_amplitude(record.amplitude, record.modified_step);
+                    add_record(scale * record.magnitude, amplitude);
+                }
+
+                for (const auto& record : state.dsloads) {
+                    const auto add_record = [&](Precision magnitude,
+                                                const std::string& amplitude) {
+                        if (magnitude == Precision(0)) {
+                            return;
+                        }
+
+                        if (record.type == "P") {
+                            if (nonlinear) {
+                                throw std::runtime_error(
+                                    "DSLOAD P is a follower pressure in Abaqus and is not supported in nonlinear FEMaster steps"
+                                );
+                            }
+                            model.add_pload(record.surface, magnitude, amplitude);
+                            return;
+                        }
+
+                        if (record.type != "TRVEC") {
+                            throw std::runtime_error("Unsupported propagated DSLOAD type '" + record.type + "'");
+                        }
+                        if (nonlinear && record.follower != "NO") {
+                            throw std::runtime_error(
+                                "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented"
+                            );
+                        }
+
+                        const Vec3 direction{
+                            record.direction[0], record.direction[1], record.direction[2]
+                        };
+                        model.add_dload(
+                            record.surface,
+                            magnitude * direction,
+                            record.orientation,
+                            amplitude
+                        );
+                    };
+
+                    if (record.modified_step == state.step_index &&
+                        record.amplitude.empty() && transient &&
+                        state.step_amplitude == "RAMP") {
+                        add_record(record.previous_magnitude, std::string{});
+                        add_record(
+                            record.magnitude - record.previous_magnitude,
+                            ramp_amplitude()
+                        );
+                        continue;
+                    }
+
+                    if (record.modified_step == state.step_index &&
+                        record.amplitude.empty() && nonlinear &&
+                        state.step_amplitude == "STEP") {
+                        throw std::runtime_error(
+                            "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
+                        );
+                    }
+
+                    const auto [scale, amplitude] =
+                        resolve_explicit_amplitude(record.amplitude, record.modified_step);
+                    add_record(scale * record.magnitude, amplitude);
                 }
             }
 
@@ -328,8 +403,9 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 throw std::runtime_error(std::string("Abaqus STEP execution failed: ") + error.what());
             }
 
-            // Freeze current-step amplitudes to the end value used when the same
-            // logical definition propagates unchanged into the next step.
+            // Freeze current-step explicit amplitudes to the end value used when
+            // the same logical definition propagates unchanged into the next
+            // step. Default RAMP records already store their new final total.
             Precision end_coordinate = state.step_period;
             if (auto* harmonic = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
                 if (!harmonic->frequencies.empty()) {
@@ -337,7 +413,7 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 }
             }
 
-            const auto freeze_records = [&](auto& records) {
+            const auto freeze_load_records = [&](auto& records) {
                 for (auto& record : records) {
                     if (record.modified_step != state.step_index) {
                         continue;
@@ -347,14 +423,26 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                             model._data->amplitudes.get(record.amplitude)->evaluate(end_coordinate);
                         record.amplitude.clear();
                     }
+                    record.previous_magnitude = Precision(0);
                     record.modified_step = 0;
                 }
             };
 
-            freeze_records(state.cloads);
-            freeze_records(state.boundaries);
-            freeze_records(state.dloads);
-            freeze_records(state.dsloads);
+            freeze_load_records(state.cloads);
+            freeze_load_records(state.dloads);
+            freeze_load_records(state.dsloads);
+
+            for (auto& record : state.boundaries) {
+                if (record.modified_step != state.step_index) {
+                    continue;
+                }
+                if (!record.amplitude.empty()) {
+                    record.magnitude *=
+                        model._data->amplitudes.get(record.amplitude)->evaluate(end_coordinate);
+                    record.amplitude.clear();
+                }
+                record.modified_step = 0;
+            }
 
             parser.clear_active_loadcase();
             state.step_active = false;
