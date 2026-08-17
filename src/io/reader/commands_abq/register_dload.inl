@@ -41,6 +41,8 @@ namespace fem::io::reader::commands_abq {
 /**
  * Registers Abaqus gravity loading on an element set, element id or the complete
  * model. The blank Abaqus target is mapped to FEMaster's built-in `EALL` region.
+ * `OP=NEW` is rejected because Abaqus cross-step load removal is not represented
+ * by the current independent FEMaster load-case mapping.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing current step state.
@@ -55,8 +57,8 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
-                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
-                    .doc("Accepted for the independent current-step collector")
+                .key("OP").optional("MOD").allowed({"MOD"})
+                    .doc("Only additive/modifying current-step loads are supported")
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
