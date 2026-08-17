@@ -50,6 +50,10 @@ namespace fem::io::reader::commands_abq {
  * in Abaqus and is rejected entirely for nonlinear static/Riks until FEMaster
  * reassembles external follower loads and their load stiffness consistently.
  *
+ * Real harmonic load amplitudes are retained and evaluated at each sweep
+ * frequency. Imaginary load components remain unsupported by the current
+ * real-reference-load harmonic solver.
+ *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser providing current step state.
  */
@@ -70,12 +74,20 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                     .doc("Only additive/modifying current-step loads are supported")
                 .key("FOLLOWER").optional("YES").allowed({"YES", "NO"})
                     .doc("Abaqus general-traction follower setting")
+                .flag("REAL").doc("Real harmonic load component")
+                .flag("IMAGINARY").doc("Unsupported imaginary harmonic load component")
         );
 
         command.on_enter([&parser, amplitude, orientation, follower](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             if (!state.step_active || !parser.active_loadcase()) {
                 throw std::runtime_error("DSLOAD must appear after a supported procedure inside STEP");
+            }
+            if (keys.has("REAL") && keys.has("IMAGINARY")) {
+                throw std::runtime_error("DSLOAD REAL and IMAGINARY are mutually exclusive");
+            }
+            if (keys.has("IMAGINARY")) {
+                throw std::runtime_error("DSLOAD IMAGINARY is not supported by the real-load harmonic solver");
             }
 
             *amplitude   = keys.has("AMPLITUDE")   ? keys.raw("AMPLITUDE")   : std::string{};
@@ -118,7 +130,8 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                             throw std::runtime_error("DSLOAD references unknown amplitude '" + *amplitude + "'");
                         }
 
-                        if (state.procedure == "LINEARTRANSIENT") {
+                        if (state.procedure == "LINEARTRANSIENT" ||
+                            state.procedure == "LINEARHARMONIC") {
                             stored_amplitude = *amplitude;
                         } else if (state.procedure == "LINEARSTATIC" ||
                                    state.procedure == "LINEARBUCKLING") {
@@ -128,8 +141,6 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                             throw std::runtime_error(
                                 "DSLOAD AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
                             );
-                        } else if (state.procedure == "LINEARHARMONIC") {
-                            throw std::runtime_error("DSLOAD AMPLITUDE is not supported for harmonic response");
                         }
                     } else if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
                         const std::string generated = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
