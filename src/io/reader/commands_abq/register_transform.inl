@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <array>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -117,8 +118,8 @@ inline void register_transform(fem::io::dsl::Registry& registry, ParserAbq& pars
                             throw std::runtime_error("TRANSFORM TYPE=C requires distinct axis points a and b");
                         }
 
-                        const fem::Vec3 axial     = axis.normalized();
-                        const fem::Vec3 radial    = axial.unitOrthogonal();
+                        const fem::Vec3 axial      = axis.normalized();
+                        const fem::Vec3 radial     = axial.unitOrthogonal();
                         const fem::Vec3 tangential = axial.cross(radial).normalized();
 
                         model.add_coordinate_system<cos::CylindricalSystem>(
