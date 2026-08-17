@@ -3,24 +3,28 @@
  * @brief Implements Abaqus-specific command registration for the common parser stages.
  *
  * The Abaqus reader reuses native FEMaster registrations whenever the accepted
- * syntax and resulting model operation are identical. Format-specific handlers
- * are used only where Abaqus semantics differ, currently for `ELEMENT`,
- * `SURFACE`, `ELASTIC`, `EXPANSION`, `SOLID SECTION` and `SHELL SECTION`.
+ * syntax and resulting model operation are identical. `ELASTIC` now uses the
+ * shared command because the native syntax follows the Abaqus type meanings.
+ * Format-specific handlers remain only where the external representation differs,
+ * currently for `ELEMENT`, `SURFACE`, `ORIENTATION`, `EXPANSION`, `SOLID SECTION`
+ * and `SHELL SECTION`.
  *
  * The supported material subset consists of `MATERIAL`, constant `DENSITY`,
  * isotropic or orthotropic `ELASTIC`, Neo-Hooke `HYPERELASTIC`, and constant
- * isotropic `EXPANSION`. Homogeneous solid, truss and shell sections are
- * constructed in the topology pass before the common parser assigns sections
- * and enumerates element-local data.
+ * isotropic `EXPANSION`. Basic coordinate-defined rectangular orientations and
+ * homogeneous solid, truss and shell sections are constructed in the topology
+ * pass before the common parser assigns sections and enumerates element-local
+ * data.
  *
  * No separate parsing pipeline is implemented here. The four passes, model
  * allocation, section assignment, element-local enumeration, shell-normal
  * construction and final data stage remain owned by `Parser`.
  *
  * @see Parser
+ * @see commands::register_elastic
  * @see commands_abq::register_element
  * @see commands_abq::register_surface
- * @see commands_abq::register_elastic
+ * @see commands_abq::register_orientation
  * @see commands_abq::register_expansion
  * @see commands_abq::register_solid_section
  * @see commands_abq::register_shell_section
@@ -32,6 +36,7 @@
 #include "parser_abq.h"
 
 #include "commands/register_density.inl"
+#include "commands/register_elastic.inl"
 #include "commands/register_elset.inl"
 #include "commands/register_heading.inl"
 #include "commands/register_hyperelastic.inl"
@@ -39,9 +44,9 @@
 #include "commands/register_node.inl"
 #include "commands/register_node_count.inl"
 #include "commands/register_nset.inl"
-#include "commands_abq/register_elastic.inl"
 #include "commands_abq/register_element.inl"
 #include "commands_abq/register_expansion.inl"
+#include "commands_abq/register_orientation.inl"
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
 #include "commands_abq/register_surface.inl"
@@ -76,9 +81,10 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     commands_abq::register_surface(registry, model());
     commands::register_material(registry, model());
     commands::register_density(registry, model());
-    commands_abq::register_elastic(registry, model());
+    commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
+    commands_abq::register_orientation(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
@@ -91,10 +97,10 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
 /**
  * Configures the topology pass for the currently supported Abaqus syntax.
  *
- * Nodes, elements, sets and surfaces are constructed together with material and
- * section definitions required before the common section-assignment and
- * element-enumeration steps. Material child commands execute while their active
- * `MATERIAL` parent selects the target FEMaster material.
+ * Nodes, elements, sets and surfaces are constructed together with material,
+ * orientation and section definitions required before the common
+ * section-assignment and element-enumeration steps. Material child commands
+ * execute while their active `MATERIAL` parent selects the target material.
  *
  * @param registry Stage-local command registry.
  */
@@ -108,9 +114,10 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     commands_abq::register_surface(registry, model());
     commands::register_material(registry, model());
     commands::register_density(registry, model());
-    commands_abq::register_elastic(registry, model());
+    commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
+    commands_abq::register_orientation(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
@@ -127,6 +134,7 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::Active);
     registry.set_active_mode("HYPERELASTIC", io::dsl::ActiveMode::Active);
     registry.set_active_mode("EXPANSION"   , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ORIENTATION" , io::dsl::ActiveMode::Active);
     registry.set_active_mode("SOLIDSECTION", io::dsl::ActiveMode::Active);
     registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
 }
@@ -137,7 +145,7 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
  * No Abaqus field-like keyword is supported yet. All known commands are
  * registered only in consume mode so the common field pass retains its position
  * between element enumeration and shell-normal construction without reapplying
- * topology, material or section mutations.
+ * topology, material, orientation or section mutations.
  *
  * @param registry Stage-local command registry.
  */
@@ -151,9 +159,10 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
     commands_abq::register_surface(registry, model());
     commands::register_material(registry, model());
     commands::register_density(registry, model());
-    commands_abq::register_elastic(registry, model());
+    commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
+    commands_abq::register_orientation(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
@@ -181,9 +190,10 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands_abq::register_surface(registry, model());
     commands::register_material(registry, model());
     commands::register_density(registry, model());
-    commands_abq::register_elastic(registry, model());
+    commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
     commands_abq::register_expansion(registry, model());
+    commands_abq::register_orientation(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
