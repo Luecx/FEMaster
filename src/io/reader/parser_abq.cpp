@@ -213,10 +213,11 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
  * Configures the final Abaqus analysis/history pass.
  *
  * Persistent model-definition keywords are consumed without execution because
- * they have already been applied in topology. Step/procedure cards update the
- * logical Abaqus load/BC history; `register_history` then materializes the active
- * snapshot into one fresh FEMaster collector at `*END STEP` and executes the
- * mechanically independent load case.
+ * they have already been applied in topology. Step/procedure cards establish the
+ * independent FEMaster load case, while load/BC cards update the logical Abaqus
+ * definition history. `register_history` replaces only `ENDSTEP` finalization,
+ * materializing the active snapshot into fresh collectors immediately before
+ * the load case is executed.
  *
  * @param registry Stage-local command registry.
  */
@@ -246,8 +247,8 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands_abq::register_dload(registry, *this);
     commands_abq::register_dsload(registry, *this);
 
-    // Replace only STEP entry/ENDSTEP finalization semantics. Procedure variants
-    // from register_step remain unchanged.
+    // Procedure parsing remains owned by register_step; this replaces only the
+    // ENDSTEP execution hook with logical-history materialization.
     commands_abq::register_history(registry, *this);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
