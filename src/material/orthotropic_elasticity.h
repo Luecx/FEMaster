@@ -2,10 +2,16 @@
  * @file orthotropic_elasticity.h
  * @brief Declares homogeneous orthotropic linear elasticity.
  *
- * The material is defined by three Young's moduli, three engineering shear
- * moduli and three major Poisson ratios in its local material basis. Solid and
- * shell sections supply the coordinate transformation between that basis and
- * the element basis.
+ * The material is defined by the nine conventional engineering constants
+ * `E1`, `E2`, `E3`, `nu12`, `nu13`, `nu23`, `G12`, `G13` and `G23` in its local
+ * material basis. This parameterization matches the standard orthotropic
+ * engineering-constants representation used by Abaqus and avoids storing
+ * reciprocal Poisson ratios as independent material data.
+ *
+ * Solid and shell sections supply the coordinate transformation between the
+ * local material basis and the element basis. The three-dimensional material
+ * tangent is recovered from the symmetric engineering compliance, while shell
+ * response uses the corresponding orthotropic plane-stress reduction.
  *
  * @see Elasticity
  * @see SolidSection
@@ -24,40 +30,44 @@ namespace fem::material {
 /**
  * @brief Stateless orthotropic Hooke elasticity for solid and shell response.
  *
- * The three-dimensional tangent is obtained by inverting the symmetric
- * engineering compliance matrix with reciprocal Poisson ratios. Shell response
- * uses the in-plane orthotropic plane-stress tangent together with the two
- * transverse shear moduli. Linearized evaluation returns Cauchy stress;
- * Green-Lagrange evaluation returns second Piola-Kirchhoff stress.
+ * The stored material parameters are the three directional Young's moduli,
+ * three major Poisson ratios and three engineering shear moduli in principal
+ * material directions. Reciprocal Poisson ratios follow from symmetry of the
+ * compliance matrix and are therefore derived rather than stored.
+ *
+ * The volume tangent is obtained by inverting the symmetric engineering
+ * compliance. Shell response uses an in-plane orthotropic plane-stress tangent
+ * together with the independent `G13` and `G23` transverse shear moduli.
+ * Linearized evaluation returns Cauchy stress; Green-Lagrange evaluation returns
+ * second Piola-Kirchhoff stress.
  */
 struct OrthotropicElasticity : Elasticity {
-    // Young's moduli along the local material axes
-    Precision Ex;
-    Precision Ey;
-    Precision Ez;
+    // Young's moduli along the principal material directions
+    Precision E1;
+    Precision E2;
+    Precision E3;
 
-    // Engineering shear moduli in the local material planes
-    Precision Gyz;
-    Precision Gzx;
-    Precision Gxy;
+    // Major Poisson ratios nu_ij: transverse strain in j for loading in i
+    Precision nu12;
+    Precision nu13;
+    Precision nu23;
 
-    // Major Poisson ratios
-    Precision vyz;
-    Precision vzx;
-    Precision vxy;
+    // Engineering shear moduli in the principal material planes
+    Precision G12;
+    Precision G13;
+    Precision G23;
 
-    // Construct the local engineering compliance from directional Young's and
-    // shear moduli plus the three major Poisson ratios. Reciprocal minor ratios
-    // are derived from symmetry when the volume tangent is built.
-    OrthotropicElasticity(Precision ex,
-                          Precision ey,
-                          Precision ez,
-                          Precision gyz,
-                          Precision gzx,
-                          Precision gxy,
-                          Precision vyz,
-                          Precision vzx,
-                          Precision vxy);
+    // Construct the material directly from conventional orthotropic engineering
+    // constants. Reciprocal Poisson ratios are derived from material symmetry.
+    OrthotropicElasticity(Precision E1,
+                          Precision E2,
+                          Precision E3,
+                          Precision nu12,
+                          Precision nu13,
+                          Precision nu23,
+                          Precision G12,
+                          Precision G13,
+                          Precision G23);
 
     // Advertise three-dimensional and shell response for both infinitesimal and
     // Green-Lagrange strain measures. Axial and beam reductions are unsupported.
@@ -81,7 +91,7 @@ struct OrthotropicElasticity : Elasticity {
                   Mat6&                            tangent) const override;
 
     // Linearized shell response in the material basis. In-plane terms use the
-    // orthotropic plane-stress reduction; XZ and YZ use Gzx and Gyz respectively.
+    // orthotropic plane-stress reduction; 13 and 23 shear use G13 and G23.
     void evaluate(const ShellMaterialStrainLinearized& strain,
                   Precision*                           state,
                   ShellMaterialStressCauchy&            stress,
@@ -102,8 +112,8 @@ private:
     // five-component shell material ordering.
     [[nodiscard]] Mat5 shell_material_tangent() const;
 
-    // Invert the reciprocal, symmetric engineering compliance to obtain the
-    // full three-dimensional tangent in local material coordinates.
+    // Invert the symmetric engineering compliance to obtain the full
+    // three-dimensional tangent in local material coordinates.
     [[nodiscard]] Mat6 volume_tangent() const;
 };
 
