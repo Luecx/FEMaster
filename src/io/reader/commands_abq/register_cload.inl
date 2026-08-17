@@ -1,0 +1,155 @@
+/**
+ * @file register_cload.inl
+ * @brief Registers step-local Abaqus *CLOAD concentrated nodal loads.
+ *
+ * Abaqus supplies one generalized nodal degree of freedom and one magnitude per
+ * record. FEMaster stores a six-component `CLoad`, so every record is expanded
+ * into a sparse six-vector and added to the current step's generated load
+ * collector. Node-set targets are expanded to individual nodes so an Abaqus
+ * `*TRANSFORM` can be resolved independently for every target node.
+ *
+ * Named amplitudes are preserved for linear transient analysis. Linear static
+ * and buckling analyses use the amplitude value at the end of the step because
+ * only the final load state is solved. Custom amplitude paths are rejected for
+ * nonlinear static/Riks and harmonic procedures where the current FEMaster
+ * solvers cannot reproduce the Abaqus history/frequency semantics exactly.
+ *
+ * @see ParserAbqState
+ * @see bc::CLoad
+ *
+ * @author Finn Eggers
+ * @date 17.08.2026
+ */
+
+#pragma once
+
+#include <stdexcept>
+#include <string>
+
+#include "../parser_abq.h"
+#include "../../dsl/condition.h"
+#include "../../dsl/keyword.h"
+#include "../../dsl/registry.h"
+#include "../../../core/types_eig.h"
+#include "../../../core/types_num.h"
+#include "../../../model/model.h"
+
+namespace fem::io::reader::commands_abq {
+
+/**
+ * Registers the standard Abaqus concentrated-load format.
+ *
+ * Each line uses `node-or-nset, dof, magnitude`, with DOFs 1--6 mapped to
+ * `[Fx,Fy,Fz,Mx,My,Mz]`. Loads are stored node-by-node so any transform assigned
+ * by `*TRANSFORM` is copied to the resulting FEMaster load object rather than
+ * changing the model's global nodal coordinate basis.
+ *
+ * @param registry Stage-local DSL registry.
+ * @param parser Abaqus parser providing step and transform state.
+ */
+inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
+    registry.command("CLOAD", [&](fem::io::dsl::Command& command) {
+        command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
+        command.doc("Apply Abaqus nodal force or moment records in the current step.");
+
+        auto amplitude = std::make_shared<std::string>();
+
+        command.keyword(
+            fem::io::dsl::KeywordSpec::make()
+                .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
+                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
+                    .doc("Accepted for the independent current-step collector")
+        );
+
+        command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
+            auto& state = parser.abaqus_state();
+            if (!state.step_active || !parser.active_loadcase()) {
+                throw std::runtime_error("CLOAD must appear after a supported procedure inside STEP");
+            }
+
+            *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
+            parser.model()._data->load_cols.activate(state.load_collector);
+            state.load_collector_used = true;
+        });
+
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<std::string>().name("TARGET").desc("Node set or node identifier")
+                    .one<int>().name("DOF").desc("Abaqus generalized degree of freedom 1--6")
+                    .one<fem::Precision>().name("MAGNITUDE").desc("Load magnitude")
+                )
+                .bind([&parser, amplitude](const std::string& target,
+                                           int dof,
+                                           fem::Precision magnitude) {
+                    if (dof < 1 || dof > 6) {
+                        throw std::runtime_error("CLOAD supports only structural DOFs 1 through 6");
+                    }
+
+                    auto& model = parser.model();
+                    auto& state = parser.abaqus_state();
+
+                    // Resolve amplitude semantics before expanding the target.
+                    // Transient analysis evaluates the stored amplitude at every
+                    // time step; static/buckling only need its final scalar value.
+                    std::string stored_amplitude;
+                    fem::Precision scale = fem::Precision(1);
+                    if (!amplitude->empty()) {
+                        if (!model._data->amplitudes.has(*amplitude)) {
+                            throw std::runtime_error("CLOAD references unknown amplitude '" + *amplitude + "'");
+                        }
+
+                        if (state.procedure == "LINEARTRANSIENT") {
+                            stored_amplitude = *amplitude;
+                        } else if (state.procedure == "LINEARSTATIC" ||
+                                   state.procedure == "LINEARBUCKLING") {
+                            scale = model._data->amplitudes.get(*amplitude)->evaluate(state.step_period);
+                        } else if (state.procedure == "NONLINEARSTATIC" ||
+                                   state.procedure == "STATIC_RIKS") {
+                            throw std::runtime_error(
+                                "CLOAD AMPLITUDE is not supported for nonlinear static/Riks because FEMaster currently uses proportional load-factor control"
+                            );
+                        } else if (state.procedure == "LINEARHARMONIC") {
+                            throw std::runtime_error(
+                                "CLOAD AMPLITUDE is not supported for harmonic response because FEMaster amplitudes are time histories, not frequency functions"
+                            );
+                        }
+                    } else if (state.procedure == "LINEARTRANSIENT" &&
+                               !state.step_amplitude.empty() &&
+                               state.step_amplitude != "STEP") {
+                        stored_amplitude = "__ABQ_STEP_" + std::to_string(state.step_index) + "_DEFAULT_AMPLITUDE";
+                    }
+
+                    fem::Vec6 load = fem::Vec6::Zero();
+                    load[dof - 1] = scale * magnitude;
+
+                    const auto add_to_node = [&](fem::ID node_id) {
+                        std::string orientation;
+                        auto transform = state.node_transforms.find(node_id);
+                        if (transform != state.node_transforms.end()) {
+                            orientation = transform->second;
+                        }
+                        model.add_cload(node_id, load, orientation, stored_amplitude);
+                    };
+
+                    if (model._data->node_sets.has(target)) {
+                        for (const fem::ID node_id : *model._data->node_sets.get(target)) {
+                            add_to_node(node_id);
+                        }
+                        return;
+                    }
+
+                    std::size_t parsed = 0;
+                    const long value = std::stol(target, &parsed);
+                    if (parsed != target.size()) {
+                        throw std::runtime_error("CLOAD target '" + target + "' is not a node set or node id");
+                    }
+                    add_to_node(static_cast<fem::ID>(value));
+                })
+            )
+        );
+    });
+}
+
+} // namespace fem::io::reader::commands_abq
