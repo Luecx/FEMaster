@@ -66,29 +66,20 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            logging::error(
-                state.step_active && parser.active_loadcase(),
-                "CLOAD must appear after a supported procedure inside STEP"
-            );
-            logging::error(
-                state.procedure != "EIGENFREQ",
-                "CLOAD is not supported in a FREQUENCY step"
-            );
-            logging::error(!keys.has("FOLLOWER"), "CLOAD FOLLOWER is not supported");
-            logging::error(
-                !(keys.has("REAL") && keys.has("IMAGINARY")),
-                "CLOAD REAL and IMAGINARY are mutually exclusive"
-            );
-            logging::error(
-                !keys.has("IMAGINARY"),
-                "CLOAD IMAGINARY is not supported by the real-load harmonic solver"
-            );
+            logging::error(state.step_active && parser.active_loadcase(),
+                "CLOAD must appear after a supported procedure inside STEP");
+            logging::error(state.procedure != "EIGENFREQ",
+                "CLOAD is not supported in a FREQUENCY step");
+            logging::error(!keys.has("FOLLOWER"),
+                "CLOAD FOLLOWER is not supported");
+            logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
+                "CLOAD REAL and IMAGINARY are mutually exclusive");
+            logging::error(!keys.has("IMAGINARY"),
+                "CLOAD IMAGINARY is not supported by the real-load harmonic solver");
 
             const std::string op = keys.raw("OP");
-            logging::error(
-                state.cload_op.empty() || state.cload_op == op,
-                "All CLOAD cards in one STEP must use the same OP value"
-            );
+            logging::error(state.cload_op.empty() || state.cload_op == op,
+                "All CLOAD cards in one STEP must use the same OP value");
             if (state.cload_op.empty()) {
                 state.cload_op = op;
                 if (op == "NEW") {
@@ -97,10 +88,8 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            logging::error(
-                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
-                "CLOAD references unknown amplitude '", *amplitude, "'"
-            );
+            logging::error(amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "CLOAD references unknown amplitude '", *amplitude, "'");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -114,10 +103,8 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 .bind([&parser, amplitude](const std::string& target,
                                            int dof,
                                            fem::Precision magnitude) {
-                    logging::error(
-                        dof >= 1 && dof <= 6,
-                        "CLOAD supports only structural DOFs 1 through 6"
-                    );
+                    logging::error(dof >= 1 && dof <= 6,
+                        "CLOAD supports only structural DOFs 1 through 6");
 
                     auto& state = parser.abaqus_state();
                     auto first = state.cloads.end();
@@ -149,11 +136,9 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         return;
                     }
 
-                    logging::error(
-                        matches == 1,
+                    logging::error(matches == 1,
                         "Multiple active CLOADs use target '", target,
-                        "' and the same DOF; use OP=NEW to redefine them"
-                    );
+                        "' and the same DOF; use OP=NEW to redefine them");
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
