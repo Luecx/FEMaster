@@ -1,16 +1,15 @@
 /**
  * @file register_dsload.inl
- * @brief Registers supported step-dependent Abaqus *DSLOAD definitions.
+ * @brief Registers supported Abaqus *DSLOAD surface-load definitions.
  *
- * Uniform pressure (`P`) and general traction (`TRVEC`) are retained as logical
- * surface-load records across steps. `OP=MOD` updates or adds records while
- * `OP=NEW` clears the complete active DSLOAD category before replacement data
- * are read.
+ * Uniform pressure (`P`) and general traction (`TRVEC`) are stored as logical
+ * Abaqus surface-load records and propagated between analysis steps according to
+ * `OP=MOD` and `OP=NEW`. The records are converted to FEMaster `PLoad` or `DLoad`
+ * objects during `*END STEP` processing.
  *
- * Abaqus identifies a general traction by surface, load type and specified load
- * direction. The unnormalized input direction is therefore retained for history
- * matching; FEMaster normalization is deferred until materialization. Repeated
- * definitions of one identity in a step remain separate additive conditions.
+ * General-traction identity contains the surface, load type, specified direction
+ * and optional orientation. The input direction is retained until materialization
+ * so Abaqus load-history matching uses the original definition.
  *
  * @see ParserAbqState
  * @see ParserAbqDSLoad
@@ -25,30 +24,31 @@
 #include <cmath>
 #include <limits>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../parser_abq.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../core/logging.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers supported Abaqus surface-load history records.
+ * Registers the supported Abaqus surface-load syntax.
  *
- * Pressure identity is surface plus `P`. General-traction identity additionally
- * includes the supplied direction components and orientation name because these
- * determine the physical traction direction. One propagated definition can be
- * redefined with `OP=MOD`; repeated definitions in the current step are additive.
+ * Pressure records use `surface, P, magnitude`. General traction records use
+ * `surface, TRVEC, magnitude, d1, d2, d3` and may reference an `ORIENTATION`.
+ * `OP=MOD` preserves the active DSLOAD set and modifies a uniquely matching
+ * propagated definition; `OP=NEW` clears the complete set before new records are
+ * read. Repeated definitions with the same identity inside one step are additive.
  *
- * An empty `OP=NEW` block removes all active DSLOADs. Imaginary harmonic loads
- * remain unsupported.
+ * Imaginary harmonic load components are not supported. All DSLOAD cards within
+ * one step must use the same `OP` value.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser retaining active surface-load definitions.
+ * @param parser Abaqus parser containing the active surface-load state.
  */
 inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("DSLOAD", [&](fem::io::dsl::Command& command) {
@@ -73,23 +73,28 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
 
         command.on_enter([&parser, amplitude, orientation, follower](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            if (!state.step_active || !parser.active_loadcase()) {
-                throw std::runtime_error("DSLOAD must appear after a supported procedure inside STEP");
-            }
-            if (state.procedure == "EIGENFREQ") {
-                throw std::runtime_error("DSLOAD is not supported in a FREQUENCY step");
-            }
-            if (keys.has("REAL") && keys.has("IMAGINARY")) {
-                throw std::runtime_error("DSLOAD REAL and IMAGINARY are mutually exclusive");
-            }
-            if (keys.has("IMAGINARY")) {
-                throw std::runtime_error("DSLOAD IMAGINARY is not supported by the real-load harmonic solver");
-            }
+            logging::error(
+                state.step_active && parser.active_loadcase(),
+                "DSLOAD must appear after a supported procedure inside STEP"
+            );
+            logging::error(
+                state.procedure != "EIGENFREQ",
+                "DSLOAD is not supported in a FREQUENCY step"
+            );
+            logging::error(
+                !(keys.has("REAL") && keys.has("IMAGINARY")),
+                "DSLOAD REAL and IMAGINARY are mutually exclusive"
+            );
+            logging::error(
+                !keys.has("IMAGINARY"),
+                "DSLOAD IMAGINARY is not supported by the real-load harmonic solver"
+            );
 
             const std::string op = keys.raw("OP");
-            if (!state.dsload_op.empty() && state.dsload_op != op) {
-                throw std::runtime_error("All DSLOAD cards in one STEP must use the same OP value");
-            }
+            logging::error(
+                state.dsload_op.empty() || state.dsload_op == op,
+                "All DSLOAD cards in one STEP must use the same OP value"
+            );
             if (state.dsload_op.empty()) {
                 state.dsload_op = op;
                 if (op == "NEW") {
@@ -101,12 +106,14 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
             *follower    = keys.raw("FOLLOWER");
 
-            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
-                throw std::runtime_error("DSLOAD references unknown amplitude '" + *amplitude + "'");
-            }
-            if (!orientation->empty() && !parser.model()._data->coordinate_systems.has(*orientation)) {
-                throw std::runtime_error("DSLOAD references unknown orientation '" + *orientation + "'");
-            }
+            logging::error(
+                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "DSLOAD references unknown amplitude '", *amplitude, "'"
+            );
+            logging::error(
+                orientation->empty() || parser.model()._data->coordinate_systems.has(*orientation),
+                "DSLOAD references unknown orientation '", *orientation, "'"
+            );
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -126,30 +133,38 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                                                                   const std::array<fem::Precision, 3>& direction) {
                     auto& model = parser.model();
                     auto& state = parser.abaqus_state();
-                    if (!model._data->surface_sets.has(surface)) {
-                        throw std::runtime_error("DSLOAD references unknown surface '" + surface + "'");
-                    }
+                    logging::error(
+                        model._data->surface_sets.has(surface),
+                        "DSLOAD references unknown surface '", surface, "'"
+                    );
 
                     std::array<fem::Precision, 3> stored_direction{
                         fem::Precision(0), fem::Precision(0), fem::Precision(0)
                     };
                     if (type == "P") {
-                        if (!std::isnan(direction[0]) || !std::isnan(direction[1]) || !std::isnan(direction[2])) {
-                            throw std::runtime_error("DSLOAD P accepts no traction direction components");
-                        }
+                        logging::error(
+                            std::isnan(direction[0]) &&
+                            std::isnan(direction[1]) &&
+                            std::isnan(direction[2]),
+                            "DSLOAD P accepts no traction direction components"
+                        );
                     } else if (type == "TRVEC") {
-                        if (std::isnan(direction[0]) || std::isnan(direction[1]) || std::isnan(direction[2])) {
-                            throw std::runtime_error("DSLOAD TRVEC requires three direction components");
-                        }
+                        logging::error(
+                            !std::isnan(direction[0]) &&
+                            !std::isnan(direction[1]) &&
+                            !std::isnan(direction[2]),
+                            "DSLOAD TRVEC requires three direction components"
+                        );
 
                         const fem::Vec3 traction_direction{direction[0], direction[1], direction[2]};
                         const fem::Precision norm = traction_direction.norm();
-                        if (!(norm > fem::Precision(0)) || !std::isfinite(norm)) {
-                            throw std::runtime_error("DSLOAD TRVEC direction must be finite and nonzero");
-                        }
+                        logging::error(
+                            norm > fem::Precision(0) && std::isfinite(norm),
+                            "DSLOAD TRVEC direction must be finite and nonzero"
+                        );
                         stored_direction = direction;
                     } else {
-                        throw std::runtime_error("DSLOAD supports only P and TRVEC load labels");
+                        logging::error(false, "DSLOAD supports only P and TRVEC load labels");
                     }
 
                     const auto same_identity = [&](const ParserAbqDSLoad& item) {
@@ -191,11 +206,11 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                         });
                         return;
                     }
-                    if (matches > 1) {
-                        throw std::runtime_error(
-                            "Multiple active DSLOADs use the same surface, type and direction; use OP=NEW to redefine them"
-                        );
-                    }
+
+                    logging::error(
+                        matches == 1,
+                        "Multiple active DSLOADs use the same surface, type and direction; use OP=NEW to redefine them"
+                    );
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
