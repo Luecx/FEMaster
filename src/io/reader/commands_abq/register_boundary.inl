@@ -1,14 +1,15 @@
 /**
  * @file register_boundary.inl
- * @brief Registers step-dependent Abaqus *BOUNDARY definitions.
+ * @brief Registers Abaqus *BOUNDARY displacement and rotation constraints.
  *
- * Boundary conditions are retained as logical target/DOF records across steps.
- * `OP=MOD` updates or adds those records; `OP=NEW` clears the complete active
- * boundary-condition set before the current step supplies its replacements.
+ * Boundary conditions are stored as logical Abaqus target/DOF records and are
+ * propagated between analysis steps according to `OP=MOD` and `OP=NEW`. Ranged
+ * input is split into one record per generalized degree of freedom so individual
+ * constraints can be updated deterministically.
  *
- * The original target spelling is preserved until `*END STEP`, where node sets
- * are expanded and nodal `*TRANSFORM` coordinate systems are copied to the
- * generated FEMaster supports.
+ * The original node or node-set target remains available until `*END STEP`, where
+ * node sets are expanded and nodal `*TRANSFORM` coordinate systems are assigned
+ * to the generated FEMaster supports.
  *
  * @see ParserAbqState
  * @see ParserAbqBoundary
@@ -21,31 +22,31 @@
 
 #include <algorithm>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../parser_abq.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../core/logging.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers direct Abaqus displacement boundary-condition history records.
+ * Registers the supported Abaqus displacement boundary-condition syntax.
  *
- * Data use `target, first_dof, last_dof, magnitude`. Ranges are split into one
- * logical record per DOF, making subsequent `OP=MOD` replacement unambiguous.
- * An empty `OP=NEW` block removes every active boundary condition without adding
- * replacements.
+ * Data use `target, first_dof, last_dof, magnitude`. Omitted `last_dof` selects
+ * only the first DOF and an omitted magnitude prescribes zero. `OP=MOD` preserves
+ * and updates the active boundary set, while `OP=NEW` clears the complete set
+ * before new records are read.
  *
- * Time-dependent prescribed displacements are validated when the active snapshot
- * is materialized because FEMaster constraints do not currently carry amplitude
- * objects. `OP` must be consistent across all `*BOUNDARY` cards in one step.
+ * Time-dependent nonzero prescribed values are validated during snapshot
+ * materialization because FEMaster support equations do not carry amplitudes.
+ * All BOUNDARY cards within one step must use the same `OP` value.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser retaining active boundary definitions.
+ * @param parser Abaqus parser containing the active boundary-definition state.
  */
 inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("BOUNDARY", [&](fem::io::dsl::Command& command) {
@@ -65,14 +66,16 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            if (!state.step_active || !parser.active_loadcase()) {
-                throw std::runtime_error("BOUNDARY must appear after a supported procedure inside STEP");
-            }
+            logging::error(
+                state.step_active && parser.active_loadcase(),
+                "BOUNDARY must appear after a supported procedure inside STEP"
+            );
 
             const std::string op = keys.raw("OP");
-            if (!state.boundary_op.empty() && state.boundary_op != op) {
-                throw std::runtime_error("All BOUNDARY cards in one STEP must use the same OP value");
-            }
+            logging::error(
+                state.boundary_op.empty() || state.boundary_op == op,
+                "All BOUNDARY cards in one STEP must use the same OP value"
+            );
             if (state.boundary_op.empty()) {
                 state.boundary_op = op;
                 if (op == "NEW") {
@@ -81,9 +84,10 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
-                throw std::runtime_error("BOUNDARY references unknown amplitude '" + *amplitude + "'");
-            }
+            logging::error(
+                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "BOUNDARY references unknown amplitude '", *amplitude, "'"
+            );
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -104,10 +108,12 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                     if (last_dof < 0) {
                         last_dof = first_dof;
                     }
-                    if (first_dof < 1 || first_dof > 6 ||
-                        last_dof < first_dof || last_dof > 6) {
-                        throw std::runtime_error("BOUNDARY supports only structural DOFs 1 through 6");
-                    }
+
+                    logging::error(
+                        first_dof >= 1 && first_dof <= 6 &&
+                        last_dof >= first_dof && last_dof <= 6,
+                        "BOUNDARY supports only structural DOFs 1 through 6"
+                    );
 
                     auto& state = parser.abaqus_state();
                     for (int dof = first_dof; dof <= last_dof; ++dof) {
