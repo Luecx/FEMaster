@@ -10,6 +10,7 @@
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
+#include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
 
 namespace fem::io::reader::commands {
