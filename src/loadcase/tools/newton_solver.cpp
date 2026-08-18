@@ -41,7 +41,7 @@ namespace tools {
  *
  * 1. Evaluate the residual vector and tangent matrix at the current state.
  * 2. Compute the caller-defined residual norm.
- * 3. Update convergence diagnostics and failure-detection counters.
+ * 3. Update failure-detection counters.
  * 4. Accept the current state when the residual tolerance is satisfied.
  * 5. Solve the linearized system for the Newton correction.
  * 6. Optionally perform a backtracking line search.
@@ -166,8 +166,7 @@ bool NewtonSolver::solve(
 
         iterations_ = iteration;
 
-        // Shift the previously evaluated residual norms before storing the
-        // current value
+        // Shift the previously evaluated residual before storing the current one
         update_residual_history_();
 
         // Evaluate the problem-specific residual convergence measure
@@ -182,8 +181,6 @@ bool NewtonSolver::solve(
             initial_residual_norm_ = last_residual_norm_;
         }
 
-        // Update convergence diagnostics from the current residual history
-        update_convergence_order_();
         update_failure_counters_();
 
         // Residual convergence is checked before solving another linearized
@@ -199,11 +196,9 @@ bool NewtonSolver::solve(
                     iteration,
                     last_residual_norm_,
                     last_correction_norm_,
-                    convergence_order_,
                     Index(0),
                     assembly_timer.elapsed(),
-                    Time(0),
-                    true
+                    Time(0)
                 );
             }
 
@@ -218,11 +213,9 @@ bool NewtonSolver::solve(
                     iteration,
                     last_residual_norm_,
                     last_correction_norm_,
-                    convergence_order_,
                     Index(0),
                     assembly_timer.elapsed(),
-                    Time(0),
-                    false
+                    Time(0)
                 );
             }
 
@@ -432,11 +425,9 @@ bool NewtonSolver::solve(
                 iteration,
                 last_residual_norm_,
                 last_correction_norm_,
-                convergence_order_,
                 line_search_iterations,
                 assembly_timer.elapsed(),
-                solve_timer.elapsed(),
-                false
+                solve_timer.elapsed()
             );
         }
 
@@ -475,46 +466,6 @@ Index NewtonSolver::iterations() const {
 }
 
 /**
- * Returns the residual norm evaluated at the initial nonlinear state.
- *
- * @return Initial residual norm of the most recent solve.
- */
-Precision NewtonSolver::initial_residual_norm() const {
-    return initial_residual_norm_;
-}
-
-/**
- * Returns the most recently evaluated residual norm.
- *
- * @return Last residual norm of the most recent solve.
- */
-Precision NewtonSolver::last_residual_norm() const {
-    return last_residual_norm_;
-}
-
-/**
- * Returns the norm of the most recently accepted Newton correction.
- *
- * The value is zero when convergence was detected before solving another
- * linearized system.
- *
- * @return Last accepted correction norm.
- */
-Precision NewtonSolver::last_correction_norm() const {
-    return last_correction_norm_;
-}
-
-/**
- * Returns the observed local convergence order estimated from the three most
- * recent positive residual norms.
- *
- * @return Estimated convergence order or zero when it cannot be determined.
- */
-Precision NewtonSolver::convergence_order() const {
-    return convergence_order_;
-}
-
-/**
  * Returns the step length of the most recently accepted Newton correction.
  *
  * A value below one indicates that the line search reduced the full Newton
@@ -524,63 +475,6 @@ Precision NewtonSolver::convergence_order() const {
  */
 Precision NewtonSolver::last_step_length() const {
     return last_step_length_;
-}
-
-/**
- * Reports whether the most recent solve exceeded the configured residual
- * divergence factor.
- *
- * @return `true` when the solve failed by divergence.
- */
-bool NewtonSolver::failed_by_divergence() const {
-    return failed_by_divergence_;
-}
-
-/**
- * Reports whether the residual increased during too many consecutive
- * iterations.
- *
- * @return `true` when the solve failed by repeated residual increase.
- */
-bool NewtonSolver::failed_by_residual_increase() const {
-    return failed_by_residual_increase_;
-}
-
-/**
- * Reports whether the residual or correction stagnated.
- *
- * @return `true` when the solve failed by stagnation.
- */
-bool NewtonSolver::failed_by_stagnation() const {
-    return failed_by_stagnation_;
-}
-
-/**
- * Reports whether the current residual remained above the configured fraction
- * of the initial residual.
- *
- * @return `true` when the solve failed by insufficient residual reduction.
- */
-bool NewtonSolver::failed_by_poor_reduction() const {
-    return failed_by_poor_reduction_;
-}
-
-/**
- * Reports whether the line search failed to find a residual-reducing trial.
- *
- * @return `true` when the solve failed during line search.
- */
-bool NewtonSolver::failed_by_line_search() const {
-    return failed_by_line_search_;
-}
-
-/**
- * Reports whether the solver exhausted the configured Newton iteration limit.
- *
- * @return `true` when the solve failed by reaching the maximum iteration count.
- */
-bool NewtonSolver::failed_by_maximum_iterations() const {
-    return failed_by_maximum_iterations_;
 }
 
 /**
@@ -630,13 +524,11 @@ void NewtonSolver::reset_state_() {
     // Reset iteration and convergence diagnostics
     iterations_ = 0;
 
-    initial_residual_norm_           = Precision(0);
-    last_residual_norm_              = Precision(0);
-    last_correction_norm_            = Precision(0);
-    previous_residual_norm_          = Precision(0);
-    previous_previous_residual_norm_ = Precision(0);
-    convergence_order_               = Precision(0);
-    last_step_length_                = Precision(1);
+    initial_residual_norm_  = Precision(0);
+    last_residual_norm_     = Precision(0);
+    last_correction_norm_   = Precision(0);
+    previous_residual_norm_ = Precision(0);
+    last_step_length_       = Precision(1);
 
     // Reset consecutive failure-detection counters
     residual_increase_count_ = 0;
@@ -652,60 +544,11 @@ void NewtonSolver::reset_state_() {
 }
 
 /**
- * Shifts the stored residual norms before a newly evaluated norm is assigned.
- *
- * After the update:
- *
- * - `previous_previous_residual_norm_` contains the residual from two
- *   evaluations ago,
- * - `previous_residual_norm_` contains the immediately preceding residual,
- * - `last_residual_norm_` may be overwritten with the current residual.
+ * Stores the previously evaluated residual norm before the current norm is
+ * assigned.
  */
 void NewtonSolver::update_residual_history_() {
-    previous_previous_residual_norm_ = previous_residual_norm_;
-    previous_residual_norm_          = last_residual_norm_;
-}
-
-/**
- * Estimates the observed local order of convergence from three consecutive
- * residual norms.
- *
- * For residual sequence `r0`, `r1`, `r2`, the order is estimated as
- *
- *     p = log(r2 / r1) / log(r1 / r0).
- *
- * The estimate is suppressed when fewer than three residuals are available,
- * when one residual is non-positive or when the denominator is numerically
- * zero.
- */
-void NewtonSolver::update_convergence_order_() {
-    convergence_order_ = Precision(0);
-
-    // Three residual evaluations are required for the logarithmic estimate
-    if (iterations_ < 3) {
-        return;
-    }
-
-    const Precision residual_0 = previous_previous_residual_norm_;
-    const Precision residual_1 = previous_residual_norm_;
-    const Precision residual_2 = last_residual_norm_;
-
-    // The logarithmic ratios require strictly positive residual norms
-    if (residual_0 <= Precision(0) ||
-        residual_1 <= Precision(0) ||
-        residual_2 <= Precision(0)) {
-        return;
-    }
-
-    const Precision numerator   = std::log(residual_2 / residual_1);
-    const Precision denominator = std::log(residual_1 / residual_0);
-
-    // Nearly identical preceding residuals make the estimated order singular
-    if (std::abs(denominator) <= Precision(1e-14)) {
-        return;
-    }
-
-    convergence_order_ = numerator / denominator;
+    previous_residual_norm_ = last_residual_norm_;
 }
 
 /**

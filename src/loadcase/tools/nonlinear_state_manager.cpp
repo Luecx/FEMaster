@@ -128,27 +128,14 @@ void NonlinearStateManager::commit_material_state() {
 }
 
 /**
- * Opens a transactional contact trial for an increment or post-Newton update.
+ * Opens one nested transactional contact trial.
  *
- * Surface mortar has no discrete partner state to refresh. The operation therefore
- * copies only multiplier/evaluation history while subsequent assemblies continue
- * to reconstruct geometry from the current nodal configuration.
+ * Surface mortar has no discrete partner state to freeze or refresh. Predictor,
+ * line-search, increment and post-Newton transactions therefore share the same
+ * begin operation and differ only in how the nonlinear controller commits or
+ * rolls them back.
  */
-void NonlinearStateManager::begin_contact_update_trial() {
-    for (const auto& contact : model_._data->contacts) {
-        contact.begin_trial();
-    }
-}
-
-/**
- * Opens a nested transactional contact trial for predictor or line-search work.
- *
- * The current surface-to-surface formulation gives this trial the same state
- * semantics as an update trial. The separate method name is retained because the
- * path controllers distinguish temporary candidate evaluations from outer
- * increment/augmentation transactions.
- */
-void NonlinearStateManager::begin_contact_frozen_trial() {
+void NonlinearStateManager::begin_contact_trial() {
     for (const auto& contact : model_._data->contacts) {
         contact.begin_trial();
     }

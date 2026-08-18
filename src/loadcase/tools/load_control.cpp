@@ -55,8 +55,7 @@ constexpr Index maximum_active_set_updates = 8;
  *
  * After a converged Newton solve, `update_active_set` may update discontinuous
  * nonlinear state at the converged configuration. If it reports a change, Newton
- * is restarted at the same target load factor. This is used for contact partner
- * ownership today and is intentionally independent of any specific subsystem.
+ * is restarted at the same target load factor.
  *
  * @param q Reduced nonlinear unknown vector. On success it contains the final
  *          accepted state. On failure it is restored to the last accepted state.
@@ -187,11 +186,9 @@ bool LoadControl::solve(
                     [&](Index     iteration,
                         Precision current_residual_norm,
                         Precision current_correction_norm,
-                        Precision convergence_order,
                         Index     line_search_iterations,
                         Time      assembly_ms,
-                        Time      solve_ms,
-                        bool      iteration_converged) {
+                        Time      solve_ms) {
                         if (on_iteration) {
                             on_iteration(
                                 accepted_increments_ + 1,
@@ -199,11 +196,9 @@ bool LoadControl::solve(
                                 target_lambda,
                                 current_residual_norm,
                                 current_correction_norm,
-                                convergence_order,
                                 line_search_iterations,
                                 assembly_ms,
-                                solve_ms,
-                                iteration_converged
+                                solve_ms
                             );
                         }
                     },
@@ -333,14 +328,6 @@ bool LoadControl::solve(
     }
 
     return true;
-}
-
-Index LoadControl::accepted_increments() const {
-    return accepted_increments_;
-}
-
-Precision LoadControl::increment() const {
-    return increment_;
 }
 
 const char* LoadControl::failure_reason() const {

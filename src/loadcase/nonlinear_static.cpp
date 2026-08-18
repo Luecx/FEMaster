@@ -339,9 +339,6 @@ void NonlinearStatic::run() {
 
     update_positions();
 
-    model::Field final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
-    final_internal.set_zero();
-
     Precision load_factor = Precision(0);
 
     logging::info(true, "");
@@ -436,8 +433,6 @@ void NonlinearStatic::run() {
 
         tangent = transformer->assemble_system_matrix(Kt);
 
-        final_internal = internal_mat;
-
         logging::error(
             residual.allFinite(),
             "Reduced residual contains NaN/Inf entries"
@@ -518,8 +513,6 @@ void NonlinearStatic::run() {
 
         transformer->project_vector(full_residual, residual);
 
-        final_internal = internal_mat;
-
         logging::error(residual.allFinite(),
             "Reduced residual contains NaN/Inf entries");
     };
@@ -571,14 +564,10 @@ void NonlinearStatic::run() {
         SparseMatrix  accepted_tangent;
         SparseMatrix  accepted_full_tangent;
 
-        /*
-         * The outer increment trial is deliberately still unfrozen here. The
-         * predictor tangent is evaluated at the last accepted configuration,
-         * but it must not select and freeze the partners that Newton will use
-         * at the predicted target configuration. A nested frozen trial makes
-         * this assembly completely state-neutral and is always rolled back.
-         */
-        nonlinear_state.begin_contact_frozen_trial();
+        // The predictor assembly is a nested state-neutral contact trial. Contact
+        // geometry is reconstructed from the supplied positions and is not part
+        // of the transactional state.
+        nonlinear_state.begin_contact_trial();
 
         try {
             assemble_state(
@@ -659,14 +648,9 @@ void NonlinearStatic::run() {
                             Precision lambda,
                             Precision residual_norm,
                             Precision correction_norm,
-                            Precision convergence_order,
                             Index     line_search_iterations,
                             Time      assembly_ms,
-                            Time      solve_ms,
-                            bool      converged) {
-        (void) convergence_order;
-        (void) converged;
-
+                            Time      solve_ms) {
         logging::info(
             true,
             std::setw(4), increment,
@@ -718,11 +702,11 @@ void NonlinearStatic::run() {
     };
 
     // Start a complete increment attempt. Material history is reset to the last
-    // accepted increment and contact may update partner ownership once before
-    // freezing the discrete contact problem for Newton.
+    // accepted increment and contact multiplier/evaluation history is copied to
+    // a nested trial.
     auto begin_increment_trial = [&]() {
         nonlinear_state.reset_material_state();
-        nonlinear_state.begin_contact_update_trial();
+        nonlinear_state.begin_contact_trial();
     };
 
     // Accept the converged material history and the outer contact trial.
@@ -741,29 +725,28 @@ void NonlinearStatic::run() {
     // Open a temporary contact trial for one line-search candidate. Material
     // history is reset by evaluate_residual() immediately before assembly.
     auto begin_line_search_trial = [&]() {
-        nonlinear_state.begin_contact_frozen_trial();
+        nonlinear_state.begin_contact_trial();
     };
 
-    // Promote the accepted candidate's contact geometry to its parent trial
+    // Promote the accepted candidate's contact state to its parent trial.
     auto commit_line_search_trial = [&]() {
         nonlinear_state.commit_contact_trial();
     };
 
-    // Discard a rejected candidate without changing its parent contact state
+    // Discard a rejected candidate without changing its parent contact state.
     auto rollback_line_search_trial = [&]() {
         nonlinear_state.rollback_contact_trial();
     };
 
-    // Refresh discontinuous contact state after Newton convergence. The update
-    // trial evaluates the converged geometry with partner updates enabled once;
-    // a changed partner signature or multiplier requests another Newton solve.
+    // Refresh augmented-Lagrange contact state after Newton convergence. A
+    // multiplier change requests another Newton solve at the same load factor.
     auto update_active_set = [&](const DynamicVector& q,
                                  Precision            lambda) {
         if (model->_data->contacts.empty()) {
             return true;
         }
 
-        nonlinear_state.begin_contact_update_trial();
+        nonlinear_state.begin_contact_trial();
 
         try {
             DynamicVector active_set_residual;
@@ -862,10 +845,6 @@ void NonlinearStatic::run() {
         arc_length_control.commit_increment_trial   = commit_increment_trial;
         arc_length_control.rollback_increment_trial = rollback_increment_trial;
 
-        arc_length_control.begin_line_search_trial    = begin_line_search_trial;
-        arc_length_control.commit_line_search_trial   = commit_line_search_trial;
-        arc_length_control.rollback_line_search_trial = rollback_line_search_trial;
-
         arc_length_control.update_active_set = update_active_set;
 
         converged = arc_length_control.solve(
@@ -878,8 +857,7 @@ void NonlinearStatic::run() {
             residual_norm,
             correction_norm,
             on_iteration,
-            on_increment,
-            evaluate_residual
+            on_increment
         );
 
         failure_reason = arc_length_control.failure_reason();
@@ -906,7 +884,7 @@ void NonlinearStatic::run() {
         "computing final nonlinear top/bottom stress"
     );
 
-    final_internal = model::NodeData{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
+    model::NodeData final_internal{"INTERNAL_FORCES", model::FieldDomain::NODE, max_nodes, 6};
     final_internal.set_zero();
 
     // Reassemble the final tangent and matching internal force from committed history

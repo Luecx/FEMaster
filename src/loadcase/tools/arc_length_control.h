@@ -12,10 +12,8 @@
  * assembly, tangent assembly, constraint projection, sparse solves, convergence
  * measures and result writing remain responsibilities of the owning load case.
  *
- * Trial callbacks are generic nonlinear-state transactions. Contact currently
- * uses them to protect partner ownership during cutbacks and temporary residual
- * evaluations; future history-dependent materials can use the same mechanism
- * for trial stresses, internal variables and committed material state.
+ * Increment trial callbacks protect stateful nonlinear subsystems across failed
+ * path increments and cutbacks.
  *
  * @see ArcLengthControl
  * @see NewtonSolver
@@ -51,13 +49,9 @@ namespace tools {
  * operations are provided through callbacks, so the same class can operate on
  * constrained, reduced or otherwise transformed nonlinear systems.
  *
- * Stateful nonlinear subsystems are handled through two nested transaction
- * levels:
- *
- * - increment trials cover a complete attempted arc-length increment and are
- *   committed only after the increment is accepted,
- * - line-search trials are forwarded to the Newton solver for strategies that
- *   enable line search in the future.
+ * Stateful nonlinear subsystems are protected by increment trials that cover a
+ * complete attempted arc-length increment and are committed only after the
+ * increment is accepted.
  *
  * The optional active-set callback updates discontinuous nonlinear state after a
  * converged augmented Newton solve. If the active set changes, the controller
@@ -72,14 +66,6 @@ public:
         Precision            lambda,
         DynamicVector&       residual,
         SparseMatrix&        tangent
-    )>;
-
-    // Residual-only evaluation used when the Newton strategy evaluates
-    // temporary trial states without needing a tangent matrix.
-    using EvaluateResidual = std::function<void(
-        const DynamicVector& q,
-        Precision            lambda,
-        DynamicVector&       residual
     )>;
 
     // Linearized solve with a single right-hand side
@@ -114,11 +100,9 @@ public:
         Precision lambda,
         Precision residual_norm,
         Precision correction_norm,
-        Precision convergence_order,
         Index     line_search_iterations,
         Time      assembly_ms,
-        Time      solve_ms,
-        bool      converged
+        Time      solve_ms
     )>;
 
     // Accepted-increment reporting hook used for result writing and path storage
@@ -152,13 +136,10 @@ public:
         const ResidualNorm&      residual_norm,
         const CorrectionNorm&    correction_norm,
         const IterationCallback& on_iteration = {},
-        const IncrementCallback& on_increment = {},
-        const EvaluateResidual&  evaluate_residual = {}
+        const IncrementCallback& on_increment = {}
     );
 
-    Index       accepted_increments() const;
-    Precision   increment()           const;
-    const char* failure_reason()      const;
+    const char* failure_reason() const;
 
 public:
     // Nonlinear increment and Newton limits
@@ -186,11 +167,6 @@ public:
     TrialCallback begin_increment_trial;
     TrialCallback commit_increment_trial;
     TrialCallback rollback_increment_trial;
-
-    // Temporary line-search transaction nested inside the current increment
-    TrialCallback begin_line_search_trial;
-    TrialCallback commit_line_search_trial;
-    TrialCallback rollback_line_search_trial;
 
     // Optional discontinuous-state update after Newton convergence
     ActiveSetCallback update_active_set;

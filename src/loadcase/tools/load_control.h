@@ -114,11 +114,9 @@ public:
         Precision lambda,
         Precision residual_norm,
         Precision correction_norm,
-        Precision convergence_order,
         Index     line_search_iterations,
         Time      assembly_ms,
-        Time      solve_ms,
-        bool      converged
+        Time      solve_ms
     )>;
 
     // Accepted-increment reporting hook used for result writing and path storage
@@ -155,9 +153,7 @@ public:
         const EvaluateResidual&  evaluate_residual = {}
     );
 
-    Index       accepted_increments() const;
-    Precision   increment()           const;
-    const char* failure_reason()      const;
+    const char* failure_reason() const;
 
 public:
     // Nonlinear increment and Newton limits

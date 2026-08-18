@@ -17,9 +17,10 @@
  * callbacks allow stateful nonlinear subsystems to begin, commit and roll back
  * temporary evaluations performed during the line search.
  *
- * The solver additionally records convergence diagnostics and can terminate
- * early when it detects divergence, repeated residual growth, residual
- * stagnation or insufficient reduction from the initial residual.
+ * The solver additionally records the diagnostics required for nonlinear path
+ * control and can terminate early when it detects divergence, repeated residual
+ * growth, residual stagnation or insufficient reduction from the initial
+ * residual.
  *
  * Increment management, load-factor adaptation, active-set restarts and result
  * writing remain responsibilities of the calling solution strategy.
@@ -88,9 +89,9 @@ namespace tools {
  * - `commit_line_search_trial` accepts the evaluated trial state,
  * - `rollback_line_search_trial` restores the state before the trial.
  *
-     * These callbacks are optional for purely state-independent problems but are
-     * required when residual evaluation modifies material history, active-set
-     * ownership or other persistent trial data.
+ * These callbacks are optional for purely state-independent problems but are
+ * required when residual evaluation modifies material history or other
+ * persistent trial data.
  *
  * A solver object may be reused for multiple nonlinear solves. Diagnostic and
  * failure state is reset at the beginning of every call to `solve`.
@@ -141,11 +142,9 @@ public:
         Index     iteration,
         Precision residual_norm,
         Precision correction_norm,
-        Precision convergence_order,
         Index     line_search_iterations,
         Time      assembly_ms,
-        Time      solve_ms,
-        bool      converged
+        Time      solve_ms
     )>;
 
     // Transaction callback used to manage temporary state during line-search
@@ -202,21 +201,9 @@ public:
         const EvaluateResidual&  evaluate_residual = {}
     );
 
-    // Diagnostics of the most recent nonlinear solve
-    Index     iterations()            const;
-    Precision initial_residual_norm() const;
-    Precision last_residual_norm()    const;
-    Precision last_correction_norm()  const;
-    Precision convergence_order()     const;
-    Precision last_step_length()      const;
-
-    // Failure classification of the most recent nonlinear solve
-    bool failed_by_divergence()         const;
-    bool failed_by_residual_increase()  const;
-    bool failed_by_stagnation()         const;
-    bool failed_by_poor_reduction()     const;
-    bool failed_by_line_search()        const;
-    bool failed_by_maximum_iterations() const;
+    // Diagnostics required by nonlinear path controllers
+    Index     iterations()       const;
+    Precision last_step_length() const;
 
     // Textual classification of the most recent failure
     const char* failure_reason() const;
@@ -225,13 +212,11 @@ private:
     // Iteration state of the most recent solve
     Index iterations_ = 0;
 
-    Precision initial_residual_norm_           = Precision(0);
-    Precision last_residual_norm_              = Precision(0);
-    Precision last_correction_norm_            = Precision(0);
-    Precision previous_residual_norm_          = Precision(0);
-    Precision previous_previous_residual_norm_ = Precision(0);
-    Precision convergence_order_               = Precision(0);
-    Precision last_step_length_                = Precision(1);
+    Precision initial_residual_norm_  = Precision(0);
+    Precision last_residual_norm_     = Precision(0);
+    Precision last_correction_norm_   = Precision(0);
+    Precision previous_residual_norm_ = Precision(0);
+    Precision last_step_length_       = Precision(1);
 
     // Consecutive failure-detection counters
     Index residual_increase_count_ = 0;
@@ -248,10 +233,9 @@ private:
     // Reset all diagnostics and failure state before a new solve
     void reset_state_();
 
-    // Update residual history, observed convergence order and consecutive
-    // failure-detection counters after each residual evaluation
+    // Update residual history and failure-detection counters after each residual
+    // evaluation
     void update_residual_history_();
-    void update_convergence_order_();
     void update_failure_counters_();
 
     // Evaluate the configured early-failure criteria
