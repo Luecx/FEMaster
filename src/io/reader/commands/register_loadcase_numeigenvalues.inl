@@ -1,9 +1,8 @@
 // register_loadcase_numeigenvalues.inl — registers NUMEIGENVALUES for loadcases
 
-#include <stdexcept>
-
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
 
@@ -21,14 +20,12 @@ inline void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, P
                     .one<int>().name("COUNT").desc("Number of eigenvalues")
                 )
                 .bind([&parser](int count) {
-                    if (count <= 0) {
-                        throw std::runtime_error("NUMEIGENVALUES requires a positive integer");
-                    }
+                    logging::error(count > 0,
+                        "NUMEIGENVALUES requires a positive integer");
 
                     auto* base = parser.active_loadcase();
-                    if (!base) {
-                        throw std::runtime_error("NUMEIGENVALUES must appear inside *LOADCASE");
-                    }
+                    logging::error(base != nullptr,
+                        "NUMEIGENVALUES must appear inside *LOADCASE");
 
                     if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
                         lc->num_eigenvalues = count;
@@ -39,7 +36,8 @@ inline void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, P
                         return;
                     }
 
-                    throw std::runtime_error("NUMEIGENVALUES not supported for loadcase type " + parser.active_loadcase_type());
+                    logging::error(false,
+                        "NUMEIGENVALUES not supported for loadcase type ", parser.active_loadcase_type());
                 })
             )
         );
