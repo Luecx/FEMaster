@@ -82,6 +82,10 @@ protected:
     void configure_topology_stage(io::dsl::Registry& registry) override;
     void configure_field_stage   (io::dsl::Registry& registry) override;
     void configure_data_stage    (io::dsl::Registry& registry) override;
+
+private:
+    // Keywords shared by all parser stages except stage-specific NODE/ELEMENT handling
+    void register_common_commands(io::dsl::Registry& registry);
 };
 
 } // namespace fem::io::reader
