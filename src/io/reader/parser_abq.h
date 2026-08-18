@@ -48,7 +48,6 @@ struct ParserAbqState {
     bool        perturbation   = false;
     Precision   step_period    = Precision(1);
     std::string step_amplitude;
-    std::string procedure;
 };
 
 /**
