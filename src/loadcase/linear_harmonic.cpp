@@ -124,8 +124,7 @@ void LinearHarmonic::run() {
 
     logging::error(!frequencies.empty(),
         "LinearHarmonic: no frequencies defined");
-    logging::error(
-        std::all_of(frequencies.begin(), frequencies.end(), [](Precision frequency) {
+    logging::error(std::all_of(frequencies.begin(), frequencies.end(), [](Precision frequency) {
             return std::isfinite(frequency) && frequency >= 0.0;
         }),
         "LinearHarmonic: frequencies must be finite and non-negative");
