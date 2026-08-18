@@ -1,16 +1,14 @@
 /**
  * @file register_dload.inl
- * @brief Registers supported step-dependent Abaqus *DLOAD definitions.
+ * @brief Registers supported Abaqus *DLOAD element-based distributed loads.
  *
- * The current element-based distributed-load subset supports `GRAV`. Definitions
- * are retained logically across steps so `OP=MOD` can update an existing load
- * and `OP=NEW` can replace the complete active DLOAD category without carrying
- * any mechanical solver state between FEMaster load cases.
+ * The supported DLOAD subset contains gravity loading (`GRAV`). Definitions are
+ * stored as logical Abaqus records identified by target, load type and direction
+ * and are propagated between analysis steps according to `OP=MOD` and `OP=NEW`.
+ * The records are converted to FEMaster volume loads during `*END STEP`.
  *
- * Abaqus identifies a gravity load by target, load type and specified load
- * direction. Repeated definitions of that same identity inside one step are
- * stored separately and add during materialization; an ambiguous propagated
- * multi-definition must be replaced with `OP=NEW` rather than modified.
+ * Repeated definitions with the same identity inside one step are represented as
+ * separate additive load conditions.
  *
  * @see ParserAbqState
  * @see ParserAbqDLoad
@@ -23,28 +21,30 @@
 
 #include <array>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../parser_abq.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../core/logging.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers Abaqus gravity-load history records.
+ * Registers the supported Abaqus DLOAD syntax.
  *
- * The logical identity consists of the original element/element-set target,
- * `GRAV` type and the three supplied gravity-vector components. One propagated
- * definition can be redefined with `OP=MOD`; repeated definitions in the current
- * step remain separate additive load conditions. An empty `OP=NEW` block removes
- * every active DLOAD.
+ * Each GRAV record contains an element or element-set target, a scalar magnitude
+ * and three direction components. A blank target maps to `EALL`. `OP=MOD`
+ * preserves the active DLOAD set and modifies a uniquely matching propagated
+ * record; `OP=NEW` clears the complete set before new records are read.
+ *
+ * Imaginary harmonic load components are not supported. All DLOAD cards within
+ * one step must use the same `OP` value.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser retaining active distributed-load definitions.
+ * @param parser Abaqus parser containing the active distributed-load state.
  */
 inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("DLOAD", [&](fem::io::dsl::Command& command) {
@@ -64,23 +64,28 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            if (!state.step_active || !parser.active_loadcase()) {
-                throw std::runtime_error("DLOAD must appear after a supported procedure inside STEP");
-            }
-            if (state.procedure == "EIGENFREQ") {
-                throw std::runtime_error("DLOAD is not supported in a FREQUENCY step");
-            }
-            if (keys.has("REAL") && keys.has("IMAGINARY")) {
-                throw std::runtime_error("DLOAD REAL and IMAGINARY are mutually exclusive");
-            }
-            if (keys.has("IMAGINARY")) {
-                throw std::runtime_error("DLOAD IMAGINARY is not supported by the real-load harmonic solver");
-            }
+            logging::error(
+                state.step_active && parser.active_loadcase(),
+                "DLOAD must appear after a supported procedure inside STEP"
+            );
+            logging::error(
+                state.procedure != "EIGENFREQ",
+                "DLOAD is not supported in a FREQUENCY step"
+            );
+            logging::error(
+                !(keys.has("REAL") && keys.has("IMAGINARY")),
+                "DLOAD REAL and IMAGINARY are mutually exclusive"
+            );
+            logging::error(
+                !keys.has("IMAGINARY"),
+                "DLOAD IMAGINARY is not supported by the real-load harmonic solver"
+            );
 
             const std::string op = keys.raw("OP");
-            if (!state.dload_op.empty() && state.dload_op != op) {
-                throw std::runtime_error("All DLOAD cards in one STEP must use the same OP value");
-            }
+            logging::error(
+                state.dload_op.empty() || state.dload_op == op,
+                "All DLOAD cards in one STEP must use the same OP value"
+            );
             if (state.dload_op.empty()) {
                 state.dload_op = op;
                 if (op == "NEW") {
@@ -89,9 +94,10 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
-                throw std::runtime_error("DLOAD references unknown amplitude '" + *amplitude + "'");
-            }
+            logging::error(
+                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "DLOAD references unknown amplitude '", *amplitude, "'"
+            );
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -108,11 +114,10 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                                            const std::string& type,
                                            fem::Precision magnitude,
                                            const std::array<fem::Precision, 3>& direction) {
-                    if (type != "GRAV") {
-                        throw std::runtime_error(
-                            "DLOAD currently supports only GRAV; use SURFACE + DSLOAD for surface pressure/traction"
-                        );
-                    }
+                    logging::error(
+                        type == "GRAV",
+                        "DLOAD currently supports only GRAV; use SURFACE + DSLOAD for surface pressure/traction"
+                    );
 
                     auto& state = parser.abaqus_state();
                     auto first = state.dloads.end();
@@ -142,11 +147,11 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         });
                         return;
                     }
-                    if (matches > 1) {
-                        throw std::runtime_error(
-                            "Multiple active DLOADs use the same target, type and direction; use OP=NEW to redefine them"
-                        );
-                    }
+
+                    logging::error(
+                        matches == 1,
+                        "Multiple active DLOADs use the same target, type and direction; use OP=NEW to redefine them"
+                    );
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
