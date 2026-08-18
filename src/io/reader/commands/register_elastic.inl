@@ -77,7 +77,8 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                 )
                 .bind([&model](fem::Precision E, fem::Precision nu) {
                     auto material = model._data->materials.get();
-                    logging::error(material != nullptr, "ELASTIC requires an active material context");
+                    logging::error(material != nullptr,
+                        "ELASTIC requires an active material context");
                     material->set_elasticity<fem::material::IsotropicElasticity>(E, nu);
                 })
             )
@@ -96,7 +97,8 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                 )
                 .bind([&model](fem::Precision E, fem::Precision nu, fem::Precision G) {
                     auto material = model._data->materials.get();
-                    logging::error(material != nullptr, "ELASTIC requires an active material context");
+                    logging::error(material != nullptr,
+                        "ELASTIC requires an active material context");
                     material->set_elasticity<fem::material::GeneralisedIsotropicElasticity>(E, nu, G);
                 })
             )
@@ -113,7 +115,8 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                 )
                 .bind([&model](const std::array<fem::Precision, 9>& data) {
                     auto material = model._data->materials.get();
-                    logging::error(material != nullptr, "ELASTIC requires an active material context");
+                    logging::error(material != nullptr,
+                        "ELASTIC requires an active material context");
 
                     material->set_elasticity<fem::material::OrthotropicElasticity>(
                         data[0], data[1], data[2],
@@ -135,7 +138,8 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                 )
                 .bind([&model](const std::array<fem::Precision, 9>& data) {
                     auto material = model._data->materials.get();
-                    logging::error(material != nullptr, "ELASTIC requires an active material context");
+                    logging::error(material != nullptr,
+                        "ELASTIC requires an active material context");
 
                     fem::Mat3 normal_stiffness;
                     normal_stiffness << data[0], data[1], data[3],
@@ -143,17 +147,13 @@ inline void register_elastic(fem::io::dsl::Registry& registry, model::Model& mod
                                         data[3], data[4], data[5];
 
                     const fem::Precision scale = normal_stiffness.cwiseAbs().maxCoeff();
-                    logging::error(
-                        scale > fem::Precision(0),
-                        "ELASTIC TYPE=ORTHOTROPIC has a singular normal stiffness block"
-                    );
+                    logging::error(scale > fem::Precision(0),
+                        "ELASTIC TYPE=ORTHOTROPIC has a singular normal stiffness block");
 
                     const fem::Mat3 normalized = normal_stiffness / scale;
-                    logging::error(
-                        std::abs(normalized.determinant()) >
-                            std::numeric_limits<fem::Precision>::epsilon(),
-                        "ELASTIC TYPE=ORTHOTROPIC has a singular normal stiffness block"
-                    );
+                    logging::error(std::abs(normalized.determinant()) >
+                                std::numeric_limits<fem::Precision>::epsilon(),
+                        "ELASTIC TYPE=ORTHOTROPIC has a singular normal stiffness block");
 
                     const fem::Mat3 compliance = normal_stiffness.inverse();
 
