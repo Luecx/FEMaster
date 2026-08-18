@@ -2,10 +2,11 @@
  * @file parser.h
  * @brief Declares the common staged FEMaster input-deck parser.
  *
- * `Parser` coordinates repeated passes over one input deck. The count pass
- * determines model capacities, the topology pass creates the discrete model,
- * the field pass creates fields that depend on element enumeration, and the
- * final data pass executes the remaining model and load-case commands.
+ * `Parser` coordinates repeated passes over one input deck. The first pass
+ * determines model capacities and collects materials and profiles, the topology
+ * pass creates the discrete model and its sections, the field pass creates
+ * fields that depend on element enumeration, and the final data pass executes
+ * the remaining model and load-case commands.
  *
  * The native FEMaster reader provides the default command registration for all
  * four stages. Syntax specializations may override only the stage-specific
@@ -80,8 +81,8 @@ struct DocOptions {
  *
  * The fixed execution order is:
  *
- * 1. count identifiers required for model allocation,
- * 2. construct topology and assign/enumerate element-local data,
+ * 1. count identifiers and collect allocation-independent definitions,
+ * 2. allocate the model, construct topology and assign/enumerate sections,
  * 3. create enumeration-dependent fields and select shell-normal data,
  * 4. execute all remaining model and analysis commands.
  *
@@ -92,7 +93,7 @@ struct DocOptions {
 class Parser {
 protected:
     /**
-     * @brief Allocation information collected during the count pass.
+     * @brief Allocation information collected during the first parser pass.
      *
      * The parser allocates dense FEMaster repositories from the highest external
      * identifiers rather than the number of encountered records. Unused entity
@@ -101,6 +102,8 @@ protected:
      *
      * Derived readers update the same counters from their format-specific count
      * registrations so all syntax variants share identical model allocation.
+     * Material and profile objects collected during the same pass remain in the
+     * placeholder model and are transferred separately during allocation.
      */
     struct CountData {
         int highest_node_id    = -1;
@@ -150,7 +153,9 @@ public:
 
 protected:
     // Format-specific command registration and activation for the four common
-    // passes. Derived readers may change syntax handling but not pass ordering.
+    // passes. The first pass may collect allocation-independent definitions in
+    // addition to entity counts. Derived readers may change syntax handling but
+    // not pass ordering.
     virtual void configure_count_stage   (io::dsl::Registry& registry, CountData& count);
     virtual void configure_topology_stage(io::dsl::Registry& registry);
     virtual void configure_field_stage   (io::dsl::Registry& registry);

@@ -148,9 +148,10 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
 /**
  * Configures the allocation stage for the supported Abaqus syntax.
  *
- * Node and element identifiers are evaluated to determine model capacities. All
- * other supported commands are registered in consume-only mode so the complete
- * input structure can be traversed without creating model data in this stage.
+ * Node and element identifiers are evaluated to determine model capacities.
+ * Material definitions are collected in the placeholder model and transferred
+ * into the allocated model before topology and sections are created. All other
+ * supported commands remain consume-only in this stage.
  *
  * @param registry Stage-local command registry.
  * @param count Allocation counters updated from parsed node and element ids.
@@ -165,16 +166,23 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE"   , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NODE"        , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("MATERIAL"    , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DENSITY"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("HYPERELASTIC", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("EXPANSION"   , io::dsl::ActiveMode::Active);
 }
 
 /**
  * Configures the topology stage for the supported Abaqus syntax.
  *
- * Persistent model data are created in this stage, including topology, sets,
- * materials, sections, amplitudes, material orientations and nodal transforms.
- * Analysis-step commands remain consume-only until the final data stage.
+ * Persistent topology, sets, sections, amplitudes, material orientations and
+ * nodal transforms are created in this stage. Materials were transferred from
+ * the preceding pass, allowing sections to reference definitions that occur
+ * later in the input deck. Analysis-step commands remain consume-only until the
+ * final data stage.
  *
  * @param registry Stage-local command registry.
  */
@@ -191,11 +199,6 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     registry.set_active_mode("NSET"          , io::dsl::ActiveMode::Active);
     registry.set_active_mode("ELSET"         , io::dsl::ActiveMode::Active);
     registry.set_active_mode("SURFACE"       , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("MATERIAL"      , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("DENSITY"       , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELASTIC"       , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("HYPERELASTIC"  , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("EXPANSION"     , io::dsl::ActiveMode::Active);
     registry.set_active_mode("ORIENTATION"   , io::dsl::ActiveMode::Active);
     registry.set_active_mode("TRANSFORM"     , io::dsl::ActiveMode::Active);
     registry.set_active_mode("AMPLITUDE"     , io::dsl::ActiveMode::Active);

@@ -2,10 +2,11 @@
  * @file parser.cpp
  * @brief Implements staged FEMaster input-deck parsing and command registration.
  *
- * The parser executes several passes over the same deck. Identifier counting
- * determines model capacities, topology construction creates nodes and elements,
- * field parsing creates enumeration-dependent fields, and the final data pass
- * executes the remaining model and load-case commands.
+ * The parser executes several passes over the same deck. The first pass
+ * determines model capacities and collects allocation-independent material and
+ * profile definitions. Topology construction then creates nodes, elements and
+ * sections, field parsing creates enumeration-dependent fields, and the final
+ * data pass executes the remaining model and load-case commands.
  *
  * The stage order and model-side finalization are shared by syntax-specific
  * readers. Derived readers replace only the command registration and activation
@@ -127,8 +128,8 @@ Parser::~Parser() = default;
  *
  * The deck is processed in four dependency-ordered stages:
  *
- * 1. determine allocation capacities from the highest identifiers,
- * 2. construct topology, assign sections and enumerate element-local data,
+ * 1. determine allocation capacities and collect materials and profiles,
+ * 2. construct topology, create and assign sections and enumerate element-local data,
  * 3. create enumeration-dependent fields and prepare shell-normal data,
  * 4. complete shell normals and execute the remaining data commands.
  *
@@ -143,7 +144,11 @@ Parser::~Parser() = default;
 void Parser::run(const std::string&                   input_path,
                  const std::string&                   output_path,
                  const io::writer::WriterFileFormats& writer_formats) {
-    // Determine the model capacities before allocating ModelData
+    // Reset allocation-independent repositories before collecting the new deck
+    m_model->_data->materials = {};
+    m_model->_data->profiles  = {};
+
+    // Determine model capacities and collect definitions required by sections
     CountData count = run_count_stage(input_path);
     allocate_model(count);
 
@@ -243,8 +248,10 @@ const std::string& Parser::active_loadcase_type() const {
  * Executes the allocation pass using the active syntax specialization.
  *
  * A fresh stage-local registry is configured and the complete deck is consumed.
- * Only the registration selected by `configure_count_stage()` may update the
- * returned counters. Model storage is not reallocated until the pass completes.
+ * Only the registrations selected by `configure_count_stage()` execute. Besides
+ * updating the returned counters, a syntax specialization may collect resources
+ * that do not depend on model capacities. Model storage is not reallocated until
+ * the pass completes.
  *
  * @param input_path Input-deck path.
  * @return Highest external identifiers required for model allocation.
@@ -306,12 +313,13 @@ void Parser::run_field_stage(const std::string& input_path) {
 }
 
 /**
- * Allocates the shared FEMaster model from identifiers found in the count pass.
+ * Allocates the shared FEMaster model from identifiers found in the first pass.
  *
  * Dense model repositories are sized to the highest external identifier plus
- * one, preserving sparse identifier spaces. Active native load-case state is
- * reset because callbacks registered before allocation must not retain state
- * bound to the placeholder model.
+ * one, preserving sparse identifier spaces. Allocation-independent material and
+ * profile repositories collected by that pass are transferred to the new model.
+ * Active native load-case state is reset because callbacks registered before
+ * allocation must not retain state bound to the placeholder model.
  *
  * @param count Highest node, element and surface identifiers from the count pass.
  */
@@ -321,7 +329,13 @@ void Parser::allocate_model(const CountData& count) {
     const int n_elems    = count.highest_element_id + 1;
     const int n_surfaces = count.highest_surface_id + 1;
 
+    // Preserve capacity-independent definitions parsed into the placeholder model
+    auto materials = std::move(m_model->_data->materials);
+    auto profiles  = std::move(m_model->_data->profiles);
+
     m_model = std::make_shared<model::Model>(n_nodes, n_elems, n_surfaces);
+    m_model->_data->materials = std::move(materials);
+    m_model->_data->profiles  = std::move(profiles);
 
     // Reset load-case state bound to the previous placeholder model
     m_active_loadcase.reset();
@@ -375,9 +389,10 @@ void Parser::run_data_stage(const std::string&                   input_path,
 /**
  * Configures the native FEMaster allocation pass.
  *
- * All native commands are registered so the complete deck can be consumed, but
- * only nodes, elements and surfaces execute because those identifiers determine
- * dense model capacities.
+ * All native commands are registered so the complete deck can be consumed.
+ * Nodes, elements and surfaces determine dense model capacities, while materials
+ * and profiles are collected for transfer to the allocated model before section
+ * creation.
  *
  * @param registry Stage-local command registry.
  * @param count Allocation counters updated by the count registrations.
@@ -388,19 +403,26 @@ void Parser::configure_count_stage(io::dsl::Registry& registry, CountData& count
     register_set_commands(registry);
     register_analysis_commands(registry);
 
-    // Execute only entity definitions that determine allocation capacities
+    // Count dense entities and collect allocation-independent section resources
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE"   , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NODE"            , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT"         , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE"         , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("MATERIAL"        , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELASTIC"         , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("HYPERELASTIC"    , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DENSITY"         , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("THERMALEXPANSION", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("PROFILE"         , io::dsl::ActiveMode::Active);
 }
 
 /**
  * Configures the native FEMaster topology pass.
  *
- * Topology, sets and the model definitions required before section assignment or
- * element-local enumeration are activated. All remaining native commands are
- * consumed without invoking their callbacks.
+ * Topology, sets, orientations and sections are activated after allocation.
+ * Materials and profiles were transferred from the first pass, so section
+ * references no longer depend on their position in the input deck. All remaining
+ * native commands are consumed without invoking their callbacks.
  *
  * @param registry Stage-local command registry.
  */
@@ -417,10 +439,10 @@ void Parser::configure_topology_stage(io::dsl::Registry& registry) {
     registry.set_active_mode("ELSET"       , io::dsl::ActiveMode::Active);
     registry.set_active_mode("SURFACE"     , io::dsl::ActiveMode::Active);
     registry.set_active_mode("SFSET"       , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("MATERIAL"    , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::Active);
-    registry.set_active_mode("DENSITY"     , io::dsl::ActiveMode::Active);
     registry.set_active_mode("ORIENTATION" , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SOLIDSECTION", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("BEAMSECTION" , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("TRUSSSECTION", io::dsl::ActiveMode::Active);
     registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
 }
 
@@ -460,17 +482,23 @@ void Parser::configure_data_stage(io::dsl::Registry& registry) {
 
     // Execute remaining data commands while consuming already applied topology
     registry.set_active_mode(io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NODE"        , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELEMENT"     , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NSET"        , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELSET"       , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SURFACE"     , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SFSET"       , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("MATERIAL"    , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("DENSITY"     , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ORIENTATION" , io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE"            , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELEMENT"         , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NSET"            , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELSET"           , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SURFACE"         , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SFSET"           , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("MATERIAL"        , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELASTIC"         , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("HYPERELASTIC"    , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("DENSITY"         , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("THERMALEXPANSION", io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("PROFILE"         , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ORIENTATION"     , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SOLIDSECTION"    , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("BEAMSECTION"     , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("TRUSSSECTION"    , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SHELLSECTION"    , io::dsl::ActiveMode::ConsumeOnly);
 
     // Field input was applied after element-local enumeration and must not be repeated
     registry.set_active_mode("FIELD" , io::dsl::ActiveMode::ConsumeOnly);
