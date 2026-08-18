@@ -76,10 +76,8 @@ inline void register_shell_section(fem::io::dsl::Registry& registry, model::Mode
                         .on_missing(5).on_empty(5)
                 )
                 .bind([&model, material, elset, orientation](fem::Precision thickness, int integration_points) {
-                    logging::error(
-                        integration_points == 5,
-                        "SHELL SECTION supports exactly 5 Simpson integration points"
-                    );
+                    logging::error(integration_points == 5,
+                        "SHELL SECTION supports exactly 5 Simpson integration points");
 
                     model.shell_section(*elset, *material, thickness, *orientation);
                 })
