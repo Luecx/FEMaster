@@ -56,10 +56,9 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
-            logging::error(state.step_active && parser.active_loadcase(),
+            logging::error(parser.abaqus_state().step_active && parser.active_loadcase(),
                 "DLOAD must appear after a supported procedure inside STEP");
-            logging::error(state.procedure != "EIGENFREQ",
+            logging::error(parser.active_loadcase_type() != "EIGENFREQ",
                 "DLOAD is not supported in a FREQUENCY step");
             logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
                 "DLOAD REAL and IMAGINARY are mutually exclusive");
