@@ -4,6 +4,7 @@
 #include <array>
 #include <string>
 
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -54,9 +55,8 @@ inline void register_shell_section(fem::io::dsl::Registry& registry, model::Mode
                         .on_missing(fem::Precision{1}).on_empty(fem::Precision{1})
                 )
                 .bind([&model, material, elset, orientation, csys_axis](fem::Precision thickness) {
-                    if (material->empty()) {
-                        throw std::runtime_error("SHELLSECTION TYPE=INTEGRATED requires MATERIAL");
-                    }
+                    logging::error(!material->empty(),
+                        "SHELLSECTION TYPE=INTEGRATED requires MATERIAL");
                     model.shell_section(*elset, *material, thickness, *orientation, *csys_axis);
                 })
             )
