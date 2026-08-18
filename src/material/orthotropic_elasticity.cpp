@@ -3,9 +3,13 @@
  * @brief Implements homogeneous orthotropic linear elasticity.
  *
  * The implementation constructs the three-dimensional engineering compliance
- * from reciprocal Poisson ratios and inverts it to obtain the material tangent.
- * Shell calls use an orthotropic plane-stress reduction and the prescribed
- * transverse shear moduli.
+ * directly from `E1`, `E2`, `E3`, `nu12`, `nu13`, `nu23`, `G12`, `G13` and
+ * `G23`. Symmetry supplies the reciprocal Poisson ratios implicitly through the
+ * off-diagonal compliance terms. The compliance is inverted to obtain the
+ * volume tangent.
+ *
+ * Shell calls use the corresponding orthotropic plane-stress reduction and the
+ * prescribed transverse shear moduli `G13` and `G23`.
  *
  * @see OrthotropicElasticity
  *
@@ -29,40 +33,41 @@
 namespace fem::material {
 
 /**
- * Constructs orthotropic elasticity from local engineering constants.
+ * Constructs orthotropic elasticity from conventional engineering constants.
  *
- * The supplied major Poisson ratios are stored with the directional Young's and
- * shear moduli. Reciprocal minor ratios are derived when the symmetric volume
- * compliance is assembled.
+ * The supplied Poisson ratios are the major ratios `nu12`, `nu13` and `nu23`.
+ * Reciprocal ratios are not stored independently because symmetry requires
+ * `nu21/E2 = nu12/E1`, `nu31/E3 = nu13/E1` and
+ * `nu32/E3 = nu23/E2`.
  *
- * @param ex Young's modulus along material axis X.
- * @param ey Young's modulus along material axis Y.
- * @param ez Young's modulus along material axis Z.
- * @param gyz Engineering shear modulus in the YZ plane.
- * @param gzx Engineering shear modulus in the ZX plane.
- * @param gxy Engineering shear modulus in the XY plane.
- * @param vyz Major Poisson ratio for Y loading and Z contraction.
- * @param vzx Major Poisson ratio for Z loading and X contraction.
- * @param vxy Major Poisson ratio for X loading and Y contraction.
+ * @param E1 Young's modulus along material direction 1.
+ * @param E2 Young's modulus along material direction 2.
+ * @param E3 Young's modulus along material direction 3.
+ * @param nu12 Poisson ratio for loading in direction 1 and contraction in 2.
+ * @param nu13 Poisson ratio for loading in direction 1 and contraction in 3.
+ * @param nu23 Poisson ratio for loading in direction 2 and contraction in 3.
+ * @param G12 Engineering shear modulus in the 1-2 plane.
+ * @param G13 Engineering shear modulus in the 1-3 plane.
+ * @param G23 Engineering shear modulus in the 2-3 plane.
  */
-OrthotropicElasticity::OrthotropicElasticity(Precision ex,
-                                             Precision ey,
-                                             Precision ez,
-                                             Precision gyz,
-                                             Precision gzx,
-                                             Precision gxy,
-                                             Precision vyz_in,
-                                             Precision vzx_in,
-                                             Precision vxy_in)
-    : Ex (ex),
-      Ey (ey),
-      Ez (ez),
-      Gyz(gyz),
-      Gzx(gzx),
-      Gxy(gxy),
-      vyz(vyz_in),
-      vzx(vzx_in),
-      vxy(vxy_in) {}
+OrthotropicElasticity::OrthotropicElasticity(Precision E1,
+                                             Precision E2,
+                                             Precision E3,
+                                             Precision nu12,
+                                             Precision nu13,
+                                             Precision nu23,
+                                             Precision G12,
+                                             Precision G13,
+                                             Precision G23)
+    : E1  (E1),
+      E2  (E2),
+      E3  (E3),
+      nu12(nu12),
+      nu13(nu13),
+      nu23(nu23),
+      G12 (G12),
+      G13 (G13),
+      G23 (G23) {}
 
 bool OrthotropicElasticity::supports_volume_linearized() const {
     return true;
@@ -83,19 +88,19 @@ bool OrthotropicElasticity::supports_shell_integration_green_lagrange() const {
 /**
  * Builds the orthotropic in-plane plane-stress tangent.
  *
- * The reciprocal ratio `nu_yx = nu_xy E_y/E_x` enforces symmetry of the normal
- * block; the engineering XY shear term is uncoupled.
+ * The reciprocal ratio `nu21 = nu12 E2/E1` enforces symmetry of the normal
+ * block. The engineering 1-2 shear term remains uncoupled and uses `G12`.
  *
  * @return Constant tangent ordered `[11,22,12]`.
  */
 Mat3 OrthotropicElasticity::plane_stress_tangent() const {
-    const Precision vyx   = vxy * Ey / Ex;
-    const Precision denom = Precision(1) - vxy * vyx;
+    const Precision nu21  = nu12 * E2 / E1;
+    const Precision denom = Precision(1) - nu12 * nu21;
 
     Mat3 tangent;
-    tangent << Ex / denom,       Ex * vyx / denom, Precision(0),
-               Ey * vxy / denom, Ey / denom,       Precision(0),
-               Precision(0),     Precision(0),      Gxy;
+    tangent << E1 / denom,         nu12 * E2 / denom, Precision(0),
+               nu21 * E1 / denom, E2 / denom,        Precision(0),
+               Precision(0),       Precision(0),       G12;
     return tangent;
 }
 
@@ -108,33 +113,30 @@ Mat3 OrthotropicElasticity::plane_stress_tangent() const {
 Mat5 OrthotropicElasticity::shell_material_tangent() const {
     Mat5 tangent = Mat5::Zero();
     tangent.template block<3, 3>(0, 0) = plane_stress_tangent();
-    tangent(3, 3) = Gzx;
-    tangent(4, 4) = Gyz;
+    tangent(3, 3) = G13;
+    tangent(4, 4) = G23;
     return tangent;
 }
 
 /**
  * Constructs the full three-dimensional orthotropic tangent.
  *
- * Reciprocal Poisson ratios complete a symmetric engineering compliance matrix,
- * which is inverted to obtain the stress-strain operator in local material
- * coordinates.
+ * The engineering compliance is assembled directly from the three major
+ * Poisson ratios. Its off-diagonal terms are written in their symmetric form,
+ * so the reciprocal minor ratios never become independent stored parameters.
+ * FEMaster's volume Voigt ordering places shear components as `[23,13,12]`.
  *
  * @return Constant six-by-six engineering-Voigt tangent.
  */
 Mat6 OrthotropicElasticity::volume_tangent() const {
-    const Precision vyx = vxy * Ey / Ex;
-    const Precision vzy = vyz * Ez / Ey;
-    const Precision vxz = vzx * Ex / Ez;
-
     Mat6 compliance;
     compliance <<
-        Precision(1) / Ex, -vyx / Ey,          -vzx / Ez,          Precision(0),       Precision(0),       Precision(0),
-        -vxy / Ex,          Precision(1) / Ey, -vzy / Ez,          Precision(0),       Precision(0),       Precision(0),
-        -vxz / Ex,          -vyz / Ey,          Precision(1) / Ez, Precision(0),       Precision(0),       Precision(0),
-        Precision(0),       Precision(0),       Precision(0),       Precision(1) / Gyz, Precision(0),       Precision(0),
-        Precision(0),       Precision(0),       Precision(0),       Precision(0),       Precision(1) / Gzx, Precision(0),
-        Precision(0),       Precision(0),       Precision(0),       Precision(0),       Precision(0),       Precision(1) / Gxy;
+        Precision(1) / E1, -nu12 / E1,         -nu13 / E1,         Precision(0),       Precision(0),       Precision(0),
+        -nu12 / E1,         Precision(1) / E2, -nu23 / E2,         Precision(0),       Precision(0),       Precision(0),
+        -nu13 / E1,         -nu23 / E2,         Precision(1) / E3, Precision(0),       Precision(0),       Precision(0),
+        Precision(0),       Precision(0),       Precision(0),       Precision(1) / G23, Precision(0),       Precision(0),
+        Precision(0),       Precision(0),       Precision(0),       Precision(0),       Precision(1) / G13, Precision(0),
+        Precision(0),       Precision(0),       Precision(0),       Precision(0),       Precision(0),       Precision(1) / G12;
     return compliance.inverse();
 }
 

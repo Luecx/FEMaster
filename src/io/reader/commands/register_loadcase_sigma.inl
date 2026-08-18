@@ -1,9 +1,8 @@
 // register_loadcase_sigma.inl — registers SIGMA for LINEARBUCKLING loadcases
 
-#include <stdexcept>
-
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 
 namespace fem::io::reader::commands {
@@ -21,9 +20,8 @@ inline void register_loadcase_sigma(fem::io::dsl::Registry& registry, Parser& pa
                 )
                 .bind([&parser](fem::Precision sigma) {
                     auto* lc = parser.active_loadcase_as<loadcase::LinearBuckling>();
-                    if (!lc) {
-                        throw std::runtime_error("SIGMA only valid for LINEARBUCKLING loadcases");
-                    }
+                    logging::error(lc != nullptr,
+                        "SIGMA only valid for LINEARBUCKLING loadcases");
                     lc->sigma = sigma;
                 })
             )

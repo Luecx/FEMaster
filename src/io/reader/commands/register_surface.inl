@@ -18,8 +18,10 @@
  *      - else: error
  */
 
-#include <stdexcept>
+#include <charconv>
+#include <cctype>
 #include <string>
+#include <system_error>
 
 #include "../../../core/logging.h"
 #include "../../../core/types_num.h"    // fem::ID
@@ -62,14 +64,20 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
         // Helper: parse SIDE tokens like "S1", integer, and SPOS/SNEG (case-insensitive)
         auto parse_side = [](const std::string& side_tok) -> int {
             if (side_tok.empty()) return 1;
-            std::string s = side_tok;
-            for (char& c : s) c = static_cast<char>(std::toupper(c));
-            if (s == "SPOS") return 1; // positive normal (shells)
-            if (s == "SNEG") return 2; // negative normal (shells use !=1 to flip)
-            if (s[0] == 'S' && s.size() > 1) {
-                return std::stoi(s.substr(1));
-            }
-            return std::stoi(s);
+
+            std::string token = side_tok;
+            for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            if (token == "SPOS") return 1;
+            if (token == "SNEG") return 2;
+
+            const std::string numeric = token[0] == 'S' && token.size() > 1 ? token.substr(1) : token;
+            int side{};
+            const char* begin = numeric.data();
+            const char* end   = begin + numeric.size();
+            const auto [ptr, ec] = std::from_chars(begin, end, side);
+            logging::error(ec == std::errc{} && ptr == end,
+                "SURFACE side '", side_tok, "' is not a valid face identifier");
+            return side;
         };
 
         // --- Variant 1: ID, ELEM_ID, SIDE ---
@@ -114,15 +122,14 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
                             }
 
                             // Else: try single element id
-                            try {
-                                const fem::ID elem_id = static_cast<fem::ID>(std::stoi(target));
-                                model.set_surface(-1, elem_id, side); // id := -1 by spec
-                            } catch (const std::exception&) {
-                                throw std::runtime_error(
-                                    "SURFACE target '" + target +
-                                    "' is neither an existing element set nor a valid element id."
-                                );
-                            }
+                            fem::ID elem_id{};
+                            const char* begin = target.data();
+                            const char* end   = begin + target.size();
+                            const auto [ptr, ec] = std::from_chars(begin, end, elem_id);
+                            logging::error(ec == std::errc{} && ptr == end,
+                                "SURFACE target '", target,
+                                "' is neither an existing element set nor a valid element id.");
+                            model.set_surface(-1, elem_id, side); // id := -1 by spec
                         })
                 )
         );

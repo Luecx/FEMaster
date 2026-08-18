@@ -1,15 +1,16 @@
 // register_loadcase_loads.inl — registers LOADS within *LOADCASE
 
 #include <array>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
+#include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
 
 namespace fem::io::reader::commands {
@@ -32,11 +33,10 @@ inline void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& pa
                     .fixed<std::string, 16>().name("LOAD").desc("Load collector names")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser, &append_tokens](const std::array<std::string, 16>& names) {
+                .bind([&parser, append_tokens](const std::array<std::string, 16>& names) {
                     auto* base = parser.active_loadcase();
-                    if (!base) {
-                        throw std::runtime_error("LOADS must appear inside *LOADCASE");
-                    }
+                    logging::error(base != nullptr,
+                        "LOADS must appear inside *LOADCASE");
 
                     if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
                         append_tokens(names, lc->loads);
@@ -58,7 +58,8 @@ inline void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& pa
                         append_tokens(names, lc->loads);
                         return;
                     }
-                    throw std::runtime_error("LOADS not supported for loadcase type " + parser.active_loadcase_type());
+                    logging::error(false,
+                        "LOADS not supported for loadcase type ", parser.active_loadcase_type());
                 })
             )
         );

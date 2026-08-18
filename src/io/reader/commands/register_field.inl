@@ -21,7 +21,6 @@
 #include <limits>
 #include <memory>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 
 #include "../../../core/logging.h"
@@ -43,7 +42,10 @@ inline model::FieldDomain parse_field_domain(const std::string& raw) {
     if (raw == "ELEMENT_NODAL" || raw == "ELEMENTNODAL") return model::FieldDomain::ELEMENT_NODAL;
     if (raw == "ELEMENT_IP" || raw == "ELEMENTIP" || raw == "IP") return model::FieldDomain::ELEMENT_IP;
     if (raw == "ELEMENT_MP" || raw == "ELEMENTMP" || raw == "MP") return model::FieldDomain::ELEMENT_MP;
-    throw std::runtime_error("FIELD: unknown TYPE '" + raw + "' (expected NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP/ELEMENT_MP)");
+
+    logging::error(false,
+        "FIELD: unknown TYPE '", raw, "' (expected NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP/ELEMENT_MP)");
+    return model::FieldDomain::NODE;
 }
 
 inline Precision parse_precision_or_throw(const std::string& token) {
@@ -60,9 +62,8 @@ inline Precision parse_precision_or_throw(const std::string& token) {
     std::istringstream ss(token);
     Precision value{};
     ss >> value;
-    if (ss.fail() || !ss.eof()) {
-        throw std::runtime_error("FIELD: failed to parse value '" + token + "'");
-    }
+    logging::error(!ss.fail() && ss.eof(),
+        "FIELD: failed to parse value '", token, "'");
     return value;
 }
 
@@ -109,30 +110,28 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
             const std::string fill = keys.has("FILL") ? keys.raw("FILL") : std::string("ZERO");
             const int         cols = keys.get<int>("COLS");
 
-            if (cols <= 0) {
-                throw std::runtime_error("FIELD: COLS must be > 0");
-            }
-            if (static_cast<std::size_t>(cols) > detail::kMaxFieldCols) {
-                throw std::runtime_error("FIELD: COLS exceeds internal limit of " + std::to_string(detail::kMaxFieldCols));
-            }
+            logging::error(cols > 0,
+                "FIELD: COLS must be > 0");
+            logging::error(static_cast<std::size_t>(cols) <= detail::kMaxFieldCols,
+                "FIELD: COLS exceeds internal limit of ", detail::kMaxFieldCols);
 
             const auto domain   = detail::parse_field_domain(type);
             const bool fill_nan = (fill == "NAN");
 
-            if (domain == model::FieldDomain::ELEMENT_NODAL &&
-                (!model._data->element_nodal_offsets ||
-                 (*model._data->element_nodal_offsets)(static_cast<Index>(model._data->max_elems)) <= 0)) {
-                throw std::runtime_error("FIELD: TYPE=ELEMENT_NODAL requires elements to be configured");
+            if (domain == model::FieldDomain::ELEMENT_NODAL) {
+                logging::error(model._data->element_nodal_offsets
+                            && (*model._data->element_nodal_offsets)(static_cast<Index>(model._data->max_elems)) > 0,
+                    "FIELD: TYPE=ELEMENT_NODAL requires elements to be configured");
             }
-            if (domain == model::FieldDomain::ELEMENT_IP &&
-                (!model._data->element_ip_offsets ||
-                 (*model._data->element_ip_offsets)(static_cast<Index>(model._data->max_elems)) <= 0)) {
-                throw std::runtime_error("FIELD: TYPE=ELEMENT_IP requires integration points to be configured");
+            if (domain == model::FieldDomain::ELEMENT_IP) {
+                logging::error(model._data->element_ip_offsets
+                            && (*model._data->element_ip_offsets)(static_cast<Index>(model._data->max_elems)) > 0,
+                    "FIELD: TYPE=ELEMENT_IP requires integration points to be configured");
             }
-            if (domain == model::FieldDomain::ELEMENT_MP &&
-                (!model._data->element_mp_offsets ||
-                 (*model._data->element_mp_offsets)(static_cast<Index>(model._data->max_elems)) <= 0)) {
-                throw std::runtime_error("FIELD: TYPE=ELEMENT_MP requires material points to be configured");
+            if (domain == model::FieldDomain::ELEMENT_MP) {
+                logging::error(model._data->element_mp_offsets
+                            && (*model._data->element_mp_offsets)(static_cast<Index>(model._data->max_elems)) > 0,
+                    "FIELD: TYPE=ELEMENT_MP requires material points to be configured");
             }
 
             ctx->field = model._data->create_field(name, domain, static_cast<Index>(cols), fill_nan);
@@ -160,31 +159,24 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                 .bind([&model, ctx](fem::ID element_id,
                                     fem::ID local_node,
                                     const std::array<std::string, detail::kMaxFieldCols>& values) {
-                    if (!ctx->field) {
-                        throw std::runtime_error("FIELD: internal error (field not initialized)");
-                    }
+                    logging::error(ctx->field != nullptr,
+                        "FIELD: internal error (field not initialized)");
 
                     // Resolve the element-local node into the flat element-nodal
                     // storage used by ModelData and all element implementations
-                    if (element_id < 0 || element_id >= model._data->max_elems ||
-                        model._data->elements[static_cast<std::size_t>(element_id)] == nullptr) {
-                        logging::error(false,
-                            "FIELD: element id ", element_id, " is not configured for field '",
-                            ctx->field->name, "'");
-                        return;
-                    }
+                    logging::error(element_id >= 0 && element_id < model._data->max_elems
+                                && model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
+                        "FIELD: element id ", element_id, " is not configured for field '",
+                        ctx->field->name, "'");
 
                     const model::Field& offsets = *model._data->element_nodal_offsets;
                     const Index         begin   = static_cast<Index>(offsets(static_cast<Index>(element_id)));
                     const Index         end     = static_cast<Index>(offsets(static_cast<Index>(element_id) + 1));
 
-                    if (local_node < 0 || static_cast<Index>(local_node) >= end - begin) {
-                        logging::error(false,
-                            "FIELD: local node ", local_node, " out of bounds for element ",
-                            element_id, " in field '", ctx->field->name,
-                            "' (nodes=", end - begin, ")");
-                        return;
-                    }
+                    logging::error(local_node >= 0 && static_cast<Index>(local_node) < end - begin,
+                        "FIELD: local node ", local_node, " out of bounds for element ",
+                        element_id, " in field '", ctx->field->name,
+                        "' (nodes=", end - begin, ")");
 
                     // Assign the supplied components and preserve the initial fill
                     // value for omitted entries
@@ -199,9 +191,8 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                     }
 
                     for (Index c = ctx->cols; c < static_cast<Index>(detail::kMaxFieldCols); ++c) {
-                        if (values[static_cast<std::size_t>(c)] != kSkipToken) {
-                            throw std::runtime_error("FIELD: more values than COLS for field '" + ctx->field->name + "'");
-                        }
+                        logging::error(values[static_cast<std::size_t>(c)] == kSkipToken,
+                            "FIELD: more values than COLS for field '", ctx->field->name, "'");
                     }
                 })
             )
@@ -218,16 +209,11 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                         .on_empty(kSkipToken).on_missing(kSkipToken)
                 )
                 .bind([ctx](fem::ID id, const std::array<std::string, detail::kMaxFieldCols>& values) {
-                    if (!ctx->field) {
-                        throw std::runtime_error("FIELD: internal error (field not initialized)");
-                    }
-
-                    if (id < 0 || static_cast<Index>(id) >= ctx->field->rows) {
-                        logging::error(false,
-                            "FIELD: id ", id, " out of bounds for field '",
-                            ctx->field->name, "' (rows=", ctx->field->rows, ")");
-                        return;
-                    }
+                    logging::error(ctx->field != nullptr,
+                        "FIELD: internal error (field not initialized)");
+                    logging::error(id >= 0 && static_cast<Index>(id) < ctx->field->rows,
+                        "FIELD: id ", id, " out of bounds for field '",
+                        ctx->field->name, "' (rows=", ctx->field->rows, ")");
 
                     const Index row = static_cast<Index>(id);
                     for (Index c = 0; c < ctx->cols; ++c) {
@@ -240,9 +226,8 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                     }
 
                     for (Index c = ctx->cols; c < static_cast<Index>(detail::kMaxFieldCols); ++c) {
-                        if (values[static_cast<std::size_t>(c)] != kSkipToken) {
-                            throw std::runtime_error("FIELD: more values than COLS for field '" + ctx->field->name + "'");
-                        }
+                        logging::error(values[static_cast<std::size_t>(c)] == kSkipToken,
+                            "FIELD: more values than COLS for field '", ctx->field->name, "'");
                     }
                 })
             )

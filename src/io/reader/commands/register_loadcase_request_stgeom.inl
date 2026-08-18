@@ -1,10 +1,10 @@
 // register_loadcase_request_stgeom.inl — registers REQUESTSTGEOM for buckling loadcases
 
-#include <stdexcept>
 #include <string>
 
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 
 namespace fem::io::reader::commands {
@@ -21,9 +21,8 @@ inline void register_loadcase_request_stgeom(fem::io::dsl::Registry& registry, P
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* lc = parser.active_loadcase_as<loadcase::LinearBuckling>();
-            if (!lc) {
-                throw std::runtime_error("REQUESTSTGEOM only valid for LINEARBUCKLING loadcases");
-            }
+            logging::error(lc != nullptr,
+                "REQUESTSTGEOM only valid for LINEARBUCKLING loadcases");
             lc->geom_file = keys.has("FILE") ? keys.raw("FILE") : "geom_" + std::to_string(lc->get_id()) + ".txt";
         });
 

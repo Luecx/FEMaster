@@ -1,8 +1,11 @@
 // register_pload.inl — DSL registration for *PLOAD
 
-#include <stdexcept>
+#include <charconv>
+#include <memory>
 #include <string>
+#include <system_error>
 
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -48,12 +51,13 @@ inline void register_pload(fem::io::dsl::Registry& registry, model::Model& model
                         return;
                     }
 
-                    try {
-                        const fem::ID id = static_cast<fem::ID>(std::stoi(target));
-                        model.add_pload(id, value, *amplitude);
-                    } catch (const std::exception&) {
-                        throw std::runtime_error("PLOAD target '" + target + "' is neither a surface set nor an id");
-                    }
+                    fem::ID id{};
+                    const char* begin = target.data();
+                    const char* end   = begin + target.size();
+                    const auto [ptr, ec] = std::from_chars(begin, end, id);
+                    logging::error(ec == std::errc{} && ptr == end,
+                        "PLOAD target '", target, "' is neither a surface set nor an id");
+                    model.add_pload(id, value, *amplitude);
                 })
             )
         );

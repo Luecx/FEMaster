@@ -1,3 +1,22 @@
+/**
+ * @file main.cpp
+ * @brief Defines the FEMaster command-line entry point and input-format selection.
+ *
+ * The executable parses command-line options, configures global runtime settings
+ * and dispatches regular analysis input either to the native FEMaster reader or
+ * the Abaqus syntax reader through `--format`. Both readers feed the same model
+ * and solver infrastructure; only the accepted input-deck syntax differs.
+ *
+ * Documentation mode remains tied to the native FEMaster command registry and
+ * is handled before regular input-file validation and parser dispatch.
+ *
+ * @see fem::io::reader::Parser
+ * @see fem::io::reader::ParserAbq
+ *
+ * @author Finn Eggers
+ * @date 17.08.2026
+ */
+
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -8,7 +27,22 @@
 #include "core/timer.h"
 #include "core/logging.h"
 #include "io/reader/parser.h"
+#include "io/reader/parser_abq.h"
 
+/**
+ * Runs FEMaster in documentation or solver mode.
+ *
+ * Command-line parsing is completed before any model reader is constructed.
+ * Documentation requests use the native FEMaster parser registry, while regular
+ * solver runs validate the input/output paths and select either native FEMaster
+ * or Abaqus syntax from `--format`. Writer settings and global thread limits are
+ * independent of the selected input syntax.
+ *
+ * @param argc Number of command-line arguments.
+ * @param argv Command-line argument values.
+ * @return Zero on successful completion and one after argument, documentation,
+ *         input-file or parser errors.
+ */
 int main(int argc, char** argv) {
     auto timer = fem::Timer();
     timer.start();
@@ -28,6 +62,11 @@ int main(int argc, char** argv) {
     program.add_argument("--output")
         .default_value(std::string{})
         .help("Override output filename (default: input with .res extension)");
+
+    program.add_argument("--format")
+        .default_value(std::string{"femaster"})
+        .choices("femaster", "abaqus")
+        .help("Input deck syntax (default: femaster).");
 
     program.add_argument("--no-res")
         .flag()
@@ -75,6 +114,7 @@ int main(int argc, char** argv) {
         .flag()
         .help("Treat --doc-search as regex.");
 
+    // Parse and validate the command-line syntax before constructing a reader
     try {
         program.parse_args(argc, argv);
     } catch (const std::runtime_error& err) {
@@ -84,10 +124,11 @@ int main(int argc, char** argv) {
 
     namespace fs = std::filesystem;
 
-    const int ncpus         = program.get<int>("--ncpus");
-    std::string input_file  = program.get<std::string>("input_file");
-    std::string output_file = program.get<std::string>("--output");
-    const bool doc_mode     = program.get<bool>("--document");
+    const int         ncpus    = program.get<int>("--ncpus");
+    const std::string format   = program.get<std::string>("--format");
+    const bool        doc_mode = program.get<bool>("--document");
+    std::string       input_file  = program.get<std::string>("input_file");
+    std::string       output_file = program.get<std::string>("--output");
 
     fem::io::writer::WriterFileFormats writer_formats;
     writer_formats.res = !program.get<bool>("--no-res");
@@ -95,10 +136,10 @@ int main(int argc, char** argv) {
 
     fem::global_config.max_threads = ncpus;
 
-    // Single parser instance; ctor registers commands for doc mode immediately.
-    fem::io::reader::Parser parser;
-
+    // Handle native command documentation independently of solver input syntax
     if (doc_mode) {
+        fem::io::reader::Parser parser;
+
         // Enforce exactly one action
         int actions = 0;
         actions += program.get<bool>("--doc-list") ? 1 : 0;
@@ -172,7 +213,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // Regular solver mode
+    // Validate and normalize regular solver input/output paths
     if (input_file.empty()) {
         std::cerr << "Error: Missing input file. You must provide one unless --document is specified.\n";
         return 1;
@@ -192,22 +233,31 @@ int main(int argc, char** argv) {
         output_file = out.string();
     }
 
+    // Report the resolved run configuration before parsing the model
     fem::logging::info(true, "");
     fem::logging::info(true, "Input file : ", input_path.string());
     fem::logging::info(true, "Output file: ", output_file);
+    fem::logging::info(true, "Format     : ", format);
     fem::logging::info(true, "CPU(s)     : ", ncpus);
     fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
     fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
     fem::logging::info(true, "");
 
+    // Dispatch only the input syntax; both readers share FEMaster model/solver behavior
     try {
-        parser.run(input_path.string(), output_file, writer_formats);
+        if (format == "abaqus") {
+            fem::io::reader::ParserAbq parser;
+            parser.run(input_path.string(), output_file, writer_formats);
+        } else {
+            fem::io::reader::Parser parser;
+            parser.run(input_path.string(), output_file, writer_formats);
+        }
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 
-    // output taken time in h, min, sec, ms
+    // Report elapsed wall time in h, min, sec and ms
     timer.stop();
     auto t  = timer.elapsed();
     auto ms = t % 1000;

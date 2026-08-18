@@ -13,10 +13,12 @@
  */
 
 #include <array>
+#include <charconv>
 #include <memory>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
+#include "../../../core/logging.h"
 #include "../../../core/types_eig.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
@@ -86,15 +88,14 @@ inline void register_cload(fem::io::dsl::Registry& registry, model::Model& model
                             }
 
                             // single node id?
-                            try {
-                                const fem::ID id = static_cast<fem::ID>(std::stoi(target));
-                                model.add_cload(id, load, *orientation, *amplitude);
-                            } catch (const std::exception&) {
-                                throw std::runtime_error(
-                                    "CLOAD target '" + target +
-                                    "' is neither an existing node set nor a valid node id."
-                                );
-                            }
+                            fem::ID id{};
+                            const char* begin = target.data();
+                            const char* end   = begin + target.size();
+                            const auto [ptr, ec] = std::from_chars(begin, end, id);
+                            logging::error(ec == std::errc{} && ptr == end,
+                                "CLOAD target '", target,
+                                "' is neither an existing node set nor a valid node id.");
+                            model.add_cload(id, load, *orientation, *amplitude);
                         })
                 )
         );

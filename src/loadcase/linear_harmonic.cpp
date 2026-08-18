@@ -11,8 +11,10 @@
  *     [ A -B ] [u_r] = [f_r]
  *     [ B  A ] [u_i]   [f_i]
  *
- * with A = K - omega^2 M and B = omega C. The first implementation assumes
- * real load amplitudes, hence f_i = 0, and Rayleigh damping C = alpha M + beta K.
+ * with A = K - omega^2 M and B = omega C. The implementation assumes real
+ * reference loads, hence f_i = 0, and Rayleigh damping C = alpha M + beta K.
+ * Named load amplitudes are evaluated at the current sweep frequency so the same
+ * scalar `Amplitude` representation can describe frequency-dependent forcing.
  *
  * @see src/loadcase/linear_harmonic.h
  * @author Finn Eggers
@@ -122,8 +124,7 @@ void LinearHarmonic::run() {
 
     logging::error(!frequencies.empty(),
         "LinearHarmonic: no frequencies defined");
-    logging::error(
-        std::all_of(frequencies.begin(), frequencies.end(), [](Precision frequency) {
+    logging::error(std::all_of(frequencies.begin(), frequencies.end(), [](Precision frequency) {
             return std::isfinite(frequency) && frequency >= 0.0;
         }),
         "LinearHarmonic: frequencies must be finite and non-negative");
@@ -139,10 +140,6 @@ void LinearHarmonic::run() {
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
-        "constructing harmonic load-amplitude matrix");
-
     auto groups = Timer::measure(
         [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
         "building constraints");
@@ -157,10 +154,6 @@ void LinearHarmonic::run() {
     auto M = Timer::measure(
         [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
         "constructing mass matrix M");
-
-    auto f = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat); },
-        "reducing harmonic load matrix -> active RHS vector");
 
     auto transformer = Timer::measure(
         [&]() {
@@ -187,10 +180,6 @@ void LinearHarmonic::run() {
         [&]() { return transformer->reduce_secondary_matrix(M); },
         "assembling reduced mass matrix Mr");
 
-    auto fr = Timer::measure(
-        [&]() { return transformer->assemble_system_rhs(K, f); },
-        "assembling reduced harmonic RHS");
-
     auto Cr = Timer::measure(
         [&]() { return damping.build(Mr, Kr); },
         "constructing reduced Rayleigh damping matrix Cr");
@@ -212,6 +201,13 @@ void LinearHarmonic::run() {
         DynamicVector u_imag;
 
         run_quiet([&]() {
+            // Abaqus-style amplitudes use frequency as STEP TIME in a frequency
+            // domain procedure. Rebuild only the load vector for each frequency;
+            // K, M, C and the constraint transformation remain unchanged.
+            const model::Field global_load_mat = model->build_load_matrix(loads, frequency);
+            const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
+            const DynamicVector fr = transformer->assemble_system_rhs(K, f);
+
             SparseMatrix A = Kr - omega * omega * Mr;
             SparseMatrix B = omega * Cr;
             A.makeCompressed();

@@ -1,10 +1,12 @@
 // register_dload.inl — DSL registration for *DLOAD
 
 #include <array>
+#include <charconv>
 #include <memory>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 
+#include "../../../core/logging.h"
 #include "../../../core/types_eig.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
@@ -61,12 +63,13 @@ inline void register_dload(fem::io::dsl::Registry& registry, model::Model& model
                         return;
                     }
 
-                    try {
-                        const fem::ID id = static_cast<fem::ID>(std::stoi(target));
-                        model.add_dload(id, load, *orientation, *amplitude);
-                    } catch (const std::exception&) {
-                        throw std::runtime_error("DLOAD target '" + target + "' is neither a surface set nor an id");
-                    }
+                    fem::ID id{};
+                    const char* begin = target.data();
+                    const char* end   = begin + target.size();
+                    const auto [ptr, ec] = std::from_chars(begin, end, id);
+                    logging::error(ec == std::errc{} && ptr == end,
+                        "DLOAD target '", target, "' is neither a surface set nor an id");
+                    model.add_dload(id, load, *orientation, *amplitude);
                 })
             )
         );

@@ -1,9 +1,8 @@
 // register_loadcase_topoexponent.inl — registers TOPOEXPONENT for LINEARSTATICTOPO loadcases
 
-#include <stdexcept>
-
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_static_topo.h"
 
 namespace fem::io::reader::commands {
@@ -21,9 +20,8 @@ inline void register_loadcase_topoexponent(fem::io::dsl::Registry& registry, Par
                 )
                 .bind([&parser](fem::Precision exponent) {
                     auto* lc = parser.active_loadcase_as<loadcase::LinearStaticTopo>();
-                    if (!lc) {
-                        throw std::runtime_error("TOPOEXPONENT only valid for LINEARSTATICTOPO loadcases");
-                    }
+                    logging::error(lc != nullptr,
+                        "TOPOEXPONENT only valid for LINEARSTATICTOPO loadcases");
                     lc->exponent = exponent;
                 })
             )

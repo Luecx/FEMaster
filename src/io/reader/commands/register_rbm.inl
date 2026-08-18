@@ -1,10 +1,10 @@
 // register_rbm.inl — registers *RBM
 
 #include <string>
-#include <stdexcept>
 
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
+#include "../../../core/logging.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
@@ -26,9 +26,9 @@ inline void register_rbm(fem::io::dsl::Registry& registry, model::Model& model) 
         );
 
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            if (keys.has("MAX_POINTS")) {
-                throw std::runtime_error("RBM key 'MAX_POINTS' is no longer supported");
-            }
+            logging::error(!keys.has("MAX_POINTS"),
+                "RBM key 'MAX_POINTS' is no longer supported");
+
             const std::string elset = keys.raw("ELSET");
             model.add_rbm(elset);
         });

@@ -1,11 +1,12 @@
 // register_loadcase_begin.inl — registers *LOADCASE (begin block)
 
+#include <exception>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
 #include "../../../loadcase/linear_harmonic.h"
@@ -30,9 +31,8 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            if (parser.active_loadcase()) {
-                throw std::runtime_error("Nested *LOADCASE blocks are not supported");
-            }
+            logging::error(parser.active_loadcase() == nullptr,
+                "Nested *LOADCASE blocks are not supported");
 
             auto& mdl = parser.model();
             auto& wrt = parser.writer();
@@ -55,7 +55,8 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             } else if (type == "LINEARHARMONIC") {
                 lc = std::make_unique<loadcase::LinearHarmonic>(id, &wrt, &mdl);
             } else {
-                throw std::runtime_error("Unsupported loadcase type: " + type);
+                logging::error(false,
+                    "Unsupported loadcase type: ", type);
             }
 
             parser.set_active_loadcase(std::move(lc), type);
@@ -71,7 +72,8 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             try {
                 lc->run();
             } catch (const std::exception& e) {
-                throw std::runtime_error(std::string("LOADCASE execution failed: ") + e.what());
+                logging::error(false,
+                    "LOADCASE execution failed: ", e.what());
             }
             parser.clear_active_loadcase();
         });

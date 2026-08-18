@@ -59,7 +59,7 @@ TEST(Reader_Parser, ParsesRbmCommand) {
     std::filesystem::remove(output_path);
 }
 
-TEST(Reader_Parser, MapsOrthotropicElasticNu13ToNu31) {
+TEST(Reader_Parser, ParsesOrthotropicEngineeringConstants) {
     const std::string input_path = "tests/TMP_ORTHO.INP";
     const std::string output_path = "tests/TMP_ORTHO.RES";
 
@@ -70,8 +70,8 @@ TEST(Reader_Parser, MapsOrthotropicElasticNu13ToNu31) {
         std::ofstream os(input_path);
         ASSERT_TRUE(os.is_open());
         os << "*MATERIAL, NAME=ORTHO\n";
-        os << "*ELASTIC, TYPE=ORTHOTROPIC\n";
-        os << "100.0, 200.0, 300.0, 23.0, 13.0, 12.0, 0.23, 0.13, 0.12\n";
+        os << "*ELASTIC, TYPE=ENGINEERINGCONSTANTS\n";
+        os << "100.0, 200.0, 300.0, 0.12, 0.13, 0.23, 12.0, 13.0, 23.0\n";
     }
 
     io::reader::Parser parser;
@@ -82,12 +82,15 @@ TEST(Reader_Parser, MapsOrthotropicElasticNu13ToNu31) {
     auto* ortho = mat->elasticity()->as<material::OrthotropicElasticity>();
     ASSERT_NE(ortho, nullptr);
 
-    EXPECT_DOUBLE_EQ(ortho->Gyz, 23.0);
-    EXPECT_DOUBLE_EQ(ortho->Gzx, 13.0);
-    EXPECT_DOUBLE_EQ(ortho->Gxy, 12.0);
-    EXPECT_DOUBLE_EQ(ortho->vyz, 0.23);
-    EXPECT_DOUBLE_EQ(ortho->vzx, 0.13 * 300.0 / 100.0);
-    EXPECT_DOUBLE_EQ(ortho->vxy, 0.12);
+    EXPECT_DOUBLE_EQ(ortho->E1, 100.0);
+    EXPECT_DOUBLE_EQ(ortho->E2, 200.0);
+    EXPECT_DOUBLE_EQ(ortho->E3, 300.0);
+    EXPECT_DOUBLE_EQ(ortho->nu12, 0.12);
+    EXPECT_DOUBLE_EQ(ortho->nu13, 0.13);
+    EXPECT_DOUBLE_EQ(ortho->nu23, 0.23);
+    EXPECT_DOUBLE_EQ(ortho->G12, 12.0);
+    EXPECT_DOUBLE_EQ(ortho->G13, 13.0);
+    EXPECT_DOUBLE_EQ(ortho->G23, 23.0);
 
     std::filesystem::remove(input_path);
     std::filesystem::remove(output_path);
@@ -96,8 +99,8 @@ TEST(Reader_Parser, MapsOrthotropicElasticNu13ToNu31) {
 TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     material::OrthotropicElasticity ortho(
         100.0, 200.0, 300.0,
-        23.0, 13.0, 12.0,
-        0.23, 0.13, 0.12
+        0.12, 0.13, 0.23,
+        12.0, 13.0, 23.0
     );
 
     ShellMaterialStrainLinearized strain;

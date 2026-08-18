@@ -1,7 +1,6 @@
 // register_density.inl — DSL registration for *DENSITY
 
-#include <stdexcept>
-
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
 
@@ -21,9 +20,8 @@ inline void register_density(fem::io::dsl::Registry& registry, model::Model& mod
                 )
                 .bind([&model](fem::Precision rho) {
                     auto material = model._data->materials.get();
-                    if (!material) {
-                        throw std::runtime_error("DENSITY requires an active material context");
-                    }
+                    logging::error(material != nullptr,
+                        "DENSITY requires an active material context");
                     material->set_density(rho);
                 })
             )

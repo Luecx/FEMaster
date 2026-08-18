@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from femaster_api.model import (
     BeamSection,
     CylindricalOrientation,
@@ -44,16 +46,57 @@ def cmd_elastic(parser, header: Header) -> None:
         if len(values) < 3:
             raise FEMasterInputError("*ELASTIC, TYPE=GENISO requires E,nu,G")
         elasticity = GeneralizedIsotropicElasticity(values[0], values[1], values[2])
+    elif kind == "ENGINEERINGCONSTANTS":
+        if len(values) < 9:
+            raise FEMasterInputError("*ELASTIC, TYPE=ENGINEERINGCONSTANTS requires 9 values")
+        elasticity = OrthotropicElasticity(*values[:9])
     elif kind in {"ORTHO", "ORTHOTROPIC"}:
         if len(values) < 9:
             raise FEMasterInputError("*ELASTIC, TYPE=ORTHOTROPIC requires 9 values")
-        elasticity = OrthotropicElasticity(*values[:9])
+        elasticity = _orthotropic_from_stiffness(values[:9])
     elif kind in {"ABD", "ABDELASTICITY"}:
         elasticity = ABDElasticity(tuple(values))
     else:
         raise FEMasterInputError(f"unsupported *ELASTIC TYPE={header.params.get('TYPE')!r}")
 
     parser.current_material = parser.model.materials.add(material.set_elasticity(elasticity))
+
+
+def _orthotropic_from_stiffness(values: list[float]) -> OrthotropicElasticity:
+    d1111, d1122, d2222, d1133, d2233, d3333, g12, g13, g23 = values
+    scale = max(abs(d1111), abs(d1122), abs(d2222), abs(d1133), abs(d2233), abs(d3333))
+    if scale <= 0.0:
+        raise FEMasterInputError("*ELASTIC, TYPE=ORTHOTROPIC has a singular normal stiffness block")
+
+    a = d1111 / scale
+    b = d1122 / scale
+    c = d1133 / scale
+    d = d2222 / scale
+    e = d2233 / scale
+    f = d3333 / scale
+
+    det = a * (d * f - e * e) - b * (b * f - c * e) + c * (b * e - c * d)
+    if abs(det) <= sys.float_info.epsilon:
+        raise FEMasterInputError("*ELASTIC, TYPE=ORTHOTROPIC has a singular normal stiffness block")
+
+    inv_scale_det = 1.0 / (scale * det)
+    s11 = (d * f - e * e) * inv_scale_det
+    s22 = (a * f - c * c) * inv_scale_det
+    s33 = (a * d - b * b) * inv_scale_det
+    s12 = (c * e - b * f) * inv_scale_det
+    s13 = (b * e - c * d) * inv_scale_det
+    s23 = (b * c - a * e) * inv_scale_det
+
+    if s11 == 0.0 or s22 == 0.0 or s33 == 0.0:
+        raise FEMasterInputError("*ELASTIC, TYPE=ORTHOTROPIC has an invalid normal compliance block")
+
+    e1 = 1.0 / s11
+    e2 = 1.0 / s22
+    e3 = 1.0 / s33
+    nu12 = -s12 * e1
+    nu13 = -s13 * e1
+    nu23 = -s23 * e2
+    return OrthotropicElasticity(e1, e2, e3, nu12, nu13, nu23, g12, g13, g23)
 
 
 def cmd_density(parser, header: Header) -> None:

@@ -61,24 +61,24 @@ class Material:
         e1: float,
         e2: float,
         e3: float,
-        g23: float,
-        g13: float,
-        g12: float,
-        nu23: float,
-        nu13: float,
         nu12: float,
+        nu13: float,
+        nu23: float,
+        g12: float,
+        g13: float,
+        g23: float,
     ) -> "Material":
         return self.set_elasticity(
             OrthotropicElasticity(
                 float(e1),
                 float(e2),
                 float(e3),
-                float(g23),
-                float(g13),
-                float(g12),
-                float(nu23),
-                float(nu13),
                 float(nu12),
+                float(nu13),
+                float(nu23),
+                float(g12),
+                float(g13),
+                float(g23),
             )
         )
 

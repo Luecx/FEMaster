@@ -1,9 +1,8 @@
 // register_loadcase_nonlinear.inl — registers NONLINEAR controls within *LOADCASE
 
-#include <stdexcept>
-
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/nonlinear_static.h"
 
 namespace fem::io::reader::commands {
@@ -49,22 +48,18 @@ inline void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
-            if (!base) {
-                throw std::runtime_error("NONLINEAR must appear inside *LOADCASE");
-            }
+            logging::error(base != nullptr,
+                "NONLINEAR must appear inside *LOADCASE");
 
             auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base);
-            if (!lc) {
-                throw std::runtime_error("NONLINEAR is only supported for NONLINEARSTATIC loadcases");
-            }
+            logging::error(lc != nullptr,
+                "NONLINEAR is only supported for NONLINEARSTATIC loadcases");
 
             if (keys.has("INCREMENTS")) {
                 const int increments = keys.get<int>("INCREMENTS");
-                if (increments <= 0) {
-                    throw std::runtime_error("NONLINEAR requires INCREMENTS > 0");
-                }
-                lc->initial_increment =
-                    Precision(1) / static_cast<Precision>(increments);
+                logging::error(increments > 0,
+                    "NONLINEAR requires INCREMENTS > 0");
+                lc->initial_increment = Precision(1) / static_cast<Precision>(increments);
             }
 
             if (keys.has("MAX_INCREMENTS")) {

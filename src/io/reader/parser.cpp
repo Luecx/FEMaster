@@ -7,15 +7,20 @@
  * field parsing creates enumeration-dependent fields, and the final data pass
  * executes the remaining model and load-case commands.
  *
+ * The stage order and model-side finalization are shared by syntax-specific
+ * readers. Derived readers replace only the command registration and activation
+ * performed by the four `configure_*_stage()` hooks.
+ *
  * The dedicated field pass is required because `ELEMENT_NODAL` field sizes are
- * known only after element enumeration. It also ensures that `*NORMAL` selects
- * the shell-normal field before `Model::build_shell_element_normals()` completes
- * missing entries and performs angular equalisation.
+ * known only after element enumeration. It also ensures that shell-normal input
+ * can be applied before `Model::build_shell_element_normals()` completes missing
+ * entries and performs angular equalisation.
  *
  * Individual keyword layouts remain implemented by the registration helpers in
- * `src/io/reader/commands`.
+ * `src/io/reader/commands` and format-specific command directories.
  *
  * @see Parser
+ * @see ParserAbq
  * @see model::Model::build_shell_element_normals
  *
  * @author Finn Eggers
@@ -26,6 +31,7 @@
 
 #include "../dsl/engine.h"
 #include "../dsl/file.h"
+#include "../../core/logging.h"
 #include "../../loadcase/linear_buckling.h"
 #include "../../loadcase/linear_eigenfreq.h"
 #include "../../loadcase/linear_static.h"
@@ -36,7 +42,6 @@
 
 #include <algorithm>
 #include <iostream>
-#include <stdexcept>
 #include <utility>
 
 // Command registration helpers
@@ -106,10 +111,9 @@
 namespace fem::io::reader {
 
 Parser::Parser()
-    : m_model(std::make_shared<model::Model>(1, 1, 1)) // tiny placeholder
-    , m_writer("")                                      // opened later in run()
-{
-    // Commands available right away (for documentation mode).
+    : m_model (std::make_shared<model::Model>(1, 1, 1)),
+      m_writer("") {
+    // Keep the native registry available immediately for documentation mode
     register_documentation_commands();
 }
 
@@ -118,17 +122,19 @@ Parser::~Parser() = default;
 // ----------------- Public API -----------------
 
 /**
- * Parses one FEMaster input deck and executes all requested load cases.
+ * Parses one input deck and executes the common FEMaster model-construction
+ * pipeline.
  *
  * The deck is processed in four dependency-ordered stages:
  *
  * 1. determine allocation capacities from the highest identifiers,
  * 2. construct topology, assign sections and enumerate element-local data,
- * 3. create generic fields and select an optional shell-normal field,
+ * 3. create enumeration-dependent fields and prepare shell-normal data,
  * 4. complete shell normals and execute the remaining data commands.
  *
- * Re-reading the deck is intentional. Commands that do not belong to the active
- * stage are consumed without invoking hooks or data bindings.
+ * Re-reading the deck is intentional. Each syntax specialization configures
+ * which commands are active in every stage, while this function retains the
+ * model-side operations that must occur between those stages.
  *
  * @param input_path Input-deck path.
  * @param output_path Optional output base path.
@@ -137,22 +143,20 @@ Parser::~Parser() = default;
 void Parser::run(const std::string&                   input_path,
                  const std::string&                   output_path,
                  const io::writer::WriterFileFormats& writer_formats) {
-    // Determine the model capacities before allocating ModelData.
+    // Determine the model capacities before allocating ModelData
     CountData count = run_count_stage(input_path);
     allocate_model(count);
 
-    // Build topology and all enumeration data required to size generic fields.
+    // Build topology and all enumeration data required to size generic fields
     run_topology_stage(input_path);
     m_model->assign_sections();
     m_model->_data->initialize_element_enumeration();
 
-    // Create enumeration-dependent fields and select the optional normal field
-    // before model-side shell-normal construction fills unspecified rows.
+    // Apply enumeration-dependent field input before completing shell normals
     run_field_stage(input_path);
     m_model->build_shell_element_normals();
 
-    // Execute all remaining model and load-case commands. FIELD and NORMAL are
-    // consumed here because they were already applied in the previous stage.
+    // Execute the remaining format-specific model and analysis commands
     run_data_stage(input_path, output_path, writer_formats);
 }
 
@@ -203,11 +207,13 @@ void Parser::document(const DocOptions& opts) const {
 // ----------------- Accessors -----------------
 
 model::Model& Parser::model() {
-    if (!m_model) throw std::runtime_error("Model not initialized.");
+    logging::error(m_model != nullptr,
+        "Model not initialized.");
     return *m_model;
 }
 const model::Model& Parser::model() const {
-    if (!m_model) throw std::runtime_error("Model not initialized.");
+    logging::error(m_model != nullptr,
+        "Model not initialized.");
     return *m_model;
 }
 io::writer::ResultWriters& Parser::writer() { return m_writer; }
@@ -233,18 +239,23 @@ const std::string& Parser::active_loadcase_type() const {
 
 // ----------------- Parser stages -----------------
 
+/**
+ * Executes the allocation pass using the active syntax specialization.
+ *
+ * A fresh stage-local registry is configured and the complete deck is consumed.
+ * Only the registration selected by `configure_count_stage()` may update the
+ * returned counters. Model storage is not reallocated until the pass completes.
+ *
+ * @param input_path Input-deck path.
+ * @return Highest external identifiers required for model allocation.
+ */
 Parser::CountData Parser::run_count_stage(const std::string& input_path) {
+    // Configure the format-specific count commands
     CountData count;
     io::dsl::Registry registry;
-    register_count_commands(registry, count);
-    register_set_commands(registry);
-    register_analysis_commands(registry);
+    configure_count_stage(registry, count);
 
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
-
+    // Consume the complete deck and collect allocation identifiers
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
@@ -252,73 +263,88 @@ Parser::CountData Parser::run_count_stage(const std::string& input_path) {
     return count;
 }
 
+/**
+ * Executes topology construction after model storage has been allocated.
+ *
+ * The stage-local registry is supplied by the active syntax specialization.
+ * Nodes, elements, sets, materials or sections may be activated here according
+ * to that format. Common section assignment and element-local enumeration are
+ * intentionally performed by `run()` only after this pass returns.
+ *
+ * @param input_path Input-deck path.
+ */
 void Parser::run_topology_stage(const std::string& input_path) {
+    // Configure commands that are allowed to mutate topology in this format
     io::dsl::Registry registry;
-    register_topology_commands(registry);
-    register_analysis_commands(registry);
+    configure_topology_stage(registry);
 
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NODE", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NSET", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELSET", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SFSET", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
-
+    // Re-read the complete deck and execute only the configured topology subset
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
 }
 
 /**
- * Executes field definitions after element-local enumeration is available.
+ * Executes field-like input after element-local enumeration is available.
  *
- * All commands are registered because the DSL engine must understand and
- * consume the complete deck. The registry is then switched to `ConsumeOnly`,
- * and only `*FIELD` and `*NORMAL` are activated. This creates correctly sized
- * generic fields and publishes the selected shell-normal field without running
- * materials, loads or load cases prematurely.
+ * The pass remains part of the common parser sequence even when a syntax
+ * specialization currently has no field command. This preserves the invariant
+ * that any future element-nodal input is applied after enumeration but before
+ * `Model::build_shell_element_normals()` completes missing shell directors.
  *
- * @param input_path Input-deck path parsed by this stage.
+ * @param input_path Input-deck path.
  */
 void Parser::run_field_stage(const std::string& input_path) {
+    // Configure the format-specific field command subset
     io::dsl::Registry registry;
-    register_topology_commands(registry);
-    register_analysis_commands(registry);
+    configure_field_stage(registry);
 
-    // Consume the complete deck while executing only field-related commands.
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("FIELD", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::Active);
-
+    // Re-read the deck after enumeration-dependent storage is available
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
 }
 
-// ----------------- Model & registration -----------------
-
+/**
+ * Allocates the shared FEMaster model from identifiers found in the count pass.
+ *
+ * Dense model repositories are sized to the highest external identifier plus
+ * one, preserving sparse identifier spaces. Active native load-case state is
+ * reset because callbacks registered before allocation must not retain state
+ * bound to the placeholder model.
+ *
+ * @param count Highest node, element and surface identifiers from the count pass.
+ */
 void Parser::allocate_model(const CountData& count) {
+    // Convert highest zero-based identifiers into dense repository capacities
     const int n_nodes    = count.highest_node_id    + 1;
     const int n_elems    = count.highest_element_id + 1;
     const int n_surfaces = count.highest_surface_id + 1;
 
     m_model = std::make_shared<model::Model>(n_nodes, n_elems, n_surfaces);
 
-    // Reset state bound to an old model
+    // Reset load-case state bound to the previous placeholder model
     m_active_loadcase.reset();
     m_active_loadcase_type.clear();
     m_next_loadcase_id = 1;
 }
 
+/**
+ * Executes the final data pass and owns result-writer lifetime for the run.
+ *
+ * Writer output is initialized only after topology, enumeration and shell-normal
+ * construction are complete. The active syntax specialization then configures
+ * the commands that may execute in the final pass. The same normalized output
+ * base is used for all requested result formats.
+ *
+ * @param input_path Input-deck path.
+ * @param output_path Requested output base or result filename.
+ * @param writer_formats Enabled result-writer formats.
+ */
 void Parser::run_data_stage(const std::string&                   input_path,
                             const std::string&                   output_path,
                             const io::writer::WriterFileFormats& writer_formats) {
+    // Normalize a possible result/input extension to the common writer base
     std::string writer_base = output_path.empty() ? input_path : output_path;
     for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
         if (writer_base.size() >= ext.size() &&
@@ -328,36 +354,127 @@ void Parser::run_data_stage(const std::string&                   input_path,
         }
     }
 
+    // Open the selected writers after the complete model topology is available
     m_writer = io::writer::ResultWriters(writer_base, writer_formats);
     m_writer.write_model_data(*m_model->_data);
 
+    // Configure and execute the format-specific final command subset
     io::dsl::Registry registry;
-    register_topology_commands(registry);
-    register_analysis_commands(registry);
-
-    registry.set_active_mode(io::dsl::ActiveMode::Active);
-    registry.set_active_mode("NODE", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NSET", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELSET", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SFSET", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
-
-    // These commands were executed in run_field_stage() and must not recreate
-    // or reselect fields while the remaining data commands are processed.
-    registry.set_active_mode("FIELD", io::dsl::ActiveMode::ConsumeOnly);
-    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::ConsumeOnly);
+    configure_data_stage(registry);
 
     io::dsl::File file(input_path);
     io::dsl::Engine engine(registry);
     engine.run(file);
 
+    // Finalize all result formats before returning from the parser
     m_writer.close();
+}
+
+// ----------------- Stage configuration -----------------
+
+/**
+ * Configures the native FEMaster allocation pass.
+ *
+ * All native commands are registered so the complete deck can be consumed, but
+ * only nodes, elements and surfaces execute because those identifiers determine
+ * dense model capacities.
+ *
+ * @param registry Stage-local command registry.
+ * @param count Allocation counters updated by the count registrations.
+ */
+void Parser::configure_count_stage(io::dsl::Registry& registry, CountData& count) {
+    // Register the complete native syntax before selecting count operations
+    register_count_commands(registry, count);
+    register_set_commands(registry);
+    register_analysis_commands(registry);
+
+    // Execute only entity definitions that determine allocation capacities
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE"   , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT", io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE", io::dsl::ActiveMode::Active);
+}
+
+/**
+ * Configures the native FEMaster topology pass.
+ *
+ * Topology, sets and the model definitions required before section assignment or
+ * element-local enumeration are activated. All remaining native commands are
+ * consumed without invoking their callbacks.
+ *
+ * @param registry Stage-local command registry.
+ */
+void Parser::configure_topology_stage(io::dsl::Registry& registry) {
+    // Register the complete native syntax before selecting topology operations
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
+
+    // Build the discrete model and prerequisites for section assignment
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NODE"        , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELEMENT"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NSET"        , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELSET"       , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SURFACE"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SFSET"       , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("MATERIAL"    , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("DENSITY"     , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("ORIENTATION" , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::Active);
+}
+
+/**
+ * Configures the native FEMaster field pass.
+ *
+ * `FIELD` creates enumeration-dependent storage and `NORMAL` selects the
+ * element-nodal field used for shell directors. Every other native command is
+ * consumed without execution.
+ *
+ * @param registry Stage-local command registry.
+ */
+void Parser::configure_field_stage(io::dsl::Registry& registry) {
+    // Register all commands so the complete deck remains consumable
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
+
+    // Execute only enumeration-dependent field and shell-normal input
+    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("FIELD" , io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::Active);
+}
+
+/**
+ * Configures the native FEMaster final data pass.
+ *
+ * All native commands are active by default. Definitions that were already
+ * applied in topology or field stages are switched to consume-only mode so
+ * their model mutations are not repeated before load cases execute.
+ *
+ * @param registry Stage-local command registry.
+ */
+void Parser::configure_data_stage(io::dsl::Registry& registry) {
+    // Register the complete native syntax for the final execution pass
+    register_topology_commands(registry);
+    register_analysis_commands(registry);
+
+    // Execute remaining data commands while consuming already applied topology
+    registry.set_active_mode(io::dsl::ActiveMode::Active);
+    registry.set_active_mode("NODE"        , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELEMENT"     , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NSET"        , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELSET"       , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SURFACE"     , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SFSET"       , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("MATERIAL"    , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ELASTIC"     , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("DENSITY"     , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("ORIENTATION" , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("SHELLSECTION", io::dsl::ActiveMode::ConsumeOnly);
+
+    // Field input was applied after element-local enumeration and must not be repeated
+    registry.set_active_mode("FIELD" , io::dsl::ActiveMode::ConsumeOnly);
+    registry.set_active_mode("NORMAL", io::dsl::ActiveMode::ConsumeOnly);
 }
 
 void Parser::register_documentation_commands() {
@@ -380,7 +497,8 @@ void Parser::register_count_commands(io::dsl::Registry& reg, CountData& count) {
 }
 
 void Parser::register_set_commands(io::dsl::Registry& reg) {
-    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+    logging::error(m_model != nullptr,
+        "Model must exist before registering commands");
 
     auto& mdl = *m_model;
     commands::register_nset(reg, mdl);
@@ -389,7 +507,8 @@ void Parser::register_set_commands(io::dsl::Registry& reg) {
 }
 
 void Parser::register_topology_commands(io::dsl::Registry& reg) {
-    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+    logging::error(m_model != nullptr,
+        "Model must exist before registering commands");
 
     auto& mdl = *m_model;
     commands::register_node(reg, mdl);
@@ -401,7 +520,8 @@ void Parser::register_topology_commands(io::dsl::Registry& reg) {
 }
 
 void Parser::register_analysis_commands(io::dsl::Registry& reg) {
-    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+    logging::error(m_model != nullptr,
+        "Model must exist before registering commands");
 
     auto& mdl = *m_model;
 

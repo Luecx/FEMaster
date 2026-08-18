@@ -2,9 +2,9 @@
 
 #include <array>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
+#include "../../../core/logging.h"
 #include "../../../core/types_eig.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
@@ -60,12 +60,9 @@ inline void register_inertialload(fem::io::dsl::Registry& registry, model::Model
                     fem::Vec3 w;  w  << omega[0], omega[1], omega[2];
                     fem::Vec3 al; al << alpha[0], alpha[1], alpha[2];
 
-                    if (model._data->elem_sets.has(target)) {
-                        model.add_inertialload(target, c, a0, w, al, *consider_point_masses);
-                        return;
-                    }
-
-                    throw std::runtime_error("INERTIALOAD target '" + target + "' must be an element set");
+                    logging::error(model._data->elem_sets.has(target),
+                        "INERTIALOAD target '", target, "' must be an element set");
+                    model.add_inertialload(target, c, a0, w, al, *consider_point_masses);
                 })
             )
         );
