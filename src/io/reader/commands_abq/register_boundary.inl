@@ -105,13 +105,15 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                         }
                     }
 
+                    fem::StaticVector<6> values;
+                    values.setConstant(std::numeric_limits<fem::Precision>::quiet_NaN());
+                    for (int dof = first_dof; dof <= last_dof; ++dof) {
+                        values[dof - 1] = magnitude;
+                    }
+
                     auto& model = parser.model();
                     auto& state = parser.abaqus_state();
-                    const auto add_to_node = [&](fem::ID node_id, int dof) {
-                        fem::StaticVector<6> values;
-                        values.setConstant(std::numeric_limits<fem::Precision>::quiet_NaN());
-                        values[dof - 1] = magnitude;
-
+                    const auto add_to_node = [&](fem::ID node_id) {
                         std::string orientation;
                         const auto transform = state.node_transforms.find(node_id);
                         if (transform != state.node_transforms.end()) {
@@ -121,10 +123,8 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                     };
 
                     if (model._data->node_sets.has(target)) {
-                        for (int dof = first_dof; dof <= last_dof; ++dof) {
-                            for (const fem::ID node_id : *model._data->node_sets.get(target)) {
-                                add_to_node(node_id, dof);
-                            }
+                        for (const fem::ID node_id : *model._data->node_sets.get(target)) {
+                            add_to_node(node_id);
                         }
                         return;
                     }
@@ -135,10 +135,7 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                     const auto [ptr, ec] = std::from_chars(begin, end, node_id);
                     logging::error(ec == std::errc{} && ptr == end,
                         "BOUNDARY target '", target, "' is not a node set or node id");
-
-                    for (int dof = first_dof; dof <= last_dof; ++dof) {
-                        add_to_node(node_id, dof);
-                    }
+                    add_to_node(node_id);
                 })
             )
         );
