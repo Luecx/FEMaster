@@ -95,7 +95,6 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             state.perturbation   = keys.has("PERTURBATION");
             state.step_period    = Precision(1);
             state.step_amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            state.procedure.clear();
 
             parser.model()._data->load_cols.activate("__ABQ_STEP_LOADS");
             parser.model()._data->supp_cols.activate("__ABQ_STEP_SUPPORTS");
@@ -153,13 +152,11 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     std::move(loadcase),
                     riks ? "STATIC_RIKS" : "NONLINEARSTATIC"
                 );
-                state.procedure = riks ? "STATIC_RIKS" : "NONLINEARSTATIC";
             } else {
                 parser.set_active_loadcase(
                     std::make_unique<loadcase::LinearStatic>(id, &parser.writer(), &parser.model()),
                     "LINEARSTATIC"
                 );
-                state.procedure = "LINEARSTATIC";
             }
         });
 
@@ -256,8 +253,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
-            auto& state = parser.abaqus_state();
-            logging::error(state.step_active && !parser.active_loadcase(),
+            logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
             parser.set_active_loadcase(
@@ -266,7 +262,6 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 ),
                 "EIGENFREQ"
             );
-            state.procedure = "EIGENFREQ";
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -301,8 +296,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
-            auto& state = parser.abaqus_state();
-            logging::error(state.step_active && !parser.active_loadcase(),
+            logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
             parser.set_active_loadcase(
@@ -311,7 +305,6 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 ),
                 "LINEARBUCKLING"
             );
-            state.procedure = "LINEARBUCKLING";
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -361,7 +354,6 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 ),
                 "LINEARTRANSIENT"
             );
-            state.procedure = "LINEARTRANSIENT";
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -422,7 +414,6 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 ),
                 "LINEARHARMONIC"
             );
-            state.procedure = "LINEARHARMONIC";
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -495,7 +486,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto& state = parser.abaqus_state();
             auto* base  = parser.active_loadcase();
-            logging::error(state.step_active && base != nullptr && !state.procedure.empty(),
+            logging::error(state.step_active && base != nullptr && !parser.active_loadcase_type().empty(),
                 "END STEP requires one active supported procedure");
 
             if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
@@ -522,14 +513,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             } catch (const std::exception& error) {
                 parser.clear_active_loadcase();
                 state.step_active = false;
-                state.procedure.clear();
                 logging::error(false,
                     "Abaqus STEP execution failed: ", error.what());
             }
 
             parser.clear_active_loadcase();
             state.step_active = false;
-            state.procedure.clear();
         });
 
         command.variant(fem::io::dsl::Variant::make());
