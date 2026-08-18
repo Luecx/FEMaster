@@ -93,13 +93,12 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
                         const char* begin = numeric.data();
                         const char* end   = begin + numeric.size();
                         const auto [ptr, ec] = std::from_chars(begin, end, side);
-                        logging::error(
-                            ec == std::errc{} && ptr == end,
-                            "SURFACE side '", side_token, "' is not a valid side identifier"
-                        );
+                        logging::error(ec == std::errc{} && ptr == end,
+                            "SURFACE side '", side_token, "' is not a valid side identifier");
                     }
 
-                    logging::error(side > 0, "SURFACE side must be positive");
+                    logging::error(side > 0,
+                        "SURFACE side must be positive");
 
                     if (model._data->elem_sets.has(target)) {
                         model.set_surface(target, static_cast<fem::ID>(side));
@@ -110,10 +109,8 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
                     const char* begin = target.data();
                     const char* end   = begin + target.size();
                     const auto [ptr, ec] = std::from_chars(begin, end, element_id);
-                    logging::error(
-                        ec == std::errc{} && ptr == end,
-                        "SURFACE target '", target, "' is not an element set or element id"
-                    );
+                    logging::error(ec == std::errc{} && ptr == end,
+                        "SURFACE target '", target, "' is not an element set or element id");
                     model.set_surface(-1, element_id, static_cast<fem::ID>(side));
                 })
             )
@@ -132,10 +129,8 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
                     (void) area;
 
                     auto destination = model._data->node_sets.get();
-                    logging::error(
-                        destination != nullptr,
-                        "SURFACE TYPE=NODE has no active destination node set"
-                    );
+                    logging::error(destination != nullptr,
+                        "SURFACE TYPE=NODE has no active destination node set");
 
                     if (model._data->node_sets.has(target)) {
                         auto source = model._data->node_sets.get(target);
@@ -149,10 +144,8 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
                     const char* begin = target.data();
                     const char* end   = begin + target.size();
                     const auto [ptr, ec] = std::from_chars(begin, end, node_id);
-                    logging::error(
-                        ec == std::errc{} && ptr == end,
-                        "SURFACE target '", target, "' is not a node set or node id"
-                    );
+                    logging::error(ec == std::errc{} && ptr == end,
+                        "SURFACE target '", target, "' is not a node set or node id");
                     destination->add(node_id);
                 })
             )
