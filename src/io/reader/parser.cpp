@@ -31,6 +31,7 @@
 
 #include "../dsl/engine.h"
 #include "../dsl/file.h"
+#include "../../core/logging.h"
 #include "../../loadcase/linear_buckling.h"
 #include "../../loadcase/linear_eigenfreq.h"
 #include "../../loadcase/linear_static.h"
@@ -41,7 +42,6 @@
 
 #include <algorithm>
 #include <iostream>
-#include <stdexcept>
 #include <utility>
 
 // Command registration helpers
@@ -207,11 +207,13 @@ void Parser::document(const DocOptions& opts) const {
 // ----------------- Accessors -----------------
 
 model::Model& Parser::model() {
-    if (!m_model) throw std::runtime_error("Model not initialized.");
+    logging::error(m_model != nullptr,
+        "Model not initialized.");
     return *m_model;
 }
 const model::Model& Parser::model() const {
-    if (!m_model) throw std::runtime_error("Model not initialized.");
+    logging::error(m_model != nullptr,
+        "Model not initialized.");
     return *m_model;
 }
 io::writer::ResultWriters& Parser::writer() { return m_writer; }
@@ -495,7 +497,8 @@ void Parser::register_count_commands(io::dsl::Registry& reg, CountData& count) {
 }
 
 void Parser::register_set_commands(io::dsl::Registry& reg) {
-    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+    logging::error(m_model != nullptr,
+        "Model must exist before registering commands");
 
     auto& mdl = *m_model;
     commands::register_nset(reg, mdl);
@@ -504,7 +507,8 @@ void Parser::register_set_commands(io::dsl::Registry& reg) {
 }
 
 void Parser::register_topology_commands(io::dsl::Registry& reg) {
-    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+    logging::error(m_model != nullptr,
+        "Model must exist before registering commands");
 
     auto& mdl = *m_model;
     commands::register_node(reg, mdl);
@@ -516,7 +520,8 @@ void Parser::register_topology_commands(io::dsl::Registry& reg) {
 }
 
 void Parser::register_analysis_commands(io::dsl::Registry& reg) {
-    if (!m_model) throw std::runtime_error("Model must exist before registering commands");
+    logging::error(m_model != nullptr,
+        "Model must exist before registering commands");
 
     auto& mdl = *m_model;
 
