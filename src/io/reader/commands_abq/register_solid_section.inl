@@ -77,10 +77,8 @@ inline void register_solid_section(fem::io::dsl::Registry& registry, model::Mode
                         .on_missing(fem::Precision{1}).on_empty(fem::Precision{1})
                 )
                 .bind([&model, material, elset, orientation](fem::Precision attribute) {
-                    logging::error(
-                        model._data->elem_sets.has(*elset),
-                        "SOLID SECTION element set '", *elset, "' does not exist"
-                    );
+                    logging::error(model._data->elem_sets.has(*elset),
+                        "SOLID SECTION element set '", *elset, "' does not exist");
 
                     auto region = model._data->elem_sets.get(*elset);
                     bool has_solid = false;
@@ -89,10 +87,8 @@ inline void register_solid_section(fem::io::dsl::Registry& registry, model::Mode
 
                     for (fem::ID id : *region) {
                         auto& element = model._data->elements[id];
-                        logging::error(
-                            element != nullptr,
-                            "SOLID SECTION references undefined element ", id
-                        );
+                        logging::error(element != nullptr,
+                            "SOLID SECTION references undefined element ", id);
 
                         if (element->as<model::T3>() != nullptr) {
                             has_truss = true;
@@ -107,10 +103,8 @@ inline void register_solid_section(fem::io::dsl::Registry& registry, model::Mode
                         }
                     }
 
-                    logging::error(
-                        region->size() > 0 && !has_other && !(has_solid && has_truss),
-                        "SOLID SECTION requires a non-empty pure solid or pure truss element set"
-                    );
+                    logging::error(region->size() > 0 && !has_other && !(has_solid && has_truss),
+                        "SOLID SECTION requires a non-empty pure solid or pure truss element set");
 
                     if (has_truss) {
                         model.truss_section(*elset, *material, attribute);
