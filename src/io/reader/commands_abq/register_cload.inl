@@ -60,7 +60,7 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             auto& state = parser.abaqus_state();
             logging::error(state.step_active && parser.active_loadcase(),
                 "CLOAD must appear after a supported procedure inside STEP");
-            logging::error(state.procedure != "EIGENFREQ",
+            logging::error(parser.active_loadcase_type() != "EIGENFREQ",
                 "CLOAD is not supported in a FREQUENCY step");
             logging::error(!keys.has("FOLLOWER"),
                 "CLOAD FOLLOWER is not supported");
