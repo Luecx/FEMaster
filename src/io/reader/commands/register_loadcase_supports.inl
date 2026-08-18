@@ -35,7 +35,7 @@ inline void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser&
                     .fixed<std::string, 16>().name("SUPP").desc("Support collector names")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser, &append_tokens](const std::array<std::string, 16>& names) {
+                .bind([&parser, append_tokens](const std::array<std::string, 16>& names) {
                     auto* base = parser.active_loadcase();
                     logging::error(base != nullptr,
                         "SUPPORTS must appear inside *LOADCASE");
