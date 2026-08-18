@@ -1,23 +1,12 @@
 /**
  * @file parser_abq.cpp
- * @brief Implements Abaqus-specific command registration for the common parser stages.
+ * @brief Implements staged command registration for Abaqus input decks.
  *
- * The Abaqus reader reuses native FEMaster registrations whenever the accepted
- * syntax and resulting model operation are identical. Format-specific handlers
- * remain only where the external representation or Abaqus history semantics
- * differ.
- *
- * Model-definition data are constructed in the topology pass. This includes
- * nodes/elements/sets/surfaces, materials and sections, tabular amplitudes,
- * material orientations and nodal `*TRANSFORM` coordinate systems. Analysis
- * steps and their load/support histories execute only in the final data pass,
- * after the common parser has assigned sections and initialized all element-local
- * data.
- *
- * Supported steps remain mechanically independent FEMaster load cases. Abaqus
- * load and boundary-condition definitions nevertheless propagate logically
- * between steps and are materialized as a fresh collector snapshot at each
- * `*END STEP`, so `OP=MOD` and `OP=NEW` do not require solver-state propagation.
+ * The Abaqus reader uses the common FEMaster parser lifecycle and configures the
+ * commands that are recognized and executed in each stage. Topology data such as
+ * nodes, elements, sets, materials, sections, amplitudes, orientations and nodal
+ * transforms are created before analysis data. Step procedures and step-local
+ * load or boundary definitions are evaluated in the final data stage.
  *
  * @see Parser
  * @see ParserAbqState
@@ -68,12 +57,11 @@ const ParserAbqState& ParserAbq::abaqus_state() const {
 }
 
 /**
- * Configures the allocation pass for the supported Abaqus syntax.
+ * Configures the allocation stage for the supported Abaqus syntax.
  *
- * `NODE` and `ELEMENT` are the only active commands because model capacities
- * depend on their highest identifiers. Every other supported keyword is still
- * registered in consume mode so complete supported decks can be traversed
- * without mutating the placeholder count-stage model.
+ * Node and element identifiers are evaluated to determine model capacities. All
+ * other supported commands are registered in consume-only mode so the complete
+ * input structure can be traversed without creating model data in this stage.
  *
  * @param registry Stage-local command registry.
  * @param count Allocation counters updated from parsed node and element ids.
@@ -101,7 +89,7 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Analysis/history syntax is recognized but inert during allocation
+    // Analysis syntax is recognized but not executed during allocation
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
@@ -114,19 +102,16 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
 }
 
 /**
- * Configures the topology pass for the supported Abaqus syntax.
+ * Configures the topology stage for the supported Abaqus syntax.
  *
- * All persistent model data required by later load cases are built here,
- * including amplitudes and nodal transforms. Abaqus step/history commands remain
- * consume-only until the final pass so no solver or logical history state is
- * changed before model topology, sections and element-local enumeration are
- * complete.
+ * Persistent model data are created in this stage, including topology, sets,
+ * materials, sections, amplitudes, material orientations and nodal transforms.
+ * Analysis-step commands remain consume-only until the final data stage.
  *
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
-    // A ParserAbq instance may parse more than one deck during its lifetime.
-    // Reset all format-only state before constructing the new model.
+    // Start each deck with an empty parser-local Abaqus state.
     m_abq_state = ParserAbqState{};
 
     // Persistent model-definition syntax
@@ -147,8 +132,7 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // History syntax must still be registered so the topology pass can traverse
-    // complete Abaqus decks without executing a load case.
+    // Analysis syntax remains inactive while topology is constructed
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
@@ -174,12 +158,11 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
 }
 
 /**
- * Configures the field pass for the supported Abaqus syntax.
+ * Configures the field stage for the supported Abaqus syntax.
  *
- * No currently supported Abaqus keyword creates an enumeration-dependent field.
- * Every known command is registered only in consume mode so the common field
- * pass retains its dependency position without replaying topology or history
- * mutations.
+ * The currently supported Abaqus subset does not define additional
+ * enumeration-dependent fields. All known commands are therefore registered in
+ * consume-only mode for this stage.
  *
  * @param registry Stage-local command registry.
  */
@@ -210,19 +193,16 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
 }
 
 /**
- * Configures the final Abaqus analysis/history pass.
+ * Configures the analysis-data stage for the supported Abaqus syntax.
  *
- * Persistent model-definition keywords are consumed without execution because
- * they have already been applied in topology. Step/procedure cards establish the
- * independent FEMaster load case, while load/BC cards update the logical Abaqus
- * definition history. `register_history` replaces only `ENDSTEP` finalization,
- * materializing the active snapshot into fresh collectors immediately before
- * the load case is executed.
+ * Model-definition commands are consumed without execution. Step procedures,
+ * loads and boundary conditions are active; `register_history` materializes the
+ * active logical definitions into FEMaster collectors when `*END STEP` is read.
  *
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
-    // Persistent model syntax remains recognized but inert
+    // Persistent model syntax is recognized but inactive in this stage
     commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
@@ -240,15 +220,12 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Analysis/history syntax executes only after model finalization
+    // Analysis and load-definition syntax
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
     commands_abq::register_dload(registry, *this);
     commands_abq::register_dsload(registry, *this);
-
-    // Procedure parsing remains owned by register_step; this replaces only the
-    // ENDSTEP execution hook with logical-history materialization.
     commands_abq::register_history(registry, *this);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
