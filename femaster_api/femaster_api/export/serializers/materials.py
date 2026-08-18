@@ -27,19 +27,19 @@ def _write_material(material) -> str:
         lines.append(keyword("ELASTIC", TYPE="GENISO"))
         lines.append(csv((elasticity.youngs_modulus, elasticity.poisson_ratio, elasticity.shear_modulus)))
     elif isinstance(elasticity, OrthotropicElasticity):
-        lines.append(keyword("ELASTIC", TYPE="ORTHOTROPIC"))
+        lines.append(keyword("ELASTIC", TYPE="ENGINEERINGCONSTANTS"))
         lines.append(
             csv(
                 (
                     elasticity.e1,
                     elasticity.e2,
                     elasticity.e3,
-                    elasticity.g23,
-                    elasticity.g13,
-                    elasticity.g12,
-                    elasticity.nu23,
-                    elasticity.nu13,
                     elasticity.nu12,
+                    elasticity.nu13,
+                    elasticity.nu23,
+                    elasticity.g12,
+                    elasticity.g13,
+                    elasticity.g23,
                 )
             )
         )
