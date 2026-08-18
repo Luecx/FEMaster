@@ -58,8 +58,7 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
-            logging::error(state.step_active && parser.active_loadcase(),
+            logging::error(parser.abaqus_state().step_active && parser.active_loadcase(),
                 "BOUNDARY must appear after a supported procedure inside STEP");
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
@@ -90,21 +89,24 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                                 && last_dof >= first_dof && last_dof <= 6,
                         "BOUNDARY supports only structural DOFs 1 through 6");
 
-                    auto& state = parser.abaqus_state();
+                    const std::string& procedure = parser.active_loadcase_type();
                     if (magnitude != fem::Precision(0)) {
-                        logging::error(state.procedure == "LINEARSTATIC"
-                                    || state.procedure == "NONLINEARSTATIC"
-                                    || state.procedure == "STATIC_RIKS",
+                        logging::error(procedure == "LINEARSTATIC"
+                                    || procedure == "NONLINEARSTATIC"
+                                    || procedure == "STATIC_RIKS",
                             "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures");
 
                         if (!amplitude->empty()) {
-                            logging::error(state.procedure == "LINEARSTATIC",
+                            logging::error(procedure == "LINEARSTATIC",
                                 "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are time-independent");
-                            magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(state.step_period);
+                            magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(
+                                parser.abaqus_state().step_period
+                            );
                         }
                     }
 
                     auto& model = parser.model();
+                    auto& state = parser.abaqus_state();
                     const auto add_to_node = [&](fem::ID node_id, int dof) {
                         fem::StaticVector<6> values;
                         values.setConstant(std::numeric_limits<fem::Precision>::quiet_NaN());
