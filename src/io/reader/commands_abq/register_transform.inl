@@ -84,37 +84,29 @@ inline void register_transform(fem::io::dsl::Registry& registry, ParserAbq& pars
                     auto& model = parser.model();
                     auto& state = parser.abaqus_state();
 
-                    logging::error(
-                        model._data->node_sets.has(*nset),
-                        "TRANSFORM references unknown node set '", *nset, "'"
-                    );
+                    logging::error(model._data->node_sets.has(*nset),
+                        "TRANSFORM references unknown node set '", *nset, "'");
 
                     const fem::Vec3 a{data[0], data[1], data[2]};
                     const fem::Vec3 b{data[3], data[4], data[5]};
                     const fem::Precision eps = std::numeric_limits<fem::Precision>::epsilon();
                     const std::string orientation = "__ABQ_TRANSFORM_" + *nset;
 
-                    logging::error(
-                        !model._data->coordinate_systems.has(orientation),
-                        "TRANSFORM for node set '", *nset, "' is defined more than once"
-                    );
+                    logging::error(!model._data->coordinate_systems.has(orientation),
+                        "TRANSFORM for node set '", *nset, "' is defined more than once");
 
                     if (*type == "R") {
                         const fem::Precision norm_a = a.norm();
                         const fem::Precision norm_b = b.norm();
                         const fem::Precision cross  = a.cross(b).norm();
-                        logging::error(
-                            norm_a > eps && norm_b > eps && cross > eps * norm_a * norm_b,
-                            "TRANSFORM TYPE=R requires nonzero, non-collinear points a and b"
-                        );
+                        logging::error(norm_a > eps && norm_b > eps && cross > eps * norm_a * norm_b,
+                            "TRANSFORM TYPE=R requires nonzero, non-collinear points a and b");
 
                         model.add_coordinate_system<cos::RectangularSystem>(orientation, a, b);
                     } else {
                         const fem::Vec3 axis = b - a;
-                        logging::error(
-                            axis.norm() > eps,
-                            "TRANSFORM TYPE=C requires distinct axis points a and b"
-                        );
+                        logging::error(axis.norm() > eps,
+                            "TRANSFORM TYPE=C requires distinct axis points a and b");
 
                         const fem::Vec3 axial      = axis.normalized();
                         const fem::Vec3 radial     = axial.unitOrthogonal();
@@ -131,11 +123,9 @@ inline void register_transform(fem::io::dsl::Registry& registry, ParserAbq& pars
                     auto nodes = model._data->node_sets.get(*nset);
                     for (const fem::ID node_id : *nodes) {
                         auto [it, inserted] = state.node_transforms.emplace(node_id, orientation);
-                        logging::error(
-                            inserted || it->second == orientation,
+                        logging::error(inserted || it->second == orientation,
                             "Node ", node_id,
-                            " belongs to multiple incompatible TRANSFORM definitions"
-                        );
+                            " belongs to multiple incompatible TRANSFORM definitions");
                     }
                 })
             )
