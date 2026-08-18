@@ -62,10 +62,9 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
         );
 
         command.on_enter([&parser, amplitude, orientation, follower](const fem::io::dsl::Keys& keys) {
-            auto& state = parser.abaqus_state();
-            logging::error(state.step_active && parser.active_loadcase(),
+            logging::error(parser.abaqus_state().step_active && parser.active_loadcase(),
                 "DSLOAD must appear after a supported procedure inside STEP");
-            logging::error(state.procedure != "EIGENFREQ",
+            logging::error(parser.active_loadcase_type() != "EIGENFREQ",
                 "DSLOAD is not supported in a FREQUENCY step");
             logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
                 "DSLOAD REAL and IMAGINARY are mutually exclusive");
@@ -96,20 +95,19 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                                                                   fem::Precision magnitude,
                                                                   const std::array<fem::Precision, 3>& direction) {
                     auto& model = parser.model();
-                    auto& state = parser.abaqus_state();
                     logging::error(model._data->surface_sets.has(surface),
                         "DSLOAD references unknown surface '", surface, "'");
 
                     const auto [scale, resolved_amplitude] = parser.resolve_load_amplitude(*amplitude);
                     magnitude *= scale;
+                    const std::string& procedure = parser.active_loadcase_type();
 
                     if (type == "P") {
                         logging::error(std::isnan(direction[0])
                                     && std::isnan(direction[1])
                                     && std::isnan(direction[2]),
                             "DSLOAD P accepts no traction direction components");
-                        logging::error(state.procedure != "NONLINEARSTATIC"
-                                    && state.procedure != "STATIC_RIKS",
+                        logging::error(procedure != "NONLINEARSTATIC" && procedure != "STATIC_RIKS",
                             "DSLOAD P is a follower pressure in Abaqus and is not supported in nonlinear FEMaster steps");
                         model.add_pload(surface, magnitude, resolved_amplitude);
                         return;
@@ -121,8 +119,7 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                                 && !std::isnan(direction[1])
                                 && !std::isnan(direction[2]),
                         "DSLOAD TRVEC requires three direction components");
-                    logging::error(state.procedure != "NONLINEARSTATIC"
-                                && state.procedure != "STATIC_RIKS"
+                    logging::error((procedure != "NONLINEARSTATIC" && procedure != "STATIC_RIKS")
                                 || *follower == "NO",
                         "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented");
 
