@@ -1,7 +1,6 @@
 // register_thermalexpansion.inl — DSL registration for *THERMALEXPANSION
 
-#include <stdexcept>
-
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
 
@@ -21,9 +20,8 @@ inline void register_thermal_expansion(fem::io::dsl::Registry& registry, model::
                 )
                 .bind([&model](fem::Precision alpha) {
                     auto material = model._data->materials.get();
-                    if (!material) {
-                        throw std::runtime_error("THERMALEXPANSION requires an active material context");
-                    }
+                    logging::error(material != nullptr,
+                        "THERMALEXPANSION requires an active material context");
                     material->set_thermal_expansion(alpha);
                 })
             )
