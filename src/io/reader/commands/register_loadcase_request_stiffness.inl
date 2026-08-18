@@ -1,10 +1,10 @@
 // register_loadcase_request_stiffness.inl — registers REQUESTSTIFFNESS within *LOADCASE
 
-#include <stdexcept>
 #include <string>
 
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
@@ -23,9 +23,8 @@ inline void register_loadcase_request_stiffness(fem::io::dsl::Registry& registry
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
-            if (!base) {
-                throw std::runtime_error("REQUESTSTIFFNESS must appear inside *LOADCASE");
-            }
+            logging::error(base != nullptr,
+                "REQUESTSTIFFNESS must appear inside *LOADCASE");
 
             std::string file = keys.has("FILE") ? keys.raw("FILE") : "stiffness_" + std::to_string(base->get_id()) + ".txt";
 
@@ -42,7 +41,8 @@ inline void register_loadcase_request_stiffness(fem::io::dsl::Registry& registry
                 return;
             }
 
-            throw std::runtime_error("REQUESTSTIFFNESS not supported for loadcase type " + parser.active_loadcase_type());
+            logging::error(false,
+                "REQUESTSTIFFNESS not supported for loadcase type ", parser.active_loadcase_type());
         });
 
         command.variant(fem::io::dsl::Variant::make());
