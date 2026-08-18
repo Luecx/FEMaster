@@ -2,9 +2,9 @@
  * @file register_boundary.inl
  * @brief Registers Abaqus *BOUNDARY displacement and rotation constraints.
  *
- * Boundary conditions are translated directly into the FEMaster support collector
- * used by the single supported Abaqus analysis step. Definitions at the root
- * represent initial-step constraints and therefore accept only zero prescribed
+ * Boundary conditions are translated directly into the FEMaster support
+ * collector used by the single supported Abaqus analysis step. Definitions at
+ * the root become constant model-level constraints and may prescribe nonzero
  * values. Definitions inside `*STEP` may prescribe supported nonzero static
  * values. Node-set targets are expanded while parsing so nodal `*TRANSFORM`
  * coordinate systems can be assigned to each generated support.
@@ -38,10 +38,11 @@ namespace fem::io::reader::commands_abq {
  *
  * Data use `target, first_dof, last_dof, magnitude`. Omitted `last_dof` selects
  * only the first DOF and an omitted magnitude prescribes zero. Root-level
- * definitions are initial-step constraints and must remain zero-valued. Nonzero
- * values inside the analysis step are supported only by static FEMaster
- * procedures. Named amplitudes for nonzero values are evaluated at the end of a
- * linear static step because FEMaster support equations do not carry amplitudes.
+ * definitions become constant constraints and may prescribe nonzero values
+ * without an amplitude. Nonzero values inside the analysis step are supported
+ * only by static FEMaster procedures. Named amplitudes for nonzero step-local
+ * values are evaluated at the end of a linear static step because FEMaster
+ * support equations do not carry amplitudes.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser containing the active step and nodal transforms.
@@ -70,6 +71,8 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
             logging::error(amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
                 "BOUNDARY references unknown amplitude '", *amplitude, "'");
+            logging::error(state.step_active || amplitude->empty(),
+                "BOUNDARY outside STEP does not support AMPLITUDE");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -95,10 +98,9 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                                 && last_dof >= first_dof && last_dof <= 6,
                         "BOUNDARY supports only structural DOFs 1 through 6");
 
+                    // Root-level values are constant model constraints; step-local
+                    // nonzero values additionally depend on the active procedure.
                     const bool in_step = parser.abaqus_state().step_active;
-                    logging::error(in_step || magnitude == fem::Precision(0),
-                        "BOUNDARY outside STEP accepts only zero prescribed values");
-
                     if (in_step && magnitude != fem::Precision(0)) {
                         const std::string& procedure = parser.active_loadcase_type();
                         logging::error(procedure == "LINEARSTATIC"

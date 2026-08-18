@@ -9,7 +9,9 @@
  *
  * Supported procedures include static load control, Riks arc-length analysis,
  * linear static perturbation, eigenfrequency extraction, linear buckling, direct
- * implicit transient dynamics and direct steady-state harmonic response.
+ * implicit transient dynamics and direct steady-state harmonic response. Abaqus
+ * node/element file and print requests are accepted and ignored because result
+ * output remains controlled by FEMaster's writers.
  *
  * @see loadcase::LinearStatic
  * @see loadcase::NonlinearStatic
@@ -68,8 +70,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("NAME").optional().doc("Optional Abaqus step name")
-                .key("NLGEOM").optional("NO").allowed({"YES", "NO"})
-                    .doc("Enable geometric nonlinearity for this step")
+                .key("NLGEOM").optional().allowed({"", "YES", "NO", "OFF"})
+                    .doc("Enable geometric nonlinearity when present without a value or set to YES")
                 .key("INC").optional("100").doc("Maximum number of increments")
                 .key("AMPLITUDE").optional().allowed({"RAMP", "STEP"})
                     .doc("Default amplitude mode for loads defined in this step")
@@ -87,10 +89,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(max_increments > 0,
                 "STEP requires INC > 0");
 
+            // Store the normalized step controls. A bare NLGEOM key and
+            // NLGEOM=YES enable geometric nonlinearity; NO and OFF disable it.
             state.step_seen      = true;
             state.step_active    = true;
             state.max_increments = max_increments;
-            state.nlgeom         = keys.raw("NLGEOM") == "YES";
+            state.nlgeom         = keys.has("NLGEOM") && keys.get<bool>("NLGEOM");
             state.perturbation   = keys.has("PERTURBATION");
             state.step_period    = Precision(1);
             state.step_amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
@@ -346,7 +350,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(keys.has("DIRECT"),
                 "Only DYNAMIC, DIRECT is supported because FEMaster transient analysis uses a fixed time increment");
             logging::error(!state.nlgeom,
-                "DYNAMIC with NLGEOM=YES is not supported by FEMaster's linear transient solver");
+                "DYNAMIC with NLGEOM is not supported by FEMaster's linear transient solver");
             logging::error(!state.perturbation,
                 "DYNAMIC is not supported in a PERTURBATION step");
 
@@ -477,6 +481,32 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             )
         );
     });
+
+    // ---------------------------------------------------------------------
+    // Ignored Abaqus output requests
+    // ---------------------------------------------------------------------
+    const auto register_ignored_output_request = [&](const std::string& name) {
+        registry.command(name, [](fem::io::dsl::Command& command) {
+            command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "STEP"}));
+            command.doc("Accept and ignore an Abaqus result-output request.");
+
+            command.variant(fem::io::dsl::Variant::make()
+                .segment(fem::io::dsl::Segment::make()
+                    .range(fem::io::dsl::LineRange{}.min(0))
+                    .pattern(fem::io::dsl::Pattern::make()
+                        .fixed<std::string, 64>().name("OUTPUT").desc("Ignored output variables")
+                            .on_missing(std::string{"_"}).on_empty(std::string{"_"})
+                    )
+                    .bind([](const std::array<std::string, 64>&) {})
+                )
+            );
+        });
+    };
+
+    register_ignored_output_request("NODEFILE");
+    register_ignored_output_request("ELFILE");
+    register_ignored_output_request("NODEPRINT");
+    register_ignored_output_request("ELPRINT");
 
     // ---------------------------------------------------------------------
     // Step terminator
