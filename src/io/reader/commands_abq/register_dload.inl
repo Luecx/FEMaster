@@ -64,28 +64,18 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            logging::error(
-                state.step_active && parser.active_loadcase(),
-                "DLOAD must appear after a supported procedure inside STEP"
-            );
-            logging::error(
-                state.procedure != "EIGENFREQ",
-                "DLOAD is not supported in a FREQUENCY step"
-            );
-            logging::error(
-                !(keys.has("REAL") && keys.has("IMAGINARY")),
-                "DLOAD REAL and IMAGINARY are mutually exclusive"
-            );
-            logging::error(
-                !keys.has("IMAGINARY"),
-                "DLOAD IMAGINARY is not supported by the real-load harmonic solver"
-            );
+            logging::error(state.step_active && parser.active_loadcase(),
+                "DLOAD must appear after a supported procedure inside STEP");
+            logging::error(state.procedure != "EIGENFREQ",
+                "DLOAD is not supported in a FREQUENCY step");
+            logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
+                "DLOAD REAL and IMAGINARY are mutually exclusive");
+            logging::error(!keys.has("IMAGINARY"),
+                "DLOAD IMAGINARY is not supported by the real-load harmonic solver");
 
             const std::string op = keys.raw("OP");
-            logging::error(
-                state.dload_op.empty() || state.dload_op == op,
-                "All DLOAD cards in one STEP must use the same OP value"
-            );
+            logging::error(state.dload_op.empty() || state.dload_op == op,
+                "All DLOAD cards in one STEP must use the same OP value");
             if (state.dload_op.empty()) {
                 state.dload_op = op;
                 if (op == "NEW") {
@@ -94,10 +84,8 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            logging::error(
-                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
-                "DLOAD references unknown amplitude '", *amplitude, "'"
-            );
+            logging::error(amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "DLOAD references unknown amplitude '", *amplitude, "'");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -114,10 +102,8 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                                            const std::string& type,
                                            fem::Precision magnitude,
                                            const std::array<fem::Precision, 3>& direction) {
-                    logging::error(
-                        type == "GRAV",
-                        "DLOAD currently supports only GRAV; use SURFACE + DSLOAD for surface pressure/traction"
-                    );
+                    logging::error(type == "GRAV",
+                        "DLOAD currently supports only GRAV; use SURFACE + DSLOAD for surface pressure/traction");
 
                     auto& state = parser.abaqus_state();
                     auto first = state.dloads.end();
@@ -148,10 +134,8 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         return;
                     }
 
-                    logging::error(
-                        matches == 1,
-                        "Multiple active DLOADs use the same target, type and direction; use OP=NEW to redefine them"
-                    );
+                    logging::error(matches == 1,
+                        "Multiple active DLOADs use the same target, type and direction; use OP=NEW to redefine them");
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
