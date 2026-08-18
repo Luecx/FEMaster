@@ -27,7 +27,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <exception>
 #include <limits>
 #include <memory>
 #include <string>
@@ -52,8 +51,8 @@ namespace fem::io::reader::commands_abq {
  *
  * `*STEP` stores the active step controls and creates dedicated load and support
  * collectors. Exactly one supported procedure card must appear before step-local
- * loads and boundary conditions. `*END STEP` attaches the collectors to the
- * active FEMaster load case and executes it.
+ * loads and boundary conditions. Each procedure attaches those collectors to its
+ * FEMaster load case, and `*END STEP` executes that load case.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser owning the active step and load-case state.
@@ -137,6 +136,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     id, &parser.writer(), &parser.model()
                 );
 
+                loadcase->loads.push_back("__ABQ_STEP_LOADS");
+                loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
                 loadcase->max_increments      = state.max_increments;
                 loadcase->initial_increment   = Precision(1);
                 loadcase->minimum_increment   = Precision(1e-5);
@@ -153,10 +154,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                     riks ? "STATIC_RIKS" : "NONLINEARSTATIC"
                 );
             } else {
-                parser.set_active_loadcase(
-                    std::make_unique<loadcase::LinearStatic>(id, &parser.writer(), &parser.model()),
-                    "LINEARSTATIC"
+                auto loadcase = std::make_unique<loadcase::LinearStatic>(
+                    id, &parser.writer(), &parser.model()
                 );
+                loadcase->loads.push_back("__ABQ_STEP_LOADS");
+                loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
+                parser.set_active_loadcase(std::move(loadcase), "LINEARSTATIC");
             }
         });
 
@@ -256,12 +259,11 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
-            parser.set_active_loadcase(
-                std::make_unique<loadcase::LinearEigenfrequency>(
-                    parser.next_loadcase_id(), &parser.writer(), &parser.model(), 10
-                ),
-                "EIGENFREQ"
+            auto loadcase = std::make_unique<loadcase::LinearEigenfrequency>(
+                parser.next_loadcase_id(), &parser.writer(), &parser.model(), 10
             );
+            loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
+            parser.set_active_loadcase(std::move(loadcase), "EIGENFREQ");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -299,12 +301,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
-            parser.set_active_loadcase(
-                std::make_unique<loadcase::LinearBuckling>(
-                    parser.next_loadcase_id(), &parser.writer(), &parser.model(), 10
-                ),
-                "LINEARBUCKLING"
+            auto loadcase = std::make_unique<loadcase::LinearBuckling>(
+                parser.next_loadcase_id(), &parser.writer(), &parser.model(), 10
             );
+            loadcase->loads.push_back("__ABQ_STEP_LOADS");
+            loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
+            parser.set_active_loadcase(std::move(loadcase), "LINEARBUCKLING");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -348,12 +350,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(!state.perturbation,
                 "DYNAMIC is not supported in a PERTURBATION step");
 
-            parser.set_active_loadcase(
-                std::make_unique<loadcase::Transient>(
-                    parser.next_loadcase_id(), &parser.writer(), &parser.model()
-                ),
-                "LINEARTRANSIENT"
+            auto loadcase = std::make_unique<loadcase::Transient>(
+                parser.next_loadcase_id(), &parser.writer(), &parser.model()
             );
+            loadcase->loads.push_back("__ABQ_STEP_LOADS");
+            loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
+            parser.set_active_loadcase(std::move(loadcase), "LINEARTRANSIENT");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -408,12 +410,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 "STEADY STATE DYNAMICS does not support NLGEOM in FEMaster");
 
             *frequency_scale = keys.raw("FREQUENCYSCALE");
-            parser.set_active_loadcase(
-                std::make_unique<loadcase::LinearHarmonic>(
-                    parser.next_loadcase_id(), &parser.writer(), &parser.model()
-                ),
-                "LINEARHARMONIC"
+            auto loadcase = std::make_unique<loadcase::LinearHarmonic>(
+                parser.next_loadcase_id(), &parser.writer(), &parser.model()
             );
+            loadcase->loads.push_back("__ABQ_STEP_LOADS");
+            loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
+            parser.set_active_loadcase(std::move(loadcase), "LINEARHARMONIC");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -486,37 +488,10 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto& state = parser.abaqus_state();
             auto* base  = parser.active_loadcase();
-            logging::error(state.step_active && base != nullptr && !parser.active_loadcase_type().empty(),
+            logging::error(state.step_active && base != nullptr,
                 "END STEP requires one active supported procedure");
 
-            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
-                lc->loads.push_back("__ABQ_STEP_LOADS");
-                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
-            } else if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
-                lc->loads.push_back("__ABQ_STEP_LOADS");
-                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
-            } else if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
-                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
-            } else if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
-                lc->loads.push_back("__ABQ_STEP_LOADS");
-                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
-            } else if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
-                lc->loads.push_back("__ABQ_STEP_LOADS");
-                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
-            } else if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
-                lc->loads.push_back("__ABQ_STEP_LOADS");
-                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
-            }
-
-            try {
-                base->run();
-            } catch (const std::exception& error) {
-                parser.clear_active_loadcase();
-                state.step_active = false;
-                logging::error(false,
-                    "Abaqus STEP execution failed: ", error.what());
-            }
-
+            base->run();
             parser.clear_active_loadcase();
             state.step_active = false;
         });
