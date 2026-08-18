@@ -2,17 +2,13 @@
  * @file register_cload.inl
  * @brief Registers Abaqus *CLOAD concentrated nodal load definitions.
  *
- * This registration stores concentrated loads as logical Abaqus records keyed by
- * their original node or node-set target and generalized degree of freedom. The
- * records persist across analysis steps according to `OP=MOD` and `OP=NEW` and
- * are converted to FEMaster `CLoad` objects during `*END STEP` processing.
- *
- * Multiple definitions with the same identity inside one step are stored as
- * separate additive load conditions. Nodal `*TRANSFORM` assignments are resolved
- * when the logical records are materialized for the active load case.
+ * Concentrated loads are translated directly into the FEMaster load collector of
+ * the single supported Abaqus analysis step. Node-set targets are expanded while
+ * parsing so nodal `*TRANSFORM` coordinate systems can be assigned to each
+ * generated load.
  *
  * @see ParserAbqState
- * @see ParserAbqCLoad
+ * @see model::Model::add_cload
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -20,9 +16,10 @@
 
 #pragma once
 
-#include <algorithm>
+#include <charconv>
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include "../parser_abq.h"
 #include "../../dsl/condition.h"
@@ -36,29 +33,24 @@ namespace fem::io::reader::commands_abq {
 /**
  * Registers the supported Abaqus concentrated-load syntax.
  *
- * Each data line uses `node-or-nset, dof, magnitude`. `OP=MOD` preserves the
- * active CLOAD set and modifies a uniquely matching propagated definition;
- * `OP=NEW` clears the complete CLOAD set before new records are read. Repeated
- * definitions of the same identity within one step are additive.
- *
- * Follower concentrated loads and imaginary harmonic load components are not
- * supported. All CLOAD cards within one step must use the same `OP` value.
+ * Each data line uses `node-or-nset, dof, magnitude`. Structural DOFs 1 through 6
+ * map to the three force and three moment components. Named amplitudes and the
+ * step-level default amplitude are resolved according to the active procedure.
+ * Follower concentrated loads and imaginary harmonic components are unsupported.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser containing the active load-definition state.
+ * @param parser Abaqus parser containing the active step and nodal transforms.
  */
 inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("CLOAD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Define or modify active Abaqus concentrated nodal loads.");
+        command.doc("Define concentrated nodal loads in the active Abaqus step.");
 
         auto amplitude = std::make_shared<std::string>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
-                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
-                    .doc("MOD preserves active CLOADs; NEW replaces the complete CLOAD category")
                 .flag("FOLLOWER").doc("Unsupported follower concentrated-load flag")
                 .flag("REAL").doc("Real harmonic load component")
                 .flag("IMAGINARY").doc("Unsupported imaginary harmonic load component")
@@ -77,28 +69,16 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             logging::error(!keys.has("IMAGINARY"),
                 "CLOAD IMAGINARY is not supported by the real-load harmonic solver");
 
-            const std::string op = keys.raw("OP");
-            logging::error(state.cload_op.empty() || state.cload_op == op,
-                "All CLOAD cards in one STEP must use the same OP value");
-            if (state.cload_op.empty()) {
-                state.cload_op = op;
-                if (op == "NEW") {
-                    state.cloads.clear();
-                }
-            }
-
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            logging::error(amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
-                "CLOAD references unknown amplitude '", *amplitude, "'");
         });
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
+                .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Node set or node identifier")
                     .one<int>().name("DOF").desc("Abaqus generalized degree of freedom 1--6")
-                    .one<fem::Precision>().name("MAGNITUDE").desc("Total load magnitude")
+                    .one<fem::Precision>().name("MAGNITUDE").desc("Load magnitude")
                 )
                 .bind([&parser, amplitude](const std::string& target,
                                            int dof,
@@ -106,44 +86,40 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     logging::error(dof >= 1 && dof <= 6,
                         "CLOAD supports only structural DOFs 1 through 6");
 
-                    auto& state = parser.abaqus_state();
-                    auto first = state.cloads.end();
-                    int matches = 0;
-                    bool defined_this_step = false;
-
-                    for (auto it = state.cloads.begin(); it != state.cloads.end(); ++it) {
-                        if (it->target != target || it->dof != dof) {
-                            continue;
-                        }
-                        if (first == state.cloads.end()) {
-                            first = it;
-                        }
-                        ++matches;
-                        defined_this_step = defined_this_step || it->modified_step == state.step_index;
-                    }
-
-                    // Repeated definitions in one step represent independent,
-                    // additive load conditions with the same Abaqus identity.
-                    if (defined_this_step || matches == 0) {
-                        state.cloads.push_back(ParserAbqCLoad{
-                            target,
-                            dof,
-                            magnitude,
-                            Precision(0),
-                            *amplitude,
-                            state.step_index
-                        });
+                    const auto [scale, resolved_amplitude] = parser.resolve_load_amplitude(*amplitude);
+                    magnitude *= scale;
+                    if (magnitude == fem::Precision(0)) {
                         return;
                     }
 
-                    logging::error(matches == 1,
-                        "Multiple active CLOADs use target '", target,
-                        "' and the same DOF; use OP=NEW to redefine them");
+                    fem::Vec6 load = fem::Vec6::Zero();
+                    load[dof - 1] = magnitude;
 
-                    first->previous_magnitude = first->magnitude;
-                    first->magnitude          = magnitude;
-                    first->amplitude          = *amplitude;
-                    first->modified_step      = state.step_index;
+                    auto& model = parser.model();
+                    auto& state = parser.abaqus_state();
+                    const auto add_to_node = [&](fem::ID node_id) {
+                        std::string orientation;
+                        const auto transform = state.node_transforms.find(node_id);
+                        if (transform != state.node_transforms.end()) {
+                            orientation = transform->second;
+                        }
+                        model.add_cload(node_id, load, orientation, resolved_amplitude);
+                    };
+
+                    if (model._data->node_sets.has(target)) {
+                        for (const fem::ID node_id : *model._data->node_sets.get(target)) {
+                            add_to_node(node_id);
+                        }
+                        return;
+                    }
+
+                    fem::ID node_id{};
+                    const char* begin = target.data();
+                    const char* end   = begin + target.size();
+                    const auto [ptr, ec] = std::from_chars(begin, end, node_id);
+                    logging::error(ec == std::errc{} && ptr == end,
+                        "CLOAD target '", target, "' is not a node set or node id");
+                    add_to_node(node_id);
                 })
             )
         );
