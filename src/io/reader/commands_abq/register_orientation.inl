@@ -2,19 +2,14 @@
  * @file register_orientation.inl
  * @brief Registers coordinate-defined rectangular Abaqus *ORIENTATION data.
  *
- * The initial Abaqus orientation reader supports the default
- * `DEFINITION=COORDINATES` and `SYSTEM=RECTANGULAR` form. Abaqus points `a`, `b`
- * and optional origin `c` are converted to the two direction vectors required
- * by FEMaster's `RectangularSystem`.
+ * `DEFINITION=COORDINATES` with `SYSTEM=RECTANGULAR` is mapped to a FEMaster
+ * `RectangularSystem`. Abaqus points `a`, `b` and optional origin `c` define the
+ * local basis through the vectors `a-c` and `b-c`.
  *
- * FEMaster coordinate systems currently represent orientation only and do not
- * store a translational origin. This is sufficient for material and section
- * orientations because only the basis directions are consumed. The Abaqus
- * origin therefore contributes to the direction vectors `a-c` and `b-c` but is
- * not retained afterwards.
- *
- * Node-defined, offset-to-node, cylindrical, spherical, Z-rectangular, user and
- * additional-rotation orientation forms remain unsupported.
+ * FEMaster rectangular coordinate systems store basis directions rather than a
+ * translational origin, so point `c` is used only while constructing the local
+ * directions. Other Abaqus orientation-definition and coordinate-system types
+ * are outside the supported syntax.
  *
  * @see cos::RectangularSystem
  *
@@ -26,12 +21,12 @@
 
 #include <limits>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../core/logging.h"
 #include "../../../core/types_eig.h"
 #include "../../../core/types_num.h"
 #include "../../../cos/rectangular_system.h"
@@ -40,16 +35,12 @@
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers the basic rectangular Abaqus orientation definition.
+ * Registers the supported rectangular Abaqus orientation definition.
  *
  * The first six data values define points `a` and `b`. The optional final three
- * values define point `c`; omitted values place `c` at the global origin. The
- * local 1-direction is constructed from `a-c`, while `b-c` defines the local
- * 1-2 plane. `RectangularSystem` performs the final orthogonalization.
- *
- * Degenerate input is rejected when `a` coincides with `c` or when the two
- * supplied directions are collinear. A second Abaqus data line for an additional
- * rotation is intentionally not accepted by this initial implementation.
+ * values define point `c` and default to the global origin. `a-c` defines local
+ * direction 1 and `b-c` defines the local 1-2 plane. Degenerate or collinear
+ * directions are rejected before the FEMaster coordinate system is created.
  *
  * @param registry Stage-local DSL registry.
  * @param model FEMaster model receiving the coordinate system.
@@ -59,8 +50,6 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Define a rectangular Abaqus material orientation from points a, b and optional c.");
 
-        // Preserve the orientation name until the following data row constructs
-        // the coordinate system
         auto name = std::make_shared<std::string>();
 
         command.keyword(
@@ -82,8 +71,6 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
             *name = keys.raw("NAME");
         });
 
-        // Read the coordinate-defined Abaqus points on exactly one data line.
-        // Point c defaults to the global origin when its coordinates are omitted.
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
@@ -114,23 +101,21 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                     const fem::Vec3 b{b1, b2, b3};
                     const fem::Vec3 c{c1, c2, c3};
 
-                    // Convert Abaqus point coordinates to the direction vectors
-                    // represented by FEMaster's origin-free coordinate system
                     const fem::Vec3 axis_1   = a - c;
                     const fem::Vec3 in_plane = b - c;
 
-                    const fem::Precision norm_1     = axis_1.norm();
-                    const fem::Precision norm_plane = in_plane.norm();
-                    const fem::Precision cross_norm = axis_1.cross(in_plane).norm();
-                    const fem::Precision tolerance  = std::numeric_limits<fem::Precision>::epsilon();
+                    const fem::Precision norm_1      = axis_1.norm();
+                    const fem::Precision norm_plane  = in_plane.norm();
+                    const fem::Precision cross_norm  = axis_1.cross(in_plane).norm();
+                    const fem::Precision tolerance   = std::numeric_limits<fem::Precision>::epsilon();
 
-                    if (norm_1 <= tolerance || norm_plane <= tolerance ||
-                        cross_norm <= tolerance * norm_1 * norm_plane) {
-                        throw std::runtime_error("ORIENTATION requires distinct, non-collinear points a, b and c");
-                    }
+                    logging::error(
+                        norm_1 > tolerance &&
+                        norm_plane > tolerance &&
+                        cross_norm > tolerance * norm_1 * norm_plane,
+                        "ORIENTATION requires distinct, non-collinear points a, b and c"
+                    );
 
-                    // RectangularSystem orthogonalizes the in-plane direction
-                    // against axis 1 and completes the right-handed basis
                     model.add_coordinate_system<cos::RectangularSystem>(*name, axis_1, in_plane);
                 })
             )
