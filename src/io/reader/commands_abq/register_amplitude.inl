@@ -1,15 +1,10 @@
 /**
  * @file register_amplitude.inl
- * @brief Registers tabular Abaqus *AMPLITUDE definitions.
+ * @brief Registers supported Abaqus *AMPLITUDE definitions.
  *
- * The initial Abaqus reader supports relative, step-time tabular amplitudes and
- * maps them directly to FEMaster's linearly interpolated `bc::Amplitude` model.
- * Abaqus permits up to four time/value pairs on one data line; the registration
- * expands every supplied pair into the same named FEMaster amplitude.
- *
- * Total-time, absolute-value and analytical/user-defined amplitude forms remain
- * unsupported because they require semantics beyond the existing FEMaster
- * scalar time-history representation.
+ * The registration maps relative, step-time `DEFINITION=TABULAR` amplitudes to
+ * FEMaster `bc::Amplitude` objects with linear interpolation. Each input line may
+ * contain up to four time/value pairs belonging to the same named amplitude.
  *
  * @see bc::Amplitude
  *
@@ -23,25 +18,24 @@
 #include <cmath>
 #include <limits>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
 #include "../../../bc/amplitude.h"
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers Abaqus `DEFINITION=TABULAR` amplitude input.
+ * Registers relative step-time Abaqus tabular amplitude input.
  *
- * The supported form uses step time and relative values, matching the time
- * coordinate consumed by FEMaster transient load cases. Every line may contain
- * one to four `(time,value)` pairs. Incomplete pairs are rejected rather than
- * silently manufacturing a value.
+ * `NAME` identifies the FEMaster amplitude. `DEFINITION=TABULAR`, `TIME=STEP TIME`
+ * and `VALUE=RELATIVE` are supported. Every data line contains one to four
+ * complete `(time, value)` pairs.
  *
  * @param registry Stage-local DSL registry.
  * @param model FEMaster model receiving the named amplitude.
@@ -61,7 +55,7 @@ inline void register_amplitude(fem::io::dsl::Registry& registry, model::Model& m
                 .key("DEFINITION")
                     .optional("TABULAR")
                     .allowed({"TABULAR"})
-                    .doc("Only TABULAR amplitudes are currently supported")
+                    .doc("Supported amplitude definition")
                 .key("TIME")
                     .optional("STEPTIME")
                     .allowed({"STEPTIME"})
@@ -95,17 +89,17 @@ inline void register_amplitude(fem::io::dsl::Registry& registry, model::Model& m
                         if (!has_time && !has_value) {
                             continue;
                         }
-                        if (has_time != has_value) {
-                            throw std::runtime_error("AMPLITUDE requires complete time/value pairs");
-                        }
+
+                        logging::error(
+                            has_time == has_value,
+                            "AMPLITUDE requires complete time/value pairs"
+                        );
 
                         model.add_amplitude_sample(*name, data[i], data[i + 1]);
                         added = true;
                     }
 
-                    if (!added) {
-                        throw std::runtime_error("AMPLITUDE data line contains no time/value pair");
-                    }
+                    logging::error(added, "AMPLITUDE data line contains no time/value pair");
                 })
             )
         );
