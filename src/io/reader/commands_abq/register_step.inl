@@ -1,19 +1,16 @@
 /**
  * @file register_step.inl
- * @brief Registers supported Abaqus analysis-step and procedure syntax.
+ * @brief Registers the supported Abaqus analysis step and procedure syntax.
  *
- * The registration maps Abaqus `*STEP` blocks and supported procedure cards to
- * FEMaster load-case classes. Supported procedures include static load control,
- * Riks arc-length analysis, linear static perturbation, eigenfrequency extraction,
- * linear buckling, direct implicit transient dynamics and direct steady-state
- * harmonic response.
+ * The Abaqus reader accepts at most one analysis `*STEP`. Supported procedure
+ * cards map directly to FEMaster load-case classes, and step-local loads and
+ * boundary conditions are written to dedicated FEMaster collectors while their
+ * input cards are parsed.
  *
- * Each step defines one FEMaster load case. Step parameters such as `NLGEOM`,
- * increment controls and frequency ranges are transferred to the corresponding
- * load-case object. Load and boundary-condition definitions are handled by the
- * dedicated history registrations.
+ * Supported procedures include static load control, Riks arc-length analysis,
+ * linear static perturbation, eigenfrequency extraction, linear buckling, direct
+ * implicit transient dynamics and direct steady-state harmonic response.
  *
- * @see commands_abq::register_history
  * @see loadcase::LinearStatic
  * @see loadcase::NonlinearStatic
  * @see loadcase::LinearEigenfrequency
@@ -30,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <string>
@@ -45,18 +43,17 @@
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers Abaqus step boundaries and the supported analysis procedures.
+ * Registers the single supported Abaqus analysis step and its procedures.
  *
- * `*STEP` stores step-local control parameters. `*STATIC` selects linear static,
- * nonlinear load-control or Riks analysis according to `PERTURBATION`, `NLGEOM`
- * and `RIKS`. `*FREQUENCY`, `*BUCKLE`, `*DYNAMIC, DIRECT` and
- * `*STEADY STATE DYNAMICS, DIRECT` create the corresponding FEMaster load cases.
- * `*END STEP` is registered as the structural terminator and its execution is
- * supplied by `register_history` in the analysis-data stage.
+ * `*STEP` stores the active step controls and creates dedicated load and support
+ * collectors. Exactly one supported procedure card must appear before step-local
+ * loads and boundary conditions. `*END STEP` attaches the collectors to the
+ * active FEMaster load case and executes it.
  *
  * @param registry Stage-local DSL registry.
  * @param parser Abaqus parser owning the active step and load-case state.
@@ -67,7 +64,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     // ---------------------------------------------------------------------
     registry.command("STEP", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Begin one FEMaster load case from an Abaqus STEP block.");
+        command.doc("Begin the single supported Abaqus analysis step.");
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
@@ -82,6 +79,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
+            logging::error(!state.step_seen,
+                "The FEMaster Abaqus reader supports at most one analysis STEP");
             logging::error(!state.step_active && !parser.active_loadcase(),
                 "Nested or unfinished Abaqus STEP blocks are not supported");
 
@@ -89,25 +88,17 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(max_increments > 0,
                 "STEP requires INC > 0");
 
-            state.step_active     = true;
-            state.step_index      = state.next_step_index++;
-            state.max_increments  = max_increments;
-            state.nlgeom          = keys.raw("NLGEOM") == "YES";
-            state.perturbation    = keys.has("PERTURBATION");
-            state.step_period     = Precision(1);
-            state.step_name       = keys.has("NAME") ? keys.raw("NAME") : std::string{};
-            state.step_amplitude  = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
+            state.step_seen      = true;
+            state.step_active    = true;
+            state.max_increments = max_increments;
+            state.nlgeom         = keys.raw("NLGEOM") == "YES";
+            state.perturbation   = keys.has("PERTURBATION");
+            state.step_period    = Precision(1);
+            state.step_amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
             state.procedure.clear();
 
-            state.cload_op.clear();
-            state.boundary_op.clear();
-            state.dload_op.clear();
-            state.dsload_op.clear();
-
-            state.load_collector    = "__ABQ_STEP_" + std::to_string(state.step_index) + "_LOADS";
-            state.support_collector = "__ABQ_STEP_" + std::to_string(state.step_index) + "_SUPPORTS";
-            state.load_collector_used    = false;
-            state.support_collector_used = false;
+            parser.model()._data->load_cols.activate("__ABQ_STEP_LOADS");
+            parser.model()._data->supp_cols.activate("__ABQ_STEP_SUPPORTS");
         });
 
         command.on_exit([&parser](const fem::io::dsl::Keys&) {
@@ -499,7 +490,48 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     // ---------------------------------------------------------------------
     registry.command("ENDSTEP", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Finish the active Abaqus step.");
+        command.doc("Execute and finish the active Abaqus analysis step.");
+
+        command.on_enter([&parser](const fem::io::dsl::Keys&) {
+            auto& state = parser.abaqus_state();
+            auto* base  = parser.active_loadcase();
+            logging::error(state.step_active && base != nullptr && !state.procedure.empty(),
+                "END STEP requires one active supported procedure");
+
+            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
+                lc->loads.push_back("__ABQ_STEP_LOADS");
+                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
+            } else if (auto* lc = dynamic_cast<loadcase::NonlinearStatic*>(base)) {
+                lc->loads.push_back("__ABQ_STEP_LOADS");
+                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
+            } else if (auto* lc = dynamic_cast<loadcase::LinearEigenfrequency*>(base)) {
+                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
+            } else if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
+                lc->loads.push_back("__ABQ_STEP_LOADS");
+                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
+            } else if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
+                lc->loads.push_back("__ABQ_STEP_LOADS");
+                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
+            } else if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+                lc->loads.push_back("__ABQ_STEP_LOADS");
+                lc->supps.push_back("__ABQ_STEP_SUPPORTS");
+            }
+
+            try {
+                base->run();
+            } catch (const std::exception& error) {
+                parser.clear_active_loadcase();
+                state.step_active = false;
+                state.procedure.clear();
+                logging::error(false,
+                    "Abaqus STEP execution failed: ", error.what());
+            }
+
+            parser.clear_active_loadcase();
+            state.step_active = false;
+            state.procedure.clear();
+        });
+
         command.variant(fem::io::dsl::Variant::make());
     });
 }
