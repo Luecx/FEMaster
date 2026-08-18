@@ -36,6 +36,6 @@ namespace fem {
 *
 * This number increments for backward-compatible bug fixes.
 */
-#define VERSION_PATCH 16
+#define VERSION_PATCH 17
 } // namespace fem
 
