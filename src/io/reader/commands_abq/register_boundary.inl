@@ -66,16 +66,12 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            logging::error(
-                state.step_active && parser.active_loadcase(),
-                "BOUNDARY must appear after a supported procedure inside STEP"
-            );
+            logging::error(state.step_active && parser.active_loadcase(),
+                "BOUNDARY must appear after a supported procedure inside STEP");
 
             const std::string op = keys.raw("OP");
-            logging::error(
-                state.boundary_op.empty() || state.boundary_op == op,
-                "All BOUNDARY cards in one STEP must use the same OP value"
-            );
+            logging::error(state.boundary_op.empty() || state.boundary_op == op,
+                "All BOUNDARY cards in one STEP must use the same OP value");
             if (state.boundary_op.empty()) {
                 state.boundary_op = op;
                 if (op == "NEW") {
@@ -84,10 +80,8 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            logging::error(
-                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
-                "BOUNDARY references unknown amplitude '", *amplitude, "'"
-            );
+            logging::error(amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "BOUNDARY references unknown amplitude '", *amplitude, "'");
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -109,11 +103,9 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                         last_dof = first_dof;
                     }
 
-                    logging::error(
-                        first_dof >= 1 && first_dof <= 6 &&
-                        last_dof >= first_dof && last_dof <= 6,
-                        "BOUNDARY supports only structural DOFs 1 through 6"
-                    );
+                    logging::error(first_dof >= 1 && first_dof <= 6
+                                && last_dof >= first_dof && last_dof <= 6,
+                        "BOUNDARY supports only structural DOFs 1 through 6");
 
                     auto& state = parser.abaqus_state();
                     for (int dof = first_dof; dof <= last_dof; ++dof) {
