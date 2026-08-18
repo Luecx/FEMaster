@@ -2,17 +2,13 @@
  * @file register_boundary.inl
  * @brief Registers Abaqus *BOUNDARY displacement and rotation constraints.
  *
- * Boundary conditions are stored as logical Abaqus target/DOF records and are
- * propagated between analysis steps according to `OP=MOD` and `OP=NEW`. Ranged
- * input is split into one record per generalized degree of freedom so individual
- * constraints can be updated deterministically.
- *
- * The original node or node-set target remains available until `*END STEP`, where
- * node sets are expanded and nodal `*TRANSFORM` coordinate systems are assigned
- * to the generated FEMaster supports.
+ * Boundary conditions are translated directly into the FEMaster support collector
+ * of the single supported Abaqus analysis step. Node-set targets are expanded
+ * while parsing so nodal `*TRANSFORM` coordinate systems can be assigned to each
+ * generated support.
  *
  * @see ParserAbqState
- * @see ParserAbqBoundary
+ * @see model::Model::add_support
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -20,9 +16,11 @@
 
 #pragma once
 
-#include <algorithm>
+#include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include "../parser_abq.h"
 #include "../../dsl/condition.h"
@@ -37,21 +35,18 @@ namespace fem::io::reader::commands_abq {
  * Registers the supported Abaqus displacement boundary-condition syntax.
  *
  * Data use `target, first_dof, last_dof, magnitude`. Omitted `last_dof` selects
- * only the first DOF and an omitted magnitude prescribes zero. `OP=MOD` preserves
- * and updates the active boundary set, while `OP=NEW` clears the complete set
- * before new records are read.
- *
- * Time-dependent nonzero prescribed values are validated during snapshot
- * materialization because FEMaster support equations do not carry amplitudes.
- * All BOUNDARY cards within one step must use the same `OP` value.
+ * only the first DOF and an omitted magnitude prescribes zero. Nonzero prescribed
+ * values are supported only by static FEMaster procedures. Named amplitudes for
+ * nonzero values are evaluated at the end of a linear static step because
+ * FEMaster support equations do not carry amplitudes.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser containing the active boundary-definition state.
+ * @param parser Abaqus parser containing the active step and nodal transforms.
  */
 inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("BOUNDARY", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
-        command.doc("Define or modify active Abaqus displacement boundary conditions.");
+        command.doc("Define displacement or rotation constraints in the active Abaqus step.");
 
         auto amplitude = std::make_shared<std::string>();
 
@@ -60,24 +55,12 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                 .key("TYPE").optional("DISPLACEMENT").allowed({"DISPLACEMENT"})
                     .doc("Only displacement-type boundary conditions are supported")
                 .key("AMPLITUDE").optional().doc("Optional named Abaqus amplitude")
-                .key("OP").optional("MOD").allowed({"MOD", "NEW"})
-                    .doc("MOD preserves active boundaries; NEW replaces the complete boundary set")
         );
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
             logging::error(state.step_active && parser.active_loadcase(),
                 "BOUNDARY must appear after a supported procedure inside STEP");
-
-            const std::string op = keys.raw("OP");
-            logging::error(state.boundary_op.empty() || state.boundary_op == op,
-                "All BOUNDARY cards in one STEP must use the same OP value");
-            if (state.boundary_op.empty()) {
-                state.boundary_op = op;
-                if (op == "NEW") {
-                    state.boundaries.clear();
-                }
-            }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
             logging::error(amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
@@ -86,7 +69,7 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
+                .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<std::string>().name("TARGET").desc("Node set or node identifier")
                     .one<int>().name("FIRST_DOF").desc("First constrained DOF")
@@ -108,27 +91,51 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                         "BOUNDARY supports only structural DOFs 1 through 6");
 
                     auto& state = parser.abaqus_state();
-                    for (int dof = first_dof; dof <= last_dof; ++dof) {
-                        auto record = std::find_if(
-                            state.boundaries.begin(), state.boundaries.end(),
-                            [&](const ParserAbqBoundary& item) {
-                                return item.target == target && item.dof == dof;
-                            }
-                        );
+                    if (magnitude != fem::Precision(0)) {
+                        logging::error(state.procedure == "LINEARSTATIC"
+                                    || state.procedure == "NONLINEARSTATIC"
+                                    || state.procedure == "STATIC_RIKS",
+                            "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures");
 
-                        if (record == state.boundaries.end()) {
-                            state.boundaries.push_back(ParserAbqBoundary{
-                                target,
-                                dof,
-                                magnitude,
-                                *amplitude,
-                                state.step_index
-                            });
-                        } else {
-                            record->magnitude     = magnitude;
-                            record->amplitude     = *amplitude;
-                            record->modified_step = state.step_index;
+                        if (!amplitude->empty()) {
+                            logging::error(state.procedure == "LINEARSTATIC",
+                                "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are time-independent");
+                            magnitude *= parser.model()._data->amplitudes.get(*amplitude)->evaluate(state.step_period);
                         }
+                    }
+
+                    auto& model = parser.model();
+                    const auto add_to_node = [&](fem::ID node_id, int dof) {
+                        fem::StaticVector<6> values;
+                        values.setConstant(std::numeric_limits<fem::Precision>::quiet_NaN());
+                        values[dof - 1] = magnitude;
+
+                        std::string orientation;
+                        const auto transform = state.node_transforms.find(node_id);
+                        if (transform != state.node_transforms.end()) {
+                            orientation = transform->second;
+                        }
+                        model.add_support(node_id, values, orientation);
+                    };
+
+                    if (model._data->node_sets.has(target)) {
+                        for (int dof = first_dof; dof <= last_dof; ++dof) {
+                            for (const fem::ID node_id : *model._data->node_sets.get(target)) {
+                                add_to_node(node_id, dof);
+                            }
+                        }
+                        return;
+                    }
+
+                    fem::ID node_id{};
+                    const char* begin = target.data();
+                    const char* end   = begin + target.size();
+                    const auto [ptr, ec] = std::from_chars(begin, end, node_id);
+                    logging::error(ec == std::errc{} && ptr == end,
+                        "BOUNDARY target '", target, "' is not a node set or node id");
+
+                    for (int dof = first_dof; dof <= last_dof; ++dof) {
+                        add_to_node(node_id, dof);
                     }
                 })
             )
