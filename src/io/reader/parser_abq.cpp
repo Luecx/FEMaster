@@ -3,15 +3,13 @@
  * @brief Implements staged command registration for Abaqus input decks.
  *
  * The Abaqus reader uses the common FEMaster parser lifecycle and configures the
- * commands that are recognized and executed in each stage. Topology data such as
- * nodes, elements, sets, materials, sections, amplitudes, orientations and nodal
- * transforms are created before analysis data. Step procedures and step-local
- * load or boundary definitions are evaluated in the final data stage.
+ * commands recognized and executed in each stage. Topology data such as nodes,
+ * elements, sets, materials, sections, amplitudes, orientations and nodal
+ * transforms are created before the single supported analysis step is executed.
  *
  * @see Parser
  * @see ParserAbqState
  * @see commands_abq::register_step
- * @see commands_abq::register_history
  * @see commands_abq::register_transform
  *
  * @author Finn Eggers
@@ -36,7 +34,6 @@
 #include "commands_abq/register_dsload.inl"
 #include "commands_abq/register_element.inl"
 #include "commands_abq/register_expansion.inl"
-#include "commands_abq/register_history.inl"
 #include "commands_abq/register_orientation.inl"
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
@@ -44,7 +41,14 @@
 #include "commands_abq/register_surface.inl"
 #include "commands_abq/register_transform.inl"
 
+#include "../dsl/registry.h"
+#include "../../bc/amplitude.h"
+#include "../../core/logging.h"
+#include "../../model/model.h"
+
 #include <algorithm>
+#include <string>
+#include <utility>
 
 namespace fem::io::reader {
 
@@ -54,6 +58,58 @@ ParserAbqState& ParserAbq::abaqus_state() {
 
 const ParserAbqState& ParserAbq::abaqus_state() const {
     return m_abq_state;
+}
+
+/**
+ * Resolves an Abaqus load amplitude for the active FEMaster procedure.
+ *
+ * Transient and harmonic procedures retain named amplitudes for evaluation by
+ * the load case. Linear static and buckling procedures evaluate named amplitudes
+ * at the step end coordinate and bake the resulting scale into the load value.
+ * Nonlinear static procedures use FEMaster's proportional load factor and
+ * therefore accept no named load amplitude.
+ *
+ * For the single supported transient step, `AMPLITUDE=RAMP` without an explicit
+ * load amplitude maps to one generated unit ramp from zero to one over the step
+ * period.
+ *
+ * @param amplitude Optional named Abaqus amplitude.
+ * @return Multiplicative load scale and optional FEMaster amplitude name.
+ */
+std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::string& amplitude) {
+    auto& state = m_abq_state;
+    auto& data  = *model()._data;
+
+    if (!amplitude.empty()) {
+        logging::error(data.amplitudes.has(amplitude),
+            "Unknown Abaqus amplitude '", amplitude, "'");
+
+        if (state.procedure == "LINEARTRANSIENT" || state.procedure == "LINEARHARMONIC") {
+            return {Precision(1), amplitude};
+        }
+        if (state.procedure == "LINEARSTATIC" || state.procedure == "LINEARBUCKLING") {
+            return {data.amplitudes.get(amplitude)->evaluate(state.step_period), std::string{}};
+        }
+
+        logging::error(state.procedure != "NONLINEARSTATIC" && state.procedure != "STATIC_RIKS",
+            "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
+    }
+
+    if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
+        const std::string name = "__ABQ_STEP_DEFAULT_AMPLITUDE";
+        if (!data.amplitudes.has(name)) {
+            model().define_amplitude(name, bc::Interpolation::Linear);
+            model().add_amplitude_sample(name, Precision(0), Precision(0));
+            model().add_amplitude_sample(name, state.step_period, Precision(1));
+        }
+        return {Precision(1), name};
+    }
+
+    logging::error(!((state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS")
+                  && state.step_amplitude == "STEP"),
+        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
+
+    return {Precision(1), std::string{}};
 }
 
 /**
@@ -67,7 +123,6 @@ const ParserAbqState& ParserAbq::abaqus_state() const {
  * @param count Allocation counters updated from parsed node and element ids.
  */
 void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& count) {
-    // Model-definition syntax
     commands::register_heading(registry);
     commands::register_node_count(registry, [&count](ID id) {
         count.highest_node_id = std::max(count.highest_node_id, static_cast<int>(id));
@@ -89,7 +144,6 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Analysis syntax is recognized but not executed during allocation
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
@@ -111,10 +165,8 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
-    // Start each deck with an empty parser-local Abaqus state.
     m_abq_state = ParserAbqState{};
 
-    // Persistent model-definition syntax
     commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
@@ -132,7 +184,6 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Analysis syntax remains inactive while topology is constructed
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
@@ -195,14 +246,13 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
 /**
  * Configures the analysis-data stage for the supported Abaqus syntax.
  *
- * Model-definition commands are consumed without execution. Step procedures,
- * loads and boundary conditions are active; `register_history` materializes the
- * active logical definitions into FEMaster collectors when `*END STEP` is read.
+ * Model-definition commands are consumed without execution. The single supported
+ * analysis step, its procedure, loads and boundary conditions execute directly in
+ * this stage.
  *
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
-    // Persistent model syntax is recognized but inactive in this stage
     commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
@@ -220,13 +270,11 @@ void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
 
-    // Analysis and load-definition syntax
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
     commands_abq::register_dload(registry, *this);
     commands_abq::register_dsload(registry, *this);
-    commands_abq::register_history(registry, *this);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("STEP"               , io::dsl::ActiveMode::Active);
