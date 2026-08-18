@@ -1,9 +1,8 @@
 // register_loadcase_rebalance.inl — registers REBALANCELOADS within *LOADCASE (LinearStatic and derived)
 
-#include <stdexcept>
-
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_static.h"
 
 namespace fem::io::reader::commands {
@@ -16,14 +15,13 @@ inline void register_loadcase_rebalance(fem::io::dsl::Registry& registry, Parser
         // Toggle only; no additional keywords
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto* base = parser.active_loadcase();
-            if (!base) {
-                throw std::runtime_error("REBALANCELOADS must appear inside *LOADCASE");
-            }
-            if (auto* lc = dynamic_cast<loadcase::LinearStatic*>(base)) {
-                lc->rebalance_loads = true;
-                return;
-            }
-            throw std::runtime_error("REBALANCELOADS is only supported for linear static load cases");
+            logging::error(base != nullptr,
+                "REBALANCELOADS must appear inside *LOADCASE");
+
+            auto* lc = dynamic_cast<loadcase::LinearStatic*>(base);
+            logging::error(lc != nullptr,
+                "REBALANCELOADS is only supported for linear static load cases");
+            lc->rebalance_loads = true;
         });
 
         command.variant(fem::io::dsl::Variant::make());
