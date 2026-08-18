@@ -90,16 +90,15 @@ inline void register_amplitude(fem::io::dsl::Registry& registry, model::Model& m
                             continue;
                         }
 
-                        logging::error(
-                            has_time == has_value,
-                            "AMPLITUDE requires complete time/value pairs"
-                        );
+                        logging::error(has_time == has_value,
+                            "AMPLITUDE requires complete time/value pairs");
 
                         model.add_amplitude_sample(*name, data[i], data[i + 1]);
                         added = true;
                     }
 
-                    logging::error(added, "AMPLITUDE data line contains no time/value pair");
+                    logging::error(added,
+                        "AMPLITUDE data line contains no time/value pair");
                 })
             )
         );
