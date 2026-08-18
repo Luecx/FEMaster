@@ -101,20 +101,18 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                     const fem::Vec3 b{b1, b2, b3};
                     const fem::Vec3 c{c1, c2, c3};
 
-                    const fem::Vec3 axis_1   = a - c;
+                    const fem::Vec3 axis_1  = a - c;
                     const fem::Vec3 in_plane = b - c;
 
-                    const fem::Precision norm_1      = axis_1.norm();
-                    const fem::Precision norm_plane  = in_plane.norm();
-                    const fem::Precision cross_norm  = axis_1.cross(in_plane).norm();
-                    const fem::Precision tolerance   = std::numeric_limits<fem::Precision>::epsilon();
+                    const fem::Precision norm_1     = axis_1.norm();
+                    const fem::Precision norm_plane = in_plane.norm();
+                    const fem::Precision cross_norm = axis_1.cross(in_plane).norm();
+                    const fem::Precision tolerance  = std::numeric_limits<fem::Precision>::epsilon();
 
-                    logging::error(
-                        norm_1 > tolerance &&
-                        norm_plane > tolerance &&
-                        cross_norm > tolerance * norm_1 * norm_plane,
-                        "ORIENTATION requires distinct, non-collinear points a, b and c"
-                    );
+                    logging::error(norm_1 > tolerance
+                                && norm_plane > tolerance
+                                && cross_norm > tolerance * norm_1 * norm_plane,
+                        "ORIENTATION requires distinct, non-collinear points a, b and c");
 
                     model.add_coordinate_system<cos::RectangularSystem>(*name, axis_1, in_plane);
                 })
