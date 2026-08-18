@@ -40,6 +40,48 @@ def test_importer_maps_deck_ids_to_repository_ids() -> None:
     assert model.fields.get("TEMP").row(1) == (42.0,)
 
 
+def test_importer_reads_orthotropic_engineering_constants() -> None:
+    model = load_model_from_inp(
+        """
+        *MATERIAL, NAME=ORTHO
+        *ELASTIC, TYPE=ENGINEERINGCONSTANTS
+        100.0, 200.0, 300.0, 0.12, 0.13, 0.23, 12.0, 13.0, 23.0
+        """.splitlines()
+    )
+
+    elasticity = model.materials.get("ORTHO").elasticity
+    assert elasticity.e1 == pytest.approx(100.0)
+    assert elasticity.e2 == pytest.approx(200.0)
+    assert elasticity.e3 == pytest.approx(300.0)
+    assert elasticity.nu12 == pytest.approx(0.12)
+    assert elasticity.nu13 == pytest.approx(0.13)
+    assert elasticity.nu23 == pytest.approx(0.23)
+    assert elasticity.g12 == pytest.approx(12.0)
+    assert elasticity.g13 == pytest.approx(13.0)
+    assert elasticity.g23 == pytest.approx(23.0)
+
+
+def test_importer_converts_orthotropic_stiffness_coefficients() -> None:
+    model = load_model_from_inp(
+        """
+        *MATERIAL, NAME=ORTHO
+        *ELASTIC, TYPE=ORTHOTROPIC
+        120.0, 40.0, 120.0, 40.0, 40.0, 120.0, 40.0, 40.0, 40.0
+        """.splitlines()
+    )
+
+    elasticity = model.materials.get("ORTHO").elasticity
+    assert elasticity.e1 == pytest.approx(100.0)
+    assert elasticity.e2 == pytest.approx(100.0)
+    assert elasticity.e3 == pytest.approx(100.0)
+    assert elasticity.nu12 == pytest.approx(0.25)
+    assert elasticity.nu13 == pytest.approx(0.25)
+    assert elasticity.nu23 == pytest.approx(0.25)
+    assert elasticity.g12 == pytest.approx(40.0)
+    assert elasticity.g13 == pytest.approx(40.0)
+    assert elasticity.g23 == pytest.approx(40.0)
+
+
 def test_importer_reads_static_and_nonlinear_loadcases() -> None:
     model = load_model_from_inp(
         """
