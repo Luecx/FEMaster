@@ -12,6 +12,7 @@
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_static_topo.h"
+#include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
 
 namespace fem::io::reader::commands {
