@@ -53,10 +53,8 @@ inline void register_expansion(fem::io::dsl::Registry& registry, model::Model& m
                 )
                 .bind([&model](fem::Precision alpha) {
                     auto material = model._data->materials.get();
-                    logging::error(
-                        material != nullptr,
-                        "EXPANSION requires an active material context"
-                    );
+                    logging::error(material != nullptr,
+                        "EXPANSION requires an active material context");
                     material->set_thermal_expansion(alpha);
                 })
             )
