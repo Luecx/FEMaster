@@ -33,7 +33,7 @@ inline void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& pa
                     .fixed<std::string, 16>().name("LOAD").desc("Load collector names")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser, &append_tokens](const std::array<std::string, 16>& names) {
+                .bind([&parser, append_tokens](const std::array<std::string, 16>& names) {
                     auto* base = parser.active_loadcase();
                     logging::error(base != nullptr,
                         "LOADS must appear inside *LOADCASE");
