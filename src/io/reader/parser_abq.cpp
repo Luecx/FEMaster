@@ -114,23 +114,17 @@ std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::s
 }
 
 /**
- * Configures the allocation stage for the supported Abaqus syntax.
+ * Registers Abaqus keywords whose syntax is identical in every parser stage.
  *
- * Node and element identifiers are evaluated to determine model capacities. All
- * other supported commands are registered in consume-only mode so the complete
- * input structure can be traversed without creating model data in this stage.
+ * Node and element commands are excluded because the allocation stage uses
+ * identifier-counting variants while later stages use topology variants. Stage
+ * activation determines whether callbacks registered here execute or are only
+ * consumed while traversing the input deck.
  *
  * @param registry Stage-local command registry.
- * @param count Allocation counters updated from parsed node and element ids.
  */
-void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& count) {
+void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_heading(registry);
-    commands::register_node_count(registry, [&count](ID id) {
-        count.highest_node_id = std::max(count.highest_node_id, static_cast<int>(id));
-    });
-    commands_abq::register_element_count(registry, [&count](ID id) {
-        count.highest_element_id = std::max(count.highest_element_id, static_cast<int>(id));
-    });
     commands::register_nset(registry, model());
     commands::register_elset(registry, model());
     commands_abq::register_surface(registry, model());
@@ -144,12 +138,31 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
     commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
-
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
     commands_abq::register_dload(registry, *this);
     commands_abq::register_dsload(registry, *this);
+}
+
+/**
+ * Configures the allocation stage for the supported Abaqus syntax.
+ *
+ * Node and element identifiers are evaluated to determine model capacities. All
+ * other supported commands are registered in consume-only mode so the complete
+ * input structure can be traversed without creating model data in this stage.
+ *
+ * @param registry Stage-local command registry.
+ * @param count Allocation counters updated from parsed node and element ids.
+ */
+void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& count) {
+    commands::register_node_count(registry, [&count](ID id) {
+        count.highest_node_id = std::max(count.highest_node_id, static_cast<int>(id));
+    });
+    commands_abq::register_element_count(registry, [&count](ID id) {
+        count.highest_element_id = std::max(count.highest_element_id, static_cast<int>(id));
+    });
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("NODE"   , io::dsl::ActiveMode::Active);
@@ -168,28 +181,9 @@ void ParserAbq::configure_count_stage(io::dsl::Registry& registry, CountData& co
 void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     m_abq_state = ParserAbqState{};
 
-    commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
-    commands::register_nset(registry, model());
-    commands::register_elset(registry, model());
-    commands_abq::register_surface(registry, model());
-    commands::register_material(registry, model());
-    commands::register_density(registry, model());
-    commands::register_elastic(registry, model());
-    commands::register_hyperelastic(registry, model());
-    commands_abq::register_expansion(registry, model());
-    commands_abq::register_orientation(registry, model());
-    commands_abq::register_transform(registry, *this);
-    commands_abq::register_amplitude(registry, model());
-    commands_abq::register_solid_section(registry, model());
-    commands_abq::register_shell_section(registry, model());
-
-    commands_abq::register_step(registry, *this);
-    commands_abq::register_cload(registry, *this);
-    commands_abq::register_boundary(registry, *this);
-    commands_abq::register_dload(registry, *this);
-    commands_abq::register_dsload(registry, *this);
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("NODE"          , io::dsl::ActiveMode::Active);
@@ -219,27 +213,9 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
-    commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
-    commands::register_nset(registry, model());
-    commands::register_elset(registry, model());
-    commands_abq::register_surface(registry, model());
-    commands::register_material(registry, model());
-    commands::register_density(registry, model());
-    commands::register_elastic(registry, model());
-    commands::register_hyperelastic(registry, model());
-    commands_abq::register_expansion(registry, model());
-    commands_abq::register_orientation(registry, model());
-    commands_abq::register_transform(registry, *this);
-    commands_abq::register_amplitude(registry, model());
-    commands_abq::register_solid_section(registry, model());
-    commands_abq::register_shell_section(registry, model());
-    commands_abq::register_step(registry, *this);
-    commands_abq::register_cload(registry, *this);
-    commands_abq::register_boundary(registry, *this);
-    commands_abq::register_dload(registry, *this);
-    commands_abq::register_dsload(registry, *this);
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
 }
@@ -254,28 +230,9 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
  * @param registry Stage-local command registry.
  */
 void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
-    commands::register_heading(registry);
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
-    commands::register_nset(registry, model());
-    commands::register_elset(registry, model());
-    commands_abq::register_surface(registry, model());
-    commands::register_material(registry, model());
-    commands::register_density(registry, model());
-    commands::register_elastic(registry, model());
-    commands::register_hyperelastic(registry, model());
-    commands_abq::register_expansion(registry, model());
-    commands_abq::register_orientation(registry, model());
-    commands_abq::register_transform(registry, *this);
-    commands_abq::register_amplitude(registry, model());
-    commands_abq::register_solid_section(registry, model());
-    commands_abq::register_shell_section(registry, model());
-
-    commands_abq::register_step(registry, *this);
-    commands_abq::register_cload(registry, *this);
-    commands_abq::register_boundary(registry, *this);
-    commands_abq::register_dload(registry, *this);
-    commands_abq::register_dsload(registry, *this);
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     registry.set_active_mode("STEP"               , io::dsl::ActiveMode::Active);
