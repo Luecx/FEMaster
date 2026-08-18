@@ -1,6 +1,7 @@
 // register_pload.inl — DSL registration for *PLOAD
 
 #include <charconv>
+#include <memory>
 #include <string>
 #include <system_error>
 
