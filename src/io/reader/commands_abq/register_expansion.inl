@@ -2,11 +2,9 @@
  * @file register_expansion.inl
  * @brief Registers isotropic Abaqus *EXPANSION material data.
  *
- * FEMaster currently stores one scalar thermal-expansion coefficient on a
- * material. The Abaqus isotropic expansion form therefore maps directly onto
- * the existing material state, while orthotropic, transversely isotropic and
- * anisotropic expansion remain unsupported because they require directional
- * coefficients that FEMaster does not currently store.
+ * Constant isotropic thermal expansion is mapped to the scalar thermal-expansion
+ * coefficient stored by FEMaster materials. Direction-dependent and
+ * temperature-/field-dependent expansion forms are outside the supported syntax.
  *
  * @see material::Material
  *
@@ -16,11 +14,10 @@
 
 #pragma once
 
-#include <stdexcept>
-
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../../model/model.h"
 
@@ -29,10 +26,8 @@ namespace fem::io::reader::commands_abq {
 /**
  * Registers constant isotropic Abaqus thermal expansion for the active material.
  *
- * `TYPE=ISO` is the supported Abaqus form. A single constant coefficient is
- * read and forwarded to `Material::set_thermal_expansion()`. Temperature and
- * field-variable dependencies are intentionally unsupported in this initial
- * reader.
+ * `TYPE=ISO` and `TYPE=ISOTROPIC` read one constant coefficient and assign it to
+ * the material selected by the enclosing `*MATERIAL` block.
  *
  * @param registry Stage-local DSL registry.
  * @param model FEMaster model containing the active material.
@@ -50,8 +45,6 @@ inline void register_expansion(fem::io::dsl::Registry& registry, model::Model& m
                     .doc("Isotropic thermal-expansion form")
         );
 
-        // Store the single isotropic coefficient directly on the active
-        // FEMaster material
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
@@ -60,9 +53,10 @@ inline void register_expansion(fem::io::dsl::Registry& registry, model::Model& m
                 )
                 .bind([&model](fem::Precision alpha) {
                     auto material = model._data->materials.get();
-                    if (!material) {
-                        throw std::runtime_error("EXPANSION requires an active material context");
-                    }
+                    logging::error(
+                        material != nullptr,
+                        "EXPANSION requires an active material context"
+                    );
                     material->set_thermal_expansion(alpha);
                 })
             )
