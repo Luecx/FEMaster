@@ -64,10 +64,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
             auto& state = parser.abaqus_state();
             auto* base  = parser.active_loadcase();
 
-            logging::error(
-                state.step_active && base != nullptr && !state.procedure.empty(),
-                "END STEP requires one active supported procedure"
-            );
+            logging::error(state.step_active && base != nullptr && !state.procedure.empty(),
+                "END STEP requires one active supported procedure");
 
             const bool nonlinear = state.procedure == "NONLINEARSTATIC" ||
                                    state.procedure == "STATIC_RIKS";
@@ -79,10 +77,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 const char* begin = value.data();
                 const char* end   = begin + value.size();
                 const auto [ptr, ec] = std::from_chars(begin, end, id);
-                logging::error(
-                    ec == std::errc{} && ptr == end,
-                    label, " '", value, "' is not a valid numeric identifier"
-                );
+                logging::error(ec == std::errc{} && ptr == end,
+                    label, " '", value, "' is not a valid numeric identifier");
                 return id;
             };
 
@@ -94,10 +90,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                     return {Precision(1), std::string{}};
                 }
 
-                logging::error(
-                    model._data->amplitudes.has(amplitude),
-                    "Unknown Abaqus amplitude '", amplitude, "'"
-                );
+                logging::error(model._data->amplitudes.has(amplitude),
+                    "Unknown Abaqus amplitude '", amplitude, "'");
 
                 if (state.procedure == "LINEARTRANSIENT" ||
                     state.procedure == "LINEARHARMONIC") {
@@ -111,10 +105,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                     };
                 }
 
-                logging::error(
-                    !nonlinear,
-                    "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading"
-                );
+                logging::error(!nonlinear,
+                    "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
                 return {Precision(1), std::string{}};
             };
 
@@ -142,24 +134,18 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
 
                     if (record.modified_step == state.step_index &&
                         !record.amplitude.empty() && magnitude != Precision(0)) {
-                        logging::error(
-                            model._data->amplitudes.has(record.amplitude),
-                            "BOUNDARY references unknown amplitude '", record.amplitude, "'"
-                        );
-                        logging::error(
-                            state.procedure == "LINEARSTATIC",
-                            "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are time-independent"
-                        );
+                        logging::error(model._data->amplitudes.has(record.amplitude),
+                            "BOUNDARY references unknown amplitude '", record.amplitude, "'");
+                        logging::error(state.procedure == "LINEARSTATIC",
+                            "Nonzero BOUNDARY AMPLITUDE is unsupported because FEMaster constraints are time-independent");
                         magnitude *= model._data->amplitudes.get(record.amplitude)->evaluate(state.step_period);
                     }
 
-                    logging::error(
-                        magnitude == Precision(0) ||
-                        state.procedure == "LINEARSTATIC" ||
-                        state.procedure == "NONLINEARSTATIC" ||
-                        state.procedure == "STATIC_RIKS",
-                        "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures"
-                    );
+                    logging::error(magnitude == Precision(0)
+                                || state.procedure == "LINEARSTATIC"
+                                || state.procedure == "NONLINEARSTATIC"
+                                || state.procedure == "STATIC_RIKS",
+                        "Nonzero prescribed BOUNDARY values are supported only for static FEMaster procedures");
 
                     StaticVector<6> values;
                     values.setConstant(std::numeric_limits<Precision>::quiet_NaN());
@@ -231,12 +217,10 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                         continue;
                     }
 
-                    logging::error(
-                        !(record.modified_step == state.step_index &&
-                          record.amplitude.empty() && nonlinear &&
-                          state.step_amplitude == "STEP"),
-                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
-                    );
+                    logging::error(!(record.modified_step == state.step_index
+                                  && record.amplitude.empty() && nonlinear
+                                  && state.step_amplitude == "STEP"),
+                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
 
                     const auto [scale, amplitude] =
                         resolve_explicit_amplitude(record.amplitude, record.modified_step);
@@ -277,12 +261,10 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                         continue;
                     }
 
-                    logging::error(
-                        !(record.modified_step == state.step_index &&
-                          record.amplitude.empty() && nonlinear &&
-                          state.step_amplitude == "STEP"),
-                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
-                    );
+                    logging::error(!(record.modified_step == state.step_index
+                                  && record.amplitude.empty() && nonlinear
+                                  && state.step_amplitude == "STEP"),
+                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
 
                     const auto [scale, amplitude] =
                         resolve_explicit_amplitude(record.amplitude, record.modified_step);
@@ -297,31 +279,23 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                         }
 
                         if (record.type == "P") {
-                            logging::error(
-                                !nonlinear,
-                                "DSLOAD P is a follower pressure in Abaqus and is not supported in nonlinear FEMaster steps"
-                            );
+                            logging::error(!nonlinear,
+                                "DSLOAD P is a follower pressure in Abaqus and is not supported in nonlinear FEMaster steps");
                             model.add_pload(record.surface, magnitude, amplitude);
                             return;
                         }
 
-                        logging::error(
-                            record.type == "TRVEC",
-                            "Unsupported propagated DSLOAD type '", record.type, "'"
-                        );
-                        logging::error(
-                            !nonlinear || record.follower == "NO",
-                            "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented"
-                        );
+                        logging::error(record.type == "TRVEC",
+                            "Unsupported propagated DSLOAD type '", record.type, "'");
+                        logging::error(!nonlinear || record.follower == "NO",
+                            "Nonlinear DSLOAD TRVEC requires FOLLOWER=NO; follower traction is not implemented");
 
                         Vec3 direction{
                             record.direction[0], record.direction[1], record.direction[2]
                         };
                         const Precision norm = direction.norm();
-                        logging::error(
-                            norm > Precision(0) && std::isfinite(norm),
-                            "Stored DSLOAD TRVEC direction is invalid"
-                        );
+                        logging::error(norm > Precision(0) && std::isfinite(norm),
+                            "Stored DSLOAD TRVEC direction is invalid");
                         direction /= norm;
 
                         model.add_dload(
@@ -343,12 +317,10 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                         continue;
                     }
 
-                    logging::error(
-                        !(record.modified_step == state.step_index &&
-                          record.amplitude.empty() && nonlinear &&
-                          state.step_amplitude == "STEP"),
-                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control"
-                    );
+                    logging::error(!(record.modified_step == state.step_index
+                                  && record.amplitude.empty() && nonlinear
+                                  && state.step_amplitude == "STEP"),
+                        "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
 
                     const auto [scale, amplitude] =
                         resolve_explicit_amplitude(record.amplitude, record.modified_step);
@@ -387,7 +359,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 } else if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
                     lc->loads.push_back(state.load_collector);
                 } else {
-                    logging::error(false, "Loads are not supported in the selected Abaqus procedure");
+                    logging::error(false,
+                        "Loads are not supported in the selected Abaqus procedure");
                 }
             }
 
@@ -400,7 +373,8 @@ inline void register_history(fem::io::dsl::Registry& registry, ParserAbq& parser
                 parser.clear_active_loadcase();
                 state.step_active = false;
                 state.procedure.clear();
-                logging::error(false, "Abaqus STEP execution failed: ", error.what());
+                logging::error(false,
+                    "Abaqus STEP execution failed: ", error.what());
             }
 
             // -----------------------------------------------------------------
