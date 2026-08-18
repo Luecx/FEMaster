@@ -79,23 +79,24 @@ const ParserAbqState& ParserAbq::abaqus_state() const {
 std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::string& amplitude) {
     auto& state = m_abq_state;
     auto& data  = *model()._data;
+    const std::string& procedure = active_loadcase_type();
 
     if (!amplitude.empty()) {
         logging::error(data.amplitudes.has(amplitude),
             "Unknown Abaqus amplitude '", amplitude, "'");
 
-        if (state.procedure == "LINEARTRANSIENT" || state.procedure == "LINEARHARMONIC") {
+        if (procedure == "LINEARTRANSIENT" || procedure == "LINEARHARMONIC") {
             return {Precision(1), amplitude};
         }
-        if (state.procedure == "LINEARSTATIC" || state.procedure == "LINEARBUCKLING") {
+        if (procedure == "LINEARSTATIC" || procedure == "LINEARBUCKLING") {
             return {data.amplitudes.get(amplitude)->evaluate(state.step_period), std::string{}};
         }
 
-        logging::error(state.procedure != "NONLINEARSTATIC" && state.procedure != "STATIC_RIKS",
+        logging::error(procedure != "NONLINEARSTATIC" && procedure != "STATIC_RIKS",
             "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
     }
 
-    if (state.procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
+    if (procedure == "LINEARTRANSIENT" && state.step_amplitude == "RAMP") {
         const std::string name = "__ABQ_STEP_DEFAULT_AMPLITUDE";
         if (!data.amplitudes.has(name)) {
             model().define_amplitude(name, bc::Interpolation::Linear);
@@ -105,7 +106,7 @@ std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::s
         return {Precision(1), name};
     }
 
-    logging::error(!((state.procedure == "NONLINEARSTATIC" || state.procedure == "STATIC_RIKS")
+    logging::error(!((procedure == "NONLINEARSTATIC" || procedure == "STATIC_RIKS")
                   && state.step_amplitude == "STEP"),
         "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
 
