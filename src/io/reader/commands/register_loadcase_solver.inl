@@ -1,10 +1,10 @@
 // register_loadcase_solver.inl — registers SOLVER within *LOADCASE
 
-#include <stdexcept>
 #include <string>
 
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
@@ -39,7 +39,8 @@ inline void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& p
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
-            logging::error(base != nullptr, "SOLVER must appear inside *LOADCASE");
+            logging::error(base != nullptr,
+                "SOLVER must appear inside *LOADCASE");
 
             const auto device = keys.raw("DEVICE");
             const auto method = keys.raw("METHOD");
@@ -58,7 +59,8 @@ inline void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& p
             if (configure(dynamic_cast<loadcase::LinearHarmonic*>(base))) return;
             if (configure(dynamic_cast<loadcase::Transient*>(base))) return;
 
-            throw std::runtime_error("SOLVER not supported for loadcase type " + parser.active_loadcase_type());
+            logging::error(false,
+                "SOLVER not supported for loadcase type ", parser.active_loadcase_type());
         });
 
         command.variant(fem::io::dsl::Variant::make());
