@@ -1,16 +1,15 @@
 /**
  * @file register_cload.inl
- * @brief Registers step-dependent Abaqus *CLOAD definitions.
+ * @brief Registers Abaqus *CLOAD concentrated nodal load definitions.
  *
- * Concentrated loads are retained as logical Abaqus records across steps rather
- * than being converted immediately to FEMaster load objects. `OP=MOD` updates or
- * adds target/DOF records; `OP=NEW` clears all active concentrated loads before
- * the current step supplies its replacement definitions.
+ * This registration stores concentrated loads as logical Abaqus records keyed by
+ * their original node or node-set target and generalized degree of freedom. The
+ * records persist across analysis steps according to `OP=MOD` and `OP=NEW` and
+ * are converted to FEMaster `CLoad` objects during `*END STEP` processing.
  *
- * Multiple definitions of the same Abaqus load condition inside one step are
- * retained separately and therefore add during materialization. Such an active
- * multi-definition cannot be modified unambiguously in a later step and must be
- * replaced using `OP=NEW`, matching Abaqus load-history semantics.
+ * Multiple definitions with the same identity inside one step are stored as
+ * separate additive load conditions. Nodal `*TRANSFORM` assignments are resolved
+ * when the logical records are materialized for the active load case.
  *
  * @see ParserAbqState
  * @see ParserAbqCLoad
@@ -23,31 +22,30 @@
 
 #include <algorithm>
 #include <memory>
-#include <stdexcept>
 #include <string>
 
 #include "../parser_abq.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../dsl/registry.h"
+#include "../../../core/logging.h"
 #include "../../../model/model.h"
 
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers standard Abaqus concentrated-load history records.
+ * Registers the supported Abaqus concentrated-load syntax.
  *
- * Each data line uses `node-or-nset, dof, magnitude`. The logical identity is
- * the original target token together with the generalized DOF. One propagated
- * definition can be redefined by `OP=MOD`; repeated definitions of the same
- * identity in the current step are stored separately and act additively.
+ * Each data line uses `node-or-nset, dof, magnitude`. `OP=MOD` preserves the
+ * active CLOAD set and modifies a uniquely matching propagated definition;
+ * `OP=NEW` clears the complete CLOAD set before new records are read. Repeated
+ * definitions of the same identity within one step are additive.
  *
- * An empty `OP=NEW` block is valid and removes all active concentrated loads.
- * Follower and imaginary harmonic loads remain unsupported. `OP` must be
- * consistent across all `*CLOAD` cards in one step.
+ * Follower concentrated loads and imaginary harmonic load components are not
+ * supported. All CLOAD cards within one step must use the same `OP` value.
  *
  * @param registry Stage-local DSL registry.
- * @param parser Abaqus parser retaining active load definitions.
+ * @param parser Abaqus parser containing the active load-definition state.
  */
 inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     registry.command("CLOAD", [&](fem::io::dsl::Command& command) {
@@ -68,26 +66,29 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
 
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
             auto& state = parser.abaqus_state();
-            if (!state.step_active || !parser.active_loadcase()) {
-                throw std::runtime_error("CLOAD must appear after a supported procedure inside STEP");
-            }
-            if (state.procedure == "EIGENFREQ") {
-                throw std::runtime_error("CLOAD is not supported in a FREQUENCY step");
-            }
-            if (keys.has("FOLLOWER")) {
-                throw std::runtime_error("CLOAD FOLLOWER is not supported");
-            }
-            if (keys.has("REAL") && keys.has("IMAGINARY")) {
-                throw std::runtime_error("CLOAD REAL and IMAGINARY are mutually exclusive");
-            }
-            if (keys.has("IMAGINARY")) {
-                throw std::runtime_error("CLOAD IMAGINARY is not supported by the real-load harmonic solver");
-            }
+            logging::error(
+                state.step_active && parser.active_loadcase(),
+                "CLOAD must appear after a supported procedure inside STEP"
+            );
+            logging::error(
+                state.procedure != "EIGENFREQ",
+                "CLOAD is not supported in a FREQUENCY step"
+            );
+            logging::error(!keys.has("FOLLOWER"), "CLOAD FOLLOWER is not supported");
+            logging::error(
+                !(keys.has("REAL") && keys.has("IMAGINARY")),
+                "CLOAD REAL and IMAGINARY are mutually exclusive"
+            );
+            logging::error(
+                !keys.has("IMAGINARY"),
+                "CLOAD IMAGINARY is not supported by the real-load harmonic solver"
+            );
 
             const std::string op = keys.raw("OP");
-            if (!state.cload_op.empty() && state.cload_op != op) {
-                throw std::runtime_error("All CLOAD cards in one STEP must use the same OP value");
-            }
+            logging::error(
+                state.cload_op.empty() || state.cload_op == op,
+                "All CLOAD cards in one STEP must use the same OP value"
+            );
             if (state.cload_op.empty()) {
                 state.cload_op = op;
                 if (op == "NEW") {
@@ -96,9 +97,10 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
             }
 
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            if (!amplitude->empty() && !parser.model()._data->amplitudes.has(*amplitude)) {
-                throw std::runtime_error("CLOAD references unknown amplitude '" + *amplitude + "'");
-            }
+            logging::error(
+                amplitude->empty() || parser.model()._data->amplitudes.has(*amplitude),
+                "CLOAD references unknown amplitude '", *amplitude, "'"
+            );
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -112,9 +114,10 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 .bind([&parser, amplitude](const std::string& target,
                                            int dof,
                                            fem::Precision magnitude) {
-                    if (dof < 1 || dof > 6) {
-                        throw std::runtime_error("CLOAD supports only structural DOFs 1 through 6");
-                    }
+                    logging::error(
+                        dof >= 1 && dof <= 6,
+                        "CLOAD supports only structural DOFs 1 through 6"
+                    );
 
                     auto& state = parser.abaqus_state();
                     auto first = state.cloads.end();
@@ -132,10 +135,8 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         defined_this_step = defined_this_step || it->modified_step == state.step_index;
                     }
 
-                    // A repeated definition in the same step is a second load
-                    // condition and therefore adds to the first one. If several
-                    // such conditions propagated from an earlier step, Abaqus no
-                    // longer has a unique record for OP=MOD redefinition.
+                    // Repeated definitions in one step represent independent,
+                    // additive load conditions with the same Abaqus identity.
                     if (defined_this_step || matches == 0) {
                         state.cloads.push_back(ParserAbqCLoad{
                             target,
@@ -147,12 +148,12 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         });
                         return;
                     }
-                    if (matches > 1) {
-                        throw std::runtime_error(
-                            "Multiple active CLOADs use target '" + target +
-                            "' and the same DOF; use OP=NEW to redefine them"
-                        );
-                    }
+
+                    logging::error(
+                        matches == 1,
+                        "Multiple active CLOADs use target '", target,
+                        "' and the same DOF; use OP=NEW to redefine them"
+                    );
 
                     first->previous_magnitude = first->magnitude;
                     first->magnitude          = magnitude;
