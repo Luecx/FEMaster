@@ -1,22 +1,17 @@
 /**
  * @file parser_abq.h
- * @brief Declares the Abaqus syntax specialization of the staged FEMaster reader.
+ * @brief Declares the staged Abaqus input reader and its parser-local state.
  *
- * `ParserAbq` reuses the model-construction pipeline implemented by `Parser` and
- * replaces only the command registration and activation performed in each
- * parser stage. This keeps allocation, topology finalization, element-local
- * enumeration, shell-normal construction and result-writer setup identical for
- * native and Abaqus input decks.
- *
- * The Abaqus reader retains only syntax state that has no persistent FEMaster
- * model counterpart. Nodal `*TRANSFORM` definitions are remembered until loads
- * and supports are materialized, while active load and boundary-condition
- * records are propagated between Abaqus steps independently of the mechanical
- * solution state.
+ * `ParserAbq` specializes the command registration used by the common
+ * `Parser::run()` pipeline for Abaqus input syntax. The class stores parser-only
+ * information that is required while translating Abaqus model and history data
+ * to FEMaster objects, including nodal `*TRANSFORM` assignments, active load and
+ * boundary-condition definitions, and the currently open analysis step.
  *
  * @see Parser
  * @see commands_abq::register_transform
  * @see commands_abq::register_step
+ * @see commands_abq::register_history
  *
  * @author Finn Eggers
  * @date 17.08.2026
@@ -34,16 +29,14 @@
 namespace fem::io::reader {
 
 /**
- * @brief Logical Abaqus concentrated-load definition retained between steps.
+ * @brief Abaqus concentrated-load record used for step-wise load history.
  *
- * The original target spelling is preserved deliberately: Abaqus identifies a
- * load by the same node/node-set specification and generalized degree of
- * freedom when a later `OP=MOD` record changes it. Expansion to individual
- * FEMaster nodes is deferred until the current step is executed.
- *
- * `previous_magnitude` stores the total value at the end of the preceding step
- * when this record is redefined. It is used only to reproduce the Abaqus default
- * `RAMP` transition for time-dependent load cases; it is not mechanical state.
+ * The target retains the original node or node-set specification and `dof`
+ * identifies the generalized load component. `magnitude` is the active total
+ * value. `previous_magnitude` stores the preceding total while a redefinition is
+ * being materialized with the default `RAMP` behavior. `amplitude` references an
+ * optional named amplitude and `modified_step` identifies the step in which the
+ * active definition was last supplied.
  */
 struct ParserAbqCLoad {
     std::string target;
@@ -55,10 +48,11 @@ struct ParserAbqCLoad {
 };
 
 /**
- * @brief Logical Abaqus displacement boundary condition retained between steps.
+ * @brief Abaqus displacement boundary-condition record used across steps.
  *
- * Ranged `*BOUNDARY` input is stored as one record per generalized degree of
- * freedom so later modifications replace exactly the affected target/DOF pair.
+ * Each record represents one target and one generalized degree of freedom.
+ * Ranged `*BOUNDARY` input is split into individual records so later `OP=MOD`
+ * definitions can address each constrained DOF independently.
  */
 struct ParserAbqBoundary {
     std::string target;
@@ -69,12 +63,11 @@ struct ParserAbqBoundary {
 };
 
 /**
- * @brief Logical supported Abaqus element-based distributed-load definition.
+ * @brief Abaqus element-based distributed-load record used across steps.
  *
- * The current reader supports `GRAV`; the type string is nevertheless retained
- * as part of the Abaqus load identity used by `OP=MOD`. `previous_magnitude`
- * retains the prior total magnitude for default `RAMP` interpolation when the
- * load is redefined in a later transient step.
+ * The supported record type is `GRAV`. Target, load type and direction form the
+ * logical identity used for `OP=MOD`. `previous_magnitude` stores the preceding
+ * total while a default transient `RAMP` is materialized.
  */
 struct ParserAbqDLoad {
     std::string              target;
@@ -87,13 +80,12 @@ struct ParserAbqDLoad {
 };
 
 /**
- * @brief Logical supported Abaqus surface-load definition retained between steps.
+ * @brief Abaqus surface-load record used across steps.
  *
- * Pressure and general traction share the same history container but remain
- * distinct through `type`. Tractions additionally retain their reference
- * direction, optional orientation and follower setting until materialization.
- * `previous_magnitude` holds the prior total scalar load magnitude for default
- * `RAMP` interpolation after a later redefinition.
+ * Pressure and general traction records store their surface, load type and
+ * scalar magnitude. General traction additionally stores its direction,
+ * orientation and follower setting. `previous_magnitude` stores the preceding
+ * total while a default transient `RAMP` is materialized.
  */
 struct ParserAbqDSLoad {
     std::string              surface;
@@ -108,38 +100,34 @@ struct ParserAbqDSLoad {
 };
 
 /**
- * @brief Syntax state required while reading one Abaqus deck.
+ * @brief Parser-local state for one Abaqus input deck.
  *
- * FEMaster load cases remain mechanically independent: every supported Abaqus
- * step starts from FEMaster's reference configuration and does not inherit
- * displacement, stress, material, contact or other converged solver state.
- *
- * Load and boundary-condition definitions are intentionally different. Abaqus
- * `OP=MOD` propagates and updates the corresponding logical records, while
- * `OP=NEW` clears that complete record category before the step supplies its new
- * definitions. At `*END STEP` the active snapshot is converted to a fresh
- * FEMaster collector for that one independent load case.
+ * The state stores nodal transformation assignments, active load and boundary
+ * definitions, `OP` selections for the current step, and the parameters required
+ * to construct the active FEMaster load case. Load and boundary definitions are
+ * propagated between steps, whereas each FEMaster load case uses its own
+ * mechanical initial state.
  */
 struct ParserAbqState {
-    // Abaqus nodal transform assignment retained between topology and data passes
+    // Nodal coordinate systems assigned by Abaqus *TRANSFORM
     std::unordered_map<ID, std::string> node_transforms;
 
-    // Active Abaqus load/BC definitions propagated independently of solver state
+    // Active Abaqus load and boundary-condition definitions
     std::vector<ParserAbqCLoad>    cloads;
     std::vector<ParserAbqBoundary> boundaries;
     std::vector<ParserAbqDLoad>    dloads;
     std::vector<ParserAbqDSLoad>   dsloads;
 
-    // OP consistency within the currently open step
+    // OP values used by each definition category in the open step
     std::string cload_op;
     std::string boundary_op;
     std::string dload_op;
     std::string dsload_op;
 
-    // Monotonic identifier used for generated step-local FEMaster collectors
+    // Monotonic identifier for generated step-local FEMaster collectors
     int next_step_index = 1;
 
-    // Currently open Abaqus step
+    // Active Abaqus step and procedure parameters
     bool        step_active = false;
     int         step_index  = 0;
     int         max_increments = 100;
@@ -150,7 +138,7 @@ struct ParserAbqState {
     std::string step_amplitude;
     std::string procedure;
 
-    // FEMaster collectors materialized from the current active snapshot
+    // FEMaster collector names created for the active step snapshot
     std::string load_collector;
     std::string support_collector;
     bool        load_collector_used    = false;
@@ -158,25 +146,16 @@ struct ParserAbqState {
 };
 
 /**
- * @brief Abaqus syntax specialization of the common staged input parser.
+ * @brief Abaqus specialization of the common staged FEMaster input parser.
  *
- * The class does not own a second model-construction workflow. `Parser::run()`
- * remains responsible for the four dependency-ordered passes and all model-side
- * finalization between them. This specialization only defines which commands
- * are known in each pass and which of those commands are active.
- *
- * Native registrations are reused where Abaqus input maps without semantic
- * changes, including `HEADING`, `NODE`, `NSET`, `ELSET`, `MATERIAL`, constant
- * `DENSITY`, `ELASTIC` and Neo-Hooke `HYPERELASTIC`. Abaqus-specific
- * registrations handle element labels, surfaces, coordinate/orientation input,
- * thermal expansion, homogeneous sections and supported analysis/history data.
- *
- * Parts, assemblies and mechanical state propagation between steps remain
- * deliberately outside the supported subset.
+ * The class registers Abaqus-compatible commands for allocation, topology,
+ * field, and analysis-data stages while delegating the stage execution and model
+ * finalization to `Parser`. Native command registrations are reused where their
+ * syntax and semantics match the supported Abaqus subset.
  */
 class ParserAbq : public Parser {
 private:
-    // Syntax-only state shared by Abaqus command callbacks in different passes
+    // Parser-local Abaqus syntax and history state
     ParserAbqState m_abq_state;
 
 public:
@@ -184,13 +163,12 @@ public:
     ParserAbq() = default;
     ~ParserAbq() override = default;
 
-    // Mutable syntax state used by the dedicated Abaqus command registrations
+    // Abaqus state shared by format-specific command registrations
     ParserAbqState& abaqus_state();
     const ParserAbqState& abaqus_state() const;
 
 protected:
-    // Stage-specific Abaqus command registration. The common Parser executes
-    // these stages in the same order used for native FEMaster decks.
+    // Stage-specific command registration
     void configure_count_stage   (io::dsl::Registry& registry, CountData& count) override;
     void configure_topology_stage(io::dsl::Registry& registry) override;
     void configure_field_stage   (io::dsl::Registry& registry) override;
