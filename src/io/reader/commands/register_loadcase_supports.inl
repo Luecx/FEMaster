@@ -1,12 +1,12 @@
 // register_loadcase_supports.inl — registers SUPPORTS within *LOADCASE
 
 #include <array>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "../parser.h"
 
+#include "../../../core/logging.h"
 #include "../../../loadcase/linear_buckling.h"
 #include "../../../loadcase/linear_eigenfreq.h"
 #include "../../../loadcase/linear_harmonic.h"
@@ -36,9 +36,8 @@ inline void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser&
                 )
                 .bind([&parser, &append_tokens](const std::array<std::string, 16>& names) {
                     auto* base = parser.active_loadcase();
-                    if (!base) {
-                        throw std::runtime_error("SUPPORTS must appear inside *LOADCASE");
-                    }
+                    logging::error(base != nullptr,
+                        "SUPPORTS must appear inside *LOADCASE");
 
                     if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
                         append_tokens(names, lc->supps);
@@ -69,7 +68,8 @@ inline void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser&
                         return;
                     }
 
-                    throw std::runtime_error("SUPPORTS not supported for loadcase type " + parser.active_loadcase_type());
+                    logging::error(false,
+                        "SUPPORTS not supported for loadcase type ", parser.active_loadcase_type());
                 })
             )
         );
