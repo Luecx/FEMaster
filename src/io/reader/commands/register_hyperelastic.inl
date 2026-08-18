@@ -1,7 +1,6 @@
 // register_hyperelastic.inl — registers *HYPERELASTIC
 
-#include <stdexcept>
-
+#include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -35,9 +34,8 @@ inline void register_hyperelastic(fem::io::dsl::Registry& registry, model::Model
                 )
                 .bind([&model](fem::Precision c10, fem::Precision d1) {
                     auto material = model._data->materials.get();
-                    if (!material) {
-                        throw std::runtime_error("HYPERELASTIC requires an active material context");
-                    }
+                    logging::error(material != nullptr,
+                        "HYPERELASTIC requires an active material context");
                     material->set_elasticity<fem::material::NeoHookeElasticity>(c10, d1);
                 })
             )
