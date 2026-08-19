@@ -1,6 +1,18 @@
 /**
  * @file model.cpp
- * @brief Implements compact model-level object registration and lifecycle logic.
+ * @brief Implements model-level registration, lifecycle and compact reporting.
+ *
+ * This file contains the small behavioral operations that act directly on
+ * `ModelData`: nonlinear step-cache coordination, registration of loads,
+ * supports and amplitudes, construction of point-mass features and the compact
+ * stream representation of a model.
+ *
+ * Part/instance flattening remains in `model_compile.cpp`, global matrix and
+ * load construction remain in `model_build.cpp`, and the detailed hierarchical
+ * diagnostic report is implemented in `model_overview.cpp`.
+ *
+ * @see Model
+ * @see ModelData
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -11,6 +23,8 @@
 #include "../bc/load_collector.h"
 #include "../bc/support_collector.h"
 #include "../feature/point_mass.h"
+
+#include <iterator>
 
 namespace fem::model {
 
@@ -87,47 +101,38 @@ void Model::add_point_mass_feature(const std::string& nset,
     _data->features.push_back(std::move(feature));
 }
 
+/**
+ * Writes a compact model summary to the supplied stream.
+ *
+ * The representation contains only stable high-level counts and the topology
+ * compilation state. Detailed hierarchical diagnostics remain the
+ * responsibility of `Model::print_overview()` and are not emitted through the
+ * logger as a side effect of streaming.
+ *
+ * @param ostream Destination stream receiving the model summary.
+ * @param model Model whose semantic and compiled entity counts are reported.
+ * @return Reference to `ostream` for chained stream operations.
+ */
 std::ostream& operator<<(std::ostream& ostream, const Model& model) {
-    const Index nodes = model._data->positions ? model._data->positions->rows : Index(0);
-    ostream << "nodes = "    << nodes                         << '\n';
-    ostream << "elements = " << model._data->elements.size() << '\n';
-    ostream << "surfaces = " << model._data->surfaces.size() << '\n';
+    const auto& model_data = *model._data;
 
-    logging::info(true, "Materials");
-    logging::up();
-    for (const auto& material : model._data->materials) {
-        material.second->info();
-    }
-    logging::down();
+    // Count named semantic containers through their public iterator interface.
+    // This avoids depending on the associative storage selected by Dict.
+    auto entry_count = [](const auto& entries) {
+        return static_cast<Index>(std::distance(entries.begin(), entries.end()));
+    };
 
-    logging::info(true, "Sections");
-    logging::up();
-    for (const auto& section : model._data->sections) {
-        section->info();
-    }
-    logging::down();
+    // Use the compiled position field as the authoritative dense node count
+    const Index node_count = model_data.positions ? model_data.positions->rows : Index(0);
 
-    logging::info(true, "Profiles");
-    logging::up();
-    for (const auto& profile : model._data->profiles) {
-        profile.second->info();
-    }
-    logging::down();
-
-    logging::info(true, "Element sets");
-    logging::up();
-    for (const auto& elem_set : model._data->elem_sets) {
-        elem_set.second->info();
-    }
-    logging::down();
-
-    logging::info(true, "Node sets");
-    logging::up();
-    for (const auto& node_set : model._data->node_sets) {
-        node_set.second->info();
-    }
-    logging::down();
-
+    // Write a compact and side-effect-free summary with aligned labels
+    ostream << "compiled  = " << (model_data.compiled ? "true" : "false") << '\n';
+    ostream << "parts     = " << entry_count(model_data.parts)              << '\n';
+    ostream << "instances = " << entry_count(model_data.instances)          << '\n';
+    ostream << "nodes     = " << node_count                                 << '\n';
+    ostream << "elements  = " << model_data.elements.size()                 << '\n';
+    ostream << "surfaces  = " << model_data.surfaces.size()                 << '\n';
+    ostream << "lines     = " << model_data.lines.size()                    << '\n';
     return ostream;
 }
 

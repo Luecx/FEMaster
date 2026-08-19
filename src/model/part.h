@@ -55,20 +55,38 @@ namespace fem::model {
  * `Model::compile()`.
  */
 struct Part : public Namable {
+    // Shared ownership type used by the model dictionary and by every instance
+    // that embeds this part into the assembled model.
     using Ptr = std::shared_ptr<Part>;
 
+    // Part-local topology. Node coordinates are expressed in the local part
+    // coordinate system, and all element, surface and line connectivity refers
+    // to identifiers from these local containers. Model compilation copies and
+    // rewires the entities into dense assembly storage without modifying this
+    // reusable definition.
     std::unordered_map<ID, Vec3>       nodes;
     std::unordered_map<ID, ElementPtr> elements;
     std::unordered_map<ID, SurfacePtr> surfaces;
     std::unordered_map<ID, LinePtr>    lines;
 
+    // Named regions in the same local identifier space as the topology above.
+    // Each registry also owns its aggregate *ALL region. Compilation creates an
+    // instance-qualified assembly region for every local region and maps all
+    // contained identifiers through the corresponding instance.
     Sets<NodeRegion>    node_sets   {SET_NODE_ALL};
     Sets<ElementRegion> elem_sets   {SET_ELEM_ALL};
     Sets<SurfaceRegion> surface_sets{SET_SURF_ALL};
     Sets<LineRegion>    line_sets   {SET_LINE_ALL};
 
+    // Section assignments defined on local element regions. Every instance
+    // receives an independent compiled section whose region and orientation are
+    // transformed into assembly space while shared material and profile
+    // definitions remain referenced.
     std::vector<Section::Ptr> sections;
 
+    // Construction of an empty named part. Topology, regions and section
+    // assignments are populated by the parser or the public model interface
+    // before the one-way model compilation pass.
     explicit Part(std::string name)
         : Namable(std::move(name)) {}
 };

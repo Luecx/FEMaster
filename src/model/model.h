@@ -39,6 +39,7 @@
 #include "model_data.h"
 #include "part.h"
 
+#include <ostream>
 #include <utility>
 
 namespace fem::model {
@@ -179,7 +180,10 @@ struct Model {
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
 
-    // misc
+    // Human-readable model diagnostics. The overview reports semantic topology,
+    // compiled assembly data and associated definitions through the logger. The
+    // stream operator writes a compact summary only to the supplied stream.
+    void print_overview() const;
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
 };
 

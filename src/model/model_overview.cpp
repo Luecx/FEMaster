@@ -1,165 +1,291 @@
-//
-// Model overview pretty-printer
-//
+/**
+ * @file model_overview.cpp
+ * @brief Implements the structured diagnostic overview of a FEM model.
+ *
+ * The overview exposes both sides of the model architecture: reusable semantic
+ * part/instance topology and the dense assembly created by `Model::compile()`.
+ * It also reports named regions, shared definitions, assignments, constraints
+ * and boundary-condition collectors through the hierarchical FEMaster logger.
+ *
+ * The compact stream representation remains implemented separately in
+ * `model.cpp` and has no logging side effects.
+ *
+ * @see Model
+ * @see ModelData
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include "model_overview.h"
+#include "model.h"
 
+#include <algorithm>
+#include <iterator>
 #include <map>
-#include <sstream>
+#include <string>
+#include <vector>
 
 #include "../core/logging.h"
-#include "element/element.h"
-#include "../section/section_beam.h"
-#include "../section/section_solid.h"
-#include "../section/section_shell.h"
 
-namespace fem { namespace model {
+namespace fem::model {
 
-static std::string element_type_of(ElementInterface* e) {
-    return e ? e->type_name() : std::string{};
-}
+/**
+ * Logs a deterministic hierarchical overview of the model representation.
+ *
+ * The report first describes reusable parts and their rigid instances before
+ * presenting the dense compiled assembly. Compiled elements are grouped by
+ * runtime type, and every named region and shared definition is listed in
+ * alphabetical order. Sections, features, constraints and load/support
+ * collectors complete the report.
+ *
+ * Logger indentation represents ownership and grouping relationships. Null
+ * entries are identified explicitly so that partially populated model state
+ * remains diagnosable instead of being silently omitted.
+ */
+void Model::print_overview() const {
+    const auto& model_data = *_data;
 
-template<typename SetsT>
-static void print_sets_header_and_items(const char* title, const SetsT& sets) {
-    int n_sets = 0;
-    for (auto it = sets.begin(); it != sets.end(); ++it) ++n_sets;
-    logging::info(true, std::string(title) + " (" + std::to_string(n_sets) + ")");
-    logging::up();
-    for (const auto& kv : sets) {
-        const auto& name = kv.first;
-        const auto& ptr  = kv.second;
-        if (!ptr) continue;
-        logging::info(true, "", name, " (", ptr->size(), ")");
-    }
-    logging::down();
-    logging::info(true, "");
-}
-
-void print_model_overview(const Model& mdl) {
-    const auto& d = *mdl._data;
-
-    const Index n_nodes = d.positions ? d.positions->rows : Index(0);
-    const Index n_elems = static_cast<Index>(d.elements.size());
-
-    logging::info(true, "Nodes (", n_nodes, ")");
-    logging::info(true, "Elements (", n_elems, ")");
-
-    std::map<std::string, int> by_type;
-    for (const auto& ep : d.elements) {
-        if (!ep) continue;
-        auto name = element_type_of(ep.get());
-        if (name.empty()) name = "UNKNOWN";
-        ++by_type[name];
-    }
-
-    logging::up();
-    if (!by_type.empty()) {
-        std::ostringstream os;
-        os << "Element Types:";
-        bool first = true;
-        for (const auto& kv : by_type) {
-            if (!first) os << "; ";
-            os << " " << kv.first << " (" << kv.second << ")";
-            first = false;
+    // Produce stable diagnostic output even though the owning dictionaries use
+    // unordered storage internally.
+    auto sorted_names = [](const auto& entries) {
+        std::vector<std::string> names;
+        for (const auto& [name, entry] : entries) {
+            (void) entry;
+            names.push_back(name);
         }
-        logging::info(true, os.str());
-    } else {
-        logging::info(true, "Element Types: not distinguished");
-    }
-    logging::down();
-    logging::info(true, "");
+        std::sort(names.begin(), names.end());
+        return names;
+    };
 
-    print_sets_header_and_items("Node Sets",    d.node_sets);
-    print_sets_header_and_items("Element Sets", d.elem_sets);
-    print_sets_header_and_items("Surface Sets", d.surface_sets);
-    print_sets_header_and_items("Line Sets",    d.line_sets);
+    // Count registry entries without depending on their concrete storage type
+    auto entry_count = [](const auto& entries) {
+        return static_cast<Index>(std::distance(entries.begin(), entries.end()));
+    };
 
-    int n_materials = 0;
-    for (auto it = d.materials.begin(); it != d.materials.end(); ++it) ++n_materials;
-    logging::info(true, "Materials (", n_materials, ")");
-    logging::up();
-    for (const auto& kv : d.materials) {
-        const auto& mat = kv.second;
-        logging::info(true, mat ? mat->name : std::string("-"));
-    }
-    logging::down();
-    logging::info(true, "");
+    // Print one family of compiled regions. Region sizes count dense assembly
+    // identifiers, including the aggregate *ALL regions owned by each registry.
+    auto print_regions = [&](const char* title, const auto& sets) {
+        const auto names = sorted_names(sets);
 
-    int n_profiles = 0;
-    for (auto it = d.profiles.begin(); it != d.profiles.end(); ++it) ++n_profiles;
-    logging::info(true, "Profiles (", n_profiles, ")");
-    logging::up();
-    for (const auto& kv : d.profiles) {
-        const auto& pr = kv.second;
-        logging::info(true, pr ? pr->name : std::string("-"));
-    }
-    logging::down();
-    logging::info(true, "");
-
-    logging::info(true, "Sections (", static_cast<int>(d.sections.size()), ")");
-    logging::up();
-    for (auto& s : d.sections) {
-        logging::info(true, s ? s->str() : std::string("Section: (null)"));
-    }
-    logging::down();
-    logging::info(true, "");
-
-    const int n_cpl = static_cast<int>(d.couplings.size());
-    int n_kin = 0;
-    int n_str = 0;
-    for (auto& c : d.couplings) {
-        if (c.type == constraint::CouplingType::KINEMATIC) ++n_kin;
-        else ++n_str;
-    }
-    logging::info(true, "Couplings (", n_cpl, ")");
-    logging::up();
-    logging::info(true, "Kinematic (", n_kin, ")");
-    logging::up();
-    for (auto& c : d.couplings) {
-        if (c.type == constraint::CouplingType::KINEMATIC) logging::info(true, c.str());
-    }
-    logging::down();
-    logging::info(true, "Structural (", n_str, ")");
-    logging::up();
-    for (auto& c : d.couplings) {
-        if (c.type == constraint::CouplingType::STRUCTURAL) logging::info(true, c.str());
-    }
-    logging::down();
-    logging::down();
-
-    int n_supp_cols = 0;
-    for (auto it = d.supp_cols.begin(); it != d.supp_cols.end(); ++it) ++n_supp_cols;
-    logging::info(true, "Support Collectors (", n_supp_cols, ")");
-    logging::up();
-    for (const auto& kv : d.supp_cols) {
-        const auto& name = kv.first;
-        const auto& ptr  = kv.second;
-        if (!ptr) continue;
-        logging::info(true, name, " (", static_cast<int>(ptr->size()), ")");
+        logging::info(true, title, " (", names.size(), ")");
         logging::up();
-        for (const auto& sup : ptr->entries()) {
-            logging::info(true, sup.str());
+        for (const auto& name : names) {
+            const auto& region = sets._data.at(name);
+            if (region) {
+                logging::info(true, name, " (", region->size(), ")");
+            } else {
+                logging::info(true, name, " (null)");
+            }
+        }
+        logging::down();
+    };
+
+    // Print named definitions without depending on their concrete type. The
+    // dictionary key is authoritative and remains available for null entries.
+    auto print_definitions = [&](const char* title, const auto& definitions) {
+        const auto names = sorted_names(definitions);
+
+        logging::info(true, title, " (", names.size(), ")");
+        logging::up();
+        for (const auto& name : names) {
+            logging::info(true, name, definitions.get(name) ? "" : " (null)");
+        }
+        logging::down();
+    };
+
+    // Start one indented report rooted at the model itself
+    logging::info(true, "");
+    logging::info(true, "Model overview");
+    logging::up();
+    logging::info(true, "Compiled: ", model_data.compiled ? "true" : "false");
+
+    // Report reusable part definitions in their local identifier spaces
+    logging::info(true, "");
+    logging::info(true, "Semantic topology");
+    logging::up();
+
+    const auto part_names = sorted_names(model_data.parts);
+    logging::info(true, "Parts (", part_names.size(), ")");
+    logging::up();
+    for (const auto& name : part_names) {
+        const auto part = model_data.parts.get(name);
+        logging::info(true, name, part ? "" : " (null)");
+        if (!part) {
+            continue;
+        }
+
+        logging::up();
+        logging::info(true, "Nodes       : ", part->nodes.size());
+        logging::info(true, "Elements    : ", part->elements.size());
+        logging::info(true, "Surfaces    : ", part->surfaces.size());
+        logging::info(true, "Lines       : ", part->lines.size());
+        logging::info(true, "Sections    : ", part->sections.size());
+        logging::info(true, "Node sets   : ", entry_count(part->node_sets));
+        logging::info(true, "Element sets: ", entry_count(part->elem_sets));
+        logging::info(true, "Surface sets: ", entry_count(part->surface_sets));
+        logging::info(true, "Line sets   : ", entry_count(part->line_sets));
+        logging::down();
+    }
+    logging::down();
+
+    // Report instance ownership and the number of local identifiers mapped into
+    // dense assembly storage by the compile pass.
+    const auto instance_names = sorted_names(model_data.instances);
+    logging::info(true, "Instances (", instance_names.size(), ")");
+    logging::up();
+    for (const auto& name : instance_names) {
+        const auto instance = model_data.instances.get(name);
+        logging::info(true, name, instance ? "" : " (null)");
+        if (!instance) {
+            continue;
+        }
+
+        logging::up();
+        logging::info(true, "Part    : ", instance->part ? instance->part->name : "(null)");
+        logging::info(true, "Nodes   : ", instance->node_ids.size());
+        logging::info(true, "Elements: ", instance->element_ids.size());
+        logging::info(true, "Surfaces: ", instance->surface_ids.size());
+        logging::info(true, "Lines   : ", instance->line_ids.size());
+        logging::down();
+    }
+    logging::down();
+    logging::down();
+
+    // Count dense elements by their runtime type. Empty solver slots remain
+    // visible as UNDEFINED instead of disappearing from the diagnostic total.
+    std::map<std::string, Index> element_types;
+    for (const auto& element : model_data.elements) {
+        std::string type = element ? element->type_name() : "";
+        if (type.empty()) {
+            type = "UNDEFINED";
+        }
+        ++element_types[type];
+    }
+
+    // Report the dense solver-facing assembly created by Model::compile()
+    const Index node_count = model_data.positions ? model_data.positions->rows : Index(0);
+
+    logging::info(true, "");
+    logging::info(true, "Compiled assembly");
+    logging::up();
+    logging::info(true, "Nodes (", node_count, ")");
+    logging::info(true, "Elements (", model_data.elements.size(), ")");
+    logging::up();
+    for (const auto& [type, count] : element_types) {
+        logging::info(true, type, " (", count, ")");
+    }
+    logging::down();
+    logging::info(true, "Surfaces (", model_data.surfaces.size(), ")");
+    logging::info(true, "Lines (", model_data.lines.size(), ")");
+    logging::down();
+
+    // List all compiled region namespaces and their dense entity counts
+    logging::info(true, "");
+    logging::info(true, "Regions");
+    logging::up();
+    print_regions("Node sets",    model_data.node_sets);
+    print_regions("Element sets", model_data.elem_sets);
+    print_regions("Surface sets", model_data.surface_sets);
+    print_regions("Line sets",    model_data.line_sets);
+    logging::down();
+
+    // List shared named resources independently of topology and assignment data
+    logging::info(true, "");
+    logging::info(true, "Definitions");
+    logging::up();
+    print_definitions("Materials",          model_data.materials);
+    print_definitions("Profiles",           model_data.profiles);
+    print_definitions("Coordinate systems", model_data.coordinate_systems);
+    print_definitions("Amplitudes",         model_data.amplitudes);
+    logging::down();
+
+    // Report compiled section assignments and non-element operator features
+    logging::info(true, "");
+    logging::info(true, "Sections and features");
+    logging::up();
+    logging::info(true, "Sections (", model_data.sections.size(), ")");
+    logging::up();
+    for (const auto& section : model_data.sections) {
+        logging::info(true, section ? section->str() : "Section: (null)");
+    }
+    logging::down();
+    logging::info(true, "Features (", model_data.features.size(), ")");
+    logging::up();
+    const Index undefined_features = static_cast<Index>(std::count(
+        model_data.features.begin(),
+        model_data.features.end(),
+        nullptr
+    ));
+    logging::info(undefined_features > 0, "Undefined: ", undefined_features);
+    logging::down();
+    logging::down();
+
+    // Summarize every stored constraint family. Couplings expose a stable
+    // printable representation; the remaining types currently expose counts.
+    logging::info(true, "");
+    logging::info(true, "Constraints");
+    logging::up();
+    logging::info(true, "Connectors: ", model_data.connectors.size());
+    logging::info(true, "Couplings : ", model_data.couplings.size());
+    logging::up();
+    for (const auto& coupling : model_data.couplings) {
+        logging::info(true, coupling.str());
+    }
+    logging::down();
+    logging::info(true, "Ties      : ", model_data.ties.size());
+    logging::info(true, "Contacts  : ", model_data.contacts.size());
+    logging::info(true, "RBMs      : ", model_data.rbms.size());
+    logging::info(true, "Equations : ", model_data.equations.size());
+    logging::down();
+
+    // Expand support collectors and their value entries in deterministic name
+    // order. Supports are stored by value and are therefore never null.
+    const auto support_collector_names = sorted_names(model_data.supp_cols);
+
+    logging::info(true, "");
+    logging::info(true, "Support collectors (", support_collector_names.size(), ")");
+    logging::up();
+    for (const auto& name : support_collector_names) {
+        const auto& collector = model_data.supp_cols._data.at(name);
+        if (!collector) {
+            logging::info(true, name, " (null)");
+            continue;
+        }
+
+        logging::info(true, name, " (", collector->size(), ")");
+        logging::up();
+        for (const auto& support : collector->entries()) {
+            logging::info(true, support.str());
         }
         logging::down();
     }
     logging::down();
 
-    int n_load_cols = 0;
-    for (auto it = d.load_cols.begin(); it != d.load_cols.end(); ++it) ++n_load_cols;
-    logging::info(true, "Load Collectors (", n_load_cols, ")");
+    // Expand load collectors and identify missing polymorphic load entries
+    // explicitly instead of silently skipping them.
+    const auto load_collector_names = sorted_names(model_data.load_cols);
+
+    logging::info(true, "");
+    logging::info(true, "Load collectors (", load_collector_names.size(), ")");
     logging::up();
-    for (const auto& kv : d.load_cols) {
-        const auto& name = kv.first;
-        const auto& ptr  = kv.second;
-        if (!ptr) continue;
-        logging::info(true, name, " (", static_cast<int>(ptr->size()), ")");
+    for (const auto& name : load_collector_names) {
+        const auto& collector = model_data.load_cols._data.at(name);
+        if (!collector) {
+            logging::info(true, name, " (null)");
+            continue;
+        }
+
+        logging::info(true, name, " (", collector->size(), ")");
         logging::up();
-        for (const auto& load_ptr : ptr->entries()) {
-            if (load_ptr) logging::info(true, load_ptr->str());
+        for (const auto& load : collector->entries()) {
+            logging::info(true, load ? load->str() : "Load: (null)");
         }
         logging::down();
     }
     logging::down();
+
+    // Close the model-level indentation established at the start of the report
+    logging::down();
 }
 
-} } // namespace fem::model
+} // namespace fem::model
