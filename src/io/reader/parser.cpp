@@ -52,7 +52,6 @@
 #include "commands/register_heading.inl"
 #include "commands/register_hyperelastic.inl"
 #include "commands/register_inertialload.inl"
-#include "commands/register_instance.inl"
 #include "commands/register_material.inl"
 #include "commands/register_node.inl"
 #include "commands/register_normal.inl"
@@ -97,6 +96,8 @@
 #include "commands/register_loadcase_topoexponent.inl"
 #include "commands/register_loadcase_topoorient.inl"
 #include "commands/register_loadcase_write_every.inl"
+
+#include "commands_abq/register_instance.inl"
 
 namespace fem::io::reader {
 
@@ -503,7 +504,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_end_part    (registry, mdl);
     commands::register_assembly    (registry, assembly_scope);
     commands::register_end_assembly(registry, assembly_scope);
-    commands::register_instance    (registry, mdl);
+    commands_abq::register_instance(registry, mdl);
     commands::register_end_instance(registry);
     commands::register_node        (registry, mdl, assembly_scope);
     commands::register_element     (registry, mdl, assembly_scope);
