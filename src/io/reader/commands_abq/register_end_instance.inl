@@ -2,6 +2,13 @@
  * @file register_end_instance.inl
  * @brief Registers the Abaqus ENDINSTANCE scope terminator.
  *
+ * `END INSTANCE` closes the scope opened by an Abaqus `INSTANCE` command. The
+ * referenced Part and rigid placement are already stored by the opening
+ * callback, so the terminator performs no additional geometry mutation.
+ *
+ * Its grammar entry remains necessary in every parser pass to retain valid
+ * parent-child scope state while commands are replayed consume-only.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

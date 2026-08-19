@@ -2,6 +2,14 @@
  * @file register_cload.inl
  * @brief Registers Abaqus concentrated nodal loads.
  *
+ * Each Abaqus `CLOAD` row maps one structural DOF and magnitude onto a
+ * six-component FEMaster concentrated load for a node or node set. Nodal
+ * `TRANSFORM` assignments define the optional load basis, and supported
+ * amplitude semantics are resolved against the active analysis procedure.
+ *
+ * Real-valued non-follower loading is stored in the dedicated step load
+ * collector. Unsupported complex or follower variants are rejected explicitly.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
@@ -14,6 +22,7 @@
 #include "../reference.h"
 #include "../parser_abq.h"
 #include "../../../bc/load_c.h"
+#include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -33,9 +42,10 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 .flag("IMAGINARY")
         );
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
-            logging::error(parser.abaqus_state().step_active && parser.active_loadcase(),
+            auto* loadcase = parser.active_loadcase();
+            logging::error(parser.abaqus_state().step_active && loadcase != nullptr,
                 "CLOAD: must appear after a supported procedure inside STEP");
-            logging::error(parser.active_loadcase_type() != "EIGENFREQ",
+            logging::error(loadcase->type_name() != "EIGENFREQ",
                 "CLOAD: not supported in a FREQUENCY step");
             logging::error(!keys.has("FOLLOWER"),
                 "CLOAD: FOLLOWER is not supported");

@@ -19,14 +19,6 @@ namespace fem {
 namespace loadcase {
 
 /**
- * @copydoc LoadCase::LoadCase
- */
-LoadCase::LoadCase(ID case_id, io::writer::ResultWriters* writer_in, model::Model* model_in)
-    : id(case_id)
-    , writer(writer_in)
-    , model(model_in) {}
-
-/**
  * @copydoc LoadCase::report_constraint_groups
  */
 void LoadCase::report_constraint_groups(const constraint::ConstraintGroups& groups) const {

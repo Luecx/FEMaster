@@ -1,6 +1,25 @@
-// register_loadcase_begin.inl — registers *LOADCASE (begin block)
+/**
+ * @file register_loadcase_begin.inl
+ * @brief Registers creation and completion of FEMaster load-case scopes.
+ *
+ * The root-level `LOADCASE` command maps the requested analysis type to one
+ * concrete `loadcase::LoadCase` implementation and transfers its ownership to
+ * `Parser::begin_loadcase()`. Consecutive child commands then configure that
+ * active object through the common parser lifecycle.
+ *
+ * When the scope closes, `Parser::end_loadcase()` removes the active definition,
+ * executes the selected analysis and releases its storage. This file therefore
+ * owns the common construction boundary, while formulation-specific settings
+ * remain in their dedicated registration files.
+ *
+ * @see loadcase::LoadCase
+ * @see Parser::begin_loadcase
+ * @see Parser::end_loadcase
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <exception>
 #include <memory>
 #include <string>
 
@@ -34,48 +53,34 @@ inline void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& pa
             logging::error(parser.active_loadcase() == nullptr,
                 "Nested *LOADCASE blocks are not supported");
 
-            auto& mdl = parser.model();
-            auto& wrt = parser.writer();
             const std::string type = keys.raw("TYPE");
-            const int id = parser.next_loadcase_id();
-
-            std::unique_ptr<loadcase::LoadCase> lc;
             if (type == "LINEARSTATIC") {
-                lc = std::make_unique<loadcase::LinearStatic>(id, &wrt, &mdl);
+                parser.begin_loadcase(std::make_unique<loadcase::LinearStatic>());
             } else if (type == "NONLINEARSTATIC") {
-                lc = std::make_unique<loadcase::NonlinearStatic>(id, &wrt, &mdl);
+                parser.begin_loadcase(std::make_unique<loadcase::NonlinearStatic>());
             } else if (type == "LINEARBUCKLING") {
-                lc = std::make_unique<loadcase::LinearBuckling>(id, &wrt, &mdl, 10);
+                parser.begin_loadcase(std::make_unique<loadcase::LinearBuckling>());
             } else if (type == "LINEARSTATICTOPO") {
-                lc = std::make_unique<loadcase::LinearStaticTopo>(id, &wrt, &mdl);
+                parser.begin_loadcase(std::make_unique<loadcase::LinearStaticTopo>());
             } else if (type == "EIGENFREQ") {
-                lc = std::make_unique<loadcase::LinearEigenfrequency>(id, &wrt, &mdl, 10);
+                parser.begin_loadcase(std::make_unique<loadcase::LinearEigenfrequency>());
             } else if (type == "LINEARTRANSIENT") {
-                lc = std::make_unique<loadcase::Transient>(id, &wrt, &mdl);
+                parser.begin_loadcase(std::make_unique<loadcase::Transient>());
             } else if (type == "LINEARHARMONIC") {
-                lc = std::make_unique<loadcase::LinearHarmonic>(id, &wrt, &mdl);
+                parser.begin_loadcase(std::make_unique<loadcase::LinearHarmonic>());
             } else {
                 logging::error(false,
                     "Unsupported loadcase type: ", type);
             }
-
-            parser.set_active_loadcase(std::move(lc), type);
         });
 
-        // When the LOADCASE scope exits, run and clear it.
+        // Execute and release the completed load case when its scope closes
         command.on_exit([&parser](const fem::io::dsl::Keys&) {
-            auto* lc = parser.active_loadcase();
-            if (!lc) {
-                // Nothing to do (either already cleared, or mis-scoped END).
+            if (!parser.active_loadcase()) {
+                // Ignore a load case already consumed by an earlier closing command
                 return;
             }
-            try {
-                lc->run();
-            } catch (const std::exception& e) {
-                logging::error(false,
-                    "LOADCASE execution failed: ", e.what());
-            }
-            parser.clear_active_loadcase();
+            parser.end_loadcase();
         });
 
         command.variant(fem::io::dsl::Variant::make());

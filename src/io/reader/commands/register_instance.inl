@@ -2,6 +2,14 @@
  * @file register_instance.inl
  * @brief Registers rigid part instances for FEMaster decks.
  *
+ * `INSTANCE` references a previously defined Part and records its assembly
+ * placement as a translation followed by an optional axis-angle rotation. The
+ * resulting rectangular coordinate system is stored with the semantic Instance
+ * rather than applied immediately to part-local nodes.
+ *
+ * `Model::compile()` later expands every instance, transforms its coordinates
+ * and constructs deterministic maps from local to dense assembly identifiers.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

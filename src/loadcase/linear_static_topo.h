@@ -29,19 +29,6 @@ namespace loadcase {
  */
 struct LinearStaticTopo : public LinearStatic {
     //-------------------------------------------------------------------------
-    // Constructor
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Constructs a LinearStaticTopo load case with a given ID, writer,
-     * and model.
-     *
-     * @param id The unique ID of the load case.
-     * @param writer Pointer to a Writer object for output handling.
-     * @param model Pointer to the finite element model.
-     */
-    explicit LinearStaticTopo(ID id, io::writer::ResultWriters* writer, model::Model* model);
-
-    //-------------------------------------------------------------------------
     // Data Members
     //-------------------------------------------------------------------------
     model::Field::Ptr density = nullptr;  /**< Element density used for topology optimization. */
@@ -49,13 +36,8 @@ struct LinearStaticTopo : public LinearStatic {
     Precision exponent = 1;  /**< Exponent used in SIMP-like penalization schemes. */
 
 public:
-    //-------------------------------------------------------------------------
-    // Run Analysis
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Executes the linear static analysis with topology optimization
-     * considerations. This function overrides the base run() method.
-     */
+    // Analysis identity and execution
+    std::string type_name() const override { return "LINEARSTATICTOPO"; }
     void run() override;
 };
 } // namespace loadcase

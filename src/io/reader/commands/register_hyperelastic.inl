@@ -1,4 +1,18 @@
-// register_hyperelastic.inl — registers *HYPERELASTIC
+/**
+ * @file register_hyperelastic.inl
+ * @brief Registers Neo-Hooke hyperelastic material definitions.
+ *
+ * The material-scoped `HYPERELASTIC` command accepts the supported Neo-Hooke
+ * spelling variants and interprets the supplied `C10` and `D1` coefficients.
+ * It resolves the active material created by the surrounding `MATERIAL` scope
+ * and installs the corresponding finite-strain elasticity model on it.
+ *
+ * The command is part of the definition pass because sections and elements may
+ * reference the completed material during later topology construction.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../../../core/logging.h"
 #include "../../../core/types_num.h"

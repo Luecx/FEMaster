@@ -1,4 +1,18 @@
-// register_loadcase_request_stgeom.inl — registers REQUESTSTGEOM for buckling loadcases
+/**
+ * @file register_loadcase_request_stgeom.inl
+ * @brief Registers geometric-stiffness matrix output for buckling analyses.
+ *
+ * `REQUESTSTGEOM` selects an optional output base for the geometric stiffness
+ * assembled by an active `LinearBuckling` load case. When no filename is given,
+ * the command derives a deterministic name from the parser-assigned load-case
+ * identifier.
+ *
+ * Matrix construction and the exact active/reduced output variants remain the
+ * responsibility of the buckling implementation.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <string>
 
@@ -20,7 +34,7 @@ inline void register_loadcase_request_stgeom(fem::io::dsl::Registry& registry, P
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto* lc = parser.active_loadcase_as<loadcase::LinearBuckling>();
+            auto* lc = dynamic_cast<loadcase::LinearBuckling*>(parser.active_loadcase());
             logging::error(lc != nullptr,
                 "REQUESTSTGEOM only valid for LINEARBUCKLING loadcases");
             lc->geom_file = keys.has("FILE") ? keys.raw("FILE") : "geom_" + std::to_string(lc->get_id()) + ".txt";
@@ -31,4 +45,3 @@ inline void register_loadcase_request_stgeom(fem::io::dsl::Registry& registry, P
 }
 
 } // namespace fem::io::reader::commands
-

@@ -2,6 +2,14 @@
  * @file register_inertialload.inl
  * @brief Registers rigid-body inertial loads.
  *
+ * `INERTIALOAD` defines translational, centrifugal and angular-acceleration
+ * contributions about a supplied center for an element region. The command also
+ * records whether concentrated point masses participate in the inertia
+ * calculation and stores the resulting `bc::InertialLoad` by collector.
+ *
+ * Mass-property evaluation and conversion of rigid-body accelerations into
+ * consistent element and nodal forces occur during load assembly.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

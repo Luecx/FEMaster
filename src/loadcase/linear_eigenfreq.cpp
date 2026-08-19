@@ -208,16 +208,6 @@ static void write_results(const std::vector<ModalMode>& modes,
 }
 
 /**
- * @class LinearEigenfrequency
- * @brief Modal analysis entry point (constrained via null-space).
- */
-LinearEigenfrequency::LinearEigenfrequency(ID id,
-                                           io::writer::ResultWriters* writer,
-                                           model::Model* model,
-                                           int numEigenvalues)
-    : LoadCase(id, writer, model), num_eigenvalues(numEigenvalues) {}
-
-/**
  * @brief Execute the modal analysis as described in the file header.
  *
  * Logging

@@ -2,6 +2,14 @@
  * @file register_boundary.inl
  * @brief Registers Abaqus displacement and rotation constraints.
  *
+ * Abaqus `BOUNDARY` rows are translated into six-component FEMaster supports
+ * for individual nodes or compiled node sets. The command supports zero and
+ * prescribed structural DOFs, applies any nodal `TRANSFORM` orientation and
+ * stores the constraints in the step support collector.
+ *
+ * Procedure-dependent validation limits nonzero values and amplitudes to the
+ * static cases that FEMaster can represent without boundary-condition history.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
@@ -15,6 +23,7 @@
 #include "../reference.h"
 #include "../parser_abq.h"
 #include "../../../bc/support.h"
+#include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -63,10 +72,9 @@ inline void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parse
                         "BOUNDARY: structural DOFs must be in [1,6]");
 
                     if (parser.abaqus_state().step_active && magnitude != Precision(0)) {
-                        const std::string& procedure = parser.active_loadcase_type();
+                        const std::string procedure = parser.active_loadcase()->type_name();
                         logging::error(procedure == "LINEARSTATIC"
-                                    || procedure == "NONLINEARSTATIC"
-                                    || procedure == "STATIC_RIKS",
+                                    || procedure == "NONLINEARSTATIC",
                             "BOUNDARY: nonzero values are supported only for static procedures");
                         if (!amplitude->empty()) {
                             logging::error(procedure == "LINEARSTATIC",

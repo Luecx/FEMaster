@@ -7,6 +7,10 @@
  * and stores it directly in ModelData. No Model-side constraint factory or type
  * dispatcher participates in this path.
  *
+ * Search distance and optional initial adjustment are retained by the selected
+ * tie formulation. Projection, interpolation and constraint-equation assembly
+ * use the compiled geometry later when a load case collects constraints.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

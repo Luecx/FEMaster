@@ -2,7 +2,7 @@
  * @file parser_abq.h
  * @brief Declares the Abaqus input reader and its parser-local state.
  *
- * `ParserAbq` specializes the semantic parser stages used by the common
+ * `ParserAbq` specializes the semantic parser passes used by the common
  * `Parser::run()` pipeline. Global material resources are collected before
  * topology, nodes and elements are constructed in reusable parts, and the
  * common `Model::compile()` boundary creates dense solver data before assembly
@@ -58,10 +58,10 @@ public:
     std::pair<Precision, std::string> resolve_load_amplitude(const std::string& amplitude);
 
 protected:
-    void configure_definition_stage(io::dsl::Registry& registry) override;
-    void configure_topology_stage  (io::dsl::Registry& registry) override;
-    void configure_field_stage     (io::dsl::Registry& registry) override;
-    void configure_data_stage      (io::dsl::Registry& registry) override;
+    void configure_definition_pass(io::dsl::Registry& registry) override;
+    void configure_topology_pass  (io::dsl::Registry& registry) override;
+    void configure_assembly_pass  (io::dsl::Registry& registry) override;
+    void configure_analysis_pass  (io::dsl::Registry& registry) override;
 
 private:
     void register_common_commands(io::dsl::Registry& registry,

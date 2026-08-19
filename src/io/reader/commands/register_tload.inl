@@ -2,6 +2,15 @@
  * @file register_tload.inl
  * @brief Registers thermal loads driven by nodal temperature fields.
  *
+ * `TLOAD` associates a compiled nodal temperature field and reference
+ * temperature with a named load collector. The resulting `bc::TLoad` provides
+ * the temperature difference consumed by elements whose materials define a
+ * thermal-expansion coefficient.
+ *
+ * This registration does not compute thermal strains or equivalent forces;
+ * those operations remain coupled to element geometry and constitutive data
+ * during analysis.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

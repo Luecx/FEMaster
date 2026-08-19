@@ -6,6 +6,11 @@
  * coefficient stored by FEMaster materials. Direction-dependent and
  * temperature-/field-dependent expansion forms are outside the supported syntax.
  *
+ * The command executes while the surrounding Abaqus material is active during
+ * the definition pass. Thermal strains and equivalent forces are evaluated
+ * later from this coefficient, reference temperatures and nodal temperature
+ * fields; no analysis state is constructed here.
+ *
  * @see material::Material
  *
  * @author Finn Eggers

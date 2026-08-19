@@ -2,6 +2,15 @@
  * @file register_pload.inl
  * @brief Registers scalar surface pressure loads.
  *
+ * Each `PLOAD` row assigns a scalar pressure to a surface or surface set and may
+ * reference a reusable amplitude. The command creates `bc::PLoad` objects in the
+ * requested load collector while retaining the geometric target by shared
+ * region ownership.
+ *
+ * Pressure direction follows the finite-element surface normal. Evaluation of
+ * normals, surface Jacobians and consistent nodal forces is deferred to load
+ * assembly.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

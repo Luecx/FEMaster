@@ -160,17 +160,6 @@ static void print_buckling_summary(const std::vector<BucklingMode>& modes,
 }
 
 /**
- * @class LinearBuckling
- * @brief Buckling analysis entry point (constrained via null-space).
- */
-LinearBuckling::LinearBuckling(ID id,
-                               io::writer::ResultWriters* writer,
-                               model::Model* model,
-                               int numEigenvalues)
-    : LoadCase(id, writer, model)
-    , num_eigenvalues(numEigenvalues) {}
-
-/**
  * @brief Execute the linear buckling analysis.
  *
  * Implementation notes

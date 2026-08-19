@@ -2,6 +2,14 @@
  * @file register_beam_section.inl
  * @brief Registers beam section assignments.
  *
+ * `BEAMSECTION` combines a material, beam profile and target element region into
+ * a `BeamSection`. An optional orientation vector defines the initial local
+ * cross-section direction used to construct the beam frame.
+ *
+ * The section is attached to semantic Part topology before compilation. Element
+ * kinematics and constitutive integration consume the stored profile, material
+ * and orientation later during matrix and result assembly.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

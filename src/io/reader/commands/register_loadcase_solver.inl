@@ -1,4 +1,18 @@
-// register_loadcase_solver.inl — registers SOLVER within *LOADCASE
+/**
+ * @file register_loadcase_solver.inl
+ * @brief Registers solver device and algorithm selection for load cases.
+ *
+ * `SOLVER` maps deck-level `DEVICE` and `METHOD` tokens to FEMaster's sparse
+ * solver enums and applies them to each supported active analysis. The command
+ * covers CPU/GPU placement and direct/iterative solution selection while the
+ * concrete solver layer enforces backend-specific compatibility.
+ *
+ * The embedded command documentation retains the compatibility matrix for
+ * constraint methods and available numerical backends.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <string>
 
@@ -60,7 +74,7 @@ inline void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& p
             if (configure(dynamic_cast<loadcase::Transient*>(base))) return;
 
             logging::error(false,
-                "SOLVER not supported for loadcase type ", parser.active_loadcase_type());
+                "SOLVER not supported for loadcase type ", base->type_name());
         });
 
         command.variant(fem::io::dsl::Variant::make());

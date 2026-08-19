@@ -2,6 +2,13 @@
  * @file register_end_instance.inl
  * @brief Registers the ENDINSTANCE scope terminator.
  *
+ * `ENDINSTANCE` closes the syntactic scope opened by an `INSTANCE` command.
+ * Instance placement is already captured when the opening command executes, so
+ * no additional model mutation is required at the terminator.
+ *
+ * Keeping the terminator in the complete grammar is nevertheless essential for
+ * correct nested-scope consumption during every dependency-ordered parser pass.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

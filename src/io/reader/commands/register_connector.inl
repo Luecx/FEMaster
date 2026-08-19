@@ -6,6 +6,10 @@
  * Connector itself. Model deliberately has no generic constraint dispatcher;
  * the completed object is appended directly to ModelData.
  *
+ * The command binds two node regions through a selected connector formulation
+ * and coordinate system. The resulting constraint contributes its kinematic
+ * relations when an active load case collects model constraints.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

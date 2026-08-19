@@ -1,4 +1,19 @@
-// register_loadcase_loads.inl — registers LOADS within *LOADCASE
+/**
+ * @file register_loadcase_loads.inl
+ * @brief Registers load-collector selection for active load cases.
+ *
+ * The `LOADS` child command reads one or more load-collector names and appends
+ * every non-empty token to the active analysis. It supports the static,
+ * buckling, transient, harmonic and nonlinear load cases that assemble external
+ * forces from named model collectors.
+ *
+ * Collector existence and formulation-specific load assembly remain load-case
+ * responsibilities. This registration layer validates the active analysis type
+ * and preserves the order in which collector names appear in the deck.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <array>
 #include <string>
@@ -59,7 +74,7 @@ inline void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& pa
                         return;
                     }
                     logging::error(false,
-                        "LOADS not supported for loadcase type ", parser.active_loadcase_type());
+                        "LOADS not supported for loadcase type ", base->type_name());
                 })
             )
         );

@@ -2,6 +2,15 @@
  * @file register_shell_section.inl
  * @brief Registers integrated and ABD shell sections.
  *
+ * `SHELLSECTION` supports material-integrated thickness definitions and direct
+ * membrane-bending `ABD` constitutive data. It resolves the target element set,
+ * optional material orientation and coordinate-system axis before creating the
+ * corresponding shell-section implementation.
+ *
+ * Integrated sections defer through-thickness constitutive evaluation to their
+ * material, whereas ABD sections store the supplied generalized stiffness and
+ * inertia terms directly. Both are assigned before model compilation.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

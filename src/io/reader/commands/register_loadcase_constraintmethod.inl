@@ -1,4 +1,20 @@
-// register_loadcase_constraintmethod.inl — registers CONSTRAINTMETHOD within *LOADCASE
+/**
+ * @file register_loadcase_constraintmethod.inl
+ * @brief Registers constraint-transformation selection for structural analyses.
+ *
+ * `CONSTRAINTMETHOD` selects null-space projection, Lagrange multipliers or
+ * elimination for the active supported load case. The command translates the
+ * deck token into `ConstraintTransformer::Method` and applies it only to
+ * analyses that expose a compatible constraint backend.
+ *
+ * Solver/backend compatibility remains documented by the command grammar and
+ * is enforced by the corresponding load-case implementation during execution.
+ * Unsupported active load-case types produce a diagnostic containing their
+ * canonical `type_name()`.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <string>
 
@@ -64,7 +80,7 @@ inline void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry,
             }
 
             logging::error(false,
-                "CONSTRAINTMETHOD not supported for loadcase type " + parser.active_loadcase_type());
+                "CONSTRAINTMETHOD not supported for loadcase type " + base->type_name());
         });
 
         command.variant(fem::io::dsl::Variant::make());

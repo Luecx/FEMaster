@@ -2,6 +2,14 @@
  * @file register_end_assembly.inl
  * @brief Registers the ENDASSEMBLY scope terminator.
  *
+ * `ENDASSEMBLY` closes the assembly grammar scope and clears the registry-local
+ * flag shared with assembly-aware topology commands. The flag determines
+ * whether sets, surfaces and other qualified definitions address compiled
+ * assembly entities rather than active Part storage.
+ *
+ * No model object is destroyed when the scope ends because FEMaster represents
+ * the assembly directly through the persistent `Model`.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

@@ -35,23 +35,12 @@ struct LinearStatic : public LoadCase {
     constraint::ConstraintTransformer::Method constraint_method =
         constraint::ConstraintTransformer::Method::NullSpace; ///< Constraint backend selection.
     std::string stiffness_file; ///< Optional path for stiffness matrix output.
-
-
     bool inertia_relief  = false; ///< Toggle for inertia relief (adds temporary inertial load to balance F/M).
     bool inertia_relief_consider_point_masses = true; ///< Include POINTMASS features in inertia-relief mass/inertia and load assembly.
 	bool rebalance_loads = false; ///< Toggle for load rebalancing (adds loads so that sum F = sum M = 0).
-    /**
-     * @brief Constructs the linear static load case.
-     *
-     * @param id Load-case identifier.
-     * @param writer Writer used for reporting.
-     * @param model Model reference.
-     */
-    LinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model);
 
-    /**
-     * @brief Executes the linear static solution procedure.
-     */
+    // Analysis identity and execution
+    std::string type_name() const override { return "LINEARSTATIC"; }
     void run() override;
 };
 } // namespace loadcase

@@ -2,6 +2,15 @@
  * @file register_dsload.inl
  * @brief Registers Abaqus pressure and traction surface loads.
  *
+ * `DSLOAD` translates scalar `P` pressure and vector `TRVEC` traction entries on
+ * compiled surface sets into FEMaster surface loads. It resolves optional
+ * amplitudes and coordinate orientations, normalizes traction directions and
+ * stores the resulting objects in the active step collector.
+ *
+ * Follower behavior is validated against the active procedure because the
+ * nonlinear formulations currently support only the explicitly representable
+ * combinations. Complex-valued loading is rejected.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
@@ -17,6 +26,7 @@
 #include "../parser_abq.h"
 #include "../../../bc/load_d.h"
 #include "../../../bc/load_p.h"
+#include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -40,9 +50,10 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                 .flag("IMAGINARY")
         );
         command.on_enter([&parser, amplitude, orientation, follower](const fem::io::dsl::Keys& keys) {
-            logging::error(parser.abaqus_state().step_active && parser.active_loadcase(),
+            auto* loadcase = parser.active_loadcase();
+            logging::error(parser.abaqus_state().step_active && loadcase != nullptr,
                 "DSLOAD: must appear after a supported procedure inside STEP");
-            logging::error(parser.active_loadcase_type() != "EIGENFREQ",
+            logging::error(loadcase->type_name() != "EIGENFREQ",
                 "DSLOAD: not supported in a FREQUENCY step");
             logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
                 "DSLOAD: REAL and IMAGINARY are mutually exclusive");
@@ -78,7 +89,7 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
 
                     const auto [scale, resolved_amplitude] = parser.resolve_load_amplitude(*amplitude);
                     magnitude *= scale;
-                    const std::string& procedure = parser.active_loadcase_type();
+                    const std::string procedure = parser.active_loadcase()->type_name();
 
                     bc::Amplitude::Ptr amplitude_ptr = nullptr;
                     if (!resolved_amplitude.empty()) {
@@ -90,7 +101,7 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                     if (type == "P") {
                         logging::error(std::isnan(direction[0]) && std::isnan(direction[1]) && std::isnan(direction[2]),
                             "DSLOAD: P accepts no direction components");
-                        logging::error(procedure != "NONLINEARSTATIC" && procedure != "STATIC_RIKS",
+                        logging::error(procedure != "NONLINEARSTATIC",
                             "DSLOAD: follower pressure is not supported in nonlinear steps");
 
                         auto load = std::make_shared<bc::PLoad>();
@@ -105,7 +116,7 @@ inline void register_dsload(fem::io::dsl::Registry& registry, ParserAbq& parser)
                         "DSLOAD: only P and TRVEC are supported");
                     logging::error(!std::isnan(direction[0]) && !std::isnan(direction[1]) && !std::isnan(direction[2]),
                         "DSLOAD: TRVEC requires three direction components");
-                    logging::error((procedure != "NONLINEARSTATIC" && procedure != "STATIC_RIKS") || *follower == "NO",
+                    logging::error(procedure != "NONLINEARSTATIC" || *follower == "NO",
                         "DSLOAD: nonlinear TRVEC requires FOLLOWER=NO");
 
                     Vec3 traction{direction[0], direction[1], direction[2]};

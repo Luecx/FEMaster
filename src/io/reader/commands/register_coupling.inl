@@ -7,6 +7,10 @@
  * region used for diagnostics/output and stores the finished Coupling directly
  * in ModelData. Model itself does not dispatch constraint types.
  *
+ * The data line selects the generalized translational and rotational DOFs that
+ * participate in the coupling. Equation generation and distribution over the
+ * resolved slave region are deferred to the concrete constraint object.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

@@ -2,6 +2,14 @@
  * @file register_node.inl
  * @brief Registers part-local and unqualified assembly nodes.
  *
+ * Node rows map sparse user identifiers to global Cartesian coordinates in the
+ * currently active semantic Part. Root-level definitions are assigned to the
+ * default part, while assembly-scope callbacks are coordinated separately
+ * during the post-compile parser pass.
+ *
+ * This command retains the original identifiers and does not allocate dense
+ * solver rows; that transformation belongs to `Model::compile()`.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

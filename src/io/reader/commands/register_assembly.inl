@@ -2,6 +2,14 @@
  * @file register_assembly.inl
  * @brief Registers the ASSEMBLY scope.
  *
+ * FEMaster represents the assembly directly through `Model`, so this command
+ * does not create a second assembly object. Instead it opens the grammar scope
+ * and updates registry-local state used by node, element, set and surface
+ * commands to distinguish assembly-level definitions from part-local data.
+ *
+ * The shared scope flag belongs to one parser pass and is cleared by the
+ * corresponding `ENDASSEMBLY` registration.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

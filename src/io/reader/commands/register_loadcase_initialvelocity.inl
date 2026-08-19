@@ -1,8 +1,20 @@
-#pragma once
 /**
  * @file register_loadcase_initialvelocity.inl
- * @brief Register *INITIALVELOCITY inside *LOADCASE (Transient): reference a node field.
+ * @brief Registers nodal initial velocities for transient analyses.
+ *
+ * The `INITIALVELOCITY` child command resolves a named node field and assigns it
+ * to the active `Transient` load case. Validation requires node-domain storage
+ * with six generalized velocity components per node so translations and
+ * rotations match the solver DOF layout.
+ *
+ * Projection into active and constrained coordinates is deferred to transient
+ * initialization after the model DOF map has been assembled.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <string>
 
@@ -43,7 +55,7 @@ inline void register_loadcase_initialvelocity(fem::io::dsl::Registry& registry, 
                 return;
             }
 
-            logging::error(false, "INITIALVELOCITY not supported for loadcase type " + parser.active_loadcase_type());
+            logging::error(false, "INITIALVELOCITY not supported for loadcase type " + base->type_name());
         });
 
         // No data lines for this command

@@ -2,6 +2,14 @@
  * @file register_end_assembly.inl
  * @brief Registers the Abaqus ENDASSEMBLY scope terminator.
  *
+ * `END ASSEMBLY` closes the syntactic assembly scope and clears the shared
+ * parser-local flag used to interpret qualified sets, surfaces and Instances.
+ * FEMaster's model-level assembly remains alive because the keyword controls
+ * parsing context rather than object lifetime.
+ *
+ * Registering the terminator in every pass preserves Abaqus nesting even when
+ * its callback is inactive and the deck is only being consumed.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

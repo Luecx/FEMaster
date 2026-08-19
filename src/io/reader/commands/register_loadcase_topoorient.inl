@@ -1,4 +1,17 @@
-// register_loadcase_topoorient.inl — registers TOPOORIENT for LINEARSTATICTOPO loadcases
+/**
+ * @file register_loadcase_topoorient.inl
+ * @brief Registers element orientations for topology-weighted statics.
+ *
+ * `TOPOORIENT` resolves a named three-component element field and assigns it to
+ * the active `LinearStaticTopo` analysis. The field supplies the element-wise
+ * orientation data required by orientation-dependent topology calculations.
+ *
+ * Domain and component-count checks are performed while parsing. Interpretation
+ * of the stored orientation vectors remains within the load-case formulation.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../parser.h"
 
@@ -19,7 +32,7 @@ inline void register_loadcase_topoorient(fem::io::dsl::Registry& registry, Parse
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto* lc = parser.active_loadcase_as<loadcase::LinearStaticTopo>();
+            auto* lc = dynamic_cast<loadcase::LinearStaticTopo*>(parser.active_loadcase());
             logging::error(lc != nullptr,
                 "TOPOORIENT only valid for LINEARSTATICTOPO loadcases");
 

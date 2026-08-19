@@ -7,6 +7,10 @@
  * appended directly to ModelData. Model itself remains free of parser-oriented
  * constraint factories and type dispatch.
  *
+ * The stored definition includes search distance, penalty stiffness, clearance
+ * and optional master-normal reversal. Contact search, active-point updates and
+ * force/tangent assembly remain inside the concrete contact implementation.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

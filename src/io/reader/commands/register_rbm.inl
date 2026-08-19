@@ -6,6 +6,10 @@
  * object directly to ModelData. This keeps Model free of generic constraint
  * dispatch and makes the same operation equally explicit for direct C++ users.
  *
+ * The target element region is resolved after compilation so rigid-body modes
+ * are derived from the final assembly coordinates and active structural DOFs.
+ * The concrete constraint owns equation generation and rank handling.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

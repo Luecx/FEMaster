@@ -45,10 +45,10 @@ struct LinearHarmonic : public LoadCase {
 
     tools::RayleighDamping damping; ///< Proportional viscous damping model.
 
-    LinearHarmonic(ID id, io::writer::ResultWriters* writer, model::Model* model);
-
     void set_damping(const tools::RayleighDamping& value) { damping = value; }
 
+    // Analysis identity and execution
+    std::string type_name() const override { return "LINEARHARMONIC"; }
     void run() override;
 };
 

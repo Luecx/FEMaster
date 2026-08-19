@@ -20,11 +20,6 @@ namespace fem { namespace loadcase {
 
 using fem::constraint::ConstraintTransformer;
 
-Transient::Transient(ID id,
-                     io::writer::ResultWriters* writer_,
-                     model::Model* model_)
-    : LoadCase(id, writer_, model_) {}
-
 void Transient::run() {
     // Banner
     logging::info(true, "");

@@ -1,8 +1,20 @@
-#pragma once
 /**
  * @file register_loadcase_write_every.inl
- * @brief Register *WRITE EVERY inside *LOADCASE (Transient): output cadence.
+ * @brief Registers result-output cadence for transient analyses.
+ *
+ * `WRITEEVERY` configures the active `Transient` load case to write either at a
+ * fixed number of integration steps or at a physical time interval. The parsed
+ * mode determines which cadence representation is stored, with step counts
+ * clamped to a valid positive value.
+ *
+ * Selection of actual snapshots remains coupled to the transient time loop so
+ * final-state output and floating-point time tolerances are handled centrally.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 #include <string>
@@ -63,7 +75,7 @@ inline void register_loadcase_write_every(fem::io::dsl::Registry& registry, Pars
                                 return;
                             }
 
-                            logging::error(false, "WRITE EVERY not supported for loadcase type " + parser.active_loadcase_type());
+                            logging::error(false, "WRITE EVERY not supported for loadcase type " + base->type_name());
                         })
                 )
         );

@@ -2,6 +2,14 @@
  * @file register_end_part.inl
  * @brief Registers the ENDPART scope terminator.
  *
+ * `ENDPART` closes the active reusable Part definition and restores the model's
+ * default part as the target for subsequent unqualified topology commands. The
+ * transition is permitted only before model compilation because semantic Part
+ * topology becomes immutable at the compile boundary.
+ *
+ * Scope admission is enforced by the DSL registry; this callback performs the
+ * corresponding model-state transition.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

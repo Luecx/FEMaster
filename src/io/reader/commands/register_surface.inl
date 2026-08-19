@@ -2,6 +2,15 @@
  * @file register_surface.inl
  * @brief Registers part-local and post-compile assembly surfaces.
  *
+ * Surface rows associate a sparse surface identifier with an element and one
+ * of its boundary sides. The command accepts numeric and conventional side
+ * labels, creates the element-specific surface representation and stores it in
+ * the active Part before compilation.
+ *
+ * Assembly-level definitions are replayed after compilation so Instance-qualified
+ * element references can be translated to dense global IDs without duplicating
+ * semantic topology.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

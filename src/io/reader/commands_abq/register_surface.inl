@@ -2,6 +2,14 @@
  * @file register_surface.inl
  * @brief Registers Abaqus part-local and assembly-level surfaces.
  *
+ * Abaqus element-based surface entries are translated from element-set and side
+ * labels into FEMaster surface identifiers and `SurfaceRegion` objects. Before
+ * compilation, definitions remain part-local; assembly definitions are replayed
+ * later so Instance-qualified references can resolve through compiled maps.
+ *
+ * The command preserves named surface groups used by pressure, traction,
+ * contact, tie and coupling translations without duplicating element geometry.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

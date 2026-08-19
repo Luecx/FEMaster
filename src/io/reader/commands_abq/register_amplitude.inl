@@ -2,6 +2,14 @@
  * @file register_amplitude.inl
  * @brief Registers Abaqus tabular amplitudes.
  *
+ * The root-level Abaqus `AMPLITUDE` command converts pairs of independent and
+ * dependent values into a named FEMaster `bc::Amplitude`. Supported Abaqus
+ * interpolation and time-basis options are validated before the completed
+ * function is stored in `ModelData`.
+ *
+ * Later step-load commands resolve the name and either retain the amplitude for
+ * dynamic evaluation or sample it according to the active static procedure.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

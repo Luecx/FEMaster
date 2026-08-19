@@ -8,8 +8,8 @@
  * references. Topology is then constructed in reusable parts and instances,
  * after which `Model::compile()` creates the dense solver representation.
  * Assembly-level sets/surfaces and enumeration-dependent fields are materialized
- * only after compilation; the final data pass executes loads, constraints and
- * analyses on compiled `ModelData`.
+ * only after compilation; the final analysis pass executes loads, constraints
+ * and load cases on compiled `ModelData`.
  *
  * The former identifier-counting stage is intentionally absent. Node, element
  * and surface identifiers remain sparse and part-local until compilation, so no
@@ -26,6 +26,7 @@
 #pragma once
 
 #include "../../core/types_num.h"
+#include "../../loadcase/loadcase.h"
 #include "../dsl/registry.h"
 #include "../writer/writers.h"
 
@@ -33,22 +34,32 @@
 #include <string>
 
 namespace fem {
-namespace loadcase { struct LoadCase; }
 namespace io { namespace dsl { class File; struct Line; } }
 namespace model { struct Model; }
 
 namespace io::reader {
 
+/**
+ * @brief Selects and formats command-language documentation output.
+ *
+ * The action determines which registry view is printed and which command or
+ * search query is used. Text is currently the implemented output format;
+ * Markdown, JSON and wrapping controls are accepted by the option contract but
+ * are not yet applied by the current text renderer.
+ */
 struct DocOptions {
+    // Documentation operation and output representation
     enum class Action { List, Show, Tokens, Variants, Search, WhereToken, All };
     enum class Format { Text, Markdown, Json };
     enum class Verbosity { Index, Compact, Full };
 
+    // Selected operation and optional command/search arguments
     Action action = Action::List;
 
     std::string cmd;
     std::string query;
 
+    // Output formatting controls
     Format    format     = Format::Text;
     Verbosity verbosity  = Verbosity::Full;
     int       wrap_width = 100;
@@ -59,79 +70,81 @@ struct DocOptions {
 /**
  * @brief Executes the common dependency-ordered input-deck workflow.
  *
- * Model construction is split into four semantic passes:
+ * The parser replays the complete deck in four dependency-ordered passes. Every
+ * pass registers the same command grammar so nested scopes remain valid, but
+ * `ActiveMode` selects which callbacks may mutate parser or model state:
  *
  * 1. collect global resources required by topology definitions,
  * 2. construct parts, instances and all part-local/default topology,
- * 3. compile and materialize assembly sets/surfaces plus dense fields,
+ * 3. materialize compiled assembly sets/surfaces plus dense fields,
  * 4. execute remaining loads, constraints and analysis commands.
  *
- * The historical `field` method names are retained internally for the third
- * pass, but that pass is now the complete post-compile materialization stage.
+ * `Model::compile()` forms the explicit boundary between the topology and
+ * assembly passes. Shell normals are completed at the end of the assembly pass
+ * before any load case can access the compiled solver fields.
+ *
+ * `Parser` also owns the active load case while its consecutive commands are
+ * interpreted, the result writers used during analysis and a separate registry
+ * containing the complete grammar for documentation queries. Derived parsers
+ * may specialize command activation for another deck dialect by overriding the
+ * four pass-configuration functions.
  */
 class Parser {
-private:
-    std::shared_ptr<model::Model> m_model;
-    io::writer::ResultWriters     m_writer;
-    mutable io::dsl::Registry     m_registry;
+    // Persistent model and result-output state
+    std::shared_ptr<model::Model> model_;
+    io::writer::ResultWriters     writer_;
 
-    std::unique_ptr<loadcase::LoadCase> m_active_loadcase;
-    std::string                         m_active_loadcase_type;
-    int                                 m_next_loadcase_id = 1;
+    // Complete command grammar used exclusively for documentation queries
+    mutable io::dsl::Registry documentation_registry_;
+
+    // Load case currently assembled by consecutive analysis-pass commands
+    loadcase::LoadCase::Ptr active_loadcase_;
+    int                     next_loadcase_id_ = 1;
 
 public:
+    // Construction
     Parser();
     virtual ~Parser();
 
+    // Complete dependency-ordered deck evaluation and command documentation
     void run(const std::string&                   input_path,
              const std::string&                   output_path,
              const io::writer::WriterFileFormats& writer_formats = io::writer::WriterFileFormats());
     void document(const DocOptions& opts) const;
 
-    model::Model& model();
+    // Current model and read-only documentation grammar
     const model::Model& model() const;
-    io::writer::ResultWriters& writer();
-    const io::writer::ResultWriters& writer() const;
-    io::dsl::Registry& registry();
+          model::Model& model();
     const io::dsl::Registry& registry() const;
 
-    int next_loadcase_id();
-    void set_active_loadcase(std::unique_ptr<loadcase::LoadCase> lc, std::string type);
+    // Active load-case ownership. Activation assigns the next internal id and
+    // common parser dependencies; completion executes and releases the case.
+    void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
+    void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
-    const loadcase::LoadCase* active_loadcase() const;
-    template<class T> T* active_loadcase_as();
-    template<class T> const T* active_loadcase_as() const;
-    void clear_active_loadcase();
-    const std::string& active_loadcase_type() const;
 
 protected:
-    virtual void configure_definition_stage(io::dsl::Registry& registry);
-    virtual void configure_topology_stage  (io::dsl::Registry& registry);
-    virtual void configure_field_stage     (io::dsl::Registry& registry);
-    virtual void configure_data_stage      (io::dsl::Registry& registry);
+    // Per-pass command activation. Derived deck readers may change which
+    // callbacks execute while retaining the common four-pass lifecycle.
+    virtual void configure_definition_pass(io::dsl::Registry& registry);
+    virtual void configure_topology_pass  (io::dsl::Registry& registry);
+    virtual void configure_assembly_pass  (io::dsl::Registry& registry);
+    virtual void configure_analysis_pass  (io::dsl::Registry& registry);
 
 private:
-    void run_definition_stage(const std::string& input_path);
-    void run_topology_stage  (const std::string& input_path);
-    void run_field_stage     (const std::string& input_path);
-    void run_data_stage      (const std::string&                   input_path,
-                              const std::string&                   output_path,
-                              const io::writer::WriterFileFormats& writer_formats);
+    // Individual complete-deck passes
+    void run_definition_pass(const std::string& input_path);
+    void run_topology_pass  (const std::string& input_path);
+    void run_assembly_pass  (const std::string& input_path);
+    void run_analysis_pass  (const std::string&                   input_path,
+                             const std::string&                   output_path,
+                             const io::writer::WriterFileFormats& writer_formats);
 
-    void register_topology_commands(io::dsl::Registry& registry);
-    void register_analysis_commands(io::dsl::Registry& registry);
-    void register_documentation_commands();
+    // Complete FEMaster grammar and the persistent documentation view
+    void register_commands(io::dsl::Registry& registry);
+    void configure_documentation_registry();
+
 };
-
-template<class T>
-inline T* Parser::active_loadcase_as() {
-    return dynamic_cast<T*>(active_loadcase());
-}
-
-template<class T>
-inline const T* Parser::active_loadcase_as() const {
-    return dynamic_cast<const T*>(active_loadcase());
-}
 
 } // namespace io::reader
 } // namespace fem

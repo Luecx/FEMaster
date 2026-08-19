@@ -124,9 +124,6 @@ Precision calculate_relative_residual(
 
 } // namespace
 
-NonlinearStatic::NonlinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model)
-    : LoadCase(id, writer, model) {}
-
 void NonlinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");

@@ -1,4 +1,18 @@
-// register_loadcase_constraintsummary.inl — registers CONSTRAINTSUMMARY inside *LOADCASE
+/**
+ * @file register_loadcase_constraintsummary.inl
+ * @brief Registers diagnostic reporting of assembled constraint groups.
+ *
+ * The flag-style `CONSTRAINTSUMMARY` command is valid inside a `LOADCASE` scope.
+ * It enables the common `LoadCase::report_constraints` setting so the selected
+ * analysis reports the constraint groups produced before reduction or solver
+ * assembly.
+ *
+ * This file changes only diagnostic behavior; it does not alter the constraint
+ * equations, transformation method or numerical solution.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../parser.h"
 
@@ -23,4 +37,3 @@ inline void register_loadcase_constraintsummary(fem::io::dsl::Registry& registry
 }
 
 } // namespace fem::io::reader::commands
-

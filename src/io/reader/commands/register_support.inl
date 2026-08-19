@@ -2,6 +2,14 @@
  * @file register_support.inl
  * @brief Registers nodal supports.
  *
+ * A `SUPPORT` row targets a node or node set and supplies six generalized
+ * constraint values. Finite entries prescribe translations or rotations while
+ * omitted components remain unconstrained; an optional coordinate system
+ * defines the basis in which the values are expressed.
+ *
+ * The completed `bc::Support` is stored in the named support collector. Actual
+ * constraint equations are assembled later by the active load case.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

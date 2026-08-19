@@ -1,6 +1,18 @@
 /**
  * @file register_field.inl
  * @brief Registers generic fields on the compiled finite-element model.
+ *
+ * `FIELD` creates named rectangular storage on node, element, surface or
+ * element-nodal domains after `Model::compile()` has established deterministic
+ * row counts. Data rows may use direct compiled identifiers or qualified deck
+ * references that are resolved through the common reader helpers.
+ *
+ * The command validates component counts and row addressing before writing
+ * values into `model::Field`. Registration in `ModelData` makes the completed
+ * field available to loads, topology analyses and result-processing routines.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
 
 #pragma once

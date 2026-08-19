@@ -1,4 +1,19 @@
-// register_loadcase_inertiarelief.inl — registers INERTIARELIEF within *LOADCASE (LinearStatic only)
+/**
+ * @file register_loadcase_inertiarelief.inl
+ * @brief Registers inertia-relief settings for linear static load cases.
+ *
+ * `INERTIARELIEF` enables rigid-body force and moment balancing on the active
+ * `LinearStatic` analysis. The optional `CONSIDER_POINT_MASSES` setting controls
+ * whether concentrated mass features participate in the mass, inertia and
+ * compensating-load calculation.
+ *
+ * The command only configures the analysis. Construction of the balancing
+ * inertial load remains the responsibility of the linear static solver.
+ * Derived linear-static formulations inherit the same setting.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../parser.h"
 

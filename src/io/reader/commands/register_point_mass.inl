@@ -1,4 +1,18 @@
-// register_point_mass.inl — DSL registration for *POINTMASS (feature on NSET)
+/**
+ * @file register_point_mass.inl
+ * @brief Registers concentrated mass and rotary inertia on node sets.
+ *
+ * The root-level `POINTMASS` command creates a model feature for a named node
+ * set. Its data line maps translational mass and rotary inertia components into
+ * the six generalized nodal directions used by FEMaster.
+ *
+ * The feature remains associated with the node region and contributes to mass
+ * assembly and, when requested, inertia-relief calculations. Command-local
+ * state retains the target set between keyword parsing and data binding.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <array>
 #include <memory>
@@ -58,4 +72,3 @@ inline void register_point_mass(fem::io::dsl::Registry& registry, model::Model& 
 }
 
 } // namespace fem::io::reader::commands
-

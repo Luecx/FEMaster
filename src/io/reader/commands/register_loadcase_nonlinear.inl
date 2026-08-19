@@ -1,4 +1,19 @@
-// register_loadcase_nonlinear.inl — registers NONLINEAR controls within *LOADCASE
+/**
+ * @file register_loadcase_nonlinear.inl
+ * @brief Registers increment and iteration controls for nonlinear statics.
+ *
+ * The `NONLINEAR` child command configures load-increment sizes, increment-count
+ * limits and Newton convergence controls on an active `NonlinearStatic` load
+ * case. Legacy increment-count input is translated into the corresponding
+ * normalized initial increment where applicable.
+ *
+ * Parsing only transfers validated user settings. Adaptive stepping, cutbacks,
+ * convergence evaluation and trial-state commitment remain inside the nonlinear
+ * solution procedure.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../parser.h"
 

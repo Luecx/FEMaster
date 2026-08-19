@@ -2,6 +2,14 @@
  * @file register_shell_section.inl
  * @brief Registers homogeneous Abaqus shell sections.
  *
+ * `SHELL SECTION` resolves the target element set, material, thickness and
+ * optional material orientation and translates them into an integrated
+ * FEMaster shell section. Section data remains associated with the active Part
+ * until model compilation expands its Instances.
+ *
+ * Layered composites and unsupported Abaqus section controls are rejected or
+ * deliberately left outside this homogeneous-section mapping.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

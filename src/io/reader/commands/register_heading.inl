@@ -1,4 +1,18 @@
-// register_heading.inl — DSL registration for *HEADING
+/**
+ * @file register_heading.inl
+ * @brief Registers optional model-heading text for FEMaster decks.
+ *
+ * `HEADING` is a root-level compatibility command. It consumes any following
+ * text lines so descriptive deck headers remain part of the accepted grammar,
+ * but deliberately does not transfer that text into the finite-element model
+ * or affect subsequent construction passes.
+ *
+ * Registering the ignored payload explicitly allows every parser pass to
+ * preserve line consumption and root-scope synchronization.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <array>
 #include <string>

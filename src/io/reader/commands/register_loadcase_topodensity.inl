@@ -1,4 +1,18 @@
-// register_loadcase_topodensity.inl — registers TOPODENSITY for LINEARSTATICTOPO loadcases
+/**
+ * @file register_loadcase_topodensity.inl
+ * @brief Registers the element-density field for topology-weighted statics.
+ *
+ * `TOPODENSITY` resolves a named scalar element field and assigns it to the
+ * active `LinearStaticTopo` load case. Validation requires element-domain
+ * storage with exactly one density component per compiled element.
+ *
+ * The load case later combines this density with its penalization exponent
+ * during stiffness and result calculations; the parser does not modify field
+ * values or apply the interpolation law itself.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <string>
 
@@ -21,7 +35,7 @@ inline void register_loadcase_topodensity(fem::io::dsl::Registry& registry, Pars
         );
 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
-            auto* lc = parser.active_loadcase_as<loadcase::LinearStaticTopo>();
+            auto* lc = dynamic_cast<loadcase::LinearStaticTopo*>(parser.active_loadcase());
             logging::error(lc != nullptr,
                 "TOPODENSITY only valid for LINEARSTATICTOPO loadcases");
 

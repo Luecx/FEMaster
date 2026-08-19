@@ -1,8 +1,19 @@
-#pragma once
 /**
  * @file register_loadcase_newmark.inl
- * @brief Register *NEWMARK inside *LOADCASE (Transient): (β, γ) parameters.
+ * @brief Registers Newmark-beta integration parameters for transient analyses.
+ *
+ * The `NEWMARK` child command reads beta and gamma for the implicit fixed-step
+ * time integrator and stores them on the active `Transient` load case. Default
+ * values remain beta = 0.25 and gamma = 0.5 when the command is absent.
+ *
+ * Time stepping, effective operator construction and state advancement remain
+ * responsibilities of the transient solver.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 
@@ -44,7 +55,7 @@ inline void register_loadcase_newmark(fem::io::dsl::Registry& registry, Parser& 
                                 return;
                             }
 
-                            logging::error(false, "NEWMARK not supported for loadcase type " + parser.active_loadcase_type());
+                            logging::error(false, "NEWMARK not supported for loadcase type " + base->type_name());
                         })
                 )
         );

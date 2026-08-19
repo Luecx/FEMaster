@@ -2,6 +2,15 @@
  * @file register_solid_section.inl
  * @brief Registers solid section assignments.
  *
+ * `SOLIDSECTION` binds a material to a target solid element region and may
+ * attach an optional material coordinate system. The command resolves these
+ * named model resources and constructs the `SolidSection` retained by semantic
+ * Part topology.
+ *
+ * Constitutive evaluation, strain measures and stress recovery remain in the
+ * solid elements and material implementation; this file only establishes their
+ * section-level association.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

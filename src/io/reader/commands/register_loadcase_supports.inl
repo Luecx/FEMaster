@@ -1,4 +1,19 @@
-// register_loadcase_supports.inl — registers SUPPORTS within *LOADCASE
+/**
+ * @file register_loadcase_supports.inl
+ * @brief Registers support and constraint collectors for active load cases.
+ *
+ * The `SUPPORTS` child command appends non-empty collector names to every
+ * supported structural analysis, including static, buckling, eigenfrequency,
+ * transient, harmonic and nonlinear formulations. Input order is retained so
+ * downstream constraint construction remains deterministic.
+ *
+ * Resolution of support, tie and coupling collectors and construction of the
+ * resulting constraint equations remain responsibilities of the load case and
+ * model constraint subsystem.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include <array>
 #include <string>
@@ -70,7 +85,7 @@ inline void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser&
                     }
 
                     logging::error(false,
-                        "SUPPORTS not supported for loadcase type ", parser.active_loadcase_type());
+                        "SUPPORTS not supported for loadcase type ", base->type_name());
                 })
             )
         );

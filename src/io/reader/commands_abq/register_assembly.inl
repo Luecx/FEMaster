@@ -2,6 +2,14 @@
  * @file register_assembly.inl
  * @brief Registers the Abaqus ASSEMBLY scope.
  *
+ * FEMaster has one model-level assembly, so the Abaqus `ASSEMBLY` keyword opens
+ * a syntactic and parser-local scope rather than allocating a second domain
+ * object. The shared flag tells set, surface, Instance and transformation
+ * commands when references must be interpreted at assembly level.
+ *
+ * Scope state is local to each parser pass and is cleared by `END ASSEMBLY`,
+ * preserving correct nesting while inactive callbacks are consume-only.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

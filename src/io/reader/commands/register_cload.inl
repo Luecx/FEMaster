@@ -2,6 +2,15 @@
  * @file register_cload.inl
  * @brief Registers concentrated nodal loads.
  *
+ * Each `CLOAD` row targets a node or node set and supplies six generalized force
+ * and moment components. Optional coordinate-system and amplitude references
+ * are resolved once and stored with the resulting `bc::CLoad` in the selected
+ * load collector.
+ *
+ * Instance-qualified node references are translated through compiled assembly
+ * maps. Coordinate transformation and time-dependent scaling are applied by the
+ * load during analysis rather than baked into the parsed values.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

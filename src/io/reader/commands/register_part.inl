@@ -2,6 +2,14 @@
  * @file register_part.inl
  * @brief Registers the PART scope.
  *
+ * A `PART` command creates and activates a named reusable semantic topology
+ * container. Subsequent nodes, elements, local regions and section assignments
+ * are stored against that Part until `ENDPART` restores the default context.
+ *
+ * Parts retain sparse local identifiers and remain independent of assembly
+ * placement. Rigid transforms and dense global expansion are handled later by
+ * Instance construction and `Model::compile()`.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

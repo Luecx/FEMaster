@@ -134,11 +134,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(!(riks && state.perturbation),
                 "STATIC, RIKS cannot be used in a PERTURBATION step");
 
-            const int id = parser.next_loadcase_id();
             if (!state.perturbation && (riks || state.nlgeom)) {
-                auto loadcase = std::make_unique<loadcase::NonlinearStatic>(
-                    id, &parser.writer(), &parser.model()
-                );
+                auto loadcase = std::make_unique<loadcase::NonlinearStatic>();
 
                 loadcase->loads.push_back("__ABQ_STEP_LOADS");
                 loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
@@ -152,18 +149,12 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 loadcase->control = riks
                     ? loadcase::NonlinearControl::ArcLength
                     : loadcase::NonlinearControl::LoadControl;
-
-                parser.set_active_loadcase(
-                    std::move(loadcase),
-                    riks ? "STATIC_RIKS" : "NONLINEARSTATIC"
-                );
+                parser.begin_loadcase(std::move(loadcase));
             } else {
-                auto loadcase = std::make_unique<loadcase::LinearStatic>(
-                    id, &parser.writer(), &parser.model()
-                );
+                auto loadcase = std::make_unique<loadcase::LinearStatic>();
                 loadcase->loads.push_back("__ABQ_STEP_LOADS");
                 loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
-                parser.set_active_loadcase(std::move(loadcase), "LINEARSTATIC");
+                parser.begin_loadcase(std::move(loadcase));
             }
         });
 
@@ -179,7 +170,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
                 .bind([&parser](const std::array<Precision, 8>& data) {
-                    auto* loadcase = parser.active_loadcase_as<loadcase::NonlinearStatic>();
+                    auto* loadcase = dynamic_cast<loadcase::NonlinearStatic*>(parser.active_loadcase());
                     logging::error(loadcase != nullptr,
                         "STATIC, RIKS did not create a nonlinear load case");
                     logging::error(std::isnan(data[4]) && std::isnan(data[5])
@@ -236,7 +227,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         ? period : data[3];
 
                     parser.abaqus_state().step_period = period;
-                    if (auto* loadcase = parser.active_loadcase_as<loadcase::NonlinearStatic>()) {
+                    if (auto* loadcase = dynamic_cast<loadcase::NonlinearStatic*>(parser.active_loadcase())) {
                         loadcase->initial_increment = initial / period;
                         loadcase->minimum_increment = minimum / period;
                         loadcase->maximum_increment = maximum / period;
@@ -263,11 +254,9 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
-            auto loadcase = std::make_unique<loadcase::LinearEigenfrequency>(
-                parser.next_loadcase_id(), &parser.writer(), &parser.model(), 10
-            );
+            auto loadcase = std::make_unique<loadcase::LinearEigenfrequency>();
             loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
-            parser.set_active_loadcase(std::move(loadcase), "EIGENFREQ");
+            parser.begin_loadcase(std::move(loadcase));
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -282,7 +271,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 .bind([&parser](int count, const std::array<Precision, 5>&) {
                     logging::error(count > 0,
                         "FREQUENCY requires a positive eigenvalue count");
-                    parser.active_loadcase_as<loadcase::LinearEigenfrequency>()->num_eigenvalues = count;
+                    auto* loadcase = dynamic_cast<loadcase::LinearEigenfrequency*>(parser.active_loadcase());
+                    loadcase->num_eigenvalues = count;
                 })
             )
         );
@@ -305,12 +295,10 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(parser.abaqus_state().step_active && !parser.active_loadcase(),
                 "STEP must contain exactly one supported procedure card");
 
-            auto loadcase = std::make_unique<loadcase::LinearBuckling>(
-                parser.next_loadcase_id(), &parser.writer(), &parser.model(), 10
-            );
+            auto loadcase = std::make_unique<loadcase::LinearBuckling>();
             loadcase->loads.push_back("__ABQ_STEP_LOADS");
             loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
-            parser.set_active_loadcase(std::move(loadcase), "LINEARBUCKLING");
+            parser.begin_loadcase(std::move(loadcase));
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -325,7 +313,8 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 .bind([&parser](int count, const std::array<Precision, 4>&) {
                     logging::error(count > 0,
                         "BUCKLE requires a positive eigenvalue count");
-                    parser.active_loadcase_as<loadcase::LinearBuckling>()->num_eigenvalues = count;
+                    auto* loadcase = dynamic_cast<loadcase::LinearBuckling*>(parser.active_loadcase());
+                    loadcase->num_eigenvalues = count;
                 })
             )
         );
@@ -354,12 +343,10 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
             logging::error(!state.perturbation,
                 "DYNAMIC is not supported in a PERTURBATION step");
 
-            auto loadcase = std::make_unique<loadcase::Transient>(
-                parser.next_loadcase_id(), &parser.writer(), &parser.model()
-            );
+            auto loadcase = std::make_unique<loadcase::Transient>();
             loadcase->loads.push_back("__ABQ_STEP_LOADS");
             loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
-            parser.set_active_loadcase(std::move(loadcase), "LINEARTRANSIENT");
+            parser.begin_loadcase(std::move(loadcase));
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -376,7 +363,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                                 && !std::isnan(data[1]) && data[1] > Precision(0),
                         "DYNAMIC, DIRECT requires positive increment and step period");
 
-                    auto* loadcase = parser.active_loadcase_as<loadcase::Transient>();
+                    auto* loadcase = dynamic_cast<loadcase::Transient*>(parser.active_loadcase());
                     loadcase->dt      = data[0];
                     loadcase->t_start = Precision(0);
                     loadcase->t_end   = data[1];
@@ -414,12 +401,10 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                 "STEADY STATE DYNAMICS does not support NLGEOM in FEMaster");
 
             *frequency_scale = keys.raw("FREQUENCYSCALE");
-            auto loadcase = std::make_unique<loadcase::LinearHarmonic>(
-                parser.next_loadcase_id(), &parser.writer(), &parser.model()
-            );
+            auto loadcase = std::make_unique<loadcase::LinearHarmonic>();
             loadcase->loads.push_back("__ABQ_STEP_LOADS");
             loadcase->supps.push_back("__ABQ_STEP_SUPPORTS");
-            parser.set_active_loadcase(std::move(loadcase), "LINEARHARMONIC");
+            parser.begin_loadcase(std::move(loadcase));
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -432,7 +417,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
                         .on_empty  (std::numeric_limits<Precision>::quiet_NaN())
                 )
                 .bind([&parser, frequency_scale](const std::array<Precision, 5>& data) {
-                    auto* loadcase = parser.active_loadcase_as<loadcase::LinearHarmonic>();
+                    auto* loadcase = dynamic_cast<loadcase::LinearHarmonic*>(parser.active_loadcase());
                     logging::error(loadcase != nullptr && !std::isnan(data[0]) && data[0] >= Precision(0),
                         "STEADY STATE DYNAMICS requires a non-negative lower frequency");
 
@@ -517,12 +502,10 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {
             auto& state = parser.abaqus_state();
-            auto* base  = parser.active_loadcase();
-            logging::error(state.step_active && base != nullptr,
+            logging::error(state.step_active && parser.active_loadcase() != nullptr,
                 "END STEP requires one active supported procedure");
 
-            base->run();
-            parser.clear_active_loadcase();
+            parser.end_loadcase();
             state.step_active = false;
         });
 

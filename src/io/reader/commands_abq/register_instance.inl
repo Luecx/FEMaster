@@ -2,6 +2,14 @@
  * @file register_instance.inl
  * @brief Registers Abaqus part-instance placement syntax.
  *
+ * Abaqus `INSTANCE` references a semantic Part and records a rigid translation
+ * plus optional axis-angle rotation. The transformation is represented by a
+ * FEMaster rectangular coordinate system attached to the new Instance rather
+ * than applied destructively to part-local coordinates.
+ *
+ * The compile step later expands the reusable Part, transforms its nodes and
+ * builds maps used by qualified assembly references.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

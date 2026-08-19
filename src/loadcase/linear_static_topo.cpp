@@ -22,9 +22,6 @@ using fem::constraint::ConstraintTransformer;
 
 namespace fem { namespace loadcase {
 
-LinearStaticTopo::LinearStaticTopo(ID id, io::writer::ResultWriters* writer, model::Model* model)
-    : LinearStatic(id, writer, model) {}
-
 void LinearStaticTopo::run() {
     logging::info(true, "");
     logging::info(true, "");

@@ -16,34 +16,49 @@
 #include "../model/model.h"
 #include "../io/writer/writers.h"
 
+#include <memory>
+#include <string>
+
 namespace fem {
 namespace loadcase {
 
 /**
- * @struct LoadCase
- * @brief Abstract base representing a simulation load case.
+ * @brief Common runtime interface for finite-element analyses.
+ *
+ * A load case stores the analysis settings collected from consecutive input
+ * commands and executes one concrete solution procedure against a model. The
+ * parser owns active load cases through @ref Ptr and supplies their sequential
+ * identifier, result writer and model when `Parser::begin_loadcase()` opens the
+ * corresponding definition scope.
+ *
+ * The identifier and dependency pointers are therefore not yet bound on a
+ * freshly constructed concrete load case and become valid before any setting
+ * command can observe it. Derived classes provide the canonical input-deck type
+ * name and implement the actual analysis in @ref run.
+ *
+ * The writer and model pointers are non-owning. Their lifetime is controlled by
+ * the parser and covers the complete execution of every active load case.
  */
 struct LoadCase {
-    const ID id;              ///< Load-case identifier.
-    io::writer::ResultWriters* writer;   ///< Output writer associated with the load case.
-    model::Model* model;      ///< Model on which the load case operates.
-    bool report_constraints = false; ///< Flag to print constraint reports.
+    // Owning polymorphic load-case pointer
+    using Ptr = std::unique_ptr<LoadCase>;
 
-    /**
-     * @brief Constructs a load case with identifiers and dependencies.
-     *
-     * @param case_id Identifier of the load case.
-     * @param writer_in Writer used for logging or output.
-     * @param model_in Model instance to operate on.
-     */
-    LoadCase(ID case_id, io::writer::ResultWriters* writer_in, model::Model* model_in);
+    // Parser-assigned identity and shared analysis dependencies
+    ID                         id     = -1;
+    io::writer::ResultWriters* writer = nullptr;
+    model::Model*              model  = nullptr;
 
-    /**
-     * @brief Executes the load case.
-     */
+    // Diagnostic settings
+    bool report_constraints = false;
+
+    // Construction and destruction
+    virtual ~LoadCase() = default;
+
+    // Concrete analysis identity and execution
+    virtual std::string type_name() const = 0;
     virtual void run() = 0;
 
-    /// Returns the load-case identifier.
+    // Assigned load-case identifier
     ID get_id() const { return id; }
 
 protected:

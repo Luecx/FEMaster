@@ -2,6 +2,15 @@
  * @file register_element.inl
  * @brief Registers supported Abaqus finite elements.
  *
+ * Abaqus element labels are mapped to the corresponding FEMaster beam, truss,
+ * shell and solid implementations while connectivity is written into the active
+ * semantic Part. Dedicated mappings handle topology differences where an Abaqus
+ * label requires adaptation to a supported FEMaster element.
+ *
+ * Sparse part-local identifiers are retained during parsing. Instance expansion,
+ * coordinate placement and dense assembly enumeration remain deferred to
+ * `Model::compile()`.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

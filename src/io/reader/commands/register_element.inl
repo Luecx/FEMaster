@@ -2,6 +2,15 @@
  * @file register_element.inl
  * @brief Registers part-local and unqualified assembly finite elements.
  *
+ * The `ELEMENT` command dispatches supported FEMaster type names to their
+ * concrete beam, truss, shell and solid element classes. Connectivity is stored
+ * in the active semantic Part before compilation; unqualified root definitions
+ * use the model's default part.
+ *
+ * The registration preserves sparse user identifiers and natural connectivity.
+ * Instance expansion and dense global enumeration are deliberately deferred to
+ * `Model::compile()`.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

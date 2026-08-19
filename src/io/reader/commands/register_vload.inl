@@ -2,6 +2,13 @@
  * @file register_vload.inl
  * @brief Registers distributed volume loads.
  *
+ * Each `VLOAD` row applies a three-component body-force vector to an element or
+ * element set. Optional orientation and amplitude references are retained by
+ * the created `bc::VLoad`, which is inserted into the selected load collector.
+ *
+ * Element-volume integration, density coupling where applicable and reduction
+ * to nodal generalized forces occur during load assembly rather than parsing.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

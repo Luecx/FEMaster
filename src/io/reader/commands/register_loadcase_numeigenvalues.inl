@@ -1,4 +1,18 @@
-// register_loadcase_numeigenvalues.inl — registers NUMEIGENVALUES for loadcases
+/**
+ * @file register_loadcase_numeigenvalues.inl
+ * @brief Registers the requested number of eigenpairs for modal analyses.
+ *
+ * `NUMEIGENVALUES` reads one positive mode count inside a `LOADCASE` scope and
+ * applies it to either linear buckling or eigenfrequency extraction. These are
+ * the two FEMaster analyses whose result cardinality is determined by a
+ * generalized eigenvalue solve.
+ *
+ * Spectral assembly and solver selection remain within the concrete load case;
+ * this command only validates and stores the requested count.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../parser.h"
 
@@ -37,7 +51,7 @@ inline void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, P
                     }
 
                     logging::error(false,
-                        "NUMEIGENVALUES not supported for loadcase type ", parser.active_loadcase_type());
+                        "NUMEIGENVALUES not supported for loadcase type ", base->type_name());
                 })
             )
         );
@@ -45,4 +59,3 @@ inline void register_loadcase_numeigenvalues(fem::io::dsl::Registry& registry, P
 }
 
 } // namespace fem::io::reader::commands
-

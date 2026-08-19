@@ -1,4 +1,19 @@
-// register_thermalexpansion.inl — DSL registration for *THERMALEXPANSION
+/**
+ * @file register_thermalexpansion.inl
+ * @brief Registers isotropic thermal-expansion material data.
+ *
+ * The material-scoped `THERMALEXPANSION` command reads one coefficient of
+ * thermal expansion and assigns it to the material active in the surrounding
+ * `MATERIAL` definition. Validation ensures that the command cannot silently
+ * modify an absent material context.
+ *
+ * The stored coefficient is later consumed together with temperature fields by
+ * thermal load and constitutive calculations; this file only defines the input
+ * grammar and transfers the scalar material property.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../../../core/logging.h"
 #include "../../../core/types_num.h"

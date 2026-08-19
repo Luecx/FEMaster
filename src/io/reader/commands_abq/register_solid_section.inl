@@ -2,6 +2,15 @@
  * @file register_solid_section.inl
  * @brief Registers Abaqus solid and truss section definitions.
  *
+ * `SOLID SECTION` binds a material and optional orientation to a solid element
+ * set, while the supported truss section form additionally reads its area. The
+ * command creates the corresponding FEMaster section object on the active
+ * semantic Part.
+ *
+ * Constitutive integration and element kinematics remain in the concrete
+ * sections and elements; this file owns only Abaqus syntax translation and
+ * resource resolution.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

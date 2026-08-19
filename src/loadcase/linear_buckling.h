@@ -23,13 +23,6 @@
  * - Inhomogeneous constraints are handled via u_p in the preload solve;
  *   buckling itself is homogeneous (eigen problem).
  *
- * Example
- * -------
- * LinearBuckling buckling(1, writer, model, k=10);
- * buckling.supps = {"ENC_A", "TIE_1"};     // whatever your model expects
- * buckling.loads = {"PUSH_TOP"};           // preload to induce K_g
- * buckling.run();
- *
  * @author  Finn
  * @date    15.09.2025
  */
@@ -42,22 +35,10 @@
 namespace fem { namespace loadcase {
 
 struct LinearBuckling : public LoadCase {
-    /**
-     * @brief Construct a linear buckling load case.
-     * @param id              Unique ID.
-     * @param writer          Result writer.
-     * @param model           FE model.
-     * @param numEigenvalues  Number of modes to extract.
-     */
-    explicit LinearBuckling(ID id,
-                            io::writer::ResultWriters* writer,
-                            model::Model* model,
-                            int numEigenvalues);
-
     // User inputs
     std::vector<std::string> supps;           ///< Support/coupling identifiers → constraints.
     std::vector<std::string> loads;           ///< Load identifiers → preload (for K_g).
-    int num_eigenvalues;                      ///< Number of buckling modes requested.
+    int num_eigenvalues = 10;                 ///< Number of buckling modes requested.
     Precision sigma = 0;                      ///< Target shift for eigenvalue search (0 = smallest).
 
     // === Debug / diagnostics ===
@@ -73,7 +54,8 @@ struct LinearBuckling : public LoadCase {
     solver::SolverDevice device = solver::CPU;
     solver::SolverMethod method = solver::DIRECT;
 
-    /// Execute the analysis.
+    // Analysis identity and execution
+    std::string type_name() const override { return "LINEARBUCKLING"; }
     void run() override;
 };
 }} // namespace fem::loadcase

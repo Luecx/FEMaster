@@ -1,8 +1,20 @@
-#pragma once
 /**
  * @file register_loadcase_frequency.inl
- * @brief Register *FREQUENCIES inside a linear harmonic load case.
+ * @brief Registers excitation-frequency sweeps for harmonic response.
+ *
+ * `FREQUENCIES` defines a linearly spaced sequence from the supplied start and
+ * end frequencies and stores it on the active `LinearHarmonic` load case. The
+ * command validates the interval and requested point count before constructing
+ * the explicit frequency vector consumed by the solver.
+ *
+ * Dynamic matrix assembly and the response solve at every frequency remain in
+ * the harmonic analysis implementation.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 #include <cmath>
@@ -46,7 +58,7 @@ inline void register_loadcase_frequency(fem::io::dsl::Registry& registry, Parser
                             auto* lc = dynamic_cast<fem::loadcase::LinearHarmonic*>(base);
                             logging::error(lc != nullptr,
                                 "FREQUENCIES not supported for loadcase type " +
-                                parser.active_loadcase_type());
+                                base->type_name());
 
                             const fem::Precision start = values[0];
                             const fem::Precision end   = values[1];

@@ -27,9 +27,6 @@ namespace loadcase {
 
 using constraint::ConstraintTransformer;
 
-LinearStatic::LinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model)
-    : LoadCase(id, writer, model) {}
-
 void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");

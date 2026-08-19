@@ -5,7 +5,14 @@
  * The root-level `OVERVIEW` command delegates diagnostic output to `Model`
  * after the parser has compiled part and instance topology into assembly data.
  *
+ * The report can therefore compare retained semantic topology with dense model
+ * fields, regions and solver-facing capacities. The command is read-only and
+ * does not trigger compilation or mutate model state.
+ *
  * @see fem::model::Model
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
 
 #include "../../dsl/condition.h"

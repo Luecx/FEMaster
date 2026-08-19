@@ -2,6 +2,14 @@
  * @file register_dload.inl
  * @brief Registers Abaqus gravity loads.
  *
+ * The supported Abaqus `DLOAD, GRAV` form combines a scalar acceleration with
+ * its three-component direction and creates a FEMaster volume load on an
+ * element or element set. Procedure-specific amplitude handling determines
+ * whether scaling is sampled immediately or retained for dynamic evaluation.
+ *
+ * Other distributed-load labels and imaginary loading are outside the current
+ * translation and produce explicit diagnostics.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
@@ -15,6 +23,7 @@
 #include "../reference.h"
 #include "../parser_abq.h"
 #include "../../../bc/load_v.h"
+#include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -33,9 +42,10 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                 .flag("IMAGINARY")
         );
         command.on_enter([&parser, amplitude](const fem::io::dsl::Keys& keys) {
-            logging::error(parser.abaqus_state().step_active && parser.active_loadcase(),
+            auto* loadcase = parser.active_loadcase();
+            logging::error(parser.abaqus_state().step_active && loadcase != nullptr,
                 "DLOAD: must appear after a supported procedure inside STEP");
-            logging::error(parser.active_loadcase_type() != "EIGENFREQ",
+            logging::error(loadcase->type_name() != "EIGENFREQ",
                 "DLOAD: not supported in a FREQUENCY step");
             logging::error(!(keys.has("REAL") && keys.has("IMAGINARY")),
                 "DLOAD: REAL and IMAGINARY are mutually exclusive");

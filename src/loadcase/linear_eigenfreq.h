@@ -31,38 +31,18 @@ namespace loadcase {
  */
 struct LinearEigenfrequency : public LoadCase {
     //-------------------------------------------------------------------------
-    // Constructor
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Constructs a LinearEigenfrequency load case with a given ID,
-     * writer, model, and the number of eigenvalues to compute.
-     *
-     * @param id The unique ID of the load case.
-     * @param writer Pointer to a Writer object for output handling.
-     * @param model Pointer to the finite element model.
-     * @param numEigenvalues The number of eigenvalues (natural frequencies) to compute.
-     */
-    explicit LinearEigenfrequency(ID id, io::writer::ResultWriters* writer, model::Model* model, int numEigenvalues);
-
-    //-------------------------------------------------------------------------
     // Data Members
     //-------------------------------------------------------------------------
     std::vector<std::string> supps;  /**< List of support conditions applied to the model. */
-    int num_eigenvalues; /**< Number of eigenvalues to compute in the analysis. */
+    int num_eigenvalues = 10; /**< Number of eigenvalues to compute in the analysis. */
 
     // Solver selection
     solver::SolverDevice device = solver::CPU;    ///< CPU / GPU.
     solver::SolverMethod method = solver::DIRECT; ///< DIRECT / INDIRECT - always DIRECT.
 
 public:
-    //-------------------------------------------------------------------------
-    // Run Analysis
-    //-------------------------------------------------------------------------
-    /**
-     * @brief Executes the linear eigenfrequency analysis. This function overrides
-     * the base run() method and computes the natural frequencies and mode shapes
-     * of the model under the specified boundary conditions.
-     */
+    // Analysis identity and execution
+    std::string type_name() const override { return "EIGENFREQ"; }
     void run() override;
 };
 } // namespace loadcase

@@ -31,10 +31,6 @@
 namespace fem { namespace loadcase {
 
 struct Transient : public LoadCase {
-    explicit Transient(ID id,
-                       io::writer::ResultWriters* writer,
-                       model::Model* model);
-
     // User inputs
     std::vector<std::string> supps;   ///< supports/ties/couplings
     std::vector<std::string> loads;   ///< load collectors (time-independent)
@@ -74,7 +70,8 @@ struct Transient : public LoadCase {
     std::string mass_file;       ///< write "_M.mtx" (active) and "_Mr.mtx" (reduced)
     std::string damping_file;    ///< write "_C.mtx" (reduced)
 
-    // Run analysis
+    // Analysis identity and execution
+    std::string type_name() const override { return "LINEARTRANSIENT"; }
     void run() override;
 };
 }} // namespace fem::loadcase

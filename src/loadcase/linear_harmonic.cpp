@@ -112,9 +112,6 @@ DynamicVector build_block_rhs(const DynamicVector& real, const DynamicVector& im
 
 } // anonymous namespace
 
-LinearHarmonic::LinearHarmonic(ID id, io::writer::ResultWriters* writer, model::Model* model)
-    : LoadCase(id, writer, model) {}
-
 void LinearHarmonic::run() {
     logging::info(true, "");
     logging::info(true, "===============================================================================================");

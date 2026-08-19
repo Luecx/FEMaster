@@ -1,8 +1,21 @@
-#pragma once
 /**
  * @file register_loadcase_damping.inl
- * @brief Register Rayleigh damping inside transient and harmonic load cases.
+ * @brief Registers Rayleigh damping for transient and harmonic analyses.
+ *
+ * The `DAMPING` child command reads the mass- and stiffness-proportional
+ * coefficients of `C = alpha M + beta K`. It constructs the common
+ * `RayleighDamping` representation and assigns it to an active linear transient
+ * or direct harmonic load case.
+ *
+ * Assembly of the physical or reduced damping operator remains part of the
+ * concrete analysis because its configuration and constraint transformation
+ * depend on the selected solution procedure.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 #include <memory>
@@ -70,7 +83,7 @@ inline void register_loadcase_damping(fem::io::dsl::Registry& registry, Parser& 
 
                             logging::error(false,
                                            "DAMPING not supported for loadcase type " +
-                                           parser.active_loadcase_type());
+                                           base->type_name());
                         })
                 )
         );

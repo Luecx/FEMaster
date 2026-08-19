@@ -1,4 +1,18 @@
-// register_loadcase_rebalance.inl — registers REBALANCELOADS within *LOADCASE (LinearStatic and derived)
+/**
+ * @file register_loadcase_rebalance.inl
+ * @brief Registers rigid-body load rebalancing for linear static analyses.
+ *
+ * The flag-style `REBALANCELOADS` command enables compensation of the active
+ * external load system so its resultant force and moment vanish. It applies to
+ * `LinearStatic` and derived formulations and only changes the corresponding
+ * analysis setting.
+ *
+ * Evaluation of resultants, selection of compensating nodal loads and stiffness
+ * solution remain part of the linear static implementation.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
 #include "../parser.h"
 
@@ -29,4 +43,3 @@ inline void register_loadcase_rebalance(fem::io::dsl::Registry& registry, Parser
 }
 
 } // namespace fem::io::reader::commands
-

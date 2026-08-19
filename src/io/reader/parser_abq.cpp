@@ -48,6 +48,7 @@
 
 #include "../dsl/registry.h"
 #include "../../bc/amplitude.h"
+#include "../../loadcase/loadcase.h"
 #include "../../model/model.h"
 
 #include <memory>
@@ -61,7 +62,10 @@ const ParserAbqState& ParserAbq::abaqus_state() const { return m_abq_state; }
 
 std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::string& amplitude) {
     auto& data = *model()._data;
-    const std::string& procedure = active_loadcase_type();
+    auto* loadcase = active_loadcase();
+    logging::error(loadcase != nullptr,
+        "Cannot resolve a load amplitude without an active load case");
+    const std::string procedure = loadcase->type_name();
 
     if (!amplitude.empty()) {
         logging::error(data.amplitudes.has(amplitude),
@@ -73,7 +77,7 @@ std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::s
         if (procedure == "LINEARSTATIC" || procedure == "LINEARBUCKLING") {
             return {data.amplitudes.get(amplitude)->evaluate(m_abq_state.step_period), std::string{}};
         }
-        logging::error(procedure != "NONLINEARSTATIC" && procedure != "STATIC_RIKS",
+        logging::error(procedure != "NONLINEARSTATIC",
             "Named load AMPLITUDE is not supported for nonlinear static/Riks proportional loading");
     }
 
@@ -88,8 +92,7 @@ std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::s
         return {Precision(1), name};
     }
 
-    logging::error(!((procedure == "NONLINEARSTATIC" || procedure == "STATIC_RIKS")
-                  && m_abq_state.step_amplitude == "STEP"),
+    logging::error(!(procedure == "NONLINEARSTATIC" && m_abq_state.step_amplitude == "STEP"),
         "STEP, AMPLITUDE=STEP cannot be represented by FEMaster nonlinear proportional load control");
     return {Precision(1), std::string{}};
 }
@@ -126,7 +129,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry,
     commands_abq::register_dsload(registry, *this);
 }
 
-void ParserAbq::configure_definition_stage(io::dsl::Registry& registry) {
+void ParserAbq::configure_definition_pass(io::dsl::Registry& registry) {
     // Definitions may be referenced by part sections during the topology pass.
     // They therefore execute before any part or instance construction.
     auto assembly_scope = std::make_shared<bool>(false);
@@ -142,7 +145,7 @@ void ParserAbq::configure_definition_stage(io::dsl::Registry& registry) {
     }
 }
 
-void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
+void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
     // The topology pass builds semantic parts and instances only. Assembly-level
     // sets/surfaces may be syntactically encountered here, but their callbacks
     // defer compiled materialization to the post-compile pass.
@@ -161,7 +164,7 @@ void ParserAbq::configure_topology_stage(io::dsl::Registry& registry) {
     }
 }
 
-void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
+void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
     // This pass runs after Model::compile(). Assembly-level regions are now
     // resolvable in dense global ids and *TRANSFORM can bind its coordinate
     // system directly to the compiled nodes of the target NSET.
@@ -178,7 +181,7 @@ void ParserAbq::configure_field_stage(io::dsl::Registry& registry) {
     }
 }
 
-void ParserAbq::configure_data_stage(io::dsl::Registry& registry) {
+void ParserAbq::configure_analysis_pass(io::dsl::Registry& registry) {
     // Analysis procedures and boundary/load data consume the final compiled
     // assembly, including all post-compile sets and nodal transforms.
     auto assembly_scope = std::make_shared<bool>(false);

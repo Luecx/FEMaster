@@ -2,6 +2,14 @@
  * @file register_sfset.inl
  * @brief Registers part-local and assembly-level surface sets.
  *
+ * `SFSET` groups existing surface identifiers using explicit entries or
+ * generated ranges. Part-local groups preserve sparse surface IDs, while
+ * assembly-level groups resolve optional Instance qualification through the
+ * compiled surface maps.
+ *
+ * The resulting `SurfaceRegion` provides a reusable target for pressure,
+ * traction, contact, coupling and tie definitions.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

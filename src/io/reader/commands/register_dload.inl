@@ -2,6 +2,14 @@
  * @file register_dload.inl
  * @brief Registers distributed surface tractions.
  *
+ * Each `DLOAD` row associates a surface or surface set with a three-component
+ * distributed traction. Optional coordinate-system and amplitude references are
+ * retained by `bc::DLoad`, and the completed object is inserted into the named
+ * load collector.
+ *
+ * Surface integration, interpolation to element nodes and physical-area scaling
+ * remain responsibilities of the load and surface implementations.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

@@ -195,20 +195,8 @@ struct NonlinearStatic : public LoadCase {
      */
     Precision zero_stiffness_regularization_alpha = Precision(1e-4);
 
-    /**
-     * @brief Constructs a nonlinear static load case.
-     *
-     * @param id Load case id.
-     * @param writer Result writer used for output fields.
-     * @param model FEM model on which the load case operates.
-     */
-    NonlinearStatic(ID id,
-                    io::writer::ResultWriters* writer,
-                    model::Model* model);
-
-    /**
-     * @brief Executes the nonlinear static analysis.
-     */
+    // Analysis identity and execution
+    std::string type_name() const override { return "NONLINEARSTATIC"; }
     void run() override;
 };
 

@@ -1,8 +1,19 @@
-#pragma once
 /**
  * @file register_loadcase_time.inl
- * @brief Register *TIME inside *LOADCASE (Transient): fixed step and end time.
+ * @brief Registers the fixed time interval for transient analyses.
+ *
+ * `TIME` accepts either `(t_start, t_end, dt)` or the compact `(t_end, dt)`
+ * form with a zero start time. Both variants configure the active `Transient`
+ * load case with a constant integration increment and explicit time window.
+ *
+ * The command only transfers integration limits. Newmark state initialization,
+ * time advancement and output scheduling remain inside the transient analysis.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 
@@ -48,7 +59,7 @@ inline void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& par
                                 return;
                             }
 
-                            logging::error(false, "TIME not supported for loadcase type " + parser.active_loadcase_type());
+                            logging::error(false, "TIME not supported for loadcase type " + base->type_name());
                         })
                 )
         );
@@ -79,7 +90,7 @@ inline void register_loadcase_time(fem::io::dsl::Registry& registry, Parser& par
                                 return;
                             }
 
-                            logging::error(false, "TIME not supported for loadcase type " + parser.active_loadcase_type());
+                            logging::error(false, "TIME not supported for loadcase type " + base->type_name());
                         })
                 )
         );

@@ -6,6 +6,10 @@
  * the surrounding `MATERIAL` command. Material storage and active-material
  * state remain owned by `model::Model` and its material repository.
  *
+ * The value is validated and retained as constitutive material data for element
+ * mass assembly, body loads, inertia relief and dynamic analyses. This command
+ * does not construct any mass matrix itself.
+ *
  * @see model::Model
  *
  * @author Finn Eggers

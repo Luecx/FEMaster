@@ -2,6 +2,14 @@
  * @file register_nset.inl
  * @brief Registers part-local and assembly-level node sets.
  *
+ * `NSET` accepts explicit identifiers and generated arithmetic ranges. Before
+ * compilation it stores sparse local node IDs in the active Part; during the
+ * assembly pass it resolves optional Instance-qualified references through the
+ * compiled local-to-global maps.
+ *
+ * The resulting `NodeRegion` is registered under its deck name for supports,
+ * loads, couplings and later assembly commands.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

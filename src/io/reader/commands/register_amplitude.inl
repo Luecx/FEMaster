@@ -2,6 +2,14 @@
  * @file register_amplitude.inl
  * @brief Registers reusable scalar amplitudes.
  *
+ * The root-level `AMPLITUDE` command builds named time-dependent scalar
+ * functions from tabular samples. Supported interpolation modes are mapped to
+ * `bc::Amplitude` and the completed object is stored in `ModelData` for later
+ * use by transient, harmonic and other amplitude-aware loads.
+ *
+ * This file owns input validation and sample transfer only. Evaluation at a
+ * physical analysis time remains the responsibility of the amplitude object.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

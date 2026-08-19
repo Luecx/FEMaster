@@ -2,6 +2,14 @@
  * @file register_elset.inl
  * @brief Registers part-local and assembly-level element sets.
  *
+ * `ELSET` consumes explicit element identifiers or generated ranges. Part-local
+ * definitions retain sparse IDs in semantic topology, whereas assembly-level
+ * definitions resolve Instance-qualified references to compiled global element
+ * rows during the post-compile pass.
+ *
+ * The completed `ElementRegion` is shared by section assignments, distributed
+ * loads, output requests and other element-domain operations.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */

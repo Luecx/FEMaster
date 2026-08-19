@@ -2,6 +2,14 @@
  * @file register_truss_section.inl
  * @brief Registers truss section assignments.
  *
+ * `TRUSSSECTION` resolves a material and target truss element region, reads the
+ * positive cross-sectional area and creates the corresponding `TrussSection`.
+ * The association is retained on semantic topology before dense assembly data
+ * is generated.
+ *
+ * Axial kinematics, constitutive response and area scaling are evaluated later
+ * by the truss element and section during analysis.
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
