@@ -53,6 +53,16 @@ namespace fem::model {
  * id map. Recompilation is intentionally unsupported because any later
  * assembly-level set, field, load or constraint may already reference those
  * dense identifiers.
+ *
+ * After compilation the same interface coordinates section assignment,
+ * analysis-step element state, material history initialization, global operator
+ * assembly and result recovery. Persistent data always remains owned by
+ * `ModelData`; `Model` only implements the operations and invariants governing
+ * that data.
+ *
+ * A model is intentionally non-copyable because copied semantic and compiled
+ * identifiers could diverge. Move construction transfers the single shared data
+ * root without duplicating any finite-element object.
  */
 struct Model {
     // Root-level unqualified topology is stored as an implicit Part and embedded
@@ -61,86 +71,105 @@ struct Model {
     static constexpr const char* DEFAULT_PART_NAME     = "__DEFAULT_PART__";
     static constexpr const char* DEFAULT_INSTANCE_NAME = "__DEFAULT_INSTANCE__";
 
-    // Single source of truth for both semantic model definitions and compiled
-    // solver-facing storage.
+    // Single source of truth for semantic definitions, reusable topology and
+    // compiled solver-facing storage. All Model operations act directly on this
+    // shared root; no mirrored compile state or secondary entity container is
+    // maintained by the behavioral interface.
     ModelDataPtr _data;
 
-    // constructors
+    // Construction and ownership. The default constructor creates the implicit
+    // root Part and identity Instance used for unqualified input entities.
+    // Copying is forbidden, while move construction transfers the data root and
+    // every object reachable from it.
     Model();
     Model(const Model&)            = delete;
     Model& operator=(const Model&) = delete;
     Model(Model&&) noexcept        = default;
 
-    // adding parts and instances which can hold elements, nodes and sets.
-    // compile() will later turn this into dense data inside _data.
+    // Semantic topology ownership. Parts contain reusable local geometry and
+    // regions; instances embed those definitions through rigid placements.
+    // Both operations are valid only before the one-way compilation boundary.
     void add_part(const std::string& name);
     void add_instance(const std::string& name,
                       const std::string& part,
                       Vec3 translation = Vec3::Zero(),
                       Mat3 rotation = Mat3::Identity());
 
-
-    // Flattens all Parts through their Instances into dense assembly data.
-    // The operation may be called exactly once. It creates deterministic dense
-    // identifiers, transforms nodal geometry and section orientations, rewires
-    // copied element/surface/line connectivity, materializes inherited sets and
-    // initializes element-nodal/IP/MP enumeration.
+    // One-way semantic-to-assembly transition. Compilation creates deterministic
+    // dense identifiers, transforms nodal geometry and section orientations,
+    // rewires copied element/surface/line connectivity, materializes inherited
+    // regions and initializes element-nodal, integration-point and material-point
+    // enumeration. The operation may be called exactly once.
     void compile();
 
-    // Resolve semantic local identifiers through the compile maps. Unqualified
-    // ids use the identity default instance.
+    // Resolution of semantic local identifiers after compilation. Qualified
+    // references use the corresponding Instance maps; unqualified references
+    // resolve through the implicit identity instance.
     ID compiled_node_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_element_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_surface_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_line_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
 
-    // Part-local geometry construction. All four operations are pre-compile
-    // because changing their contents would invalidate dense assembly ids.
+    // Part-local topology construction in the currently active semantic Part.
+    // Nodes and element connectivity retain their input identifiers, while
+    // boundary extraction creates a local surface or line from an element side.
+    // These operations are pre-compile because later changes would invalidate
+    // dense assembly identifiers and inherited regions.
     inline void set_node(ID id, Precision x, Precision y, Precision z = 0);
     template<typename T, typename... Args>
     inline void set_element(ID id, Args&&... args);
     inline void set_surface(ID id, ID element_id, ID surface_id);
     inline void set_surface(const std::string& elset, ID surface_id);
 
-    // Shared definitions and assignments --------------------------------------
-    // Materials, profiles and coordinate systems are independent definition
-    // dictionaries and may be extended on either side of compile(). A section
-    // added pre-compile belongs to the active Part; a section added post-compile
-    // must reference a compiled element set and is assigned immediately.
+    // Shared definitions and section assignments. Materials, profiles and
+    // coordinate systems are independent of identifier flattening and may be
+    // registered on either side of compile(). A pre-compile section belongs to
+    // the active Part and is copied per Instance; a post-compile section must
+    // already reference a compiled element region and is assigned immediately.
     void add_coordinate_system(cos::CoordinateSystem::Ptr coordinate_system);
     void add_material(material::Material::Ptr material);
     void add_profile(Profile::Ptr profile);
     void add_section(Section::Ptr section);
 
-    // Loads/supports remain compact registration helpers because both use one
-    // uniform data type. Constraints deliberately have no equivalent helper:
-    // callers append concrete Connector/Coupling/Tie/Contact/Rbm/Equation
-    // objects directly to the matching ModelData collection.
+    // Boundary-condition resources and collector entries. Loads and supports
+    // address compiled regions and therefore require an active collector after
+    // compilation. Amplitudes are shared named definitions and remain independent
+    // of the topology transition. Constraints deliberately have no registration
+    // helper; callers append their concrete type directly to ModelData.
     void add_load     (bc::Load::Ptr load);
     void add_amplitude(bc::Amplitude::Ptr amplitude);
     void add_support  (bc::Support support);
 
-    // adds a point mass to a node with prespecified mass, inertia and spring constants.
+    // Non-element mass and spring contribution acting on a compiled node region.
+    // The generated PointMass feature contributes translational mass, rotary
+    // inertia and optional translational/rotational stiffness during later global
+    // operator assembly.
     void add_point_mass_feature(const std::string& nset,
                                 Precision mass,
                                 Vec3 rotary_inertia,
                                 Vec3 spring_constants,
                                 Vec3 rotary_spring_constants);
 
-
-    // Element lifecycle and section assignment --------------------------------
-    // step_begin()/step_end() own analysis-local caches. They are intentionally
-    // separate from compile(), which only creates persistent assembly topology.
+    // Compiled element preparation and analysis lifecycle. Section assignment
+    // binds compiled elements to their section definitions, and shell-normal
+    // construction prepares element-nodal reference geometry. step_begin() and
+    // step_end() manage analysis-local element caches independently of the
+    // persistent topology created by compile().
     void step_begin();
     void step_end();
     void assign_sections();
     void build_shell_element_normals(Precision equalize_angle_degrees = Precision(20));
 
-    // Material state -----------------------------------------------------------
+    // Material-point history allocation and initialization. The maximum width is
+    // derived from the elastic laws assigned to compiled elements; initialization
+    // then prepares every enumerated material point in a compatible field.
     [[nodiscard]] Index maximum_material_state_size() const;
     void initialize_material_state(Field& state) const;
 
-    // Global assembly ----------------------------------------------------------
+    // Global system construction. These operations enumerate active DOFs,
+    // collect prescribed loads and constraints, and assemble structural tangent,
+    // geometric, mass and internal-force contributions in global coordinates.
+    // Optional stiffness-scaling fields act per compiled element.
     SystemDofIds build_unconstrained_index_matrix();
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
@@ -169,7 +198,10 @@ struct Model {
     SparseMatrix build_lumped_mass_matrix(
         SystemDofIds& indices);
 
-    // Result recovery ----------------------------------------------------------
+    // Result recovery from compiled structural elements. Returned fields use the
+    // domain appropriate to each quantity, including integration-point stress,
+    // element-nodal stress/strain, shell resultants and element-level compliance,
+    // volume, section-force and shear-flow measures.
     Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
@@ -180,9 +212,10 @@ struct Model {
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
 
-    // Human-readable model diagnostics. The overview reports semantic topology,
-    // compiled assembly data and associated definitions through the logger. The
-    // stream operator writes a compact summary only to the supplied stream.
+    // Human-readable diagnostics. The overview reports semantic topology,
+    // compiled assembly data and associated definitions through the hierarchical
+    // logger. The stream operator writes a compact, side-effect-free summary only
+    // to the supplied stream.
     void print_overview() const;
     friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
 };

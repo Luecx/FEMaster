@@ -165,6 +165,25 @@ bool Field::is_nan(Index row, Index component) const {
     return !std::isfinite(static_cast<double>(value));
 }
 
+/**
+ * Validates that every stored field component is finite.
+ *
+ * NaN and infinite values are treated as numerical failures. The supplied
+ * label identifies the operation or physical result being checked, while the
+ * reported row and component locate the invalid value in the field storage.
+ *
+ * @param label Diagnostic name included in a failed check.
+ */
+void Field::check_finite(const std::string& label) const {
+    // Inspect the complete rectangular field storage
+    for (Index row = 0; row < rows; ++row) {
+        for (Index component = 0; component < components; ++component) {
+            logging::error(std::isfinite(static_cast<double>(values(row, component))),
+                label, " row ", row, " has invalid value at component ", component);
+        }
+    }
+}
+
 Vec3 Field::row_vec3(Index row) const {
     logging::error(components >= 3,
         "Field '", name, "': row_vec3 requires at least three components");

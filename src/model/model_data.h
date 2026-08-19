@@ -2,6 +2,23 @@
  * @file model_data.h
  * @brief Declares semantic and compiled FEM model storage.
  *
+ * `ModelData` is the shared data root owned by `Model`. Before compilation it
+ * retains reusable Parts and their rigid Instances. `Model::compile()` flattens
+ * that semantic topology into dense assembly arrays, global regions and nodal
+ * coordinate fields consumed by element formulations, constraints, load cases
+ * and result writers.
+ *
+ * The data root also owns shared material/profile definitions, compiled section
+ * assignments, global field registration and prefix-sum enumerations for
+ * element-nodal, integration-point and material-point storage. Public model
+ * operations coordinate transitions and validation; `ModelData` provides the
+ * common storage and domain-level utilities.
+ *
+ * @see Model
+ * @see Part
+ * @see Instance
+ * @see Field
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
@@ -40,34 +57,64 @@ namespace fem::model {
 struct Part;
 struct Instance;
 
+/**
+ * @brief Shared semantic, assembly and solver-facing storage of a FEM model.
+ *
+ * `ModelData` is the internal ownership root behind `Model`. During model input,
+ * Parts contain sparse local topology and Instances define rigid placements of
+ * those reusable definitions. Compilation preserves this semantic data for name
+ * and identifier resolution while additionally creating dense global arrays for
+ * nodes, elements, surfaces, lines, regions and section assignments.
+ *
+ * Dense element identifiers index `elements` directly. Every represented
+ * element stores the corresponding global nodal connectivity and receives
+ * prefix offsets into the model-wide `ELEMENT_NODAL`, `ELEMENT_IP` and
+ * `ELEMENT_MP` domains. Each offset field has one terminal entry so the span of
+ * element `e` is `[offset[e], offset[e + 1])`.
+ *
+ * Named fields are owned through shared pointers in `fields`. Dedicated handles
+ * expose fields with central solver meaning, such as current/reference nodal
+ * positions, material history and shell reference normals. A dedicated handle
+ * may also refer to a registered named field; the registry and handle therefore
+ * share ownership rather than duplicate values.
+ *
+ * The `compiled` flag is monotonic. Once set, semantic topology must no longer be
+ * changed because all dense identifiers, regions, offsets and dependent fields
+ * rely on the compiled ordering.
+ */
 struct ModelData {
 
-    // non-flat data. Each part has some sets which should, once compiled, also be present in the sets below
-    // instances reference a part. the sets will be copied for each instance.
+    // Semantic topology retained across compilation. Parts own sparse local
+    // entities and regions; instances reference a Part and define its rigid
+    // placement. `compiled` marks the one-way transition to dense assembly data.
     Dict<Part>     parts;
     Dict<Instance> instances;
     bool           compiled = false;
 
-    // flattened elements, surfaces and lines. mapping to instance elements is
-    // possible using the map inside each instance.
+    // Dense assembly topology produced by Model::compile(). Vector indices are
+    // global identifiers, while each Instance retains the corresponding map from
+    // its part-local identifiers.
     std::vector<ElementPtr> elements;
     std::vector<SurfacePtr> surfaces;
     std::vector<LinePtr>    lines;
 
-    // flattened sections, profiles and other features.
-    std::vector<Section::Ptr>  sections;
-    Dict<Profile>              profiles;
+    // Assembly section assignments and shared non-topological definitions.
+    // Features contribute matrices or loads outside regular element topology.
+    std::vector<Section::Ptr>          sections;
+    Dict<Profile>                      profiles;
     std::vector<feature::Feature::Ptr> features;
 
-    // materials, coordinate systems and amplitudes defined across the assembly. (there are no part-level csys)
+    // Named definitions shared across the complete assembly. Coordinate systems
+    // and amplitudes are global resources rather than part-local topology.
     Dict<material::Material>    materials;
     Dict<cos::CoordinateSystem> coordinate_systems;
     Dict<bc::Amplitude>         amplitudes;
 
-    // global fields specified for the full assembly.
+    // Named global fields indexed by their physical FieldDomain
     std::unordered_map<std::string, Field::Ptr> fields;
 
-    // specific fields used throughout the solver. may be bound to a field from the fields map above.
+    // Solver-facing field handles. These may alias entries in `fields`; the
+    // element offset fields are internal prefix sums with one terminal row.
     Field::Ptr positions                   = nullptr;
     Field::Ptr positions_reference         = nullptr;
     Field::Ptr element_stiffness_scale     = nullptr;
@@ -78,13 +125,14 @@ struct ModelData {
     Field::Ptr element_ip_offsets          = nullptr;
     Field::Ptr element_mp_offsets          = nullptr;
 
-    // sets for nodes, elements, surfaces and lines. should be just the sets from each instance / part.
+    // Global assembly regions materialized from the compiled instances. Every
+    // collection owns an aggregate *ALL region that receives all dense entities.
     Sets<NodeRegion>    node_sets   {SET_NODE_ALL};
     Sets<ElementRegion> elem_sets   {SET_ELEM_ALL};
     Sets<SurfaceRegion> surface_sets{SET_SURF_ALL};
     Sets<LineRegion>    line_sets   {SET_LINE_ALL};
 
-    // constraints defined for the assembly.
+    // Assembly constraints operating on dense global identifiers and regions
     std::vector<constraint::Connector> connectors;
     std::vector<constraint::Coupling>  couplings;
     std::vector<constraint::Tie>       ties;
@@ -92,28 +140,46 @@ struct ModelData {
     std::vector<constraint::Rbm>       rbms;
     std::vector<constraint::Equation>  equations;
 
-    // all support collectors and load collectors defined for all the load-cases.
+    // Named support and load collectors shared by the model load cases
     Sets<bc::SupportCollector> supp_cols;
     Sets<bc::LoadCollector>    load_cols;
 
-    // empty constructor
+    // Construction
     ModelData() = default;
 
-    // specifying how many total rows there are for a specific domain, e.g. Nodal, Element Nodal, and so on.
+    // Domain sizing and element-local enumeration. Variable-size element domains
+    // use terminal prefix offsets, whereas NODE and ELEMENT derive their row
+    // counts directly from compiled coordinate and topology storage.
     Index field_rows(FieldDomain domain) const;
-    // initialise the fields for the offsets for each field type for each element.
     void initialize_element_enumeration();
 
-    // field creation and management
+    // Named field lookup and allocation. Registered creation reuses a compatible
+    // existing field; unregistered creation produces independent temporary
+    // storage without changing the global field dictionary.
     bool has_field(const std::string& name) const;
     Field::Ptr get_field(const std::string& name) const;
-    Field::Ptr create_field(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true, bool reg = true);
-    Field create_field_(const std::string& name, FieldDomain domain, Index components, bool fill_nan = true);
+    Field::Ptr create_field(
+        const std::string& name,
+        FieldDomain       domain,
+        Index             components,
+        bool              fill_nan = true,
+        bool              reg = true
+    );
+    Field create_field_(
+        const std::string& name,
+        FieldDomain       domain,
+        Index             components,
+        bool              fill_nan = true
+    );
 
-    // conversion of fields from one domain to another.
-    Field element_nodal_to_nodal(const Field& element_nodal,
-                                 const Field& element_weights,
-                                 const std::string& name) const;
+    // Weighted projection from element-local nodal rows onto unique global
+    // nodes. Element weights control participation and the relative contribution
+    // of every connected element to the final nodal average.
+    Field element_nodal_to_nodal(
+        const Field&       element_nodal,
+        const Field&       element_weights,
+        const std::string& name
+    ) const;
 };
 
 } // namespace fem::model

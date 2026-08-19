@@ -19,6 +19,16 @@
  * system: orientation axes rotate with the instance and spatial origins also
  * receive the instance translation.
  *
+ * Dense identifiers are deterministic: instance names and every part-local
+ * entity identifier are sorted before enumeration. The resulting Instance maps
+ * remain available for resolving qualified semantic references after the model
+ * has crossed the one-way compilation boundary.
+ *
+ * @see Model
+ * @see ModelData
+ * @see Part
+ * @see Instance
+ *
  * @author Finn Eggers
  * @date 19.08.2026
  */
@@ -39,6 +49,13 @@
 
 namespace fem::model {
 
+/**
+ * Constructs an empty model with an implicit root part and identity instance.
+ *
+ * Unqualified topology uses these two semantic objects, allowing root-level and
+ * explicitly instanced input to share the same compilation and identifier
+ * resolution path without a separate assembly topology type.
+ */
 Model::Model()
     : _data(std::make_shared<ModelData>()) {
     // Unqualified deck entities live in the default part. The corresponding
@@ -47,6 +64,16 @@ Model::Model()
     _data->instances.activate(DEFAULT_INSTANCE_NAME, default_part);
 }
 
+/**
+ * Creates and activates a named reusable part definition.
+ *
+ * Parts participate in identifier flattening and may therefore be added only
+ * before compilation. Names must be non-empty and unique in the semantic part
+ * dictionary. The new part becomes active for subsequent local topology and
+ * section construction.
+ *
+ * @param name Unique semantic part name.
+ */
 void Model::add_part(const std::string& name) {
     // Parts participate directly in flattening and may therefore only be
     // created before the one allowed compile pass.
@@ -57,9 +84,24 @@ void Model::add_part(const std::string& name) {
     logging::error(!_data->parts.has(name),
         "Model: part ", name, " is already defined");
 
+    // Create the part and select it as the current topology destination
     _data->parts.activate(name);
 }
 
+/**
+ * Adds one rigid placement of an existing semantic part.
+ *
+ * The instance stores its source Part and the local-to-global transformation
+ * `x = R X + t`. Finiteness, orthonormality and proper-rotation requirements are
+ * validated together for all instances when compilation begins. Instance names
+ * are unique and remain the namespace qualifier for inherited regions and local
+ * identifier resolution.
+ *
+ * @param name Unique instance name.
+ * @param part_name Name of the existing reusable part definition.
+ * @param translation Global translation applied after rotation.
+ * @param rotation Proper rotation from part-local to global coordinates.
+ */
 void Model::add_instance(const std::string& name,
                          const std::string& part_name,
                          Vec3 translation,
@@ -75,6 +117,7 @@ void Model::add_instance(const std::string& name,
     logging::error(!_data->instances.has(name),
         "Model: instance ", name, " is already defined");
 
+    // Store the semantic placement without duplicating its referenced topology
     _data->instances.add(std::make_shared<Instance>(
         name,
         _data->parts.get(part_name),
@@ -83,6 +126,15 @@ void Model::add_instance(const std::string& name,
     ));
 }
 
+/**
+ * Registers a unique named coordinate-system definition.
+ *
+ * Coordinate systems are shared resources rather than flattened topology and
+ * may be added before or after compilation. The model dictionary takes shared
+ * ownership of the supplied polymorphic definition.
+ *
+ * @param coordinate_system Coordinate system to register.
+ */
 void Model::add_coordinate_system(cos::CoordinateSystem::Ptr coordinate_system) {
     // Coordinate systems are definitions rather than assembly topology. Abaqus
     // *TRANSFORM deliberately creates nodal systems after compile(), so no
@@ -94,9 +146,19 @@ void Model::add_coordinate_system(cos::CoordinateSystem::Ptr coordinate_system) 
     logging::error(!_data->coordinate_systems.has(coordinate_system->name),
         "Model: coordinate system ", coordinate_system->name, " is already defined");
 
+    // Transfer the unique named definition into persistent model storage
     _data->coordinate_systems.add(std::move(coordinate_system));
 }
 
+/**
+ * Registers a unique named material definition.
+ *
+ * Materials are shared by section assignments and do not participate directly
+ * in part/instance identifier flattening, so registration is independent of the
+ * compile state.
+ *
+ * @param material Material definition to register.
+ */
 void Model::add_material(material::Material::Ptr material) {
     // Materials do not affect part/instance identifier flattening. They may be
     // introduced whenever a later section or analysis object needs them.
@@ -107,9 +169,18 @@ void Model::add_material(material::Material::Ptr material) {
     logging::error(!_data->materials.has(material->name),
         "Model: material ", material->name, " is already defined");
 
+    // Transfer the unique named definition into persistent model storage
     _data->materials.add(std::move(material));
 }
 
+/**
+ * Registers a unique named beam-profile definition.
+ *
+ * Profiles are shared resources referenced by beam sections and remain
+ * independent of semantic topology compilation.
+ *
+ * @param profile Profile definition to register.
+ */
 void Model::add_profile(Profile::Ptr profile) {
     // Profiles behave like materials: they are shared definitions and are not
     // part of the topology that compile() freezes.
@@ -120,10 +191,26 @@ void Model::add_profile(Profile::Ptr profile) {
     logging::error(!_data->profiles.has(profile->name),
         "Model: profile ", profile->name, " is already defined");
 
+    // Transfer the unique named definition into persistent model storage
     _data->profiles.add(std::move(profile));
 }
 
+/**
+ * Registers a section assignment in semantic or compiled element space.
+ *
+ * Before compilation the section region must be the exact region object owned
+ * by the active Part. The section remains a semantic definition and is copied
+ * once for every Instance during `compile()`. After compilation the region must
+ * instead be the exact registered assembly element set; the section is stored
+ * directly and immediately assigned to its target elements.
+ *
+ * This pointer-identity requirement prevents stale or same-named regions from a
+ * different identifier space from crossing the compilation boundary.
+ *
+ * @param section Section assignment to register.
+ */
 void Model::add_section(Section::Ptr section) {
+    // Validate section ownership and its required target region
     logging::error(_data != nullptr,
         "Model: model data is not initialized");
     logging::error(section != nullptr,
@@ -140,6 +227,7 @@ void Model::add_section(Section::Ptr section) {
             "Model: post-compile section region ", section->region_->name,
             " is not a compiled element set");
 
+        // Store and bind the assembly-space assignment immediately
         _data->sections.push_back(std::move(section));
         assign_sections();
         return;
@@ -156,9 +244,29 @@ void Model::add_section(Section::Ptr section) {
         "Model: section region ", section->region_->name,
         " does not belong to active part ", active->name);
 
+    // Retain the semantic assignment for instance-specific compilation
     active->sections.push_back(std::move(section));
 }
 
+/**
+ * Flattens all semantic Parts and Instances into dense assembly storage.
+ *
+ * Compilation validates every rigid instance, determines exact assembly sizes
+ * and allocates dense node, element, surface and line storage. Instances are
+ * processed by sorted name; every local entity family is likewise enumerated by
+ * sorted identifier. Nodes are transformed by `x = R X + t`, polymorphic
+ * topology objects are copied and rewired through instance maps, and inherited
+ * regions receive qualified assembly names.
+ *
+ * Part-local sections become independent assembly assignments per Instance.
+ * Their element regions are remapped, beam directions are rotated and spatial
+ * coordinate systems are rigidly transformed while shared material and profile
+ * definitions remain referenced.
+ *
+ * Finally, sections are bound to dense elements, element-nodal/IP/MP offsets are
+ * initialized and the semantic topology is frozen. Recompilation is unsupported
+ * because it would invalidate every assembly-level field, region and reference.
+ */
 void Model::compile() {
     // Compiling twice would duplicate/renumber the assembly and invalidate every
     // global reference created after the first pass. Recompilation is therefore
@@ -166,6 +274,7 @@ void Model::compile() {
     logging::error(_data != nullptr && !_data->compiled,
         "Model: compile() may only be called once");
 
+    // Collect deterministic instance order and exact dense assembly dimensions
     std::vector<std::string> instance_names;
     instance_names.reserve(_data->instances._data.size());
 
@@ -179,6 +288,7 @@ void Model::compile() {
     const Precision rotation_tolerance =
         Precision(100) * std::sqrt(std::numeric_limits<Precision>::epsilon());
 
+    // Validate every rigid placement and reset its compile-output identifier maps
     for (const auto& [name, instance] : _data->instances) {
         logging::error(instance != nullptr && instance->part != nullptr,
             "Model: instance ", name, " does not reference a part");
@@ -240,6 +350,7 @@ void Model::compile() {
     ID next_surface = 0;
     ID next_line    = 0;
 
+    // Materialize every instance in deterministic semantic-name order
     for (const std::string& instance_name : instance_names) {
         const auto instance   = _data->instances.get(instance_name);
         const auto source     = instance->part;
@@ -276,6 +387,7 @@ void Model::compile() {
         }
         std::sort(node_ids.begin(), node_ids.end());
 
+        // Transform local nodal coordinates and establish the dense node map
         for (const ID local_id : node_ids) {
             const ID global_id = next_node++;
             const Vec3 position =
@@ -289,6 +401,7 @@ void Model::compile() {
             _data->node_sets.all()->add(global_id);
         }
 
+        // Sort local elements before assigning deterministic dense identifiers
         std::vector<ID> element_ids;
         element_ids.reserve(source->elements.size());
         for (const auto& [id, element] : source->elements) {
@@ -297,6 +410,7 @@ void Model::compile() {
         }
         std::sort(element_ids.begin(), element_ids.end());
 
+        // Copy concrete elements and rewire their connectivity through the node map
         for (const ID local_id : element_ids) {
             const auto source_element = source->elements.at(local_id);
             const ID global_id        = next_element++;
@@ -312,6 +426,7 @@ void Model::compile() {
             element->_section          = nullptr;
             element->_model_data       = _data.get();
 
+            // Replace every part-local node reference by its dense assembly id
             for (Index local = 0; local < static_cast<Index>(element->n_nodes()); ++local) {
                 const ID local_node = source_element->nodes()[local];
                 const auto node_it  = node_map.find(local_node);
@@ -355,6 +470,7 @@ void Model::compile() {
             }
         }
 
+        // Sort and copy part-local surfaces into dense assembly topology
         std::vector<ID> surface_ids;
         surface_ids.reserve(source->surfaces.size());
         for (const auto& [id, surface] : source->surfaces) {
@@ -363,6 +479,7 @@ void Model::compile() {
         }
         std::sort(surface_ids.begin(), surface_ids.end());
 
+        // Rewire copied surface connectivity through the instance node map
         for (const ID local_id : surface_ids) {
             const auto source_surface = source->surfaces.at(local_id);
             const ID global_id        = next_surface++;
@@ -382,6 +499,7 @@ void Model::compile() {
             surface_map.emplace(local_id, global_id);
         }
 
+        // Materialize qualified surface regions through the dense surface map
         for (const auto& [local_name, local_set] : source->surface_sets) {
             if (is_default && local_name == SET_SURF_ALL) continue;
 
@@ -395,6 +513,7 @@ void Model::compile() {
             }
         }
 
+        // Sort and copy part-local lines into dense assembly topology
         std::vector<ID> line_ids;
         line_ids.reserve(source->lines.size());
         for (const auto& [id, line] : source->lines) {
@@ -403,6 +522,7 @@ void Model::compile() {
         }
         std::sort(line_ids.begin(), line_ids.end());
 
+        // Rewire copied line connectivity through the instance node map
         for (const ID local_id : line_ids) {
             const auto source_line = source->lines.at(local_id);
             const ID global_id     = next_line++;
@@ -422,6 +542,7 @@ void Model::compile() {
             line_map.emplace(local_id, global_id);
         }
 
+        // Materialize qualified line regions through the dense line map
         for (const auto& [local_name, local_set] : source->line_sets) {
             if (is_default && local_name == SET_LINE_ALL) continue;
 
@@ -451,6 +572,7 @@ void Model::compile() {
                 region->add(it->second);
             }
 
+            // Copy the concrete section and transform its spatial orientation data
             Section::Ptr section = nullptr;
             if (auto* solid = source_section->as<SolidSection>()) {
                 auto copy = std::make_shared<SolidSection>();
@@ -502,7 +624,15 @@ void Model::compile() {
     _data->compiled = true;
 }
 
+/**
+ * Resolves one part-local node identifier through a compiled Instance map.
+ *
+ * @param id Node identifier in the referenced Part namespace.
+ * @param instance Instance name, or the implicit identity instance by default.
+ * @return Dense assembly node identifier.
+ */
 ID Model::compiled_node_id(ID id, const std::string& instance) const {
+    // Validate the compile state, instance namespace and local node reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: node ids cannot be resolved before compile()");
 
@@ -516,7 +646,15 @@ ID Model::compiled_node_id(ID id, const std::string& instance) const {
     return it->second;
 }
 
+/**
+ * Resolves one part-local element identifier through a compiled Instance map.
+ *
+ * @param id Element identifier in the referenced Part namespace.
+ * @param instance Instance name, or the implicit identity instance by default.
+ * @return Dense assembly element identifier.
+ */
 ID Model::compiled_element_id(ID id, const std::string& instance) const {
+    // Validate the compile state, instance namespace and local element reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: element ids cannot be resolved before compile()");
 
@@ -530,7 +668,15 @@ ID Model::compiled_element_id(ID id, const std::string& instance) const {
     return it->second;
 }
 
+/**
+ * Resolves one part-local surface identifier through a compiled Instance map.
+ *
+ * @param id Surface identifier in the referenced Part namespace.
+ * @param instance Instance name, or the implicit identity instance by default.
+ * @return Dense assembly surface identifier.
+ */
 ID Model::compiled_surface_id(ID id, const std::string& instance) const {
+    // Validate the compile state, instance namespace and local surface reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: surface ids cannot be resolved before compile()");
 
@@ -544,7 +690,15 @@ ID Model::compiled_surface_id(ID id, const std::string& instance) const {
     return it->second;
 }
 
+/**
+ * Resolves one part-local line identifier through a compiled Instance map.
+ *
+ * @param id Line identifier in the referenced Part namespace.
+ * @param instance Instance name, or the implicit identity instance by default.
+ * @return Dense assembly line identifier.
+ */
 ID Model::compiled_line_id(ID id, const std::string& instance) const {
+    // Validate the compile state, instance namespace and local line reference
     logging::error(_data != nullptr && _data->compiled,
         "Model: line ids cannot be resolved before compile()");
 

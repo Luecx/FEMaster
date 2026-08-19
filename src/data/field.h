@@ -121,6 +121,10 @@ struct Field {
     // Returns whether a field component is not finite
     [[nodiscard]] bool is_nan(Index row, Index component) const;
 
+    // Validates that every stored component is finite and identifies invalid
+    // rows and components through the supplied diagnostic label.
+    void check_finite(const std::string& label) const;
+
     // Returns the first three components of a row
     [[nodiscard]] Vec3 row_vec3(Index row) const;
 
