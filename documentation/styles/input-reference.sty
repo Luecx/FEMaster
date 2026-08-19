@@ -1,0 +1,159 @@
+% Additional layout for the FEMaster/Abaqus input-language reference.
+% Kept separate from femaster-manual.sty so the generic manual styling remains
+% reusable by older auxiliary documents.
+
+\NeedsTeXFormat{LaTeX2e}
+
+\definecolor{FMAbaqus}{HTML}{7A3E00}
+\definecolor{FMSoftBlue}{HTML}{EEF5FA}
+\definecolor{FMSoftOrange}{HTML}{FFF4E8}
+\definecolor{FMSoftGreen}{HTML}{EEF7EF}
+
+% Every documented input keyword starts on a fresh page. The page break is
+% intentional: the manual is both a continuous tutorial and a printable keyword
+% reference in which a single command can be opened or printed independently.
+\newcommand{\keywordpage}[1]{%
+  \clearpage
+  \section{\cmd{#1}}
+  \markright{\cmd{#1}}
+}
+
+\newcommand{\keywordsubpage}[2]{%
+  \clearpage
+  \section{#1: \cmd{#2}}
+  \markright{\cmd{#2}}
+}
+
+% Consistent introductory support labels. "Shared" means that the syntax shown
+% is accepted by both FEMaster and the supported Abaqus reader; it is not a claim
+% that every option implemented by Abaqus itself is supported.
+\newtcolorbox{supportnote}[1][]{%
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMSoftBlue,
+  colframe=FMBlue,
+  boxrule=0.4pt,
+  borderline west={2pt}{0pt}{FMBlue},
+  left=7pt,right=7pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+\newtcolorbox{abaqusnote}[1][]{%
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMSoftOrange,
+  colframe=FMAbaqus,
+  boxrule=0.4pt,
+  borderline west={2pt}{0pt}{FMAbaqus},
+  left=7pt,right=7pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+\newtcolorbox{implementationnote}[1][]{%
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMSoftGreen,
+  colframe=FMGreen,
+  boxrule=0.4pt,
+  borderline west={2pt}{0pt}{FMGreen},
+  left=7pt,right=7pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+% Side-by-side input examples. Each child box is an ordinary inputdeck listing,
+% which keeps verbatim material safe. Equal row height makes the relation between
+% both dialects visually immediate even when one representation needs more lines.
+\newenvironment{dialectexamples}{%
+  \begin{tcbraster}[
+    raster columns=2,
+    raster equal height=rows,
+    raster column skip=4mm,
+    raster row skip=2mm,
+    raster left skip=0pt,
+    raster right skip=0pt
+  ]
+}{%
+  \end{tcbraster}
+}
+
+\newtcblisting{femasterdeck}{%
+  listing only,
+  listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMBlue,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  left=5pt,right=5pt,top=5pt,bottom=5pt,
+  title=FEMaster
+}
+
+\newtcblisting{abaqusdeck}{%
+  listing only,
+  listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMAbaqus,
+  borderline west={2pt}{0pt}{FMAbaqus},
+  boxrule=0.4pt,
+  left=5pt,right=5pt,top=5pt,bottom=5pt,
+  title=Abaqus input
+}
+
+% Used when the supported Abaqus reader has no equivalent keyword. Keeping the
+% right-hand box rather than dropping it preserves the visual comparison contract
+% throughout the manual.
+\newtcolorbox{noabaqus}{%
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMAbaqus,
+  borderline west={2pt}{0pt}{FMAbaqus},
+  boxrule=0.4pt,
+  left=7pt,right=7pt,top=7pt,bottom=7pt,
+  title=Abaqus input
+}
+
+\newtcolorbox{nofemaster}{%
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMBlue,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  left=7pt,right=7pt,top=7pt,bottom=7pt,
+  title=FEMaster
+}
+
+\newenvironment{keywordparameters}{%
+  \subsection*{Parameters}
+  \begin{tabularx}{\linewidth}{@{}p{0.21\linewidth}p{0.16\linewidth}Y@{}}
+  \toprule
+  \textbf{Parameter} & \textbf{Status} & \textbf{Meaning} \\
+  \midrule
+}{%
+  \bottomrule
+  \end{tabularx}
+}
+
+\newenvironment{keyworddata}{%
+  \subsection*{Data lines}
+  \begin{tabularx}{\linewidth}{@{}p{0.28\linewidth}Y@{}}
+  \toprule
+  \textbf{Entry} & \textbf{Meaning} \\
+  \midrule
+}{%
+  \bottomrule
+  \end{tabularx}
+}
+
+\newcommand{\syntaxheading}{\subsection*{Syntax and semantics}}
+\newcommand{\exampleheading}{\subsection*{FEMaster and Abaqus example}}
+\newcommand{\notesheading}{\subsection*{Notes and interactions}}
