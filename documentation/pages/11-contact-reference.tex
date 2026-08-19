@@ -1,0 +1,61 @@
+\chapter{Contact}
+\label{chap:contact}
+
+Contact is a unilateral geometric constraint: opposing surfaces may transmit compressive normal interaction when they approach or penetrate, but they may separate freely. The current FEMaster implementation is frictionless dual-mortar surface-to-surface contact with augmented-Lagrange nodal multipliers. Contact therefore differs fundamentally from a Tie, which enforces a permanent equality relation after projection.
+
+The input command is intentionally compact. It identifies master and slave surface regions and supplies numerical parameters. Geometric segmentation, common-plane projection, dual interpolation, residual/tangent assembly, multiplier updates, and adaptive penalty continuation remain internal to the Contact implementation.
+
+\keywordpage{CONTACT}
+
+\cmd{CONTACT} creates one frictionless contact pair between a nonempty master surface set and a nonempty slave surface set. The model must already be compiled, so both names resolve to final Assembly regions. \key{MASTER} and \key{SLAVE} are required. The initial penalty stiffness is supplied by \key{PENALTY}; \key{CLEARANCE} defaults to zero and shifts the contact gap definition. \key{FLIP=YES} reverses the master-normal orientation used by the contact geometry; the default is \val{NO}.
+
+The current contact formulation reconstructs physical overlap from the current configuration during every assembly. Slave and master facets are projected to a slave-centred common plane, clipped to obtain their physical overlap, and integrated using the mortar construction. A biorthogonal dual interpolation produces one normalized unilateral constraint per global slave mortar node.
+
+For slave nodal gap \(g_i\), augmented-Lagrange multiplier \(\lambda_i\), and current penalty \(\varepsilon\), the normal pressure coefficient follows
+\[
+p_i=\max\left(0,\lambda_i-\varepsilon g_i\right).
+\]
+Only compressive contact is therefore active. The augmented-Lagrange multiplier is persistent nonlinear state. Current geometry itself is recomputed rather than stored as permanent master-partner history.
+
+The supplied \key{PENALTY} is the initial numerical penalty parameter. FEMaster may adapt the effective penalty between converged Newton solves when augmented-Lagrange penetration reduction stagnates. This means the input value is a starting continuation scale rather than necessarily the fixed coefficient used throughout every augmentation.
+
+Contact nonlinear state is transactional. Increment, predictor, and line-search trials can create temporary multiplier/evaluation states and then commit or roll them back. This is required so rejected nonlinear trials do not leave irreversible contact history in the model.
+
+The current tangent is assembled with frozen contact geometry for the individual evaluation. Geometric overlap and active contact are nevertheless reconstructed from the current nodal configuration on subsequent evaluations. Users should therefore expect contact to be one of the primary sources of non-smoothness in difficult nonlinear equilibrium paths, particularly when overlap topology changes.
+
+\begin{keywordparameters}
+\key{MASTER} & required & Nonempty compiled master surface set. \\
+\key{SLAVE} & required & Nonempty compiled slave surface set. \\
+\key{PENALTY} & required & Initial augmented-Lagrange penalty stiffness. \\
+\key{CLEARANCE} & optional & Contact-clearance offset; default 0. \\
+\key{FLIP} & optional & \val{NO} (default) or \val{YES}; reverses master normal orientation. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SURFACE, NAME=MASTER_FACE
+MASTER_ELEMENTS, S1
+*SURFACE, NAME=SLAVE_FACE
+SLAVE_ELEMENTS, S2
+
+*CONTACT, MASTER=MASTER_FACE,
+ SLAVE=SLAVE_FACE,
+ PENALTY=1.0e8,
+ CLEARANCE=0.0, FLIP=NO
+\end{femasterdeck}
+\begin{noabaqus}
+The current Abaqus reader does not register the Abaqus contact-definition family. Contact must presently be defined using native FEMaster syntax after the imported model regions have been constructed.
+\end{noabaqus}
+\end{dialectexamples}
+
+\notesheading
+
+\textbf{Master/slave choice.} The two regions are not interchangeable in the implementation: the common-plane projection and dual basis are slave-centred and multipliers live on global slave mortar nodes. Choose the discretizations consistently and avoid assigning the same physical boundary ambiguously to both roles.
+
+\textbf{Normal orientation.} Contact sign depends on surface orientation. If an otherwise correct pair separates or activates on the wrong side, verify element connectivity and side labels before using \key{FLIP}. The flip option exists to reverse master orientation deliberately; it should not be used to conceal incorrectly constructed surface topology.
+
+\textbf{Penalty magnitude.} An excessively small starting penalty permits large penetration before augmentation, while an excessively large value can worsen conditioning. Because the implementation also performs augmented-Lagrange updates and penalty adaptation, the appropriate value is a numerical scale tied to model stiffness and geometry rather than a physical material constant.
+
+\textbf{Analysis type.} Contact contributes nonlinear residual and tangent terms and is intended for nonlinear static analysis. A linear analysis cannot represent changing unilateral active conditions simply by defining a Contact object.
