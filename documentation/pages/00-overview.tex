@@ -1,42 +1,78 @@
 \chapter{Overview}
 
-FEMaster is a finite-element solver for linear and nonlinear mechanical analyses. Models are described with an input-deck language in which commands start with an asterisk, command options are written as keywords, and numerical data follows on subsequent lines.
+FEMaster is a finite-element solver for structural mechanics. The same solver-facing model can be constructed from the native FEMaster input language or from the Abaqus input subset implemented by FEMaster. This manual deliberately documents both representations together. The objective is not to teach two unrelated file formats, but to explain the mechanical model once and then show how the same concept is expressed in each input dialect.
 
-The manual is organized as a user reference. Command tables summarize the available DSL commands; the later chapters explain how model entities are connected, how collectors are activated in loadcases, and how analysis controls affect the solved equations.
+The manual is therefore organized by finite-element modelling topic rather than by parser implementation. Model organization and mesh definition come first, followed by regions, materials, sections, coordinate systems, fields, loads, constraints, contact, analysis procedures, numerical controls, and result output. Within these chapters every input keyword has one canonical location. Each keyword begins on a new page and is documented with its purpose, scope, parameters, data-line format, semantic effects, and a side-by-side FEMaster/Abaqus example.
 
-\section{Model layers}
+\section{Two input dialects, one model}
 
-A model starts with nodes. Nodes define global coordinates and provide the reference points for all other model entities. Elements connect nodes into line, surface, or volume discretizations. Surfaces describe element sides used by pressure loads, distributed loads, ties, surface couplings, and surface-to-surface contact. Sets group nodes, elements, or surfaces so that loads, supports, sections, and constraints can refer to meaningful names instead of long ID lists.
+The native FEMaster language and the supported Abaqus reader are separate parsers, but both construct the same semantic \emph{Model}. In particular, both readers can construct reusable Parts and rigid Instances. The semantic model is subsequently compiled exactly once into dense solver-facing \emph{ModelData}. Part-local node and element identifiers therefore remain local while the input is being interpreted; instance expansion and deterministic assembly identifiers are created at the compile boundary.
 
-Materials and sections give elements their physical meaning. An element by itself defines only topology and interpolation. A section assigns material, thickness, area, or profile data. Features such as point masses are additional model objects that contribute mass, inertia, or spring stiffness without being part of element connectivity. Contact pairs connect explicitly selected master and slave surfaces and contribute unilateral normal interaction during nonlinear static analysis.
+This distinction is useful even for users who never create an explicit \cmd{PART}. A simple flat deck remains the shortest representation for many analyses. FEMaster provides a default model context for such input, so nodes, elements, sets, sections, loads, and analyses can be written without introducing an explicit part/assembly hierarchy. Parts and Instances become useful when the same topology is reused, when local identifiers should remain independent between components, or when a component should be placed repeatedly using rigid translations and rotations.
 
-Loads and supports are stored in named collectors. A loadcase decides which collectors are active. This allows one model to contain several analyses without repeating geometry, materials, sections, or load definitions.
+\begin{notebox}[Optional part/assembly hierarchy]
+A model does not need \cmd{PART}, \cmd{ASSEMBLY}, or \cmd{INSTANCE}. Their presence changes model organization and identifier scope, not the fundamental finite-element equations. The flat form is intentionally retained as a first-class FEMaster workflow.
+\end{notebox}
 
-\section{Supported analysis types}
+\section{Semantic model and compile boundary}
 
-\begin{longtable}{@{}p{0.32\linewidth}p{0.58\linewidth}@{}}
+Before compilation, FEMaster stores model topology in semantic objects. A Part owns its local nodes and elements together with part-level regions such as node sets, element sets, and surfaces. An Instance references a Part and carries an affine rigid placement. Materials, profiles, orientations, section descriptions, amplitudes, and analysis definitions remain named model resources.
+
+Compilation flattens the reusable topology into the dense fields required by assembly and solution. Each Instance contributes transformed node coordinates and a corresponding copy of the referenced part topology. Part-level sets and surfaces are expanded for the instance and mapped to the compiled identifiers. Assembly-level regions can then combine entities originating from different instances. The solver works only with the compiled representation; it does not repeatedly interpret part-local identifiers while assembling matrices.
+
+Conceptually, the data flow is
+
+\[
+\text{input deck}
+\longrightarrow
+\text{semantic Model}
+\longrightarrow
+\operatorname{compile}()
+\longrightarrow
+\text{dense ModelData}
+\longrightarrow
+\text{analysis}.
+\]
+
+The parser currently evaluates a deck in dependency-ordered complete-file passes so that global definitions, semantic topology, compiled assembly regions, and analyses are created in a deterministic order. This is an implementation mechanism rather than a requirement to manually duplicate or stage an input file. Users should write definitions in a logical readable order; the manual describes observable model semantics rather than relying on parser-pass details.
+
+\section{Model entities}
+
+Nodes define reference positions and provide mechanical degrees of freedom. Elements connect nodes and introduce interpolation, kinematics, and element-specific state. Named node sets and element sets define reusable regions. Surfaces identify element faces or surface collections and are used by pressure loads, distributed loads, ties, couplings, and contact.
+
+Materials define constitutive behaviour and mass density. Sections connect element regions to material and geometric properties such as shell thickness, truss area, or beam profile data. Coordinate systems and orientations define local bases for anisotropy, sections, loads, supports, and nodal transformations. Fields store spatially varying nodal, elemental, element-nodal, integration-point, or material-point information where a model feature requires data beyond a scalar keyword parameter.
+
+Loads and supports are named model objects in native FEMaster input. A loadcase selects the collectors that participate in an analysis. Abaqus input expresses the same high-level idea through Step scopes containing procedures, boundary conditions, and loads. The reader converts supported Abaqus procedures into the corresponding FEMaster loadcase objects.
+
+\section{Supported analysis families}
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.60\linewidth}@{}}
 \toprule
-\textbf{Type} & \textbf{Purpose} \\
+\textbf{FEMaster analysis} & \textbf{Purpose} \\
 \midrule
 \endhead
-\val{LINEARSTATIC} & Small-displacement static equilibrium with linear material behaviour. \\
-\val{LINEARSTATICTOPO} & Static analysis with element-wise topology fields such as density, orientation, and penalization exponent. \\
-\val{NONLINEARSTATIC} & Incremental static equilibrium with geometric and material nonlinearity, load control, arc-length path following, and nonlinear surface contact. \\
-\val{EIGENFREQ} & Natural-frequency analysis of the linear constrained system. \\
-\val{LINEARBUCKLING} & Linear buckling analysis from a static preload and the resulting geometric stiffness. \\
-\val{LINEARTRANSIENT} & Linear time integration with Newmark parameters, optional Rayleigh damping, and controlled result cadence. \\
-\val{LINEARHARMONIC} & Direct steady-state harmonic response over a prescribed excitation-frequency sweep with optional Rayleigh damping. \\
+\val{LINEARSTATIC} & Small-displacement static equilibrium for the assembled linear system. \\
+\val{LINEARSTATICTOPO} & Linear static analysis with element-wise topology density, penalization, and optional material-orientation fields. \\
+\val{NONLINEARSTATIC} & Incremental nonlinear equilibrium with load control or arc-length path following, nonlinear element formulations, and nonlinear contact where applicable. \\
+\val{EIGENFREQ} & Constrained free-vibration eigenvalue analysis using the assembled stiffness and mass matrices. \\
+\val{LINEARBUCKLING} & Linearized buckling analysis based on a preloaded equilibrium state and geometric stiffness. \\
+\val{LINEARTRANSIENT} & Implicit linear time integration with Newmark parameters, optional Rayleigh damping, initial velocity, and configurable result cadence. \\
+\val{LINEARHARMONIC} & Direct steady-state harmonic response over a specified excitation-frequency sweep with optional Rayleigh damping. \\
 \bottomrule
 \end{longtable}
 
+The Abaqus reader maps the supported \cmd{STATIC}, \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS} procedures onto these FEMaster analysis families. Procedure-specific details are documented in Chapter~\ref{chap:analysis-procedures}.
+
 \section{Degree-of-freedom convention}
 
-Mechanical nodal vectors use the component order
+Mechanical nodal vectors use the order
 \[
 \text{\dofvec}.
 \]
-The first three components are translations and the last three are rotations. Not every element uses all six components. Solid elements usually contribute only translational displacement degrees of freedom. Beams, shells, constraints, connectors, and some features may introduce rotations.
+The first three entries are translations and the last three are rotations. This six-component convention is used uniformly by generalized loads, supports, many constraint definitions, and internal nodal fields even when a particular element formulation uses only a subset. Continuum solid elements usually activate translational degrees of freedom only, whereas beams and shells also use rotational components.
 
-\section{Targets}
+\section{Reading the keyword pages}
 
-Many commands accept a target that can be either a set name or a single numeric ID. For example, \cmd{CLOAD} can target a node set or one node, \cmd{DLOAD} can target a surface set or one surface, and \cmd{VLOAD} can target an element set or one element. This makes small test decks compact while keeping large models readable through named sets.
+Each keyword page starts with continuous explanatory text. The following parameter and data-line tables describe the accepted grammar without replacing the explanation of what the command actually does. The final side-by-side block compares the native FEMaster representation with the supported Abaqus representation of the same modelling intent.
+
+When both columns contain identical syntax, that is intentional: it communicates that the input can be written in the same way in both dialects. When no corresponding keyword is implemented in the Abaqus reader, the Abaqus column states that explicitly rather than presenting unsupported Abaqus syntax as if FEMaster could read it. Conversely, Abaqus-only input keywords such as \cmd{BOUNDARY}, \cmd{DSLOAD}, or procedure keywords are documented alongside the native FEMaster mechanism to which they are translated.
