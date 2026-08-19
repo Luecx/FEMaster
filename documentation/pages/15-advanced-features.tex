@@ -1,0 +1,131 @@
+\chapter{Advanced Model Features}
+\label{chap:advanced-features}
+
+This chapter collects model features that are important but do not fit naturally into the basic topology--material--load workflow. Point-mass features augment nodal mass, inertia, and spring properties without introducing a separate finite element. The topology-static controls select compiled Fields that modify stiffness and orientation element by element. These capabilities are native FEMaster extensions and are not currently represented by dedicated mappings in the supported Abaqus reader.
+
+\keywordpage{POINTMASS}
+
+\cmd{POINTMASS} assigns concentrated translational mass, rotary inertia, and optional translational and rotational spring constants to every node in a named node set. The command is a root-level native FEMaster feature. \key{NSET} is required and identifies the compiled target region.
+
+The first scalar is one isotropic point mass. It contributes to the three translational generalized directions. The following three values are rotary inertia components \(I_x,I_y,I_z\) associated with the rotational generalized directions. Three translational spring constants and three rotational spring constants may then be supplied. Missing values in all groups default to zero, so a simple lumped mass needs only the first value.
+
+A PointMass is a model feature rather than an ordinary connectivity element. It remains associated with its target node region and participates in mass assembly. When \cmd{INERTIARELIEF} or \cmd{INERTIALOAD} is configured to consider point masses, these concentrated mass properties can also contribute to the rigid-body mass and inertia calculation.
+
+The spring entries provide diagonal generalized stiffness at the target nodes. They are useful for idealized local support/compliance models when a full connector or structural spring element is unnecessary. Because they act in the generalized nodal directions, rotational spring values have moment-per-radian dimensions consistent with the chosen unit system.
+
+\begin{keywordparameters}
+\key{NSET} & required & Target compiled node set. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{mass} & Concentrated translational mass; default 0 if omitted. \\
+\val{Ix, Iy, Iz} & Rotary inertia components; defaults 0. \\
+\val{kx, ky, kz} & Translational spring constants; defaults 0. \\
+\val{krx, kry, krz} & Rotational spring constants; defaults 0. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*POINTMASS, NSET=PAYLOAD
+0.025,
+1.2e-3, 1.2e-3, 2.0e-3,
+1000., 1000., 0.,
+0., 0., 0.
+\end{femasterdeck}
+\begin{noabaqus}
+The current Abaqus reader does not translate concentrated-mass or spring cards into the native \cmd{POINTMASS} feature.
+\end{noabaqus}
+\end{dialectexamples}
+
+\notesheading
+
+A PointMass on a node set applies the defined feature to the region represented by that set according to the model feature implementation. Avoid unintentionally assigning a full intended total mass independently to many nodes when the physical intention is a single lumped mass.
+
+\section{Topology-weighted linear statics}
+
+The \val{LINEARSTATICTOPO} loadcase is designed for analyses in which element stiffness is weighted by a scalar density Field and may additionally use an element-wise orientation Field. The feature is intentionally Field based: topology/design data are stored on the compiled element domain and can therefore be produced externally, updated between runs, or written back as analysis results without altering mesh connectivity.
+
+\keywordpage{TOPODENSITY}
+
+\cmd{TOPODENSITY} selects the density Field used by an active \val{LINEARSTATICTOPO} loadcase. \key{FIELD} is required; \key{NAME} is accepted as an alternative spelling. The referenced Field must exist, use \val{TYPE=ELEMENT}, and contain exactly one component per compiled element.
+
+The command does not alter or clamp the supplied densities. It only attaches the Field to the topology-aware loadcase. The loadcase later combines each element density with its penalization exponent when evaluating stiffness and design-related result quantities. Users are therefore responsible for supplying physically/numerically meaningful density values according to the optimization or sensitivity workflow in which the solver is embedded.
+
+\begin{keywordparameters}
+\key{FIELD} / \key{NAME} & required & Scalar \val{ELEMENT} Field containing element densities. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=RHO, TYPE=ELEMENT,
+ COLS=1, FILL=ZERO
+1, 0.8
+2, 1.0
+
+*LOADCASE, TYPE=LINEARSTATICTOPO
+*TOPODENSITY, FIELD=RHO
+*TOPOEXPONENT
+3.0
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+Topology-density Fields and the \val{LINEARSTATICTOPO} procedure are native FEMaster capabilities and are not mapped from Abaqus input.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{TOPOORIENT}
+
+\cmd{TOPOORIENT} selects a three-component element Field containing orientation data for an active \val{LINEARSTATICTOPO} loadcase. \key{FIELD} is required and \key{NAME} is accepted as an alias. The referenced Field must have \val{ELEMENT} domain and exactly three components.
+
+The parser deliberately does not interpret the three values. It validates only storage domain and component count, then attaches the Field to the topology-aware analysis. Interpretation of the orientation vector/angle representation remains inside that loadcase and its element/material calculations. This division keeps generic Field parsing independent of topology-optimization conventions.
+
+Use this feature only when the selected material/element response is orientation dependent. For isotropic material laws an orientation Field does not create anisotropy by itself.
+
+\begin{keywordparameters}
+\key{FIELD} / \key{NAME} & required & Three-component \val{ELEMENT} Field. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=ORIENT,
+ TYPE=ELEMENT, COLS=3, FILL=ZERO
+1, 0.0, 0.0, 0.0
+2, 0.0, 0.2, 0.0
+
+*LOADCASE, TYPE=LINEARSTATICTOPO
+*TOPODENSITY, FIELD=RHO
+*TOPOORIENT, FIELD=ORIENT
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+No topology-orientation Field mapping is registered by the Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{TOPOEXPONENT}
+
+\cmd{TOPOEXPONENT} sets the scalar density penalization exponent used by \val{LINEARSTATICTOPO}. The command accepts one data value and is valid only for that loadcase type. It configures the SIMP-like interpolation exponent applied later by the topology-aware analysis.
+
+For the common conceptual law
+\[
+K_e(\rho_e) \propto \rho_e^p K_{e,0},
+\]
+\(p\) is the value supplied by \cmd{TOPOEXPONENT}. Increasing \(p\) penalizes intermediate densities more strongly. The exact stiffness/result interpolation and any minimum-density safeguards belong to the loadcase implementation rather than the parser.
+
+\begin{keyworddata}
+\val{exponent} & Scalar density penalization exponent. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*TOPOEXPONENT
+3.0
+\end{femasterdeck}
+\begin{noabaqus}
+No equivalent topology penalization command is registered in the supported Abaqus input subset.
+\end{noabaqus}
+\end{dialectexamples}
