@@ -330,13 +330,6 @@ constraint::ConstraintGroups Model::collect_constraints(
     return groups;
 }
 
-constraint::Equations Model::build_constraints(
-    SystemDofIds&             system_dof_ids,
-    std::vector<std::string> supp_sets
-) {
-    return collect_constraints(system_dof_ids, supp_sets).flatten();
-}
-
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* stiffness_scalar) {
     logging::error(_data->contacts.empty(),
         "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");

@@ -64,37 +64,34 @@ struct Model {
     // solver-facing storage.
     ModelDataPtr _data;
 
+    // constructors
     Model();
-
     Model(const Model&)            = delete;
     Model& operator=(const Model&) = delete;
     Model(Model&&) noexcept        = default;
 
-    // Semantic topology --------------------------------------------------------
-    // These operations affect what compile() must flatten and are therefore
-    // valid only before the compile boundary.
+    // adding parts and instances which can hold elements, nodes and sets.
+    // compile() will later turn this into dense data inside _data.
     void add_part(const std::string& name);
     void add_instance(const std::string& name,
                       const std::string& part,
                       Vec3 translation = Vec3::Zero(),
                       Mat3 rotation = Mat3::Identity());
 
-    /**
-     * @brief Flattens all Parts through their Instances into dense assembly data.
-     *
-     * The operation may be called exactly once. It creates deterministic dense
-     * identifiers, transforms nodal geometry and section orientations, rewires
-     * copied element/surface/line connectivity, materializes inherited sets and
-     * initializes element-nodal/IP/MP enumeration.
-     */
+
+    // Flattens all Parts through their Instances into dense assembly data.
+    // The operation may be called exactly once. It creates deterministic dense
+    // identifiers, transforms nodal geometry and section orientations, rewires
+    // copied element/surface/line connectivity, materializes inherited sets and
+    // initializes element-nodal/IP/MP enumeration.
     void compile();
 
     // Resolve semantic local identifiers through the compile maps. Unqualified
     // ids use the identity default instance.
-    ID compiled_node_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
+    ID compiled_node_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_element_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_surface_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
-    ID compiled_line_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
+    ID compiled_line_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
 
     // Part-local geometry construction. All four operations are pre-compile
     // because changing their contents would invalidate dense assembly ids.
@@ -118,17 +115,17 @@ struct Model {
     // uniform data type. Constraints deliberately have no equivalent helper:
     // callers append concrete Connector/Coupling/Tie/Contact/Rbm/Equation
     // objects directly to the matching ModelData collection.
-    void add_load(bc::Load::Ptr load);
+    void add_load     (bc::Load::Ptr load);
     void add_amplitude(bc::Amplitude::Ptr amplitude);
-    void add_support(bc::Support support);
+    void add_support  (bc::Support support);
 
+    // adds a point mass to a node with prespecified mass, inertia and spring constants.
     void add_point_mass_feature(const std::string& nset,
                                 Precision mass,
                                 Vec3 rotary_inertia,
                                 Vec3 spring_constants,
                                 Vec3 rotary_spring_constants);
 
-    friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
 
     // Element lifecycle and section assignment --------------------------------
     // step_begin()/step_end() own analysis-local caches. They are intentionally
@@ -144,25 +141,32 @@ struct Model {
 
     // Global assembly ----------------------------------------------------------
     SystemDofIds build_unconstrained_index_matrix();
-    Field build_load_matrix(std::vector<std::string> load_sets = {}, Precision time = 0);
-    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(std::vector<std::string> load_sets = {});
-    constraint::ConstraintGroups collect_constraints(SystemDofIds& system_dof_ids,
-                                                      const std::vector<std::string>& supp_sets = {});
-    constraint::Equations build_constraints(SystemDofIds& system_dof_ids,
-                                             std::vector<std::string> supp_sets = {});
-
-    SparseMatrix build_stiffness_matrix(SystemDofIds& indices, const Field* stiffness_scalar = nullptr);
-    SparseMatrix build_tangent_stiffness_matrix(SystemDofIds& indices,
-                                                 NodeData& nodal_forces,
-                                                 const Field& displacement,
-                                                 const Field* stiffness_scalar = nullptr);
-    SparseMatrix build_geom_stiffness_matrix(SystemDofIds& indices,
-                                              const Field& ip_stress,
-                                              const Field* stiffness_scalar = nullptr);
-    void build_internal_force_nonlinear(SystemDofIds& indices,
-                                        NodeData& nodal_forces,
-                                        const Field& displacement);
-    SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
+    Field build_load_matrix(
+        std::vector<std::string> load_sets = {},
+        Precision time = 0);
+    constraint::ConstraintGroups collect_constraints(
+        SystemDofIds& system_dof_ids,
+        const std::vector<std::string>& supp_sets = {});
+    std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(
+        std::vector<std::string> load_sets = {});
+    SparseMatrix build_stiffness_matrix(
+        SystemDofIds& indices,
+        const Field* stiffness_scalar = nullptr);
+    SparseMatrix build_tangent_stiffness_matrix(
+        SystemDofIds& indices,
+        NodeData& nodal_forces,
+        const Field& displacement,
+        const Field* stiffness_scalar = nullptr);
+    SparseMatrix build_geom_stiffness_matrix(
+        SystemDofIds& indices,
+        const Field& ip_stress,
+        const Field* stiffness_scalar = nullptr);
+    void build_internal_force_nonlinear(
+        SystemDofIds& indices,
+        NodeData& nodal_forces,
+        const Field& displacement);
+    SparseMatrix build_lumped_mass_matrix(
+        SystemDofIds& indices);
 
     // Result recovery ----------------------------------------------------------
     Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
@@ -174,6 +178,9 @@ struct Model {
     Field compute_volumes();
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
+
+    // misc
+    friend std::ostream& operator<<(std::ostream& ostream, const Model& model);
 };
 
 #include "model.ipp"
