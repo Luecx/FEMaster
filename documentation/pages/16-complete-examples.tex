@@ -1,41 +1,36 @@
 \chapter{Complete Examples}
 \label{chap:complete-examples}
 
-The examples in this chapter assemble the individual keyword pages into complete modelling workflows. Each section describes one physical problem and shows the native FEMaster and supported Abaqus representation side by side. The objective is not to minimize line count: the examples deliberately retain explicit sets, material definitions, Sections, boundary conditions, and analysis controls so the relation between both dialects remains visible.
+The examples in this chapter combine the individual keyword pages into complete modelling workflows. Each section describes one physical problem and presents the native FEMaster and supported Abaqus representation side by side. The examples intentionally keep explicit regions, properties, boundary conditions, loads, and analysis controls so that the translation between both dialects remains visible.
 
-Where the two input languages expose different abstractions, the examples use the mechanisms actually implemented by the readers. Native FEMaster therefore defines reusable support/load collectors and selects them in \cmd{LOADCASE}; Abaqus input places supported \cmd{BOUNDARY} and load cards inside one \cmd{STEP}. Native truss properties use \cmd{TRUSS SECTION}; the current Abaqus translation uses the supported pure-truss \cmd{SOLID SECTION} mapping.
+The two readers do not expose exactly the same abstractions. Native FEMaster defines reusable support and load collectors at model level and selects them in \cmd{LOADCASE}. Abaqus input places supported \cmd{BOUNDARY} and load cards in one \cmd{STEP}. Native truss properties use \cmd{TRUSS SECTION}; the current Abaqus reader maps a pure \val{T3D2} set supplied through \cmd{SOLID SECTION} to the same internal TrussSection. These examples always use the syntax actually implemented by the readers rather than syntax merely available in the full Abaqus product.
 
 \section{Linear static truss}
 
-The first example is a two-node axial bar in a consistent N--mm unit system. Node 1 is fixed. At node 2 the transverse translations are constrained while the axial translation remains free. A 1000 N axial load acts in the global \(x\)-direction. With \(E=210000\) MPa, length \(L=1000\) mm, and area \(A=100\) mm\(^2\), the analytical axial displacement is
+The first model is a two-node axial bar in a consistent N--mm unit system. Node 1 is fixed and node 2 is guided so only axial translation remains free. A 1000 N force acts in the global \(x\)-direction. With \(E=210000\) MPa, \(L=1000\) mm, and \(A=100\) mm\(^2\), the analytical displacement is
 \[
-u_x=\frac{FL}{EA}
-=\frac{1000\cdot1000}{210000\cdot100}
-\approx 0.047619\ \mathrm{mm}.
+u_x=\frac{FL}{EA}\approx0.047619\ \mathrm{mm}.
 \]
-This makes the model useful as both a syntax example and a basic solver verification case.
+The case is therefore useful both as a syntax template and as a basic verification model.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
 *HEADING
 Linear static axial truss
 
-*NODE, NSET=NALL
+*NODE
 1,    0., 0., 0.
 2, 1000., 0., 0.
-
 *ELEMENT, TYPE=T3, ELSET=BAR
 1, 1, 2
-
 *NSET, NAME=FIXED
 1
 *NSET, NAME=TIP
 2
 
 *MATERIAL, NAME=STEEL
-*ELASTIC, TYPE=ISOTROPIC
+*ELASTIC
 210000., 0.3
-
 *TRUSS SECTION, ELSET=BAR,
  MATERIAL=STEEL
 100.
@@ -43,12 +38,10 @@ Linear static axial truss
 *SUPPORT, SUPPORT_COLLECTOR=BC
 FIXED, 0., 0., 0., NAN, NAN, NAN
 TIP, NAN, 0., 0., NAN, NAN, NAN
-
 *CLOAD, LOAD_COLLECTOR=AXIAL
 TIP, 1000., 0., 0., 0., 0., 0.
 
-*LOADCASE, TYPE=LINEARSTATIC,
- NAME=AXIAL_TENSION
+*LOADCASE, TYPE=LINEARSTATIC
 *SUPPORTS
 BC
 *LOADS
@@ -61,13 +54,11 @@ AXIAL
 *HEADING
 Linear static axial truss
 
-*NODE, NSET=NALL
+*NODE
 1,    0., 0., 0.
 2, 1000., 0., 0.
-
 *ELEMENT, TYPE=T3D2, ELSET=BAR
 1, 1, 2
-
 *NSET, NSET=FIXED
 1
 *NSET, NSET=TIP
@@ -76,7 +67,6 @@ Linear static axial truss
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
-
 *SOLID SECTION, ELSET=BAR,
  MATERIAL=STEEL
 100.
@@ -94,19 +84,20 @@ TIP, 1, 1000.
 
 \section{Reusable Part and translated Instance}
 
-This example demonstrates the optional semantic model hierarchy. A truss Part is defined in local coordinates and then instantiated after a translation of 500 mm in \(x\). Assembly-level node sets qualify the local node labels with \key{INSTANCE} so supports and loads act on the placed component. The Part itself remains unchanged; the translated coordinates exist only in compiled Assembly data.
+This example demonstrates the optional Part/Assembly hierarchy. The material is a root-level named resource. The reusable truss topology and its Section assignment live inside the Part. One Instance translates the complete Part by 500 mm in \(x\). Assembly-level node sets then resolve the local node labels through \key{INSTANCE}. The source Part remains unchanged; transformed coordinates are created only when the model is compiled.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+
 *PART, NAME=ROD
-*NODE, NSET=PNODES
+*NODE
 1,   0., 0., 0.
 2, 500., 0., 0.
 *ELEMENT, TYPE=T3, ELSET=BAR
 1, 1, 2
-*MATERIAL, NAME=STEEL
-*ELASTIC
-210000., 0.3
 *TRUSS SECTION, ELSET=BAR,
  MATERIAL=STEEL
 50.
@@ -125,26 +116,27 @@ This example demonstrates the optional semantic model hierarchy. A truss Part is
 *SUPPORT, SUPPORT_COLLECTOR=BC
 LEFT, 0., 0., 0., NAN, NAN, NAN
 RIGHT, NAN, 0., 0., NAN, NAN, NAN
-*CLOAD, LOAD_COLLECTOR=LOAD
+*CLOAD, LOAD_COLLECTOR=P
 RIGHT, 500., 0., 0., 0., 0., 0.
 
 *LOADCASE, TYPE=LINEARSTATIC
 *SUPPORTS
 BC
 *LOADS
-LOAD
+P
 *END
 \end{femasterdeck}
 \begin{abaqusdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+
 *PART, NAME=ROD
-*NODE, NSET=PNODES
+*NODE
 1,   0., 0., 0.
 2, 500., 0., 0.
 *ELEMENT, TYPE=T3D2, ELSET=BAR
 1, 1, 2
-*MATERIAL, NAME=STEEL
-*ELASTIC
-210000., 0.3
 *SOLID SECTION, ELSET=BAR,
  MATERIAL=STEEL
 50.
@@ -173,7 +165,7 @@ RIGHT, 1, 500.
 
 \section{Homogeneous shell cantilever}
 
-A rectangular shell panel is clamped along one edge and loaded by two equal transverse nodal forces at the free edge. The native deck uses the MITC4 formulation directly; the Abaqus deck uses \val{S4}, which the current reader maps to the corresponding FEMaster FRT shell implementation. Both use a homogeneous integrated shell Section with 2 mm thickness.
+A four-node shell panel is clamped along one edge and loaded transversely at the free edge. The native deck selects \val{MITC4}. Abaqus \val{S4} is mapped by the current reader to the corresponding FEMaster FRT shell implementation. Both Sections represent a homogeneous 2 mm shell; the Abaqus form explicitly uses the supported five Simpson integration points.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -182,10 +174,8 @@ A rectangular shell panel is clamped along one edge and loaded by two equal tran
 2, 1000.,   0., 0.
 3, 1000., 500., 0.
 4,    0., 500., 0.
-
 *ELEMENT, TYPE=MITC4, ELSET=PANEL
 1, 1, 2, 3, 4
-
 *NSET, NAME=ROOT
 1, 4
 *NSET, NAME=TIP
@@ -194,22 +184,20 @@ A rectangular shell panel is clamped along one edge and loaded by two equal tran
 *MATERIAL, NAME=ALUMINIUM
 *ELASTIC
 70000., 0.33
-
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM, TYPE=INTEGRATED
 2.0
 
 *SUPPORT, SUPPORT_COLLECTOR=BC
 ROOT, 0., 0., 0., 0., 0., 0.
-
-*CLOAD, LOAD_COLLECTOR=TIP_LOAD
+*CLOAD, LOAD_COLLECTOR=P
 TIP, 0., 0., -50., 0., 0., 0.
 
 *LOADCASE, TYPE=LINEARSTATIC
 *SUPPORTS
 BC
 *LOADS
-TIP_LOAD
+P
 *END
 \end{femasterdeck}
 \begin{abaqusdeck}
@@ -218,10 +206,8 @@ TIP_LOAD
 2, 1000.,   0., 0.
 3, 1000., 500., 0.
 4,    0., 500., 0.
-
 *ELEMENT, TYPE=S4, ELSET=PANEL
 1, 1, 2, 3, 4
-
 *NSET, NSET=ROOT
 1, 4
 *NSET, NSET=TIP
@@ -230,7 +216,6 @@ TIP_LOAD
 *MATERIAL, NAME=ALUMINIUM
 *ELASTIC
 70000., 0.33
-
 *SHELL SECTION, ELSET=PANEL,
  MATERIAL=ALUMINIUM
 2.0, 5
@@ -247,7 +232,7 @@ TIP, 3, -50.
 
 \section{Solid cube under pressure}
 
-The cube demonstrates element-face surfaces and scalar pressure loading. The native deck uses \cmd{PLOAD}; Abaqus input uses \cmd{DSLOAD} with type \val{P}. The surface is constructed from one element side so pressure direction follows the finite-element face orientation rather than an independently supplied global vector.
+The solid example demonstrates an element-face Surface and pressure loading. The native deck uses \cmd{PLOAD}; Abaqus input uses \cmd{DSLOAD} with type \val{P}. In both cases the traction direction follows the finite-element surface orientation rather than an independently supplied global vector.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -260,13 +245,11 @@ The cube demonstrates element-face surfaces and scalar pressure loading. The nat
 6, 1., 0., 1.
 7, 1., 1., 1.
 8, 0., 1., 1.
-
 *ELEMENT, TYPE=C3D8, ELSET=CUBE
 1, 1, 2, 3, 4, 5, 6, 7, 8
-
 *NSET, NAME=BASE
 1, 2, 3, 4
-*SURFACE, NAME=TOP
+*SURFACE, NAME=LOADED_FACE
 CUBE, S2
 
 *MATERIAL, NAME=MAT
@@ -277,7 +260,7 @@ CUBE, S2
 *SUPPORT, SUPPORT_COLLECTOR=BC
 BASE, 0., 0., 0., NAN, NAN, NAN
 *PLOAD, LOAD_COLLECTOR=P
-TOP, 1.0
+LOADED_FACE, 1.0
 
 *LOADCASE, TYPE=LINEARSTATIC
 *SUPPORTS
@@ -296,13 +279,12 @@ P
 6, 1., 0., 1.
 7, 1., 1., 1.
 8, 0., 1., 1.
-
 *ELEMENT, TYPE=C3D8, ELSET=CUBE
 1, 1, 2, 3, 4, 5, 6, 7, 8
-
 *NSET, NSET=BASE
 1, 2, 3, 4
-*SURFACE, NAME=TOP, TYPE=ELEMENT
+*SURFACE, NAME=LOADED_FACE,
+ TYPE=ELEMENT
 CUBE, S2
 
 *MATERIAL, NAME=MAT
@@ -315,14 +297,14 @@ CUBE, S2
 *BOUNDARY
 BASE, 1, 3, 0.
 *DSLOAD
-TOP, P, 1.0
+LOADED_FACE, P, 1.0
 *END STEP
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\section{Eigenfrequency with concentrated tip mass}
+\section{Eigenfrequency analysis}
 
-The native example attaches a point mass to the free end of a two-element truss and extracts the lowest five eigenpairs. The current Abaqus reader does not translate an equivalent point-mass card, so the Abaqus column demonstrates the supported distributed-mass eigenfrequency model without the concentrated mass. This deliberate difference illustrates an important documentation rule: the right-hand column shows what FEMaster actually accepts rather than pretending unsupported Abaqus syntax is available.
+The modal example uses a two-element bar with distributed material density and requests the lowest five eigenpairs. The native deck could additionally use \cmd{POINTMASS}; the current Abaqus reader does not translate an equivalent concentrated-mass keyword, so the common example intentionally uses only distributed mass and therefore represents the same mechanical model on both sides.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -337,8 +319,6 @@ The native example attaches a point mass to the free end of a two-element truss 
 1
 *NSET, NAME=GUIDED
 2, 3
-*NSET, NAME=TIP
-3
 *MATERIAL, NAME=STEEL
 *ELASTIC
 210000., 0.3
@@ -346,11 +326,10 @@ The native example attaches a point mass to the free end of a two-element truss 
 7.85e-9
 *TRUSS SECTION, ELSET=BAR, MATERIAL=STEEL
 100.
-*POINTMASS, NSET=TIP
-0.01
 *SUPPORT, SUPPORT_COLLECTOR=BC
 FIXED, 0., 0., 0., NAN, NAN, NAN
 GUIDED, NAN, 0., 0., NAN, NAN, NAN
+
 *LOADCASE, TYPE=EIGENFREQ
 *SUPPORTS
 BC
@@ -377,6 +356,7 @@ BC
 7.85e-9
 *SOLID SECTION, ELSET=BAR, MATERIAL=STEEL
 100.
+
 *STEP, PERTURBATION
 *FREQUENCY
 5
@@ -387,9 +367,9 @@ GUIDED, 2, 3, 0.
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\section{Geometrically nonlinear two-bar arch}
+\section{Arc-length snap-through}
 
-A shallow two-bar arch provides a compact nonlinear example. The native deck explicitly selects arc-length control. The Abaqus deck requests \cmd{STATIC, RIKS} with the same normalized initial/minimum/maximum path scales. This is the closest side-by-side representation of the nonlinear solver mapping because the Abaqus reader creates the same FEMaster \val{NONLINEARSTATIC} loadcase internally.
+A shallow two-bar arch illustrates geometrically nonlinear path following. The native deck selects \val{ARC_LENGTH}; Abaqus input selects \cmd{STATIC, RIKS}. The first four Riks data values correspond to the initial, period, minimum, and maximum path scales that the reader normalizes onto the FEMaster nonlinear load path.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -414,6 +394,7 @@ ENDS, 0., 0., 0., NAN, NAN, NAN
 APEX, 0., NAN, 0., NAN, NAN, NAN
 *CLOAD, LOAD_COLLECTOR=P
 APEX, 0., -20000., 0., 0., 0., 0.
+
 *LOADCASE, TYPE=NONLINEARSTATIC
 *SUPPORTS
 BC
@@ -444,6 +425,7 @@ P
 210000., 0.3
 *SOLID SECTION, ELSET=BARS, MATERIAL=STEEL
 100.
+
 *STEP, NLGEOM=YES, INC=200
 *STATIC, RIKS
 0.05, 1.0, 1e-5, 0.1
@@ -459,7 +441,7 @@ APEX, 2, -20000.
 
 \section{Linear transient ramp load}
 
-The final dynamic example applies an axial load with a tabular amplitude. Native FEMaster defines the time interval and Newmark parameters explicitly. Abaqus \cmd{DYNAMIC, DIRECT} provides the fixed time increment and Step period; the current reader maps this to the FEMaster transient solver, whose default Newmark parameters are \(\beta=0.25\), \(\gamma=0.5\).
+The transient model applies an axial force with a tabular amplitude. Native FEMaster defines the integration interval and Newmark parameters directly. Abaqus \cmd{DYNAMIC, DIRECT} supplies the fixed time increment and Step period; the reader maps these values to the same transient loadcase, whose default Newmark parameters are \(\beta=0.25\) and \(\gamma=0.5\).
 
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -482,12 +464,13 @@ The final dynamic example applies an axial load with a tabular amplitude. Native
 *SUPPORT, SUPPORT_COLLECTOR=BC
 FIXED, 0., 0., 0., NAN, NAN, NAN
 TIP, NAN, 0., 0., NAN, NAN, NAN
-*AMPLITUDE, NAME=RAMP, TYPE=LINEAR
+*AMPLITUDE, NAME=RAMP
 0., 0.
 0.1, 1.
 1., 1.
 *CLOAD, LOAD_COLLECTOR=P, AMPLITUDE=RAMP
 TIP, 1000., 0., 0., 0., 0., 0.
+
 *LOADCASE, TYPE=LINEARTRANSIENT
 *SUPPORTS
 BC
@@ -520,6 +503,7 @@ P
 100.
 *AMPLITUDE, NAME=RAMP
 0., 0., 0.1, 1., 1., 1.
+
 *STEP
 *DYNAMIC, DIRECT
 0.01, 1.0
@@ -536,7 +520,7 @@ U
 
 \section{Linear harmonic frequency sweep}
 
-The harmonic example uses the same axial bar and evaluates a real harmonic force from 10 to 1000 frequency units at 100 linearly spaced points. Native \cmd{FREQUENCIES} constructs the sweep directly. Abaqus \cmd{STEADY STATE DYNAMICS, DIRECT} is translated into the same explicit FEMaster frequency vector.
+The harmonic example evaluates a real axial harmonic force from 10 to 1000 frequency units at 100 linearly spaced points. Native \cmd{FREQUENCIES} constructs the sweep directly. Abaqus \cmd{STEADY STATE DYNAMICS, DIRECT} is translated into the same explicit FEMaster frequency vector.
 
 \begin{dialectexamples}
 \begin{femasterdeck}
@@ -561,6 +545,7 @@ FIXED, 0., 0., 0., NAN, NAN, NAN
 TIP, NAN, 0., 0., NAN, NAN, NAN
 *CLOAD, LOAD_COLLECTOR=HARMONIC
 TIP, 1., 0., 0., 0., 0., 0.
+
 *LOADCASE, TYPE=LINEARHARMONIC
 *SUPPORTS
 BC
@@ -590,6 +575,7 @@ HARMONIC
 7.85e-9
 *SOLID SECTION, ELSET=BAR, MATERIAL=STEEL
 100.
+
 *STEP
 *STEADY STATE DYNAMICS, DIRECT,
  FREQUENCYSCALE=LINEAR
@@ -605,6 +591,6 @@ TIP, 1, 1.
 
 \section{Using the examples as templates}
 
-When adapting an example, preserve the modelling hierarchy before changing numerical detail. First verify that nodes and elements describe the intended reference geometry, then define reusable regions, then attach materials and Sections, then define loads/constraints, and only then tune analysis controls. For imported Abaqus input, remain within the keyword subset documented in this manual: an Abaqus keyword that exists in the commercial Abaqus product is not automatically implemented by the FEMaster reader.
+When adapting an example, preserve the modelling hierarchy before tuning numerical details. First verify reference geometry and element connectivity, then define reusable regions, then attach materials and Sections, then define loads and constraints, and only then adjust solver controls. For imported Abaqus input, remain within the keyword subset documented in this manual: a keyword available in Abaqus itself is not automatically implemented by FEMaster's Abaqus reader.
 
-The side-by-side layout is also a translation guide. If a native feature has no Abaqus counterpart in the right column, it should not be added to an Abaqus deck under an assumed spelling. Conversely, Abaqus-specific Step grammar should not be copied into a native FEMaster loadcase. Both routes intentionally converge on the same solver-facing Model and loadcase classes while retaining distinct front-end syntax where appropriate.
+The side-by-side layout is also a translation guide. If a native feature has no Abaqus counterpart in the right column, do not add an assumed Abaqus spelling to an imported deck. Conversely, Abaqus Step grammar should not be copied into a native FEMaster \cmd{LOADCASE}. Both routes converge on the same solver-facing ModelData and loadcase classes while retaining distinct front-end abstractions where that distinction is useful.
