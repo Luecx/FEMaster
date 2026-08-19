@@ -1,0 +1,346 @@
+\chapter{Analysis Procedures}
+\label{chap:analysis-procedures}
+
+An analysis procedure turns the completed mechanical model into a sequence of matrix assemblies and solver operations. Native FEMaster expresses an analysis with \cmd{LOADCASE, TYPE=...}; child commands select loads, supports, numerical methods, time or frequency ranges, and formulation-specific controls. Abaqus input uses \cmd{STEP} followed by exactly one supported procedure card. The Abaqus reader creates the corresponding FEMaster loadcase internally and attaches Step-local loads and boundary conditions through dedicated collectors.
+
+The two syntaxes therefore differ most strongly in this part of the manual. The side-by-side examples show equivalent analysis intent rather than forcing Abaqus Step grammar into the native collector model. Numerical controls that are reusable across several loadcase types are documented in the following chapter.
+
+\keywordpage{LOADCASE}
+
+Native \cmd{LOADCASE} begins one analysis definition. \key{TYPE} is required and selects the concrete FEMaster loadcase class. The supported types are \val{LINEARSTATIC}, \val{LINEARBUCKLING}, \val{LINEARSTATICTOPO}, \val{EIGENFREQ}, \val{LINEARTRANSIENT}, \val{LINEARHARMONIC}, and \val{NONLINEARSTATIC}. \key{NAME} is optional and may be used to identify the analysis in a human-readable deck.
+
+Nested Loadcases are not supported. The parser constructs the selected concrete loadcase on entry, child commands configure it, and closing the scope executes the analysis immediately through the parser's \texttt{end_loadcase()} path. This means a deck can contain consecutive native Loadcases that reuse the same compiled model and named model resources.
+
+The loadcase type determines which child commands are meaningful. For example, \cmd{TIME} and \cmd{NEWMARK} configure a transient analysis, \cmd{FREQUENCIES} configures harmonic response, and \cmd{NONLINEAR} configures nonlinear static path following. Unsupported combinations are diagnosed rather than silently ignored.
+
+\begin{keywordparameters}
+\key{TYPE} & required & One of the seven registered native analysis types listed above. \\
+\key{NAME} & optional & Descriptive loadcase name. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARSTATIC,
+ NAME=SERVICE_LOAD
+*SUPPORTS
+BC
+*LOADS
+SERVICE
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP, NAME=SERVICE_LOAD
+*STATIC
+*BOUNDARY
+...
+*CLOAD
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\notesheading
+
+The native analysis model deliberately keeps model-level load definitions separate from analysis selection. This makes it possible to reuse the same \cmd{CLOAD}, \cmd{PLOAD}, or support collector in a static, buckling, transient, or harmonic loadcase without rewriting its spatial definition.
+
+\keywordpage{SUPPORTS}
+
+\cmd{SUPPORTS} is a native \cmd{LOADCASE} child that appends one or more named support collectors to the active analysis. Up to sixteen collector names can be supplied in a parsed record, and additional records may follow. Input order is retained.
+
+The command is supported by linear static, nonlinear static, linear buckling, topology static, eigenfrequency, transient, and harmonic loadcases. The loadcase later resolves the collector names and combines their support equations with model constraints such as couplings, ties, connectors, and RBM suppression according to the selected constraint method.
+
+Abaqus input does not have a collector-selection card. The reader writes supported \cmd{BOUNDARY} definitions inside a Step to an internal Step support collector and automatically attaches that collector when the procedure card creates the FEMaster loadcase.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=EIGENFREQ
+*SUPPORTS
+FIXED_SUPPORTS, SYMMETRY_SUPPORTS
+*NUMEIGENVALUES
+10
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP
+*FREQUENCY
+10
+*BOUNDARY
+FIXED, 1, 3, 0.
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{LOADS}
+
+\cmd{LOADS} appends native load collector names to the active loadcase. It is supported by linear static, nonlinear static, linear buckling, transient, and harmonic analyses. Eigenfrequency extraction does not assemble an external load vector, and the dedicated topology-static class does not use this generic load-selection registration.
+
+Collector names are preserved in input order. Existence and actual load application are validated by the loadcase/model path when forces are assembled. Several collectors may therefore be superimposed in one analysis, while another loadcase can activate a different subset of the same root-level load definitions.
+
+Abaqus Step-local mechanical loads are automatically inserted into the internal \val{__ABQ_STEP_LOADS} collector by the reader and attached to procedures that use external loading.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+*LOADS
+GRAVITY, PRESSURE, ACTUATOR
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP
+*STATIC
+*DLOAD
+EALL, GRAV, 9810., 0., 0., -1.
+*DSLOAD
+PRESSURE_FACE, P, 2.0
+*CLOAD
+ACTUATOR, 1, 500.
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{END}
+
+Native \cmd{END} is an explicit terminator for the active \cmd{LOADCASE}. It carries no parameters or data. The Loadcase can also close when its structural scope ends according to the parser, but using \cmd{END} makes the end of a long analysis block obvious and remains the recommended style in complete examples.
+
+The command is valid only inside a native Loadcase. It is unrelated to \cmd{END PART}, \cmd{END ASSEMBLY}, \cmd{END INSTANCE}, or Abaqus \cmd{END STEP}.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+...
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP
+*STATIC
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{STEP}
+
+\cmd{STEP} begins the single analysis Step currently supported by the Abaqus reader. The reader accepts at most one Abaqus Step in one input deck and does not permit nesting. On entry it creates dedicated internal load and support collectors; exactly one supported procedure card must appear before Step-local loads and boundary conditions can be interpreted.
+
+\key{NAME} is optional. \key{NLGEOM} enables geometric nonlinearity when present as a bare key or set to \val{YES}; \val{NO} and \val{OFF} disable it. \key{INC} gives the maximum number of increments and defaults to 100; it must be positive. \key{AMPLITUDE} may select the supported default Step load-amplitude mode \val{RAMP} or \val{STEP}. The \key{PERTURBATION} flag marks a linear perturbation Step.
+
+Procedure selection is deliberately strict. \cmd{STATIC} can create linear static, nonlinear load-control, or nonlinear Riks analysis depending on the Step options. \cmd{FREQUENCY}, \cmd{BUCKLE}, \cmd{DYNAMIC}, and \cmd{STEADY STATE DYNAMICS} create the corresponding FEMaster analyses. \cmd{END STEP} executes the active loadcase and ends the Step.
+
+\begin{keywordparameters}
+\key{NAME} & optional & Descriptive Abaqus Step name. \\
+\key{NLGEOM} & optional & Bare/\val{YES} enables geometric nonlinearity; \val{NO}/\val{OFF} disables it. \\
+\key{INC} & optional & Positive maximum increment count; default 100. \\
+\key{AMPLITUDE} & optional & Supported Step default \val{RAMP} or \val{STEP}. \\
+\key{PERTURBATION} & optional flag & Select linear perturbation Step semantics. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=NONLINEARSTATIC
+*NONLINEAR, CONTROL=LOAD,
+ MAX_INCREMENTS=100
+...
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP, NAME=LARGE_DEFLECTION,
+ NLGEOM=YES, INC=100
+*STATIC
+0.05, 1.0, 1e-5, 0.1
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{STATIC}
+
+Abaqus \cmd{STATIC} maps to native linear or nonlinear static analysis depending on Step state. In a normal Step with neither \key{NLGEOM} nor \key{RIKS}, it creates \val{LINEARSTATIC}. A \key{PERTURBATION} Step also maps to linear static and rejects general-Step increment data. If \key{NLGEOM} is active or \key{RIKS} is present, the reader creates \val{NONLINEARSTATIC}.
+
+\key{RIKS} selects FEMaster arc-length control and cannot be combined with a perturbation Step. \key{DIRECT} disables adaptive nonlinear increments, producing a fixed-increment load-control interpretation where applicable. For ordinary nonlinear static input the optional data are initial time increment, Step period, minimum increment, and maximum increment. Defaults are derived from the period and normalized to FEMaster's unit load-factor path.
+
+For Riks analysis the first four values are interpreted as initial arc-length increment, period, minimum increment, and maximum increment. Abaqus termination controls based on load proportionality factor or displacement in the later four data positions are currently not supported and are rejected when supplied.
+
+\begin{keywordparameters}
+\key{RIKS} & optional flag & Select arc-length path following. \\
+\key{DIRECT} & optional flag & Use fixed nonlinear load increments rather than adaptive stepping. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+Ordinary static & Optional \val{initial, period, minimum, maximum}. \\
+Riks & Up to eight Abaqus controls; FEMaster uses the first four and requires unsupported termination entries to be omitted. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=NONLINEARSTATIC
+*NONLINEAR, CONTROL=ARC_LENGTH,
+ INITIAL_INCREMENT=0.05,
+ MINIMUM_INCREMENT=1e-5,
+ MAXIMUM_INCREMENT=0.1,
+ MAX_INCREMENTS=200
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP, NLGEOM=YES, INC=200
+*STATIC, RIKS
+0.05, 1.0, 1e-5, 0.1
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{FREQUENCY}
+
+Abaqus \cmd{FREQUENCY} creates FEMaster's \val{EIGENFREQ} loadcase. Step support constraints are attached, but external Step loads are not used because this is a free-vibration eigenproblem. The data line requires a positive number of requested eigenvalues. Additional supported-input positions corresponding to Abaqus spectral controls are parsed but not used by the current mapping.
+
+\key{EIGENSOLVER} may be \val{LANCZOS} or \val{SUBSPACE}. The label is accepted for compatibility, but FEMaster selects its own configured eigenvalue backend; the Abaqus label does not force the underlying library implementation.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=EIGENFREQ
+*SUPPORTS
+BC
+*NUMEIGENVALUES
+12
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP, PERTURBATION
+*FREQUENCY, EIGENSOLVER=LANCZOS
+12
+*BOUNDARY
+FIXED, 1, 6, 0.
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{BUCKLE}
+
+Abaqus \cmd{BUCKLE} creates FEMaster's \val{LINEARBUCKLING} loadcase and attaches the internal Step load and support collectors. The data line requires a positive number of buckling eigenvalues. Additional Abaqus buckling controls in the accepted record are currently not used by the translation.
+
+\key{EIGENSOLVER} accepts \val{LANCZOS} or \val{SUBSPACE} for syntax compatibility; FEMaster's own eigen-solver configuration remains authoritative. Linear buckling first evaluates the preloaded static state associated with the active loads and then solves the generalized eigenproblem involving geometric stiffness.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARBUCKLING
+*SUPPORTS
+BC
+*LOADS
+PRELOAD
+*NUMEIGENVALUES
+5
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP, PERTURBATION
+*BUCKLE
+5
+*BOUNDARY
+...
+*CLOAD
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{DYNAMIC}
+
+Abaqus \cmd{DYNAMIC} maps to FEMaster's linear implicit Newmark transient analysis. The \key{DIRECT} flag is required because the current transient solver uses a fixed time increment. Geometric nonlinearity and perturbation-Step use are rejected for this mapping.
+
+The data line supplies fixed time increment and positive Step period in its first two positions. The remaining accepted positions correspond to unused Abaqus minimum/maximum controls. FEMaster sets \(t_0=0\), \(t_{\mathrm{end}}\) equal to the Step period, and \(\Delta t\) equal to the specified fixed increment. Step loads and supports are attached to the resulting Transient loadcase.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARTRANSIENT
+*SUPPORTS
+BC
+*LOADS
+DYNAMIC_LOAD
+*TIME
+0., 1., 0.01
+*NEWMARK
+0.25, 0.5
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP
+*DYNAMIC, DIRECT
+0.01, 1.0
+*BOUNDARY
+...
+*CLOAD, AMPLITUDE=RAMP
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{STEADY STATE DYNAMICS}
+
+Abaqus \cmd{STEADY STATE DYNAMICS} maps the supported direct physical-DOF steady-state procedure to FEMaster's \val{LINEARHARMONIC} analysis. The \key{DIRECT} flag is required and \key{INTERVAL} currently supports only \val{RANGE}. \key{FREQUENCYSCALE} may be \val{LOGARITHMIC} (the Abaqus-side default) or \val{LINEAR}.
+
+Each data record contains lower frequency, optional upper frequency, optional point count, bias, and scale factor. If the upper frequency is omitted or zero, the lower value is treated as one discrete frequency. For a range, the upper value must be no smaller than the lower. The point count defaults to 20 and must be integral when supplied. Biased spacing is unsupported, so bias must be one, and frequency scale factor must be one when present. Logarithmic spacing requires a positive lower frequency.
+
+The reader explicitly constructs the requested list of linear or logarithmically spaced frequencies and stores it on the FEMaster harmonic loadcase.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARHARMONIC
+*SUPPORTS
+BC
+*LOADS
+HARMONIC_FORCE
+*FREQUENCIES, TYPE=LINEAR
+10., 1000., 100
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP
+*STEADY STATE DYNAMICS, DIRECT,
+ FREQUENCYSCALE=LINEAR
+10., 1000., 100, 1., 1.
+*CLOAD
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{END STEP}
+
+\cmd{END STEP} executes and closes the active supported Abaqus Step. A supported procedure must already have created one active FEMaster loadcase. The reader calls the same \texttt{end_loadcase()} execution path used by native input and then clears its Step-active state.
+
+The command carries no parameters or data. A missing \cmd{END STEP} is diagnosed when the Step scope exits. Because the reader currently supports at most one Abaqus analysis Step, this command also marks the end of all analysis content in a normal imported deck.
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+...
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP
+*STATIC
+...
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
