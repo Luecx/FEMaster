@@ -37,6 +37,11 @@ struct FRTShellS4 : FRTShell<4> {
     // identifiers in positive surface ordering.
     FRTShellS4(ID id, const std::array<ID, 4>& nodes);
 
+    // Recreate the concrete FRT shell from persistent topology only. The unique
+    // reference-geometry cache is analysis state and is initialized later by the
+    // normal step lifecycle instead of being copied between Instances.
+    ElementPtr copy() const override { return std::make_shared<FRTShellS4>(elem_id, node_ids); }
+
     // Destroy the concrete shell through the common structural-element
     // interface.
     ~FRTShellS4() override = default;

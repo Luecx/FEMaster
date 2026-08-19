@@ -1,46 +1,33 @@
-// register_coupling.inl — registers *COUPLING
-#pragma once
 /**
  * @file register_coupling.inl
- * @brief Register *COUPLING command.
+ * @brief Registers kinematic and structural couplings.
  *
- * Couplings tie DOFs of a SLAVE (node set or surface) to a MASTER (usually one node).
- * Types:
- *  • KINEMATIC  — slaves follow the master kinematically (rigid “spider” behavior).
- *  • STRUCTURAL — loads/moments are distributed/collected work-equivalently.
+ * Coupling syntax is resolved completely inside the parser. The parser chooses
+ * the node- or surface-based concrete constructor, assigns the semantic master
+ * region used for diagnostics/output and stores the finished Coupling directly
+ * in ModelData. Model itself does not dispatch constraint types.
  *
- * Notes:
- *  • Exactly one of SLAVE (node set) or SFSET (surface) must be given.
- *  • MASTER should usually contain exactly one node; larger masters can over-constrain.
- *  • Only couple DOFs that exist on involved nodes (e.g., truss nodes have no rotations).
- *  • Near-collinear axis/geometry definitions can yield unrealistic behavior and must be avoided.
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 #include <memory>
 #include <string>
 
 #include "../../../constraints/types/coupling.h"
-#include "../../../core/logging.h"
-#include "../../../core/types_eig.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc(
-            "Create kinematic or structural couplings between a MASTER and a SLAVE (node set) "
-            "or SFSET (surface). Provide exactly one of SLAVE or SFSET. DOF entries > 0 enable "
-            "coupling for [Ux, Uy, Uz, Rx, Ry, Rz]. KINEMATIC makes slaves follow the master; "
-            "STRUCTURAL distributes/collects loads in a work-equivalent way. Avoid near-collinear "
-            "axis/geometry definitions as they can cause unrealistic results."
-        );
 
-        // Persistent per-command state
         auto master  = std::make_shared<std::string>();
         auto slave   = std::make_shared<std::string>();
         auto surface = std::make_shared<std::string>();
@@ -48,72 +35,79 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("MASTER").required().doc("Master node set (commonly exactly one node).")
+                .key("MASTER").required()
                 .key("TYPE").required().allowed({"KINEMATIC", "STRUCTURAL"})
-                .key("SLAVE").optional().doc("Slave node set.")
-                .key("SFSET").optional().doc("Slave surface set.")
+                .key("SLAVE").optional()
+                .key("SFSET").optional()
         );
-
-        command.on_enter([&model, master, type, slave, surface](const fem::io::dsl::Keys& keys) {
+        command.on_enter([&model, master, slave, surface, type](const fem::io::dsl::Keys& keys) {
             *master  = keys.raw("MASTER");
             *type    = keys.raw("TYPE");
             *slave   = keys.has("SLAVE") ? keys.raw("SLAVE") : std::string{};
             *surface = keys.has("SFSET") ? keys.raw("SFSET") : std::string{};
 
-            // Exactly one target (SLAVE xor SFSET)
-            if ( (*slave).empty() == (*surface).empty() )
-                logging::error(false, "COUPLING: requires exactly one of SLAVE or SFSET.");
+            logging::error(model._data->compiled,
+                "COUPLING: constraints require a compiled model");
+            logging::error(slave->empty() != surface->empty(),
+                "COUPLING: exactly one of SLAVE or SFSET is required");
+            logging::error(model._data->node_sets.has(*master),
+                "COUPLING: master node set ", *master, " does not exist");
+            logging::error(model._data->node_sets.get(*master) && model._data->node_sets.get(*master)->size() == 1,
+                "COUPLING: master node set ", *master, " must contain exactly one node");
 
-            // MASTER existence & non-empty (use ->size())
-            if (!model._data->node_sets.has(*master))
-                logging::error(false, "COUPLING: MASTER node set '" + *master + "' does not exist.");
-            if (model._data->node_sets.has(*master) && model._data->node_sets.get(*master)->size() == 0)
-                logging::error(false, "COUPLING: MASTER node set '" + *master + "' is empty.");
-
-            // If SLAVE is used: existence & non-empty (use ->size())
-            if (!(*slave).empty() && !model._data->node_sets.has(*slave))
-                logging::error(false, "COUPLING: SLAVE node set '" + *slave + "' does not exist.");
-            if (!(*slave).empty() && model._data->node_sets.has(*slave) &&
-                model._data->node_sets.get(*slave)->size() == 0)
-                logging::error(false, "COUPLING: SLAVE node set '" + *slave + "' is empty.");
-
-            // TYPE validation
-            if (*type != "KINEMATIC" && *type != "STRUCTURAL")
-                logging::error(false, "COUPLING: unsupported TYPE='" + *type + "'.");
+            if (!slave->empty()) {
+                logging::error(model._data->node_sets.has(*slave),
+                    "COUPLING: slave node set ", *slave, " does not exist");
+                logging::error(model._data->node_sets.get(*slave) && model._data->node_sets.get(*slave)->size() > 0,
+                    "COUPLING: slave node set ", *slave, " is empty");
+            } else {
+                logging::error(model._data->surface_sets.has(*surface),
+                    "COUPLING: slave surface set ", *surface, " does not exist");
+                logging::error(model._data->surface_sets.get(*surface) && model._data->surface_sets.get(*surface)->size() > 0,
+                    "COUPLING: slave surface set ", *surface, " is empty");
+            }
         });
 
-
-        command.variant(
-            fem::io::dsl::Variant::make()
-                .doc("One data line: six DOF flags (1/0) for [Ux, Uy, Uz, Rx, Ry, Rz]. Values > 0 enable coupling.")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 6>()
-                                .name("DOF")
-                                .desc("Coupled degrees of freedom (1=on, 0=off).")
-                                .on_missing(fem::Precision{0})
-                                .on_empty  (fem::Precision{0})
-                        )
-                        .bind([&model, master, type, slave, surface](const std::array<fem::Precision, 6>& dofs_raw) {
-                            fem::Dofs mask;
-                            for (int i = 0; i < 6; ++i) mask(i) = dofs_raw[i] > fem::Precision{0};
-
-                            if (!mask.any())
-                                logging::error(true, "COUPLING: all DOF flags are zero; coupling has no effect.");
-
-                            const bool is_surface = !surface->empty();
-                            const std::string& slave_ref = is_surface ? *surface : *slave;
-
-                            const constraint::CouplingType ctype =
-                                (*type == "KINEMATIC") ? constraint::CouplingType::KINEMATIC
-                                                        : constraint::CouplingType::STRUCTURAL;
-
-                            model.add_coupling(*master, slave_ref, mask, ctype, is_surface);
-                        })
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .fixed<fem::Precision, 6>().name("DOF")
+                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
+                .bind([&model, master, slave, surface, type](const std::array<fem::Precision, 6>& raw) {
+                    Dofs dofs;
+                    for (Index i = 0; i < 6; ++i) {
+                        dofs(i) = raw[static_cast<std::size_t>(i)] > Precision(0);
+                    }
+
+                    const auto coupling_type = *type == "KINEMATIC"
+                        ? constraint::CouplingType::KINEMATIC
+                        : constraint::CouplingType::STRUCTURAL;
+                    const auto master_region = model._data->node_sets.get(*master);
+                    const ID master_node = master_region->first();
+
+                    if (!slave->empty()) {
+                        constraint::Coupling coupling{
+                            master_node,
+                            model._data->node_sets.get(*slave),
+                            dofs,
+                            coupling_type
+                        };
+                        coupling.master_region = master_region;
+                        model._data->couplings.emplace_back(std::move(coupling));
+                    } else {
+                        constraint::Coupling coupling{
+                            master_node,
+                            model._data->surface_sets.get(*surface),
+                            dofs,
+                            coupling_type
+                        };
+                        coupling.master_region = master_region;
+                        model._data->couplings.emplace_back(std::move(coupling));
+                    }
+                })
+            )
         );
     });
 }

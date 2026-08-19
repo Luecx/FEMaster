@@ -147,14 +147,7 @@ def cmd_profile(parser, header: Header) -> None:
 
 def cmd_solid_section(parser, header: Header) -> None:
     name = _section_name(header, "SOLID")
-    parser.model.sections.add(
-        SolidSection(
-            name,
-            _material(parser, header),
-            _element_set(parser, header),
-            _orientation(parser, header),
-        )
-    )
+    parser.model.sections.add(SolidSection(name, _material(parser, header), _element_set(parser, header), _orientation(parser, header)))
     _reject_data(parser, "*SOLIDSECTION")
 
 
@@ -162,13 +155,7 @@ def cmd_shell_section(parser, header: Header) -> None:
     data = [value for line in parser.consume_data_lines() for value in numbers(line)]
     thickness = data[0] if data else float(header.params.get("THICKNESS", 1.0))
     parser.model.sections.add(
-        ShellSection(
-            _section_name(header, "SHELL"),
-            _material(parser, header),
-            _element_set(parser, header),
-            thickness,
-            _orientation(parser, header),
-        )
+        ShellSection(_section_name(header, "SHELL"), _material(parser, header), _element_set(parser, header), thickness, _orientation(parser, header))
     )
 
 
@@ -301,10 +288,7 @@ def _field_index_cols(domain: FieldDomain) -> int:
 
 def _field_key(parser, domain: FieldDomain, tokens: list[str]) -> tuple[int, ...]:
     if domain is FieldDomain.ELEMENT_NODAL:
-        return (
-            parser.element_by_deck_id[int(tokens[0])].id,
-            parser.node_by_deck_id[int(tokens[1])].id,
-        )
+        return (parser.element_by_deck_id[int(tokens[0])].id, int(tokens[1]))
     if domain is FieldDomain.ELEMENT_IP:
         return (parser.element_by_deck_id[int(tokens[0])].id, int(tokens[1]))
     return (_model_field_index(parser, domain, int(tokens[0])),)

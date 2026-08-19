@@ -1,68 +1,72 @@
-// register_support.inl — registers *SUPPORT
+/**
+ * @file register_support.inl
+ * @brief Registers nodal supports.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
+
+#pragma once
 
 #include <array>
-#include <charconv>
 #include <limits>
 #include <memory>
 #include <string>
-#include <system_error>
 
-#include "../../../core/logging.h"
-#include "../../../core/types_eig.h"
-#include "../../../core/types_num.h"
+#include "../reference.h"
+#include "../../../bc/support.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_support(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("SUPPORT", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Define nodal supports via support collectors.");
 
-        // Persistent per-command state (captured by value in lambdas)
         auto orientation = std::make_shared<std::string>();
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("SUPPORT_COLLECTOR").required().doc("Support collector name")
-                .key("ORIENTATION").optional().doc("Optional orientation coordinate system")
+                .key("SUPPORT_COLLECTOR").required()
+                .key("ORIENTATION").optional()
         );
-
-        command.on_enter([orientation, &model](const fem::io::dsl::Keys& keys) {
-            // NOTE: raw() presumably returns by value; if not, copy explicitly.
-            const std::string collector = keys.raw("SUPPORT_COLLECTOR");
+        command.on_enter([&model, orientation](const fem::io::dsl::Keys& keys) {
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
-            model._data->supp_cols.activate(collector);
+            model._data->supp_cols.activate(keys.raw("SUPPORT_COLLECTOR"));
         });
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Node set or id")
-                    .fixed<fem::Precision, 6>().name("DOF").desc("Support values for ux,uy,uz,rx,ry,rz")
+                    .one<std::string>().name("TARGET")
+                    .fixed<fem::Precision, 6>().name("DOF")
                         .on_missing(std::numeric_limits<fem::Precision>::quiet_NaN())
-                        .on_empty  (std::numeric_limits<fem::Precision>::quiet_NaN())
+                        .on_empty(std::numeric_limits<fem::Precision>::quiet_NaN())
                 )
                 .bind([&model, orientation](const std::string& target,
                                             const std::array<fem::Precision, 6>& values) {
-                    fem::StaticVector<6> constraint;
-                    for (int i = 0; i < 6; ++i) constraint(i) = values[i];
-
+                    model::NodeRegion::Ptr region;
                     if (model._data->node_sets.has(target)) {
-                        model.add_support(target, constraint, *orientation);
-                        return;
+                        region = model._data->node_sets.get(target);
+                    } else {
+                        region = std::make_shared<model::NodeRegion>("INTERNAL");
+                        region->add(io::reader::compiled_node_id(model, target));
                     }
 
-                    fem::ID id{};
-                    const char* begin = target.data();
-                    const char* end   = begin + target.size();
-                    const auto [ptr, ec] = std::from_chars(begin, end, id);
-                    logging::error(ec == std::errc{} && ptr == end,
-                        "SUPPORT target '", target, "' is neither a node set nor an id");
-                    model.add_support(id, constraint, *orientation);
+                    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+                    if (!orientation->empty()) {
+                        logging::error(model._data->coordinate_systems.has(*orientation),
+                            "SUPPORT: coordinate system ", *orientation, " does not exist");
+                        orientation_ptr = model._data->coordinate_systems.get(*orientation);
+                    }
+
+                    Vec6 constraint;
+                    for (Index i = 0; i < 6; ++i) {
+                        constraint(i) = values[static_cast<std::size_t>(i)];
+                    }
+                    model.add_support(bc::Support{std::move(region), constraint, std::move(orientation_ptr)});
                 })
             )
         );

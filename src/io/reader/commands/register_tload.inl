@@ -1,41 +1,46 @@
-// register_tload.inl — DSL registration for *TLOAD
+/**
+ * @file register_tload.inl
+ * @brief Registers thermal loads driven by nodal temperature fields.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <string>
+#pragma once
 
-#include "../../../core/types_num.h"
+#include "../../../bc/load_t.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_tload(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("TLOAD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Thermal load referencing a temperature field.");
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("LOAD_COLLECTOR")
-                    .required()
-                    .doc("Target load collector that groups the loads")
-                .key("TEMPERATUREFIELD")
-                    .required()
-                    .doc("Name of the temperature field to apply")
-                .key("REFERENCETEMPERATURE")
-                    .required()
-                    .doc("Reference temperature value")
+                .key("LOAD_COLLECTOR").required()
+                .key("TEMPERATUREFIELD").required()
+                .key("REFERENCETEMPERATURE").required()
         );
-
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            const std::string& collector = keys.raw("LOAD_COLLECTOR");
-            std::string field            = keys.raw("TEMPERATUREFIELD");
-            const fem::Precision ref     = keys.get<fem::Precision>("REFERENCETEMPERATURE");
+            model._data->load_cols.activate(keys.raw("LOAD_COLLECTOR"));
 
-            model._data->load_cols.activate(collector);
-            model.add_tload(field, ref);
+            const std::string field_name = keys.raw("TEMPERATUREFIELD");
+            const auto field = model._data->get_field(field_name);
+            logging::error(field != nullptr,
+                "TLOAD: temperature field ", field_name, " does not exist");
+            logging::error(field->domain == model::FieldDomain::NODE,
+                "TLOAD: temperature field ", field_name, " must use NODE domain");
+            logging::error(field->components == 1,
+                "TLOAD: temperature field ", field_name, " must have one component");
+
+            auto load = std::make_shared<bc::TLoad>();
+            load->temp_field_ = field;
+            load->ref_temp_   = keys.get<fem::Precision>("REFERENCETEMPERATURE");
+            model.add_load(std::move(load));
         });
-
         command.variant(fem::io::dsl::Variant::make());
     });
 }

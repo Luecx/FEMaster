@@ -36,6 +36,11 @@ struct C3D4 : public SolidElement<4> {
      * @param pNodeIds Array containing IDs of the 4 nodes.
      */
     C3D4(ID pElemId, const std::array<ID, 4>& pNodeIds);
+
+    // Recreate only the persistent topology. Model::compile() rewires the
+    // returned element to the target Instance and initializes runtime state.
+    ElementPtr copy() const override { return std::make_shared<C3D4>(elem_id, node_ids); }
+
     std::string type_name() const override { return "C3D4"; }
 
     //-------------------------------------------------------------------------
@@ -89,6 +94,6 @@ struct C3D4 : public SolidElement<4> {
      */
     const math::quadrature::Quadrature& integration_scheme() const override;
 
-    SurfacePtr                    surface(ID surface_id) override;
+    SurfacePtr surface(ID surface_id) override;
 };
 } } // namespace fem::model

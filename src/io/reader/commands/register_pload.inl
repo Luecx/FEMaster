@@ -1,63 +1,68 @@
-// register_pload.inl — DSL registration for *PLOAD
+/**
+ * @file register_pload.inl
+ * @brief Registers scalar surface pressure loads.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <charconv>
+#pragma once
+
 #include <memory>
 #include <string>
-#include <system_error>
 
-#include "../../../core/logging.h"
-#include "../../../core/types_num.h"
+#include "../reference.h"
+#include "../../../bc/load_p.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_pload(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("PLOAD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc(
-            "Pressure loads on surfaces. AMPLITUDE may reference a time history that scales the pressure magnitude."
-        );
 
         auto amplitude = std::make_shared<std::string>();
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("LOAD_COLLECTOR")
-                    .doc("Target load collector that groups the loads")
-                    .required()
+                .key("LOAD_COLLECTOR").required()
                 .key("AMPLITUDE").optional()
-                    .doc("Optional time amplitude used to scale the pressure value")
         );
-
         command.on_enter([&model, amplitude](const fem::io::dsl::Keys& keys) {
-            const std::string& collector = keys.raw("LOAD_COLLECTOR");
             *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            model._data->load_cols.activate(collector);
+            model._data->load_cols.activate(keys.raw("LOAD_COLLECTOR"));
         });
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Surface set or surface id")
-                    .one<fem::Precision>().name("P").desc("Pressure value")
+                    .one<std::string>().name("TARGET")
+                    .one<fem::Precision>().name("P")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
                 .bind([&model, amplitude](const std::string& target, fem::Precision value) {
+                    model::SurfaceRegion::Ptr region;
                     if (model._data->surface_sets.has(target)) {
-                        model.add_pload(target, value, *amplitude);
-                        return;
+                        region = model._data->surface_sets.get(target);
+                    } else {
+                        region = std::make_shared<model::SurfaceRegion>("INTERNAL");
+                        region->add(io::reader::compiled_surface_id(model, target));
                     }
 
-                    fem::ID id{};
-                    const char* begin = target.data();
-                    const char* end   = begin + target.size();
-                    const auto [ptr, ec] = std::from_chars(begin, end, id);
-                    logging::error(ec == std::errc{} && ptr == end,
-                        "PLOAD target '", target, "' is neither a surface set nor an id");
-                    model.add_pload(id, value, *amplitude);
+                    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+                    if (!amplitude->empty()) {
+                        logging::error(model._data->amplitudes.has(*amplitude),
+                            "PLOAD: amplitude ", *amplitude, " does not exist");
+                        amplitude_ptr = model._data->amplitudes.get(*amplitude);
+                    }
+
+                    auto load = std::make_shared<bc::PLoad>();
+                    load->region_    = std::move(region);
+                    load->pressure_  = value;
+                    load->amplitude_ = std::move(amplitude_ptr);
+                    model.add_load(std::move(load));
                 })
             )
         );

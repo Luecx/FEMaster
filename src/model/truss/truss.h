@@ -44,6 +44,10 @@ struct T3 : StructuralElement {
     T3(ID elem_id, std::array<ID, N> node_ids);
     ~T3() override = default;
 
+    // Recreate only id and connectivity for Instance expansion. Section,
+    // offsets, material state and ModelData binding belong to compiled storage.
+    ElementPtr copy() const override { return std::make_shared<T3>(elem_id, node_ids); }
+
     // Element topology and identification
     ElDofs    dofs() const override;
     Dim       dimensions() const override;

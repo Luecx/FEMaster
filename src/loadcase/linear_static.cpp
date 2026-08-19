@@ -1,23 +1,12 @@
 /**
  * @file linear_static.cpp
  * @brief Implements the linear static load case leveraging constraint maps.
- *
- * The algorithm assembles the constrained system, reduces it via the null-space
- * map, solves for the reduced coordinates, and expands the solution and
- * reactions back to global DOFs. Support reactions are recovered from
- * constraint multipliers (g_supp = C_supp^T λ_supp), ensuring nonzero values
- * even for supported DOFs without element stiffness (e.g. reference points
- * constrained via couplings).
- *
- * @see src/loadcase/linear_static.h
- * @see src/constraints/transformer/constraint_transformer.h
- * @author Finn Eggers
- * @date 06.03.2025
  */
 
 #include "linear_static.h"
 
 #include "../constraints/transformer/constraint_transformer.h"
+#include "../constraints/types/rbm.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
 #include "../mattools/reduce_mat_to_vec.h"
@@ -38,19 +27,9 @@ namespace loadcase {
 
 using constraint::ConstraintTransformer;
 
-namespace {
-
-/**
- * @copydoc LinearStatic::LinearStatic
- */
-} // anonymous namespace
-
 LinearStatic::LinearStatic(ID id, io::writer::ResultWriters* writer, model::Model* model)
     : LoadCase(id, writer, model) {}
 
-/**
- * @copydoc LinearStatic::run
- */
 void LinearStatic::run() {
     logging::info(true, "");
     logging::info(true, "");
@@ -66,41 +45,45 @@ void LinearStatic::run() {
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
-    // Build initial global load matrix (without inertia relief)
     auto global_load_mat = Timer::measure(
         [&]() { return model->build_load_matrix(loads); },
         "constructing load matrix (node x 6)");
 
-    // ---------------------------------------------------------------------
-    // Inertia relief: requires no supports in this load case
-    // ---------------------------------------------------------------------
     if (inertia_relief) {
         logging::error(supps.empty(),
-                       "InertiaRelief: cannot be used with *SUPPORT in this load case. "
-                       "Remove all referenced support collectors.");
+            "InertiaRelief: cannot be used with *SUPPORT in this load case. "
+            "Remove all referenced support collectors.");
 
         Timer::measure(
             [&]() {
-                fem::apply_inertia_relief(*model->_data,
-                                          global_load_mat,
-                                          inertia_relief_consider_point_masses);
+                fem::apply_inertia_relief(
+                    *model->_data,
+                    global_load_mat,
+                    inertia_relief_consider_point_masses
+                );
 
-                // Add temporary RBM constraint (all elements). Removed later after equations are built.
-                model->add_rbm(std::string("EALL"));
+                logging::error(model->_data->elem_sets.has("EALL")
+                            && model->_data->elem_sets.get("EALL") != nullptr,
+                    "InertiaRelief: EALL element set is not available");
+
+                // Inertia relief adds one temporary RBM directly to the same
+                // collection used by parser-created constraints. It is removed
+                // again immediately after constraint collection below.
+                model->_data->rbms.emplace_back(model->_data->elem_sets.get("EALL"));
             },
             "InertiaRelief: adjusting external load matrix and adding RBM");
     }
 
     if (rebalance_loads) {
         logging::error(supps.empty(),
-                       "Rebalancing Loads: cannot be used with *SUPPORT in this load case. "
-                       "Remove all referenced support collectors.");
+            "Rebalancing Loads: cannot be used with *SUPPORT in this load case. "
+            "Remove all referenced support collectors.");
 
-        Timer::measure([&]() {fem::rebalance_loads(*model->_data, global_load_mat);},
+        Timer::measure(
+            [&]() { fem::rebalance_loads(*model->_data, global_load_mat); },
             "rebalancing of loads");
     }
 
-    // Build constraint groups (include RBM if inertia relief is enabled)
     auto groups = Timer::measure(
         [&]() { return model->collect_constraints(active_dof_idx_mat, supps); },
         "building constraints");
@@ -118,21 +101,22 @@ void LinearStatic::run() {
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
-                       "Invalid solver/constraint combination\n"
-                       "Constraint | Backend   | DIRECT       | INDIRECT\n"
-                       "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
-                       "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
-                       "NULLSPACE  | GPU       | Yes          | Yes\n"
-                       "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
-                       "LAGRANGE   | CPU MKL   | Yes          | No\n"
-                       "LAGRANGE   | CPU Eigen | Limited      | No\n"
-                       "LAGRANGE   | GPU       | No           | No\n"
-                       "LAGRANGE   | GPU cuDSS | Yes          | No\n"
-                       "ELIMINATION| CPU MKL   | Yes          | Yes\n"
-                       "ELIMINATION| CPU Eigen | Yes          | Yes\n"
-                       "ELIMINATION| GPU       | Yes          | Yes\n"
-                       "ELIMINATION| GPU cuDSS | Yes          | Yes");
+            "Invalid solver/constraint combination\n"
+            "Constraint | Backend   | DIRECT       | INDIRECT\n"
+            "NULLSPACE  | CPU MKL   | Yes          | Yes\n"
+            "NULLSPACE  | CPU Eigen | Yes          | Yes\n"
+            "NULLSPACE  | GPU       | Yes          | Yes\n"
+            "NULLSPACE  | GPU cuDSS | Yes          | Yes\n"
+            "LAGRANGE   | CPU MKL   | Yes          | No\n"
+            "LAGRANGE   | CPU Eigen | Limited      | No\n"
+            "LAGRANGE   | GPU       | No           | No\n"
+            "LAGRANGE   | GPU cuDSS | Yes          | No\n"
+            "ELIMINATION| CPU MKL   | Yes          | Yes\n"
+            "ELIMINATION| CPU Eigen | Yes          | Yes\n"
+            "ELIMINATION| GPU       | Yes          | Yes\n"
+            "ELIMINATION| GPU cuDSS | Yes          | Yes");
     }
+
     const auto direct_matrix_type =
         constraint_method == ConstraintTransformer::Method::Lagrange
             ? solver::DirectSolverMatrixType::General
@@ -169,11 +153,9 @@ void LinearStatic::run() {
     }
     logging::down();
 
-    // Remove temporary RBM again (equations already built)
     if (inertia_relief) {
-        logging::error(model->_data != nullptr, "InertiaRelief: model data not initialized");
         logging::error(!model->_data->rbms.empty(),
-                       "InertiaRelief: expected a temporary RBM to be present, but rbms is empty");
+            "InertiaRelief: expected a temporary RBM to be present, but rbms is empty");
         model->_data->rbms.pop_back();
     }
 
@@ -194,12 +176,12 @@ void LinearStatic::run() {
                     break;
                 }
             }
-            if (bad_matrix) {
-                break;
-            }
+            if (bad_matrix) break;
         }
-        logging::error(!bad_matrix, "Matrix A contains NaN/Inf entries");
-        logging::error(b.allFinite(), "b contains NaN/Inf entries");
+        logging::error(!bad_matrix,
+            "Matrix A contains NaN/Inf entries");
+        logging::error(b.allFinite(),
+            "b contains NaN/Inf entries");
     }
 
     auto q = Timer::measure(
@@ -213,8 +195,8 @@ void LinearStatic::run() {
     auto r_internal = Timer::measure(
         [&]() { return transformer->reactions(K, f, q); },
         "computing internal nodal forces r_int = K u - f");
+    (void) r_internal;
 
-    // Support reactions via constraint multipliers: g_supp = C_supp^T lambda_supp
     auto r_support = Timer::measure(
         [&]() { return transformer->support_reactions(K, f, q); },
         "computing support reactions via multipliers (C_supp^T lambda)");
@@ -253,32 +235,28 @@ void LinearStatic::run() {
         io::writer::write_mtx_dense(stiffness_file + "_b.mtx", b);
     }
 
-    // Build a support-only mask for reaction reporting: NaN everywhere except
-    // DOFs that were constrained by supports.
     BooleanMatrix support_mask(active_dof_idx_mat.rows(), active_dof_idx_mat.cols());
     support_mask.setConstant(false);
     for (const auto& eq : groups.supports) {
         for (const auto& e : eq.entries) {
-            if (e.node_id >= 0 && e.node_id < support_mask.rows() &&
-                e.dof < support_mask.cols())
-            {
-                // Only mark if DOF exists in the active numbering
-                if (active_dof_idx_mat(e.node_id, e.dof) != -1) {
-                    support_mask(e.node_id, e.dof) = true;
-                }
+            if (e.node_id >= 0 && e.node_id < support_mask.rows()
+             && e.dof < support_mask.cols()
+             && active_dof_idx_mat(e.node_id, e.dof) != -1) {
+                support_mask(e.node_id, e.dof) = true;
             }
         }
     }
 
-    model::Field reaction_masked{"REACTION_FORCES", model::FieldDomain::NODE,
-                                 global_react_mat.rows,
-                                 global_react_mat.components};
+    model::Field reaction_masked{
+        "REACTION_FORCES",
+        model::FieldDomain::NODE,
+        global_react_mat.rows,
+        global_react_mat.components
+    };
     reaction_masked.fill_nan();
     for (Index i = 0; i < reaction_masked.rows; ++i) {
         for (Index j = 0; j < reaction_masked.components; ++j) {
-            if (support_mask(i, j)) {
-                reaction_masked(i, j) = global_react_mat(i, j);
-            }
+            if (support_mask(i, j)) reaction_masked(i, j) = global_react_mat(i, j);
         }
     }
 
@@ -303,5 +281,6 @@ void LinearStatic::run() {
     transformer->post_check_static(K, f, q);
     model->step_end();
 }
+
 } // namespace loadcase
 } // namespace fem

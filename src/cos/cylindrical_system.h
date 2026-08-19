@@ -3,7 +3,9 @@
  * @brief Declares a cylindrical coordinate system implementation.
  *
  * Converts between cylindrical and Cartesian representations using a configurable
- * base point and orientation vectors.
+ * base point and orientation vectors. Unlike a rectangular orientation, a
+ * cylindrical system has a spatial origin; instance compilation therefore
+ * rotates both axes and translates the base point.
  *
  * @see src/cos/coordinate_system.h
  * @author Finn Eggers
@@ -30,6 +32,15 @@ public:
     Vec3  to_local (const Vec3& global_point) const override;
     Vec3  to_global(const Vec3& local_point ) const override;
     Basis get_axes (const Vec3& local_point ) const override;
+
+    /**
+     * @brief Embeds this cylindrical frame by one rigid instance placement.
+     *
+     * The base point receives rotation and translation. The radial, tangential
+     * and axial directions receive only the rotation, preserving all cylindrical
+     * distances and angles under the rigid mapping.
+     */
+    Ptr transformed(const Mat3& rotation, const Vec3& translation) const override;
 
 private:
     Vec3 base_point_{};

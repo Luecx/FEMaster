@@ -1,84 +1,74 @@
-// register_beam_section.inl — DSL registration for *BEAMSECTION
-#pragma once
 /**
  * @file register_beam_section.inl
- * @brief Register *BEAMSECTION command.
+ * @brief Registers beam section assignments.
  *
- * Assigns a beam section (material + profile) and a local section orientation vector.
- * The orientation is orthonormalized against the element axis internally; near-collinear
- * inputs trigger a robust fallback (implementation-defined).
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <array>
 #include <memory>
-#include <string>
 
-#include "../../../core/types_eig.h"
-#include "../../../core/types_num.h"
+#include "../../../model/model.h"
+#include "../../../section/section_beam.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_beam_section(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("BEAMSECTION", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART"}));
 
-        // Keep this concise; no explicit “scope/keywords/data” lists here.
-        command.doc(
-            "Assign a beam section with a local orientation. "
-            "The target element set must contain only beam elements. "
-            "The provided direction n1 is normalized and orthogonalized internally; "
-            "if n1 is (near-)collinear with the element axis, a stable fallback is applied."
-        );
-
-        // Persistent per-command state:
         auto material    = std::make_shared<std::string>();
         auto elset       = std::make_shared<std::string>();
         auto profile     = std::make_shared<std::string>();
-        auto orientation = std::make_shared<fem::Vec3>(fem::Vec3::Zero());
+        auto orientation = std::make_shared<Vec3>(Vec3::Zero());
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("MATERIAL").alternative("MAT").required()
-                    .doc("Material name (must exist).")
                 .key("ELSET").required()
-                    .doc("Target element set; must contain only beam elements.")
                 .key("PROFILE").required()
-                    .doc("Section/profile identifier, e.g., IPE80, RECT_20x10, CHS60x3.")
         );
-
         command.on_enter([material, elset, profile, orientation](const fem::io::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
             *profile  = keys.raw("PROFILE");
             orientation->setZero();
         });
-
         command.on_exit([&model, material, elset, profile, orientation](const fem::io::dsl::Keys&) {
-            model.beam_section(*elset, *material, *profile, *orientation);
-        });
+            const auto part = model._data->parts.get();
+            logging::error(part != nullptr,
+                "BEAMSECTION: no active part is available");
+            logging::error(part->elem_sets.has(*elset),
+                "BEAMSECTION: element set ", *elset, " is not defined in part ", part->name);
+            logging::error(model._data->materials.has(*material),
+                "BEAMSECTION: material ", *material, " is not defined");
+            logging::error(model._data->profiles.has(*profile),
+                "BEAMSECTION: profile ", *profile, " is not defined");
+            logging::error(orientation->norm() > Precision(0),
+                "BEAMSECTION: orientation vector must be non-zero");
 
-        command.variant(
-            fem::io::dsl::Variant::make()
-                .doc("Optional data line with the section direction n1 = (N1_x, N1_y, N1_z).")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(0).max(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .fixed<fem::Precision, 3>()
-                                .name("N1")
-                                .desc("Section orientation vector components: N1_x, N1_y, N1_z.")
-                                .on_missing(fem::Precision{0})
-                                .on_empty  (fem::Precision{0})
-                        )
-                        .bind([orientation](const std::array<fem::Precision, 3>& n1_data) {
-                            fem::Vec3 n1; n1 << n1_data[0], n1_data[1], n1_data[2];
-                            *orientation = n1;
-                        })
+            auto section = std::make_shared<BeamSection>();
+            section->material_  = model._data->materials.get(*material);
+            section->region_    = part->elem_sets.get(*elset);
+            section->profile_   = model._data->profiles.get(*profile);
+            section->direction_ = *orientation;
+            model.add_section(std::move(section));
+        });
+        command.variant(fem::io::dsl::Variant::make()
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1).max(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .fixed<Precision, 3>().name("N1")
                 )
+                .bind([orientation](const std::array<Precision, 3>& values) {
+                    *orientation = Vec3{values[0], values[1], values[2]};
+                })
+            )
         );
     });
 }

@@ -58,19 +58,10 @@ struct BeamElement : StructuralElement {
     // distribution consistently use this fixed-size connectivity.
     std::array<ID, N> node_ids{};
 
-    // Optional global node identifier used to define the section n1 direction.
-    // A negative value selects the orientation vector stored in the assigned
-    // beam section instead.
-    ID orientation_node_id_ = static_cast<ID>(-1);
-
-    // Construction from the element identifier, ordered connectivity and an
-    // optional orientation node. The structural base stores the element ID;
-    // this class retains the topology and orientation definition.
-    BeamElement(
-        ID                elem_id,
-        std::array<ID, N> node_ids_in,
-        ID                orientation_node_id = static_cast<ID>(-1)
-    );
+    // Construct from the element identifier and ordered connectivity. Beam
+    // orientation is a section property and is therefore not part of element
+    // topology.
+    BeamElement(ID elem_id, std::array<ID, N> node_ids_in);
 
     // Polymorphic destruction through the structural-element interface.
     ~BeamElement() override;
@@ -84,11 +75,8 @@ struct BeamElement : StructuralElement {
     material::MaterialPtr          get_material();
     material::IsotropicElasticity* get_elasticity();
 
-    // Orientation metadata and normalized section n1 direction. An explicit
-    // orientation node takes precedence over the direction stored in the beam
-    // section; at least one valid non-zero definition must be available.
-    ID   orientation_node() const;
-    bool has_orientation_node() const;
+    // Normalized section n1 direction. Beam orientation is defined exclusively
+    // by the assigned BeamSection.
     Vec3 orientation_direction();
 
     // Geometric measures evaluated from the current model coordinates. Length

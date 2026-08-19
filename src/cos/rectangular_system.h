@@ -4,7 +4,9 @@
  *
  * Provides utilities to construct axes from one, two, or three direction
  * vectors and exposes rotation helpers commonly used for connector
- * transformations.
+ * transformations. Rectangular systems are orientation-only definitions: a
+ * rigid instance translation does not change them, while all three axes rotate
+ * with the instance placement.
  *
  * @see src/cos/coordinate_system.h
  * @see src/cos/cylindrical_system.h
@@ -34,6 +36,15 @@ public:
     Vec3 to_local(const Vec3& global_point) const override;
     Vec3 to_global(const Vec3& local_point) const override;
     Basis get_axes(const Vec3& local_point) const override;
+
+    /**
+     * @brief Rotates this basis into an instance frame.
+     *
+     * Rectangular systems have no origin, hence translation is intentionally
+     * ignored. The returned object is independent from the source system and
+     * keeps the same semantic name for diagnostics.
+     */
+    Ptr transformed(const Mat3& rotation, const Vec3& translation) const override;
 
     static RectangularSystem euler(Precision rot_x, Precision rot_y, Precision rot_z);
 

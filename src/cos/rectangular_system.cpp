@@ -42,7 +42,6 @@ RectangularSystem::RectangularSystem(const std::string& name, const Vec3& x_axis
     compute_transformations();
 }
 
-
 Vec3 RectangularSystem::to_local(const Vec3& global_point) const {
     return global_to_local_ * global_point;
 }
@@ -54,6 +53,16 @@ Vec3 RectangularSystem::to_global(const Vec3& local_point) const {
 Basis RectangularSystem::get_axes(const Vec3& local_point) const {
     (void)local_point;
     return local_to_global_;
+}
+
+CoordinateSystem::Ptr RectangularSystem::transformed(const Mat3& rotation, const Vec3& translation) const {
+    (void) translation;
+    return std::make_shared<RectangularSystem>(
+        name,
+        rotation * x_axis_,
+        rotation * y_axis_,
+        rotation * z_axis_
+    );
 }
 
 RectangularSystem RectangularSystem::euler(Precision rot_x, Precision rot_y, Precision rot_z) {
@@ -137,7 +146,6 @@ void RectangularSystem::orthogonalize() {
     }
     z_axis_ = x_axis_.cross(y_axis_).normalized();
 }
-
 
 void RectangularSystem::compute_transformations() {
     local_to_global_.col(0) = x_axis_;

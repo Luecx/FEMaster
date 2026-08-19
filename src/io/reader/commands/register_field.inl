@@ -1,21 +1,9 @@
 /**
  * @file register_field.inl
- * @brief Registers generic model-field input.
- *
- * The `*FIELD` command creates and populates dense fields on the supported
- * FEMaster domains. Field allocation uses the domain-specific row counts owned
- * by `ModelData`, while the command data lines assign values by field row.
- *
- * Interpretation of a field remains the responsibility of the subsystem that
- * later references it. This registration only manages generic field storage and
- * does not attach application-specific semantics to the values.
- *
- * @see model::Field
- * @see model::ModelData
- *
- * @author Finn Eggers
- * @date 30.07.2026
+ * @brief Registers generic fields on the compiled finite-element model.
  */
+
+#pragma once
 
 #include <array>
 #include <limits>
@@ -23,6 +11,7 @@
 #include <sstream>
 #include <string>
 
+#include "../reference.h"
 #include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../../data/field.h"
@@ -44,7 +33,8 @@ inline model::FieldDomain parse_field_domain(const std::string& raw) {
     if (raw == "ELEMENT_MP" || raw == "ELEMENTMP" || raw == "MP") return model::FieldDomain::ELEMENT_MP;
 
     logging::error(false,
-        "FIELD: unknown TYPE '", raw, "' (expected NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP/ELEMENT_MP)");
+        "FIELD: unknown TYPE '", raw,
+        "' (expected NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP/ELEMENT_MP)");
     return model::FieldDomain::NODE;
 }
 
@@ -69,166 +59,182 @@ inline Precision parse_precision_or_throw(const std::string& token) {
 
 } // namespace detail
 
-/**
- * Registers generic field allocation and row-wise field population.
- *
- * `*FIELD` selects the storage domain and component count, initializes the full
- * field to zero or NaN and then applies the supplied values. Element-nodal
- * values are addressed by element identifier and zero-based local node index;
- * the remaining domains use their flat field row identifier. Enumeration-
- * dependent domains require the corresponding ModelData offsets to exist before
- * the command is executed.
- *
- * @param registry DSL registry receiving the `*FIELD` command definition.
- * @param model Model whose generic field registry is modified.
- */
 inline void register_field(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("FIELD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::any_of({
             fem::io::dsl::Condition::parent_is("ROOT"),
             fem::io::dsl::Condition::parent_is("LOADCASE")
         }));
-        command.doc("Create or populate a generic field (NODE/ELEMENT/ELEMENT_NODAL/ELEMENT_IP/ELEMENT_MP).");
+        command.doc("Create or populate a generic field using semantic instance-local entity references.");
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("NAME").required().doc("Field name")
-                .key("TYPE").required().allowed({"NODE","ELEMENT","ELEMENT_NODAL","ELEMENT_IP","IP","ELEMENT_MP","MP"}).doc("Field domain")
+                .key("TYPE").required()
+                    .allowed({"NODE", "ELEMENT", "ELEMENT_NODAL", "ELEMENTNODAL",
+                              "ELEMENT_IP", "ELEMENTIP", "IP", "ELEMENT_MP", "ELEMENTMP", "MP"})
+                    .doc("Field domain")
                 .key("COLS").required().doc("Number of components")
-                .key("FILL").optional("ZERO").allowed({"ZERO","NAN"}).doc("Initialization (ZERO default)")
+                .key("FILL").optional("ZERO").allowed({"ZERO", "NAN"}).doc("Initialization")
         );
 
         struct Context {
             model::Field::Ptr field = nullptr;
-            Index             cols  = 0;
+            Index cols = 0;
         };
         auto ctx = std::make_shared<Context>();
 
         command.on_enter([&model, ctx](const fem::io::dsl::Keys& keys) {
             const std::string name = keys.raw("NAME");
             const std::string type = keys.raw("TYPE");
-            const std::string fill = keys.has("FILL") ? keys.raw("FILL") : std::string("ZERO");
-            const int         cols = keys.get<int>("COLS");
+            const std::string fill = keys.raw("FILL");
+            const int cols = keys.get<int>("COLS");
 
             logging::error(cols > 0,
                 "FIELD: COLS must be > 0");
             logging::error(static_cast<std::size_t>(cols) <= detail::kMaxFieldCols,
                 "FIELD: COLS exceeds internal limit of ", detail::kMaxFieldCols);
 
-            const auto domain   = detail::parse_field_domain(type);
-            const bool fill_nan = (fill == "NAN");
-
+            const auto domain = detail::parse_field_domain(type);
             if (domain == model::FieldDomain::ELEMENT_NODAL) {
-                logging::error(model._data->element_nodal_offsets
-                            && (*model._data->element_nodal_offsets)(static_cast<Index>(model._data->max_elems)) > 0,
-                    "FIELD: TYPE=ELEMENT_NODAL requires elements to be configured");
+                logging::error(model._data->element_nodal_offsets != nullptr,
+                    "FIELD: TYPE=ELEMENT_NODAL requires compiled element enumeration");
             }
             if (domain == model::FieldDomain::ELEMENT_IP) {
-                logging::error(model._data->element_ip_offsets
-                            && (*model._data->element_ip_offsets)(static_cast<Index>(model._data->max_elems)) > 0,
-                    "FIELD: TYPE=ELEMENT_IP requires integration points to be configured");
+                logging::error(model._data->element_ip_offsets != nullptr,
+                    "FIELD: TYPE=ELEMENT_IP requires compiled integration-point enumeration");
             }
             if (domain == model::FieldDomain::ELEMENT_MP) {
-                logging::error(model._data->element_mp_offsets
-                            && (*model._data->element_mp_offsets)(static_cast<Index>(model._data->max_elems)) > 0,
-                    "FIELD: TYPE=ELEMENT_MP requires material points to be configured");
+                logging::error(model._data->element_mp_offsets != nullptr,
+                    "FIELD: TYPE=ELEMENT_MP requires compiled material-point enumeration");
             }
 
+            const bool fill_nan = fill == "NAN";
             ctx->field = model._data->create_field(name, domain, static_cast<Index>(cols), fill_nan);
             ctx->cols  = static_cast<Index>(cols);
 
-            if (fill_nan) {
-                ctx->field->fill_nan();
-            } else {
-                ctx->field->set_zero();
-            }
+            if (fill_nan) ctx->field->fill_nan();
+            else ctx->field->set_zero();
         });
 
         static const std::string kSkipToken = "__SKIP__";
 
+        const auto assign_values = [ctx](Index row,
+                                         const std::array<std::string, detail::kMaxFieldCols>& values) {
+            logging::error(ctx->field != nullptr,
+                "FIELD: internal error (field not initialized)");
+            logging::error(row >= 0 && row < ctx->field->rows,
+                "FIELD: resolved row ", row, " is out of bounds for field ", ctx->field->name);
+
+            for (Index c = 0; c < ctx->cols; ++c) {
+                const auto& token = values[static_cast<std::size_t>(c)];
+                if (token != kSkipToken) {
+                    (*ctx->field)(row, c) = detail::parse_precision_or_throw(token);
+                }
+            }
+            for (Index c = ctx->cols; c < static_cast<Index>(detail::kMaxFieldCols); ++c) {
+                logging::error(values[static_cast<std::size_t>(c)] == kSkipToken,
+                    "FIELD: more values than COLS for field ", ctx->field->name);
+            }
+        };
+
+        const auto get_element = [&model](const std::string& target) {
+            const ID element_id = io::reader::compiled_element_id(model, target);
+            logging::error(element_id >= 0
+                        && static_cast<std::size_t>(element_id) < model._data->elements.size()
+                        && model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
+                "FIELD: element ", target, " is not configured");
+            return model._data->elements[static_cast<std::size_t>(element_id)];
+        };
+
         command.variant(fem::io::dsl::Variant::make()
-            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_NODAL"}))
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"NODE", "ELEMENT"}))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::ID>().name("ELEMENT_ID").desc("Element identifier")
-                    .one<fem::ID>().name("LOCAL_NODE").desc("Zero-based local node index")
+                    .one<std::string>().name("TARGET").desc("ID or INSTANCE.ID")
                     .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
                         .on_empty(kSkipToken).on_missing(kSkipToken)
                 )
-                .bind([&model, ctx](fem::ID element_id,
-                                    fem::ID local_node,
-                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
-                    logging::error(ctx->field != nullptr,
-                        "FIELD: internal error (field not initialized)");
-
-                    // Resolve the element-local node into the flat element-nodal
-                    // storage used by ModelData and all element implementations
-                    logging::error(element_id >= 0 && element_id < model._data->max_elems
-                                && model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
-                        "FIELD: element id ", element_id, " is not configured for field '",
-                        ctx->field->name, "'");
-
-                    const model::Field& offsets = *model._data->element_nodal_offsets;
-                    const Index         begin   = static_cast<Index>(offsets(static_cast<Index>(element_id)));
-                    const Index         end     = static_cast<Index>(offsets(static_cast<Index>(element_id) + 1));
-
-                    logging::error(local_node >= 0 && static_cast<Index>(local_node) < end - begin,
-                        "FIELD: local node ", local_node, " out of bounds for element ",
-                        element_id, " in field '", ctx->field->name,
-                        "' (nodes=", end - begin, ")");
-
-                    // Assign the supplied components and preserve the initial fill
-                    // value for omitted entries
-                    const Index row = begin + static_cast<Index>(local_node);
-                    for (Index c = 0; c < ctx->cols; ++c) {
-                        const auto& token = values[static_cast<std::size_t>(c)];
-                        if (token == kSkipToken) {
-                            continue;
-                        }
-                        const Precision v = detail::parse_precision_or_throw(token);
-                        (*ctx->field)(row, c) = v;
-                    }
-
-                    for (Index c = ctx->cols; c < static_cast<Index>(detail::kMaxFieldCols); ++c) {
-                        logging::error(values[static_cast<std::size_t>(c)] == kSkipToken,
-                            "FIELD: more values than COLS for field '", ctx->field->name, "'");
-                    }
+                .bind([&model, ctx, assign_values](const std::string& target,
+                                                   const std::array<std::string, detail::kMaxFieldCols>& values) {
+                    const ID row = ctx->field->domain == model::FieldDomain::NODE
+                        ? io::reader::compiled_node_id(model, target)
+                        : io::reader::compiled_element_id(model, target);
+                    assign_values(static_cast<Index>(row), values);
                 })
             )
         );
 
         command.variant(fem::io::dsl::Variant::make()
-            .when(fem::io::dsl::Condition::negate(
-                fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_NODAL"})))
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_NODAL", "ELEMENTNODAL"}))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::ID>().name("ID").desc("Row id")
+                    .one<std::string>().name("ELEMENT").desc("Element ID or INSTANCE.ID")
+                    .one<ID>().name("LOCAL_NODE").desc("Zero-based local node index")
                     .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
                         .on_empty(kSkipToken).on_missing(kSkipToken)
                 )
-                .bind([ctx](fem::ID id, const std::array<std::string, detail::kMaxFieldCols>& values) {
-                    logging::error(ctx->field != nullptr,
-                        "FIELD: internal error (field not initialized)");
-                    logging::error(id >= 0 && static_cast<Index>(id) < ctx->field->rows,
-                        "FIELD: id ", id, " out of bounds for field '",
-                        ctx->field->name, "' (rows=", ctx->field->rows, ")");
+                .bind([get_element, assign_values](const std::string& target,
+                                                   ID local_node,
+                                                   const std::array<std::string, detail::kMaxFieldCols>& values) {
+                    const auto element = get_element(target);
+                    logging::error(local_node >= 0 && local_node < element->n_nodes(),
+                        "FIELD: local node ", local_node, " is out of bounds for element ", target);
+                    assign_values(static_cast<Index>(element->elem_nodal_offset + local_node), values);
+                })
+            )
+        );
 
-                    const Index row = static_cast<Index>(id);
-                    for (Index c = 0; c < ctx->cols; ++c) {
-                        const auto& token = values[static_cast<std::size_t>(c)];
-                        if (token == kSkipToken) {
-                            continue;
-                        }
-                        const Precision v = detail::parse_precision_or_throw(token);
-                        (*ctx->field)(row, c) = v;
-                    }
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_IP", "ELEMENTIP", "IP"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<std::string>().name("ELEMENT").desc("Element ID or INSTANCE.ID")
+                    .one<ID>().name("LOCAL_IP").desc("Zero-based local integration-point index")
+                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
+                        .on_empty(kSkipToken).on_missing(kSkipToken)
+                )
+                .bind([get_element, assign_values](const std::string& target,
+                                                   ID local_ip,
+                                                   const std::array<std::string, detail::kMaxFieldCols>& values) {
+                    const auto element = get_element(target);
+                    logging::error(local_ip >= 0 && local_ip < element->num_ip(),
+                        "FIELD: local integration point ", local_ip,
+                        " is out of bounds for element ", target);
+                    assign_values(element->ip_index(static_cast<Index>(local_ip)), values);
+                })
+            )
+        );
 
-                    for (Index c = ctx->cols; c < static_cast<Index>(detail::kMaxFieldCols); ++c) {
-                        logging::error(values[static_cast<std::size_t>(c)] == kSkipToken,
-                            "FIELD: more values than COLS for field '", ctx->field->name, "'");
-                    }
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT_MP", "ELEMENTMP", "MP"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(0))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<std::string>().name("ELEMENT").desc("Element ID or INSTANCE.ID")
+                    .one<ID>().name("LOCAL_IP").desc("Zero-based local integration-point index")
+                    .one<ID>().name("LOCAL_MP").desc("Zero-based local material-point index")
+                    .fixed<std::string, detail::kMaxFieldCols>().name("V").desc("Values")
+                        .on_empty(kSkipToken).on_missing(kSkipToken)
+                )
+                .bind([get_element, assign_values](const std::string& target,
+                                                   ID local_ip,
+                                                   ID local_mp,
+                                                   const std::array<std::string, detail::kMaxFieldCols>& values) {
+                    const auto element = get_element(target);
+                    logging::error(local_ip >= 0 && local_ip < element->num_ip(),
+                        "FIELD: local integration point ", local_ip,
+                        " is out of bounds for element ", target);
+                    logging::error(local_mp >= 0 && local_mp < element->num_mp_per_ip(),
+                        "FIELD: local material point ", local_mp,
+                        " is out of bounds for element ", target);
+                    assign_values(
+                        element->mp_index(static_cast<Index>(local_ip), static_cast<Index>(local_mp)),
+                        values
+                    );
                 })
             )
         );

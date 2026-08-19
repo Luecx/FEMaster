@@ -1,35 +1,47 @@
+/**
+ * @file test_elements.cpp
+ * @brief Tests shell, membrane and truss elements through compiled model data.
+ */
+
 #include "../src/cos/rectangular_system.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/qspt.h"
 #include "../src/model/shell/s4.h"
 #include "../src/model/truss/truss.h"
+#include "../src/section/section_shell_abd.h"
+#include "../src/section/section_shell_integrated.h"
+#include "../src/section/section_truss.h"
 
 #include <gtest/gtest.h>
 
 namespace {
 
 fem::model::Model build_qspt_model(bool with_density) {
-    fem::model::Model model(8, 4, 8);
+    fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-
     model.set_element<fem::model::QSPT>(0, 0, 1, 2, 3);
 
-    auto material = model._data->materials.activate("MAT");
+    auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_elasticity<fem::material::IsotropicElasticity>(100.0, 0.0);
-    if (with_density) {
-        material->set_density(10.0);
-    }
+    if (with_density) material->set_density(10.0);
+    model.add_material(material);
 
-    model.shell_section("EALL", "MAT", 0.1);
-    model.assign_sections();
+    const auto part = model._data->parts.get();
+    model.add_section(std::make_shared<fem::IntegratedShellSection>(
+        material,
+        part->elem_sets.get(fem::SET_ELEM_ALL),
+        0.1
+    ));
+    model.compile();
 
     return model;
 }
+
 } // namespace
 
 TEST(Elements_QSPT, StiffnessMassAndShearFlowForUnitSquare) {
@@ -83,7 +95,7 @@ TEST(Elements_QSPT, MassMatrixIsZeroWithoutDensity) {
 }
 
 TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
-    fem::model::Model model(8, 4, 8);
+    fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
@@ -91,13 +103,20 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     model.set_node(3, 0.0, 1.0, 0.0);
     model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
 
-    auto material = model._data->materials.activate("MAT");
+    auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_density(10.0);
+    model.add_material(material);
 
-    fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Identity();
+    fem::StaticMatrix<6, 6> abd   = fem::StaticMatrix<6, 6>::Identity();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
-    model.shell_section_abd("EALL", "MAT", 0.1, abd, shear);
-    model.assign_sections();
+    model.add_section(std::make_shared<fem::ABDShellSection>(
+        material,
+        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        0.1,
+        abd,
+        shear
+    ));
+    model.compile();
 
     auto* elem = model._data->elements[0]->as<fem::model::S4>();
     ASSERT_NE(elem, nullptr);
@@ -120,7 +139,7 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
 }
 
 TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
-    fem::model::Model model(8, 4, 8);
+    fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
@@ -128,18 +147,27 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     model.set_node(3, 0.0, 1.0, 0.0);
     model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
 
-    model.add_coordinate_system<fem::cos::RectangularSystem>(
+    auto orientation = std::make_shared<fem::cos::RectangularSystem>(
         "ORI",
         fem::Vec3(1.0, 0.0, 0.0),
         fem::Vec3(0.0, 0.0, -1.0)
     );
+    model.add_coordinate_system(orientation);
 
-    model._data->materials.activate("MAT");
-    fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Identity();
+    auto material = std::make_shared<fem::material::Material>("MAT");
+    model.add_material(material);
+
+    fem::StaticMatrix<6, 6> abd   = fem::StaticMatrix<6, 6>::Identity();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
-
-    model.shell_section_abd("EALL", "MAT", 1.0, abd, shear, "ORI");
-    model.assign_sections();
+    model.add_section(std::make_shared<fem::ABDShellSection>(
+        material,
+        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        1.0,
+        abd,
+        shear,
+        orientation
+    ));
+    model.compile();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
     displacement.set_zero();
@@ -157,7 +185,7 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
 }
 
 TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
-    fem::model::Model model(8, 4, 8);
+    fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
@@ -165,14 +193,22 @@ TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
     model.set_node(3, 0.0, 1.0, 0.0);
     model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
 
-    model._data->materials.activate("MAT");
-    fem::StaticMatrix<6, 6> abd = fem::StaticMatrix<6, 6>::Zero();
+    auto material = std::make_shared<fem::material::Material>("MAT");
+    model.add_material(material);
+
+    fem::StaticMatrix<6, 6> abd   = fem::StaticMatrix<6, 6>::Zero();
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Zero();
     shear(0, 0) = 2.0;
     shear(1, 1) = 3.0;
 
-    model.shell_section_abd("EALL", "MAT", 1.0, abd, shear);
-    model.assign_sections();
+    model.add_section(std::make_shared<fem::ABDShellSection>(
+        material,
+        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        1.0,
+        abd,
+        shear
+    ));
+    model.compile();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
     displacement.set_zero();
@@ -187,18 +223,23 @@ TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
 }
 
 TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
-    fem::model::Model model(4, 4, 4);
+    fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_element<fem::model::T3>(0, 0, 1);
 
-    auto material = model._data->materials.activate("MAT");
+    auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_elasticity<fem::material::IsotropicElasticity>(6.0, 0.0);
     material->set_density(3.0);
+    model.add_material(material);
 
-    model.truss_section("EALL", "MAT", 2.0);
-    model.assign_sections();
+    model.add_section(std::make_shared<fem::TrussSection>(
+        material,
+        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        2.0
+    ));
+    model.compile();
 
     auto* elem = model._data->elements[0]->as<fem::model::T3>();
     ASSERT_NE(elem, nullptr);
@@ -223,16 +264,11 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
 
     const auto section_forces = model.compute_section_forces(displacement);
     ASSERT_EQ(section_forces.rows, 2);
-    ASSERT_EQ(section_forces.components, 8);
-    EXPECT_NEAR(section_forces(0, 0), 0.0, 1e-12);
-    EXPECT_NEAR(section_forces(1, 0), 0.0, 1e-12);
-    EXPECT_NEAR(section_forces(0, 1), 0.0, 1e-12);
-    EXPECT_NEAR(section_forces(1, 1), 1.0, 1e-12);
-    EXPECT_NEAR(section_forces(0, 2), 12.0, 1e-12);
-    EXPECT_NEAR(section_forces(1, 2), 12.0, 1e-12);
-    for (int col = 3; col < 8; ++col) {
+    ASSERT_EQ(section_forces.components, 6);
+    EXPECT_NEAR(section_forces(0, 0), 12.0, 1e-12);
+    EXPECT_NEAR(section_forces(1, 0), 12.0, 1e-12);
+    for (int col = 1; col < 6; ++col) {
         EXPECT_NEAR(section_forces(0, col), 0.0, 1e-12);
         EXPECT_NEAR(section_forces(1, col), 0.0, 1e-12);
     }
 }
-

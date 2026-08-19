@@ -1,5 +1,14 @@
-#ifndef S8_MITC_H
-#define S8_MITC_H
+/**
+ * @file s8_mitc.h
+ * @brief Declares the eight-node MITC8 shell element.
+ *
+ * The quadratic serendipity shell evaluates physical transverse-shear rows at
+ * the MITC8 tying positions, transforms them to covariant natural components,
+ * interpolates those components and maps the assumed field back to the local
+ * element plane at the evaluation point.
+ */
+
+#pragma once
 
 #include "shell_simple.h"
 #include "../geometry/surface/surface8.h"
@@ -30,6 +39,10 @@ struct MITC8
 
     MITC8(ID p_elem_id, std::array<ID, 8> p_node)
         : Base(p_elem_id, p_node) {}
+
+    // Preserve the MITC8 dynamic type while cloning only persistent topology.
+    // All assembly-specific state is installed after cloning by Model::compile().
+    ElementPtr copy() const override { return std::make_shared<MITC8>(elem_id, node_ids); }
 
     std::string type_name() const override {
         return "MITC8";
@@ -204,13 +217,9 @@ struct MITC8
             detJ_eval
         );
 
-        const ShearMatrix B_xy =
-            J_eval.inverse().transpose() * B_rs;
-
+        const ShearMatrix B_xy = J_eval.inverse().transpose() * B_rs;
         return B_xy;
     }
 };
 
 } // namespace fem::model
-
-#endif // S8_MITC_H

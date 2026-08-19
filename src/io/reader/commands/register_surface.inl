@@ -1,72 +1,74 @@
-#pragma once
 /**
  * @file register_surface.inl
- * @brief Register *SURFACE command.
+ * @brief Registers part-local and post-compile assembly surfaces.
  *
- * Define surfaces from element faces or element sets.
- * Header:
- *   SFSET|NAME=<set> (optional, default "SFALL")
- *
- * Data (repeatable lines):
- *   1) ID, ELEM_ID, SIDE
- *      - SIDE accepts "S#" or integer
- *      - calls model.set_surface(id, elem_id, side)
- *   2) TARGET, SIDE
- *      - TARGET = ELSET name or single element id (int)
- *      - if ELSET exists: model.set_surface(set_name, side)
- *      - else if integer: model.set_surface(-1, elem_id, side)
- *      - else: error
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
+
+#pragma once
 
 #include <charconv>
 #include <cctype>
+#include <memory>
 #include <string>
 #include <system_error>
 
-#include "../../../core/logging.h"
-#include "../../../core/types_num.h"    // fem::ID
+#include "../reference.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../dsl/segment.h"
-#include "../../dsl/pattern.h"
-#include "../../dsl/variant.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
-inline void register_surface(fem::io::dsl::Registry& registry, model::Model& model) {
+inline void register_surface(fem::io::dsl::Registry& registry,
+                             model::Model& model,
+                             std::shared_ptr<bool> assembly_scope) {
     registry.command("SURFACE", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc(
-            "Define surfaces from element faces (by element id) or entire element sets.\n"
-            "TYPE must be ELEMENT. Use SFSET/NAME to select the active surface set."
-        );
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
 
-        // --- Header keywords ---
+        struct Context {
+            bool assembly = false;
+            std::string name;
+            std::string instance;
+        };
+        auto ctx = std::make_shared<Context>();
+
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("SFSET").alternative("NAME").optional("SFALL")
-                    .doc("Set name to activate/create (default: SFALL).\n"
-                         "Elements with 2D faces contribute surfaces; beam elements contribute 1D lines under the same set name.")
+                .key("INSTANCE").optional()
         );
+        command.on_enter([&model, assembly_scope, ctx](const fem::io::dsl::Keys& keys) {
+            ctx->assembly = *assembly_scope;
+            ctx->name     = keys.raw("SFSET");
+            ctx->instance = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
 
-        // --- On enter: validate + activate sfset ---
-        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            const std::string& sfset = keys.get<std::string>("SFSET"); // resolves NAME alias
-            // Activate both surface and line sets under the same name so beam elements
-            // can contribute their 1D geometry to a parallel line-set with identical key.
-            auto s = model._data->surface_sets.activate(sfset);
-            auto l = model._data->line_sets.activate(sfset);
-            if (s) { s->sorted(true).duplicates(false); }
-            if (l) { l->sorted(true).duplicates(false); }
+            logging::error(ctx->assembly || ctx->instance.empty(),
+                "SURFACE: INSTANCE is only valid at assembly level");
+
+            if (ctx->assembly) {
+                if (!model._data->compiled) return;
+                logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
+                    "SURFACE: instance ", ctx->instance, " is not defined");
+                model._data->surface_sets.activate(ctx->name)->sorted(true).duplicates(false);
+                model._data->line_sets.activate(ctx->name)->sorted(true).duplicates(false);
+            } else if (!model._data->compiled) {
+                const auto part = model._data->parts.get();
+                logging::error(part != nullptr,
+                    "SURFACE: no active part is available");
+                part->surface_sets.activate(ctx->name)->sorted(true).duplicates(false);
+                part->line_sets.activate(ctx->name)->sorted(true).duplicates(false);
+            }
         });
 
-        // Helper: parse SIDE tokens like "S1", integer, and SPOS/SNEG (case-insensitive)
-        auto parse_side = [](const std::string& side_tok) -> int {
-            if (side_tok.empty()) return 1;
+        auto parse_side = [](const std::string& side_token) -> int {
+            if (side_token.empty()) return 1;
 
-            std::string token = side_tok;
-            for (char& c : token) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            std::string token = side_token;
+            for (char& c : token) {
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            }
             if (token == "SPOS") return 1;
             if (token == "SNEG") return 2;
 
@@ -76,62 +78,93 @@ inline void register_surface(fem::io::dsl::Registry& registry, model::Model& mod
             const char* end   = begin + numeric.size();
             const auto [ptr, ec] = std::from_chars(begin, end, side);
             logging::error(ec == std::errc{} && ptr == end,
-                "SURFACE side '", side_tok, "' is not a valid face identifier");
+                "SURFACE: side ", side_token, " is not a valid face identifier");
             return side;
         };
 
-        // --- Variant 1: ID, ELEM_ID, SIDE ---
-        command.variant(
-            fem::io::dsl::Variant::make()
-                .doc("Three fields per line: ID, ELEM_ID, SIDE (SIDE accepts 'S#' or integer).")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .one<fem::ID>().name("ID").desc("Surface id")
-                                .one<fem::ID>().name("ELEM_ID").desc("Element id")
-                                .one<std::string>().name("SIDE").desc("Face id, e.g. S1 or 1")
-                        )
-                        .bind([&model, parse_side](fem::ID id, fem::ID elem_id, const std::string& side_tok) {
-                            int side = parse_side(side_tok);
-                            model.set_surface(id, elem_id, side);
-                        })
+        auto add_compiled_boundary = [&model](ID element_id, ID side, const std::string& name) {
+            logging::error(element_id >= 0 && static_cast<std::size_t>(element_id) < model._data->elements.size(),
+                "SURFACE: compiled element ", element_id, " is out of range");
+            logging::error(model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
+                "SURFACE: compiled element ", element_id, " is not configured");
+
+            const auto element = model._data->elements[static_cast<std::size_t>(element_id)];
+            auto surface = element->surface(side);
+            auto line    = element->line(side);
+            logging::error(surface != nullptr || line != nullptr,
+                "SURFACE: boundary ", side, " of compiled element ", element_id,
+                " provides neither a surface nor a line");
+
+            if (surface) {
+                const ID surface_id = static_cast<ID>(model._data->surfaces.size());
+                model._data->surfaces.push_back(std::move(surface));
+                model._data->surface_sets.activate(name)->add(surface_id);
+            }
+            if (line) {
+                const ID line_id = static_cast<ID>(model._data->lines.size());
+                model._data->lines.push_back(std::move(line));
+                model._data->line_sets.activate(name)->add(line_id);
+            }
+        };
+
+        command.variant(fem::io::dsl::Variant::make()
+            .rank(20)
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<ID>().name("ID")
+                    .one<ID>().name("ELEM_ID")
+                    .one<std::string>().name("SIDE")
                 )
+                .bind([&model, ctx, parse_side](ID id, ID element_id, const std::string& side_token) {
+                    logging::error(!ctx->assembly,
+                        "SURFACE: explicit surface ids are not supported at assembly level");
+                    if (!model._data->compiled) {
+                        model.set_surface(id, element_id, parse_side(side_token));
+                    }
+                })
+            )
         );
 
-        // --- Variant 2: TARGET, SIDE (id := -1 if TARGET is elem id) ---
-        command.variant(
-            fem::io::dsl::Variant::make()
-                .doc("Two fields per line: TARGET, SIDE (TARGET = ELSET name or single element id).")
-                .segment(
-                    fem::io::dsl::Segment::make()
-                        .range(fem::io::dsl::LineRange{}.min(1))
-                        .pattern(
-                            fem::io::dsl::Pattern::make()
-                                .one<std::string>().name("TARGET").desc("ELSET name or element id (int)")
-                                .one<std::string>().name("SIDE").desc("Face id, e.g. S1 or 1")
-                        )
-                        .bind([&model, parse_side](const std::string& target, const std::string& side_tok) {
-                            int side = parse_side(side_tok);
-
-                            // First: ELSET name?
-                            if (model._data->elem_sets.has(target)) {
-                                model.set_surface(target, side);
-                                return;
-                            }
-
-                            // Else: try single element id
-                            fem::ID elem_id{};
-                            const char* begin = target.data();
-                            const char* end   = begin + target.size();
-                            const auto [ptr, ec] = std::from_chars(begin, end, elem_id);
-                            logging::error(ec == std::errc{} && ptr == end,
-                                "SURFACE target '", target,
-                                "' is neither an existing element set nor a valid element id.");
-                            model.set_surface(-1, elem_id, side); // id := -1 by spec
-                        })
+        command.variant(fem::io::dsl::Variant::make()
+            .rank(10)
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<std::string>().name("TARGET")
+                    .one<std::string>().name("SIDE")
                 )
+                .bind([&model, ctx, parse_side, add_compiled_boundary](const std::string& target,
+                                                                       const std::string& side_token) {
+                    const ID side = static_cast<ID>(parse_side(side_token));
+                    if (ctx->assembly) {
+                        if (!model._data->compiled) return;
+
+                        const std::string reference = io::reader::qualify_reference(target, ctx->instance);
+                        if (model._data->elem_sets.has(reference)) {
+                            const auto elements = model._data->elem_sets.get(reference);
+                            logging::error(elements != nullptr,
+                                "SURFACE: element set ", reference, " is not initialized");
+                            for (const ID element_id : *elements) {
+                                add_compiled_boundary(element_id, side, ctx->name);
+                            }
+                        } else {
+                            add_compiled_boundary(io::reader::compiled_element_id(model, reference), side, ctx->name);
+                        }
+                        return;
+                    }
+
+                    if (model._data->compiled) return;
+                    const auto part = model._data->parts.get();
+                    logging::error(part != nullptr,
+                        "SURFACE: no active part is available");
+                    if (part->elem_sets.has(target)) {
+                        model.set_surface(target, side);
+                    } else {
+                        model.set_surface(-1, io::reader::parse_local_id(target, "SURFACE"), side);
+                    }
+                })
+            )
         );
     });
 }

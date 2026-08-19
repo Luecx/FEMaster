@@ -25,6 +25,17 @@
 namespace fem {
 namespace model {
 
+namespace detail {
+
+template<typename T, typename = void>
+struct IsNamableOrIncomplete : std::true_type {};
+
+template<typename T>
+struct IsNamableOrIncomplete<T, std::void_t<decltype(sizeof(T))>>
+    : std::bool_constant<std::is_base_of_v<Namable, T>> {};
+
+} // namespace detail
+
 /**
  * @struct Dict
  * @brief Stores shared pointers keyed either by string or by index.
@@ -41,15 +52,15 @@ struct Dict {
     /// Backing container, selected depending on the key type.
     std::conditional_t<std::is_same_v<Key, std::string>, std::unordered_map<Key, TPtr>, std::vector<TPtr>> _data;
 
-    static_assert(!std::is_same_v<Key, std::string> || std::is_base_of_v<Namable, T>,
-                  "Key must be a string if T is namable");
+    static_assert(!std::is_same_v<Key, std::string> || detail::IsNamableOrIncomplete<T>::value,
+                  "String-keyed Dict entries must derive from Namable");
 
     TPtr _cur = nullptr;    ///< Tracks the most recently accessed entry.
 
     /**
      * @brief Checks whether an entry exists for `key`.
      */
-    bool has(const Key& key) {
+    bool has(const Key& key) const {
         if constexpr (std::is_same_v<Key, std::string>) {
             return has_key(key);
         } else {
@@ -60,7 +71,7 @@ struct Dict {
     /**
      * @brief Checks existence using only key look-up (string specialisation).
      */
-    bool has_key(const Key& key) {
+    bool has_key(const Key& key) const {
         if constexpr (std::is_same_v<Key, std::string>) {
             return _data.find(key) != _data.end();
         }
@@ -68,12 +79,12 @@ struct Dict {
     }
 
     /// Returns whether the dictionary currently holds any entry.
-    bool has_any() {
+    bool has_any() const {
         return _cur != nullptr;
     }
 
     /// Returns the last activated/created entry.
-    TPtr get() {
+    TPtr get() const {
         return _cur;
     }
 
@@ -82,7 +93,7 @@ struct Dict {
      *
      * @return Shared pointer or `nullptr` when the entry is missing.
      */
-    TPtr get(const Key& key) {
+    TPtr get(const Key& key) const {
         if (!has(key)) {
             return nullptr;
         }
@@ -109,6 +120,22 @@ struct Dict {
         } else {
             _cur = get(key);
         }
+        return _cur;
+    }
+
+    // Register an already constructed named object. String-keyed dictionaries
+    // derive the key from the object's immutable Namable::name property so the
+    // owning API does not need to accept the same name separately.
+    template<typename K = Key>
+    std::enable_if_t<std::is_same_v<K, std::string>, TPtr> add(TPtr instance) {
+        if (!instance) {
+            return nullptr;
+        }
+
+        const Key key = instance->name;
+        auto [it, inserted] = _data.emplace(key, instance);
+        (void) inserted;
+        _cur = it->second;
         return _cur;
     }
 

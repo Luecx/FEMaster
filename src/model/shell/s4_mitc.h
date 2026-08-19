@@ -1,5 +1,12 @@
-#ifndef S4_MITC_H
-#define S4_MITC_H
+/**
+ * @file s4_mitc.h
+ * @brief Declares the four-node MITC4 shell element.
+ *
+ * The element uses bilinear quadrilateral geometry together with the classical
+ * MITC4 edge-midpoint interpolation of the two transverse-shear components.
+ */
+
+#pragma once
 
 #include "shell_simple.h"
 #include "../geometry/surface/surface4.h"
@@ -23,6 +30,10 @@ struct MITC4
     MITC4(ID id, std::array<ID, 4> nodes)
         : Base(id, nodes) {}
 
+    // Preserve the MITC4 dynamic type while cloning only the persistent shell
+    // topology. All compiled assembly state is attached afterwards.
+    ElementPtr copy() const override { return std::make_shared<MITC4>(elem_id, node_ids); }
+
     std::string type_name() const override { return "MITC4"; }
 
     std::shared_ptr<SurfaceInterface> surface(int surface_id) override {
@@ -33,22 +44,21 @@ struct MITC4
         );
     }
 
-    // MITC4: shear strains are "tied" at edge midpoints and interpolated into (r,s)
+    // MITC4: shear strains are tied at edge midpoints and interpolated into
+    // the current natural position (r,s).
     StaticMatrix<2, 12>
     strain_disp_shear_at(Precision r, Precision s, const LocalCoords& xy) override
     {
-        // Helper: build 1x12 row for a shear strain component at (rr,ss)
-        // Shell transverse shear follows generalized order: gamma_xz, gamma_yz.
-        //   gamma_yz = dw/dy - theta_x   (-> uses rx with - sign)
-        //   gamma_xz = dw/dx + theta_y   (-> uses ry with + sign)
+        // Build one shear-strain row at a tying point. Shell transverse shear
+        // follows generalized order gamma_xz, gamma_yz.
         auto Bs_at = [&](Precision rr, Precision ss, bool xz) -> StaticMatrix<1, 12> {
             ShapeDerivative dH_rs = this->shape_derivative(rr, ss);
             Jacobian        J     = this->jacobian(dH_rs, const_cast<LocalCoords&>(xy));
             Mat2            invJ  = J.inverse();
 
-            // dN/dx, dN/dy in local element xy plane
-            auto dH_xy = (dH_rs * invJ).transpose();   // (2 x 4): row0=dN/dx, row1=dN/dy
-            auto H     = this->shape_function(rr, ss); // (4)
+            // Transform natural derivatives into the local element xy plane.
+            auto dH_xy = (dH_rs * invJ).transpose();
+            auto H     = this->shape_function(rr, ss);
 
             StaticMatrix<1, 12> row;
             row.setZero();
@@ -71,23 +81,20 @@ struct MITC4
             return row;
         };
 
-        // Tying points (edge midpoints) in (r,s) space:
-        //   gamma_xz tied on s = +/-1 at r = 0
-        //   gamma_yz tied on r = +/-1 at s = 0
-        const Precision a_m = Precision(0.5) * (Precision(1.0) - s); // weight for s=-1
-        const Precision a_p = Precision(0.5) * (Precision(1.0) + s); // weight for s=+1
+        // Edge-midpoint interpolation weights in natural coordinates.
+        const Precision a_m = Precision(0.5) * (Precision(1.0) - s);
+        const Precision a_p = Precision(0.5) * (Precision(1.0) + s);
+        const Precision b_m = Precision(0.5) * (Precision(1.0) - r);
+        const Precision b_p = Precision(0.5) * (Precision(1.0) + r);
 
-        const Precision b_m = Precision(0.5) * (Precision(1.0) - r); // weight for r=-1
-        const Precision b_p = Precision(0.5) * (Precision(1.0) + r); // weight for r=+1
-
-        // Interpolate tied shear strains to (r,s)
+        // Interpolate the tied shear strains to the requested point.
         StaticMatrix<1, 12> row_xz =
-            a_m * Bs_at(Precision(0.0), Precision(-1.0), /*xz=*/true) +
-            a_p * Bs_at(Precision(0.0), Precision(+1.0), /*xz=*/true);
+            a_m * Bs_at(Precision(0.0), Precision(-1.0), true) +
+            a_p * Bs_at(Precision(0.0), Precision(+1.0), true);
 
         StaticMatrix<1, 12> row_yz =
-            b_m * Bs_at(Precision(-1.0), Precision(0.0), /*xz=*/false) +
-            b_p * Bs_at(Precision(+1.0), Precision(0.0), /*xz=*/false);
+            b_m * Bs_at(Precision(-1.0), Precision(0.0), false) +
+            b_p * Bs_at(Precision(+1.0), Precision(0.0), false);
 
         StaticMatrix<2, 12> Bs;
         Bs.setZero();
@@ -96,6 +103,5 @@ struct MITC4
         return Bs;
     }
 };
-} // namespace fem::model
 
-#endif // S4_MITC_H
+} // namespace fem::model

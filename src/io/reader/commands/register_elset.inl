@@ -1,74 +1,96 @@
-// register_elset.inl — DSL registration for *ELSET
+/**
+ * @file register_elset.inl
+ * @brief Registers part-local and assembly-level element sets.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
+
+#pragma once
 
 #include <array>
-#include <limits>
+#include <memory>
 #include <string>
 
-#include "../../../core/types_num.h"
+#include "../reference.h"
+#include "../../../model/model.h"
+#include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 
 namespace fem::io::reader::commands {
 
-inline void register_elset(fem::io::dsl::Registry& registry, model::Model& model) {
+inline void register_elset(fem::io::dsl::Registry& registry,
+                           model::Model& model,
+                           std::shared_ptr<bool> assembly_scope) {
     registry.command("ELSET", [&](fem::io::dsl::Command& command) {
-        command.doc("Define named element sets.");
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
+
+        struct Context {
+            bool assembly = false;
+            std::string instance;
+            model::ElementRegion::Ptr destination = nullptr;
+        };
+        auto ctx = std::make_shared<Context>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("ELSET")
-                    .alternative("NAME")
-                    .required()
-                    .doc("Name of the element set to activate or create")
+                .key("ELSET").alternative("NAME").required()
+                .key("INSTANCE").optional()
                 .flag("GENERATE")
-                    .doc("Interpret rows as start,end[,increment] ranges")
         );
+        command.on_enter([&model, assembly_scope, ctx](const fem::io::dsl::Keys& keys) {
+            ctx->assembly    = *assembly_scope;
+            ctx->instance    = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
+            ctx->destination = nullptr;
 
-        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            const std::string& name = keys.raw("ELSET");
-            model._data->elem_sets.activate(name);
+            logging::error(ctx->assembly || ctx->instance.empty(),
+                "ELSET: INSTANCE is only valid at assembly level");
+
+            if (ctx->assembly) {
+                if (!model._data->compiled) return;
+                logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
+                    "ELSET: instance ", ctx->instance, " is not defined");
+                ctx->destination = model._data->elem_sets.activate(keys.raw("ELSET"));
+            } else if (!model._data->compiled) {
+                const auto part = model._data->parts.get();
+                logging::error(part != nullptr,
+                    "ELSET: no active part is available");
+                ctx->destination = part->elem_sets.activate(keys.raw("ELSET"));
+            }
         });
 
-        const fem::ID missing_id = std::numeric_limits<fem::ID>::min();
+        const std::string missing_token = "__MISSING__";
 
-        // Variant for *ELSET with boolean-aware GENERATE flag (present & truthy)
         command.variant(fem::io::dsl::Variant::make()
+            .rank(10)
             .when(fem::io::dsl::Condition::key_true("GENERATE"))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::ID>().name("START").desc("First element id")
-                    .one<fem::ID>().name("END").desc("Last element id")
-                    .one<fem::ID>().name("INC").desc("Increment").on_missing(fem::ID{1}).on_empty(fem::ID{1})
+                    .one<fem::ID>().name("START")
+                    .one<fem::ID>().name("END")
+                    .one<fem::ID>().name("INC").on_missing(fem::ID{1}).on_empty(fem::ID{1})
                 )
-                .bind([&model](fem::ID first, fem::ID last, fem::ID inc) {
-                    if (inc == 0) {
-                        inc = 1;
-                    }
-
-                    auto set = model._data->elem_sets.get();
-                    if (!set) {
-                        return;
-                    }
-
-                    if ((inc > 0 && first > last) || (inc < 0 && first < last)) {
-                        return;
-                    }
+                .bind([&model, ctx](fem::ID first, fem::ID last, fem::ID inc) {
+                    logging::error(inc != 0,
+                        "ELSET/GENERATE: increment must not be zero");
+                    if (!ctx->destination) return;
+                    if ((inc > 0 && first > last) || (inc < 0 && first < last)) return;
 
                     for (fem::ID id = first;; id += inc) {
-                        set->add(id);
+                        const fem::ID value = ctx->assembly
+                            ? (ctx->instance.empty() ? model.compiled_element_id(id)
+                                                     : model.compiled_element_id(id, ctx->instance))
+                            : id;
+                        ctx->destination->add(value);
 
                         const fem::ID next = static_cast<fem::ID>(id + inc);
-                        const bool stop = (inc > 0) ? next > last : next < last;
-                        if (stop) {
-                            break;
-                        }
+                        if (inc > 0 ? next > last : next < last) break;
                     }
                 })
             )
         );
 
-        // Variant for explicit element id lists (up to 32 per line).
-        // Matches when GENERATE is missing OR explicitly false.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::any_of({
                 fem::io::dsl::Condition::negate(fem::io::dsl::Condition::key_present("GENERATE")),
@@ -77,20 +99,26 @@ inline void register_elset(fem::io::dsl::Registry& registry, model::Model& model
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .fixed<fem::ID, 32>().name("ID").desc("Element ids (up to 32 per line)")
-                        .on_missing(missing_id)
-                        .on_empty(missing_id)
+                    .fixed<std::string, 32>().name("TARGET")
+                        .on_missing(missing_token).on_empty(missing_token)
                 )
-                .bind([&model, missing_id](const std::array<fem::ID, 32>& ids) {
-                    auto set = model._data->elem_sets.get();
-                    if (!set) {
-                        return;
-                    }
-                    for (fem::ID id : ids) {
-                        if (id == missing_id) {
-                            continue;
+                .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
+                    if (!ctx->destination) return;
+                    for (const std::string& target : targets) {
+                        if (target == missing_token) continue;
+                        if (ctx->assembly) {
+                            io::reader::add_compiled_reference(
+                                model._data->elem_sets,
+                                ctx->destination,
+                                target,
+                                ctx->instance,
+                                [&model](const std::string& reference) {
+                                    return io::reader::compiled_element_id(model, reference);
+                                }
+                            );
+                        } else {
+                            ctx->destination->add(io::reader::parse_local_id(target, "ELSET"));
                         }
-                        set->add(id);
                     }
                 })
             )

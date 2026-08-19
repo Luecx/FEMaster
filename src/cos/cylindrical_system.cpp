@@ -55,5 +55,18 @@ Basis CylindricalSystem::get_axes(const Vec3& local_point) const {
     axes.col(2) = z_axis_;
     return axes;
 }
+
+CoordinateSystem::Ptr CylindricalSystem::transformed(const Mat3& rotation, const Vec3& translation) const {
+    const Vec3 base        = rotation * base_point_  + translation;
+    const Vec3 radial      = rotation * r_axis_;
+    const Vec3 tangential  = rotation * theta_axis_;
+
+    return std::make_shared<CylindricalSystem>(
+        name,
+        base,
+        base + radial,
+        base + tangential
+    );
+}
 } // namespace cos
 } // namespace fem

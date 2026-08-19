@@ -1,4 +1,11 @@
+/**
+ * @file test_bc_loads.cpp
+ * @brief Tests load accumulation, point masses and inertia relief on compiled models.
+ */
+
+#include "../src/bc/load_c.h"
 #include "../src/bc/load_collector.h"
+#include "../src/bc/load_inertial.h"
 #include "../src/loadcase/tools/inertia_relief.h"
 #include "../src/model/model.h"
 
@@ -6,19 +13,17 @@
 
 using namespace fem;
 
-// 25) LoadCollector additive behavior on overlapping node regions (CLoad)
 TEST(BC_Loads, CLoadAdditiveOverlap) {
-    model::Model mdl(2, 0, 0);
+    model::Model mdl;
     mdl.set_node(0, 0,0,0);
     mdl.set_node(1, 1,0,0);
+    mdl.compile();
 
     bc::LoadCollector lc("L1");
 
-    // Region with node 0
     auto r0 = std::make_shared<model::NodeRegion>("R0");
     r0->add(0);
 
-    // Two concentrated loads on same node and same dof (Fx)
     auto L1 = std::make_shared<bc::CLoad>();
     L1->region_ = r0;
     L1->values_ = Vec6(NAN, NAN, NAN, NAN, NAN, NAN);
@@ -33,21 +38,19 @@ TEST(BC_Loads, CLoadAdditiveOverlap) {
 
     model::Field bc{"BC", model::FieldDomain::NODE, 2, 6};
     bc.set_zero();
-    lc.apply(*mdl._data, bc, /*time=*/0.0);
+    lc.apply(*mdl._data, bc, 0.0);
 
     EXPECT_NEAR(bc(0,0), 3.5, 1e-12);
     EXPECT_NEAR(bc(1,0), 0.0, 1e-12);
 }
 
 TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
-    model::Model mdl(1, 1, 0);
+    model::Model mdl;
     mdl.set_node(0, 0.0, 0.0, 0.0);
+    mdl.compile();
 
-    mdl.add_point_mass_feature("NALL",
-                               /*mass=*/2.0,
-                               Vec3::Zero(),
-                               Vec3::Zero(),
-                               Vec3::Zero());
+    mdl.add_point_mass_feature(
+        "NALL", 2.0, Vec3::Zero(), Vec3::Zero(), Vec3::Zero());
 
     bc::InertialLoad load;
     load.region_     = std::make_shared<model::ElementRegion>("EMPTY_REGION");
@@ -60,34 +63,32 @@ TEST(BC_Loads, InertialLoadIncludesPointMassesWhenEnabled) {
     rhs.set_zero();
 
     load.consider_point_masses_ = false;
-    load.apply(*mdl._data, rhs, /*time=*/0.0);
+    load.apply(*mdl._data, rhs, 0.0);
     EXPECT_NEAR(rhs(0, 0), 0.0, 1e-12);
 
     rhs.set_zero();
     load.consider_point_masses_ = true;
-    load.apply(*mdl._data, rhs, /*time=*/0.0);
+    load.apply(*mdl._data, rhs, 0.0);
     EXPECT_NEAR(rhs(0, 0), -2.0, 1e-12);
     EXPECT_NEAR(rhs(0, 1), 0.0, 1e-12);
     EXPECT_NEAR(rhs(0, 2), 0.0, 1e-12);
 }
 
 TEST(BC_Loads, InertiaReliefBalancesPointMassOnlyModel) {
-    model::Model mdl(2, 1, 0);
+    model::Model mdl;
     mdl.set_node(0, -1.0, 0.0, 0.0);
     mdl.set_node(1,  1.0, 0.0, 0.0);
+    mdl.compile();
 
-    mdl.add_point_mass_feature("NALL",
-                               /*mass=*/1.0,
-                               Vec3::Zero(),
-                               Vec3::Zero(),
-                               Vec3::Zero());
+    mdl.add_point_mass_feature(
+        "NALL", 1.0, Vec3::Zero(), Vec3::Zero(), Vec3::Zero());
 
     model::Field global_load{"GLOBAL_LOAD", model::FieldDomain::NODE, 2, 6};
     global_load.set_zero();
     global_load(0, 0) = 1.0;
     global_load(1, 0) = 1.0;
 
-    apply_inertia_relief(*mdl._data, global_load, /*consider_point_masses=*/true);
+    apply_inertia_relief(*mdl._data, global_load, true);
 
     EXPECT_NEAR(global_load(0, 0), 0.0, 1e-10);
     EXPECT_NEAR(global_load(1, 0), 0.0, 1e-10);

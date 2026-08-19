@@ -1,39 +1,51 @@
-// register_node.inl — DSL registration for *NODE
+/**
+ * @file register_node.inl
+ * @brief Registers part-local and unqualified assembly nodes.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <string>
+#pragma once
 
-#include "../../../core/types_num.h"
-#include "../../dsl/keyword.h"
-#include "../../dsl/registry.h"
+#include <memory>
+
 #include "../../../model/model.h"
+#include "../../dsl/condition.h"
+#include "../../dsl/keyword.h"
 
 namespace fem::io::reader::commands {
 
-inline void register_node(fem::io::dsl::Registry& registry, model::Model& model) {
+inline void register_node(fem::io::dsl::Registry& registry,
+                          model::Model& model,
+                          std::shared_ptr<bool> assembly_scope) {
     registry.command("NODE", [&](fem::io::dsl::Command& command) {
-        command.doc("Define nodes with optional coordinates and assign them to a node set.");
-
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("NSET")
-                    .optional("NALL")
-                    .doc("Target node set to populate (defaults to NALL)")
+                .key("NSET").optional("NALL")
         );
-
-        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            model._data->node_sets.activate(keys.raw("NSET"));
+        command.on_enter([&model, assembly_scope](const fem::io::dsl::Keys& keys) {
+            logging::error(model._data != nullptr && !model._data->compiled,
+                "NODE: nodes cannot be added after compile()");
+            if (*assembly_scope) {
+                model._data->parts.activate(model::Model::DEFAULT_PART_NAME);
+            }
+            const auto part = model._data->parts.get();
+            logging::error(part != nullptr,
+                "NODE: no active part is available");
+            part->node_sets.activate(keys.raw("NSET"));
         });
-
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::ID>().name("ID").desc("Node identifier")
-                    .one<fem::Precision>().name("X").desc("X-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
-                    .one<fem::Precision>().name("Y").desc("Y-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
-                    .one<fem::Precision>().name("Z").desc("Z-coordinate").on_empty(fem::Precision{0}).on_missing(fem::Precision{0})
+                    .one<ID>().name("ID")
+                    .one<Precision>().name("X").on_empty(Precision{0}).on_missing(Precision{0})
+                    .one<Precision>().name("Y").on_empty(Precision{0}).on_missing(Precision{0})
+                    .one<Precision>().name("Z").on_empty(Precision{0}).on_missing(Precision{0})
                 )
-                .bind([&model](fem::ID id, fem::Precision x, fem::Precision y, fem::Precision z) {
+                .bind([&model](ID id, Precision x, Precision y, Precision z) {
                     model.set_node(id, x, y, z);
                 })
             )

@@ -38,6 +38,11 @@ namespace model {
 struct C3D8 : public SolidElement<8> {
     // Construction and element identification
     C3D8(ID pElemId, const std::array<ID, 8>& pNodeIds);
+
+    // Recreate the concrete element from persistent topology only. Dense ids,
+    // sections, offsets and ModelData binding are instance-specific compile data.
+    ElementPtr copy() const override { return std::make_shared<C3D8>(elem_id, node_ids); }
+
     std::string type_name() const override { return "C3D8"; }
 
     // Natural-coordinate interpolation and reference node positions

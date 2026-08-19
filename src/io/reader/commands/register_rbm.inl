@@ -1,38 +1,43 @@
-// register_rbm.inl — registers *RBM
+/**
+ * @file register_rbm.inl
+ * @brief Registers rigid-body-motion suppression.
+ *
+ * The parser resolves the compiled element set and appends the completed Rbm
+ * object directly to ModelData. This keeps Model free of generic constraint
+ * dispatch and makes the same operation equally explicit for direct C++ users.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <string>
+#pragma once
 
+#include "../../../constraints/types/rbm.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../core/logging.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_rbm(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("RBM", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc(
-            "Add rigid-body-motion suppression equations for an element set. "
-            "ELSET defaults to EALL."
-        );
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("ELSET")
-                    .alternative("SET")
-                    .optional("EALL")
-                    .doc("Target element set used to build RBM equations")
+                .key("ELSET").alternative("SET").optional("EALL")
         );
-
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
-            logging::error(!keys.has("MAX_POINTS"),
-                "RBM key 'MAX_POINTS' is no longer supported");
+            const std::string set = keys.raw("ELSET");
 
-            const std::string elset = keys.raw("ELSET");
-            model.add_rbm(elset);
+            logging::error(model._data->compiled,
+                "RBM: constraints require a compiled model");
+            logging::error(model._data->elem_sets.has(set),
+                "RBM: element set ", set, " not found");
+            logging::error(model._data->elem_sets.get(set) && model._data->elem_sets.get(set)->size() > 0,
+                "RBM: element set ", set, " is empty");
+
+            model._data->rbms.emplace_back(model._data->elem_sets.get(set));
         });
-
         command.variant(fem::io::dsl::Variant::make());
     });
 }

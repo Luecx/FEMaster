@@ -45,6 +45,11 @@ public:
     C3D8R(ID elem_id, const std::array<ID, N>& node_ids);
     ~C3D8R() override = default;
 
+    // Preserve the reduced-integration concrete type while copying only the
+    // persistent topology. Hourglass/runtime state is rebuilt by the normal
+    // compiled-element lifecycle.
+    ElementPtr copy() const override { return std::make_shared<C3D8R>(elem_id, node_ids); }
+
     // Element identification and reduced quadrature
     std::string type_name() const override;
     const math::quadrature::Quadrature& integration_scheme_stiffness() const override;

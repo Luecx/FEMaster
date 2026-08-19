@@ -1,3 +1,20 @@
+/**
+ * @file test_constraints.cpp
+ * @brief Tests constraint-system assembly, connectors and null-space mappings.
+ *
+ * Connector tests construct semantic nodal topology and compile it before
+ * geometric constraint equations access `ModelData`. Algebraic constraint-system
+ * tests remain independent of the object-model lifecycle.
+ *
+ * @see constraint::Connector
+ * @see constraint::assemble_constraint_system
+ * @see constraint::build_null_space
+ * @see model::Model::compile
+ *
+ * @author Finn Eggers
+ * @date 18.08.2026
+ */
+
 #include "../src/constraints/transformer/constraint_system.h"
 #include "../src/constraints/transformer/null_space.h"
 #include "../src/constraints/types/connector.h"
@@ -52,9 +69,11 @@ TEST(Constraints_Set, ZeroRowDrop) {
 // 29) Connector equations basic
 TEST(Constraints_Connector, TwoNodesSameDir) {
     // Model with positions (needed for local frames)
-    model::Model mdl(2, 0, 0);
+    model::Model mdl;
     mdl.set_node(0, 0,0,0);
     mdl.set_node(1, 1,0,0);
+    mdl.compile();
+
     // Global x as local x
     auto cs = std::make_shared<cos::RectangularSystem>("R", Vec3(1,0,0));
     constraint::Connector conn(0, 1, cs, constraint::ConnectorType::Join); // constrain translations

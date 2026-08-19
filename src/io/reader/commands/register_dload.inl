@@ -1,75 +1,82 @@
-// register_dload.inl — DSL registration for *DLOAD
+/**
+ * @file register_dload.inl
+ * @brief Registers distributed surface tractions.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
+
+#pragma once
 
 #include <array>
-#include <charconv>
 #include <memory>
 #include <string>
-#include <system_error>
 
-#include "../../../core/logging.h"
-#include "../../../core/types_eig.h"
-#include "../../../core/types_num.h"
+#include "../reference.h"
+#include "../../../bc/load_d.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_dload(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("DLOAD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc(
-            "Apply distributed surface tractions to surfaces or surface sets. Each line provides a target followed by "
-            "three components (Fx,Fy,Fz). When ORIENTATION is specified the components are measured in that local frame; "
-            "otherwise they are interpreted in the global Cartesian basis. AMPLITUDE references a time history that scales "
-            "the traction. Contributions from multiple records add linearly in the active load collector."
-        );
 
         auto orientation = std::make_shared<std::string>();
-        auto amplitude = std::make_shared<std::string>();
+        auto amplitude   = std::make_shared<std::string>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("LOAD_COLLECTOR")
-                    .doc("Name of the load collector that aggregates the distributed loads")
-                    .required()
+                .key("LOAD_COLLECTOR").required()
                 .key("ORIENTATION").optional()
-                    .doc("Optional coordinate system describing the local traction directions")
                 .key("AMPLITUDE").optional()
-                    .doc("Optional time amplitude that scales the traction vector")
         );
-
-        command.on_enter([orientation, amplitude, &model](const fem::io::dsl::Keys& keys) {
-            const std::string& collector = keys.raw("LOAD_COLLECTOR");
+        command.on_enter([&model, orientation, amplitude](const fem::io::dsl::Keys& keys) {
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
-            *amplitude = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
-            model._data->load_cols.activate(collector);
+            *amplitude   = keys.has("AMPLITUDE") ? keys.raw("AMPLITUDE") : std::string{};
+            model._data->load_cols.activate(keys.raw("LOAD_COLLECTOR"));
         });
 
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<std::string>().name("TARGET").desc("Surface set or surface id")
-                    .fixed<fem::Precision, 3>().name("LOAD").desc("Fx,Fy,Fz components, local if ORIENTATION is set")
+                    .one<std::string>().name("TARGET")
+                    .fixed<fem::Precision, 3>().name("LOAD")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
-                .bind([&model, orientation, amplitude](const std::string& target, const std::array<fem::Precision, 3>& values) {
-                    fem::Vec3 load;
-                    load << values[0], values[1], values[2];
-
+                .bind([&model, orientation, amplitude](const std::string& target,
+                                                       const std::array<fem::Precision, 3>& values) {
+                    model::SurfaceRegion::Ptr region;
                     if (model._data->surface_sets.has(target)) {
-                        model.add_dload(target, load, *orientation, *amplitude);
-                        return;
+                        region = model._data->surface_sets.get(target);
+                    } else {
+                        region = std::make_shared<model::SurfaceRegion>("INTERNAL");
+                        region->add(io::reader::compiled_surface_id(model, target));
                     }
 
-                    fem::ID id{};
-                    const char* begin = target.data();
-                    const char* end   = begin + target.size();
-                    const auto [ptr, ec] = std::from_chars(begin, end, id);
-                    logging::error(ec == std::errc{} && ptr == end,
-                        "DLOAD target '", target, "' is neither a surface set nor an id");
-                    model.add_dload(id, load, *orientation, *amplitude);
+                    cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
+                    if (!orientation->empty()) {
+                        logging::error(model._data->coordinate_systems.has(*orientation),
+                            "DLOAD: coordinate system ", *orientation, " does not exist");
+                        orientation_ptr = model._data->coordinate_systems.get(*orientation);
+                    }
+
+                    bc::Amplitude::Ptr amplitude_ptr = nullptr;
+                    if (!amplitude->empty()) {
+                        logging::error(model._data->amplitudes.has(*amplitude),
+                            "DLOAD: amplitude ", *amplitude, " does not exist");
+                        amplitude_ptr = model._data->amplitudes.get(*amplitude);
+                    }
+
+                    auto load = std::make_shared<bc::DLoad>();
+                    load->region_      = std::move(region);
+                    load->values_      = Vec3{values[0], values[1], values[2]};
+                    load->orientation_ = std::move(orientation_ptr);
+                    load->amplitude_   = std::move(amplitude_ptr);
+                    model.add_load(std::move(load));
                 })
             )
         );

@@ -1,4 +1,22 @@
-// ===== FILE: ./include/fem/io/reader/commands/register_profile.inl =====
+/**
+ * @file register_profile.inl
+ * @brief Registers object-based beam profile definitions for FEMaster decks.
+ *
+ * Beam cross-section constants are parsed into a complete `Profile` object whose
+ * name is part of the object itself. The parser registers that object through
+ * `Model::add_profile()` instead of asking the model facade to construct a
+ * profile from duplicated name and scalar arguments.
+ *
+ * The product-of-inertia convention remains
+ * `Iyz = integral_A(y*z*dA)` without a leading minus sign.
+ *
+ * @see Profile
+ * @see model::Model::add_profile
+ *
+ * @author Finn Eggers
+ * @date 18.08.2026
+ */
+
 #include <memory>
 #include <string>
 
@@ -6,6 +24,7 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 #include "../../../model/model.h"
+#include "../../../section/profile.h"
 
 namespace fem::io::reader::commands {
 
@@ -16,7 +35,6 @@ inline void register_profile(fem::io::dsl::Registry& registry, model::Model& mod
                     "Only the first 4 are required. "
                     "Convention: Iyz = integral_A(y*z*dA), i.e. without a leading minus sign.");
 
-        // Persistent state for this command's handlers:
         auto profile_name = std::make_shared<std::string>();
 
         command.keyword(
@@ -27,14 +45,10 @@ inline void register_profile(fem::io::dsl::Registry& registry, model::Model& mod
                     .doc("Identifier of the profile")
         );
 
-        // Capture by value (shared_ptr) so it stays valid
         command.on_enter([profile_name](const fem::io::dsl::Keys& keys) {
-            *profile_name = keys.raw("PROFILE");  // spec canonicalizes NAME→PROFILE
+            *profile_name = keys.raw("PROFILE");
         });
 
-        // Single variant with optional trailing values.
-        // Order: A, Iy, Iz, Jt, Iyz, ey, ez, refy, refz
-        // Missing/empty trailing values default to 0.
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
@@ -54,18 +68,27 @@ inline void register_profile(fem::io::dsl::Registry& registry, model::Model& mod
                     .fixed<fem::Precision, 1>().name("REFZ").desc("Reference-line offset in local z: refz = z(REF) - z(SMP)")
                         .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
                 )
-                .bind([&model, profile_name](fem::Precision A,
-                                             fem::Precision IY,
-                                             fem::Precision IZ,
-                                             fem::Precision JT,
-                                             fem::Precision IYZ,
-                                             fem::Precision EY,
-                                             fem::Precision EZ,
-                                             fem::Precision REFY,
-                                             fem::Precision REFZ) {
-                    model._data->profiles.activate(*profile_name,
-                                                   A, IY, IZ, JT, IYZ,
-                                                   EY, EZ, REFY, REFZ);
+                .bind([&model, profile_name](fem::Precision area,
+                                             fem::Precision inertia_y,
+                                             fem::Precision inertia_z,
+                                             fem::Precision torsion,
+                                             fem::Precision product_yz,
+                                             fem::Precision offset_y,
+                                             fem::Precision offset_z,
+                                             fem::Precision reference_y,
+                                             fem::Precision reference_z) {
+                    model.add_profile(std::make_shared<Profile>(
+                        *profile_name,
+                        area,
+                        inertia_y,
+                        inertia_z,
+                        torsion,
+                        product_yz,
+                        offset_y,
+                        offset_z,
+                        reference_y,
+                        reference_z
+                    ));
                 })
             )
         );

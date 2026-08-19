@@ -1,76 +1,72 @@
-// register_connector.inl — registers *CONNECTOR
-#pragma once
 /**
  * @file register_connector.inl
- * @brief Register *CONNECTOR command.
+ * @brief Registers connector constraints.
  *
- * Defines a connector constraint between two node sets using a named coordinate system.
+ * The parser resolves all referenced model objects and constructs the concrete
+ * Connector itself. Model deliberately has no generic constraint dispatcher;
+ * the completed object is appended directly to ModelData.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
  */
 
-#include <string>
+#pragma once
 
 #include "../../../constraints/types/connector.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
-#include "../../../core/logging.h" // logging::error(...)
 
 namespace fem::io::reader::commands {
 
 inline void register_connector(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("CONNECTOR", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-
-        command.doc(
-            "Define a connector between two node sets in a given coordinate system. "
-            "Both node sets must exist and be non-empty. Their composition should fit the "
-            "connector’s semantics. The coordinate system defines the local axes."
-        );
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("TYPE").required().doc("Connector type identifier.")
-                .key("NSET1").required().doc("First node set.")
-                .key("NSET2").required().doc("Second node set.")
-                .key("COORDINATESYSTEM").required().doc("Name of a coordinate system.")
+                .key("TYPE").required()
+                .key("NSET1").required()
+                .key("NSET2").required()
+                .key("COORDINATESYSTEM").required()
         );
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
+            const std::string type = keys.raw("TYPE");
+            const std::string set1 = keys.raw("NSET1");
+            const std::string set2 = keys.raw("NSET2");
+            const std::string csys = keys.raw("COORDINATESYSTEM");
 
-        command.on_enter([&](const fem::io::dsl::Keys& keys) {
-            const std::string type_raw = keys.raw("TYPE");   // already uppercase per DSL
-            const std::string nset1    = keys.raw("NSET1");
-            const std::string nset2    = keys.raw("NSET2");
-            const std::string coord    = keys.raw("COORDINATESYSTEM");
+            logging::error(model._data->compiled,
+                "CONNECTOR: constraints require a compiled model");
+            logging::error(model._data->node_sets.has(set1),
+                "CONNECTOR: node set ", set1, " does not exist");
+            logging::error(model._data->node_sets.get(set1) && model._data->node_sets.get(set1)->size() == 1,
+                "CONNECTOR: node set ", set1, " must contain exactly one node");
+            logging::error(model._data->node_sets.has(set2),
+                "CONNECTOR: node set ", set2, " does not exist");
+            logging::error(model._data->node_sets.get(set2) && model._data->node_sets.get(set2)->size() == 1,
+                "CONNECTOR: node set ", set2, " must contain exactly one node");
+            logging::error(model._data->coordinate_systems.has(csys),
+                "CONNECTOR: coordinate system ", csys, " does not exist");
 
-            // Existence
-            if (!model._data->node_sets.has(nset1))
-                logging::error(false, "CONNECTOR: node set '" + nset1 + "' does not exist.");
-            if (!model._data->node_sets.has(nset2))
-                logging::error(false, "CONNECTOR: node set '" + nset2 + "' does not exist.");
+            constraint::ConnectorType connector_type = constraint::ConnectorType::None;
+            if (type == "BEAM") connector_type = constraint::ConnectorType::Beam;
+            else if (type == "HINGE") connector_type = constraint::ConnectorType::Hinge;
+            else if (type == "CYLINDRICAL") connector_type = constraint::ConnectorType::Cylindrical;
+            else if (type == "TRANSLATOR") connector_type = constraint::ConnectorType::Translator;
+            else if (type == "JOIN") connector_type = constraint::ConnectorType::Join;
+            else if (type == "JOINRX") connector_type = constraint::ConnectorType::JoinRx;
 
-            // Emptiness (Region ptr -> use ->size())
-            if (model._data->node_sets.has(nset1) && model._data->node_sets.get(nset1)->size() == 0)
-                logging::error(false, "CONNECTOR: node set '" + nset1 + "' is empty.");
-            if (model._data->node_sets.has(nset2) && model._data->node_sets.get(nset2)->size() == 0)
-                logging::error(false, "CONNECTOR: node set '" + nset2 + "' is empty.");
+            logging::error(connector_type != constraint::ConnectorType::None,
+                "CONNECTOR: unsupported type ", type);
 
-            // TYPE mapping (inputs already uppercase)
-            constraint::ConnectorType ctype = constraint::ConnectorType::None;
-            if      (type_raw == "BEAM")        ctype = constraint::ConnectorType::Beam;
-            else if (type_raw == "HINGE")       ctype = constraint::ConnectorType::Hinge;
-            else if (type_raw == "CYLINDRICAL") ctype = constraint::ConnectorType::Cylindrical;
-            else if (type_raw == "TRANSLATOR")  ctype = constraint::ConnectorType::Translator;
-            else if (type_raw == "JOIN")        ctype = constraint::ConnectorType::Join;
-            else if (type_raw == "JOINRX")      ctype = constraint::ConnectorType::JoinRx;
-            else
-                logging::error(false,
-                               "CONNECTOR: unknown TYPE='" + type_raw +
-                               "'. Supported: BEAM, HINGE, CYLINDRICAL, TRANSLATOR, JOIN, JOINRX.");
-
-            // Delegate (coord-system checks handled inside model)
-            model.add_connector(nset1, nset2, coord, ctype);
+            model._data->connectors.emplace_back(
+                model._data->node_sets.get(set1)->first(),
+                model._data->node_sets.get(set2)->first(),
+                model._data->coordinate_systems.get(csys),
+                connector_type
+            );
         });
-
-        command.variant(fem::io::dsl::Variant::make()); // no data lines
+        command.variant(fem::io::dsl::Variant::make());
     });
 }
 

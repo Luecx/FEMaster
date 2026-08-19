@@ -1,57 +1,50 @@
-// register_amplitude.inl — DSL registration for *AMPLITUDE
+/**
+ * @file register_amplitude.inl
+ * @brief Registers reusable scalar amplitudes.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <memory>
-#include <string>
+#pragma once
 
 #include "../../../bc/amplitude.h"
+#include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_amplitude(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("AMPLITUDE", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc(
-            "Define a reusable scalar time history. Each data line specifies a time-value pair. "
-            "The TYPE keyword controls interpolation (STEP, NEAREST, LINEAR). Loads referencing the amplitude "
-            "will scale their components by the interpolated value at the current analysis time."
-        );
-
-        auto name = std::make_shared<std::string>();
-        auto interpolation = std::make_shared<bc::Interpolation>(bc::Interpolation::Linear);
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("NAME").required().doc("Amplitude identifier")
-                .key("TYPE").optional("LINEAR")
-                    .doc("Interpolation scheme: STEP, NEAREST, or LINEAR (default)")
-                    .allowed({"STEP", "NEAREST", "LINEAR"})
+                .key("NAME").required()
+                .key("TYPE").optional("LINEAR").allowed({"STEP", "NEAREST", "LINEAR"})
         );
-
-        command.on_enter([name, interpolation, &model](const fem::io::dsl::Keys& keys) {
-            *name = keys.raw("NAME");
-            const std::string type_token = keys.raw("TYPE");
-            if (type_token == "STEP" || type_token == "step" || type_token == "Step") {
-                *interpolation = bc::Interpolation::Step;
-            } else if (type_token == "NEAREST" || type_token == "nearest" || type_token == "Nearest") {
-                *interpolation = bc::Interpolation::Nearest;
-            } else {
-                *interpolation = bc::Interpolation::Linear;
+        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
+            bc::Interpolation interpolation = bc::Interpolation::Linear;
+            const std::string type = keys.raw("TYPE");
+            if (type == "STEP") {
+                interpolation = bc::Interpolation::Step;
+            } else if (type == "NEAREST") {
+                interpolation = bc::Interpolation::Nearest;
             }
-            model.define_amplitude(*name, *interpolation);
+            model.add_amplitude(std::make_shared<bc::Amplitude>(keys.raw("NAME"), interpolation));
         });
-
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("TIME").desc("Time coordinate")
-                    .one<fem::Precision>().name("VALUE").desc("Amplitude value at TIME")
+                    .one<fem::Precision>().name("TIME")
+                    .one<fem::Precision>().name("VALUE")
                 )
-                .bind([&model, name](fem::Precision time, fem::Precision value) {
-                    model.add_amplitude_sample(*name, time, value);
+                .bind([&model](fem::Precision time, fem::Precision value) {
+                    const auto amplitude = model._data->amplitudes.get();
+                    logging::error(amplitude != nullptr,
+                        "AMPLITUDE: no active amplitude is available");
+                    amplitude->add_sample(time, value);
                 })
             )
         );

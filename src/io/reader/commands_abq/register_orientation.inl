@@ -1,20 +1,20 @@
 /**
  * @file register_orientation.inl
- * @brief Registers coordinate-defined rectangular Abaqus *ORIENTATION data.
+ * @brief Registers coordinate-defined rectangular Abaqus material orientations.
  *
- * `DEFINITION=COORDINATES` with `SYSTEM=RECTANGULAR` is mapped to a FEMaster
- * `RectangularSystem`. Abaqus points `a`, `b` and optional origin `c` define the
- * local basis through the vectors `a-c` and `b-c`.
+ * `DEFINITION=COORDINATES` with `SYSTEM=RECTANGULAR` is translated directly into
+ * a named FEMaster `RectangularSystem`. Abaqus points `a`, `b` and optional
+ * origin `c` define the local basis through the vectors `a-c` and `b-c`.
  *
- * FEMaster rectangular coordinate systems store basis directions rather than a
- * translational origin, so point `c` is used only while constructing the local
- * directions. Other Abaqus orientation-definition and coordinate-system types
- * are outside the supported syntax.
+ * The parser constructs the concrete coordinate-system object and passes it to
+ * `Model::add_coordinate_system()`, avoiding a templated factory on the model
+ * facade. Other Abaqus orientation definitions remain unsupported.
  *
  * @see cos::RectangularSystem
+ * @see model::Model::add_coordinate_system
  *
  * @author Finn Eggers
- * @date 17.08.2026
+ * @date 18.08.2026
  */
 
 #pragma once
@@ -34,17 +34,6 @@
 
 namespace fem::io::reader::commands_abq {
 
-/**
- * Registers the supported rectangular Abaqus orientation definition.
- *
- * The first six data values define points `a` and `b`. The optional final three
- * values define point `c` and default to the global origin. `a-c` defines local
- * direction 1 and `b-c` defines the local 1-2 plane. Degenerate or collinear
- * directions are rejected before the FEMaster coordinate system is created.
- *
- * @param registry Stage-local DSL registry.
- * @param model FEMaster model receiving the coordinate system.
- */
 inline void register_orientation(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("ORIENTATION", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
@@ -54,16 +43,10 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("NAME")
-                    .required()
-                    .doc("Orientation identifier")
-                .key("DEFINITION")
-                    .optional("COORDINATES")
-                    .allowed({"COORDINATES"})
+                .key("NAME").required().doc("Orientation identifier")
+                .key("DEFINITION").optional("COORDINATES").allowed({"COORDINATES"})
                     .doc("Orientation definition method")
-                .key("SYSTEM")
-                    .optional("RECTANGULAR")
-                    .allowed({"RECTANGULAR"})
+                .key("SYSTEM").optional("RECTANGULAR").allowed({"RECTANGULAR"})
                     .doc("Local coordinate-system type")
         );
 
@@ -101,7 +84,7 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                     const fem::Vec3 b{b1, b2, b3};
                     const fem::Vec3 c{c1, c2, c3};
 
-                    const fem::Vec3 axis_1  = a - c;
+                    const fem::Vec3 axis_1   = a - c;
                     const fem::Vec3 in_plane = b - c;
 
                     const fem::Precision norm_1     = axis_1.norm();
@@ -114,7 +97,11 @@ inline void register_orientation(fem::io::dsl::Registry& registry, model::Model&
                                 && cross_norm > tolerance * norm_1 * norm_plane,
                         "ORIENTATION requires distinct, non-collinear points a, b and c");
 
-                    model.add_coordinate_system<cos::RectangularSystem>(*name, axis_1, in_plane);
+                    model.add_coordinate_system(std::make_shared<cos::RectangularSystem>(
+                        *name,
+                        axis_1,
+                        in_plane
+                    ));
                 })
             )
         );

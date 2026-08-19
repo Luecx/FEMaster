@@ -1,49 +1,49 @@
-// register_shell_section.inl — DSL registration for *SHELLSECTION
+/**
+ * @file register_shell_section.inl
+ * @brief Registers integrated and ABD shell sections.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
 
-#include <memory>
+#pragma once
+
 #include <array>
-#include <string>
+#include <memory>
 
-#include "../../../core/logging.h"
-#include "../../../core/types_num.h"
+#include "../../../model/model.h"
+#include "../../../section/section_shell_abd.h"
+#include "../../../section/section_shell_integrated.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_shell_section(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("SHELLSECTION", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Assign a shell section to an element set.");
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART"}));
 
-        // Persistent per-command state
         auto material    = std::make_shared<std::string>();
         auto elset       = std::make_shared<std::string>();
         auto orientation = std::make_shared<std::string>();
-        auto type        = std::make_shared<std::string>();
-        auto thickness   = std::make_shared<fem::Precision>(fem::Precision(1));
-        auto csys_axis   = std::make_shared<fem::Index>(0);
+        auto thickness   = std::make_shared<Precision>(Precision(1));
+        auto csys_axis   = std::make_shared<Index>(0);
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("TYPE").optional("INTEGRATED").allowed({"INTEGRATED", "ABD"}).doc("Section formulation")
-                .key("MATERIAL").alternative("MAT").optional().doc("Material name")
-                .key("ELSET").required().doc("Target element set")
-                .key("THICKNESS").optional("1.0").doc("Shell thickness used for mass/geometric thickness")
-                .key("ORIENTATION").optional().doc("Optional coordinate system for shell n1/n2 material/resultant axes")
+                .key("TYPE").optional("INTEGRATED").allowed({"INTEGRATED", "ABD"})
+                .key("MATERIAL").alternative("MAT").optional()
+                .key("ELSET").required()
+                .key("THICKNESS").optional("1.0")
+                .key("ORIENTATION").optional()
                 .key("CSYSAXIS").optional("1").allowed({"1", "2", "3"})
-                    .doc("Coordinate-system axis projected into the shell plane")
         );
-
-        // Capture shared_ptrs BY VALUE so they're valid later
-        command.on_enter([material, elset, orientation, type, thickness, csys_axis](const fem::io::dsl::Keys& keys) {
-            *type        = keys.raw("TYPE");
+        command.on_enter([material, elset, orientation, thickness, csys_axis](const fem::io::dsl::Keys& keys) {
             *material    = keys.has("MATERIAL") ? keys.raw("MATERIAL") : std::string{};
             *elset       = keys.raw("ELSET");
             *orientation = keys.has("ORIENTATION") ? keys.raw("ORIENTATION") : std::string{};
-            *thickness   = keys.get<fem::Precision>("THICKNESS");
-            *csys_axis   = static_cast<fem::Index>(keys.get<int>("CSYSAXIS") - 1);
+            *thickness   = keys.get<Precision>("THICKNESS");
+            *csys_axis   = static_cast<Index>(keys.get<int>("CSYSAXIS") - 1);
         });
 
         command.variant(fem::io::dsl::Variant::make()
@@ -51,13 +51,27 @@ inline void register_shell_section(fem::io::dsl::Registry& registry, model::Mode
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("THICKNESS").desc("Shell thickness")
-                        .on_missing(fem::Precision{1}).on_empty(fem::Precision{1})
+                    .one<Precision>().name("THICKNESS")
+                        .on_missing(Precision{1}).on_empty(Precision{1})
                 )
-                .bind([&model, material, elset, orientation, csys_axis](fem::Precision thickness) {
-                    logging::error(!material->empty(),
-                        "SHELLSECTION TYPE=INTEGRATED requires MATERIAL");
-                    model.shell_section(*elset, *material, thickness, *orientation, *csys_axis);
+                .bind([&model, material, elset, orientation, csys_axis](Precision local_thickness) {
+                    const auto part = model._data->parts.get();
+                    logging::error(part != nullptr,
+                        "SHELLSECTION: no active part is available");
+                    logging::error(part->elem_sets.has(*elset),
+                        "SHELLSECTION: element set ", *elset, " is not defined in part ", part->name);
+                    logging::error(!material->empty() && model._data->materials.has(*material),
+                        "SHELLSECTION: integrated section requires a defined material");
+                    logging::error(orientation->empty() || model._data->coordinate_systems.has(*orientation),
+                        "SHELLSECTION: coordinate system ", *orientation, " is not defined");
+
+                    model.add_section(std::make_shared<IntegratedShellSection>(
+                        model._data->materials.get(*material),
+                        part->elem_sets.get(*elset),
+                        local_thickness,
+                        orientation->empty() ? nullptr : model._data->coordinate_systems.get(*orientation),
+                        *csys_axis
+                    ));
                 })
             )
         );
@@ -68,23 +82,37 @@ inline void register_shell_section(fem::io::dsl::Registry& registry, model::Mode
                 .range(fem::io::dsl::LineRange{}.min(1).max(8))
                 .pattern(fem::io::dsl::Pattern::make()
                     .allow_multiline()
-                    .fixed<fem::Precision, 40>().name("DATA").desc("ABD row-major (36 values), then shear row-major (4 values)")
+                    .fixed<Precision, 40>().name("DATA")
                 )
-                .bind([&model, material, elset, orientation, thickness, csys_axis](const std::array<fem::Precision, 40>& vals) {
+                .bind([&model, material, elset, orientation, thickness, csys_axis](const std::array<Precision, 40>& values) {
+                    const auto part = model._data->parts.get();
+                    logging::error(part != nullptr,
+                        "SHELLSECTION: no active part is available");
+                    logging::error(part->elem_sets.has(*elset),
+                        "SHELLSECTION: element set ", *elset, " is not defined in part ", part->name);
+                    logging::error(material->empty() || model._data->materials.has(*material),
+                        "SHELLSECTION: material ", *material, " is not defined");
+                    logging::error(orientation->empty() || model._data->coordinate_systems.has(*orientation),
+                        "SHELLSECTION: coordinate system ", *orientation, " is not defined");
+
                     StaticMatrix<6, 6> abd;
                     StaticMatrix<2, 2> shear;
                     for (Index i = 0; i < 6; ++i) {
-                        for (Index j = 0; j < 6; ++j) {
-                            abd(i, j) = vals[6 * i + j];
-                        }
+                        for (Index j = 0; j < 6; ++j) abd(i, j) = values[6 * i + j];
                     }
                     for (Index i = 0; i < 2; ++i) {
-                        for (Index j = 0; j < 2; ++j) {
-                            shear(i, j) = vals[36 + 2 * i + j];
-                        }
+                        for (Index j = 0; j < 2; ++j) shear(i, j) = values[36 + 2 * i + j];
                     }
 
-                    model.shell_section_abd(*elset, *material, *thickness, abd, shear, *orientation, *csys_axis);
+                    model.add_section(std::make_shared<ABDShellSection>(
+                        material->empty() ? nullptr : model._data->materials.get(*material),
+                        part->elem_sets.get(*elset),
+                        *thickness,
+                        abd,
+                        shear,
+                        orientation->empty() ? nullptr : model._data->coordinate_systems.get(*orientation),
+                        *csys_axis
+                    ));
                 })
             )
         );

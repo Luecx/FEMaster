@@ -1,3 +1,18 @@
+/**
+ * @file test_bc_support.cpp
+ * @brief Tests nodal supports in global and rotated coordinate systems.
+ *
+ * Nodal topology is constructed semantically and compiled before support
+ * equations consume `ModelData`, matching the production object-model lifecycle.
+ *
+ * @see bc::Support
+ * @see model::Model::compile
+ * @see cos::RectangularSystem
+ *
+ * @author Finn Eggers
+ * @date 18.08.2026
+ */
+
 #include "../src/bc/support.h"
 #include "../src/bc/support_collector.h"
 #include "../src/cos/rectangular_system.h"
@@ -9,10 +24,11 @@ using namespace fem;
 
 // 24) Support on node region: identity vs rotated frame
 TEST(BC_Support, NodeRegionIdentityAndRotated) {
-    // Small model with 2 nodes
-    model::Model mdl(2, 0, 0);
+    // Small compiled model with 2 nodes
+    model::Model mdl;
     mdl.set_node(0, 0.0, 0.0, 0.0);
     mdl.set_node(1, 1.0, 0.0, 0.0);
+    mdl.compile();
 
     // Identity orientation (no coordinate system)
     auto nset = std::make_shared<model::NodeRegion>("S");
@@ -48,4 +64,3 @@ TEST(BC_Support, NodeRegionIdentityAndRotated) {
     EXPECT_NEAR(cy, 1.0, 1e-12);
     EXPECT_NEAR(cz, 0.0, 1e-12);
 }
-

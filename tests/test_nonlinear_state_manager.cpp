@@ -1,13 +1,6 @@
 /**
  * @file test_nonlinear_state_manager.cpp
  * @brief Tests nonlinear material-state ownership and lifecycle transitions.
- *
- * The tests exercise the material portion of `NonlinearStateManager` with a
- * stateful dummy material and explicit material-point enumeration. Contact state
- * is covered by the contact-specific tests and remains owned by `Contact`.
- *
- * @author Finn Eggers
- * @date 07.08.2026
  */
 
 #include "../src/loadcase/tools/nonlinear_state_manager.h"
@@ -25,14 +18,6 @@ namespace {
 
 using namespace fem;
 
-/**
- * @brief Minimal stateful constitutive law used to verify state initialization.
- *
- * The dummy model reserves three scalars and initializes them to distinct values
- * so buffer reset, promotion and restoration can be observed unambiguously. It
- * implements no stress response because the manager tests exercise only state
- * ownership and lifecycle operations.
- */
 struct StatefulElasticity final : material::Elasticity {
     Index state_size() const override {
         return 3;
@@ -45,12 +30,6 @@ struct StatefulElasticity final : material::Elasticity {
     }
 };
 
-/**
- * @brief Minimal section that associates the dummy material with a test element.
- *
- * No constitutive section behavior is required; only the generic `Section`
- * material pointer participates in model-wide state-size discovery.
- */
 struct TestSection final : Section {
     void info() override {}
 
@@ -59,16 +38,17 @@ struct TestSection final : Section {
     }
 };
 
-/**
- * @brief Minimal element exposing two integration points with two material points each.
- *
- * The fixed topology produces four globally enumerated material-state rows and
- * thereby verifies element/IP/material-point ordering independently of a concrete
- * structural element formulation.
- */
 struct TestElement final : model::ElementInterface {
+    std::array<ID, 1> node_ids{0};
+
     explicit TestElement(ID id)
         : ElementInterface(id) {}
+
+    model::ElementPtr copy() const override {
+        auto copy = std::make_shared<TestElement>(elem_id);
+        copy->node_ids = node_ids;
+        return copy;
+    }
 
     ElDofs dofs() const override {
         return ElDofs{true, false, false, false, false, false};
@@ -93,12 +73,12 @@ struct TestElement final : model::ElementInterface {
     const ID* nodes() const override {
         return node_ids.data();
     }
-
-    std::array<ID, 1> node_ids{0};
 };
 
 TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
-    model::Model model(1, 1, 0);
+    model::Model model;
+    model._data = std::make_shared<model::ModelData>();
+    model._data->elements.resize(1);
 
     auto material = std::make_shared<material::Material>("STATEFUL");
     material->set_elasticity<StatefulElasticity>();
@@ -151,7 +131,9 @@ TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
 }
 
 TEST(NonlinearStateManager, KeepsEnumeratedStateForStatelessMaterials) {
-    model::Model model(1, 1, 0);
+    model::Model model;
+    model._data = std::make_shared<model::ModelData>();
+    model._data->elements.resize(1);
 
     auto material = std::make_shared<material::Material>("STATELESS");
 

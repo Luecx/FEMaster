@@ -38,6 +38,11 @@ struct FRTShellS6 : FRTShell<6> {
     // identifiers in quadratic triangular ordering.
     FRTShellS6(ID id, const std::array<ID, 6>& nodes);
 
+    // Recreate the concrete FRT shell from persistent topology only. The unique
+    // reference-geometry cache is analysis state and is initialized later by the
+    // normal step lifecycle instead of being copied between Instances.
+    ElementPtr copy() const override { return std::make_shared<FRTShellS6>(elem_id, node_ids); }
+
     // Destroy the concrete shell through the common structural-element
     // interface.
     ~FRTShellS6() override = default;

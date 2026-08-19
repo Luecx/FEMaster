@@ -1,0 +1,76 @@
+/**
+ * @file part.h
+ * @brief Defines reusable finite-element part topology before model compilation.
+ *
+ * A `Part` owns the local topology and named regions that may be instantiated
+ * multiple times in one `Model`. Node and element identifiers are local to the
+ * part and therefore need not form dense ranges. Surfaces and lines retain the
+ * same local node connectivity, while section assignments reference the local
+ * element regions on which they were defined.
+ *
+ * `Instance` adds only placement information and never duplicates the part
+ * definition. `Model::compile()` expands every instance into the dense,
+ * solver-facing `ModelData` representation used by elements and load cases.
+ *
+ * @see Instance
+ * @see Model
+ * @see ModelData
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
+
+#pragma once
+
+#include "../core/types_cls.h"
+#include "../core/types_eig.h"
+#include "../data/namable.h"
+#include "../data/region.h"
+#include "../data/sets.h"
+#include "../section/section.h"
+
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace fem::model {
+
+/**
+ * @brief Reusable local finite-element topology referenced by model instances.
+ *
+ * A part stores nodes, elements, geometric boundary entities, named regions and
+ * section assignments in its own identifier space. These identifiers remain
+ * stable while the model is being constructed and may be sparse or otherwise
+ * unrelated to the dense solver indices generated later.
+ *
+ * Section objects stored by the part reference local element regions. During
+ * compilation each instance receives an independent section assignment with a
+ * corresponding compiled region, while material, profile and coordinate-system
+ * resources remain shared.
+ *
+ * The class intentionally contains no compilation or solver logic. Expansion,
+ * coordinate transformation and dense enumeration are responsibilities of
+ * `Model::compile()`.
+ */
+struct Part : public Namable {
+    using Ptr = std::shared_ptr<Part>;
+
+    std::unordered_map<ID, Vec3>       nodes;
+    std::unordered_map<ID, ElementPtr> elements;
+    std::unordered_map<ID, SurfacePtr> surfaces;
+    std::unordered_map<ID, LinePtr>    lines;
+
+    Sets<NodeRegion>    node_sets   {SET_NODE_ALL};
+    Sets<ElementRegion> elem_sets   {SET_ELEM_ALL};
+    Sets<SurfaceRegion> surface_sets{SET_SURF_ALL};
+    Sets<LineRegion>    line_sets   {SET_LINE_ALL};
+
+    std::vector<Section::Ptr> sections;
+
+    explicit Part(std::string name)
+        : Namable(std::move(name)) {}
+};
+
+} // namespace fem::model

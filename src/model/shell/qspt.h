@@ -1,7 +1,15 @@
+/**
+ * @file qspt.h
+ * @brief Declares the four-node quadrilateral shear-panel element.
+ *
+ * QSPT stores only topology and geometry definitions persistently. Its shear
+ * state, stiffness data and density-dependent quantities are evaluated from the
+ * compiled model state when requested.
+ */
+
 #pragma once
 
 #include "shell.h"
-
 #include "../geometry/surface/surface4.h"
 
 namespace fem::model {
@@ -14,16 +22,20 @@ struct QSPT : ShellElement<4> {
     using StiffnessMatrix = StaticMatrix<12, 12>;
 
     struct ShearState {
-        StaticVector<4>         q = StaticVector<4>::Zero();
-        StaticVector<12>        fn = StaticVector<12>::Zero();
+        StaticVector<4>          q = StaticVector<4>::Zero();
+        StaticVector<12>         fn = StaticVector<12>::Zero();
         std::array<Precision, 4> edge_lengths {};
-        Precision               flexibility = Precision(0);
+        Precision                flexibility = Precision(0);
     };
 
-    Surface4               geometry;
+    Surface4                      geometry;
     math::quadrature::Quadrature integration_scheme_;
 
     QSPT(ID p_elem_id, std::array<ID, 4> p_node_ids);
+
+    // Rebuild the concrete element from id and connectivity only. Geometry and
+    // quadrature definitions are recreated by the ordinary QSPT constructor.
+    ElementPtr copy() const override { return std::make_shared<QSPT>(elem_id, node_ids); }
 
     std::string type_name() const override { return "QSPT"; }
 
@@ -55,17 +67,17 @@ struct QSPT : ShellElement<4> {
 
 private:
     struct GeometryData {
-        NodeCoords                coords = NodeCoords::Zero();
-        std::array<Vec3, 4>       midpoints {};
-        std::array<Vec3, 4>       edges {};
-        std::array<Precision, 4>  edge_lengths {};
-        Precision                 h12 = Precision(0);
-        Precision                 h13 = Precision(0);
-        Precision                 h23 = Precision(0);
-        Precision                 h24 = Precision(0);
-        Precision                 h34 = Precision(0);
-        Precision                 h31 = Precision(0);
-        Precision                 area = Precision(0);
+        NodeCoords               coords = NodeCoords::Zero();
+        std::array<Vec3, 4>      midpoints {};
+        std::array<Vec3, 4>      edges {};
+        std::array<Precision, 4> edge_lengths {};
+        Precision                h12 = Precision(0);
+        Precision                h13 = Precision(0);
+        Precision                h23 = Precision(0);
+        Precision                h24 = Precision(0);
+        Precision                h34 = Precision(0);
+        Precision                h31 = Precision(0);
+        Precision                area = Precision(0);
     };
 
     GeometryData     geometry_data();
@@ -76,4 +88,5 @@ private:
     Precision        effective_shear_modulus();
     StaticVector<12> displacement_vector(const Field& displacement);
 };
+
 } // namespace fem::model

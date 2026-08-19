@@ -1,43 +1,59 @@
-// register_truss_section.inl — DSL registration for *TRUSSSECTION
+/**
+ * @file register_truss_section.inl
+ * @brief Registers truss section assignments.
+ *
+ * @author Finn Eggers
+ * @date 19.08.2026
+ */
+
+#pragma once
 
 #include <memory>
-#include <string>
 
-#include "../../../core/types_num.h"
+#include "../../../model/model.h"
+#include "../../../section/section_truss.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
-#include "../../../model/model.h"
 
 namespace fem::io::reader::commands {
 
 inline void register_truss_section(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("TRUSSSECTION", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Assign a truss section area to an element set.");
+        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART"}));
 
         auto material = std::make_shared<std::string>();
         auto elset    = std::make_shared<std::string>();
-
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("MATERIAL").alternative("MAT").required().doc("Material name")
-                .key("ELSET").required().doc("Target truss element set")
+                .key("MATERIAL").alternative("MAT").required()
+                .key("ELSET").required()
         );
-
         command.on_enter([material, elset](const fem::io::dsl::Keys& keys) {
             *material = keys.raw("MATERIAL");
             *elset    = keys.raw("ELSET");
         });
-
         command.variant(fem::io::dsl::Variant::make()
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1).max(1))
                 .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::Precision>().name("AREA").desc("Truss cross-sectional area")
-                        .on_missing(fem::Precision{0}).on_empty(fem::Precision{0})
+                    .one<Precision>().name("AREA")
                 )
-                .bind([&model, material, elset](fem::Precision area) {
-                    model.truss_section(*elset, *material, area);
+                .bind([&model, material, elset](Precision area) {
+                    const auto part = model._data->parts.get();
+                    logging::error(part != nullptr,
+                        "TRUSSSECTION: no active part is available");
+                    logging::error(part->elem_sets.has(*elset),
+                        "TRUSSSECTION: element set ", *elset, " is not defined in part ", part->name);
+                    logging::error(model._data->materials.has(*material),
+                        "TRUSSSECTION: material ", *material, " is not defined");
+                    logging::error(area > Precision(0),
+                        "TRUSSSECTION: area must be positive");
+
+                    model.add_section(std::make_shared<TrussSection>(
+                        model._data->materials.get(*material),
+                        part->elem_sets.get(*elset),
+                        area
+                    ));
                 })
             )
         );
