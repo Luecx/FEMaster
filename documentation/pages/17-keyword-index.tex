@@ -1,0 +1,135 @@
+\chapter{Keyword Index}
+\label{chap:keyword-index}
+
+This chapter is the completeness index for the input reference. It is derived from the commands registered by the current native FEMaster and Abaqus readers rather than from the previous manual. Every registered command has one canonical documentation location in the preceding chapters. A check mark means that the keyword is registered by that reader. A dash means that the reader has no command with that spelling; the documentation page may nevertheless show an equivalent modelling mechanism in the other dialect.
+
+Command names in the source registry are normalized internally, so this table displays the conventional spaced spelling used in input decks: for example, internal \val{ENDPART} is written as \cmd{END PART}, \val{SOLIDSECTION} as \cmd{SOLID SECTION}, and \val{STEADYSTATEDYNAMICS} as \cmd{STEADY STATE DYNAMICS}. \cmd{INERTIALOAD} is shown with its exact currently registered native spelling.
+
+\small
+\begin{longtable}{@{}p{0.29\linewidth}p{0.10\linewidth}p{0.10\linewidth}p{0.39\linewidth}@{}}
+\caption{Registered input keywords and their canonical documentation locations.}\label{tab:keyword-index}\\
+\toprule
+\textbf{Keyword} & \textbf{FEMaster} & \textbf{Abaqus} & \textbf{Canonical topic} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Keyword} & \textbf{FEMaster} & \textbf{Abaqus} & \textbf{Canonical topic} \\
+\midrule
+\endhead
+
+\cmd{HEADING} & \checkmark & \checkmark & Input Format \\
+\cmd{MODEL} & \checkmark & -- & Model Definition: model organization \\
+\cmd{PART} & \checkmark & \checkmark & Model Definition: model organization \\
+\cmd{END PART} & \checkmark & \checkmark & Model Definition: model organization \\
+\cmd{ASSEMBLY} & \checkmark & \checkmark & Model Definition: model organization \\
+\cmd{END ASSEMBLY} & \checkmark & \checkmark & Model Definition: model organization \\
+\cmd{INSTANCE} & \checkmark & \checkmark & Model Definition: model organization \\
+\cmd{END INSTANCE} & \checkmark & \checkmark & Model Definition: model organization \\
+\cmd{NODE} & \checkmark & \checkmark & Model Definition: mesh definition \\
+\cmd{ELEMENT} & \checkmark & \checkmark & Model Definition: mesh definition \\
+
+\midrule
+\cmd{NSET} & \checkmark & \checkmark & Regions and Selections \\
+\cmd{ELSET} & \checkmark & \checkmark & Regions and Selections \\
+\cmd{SURFACE} & \checkmark & \checkmark & Regions and Selections \\
+\cmd{SFSET} & \checkmark & -- & Regions and Selections \\
+
+\midrule
+\cmd{MATERIAL} & \checkmark & \checkmark & Materials \\
+\cmd{ELASTIC} & \checkmark & \checkmark & Materials \\
+\cmd{HYPERELASTIC} & \checkmark & \checkmark & Materials \\
+\cmd{DENSITY} & \checkmark & \checkmark & Materials \\
+\cmd{THERMALEXPANSION} & \checkmark & -- & Materials \\
+\cmd{EXPANSION} & -- & \checkmark & Materials \\
+
+\midrule
+\cmd{PROFILE} & \checkmark & -- & Sections and Element Properties \\
+\cmd{SOLID SECTION} & \checkmark & \checkmark & Sections and Element Properties \\
+\cmd{SHELL SECTION} & \checkmark & \checkmark & Sections and Element Properties \\
+\cmd{BEAM SECTION} & \checkmark & -- & Sections and Element Properties \\
+\cmd{TRUSS SECTION} & \checkmark & -- & Sections and Element Properties \\
+
+\midrule
+\cmd{ORIENTATION} & \checkmark & \checkmark & Coordinate Systems and Orientations \\
+\cmd{TRANSFORM} & -- & \checkmark & Coordinate Systems and Orientations \\
+
+\midrule
+\cmd{FIELD} & \checkmark & -- & Fields and Model Data \\
+\cmd{NORMAL} & \checkmark & -- & Fields and Model Data \\
+
+\midrule
+\cmd{AMPLITUDE} & \checkmark & \checkmark & Loads and Boundary Conditions \\
+\cmd{SUPPORT} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{BOUNDARY} & -- & \checkmark & Loads and Boundary Conditions \\
+\cmd{CLOAD} & \checkmark & \checkmark & Loads and Boundary Conditions \\
+\cmd{DLOAD} & \checkmark & \checkmark & Loads and Boundary Conditions; semantics differ by dialect \\
+\cmd{PLOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{DSLOAD} & -- & \checkmark & Loads and Boundary Conditions \\
+\cmd{VLOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{TLOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{INERTIALOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+
+\midrule
+\cmd{COUPLING} & \checkmark & -- & Constraints and Connections \\
+\cmd{TIE} & \checkmark & -- & Constraints and Connections \\
+\cmd{CONNECTOR} & \checkmark & -- & Constraints and Connections \\
+\cmd{RBM} & \checkmark & -- & Constraints and Connections \\
+\cmd{CONTACT} & \checkmark & -- & Contact \\
+
+\midrule
+\cmd{LOADCASE} & \checkmark & -- & Analysis Procedures \\
+\cmd{SUPPORTS} & \checkmark & -- & Analysis Procedures \\
+\cmd{LOADS} & \checkmark & -- & Analysis Procedures \\
+\cmd{END} & \checkmark & -- & Analysis Procedures \\
+\cmd{STEP} & -- & \checkmark & Analysis Procedures \\
+\cmd{STATIC} & -- & \checkmark & Analysis Procedures \\
+\cmd{FREQUENCY} & -- & \checkmark & Analysis Procedures \\
+\cmd{BUCKLE} & -- & \checkmark & Analysis Procedures \\
+\cmd{DYNAMIC} & -- & \checkmark & Analysis Procedures \\
+\cmd{STEADY STATE DYNAMICS} & -- & \checkmark & Analysis Procedures \\
+\cmd{END STEP} & -- & \checkmark & Analysis Procedures \\
+
+\midrule
+\cmd{SOLVER} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{CONSTRAINTMETHOD} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{NONLINEAR} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{TIME} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{NEWMARK} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{DAMPING} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{FREQUENCIES} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{NUMEIGENVALUES} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{SIGMA} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{WRITEEVERY} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{INITIALVELOCITY} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{INERTIARELIEF} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{REBALANCELOADS} & \checkmark & -- & Solver and Numerical Controls \\
+
+\midrule
+\cmd{OVERVIEW} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{REQUESTSTIFFNESS} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{REQUESTSTGEOM} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{CONSTRAINTSUMMARY} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{NODE FILE} & -- & \checkmark & Output, Diagnostics, and Results; accepted and ignored \\
+\cmd{EL FILE} & -- & \checkmark & Output, Diagnostics, and Results; accepted and ignored \\
+\cmd{NODE PRINT} & -- & \checkmark & Output, Diagnostics, and Results; accepted and ignored \\
+\cmd{EL PRINT} & -- & \checkmark & Output, Diagnostics, and Results; accepted and ignored \\
+
+\midrule
+\cmd{POINTMASS} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPODENSITY} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPOORIENT} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPOEXPONENT} & \checkmark & -- & Advanced Model Features \\
+
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Coverage notes}
+
+The table records the command registrations, not the complete feature set of the commercial Abaqus product. In particular, a check mark in the Abaqus column means that FEMaster's Abaqus reader registers and validates the documented subset of that keyword. It does not imply support for every parameter, data variant, dependency, or nonlinear history option accepted by Abaqus itself.
+
+Likewise, identical keyword names do not always imply identical data semantics. \cmd{DLOAD} is the clearest example: native FEMaster uses it for a vector surface traction, whereas the supported Abaqus \cmd{DLOAD} translation currently implements \val{GRAV} body acceleration. The detailed keyword page is authoritative whenever the same spelling appears in both columns.
+
+The four Abaqus output cards \cmd{NODE FILE}, \cmd{EL FILE}, \cmd{NODE PRINT}, and \cmd{EL PRINT} are included because they are genuine registered commands. They are consumed and ignored so common Abaqus decks remain syntactically readable; they do not configure FEMaster output selection.
+
+This index should be updated whenever a new parser command is registered. The recommended documentation workflow is to add the implementation, add or update its detailed thematic keyword page, add a complete example when the feature materially changes modelling workflow, and then add the command to this index. Treating the executable registry as the source of truth prevents the reference manual from silently drifting away from the accepted language.
