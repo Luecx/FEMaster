@@ -1,17 +1,27 @@
-\chapter{Constraints and Connections}
+\chapter{Constraints}
 \label{chap:constraints}
 
-Constraints introduce kinematic relations between degrees of freedom that are more general than ordinary supports. They are constructed only after the model has been compiled, because their equations depend on final Assembly coordinates, compiled node and surface regions, and the active structural DOFs. Native FEMaster currently exposes couplings, ties, connectors, and rigid-body-motion suppression directly. The supported Abaqus reader does not yet translate the full Abaqus constraint catalogue, so the right-hand examples explicitly show where no imported equivalent is registered.
+Constraints introduce kinematic relations between degrees of freedom that go beyond ordinary supports. A support prescribes selected degrees of freedom directly. A constraint instead relates the motion of different nodes or regions, for example by connecting a reference node to a surface, tying two independently meshed regions together, defining an idealized joint, or removing rigid-body motion from an otherwise free component.
+
+The distinction between these constraint types is physical, not merely syntactic. A kinematic coupling imposes a rigid relation between selected motions. A structural/distributing coupling transfers generalized motion and loading between a reference point and a distributed region. A Tie creates a permanent compatibility relation between associated geometry. A Connector idealizes a joint between two points. RBM removes the rigid-body nullspace of a selected structural region. Contact, described at the end of this chapter, is unilateral and allows separation.
+
+Constraints are used by the active analysis together with the selected support collectors. The numerical method used to enforce the resulting equations is controlled separately by \cmd{CONSTRAINTMETHOD}; see Chapter~\ref{chap:numerical-controls}.
 
 \keywordpage{COUPLING}
 
-\cmd{COUPLING} relates one master/reference node to a slave region. The master is specified as a node set and must contain exactly one node. The slave may be either a nonempty node set selected with \key{SLAVE} or a nonempty surface set selected with \key{SFSET}; exactly one of these two parameters must be present.
+\cmd{COUPLING} relates one master or reference node to a slave region. The master is given as a node set and must contain exactly one node. The slave can be a nonempty node set selected with \key{SLAVE} or a nonempty surface set selected with \key{SFSET}; exactly one of these two slave definitions must be used.
 
-\key{TYPE=KINEMATIC} creates a kinematic coupling. The selected generalized slave motion is constrained to the rigid kinematic motion associated with the master node according to the coupling implementation. \key{TYPE=STRUCTURAL} creates the structural/distributing form, in which the concrete Coupling object distributes the selected generalized relation over the resolved slave region rather than simply identifying all slave DOFs with the reference point.
+\key{TYPE=KINEMATIC} creates a kinematic coupling. The selected slave degrees of freedom follow the rigid kinematics induced by the reference node. This is useful when a region should move as if connected to a rigid reference point, for example at an idealized rigid flange, a load-introduction point, or a boundary where deformation of the coupled patch is intentionally suppressed in the selected directions.
 
-The data line contains six selector values corresponding to \dofvec. A component is active when its supplied value is greater than zero. Missing values default to zero. The selector therefore describes which translational and rotational relations the coupling contributes; it is not a six-component prescribed displacement vector.
+\key{TYPE=STRUCTURAL} creates the distributing form. It is intended for transferring generalized loads and motions between a reference point and a distributed region without making the complete slave region rigid in the same sense as a kinematic coupling. This is generally the more appropriate choice when a force or moment is to be introduced through a reference point while the connected surface should still be able to deform according to the surrounding structure.
 
-For a surface slave, the coupling retains the actual surface region and can use its geometric distribution during equation generation. For a node-set slave, the region is already explicitly nodal. The master region itself is also retained for diagnostics and output even though the actual master equation uses its single contained node.
+The data line contains six selector values in the order
+\[
+(U_x,U_y,U_z,R_x,R_y,R_z).
+\]
+A component is active when the supplied value is greater than zero. Missing values are inactive. These six values are therefore \emph{selectors}; they are not prescribed displacement or rotation magnitudes.
+
+For a surface slave, the distribution is based on the selected surface geometry. For a node-set slave, the supplied node region itself defines the coupled region. In either case the reference-node set must contain exactly one node so that the generalized motion and loading have an unambiguous reference point.
 
 \begin{keywordparameters}
 \key{MASTER} & required & Node set containing exactly one master/reference node. \\
@@ -21,7 +31,7 @@ For a surface slave, the coupling retains the actual surface region and can use 
 \end{keywordparameters}
 
 \begin{keyworddata}
-Six DOF selectors & Positive value enables the corresponding \(U_x,U_y,U_z,R_x,R_y,R_z\) relation; missing values are inactive. \\
+Six DOF selectors & Positive value enables the corresponding \(U_x,U_y,U_z,R_x,R_y,R_z\) relation; omitted values are inactive. \\
 \end{keyworddata}
 
 \exampleheading
@@ -33,26 +43,30 @@ Six DOF selectors & Positive value enables the corresponding \(U_x,U_y,U_z,R_x,R
 1., 1., 1., 0., 0., 0.
 \end{femasterdeck}
 \begin{noabaqus}
-The current Abaqus reader does not register the Abaqus coupling keyword family. Define the equivalent coupling in native FEMaster input when this constraint is required.
+The supported Abaqus reader currently does not import the Abaqus coupling keyword family. Define the coupling with native FEMaster syntax when this relation is required.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-A distributing/structural coupling is preferable to applying the same concentrated force to every node when the physical intent is a resultant load acting through a reference point. Loads can be placed on the master node while the coupling transfers the selected generalized action to the slave region.
+A distributing coupling is often preferable to applying identical concentrated nodal forces to all nodes of a surface. The latter changes the total load when the mesh is refined, while a reference-point load combined with a distributing coupling represents a definite resultant force or moment.
+
+Use a kinematic coupling only when the corresponding rigid relation is physically intended. Coupling a large deformable surface kinematically can add substantial artificial stiffness even though the solver satisfies the equations exactly.
 
 \keywordpage{TIE}
 
-\cmd{TIE} enforces compatible motion between slave geometry and master geometry found within a search distance. The slave name may identify either a node set or a surface set. The master may identify a surface set or a line set. FEMaster resolves the available region types and constructs the matching concrete Tie variant automatically.
+\cmd{TIE} creates a permanent kinematic connection between slave geometry and master geometry located within a prescribed search distance. The slave may be a node set or a surface set. The master may be a surface set or a line set. FEMaster selects the appropriate supported tie relation from these region types.
 
-\key{DISTANCE} is the required geometric search tolerance used during projection/matching. \key{ADJUST=YES} enables the supported initial adjustment behaviour; the default is \val{NO}. The exact projection and interpolation equations depend on whether the slave is nodal or surface-based and whether the master consists of surfaces or lines, but all variants are stored as one Tie family in ModelData.
+\key{DISTANCE} defines the geometric search tolerance used to associate slave locations with the master geometry. It should be large enough to capture the intended interface but not so large that unrelated geometry becomes a possible match. \key{ADJUST=YES} permits the supported initial adjustment of slave geometry to the tie relation; the default is \val{NO}.
 
-Tie creation requires a compiled model because projections use final Assembly geometry, including Instance placement. Both master and slave regions must be nonempty. For a surface master, FEMaster supports node-to-surface and surface-to-surface Tie variants; for a line master it supports the corresponding line-based forms.
+A Tie represents a bonded or otherwise permanently connected interface. Once the relation has been established, opening or sliding that violates the selected compatibility equations is not permitted. It is therefore appropriate for idealized bonded interfaces, mesh transitions, or connections that are assumed not to separate. It is not appropriate for interfaces that may open, close, or lose contact; use \cmd{CONTACT} for that case.
+
+The accuracy of a Tie depends on the geometric relation between the two discretizations. Avoid unnecessarily large search distances and inspect the interface when meshes are highly nonmatching, strongly curved, or close to other candidate master surfaces.
 
 \begin{keywordparameters}
 \key{MASTER} & required & Nonempty master surface or line set. \\
 \key{SLAVE} & required & Nonempty slave node or surface set. \\
-\key{DISTANCE} & required & Search/projection distance. \\
+\key{DISTANCE} & required & Search/projection distance used to associate slave and master geometry. \\
 \key{ADJUST} & optional & \val{NO} (default) or \val{YES}. \\
 \end{keywordparameters}
 
@@ -65,27 +79,31 @@ Tie creation requires a compiled model because projections use final Assembly ge
  DISTANCE=0.5, ADJUST=YES
 \end{femasterdeck}
 \begin{noabaqus}
-Abaqus \cmd{TIE} is not currently registered by FEMaster's Abaqus reader, even though the native solver provides Tie constraints.
+Abaqus \cmd{TIE} is currently not imported by the FEMaster Abaqus reader, even though the native solver provides Tie constraints.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-Tie and contact solve different modelling problems. A Tie introduces equality-type kinematic relations once a slave location has been associated with master geometry; contact allows separation and activates only under the unilateral contact condition.
+Tie and contact solve different modelling problems. A Tie is an equality-type connection and remains active. Contact is unilateral: it transmits normal interaction only while the contact condition is active and permits subsequent separation.
+
+If a nominally bonded interface is modelled with a Tie, the connection stiffness is governed by the surrounding structure rather than by an artificial penalty spring. If compliance of an adhesive layer or joint is physically important, model that compliance explicitly rather than using Tie merely because the surfaces are close.
 
 \keywordpage{CONNECTOR}
 
-\cmd{CONNECTOR} creates a two-node kinematic connector between two node sets. Each of \key{NSET1} and \key{NSET2} must contain exactly one compiled node. A named coordinate system is required because connector freedoms are defined relative to a connector basis rather than implicitly in the global system.
+\cmd{CONNECTOR} defines an idealized kinematic joint between two nodes. \key{NSET1} and \key{NSET2} each identify a node set containing exactly one node. \key{COORDINATESYSTEM} specifies the local connector axes, and \key{TYPE} selects which relative translations and rotations are constrained or released.
 
-The supported native connector types are \val{BEAM}, \val{HINGE}, \val{CYLINDRICAL}, \val{TRANSLATOR}, \val{JOIN}, and \val{JOINRX}. The parser maps the textual type to the concrete ConnectorType and stores the completed Connector in ModelData. Constraint equation generation is deferred until the loadcase collects model constraints.
+The supported connector types are \val{BEAM}, \val{HINGE}, \val{CYLINDRICAL}, \val{TRANSLATOR}, \val{JOIN}, and \val{JOINRX}. They represent different idealized joint kinematics. For example, a hinge is intended to release a rotational degree of freedom about its local hinge axis while constraining the remaining relative motion required by that joint idealization. A translator and a cylindrical connector likewise rely on their local axis system to define the permitted relative motion.
 
-Different connector types release or constrain different relative translations and rotations. They should therefore be selected according to the intended joint kinematics, not merely because two nodes occupy the same geometric location. The coordinate system determines the local axes with respect to which hinge, translator, or cylindrical motions are interpreted.
+The coordinate system is therefore part of the physical definition, not a cosmetic orientation. Always verify the local connector axes, especially when the connected nodes lie in arbitrary three-dimensional geometry. A correct joint type with an incorrect axis can produce a perfectly converged but physically wrong model.
+
+Connectors are best used for idealized joints whose internal geometry does not need to be resolved. If bearing deformation, bolt bending, local contact, joint clearance, or detailed connection stress is important, replace the idealized connector with an appropriately detailed beam, shell, solid, spring, or contact model.
 
 \begin{keywordparameters}
 \key{TYPE} & required & \val{BEAM}, \val{HINGE}, \val{CYLINDRICAL}, \val{TRANSLATOR}, \val{JOIN}, or \val{JOINRX}. \\
 \key{NSET1} & required & First one-node set. \\
 \key{NSET2} & required & Second one-node set. \\
-\key{COORDINATESYSTEM} & required & Existing named coordinate system defining connector axes. \\
+\key{COORDINATESYSTEM} & required & Named coordinate system defining the connector axes. \\
 \end{keywordparameters}
 
 \exampleheading
@@ -95,26 +113,29 @@ Different connector types release or constrain different relative translations a
 *ORIENTATION, NAME=HINGE_AXES,
  TYPE=RECTANGULAR
 1., 0., 0., 0., 1., 0.
+
 *CONNECTOR, TYPE=HINGE,
  NSET1=PIN_A, NSET2=PIN_B,
  COORDINATESYSTEM=HINGE_AXES
 \end{femasterdeck}
 \begin{noabaqus}
-Connector translation is not currently part of the supported Abaqus input subset.
+Connector translation is currently not part of the supported Abaqus input subset.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-The two node sets are intentionally required to contain one node each. If a region-level relation is required, use a Coupling first to reduce a distributed region to a reference node and then connect reference nodes with a Connector where appropriate.
+If a distributed region is to be connected through an idealized joint, first reduce the region to a meaningful reference node using a coupling and then connect the reference nodes. This keeps the joint definition independent of the surface mesh density.
 
 \keywordpage{RBM}
 
-\cmd{RBM} generates equations that suppress rigid-body motion of a selected structural element region without requiring the user to choose arbitrary fixed nodes. The target is an element set specified by \key{ELSET} or its alias \key{SET}; the default is \val{EALL}. The set must exist and be nonempty.
+\cmd{RBM} suppresses the rigid-body modes of a selected structural element region without requiring the user to choose arbitrary fixed nodes. The target is specified by \key{ELSET} or its alias \key{SET}; if omitted, \val{EALL} is used.
 
-The concrete RBM constraint derives rigid-body modes from the compiled Assembly coordinates and active structural DOFs. This is why the command is evaluated after compilation. Its equation generation and rank handling remain inside the RBM implementation, allowing it to account for the actual dimensionality and connectivity of the target region.
+A free three-dimensional body has six rigid-body modes: three translations and three rotations. These modes have no elastic strain energy and therefore produce a structural nullspace when no physical support removes them. RBM constructs constraint equations that remove the rigid-body motion of the selected region while avoiding the strong local bias that can arise from fixing one arbitrary corner node in several directions.
 
-RBM suppression is particularly useful in analyses where the physical model should remain free of artificial local support choices but a solver operation requires removal of the nullspace. It is not equivalent to inertia relief: RBM adds kinematic equations, whereas inertia relief balances applied loads with inertial fields while retaining a free-body interpretation.
+RBM is useful when the numerical problem requires the rigid-body nullspace to be removed but no particular physical support point is intended. It should not be used to conceal a genuinely incomplete boundary-condition model. If the real structure is attached through bearings, bolts, symmetry, contact, or other supports, those physical constraints should normally be represented directly.
+
+RBM is also different from inertia relief. RBM changes the admissible kinematics by suppressing rigid motion. Inertia relief retains the free-body interpretation and balances the applied load with an equivalent rigid-body inertial field.
 
 \begin{keywordparameters}
 \key{ELSET} / \key{SET} & optional & Nonempty target structural element set; default \val{EALL}. \\
@@ -127,10 +148,12 @@ RBM suppression is particularly useful in analyses where the physical model shou
 *RBM, ELSET=FREE_COMPONENT
 \end{femasterdeck}
 \begin{noabaqus}
-No direct RBM-suppression keyword is registered in the supported Abaqus reader.
+No direct RBM-suppression keyword is currently imported by the supported Abaqus reader.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-Use RBM only when suppressing the rigid-body nullspace is physically and numerically appropriate. It should not be used to hide a genuinely under-constrained structural model whose missing supports are part of the modelling error.
+Use RBM when removing rigid-body motion is itself the intended mathematical constraint. Do not use it as a general cure for singular systems: a singularity may instead indicate disconnected parts, released mechanisms, missing sections, unsupported rotational degrees of freedom, or an incorrect constraint definition.
+
+\input{pages/11-contact-reference}
