@@ -31,14 +31,14 @@
 #include "../bc/support.h"
 #include "../bc/support_collector.h"
 #include "../constraints/types/connector.h"
-#include "../constraints/types/coupling.h"
 #include "../constraints/types/contact.h"
+#include "../constraints/types/coupling.h"
 #include "../constraints/types/equation.h"
 #include "../constraints/types/rbm.h"
 #include "../constraints/types/tie.h"
-#include "../cos/coordinate_system.h"
 #include "../core/types_cls.h"
 #include "../core/types_eig.h"
+#include "../cos/coordinate_system.h"
 #include "../data/dict.h"
 #include "../data/field.h"
 #include "../data/region.h"
@@ -47,6 +47,7 @@
 #include "../material/material.h"
 #include "../section/profile.h"
 #include "../section/section.h"
+#include "instance.h"
 
 #include <string>
 #include <unordered_map>
@@ -90,6 +91,9 @@ struct ModelData {
     Dict<Part>     parts;
     Dict<Instance> instances;
     bool           compiled = false;
+
+    // mapping global node back to local instance nodes
+    std::vector<std::tuple<Instance::Ptr, Index>> node_mapping;
 
     // Dense assembly topology produced by Model::compile(). Vector indices are
     // global identifiers, while each Instance retains the corresponding map from

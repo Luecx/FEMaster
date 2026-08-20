@@ -189,6 +189,12 @@ struct Dict {
     auto end() const {
         return _data.cend();
     }
+    auto size() {
+        return _data.size();
+    }
+    auto size() const {
+        return _data.size();
+    }
 };
 }    // namespace model
 }    // namespace fem

@@ -60,6 +60,9 @@ struct Instance : public Namable {
     // its own local identifier and coordinate spaces throughout compilation.
     Part::Ptr part = nullptr;
 
+    // ID of the instance. The default instance has ID 0 while other instances increment by 1.
+    ID instance_id;
+
     // Rigid local-to-global placement. Model compilation transforms every local
     // nodal position according to x = R X + t and rotates section directions and
     // coordinate systems consistently with the same proper rotation.

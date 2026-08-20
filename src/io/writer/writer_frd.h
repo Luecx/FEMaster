@@ -1,3 +1,26 @@
+/**
+ * @file writer_frd.h
+ * @brief Declares the ASCII CalculiX/CGX FRD result writer.
+ *
+ * `FrdWriter` writes the compiled FEMaster mesh and NODE-domain result fields
+ * in the CalculiX FRD format. Dense solver node identifiers are translated once
+ * during mesh output into persistent FRD node identifiers derived from the
+ * semantic Instance and part-local node identifiers retained by `ModelData`.
+ *
+ * The resulting dense-to-FRD node mapping is cached by the writer and reused
+ * for element connectivity and all later nodal result blocks. Result output
+ * therefore does not require repeated semantic node resolution.
+ *
+ * Non-NODE fields are ignored intentionally. Element identifiers are written
+ * unchanged from the compiled model.
+ *
+ * @see FrdWriter
+ * @see model::ModelData
+ *
+ * @author Finn Eggers
+ * @date 20.08.2026
+ */
+
 #pragma once
 
 #include "../../core/core.h"
@@ -20,19 +43,33 @@ namespace io {
 namespace writer {
 
 /**
- * @brief Minimal ASCII CalculiX/CGX .frd writer.
+ * @brief Minimal ASCII CalculiX/CGX FRD mesh and nodal-result writer.
  *
- * Scope:
- * - writes node coordinates
- * - writes supported element connectivities
- * - writes NODE fields as nodal result blocks
+ * The writer emits all compiled nodes, supported structural element
+ * connectivities and NODE-domain result fields. Nodes are not filtered by
+ * element participation, so isolated model nodes remain present in the output.
  *
- * Non-nodal fields are ignored intentionally.
+ * FEMaster uses dense node identifiers internally. During the first mesh write,
+ * each dense node is assigned its FRD identifier according to
+ *
+ *     10^8 * i_instance + n_local.
+ *
+ * The implicit default Instance has instance identifier zero, so its original
+ * local node identifiers remain unchanged in the FRD file. Explicit Instances
+ * occupy disjoint identifier ranges of width \f$10^8\f$.
+ *
+ * The generated dense-to-FRD mapping is retained by the writer for subsequent
+ * field output, allowing result frames to be written without repeated access to
+ * the complete model data.
  */
 class FrdWriter {
     private:
     std::ofstream file_path;
 
+    // Dense global node id -> FRD node id
+    std::vector<ID> node_ids;
+
+    // Writer state
     bool model_data_written = false;
 
     int current_step         = 1;
@@ -43,12 +80,8 @@ class FrdWriter {
 
     WriterStepType current_step_type = WriterStepType::Static;
 
-    bool remap_zero_node_ids    = false;
-    bool remap_zero_element_ids = false;
-
-    std::vector<ID> frd_node_ids;
-
     public:
+    // File lifetime and ownership
     explicit FrdWriter(const std::string& filename = "");
     ~FrdWriter();
 
@@ -58,8 +91,10 @@ class FrdWriter {
     void open(const std::string& filename);
     void close();
 
+    // Analysis-step metadata
     void add_loadcase(int id, WriterStepType step_type = WriterStepType::Static);
 
+    // Mesh and result output
     void write_model_data(const model::ModelData& model_data);
     void write_field(const model::Field& field,
                      const std::string& field_name,
@@ -67,14 +102,12 @@ class FrdWriter {
                      Precision frame_value = std::numeric_limits<Precision>::quiet_NaN());
 
     private:
+    // FRD mesh and NODE-domain result blocks
     void write_nodes      (const model::ModelData& model_data);
     void write_elements   (const model::ModelData& model_data);
     void write_nodal_field(const model::Field& field,
                            const std::string& field_name,
                            Precision frame_value);
-
-    ID  frd_node_number   (ID internal_node_id) const;
-    ID  frd_element_number(ID internal_element_id) const;
 };
 
 } // namespace writer

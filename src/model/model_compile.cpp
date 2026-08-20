@@ -62,6 +62,7 @@ Model::Model()
     // default instance is its identity embedding into the final assembly.
     const auto default_part = _data->parts.activate(DEFAULT_PART_NAME);
     _data->instances.activate(DEFAULT_INSTANCE_NAME, default_part);
+    _data->instances.get(DEFAULT_INSTANCE_NAME)->instance_id = 0;
 }
 
 /**
@@ -124,6 +125,7 @@ void Model::add_instance(const std::string& name,
         translation,
         rotation
     ));
+    _data->instances.get(name)->instance_id = _data->instances.size() - 1;
 }
 
 /**
@@ -296,8 +298,7 @@ void Model::compile() {
             "Model: instance ", name, " translation contains invalid values");
         logging::error(instance->rotation.allFinite(),
             "Model: instance ", name, " rotation contains invalid values");
-        logging::error((instance->rotation.transpose() * instance->rotation - Mat3::Identity()).norm()
-                    <= rotation_tolerance,
+        logging::error((instance->rotation.transpose() * instance->rotation - Mat3::Identity()).norm() <= rotation_tolerance,
             "Model: instance ", name, " rotation is not orthonormal");
         logging::error(std::abs(instance->rotation.determinant() - Precision(1)) <= rotation_tolerance,
             "Model: instance ", name, " rotation must have determinant +1");
@@ -305,25 +306,36 @@ void Model::compile() {
         // The local-to-global maps are output of compile(). Clearing them here
         // makes the single pass deterministic even for a freshly reused object,
         // while the compiled guard still forbids an actual second invocation.
-        instance->node_ids.clear();
+        instance->node_ids   .clear();
         instance->element_ids.clear();
         instance->surface_ids.clear();
-        instance->line_ids.clear();
+        instance->line_ids   .clear();
 
-        total_nodes    += static_cast<Index>(instance->part->nodes.size());
+        total_nodes    += static_cast<Index>(instance->part->nodes   .size());
         total_elements += static_cast<Index>(instance->part->elements.size());
         total_surfaces += static_cast<Index>(instance->part->surfaces.size());
-        total_lines    += static_cast<Index>(instance->part->lines.size());
+        total_lines    += static_cast<Index>(instance->part->lines   .size());
         instance_names.push_back(name);
     }
-    std::sort(instance_names.begin(), instance_names.end());
+
+    // sort by instance id so that the default instance (id = 0) is first, also relevant for output.
+    std::sort(instance_names.begin(), instance_names.end(),
+        [&](const std::string& a, const std::string& b) {
+            const auto instance_a = _data->instances.get(a);
+            const auto instance_b = _data->instances.get(b);
+
+            return instance_a->instance_id < instance_b->instance_id;
+        });
 
     // Dense solver arrays are allocated exactly once from the semantic assembly
     // size. Sparse/local identifiers never escape into these arrays.
     _data->elements.assign(static_cast<std::size_t>(total_elements), nullptr);
     _data->surfaces.assign(static_cast<std::size_t>(total_surfaces), nullptr);
-    _data->lines.assign(static_cast<std::size_t>(total_lines), nullptr);
+    _data->lines   .assign(static_cast<std::size_t>(total_lines), nullptr);
     _data->sections.clear();
+
+    // node mapping to map back to instance + local id
+    _data->node_mapping.resize(static_cast<std::size_t>(total_nodes));
 
     // Rebuild the compiled set namespaces. Each Sets container automatically
     // propagates additions into its global *ALL parent collection.
@@ -336,13 +348,11 @@ void Model::compile() {
     // occupy the remaining components later during nonlinear analyses and start
     // at zero in both fields.
     _data->fields.clear();
-    _data->positions = std::make_shared<Field>(
-        "POSITION", FieldDomain::NODE, total_nodes, 6);
-    _data->positions_reference = std::make_shared<Field>(
-        "POSITION_REFERENCE", FieldDomain::NODE, total_nodes, 6);
-    _data->positions->set_zero();
+    _data->positions           = std::make_shared<Field>("POSITION"          , FieldDomain::NODE, total_nodes, 6);
+    _data->positions_reference = std::make_shared<Field>("POSITION_REFERENCE", FieldDomain::NODE, total_nodes, 6);
+    _data->positions          ->set_zero();
     _data->positions_reference->set_zero();
-    _data->fields.emplace(_data->positions->name, _data->positions);
+    _data->fields.emplace(_data->positions->name          , _data->positions);
     _data->fields.emplace(_data->positions_reference->name, _data->positions_reference);
 
     ID next_node    = 0;
@@ -394,8 +404,14 @@ void Model::compile() {
                 instance->rotation * source->nodes.at(local_id) + instance->translation;
 
             node_map.emplace(local_id, global_id);
+
+            _data->node_mapping[static_cast<std::size_t>(global_id)] = {
+                instance,
+                local_id
+            };
+
             for (Dim d = 0; d < 3; ++d) {
-                (*_data->positions)(static_cast<Index>(global_id), d)           = position(d);
+                (*_data->positions          )(static_cast<Index>(global_id), d) = position(d);
                 (*_data->positions_reference)(static_cast<Index>(global_id), d) = position(d);
             }
             _data->node_sets.all()->add(global_id);
