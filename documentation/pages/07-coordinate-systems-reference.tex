@@ -1,32 +1,38 @@
 \chapter{Coordinate Systems and Orientations}
 \label{chap:coordinates}
 
-Coordinate systems provide local bases for material anisotropy, shell and solid Sections, direction-dependent loads or supports, and Abaqus nodal transformations. FEMaster stores coordinate systems as named model resources. Different commands can therefore refer to one consistent basis rather than duplicating direction vectors throughout the deck.
+Coordinate systems define local directions used by materials, Sections, loads, supports, and nodal transformations. They are especially important whenever a model contains anisotropy, beam or shell local axes, cylindrical loading, or boundary conditions that should be expressed in directions other than the global Cartesian axes.
 
-Two concepts should be kept distinct. \cmd{ORIENTATION} defines a named coordinate system, typically for material or Section use. Abaqus \cmd{TRANSFORM} assigns a local nodal degree-of-freedom basis to a node set after the model has been compiled. Both use the same underlying rectangular or cylindrical coordinate-system classes, but their scope and effect are different.
+Two concepts should be kept distinct. \cmd{ORIENTATION} defines a named coordinate system that can be referenced by Sections and other orientation-aware native FEMaster features. Abaqus \cmd{TRANSFORM} assigns a local degree-of-freedom basis to a node set. Neither command moves the geometry; rigid placement of a Part is defined by \cmd{INSTANCE}.
 
 \keywordpage{ORIENTATION}
 
-Native \cmd{ORIENTATION} creates either a rectangular or cylindrical named coordinate system. \key{TYPE} is required and accepts \val{RECTANGULAR} or \val{CYLINDRICAL}; \key{NAME} gives the resource identifier. The legacy \key{DEFINITION} parameter is accepted by the native grammar but is currently unused.
+Native \cmd{ORIENTATION} creates a named rectangular or cylindrical coordinate system. \key{NAME} identifies the system and \key{TYPE} selects \val{RECTANGULAR} or \val{CYLINDRICAL}.
 
-For a rectangular system, FEMaster accepts one, two, or three supplied vectors, represented as three, six, or nine scalar values. The concrete \texttt{RectangularSystem} constructor completes the orthonormal basis from the supplied direction information. Providing two non-collinear directions is generally the clearest form because it defines the first axis and the plane containing the second axis without over-specifying a potentially inconsistent triad. A nine-value form may be used when all three vectors are available.
+A rectangular coordinate system describes a fixed orthogonal basis. FEMaster accepts one, two, or three supplied direction vectors, corresponding to three, six, or nine scalar values. In most user-written models, two non-collinear directions are the clearest representation: the first vector defines the first local axis and the second vector defines the plane in which the second local axis lies. The final orthogonal triad is then determined from those directions.
 
-A native cylindrical system currently uses nine values and constructs the named \texttt{CylindricalSystem} from three supplied vectors/points according to the coordinate-system implementation. Cylindrical bases vary spatially: the radial and circumferential directions depend on the evaluation position, unlike a fixed rectangular basis.
+For example, the vectors
+\[
+\boldsymbol a=(1,0,0),\qquad \boldsymbol b=(0,1,0)
+\]
+define a local basis aligned with the global Cartesian axes. Rotating these vectors rotates the local material or Section basis without changing any node coordinates.
 
-The Abaqus reader registers a more specific \cmd{ORIENTATION} subset: \key{DEFINITION=COORDINATES} and \key{SYSTEM=RECTANGULAR}. Its data are points \(a\), \(b\), and an optional origin \(c\). FEMaster forms the first direction from \(a-c\) and the in-plane direction from \(b-c\); the points must be distinct and non-collinear. If \(c\) is omitted it defaults to the global origin. This is then stored as an ordinary FEMaster rectangular coordinate system, so downstream Sections do not care which input dialect created it.
+A cylindrical coordinate system defines an axis and corresponding radial/circumferential directions. Unlike a rectangular system, the radial and circumferential directions depend on the position at which the system is evaluated. This is useful for axisymmetric-like components, cylindrical material directions, or directional quantities that should follow a curved geometry.
+
+The supported Abaqus \cmd{ORIENTATION} form uses \key{DEFINITION=COORDINATES} and \key{SYSTEM=RECTANGULAR}. Its data contain points \(a\), \(b\), and optionally \(c\). The vector \(a-c\) defines the first direction and \(b-c\) defines the second in-plane direction. If \(c\) is omitted, the global origin is used. The points must define nonzero, non-collinear directions.
 
 \begin{keywordparameters}
-\key{NAME} & required & Name used by Sections and other orientation-aware features. \\
+\key{NAME} & required & Coordinate-system name used by Sections and other orientation-aware features. \\
 \key{TYPE} & native required & \val{RECTANGULAR} or \val{CYLINDRICAL}. \\
-\key{DEFINITION} & native optional & Accepted legacy parameter; currently unused by native FEMaster. \\
-\key{DEFINITION} & Abaqus optional & Must be \val{COORDINATES}; default \val{COORDINATES}. \\
-\key{SYSTEM} & Abaqus optional & Must be \val{RECTANGULAR}; default \val{RECTANGULAR}. \\
+\key{DEFINITION} & native optional & Accepted legacy parameter. \\
+\key{DEFINITION} & Abaqus optional & \val{COORDINATES}; default \val{COORDINATES}. \\
+\key{SYSTEM} & Abaqus optional & \val{RECTANGULAR}; default \val{RECTANGULAR}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-Native rectangular & 3, 6, or 9 scalar components defining one to three basis directions. \\
+Native rectangular & 3, 6, or 9 scalar components defining one to three directions. \\
 Native cylindrical & 9 scalar components defining the cylindrical system geometry. \\
-Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to zero. \\
+Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to the origin. \\
 \end{keyworddata}
 
 \exampleheading
@@ -48,32 +54,40 @@ Abaqus rectangular & \(a_1,a_2,a_3,b_1,b_2,b_3,c_1,c_2,c_3\); \(c\) defaults to 
 
 \notesheading
 
-A material orientation does not transform node coordinates. It supplies a basis at constitutive or Section evaluation. For orthotropic materials, make sure the first, second, and third material axes represented by the coordinate system match the order in which \(E_1,E_2,E_3\), Poisson ratios, and shear moduli were supplied.
+A material orientation changes the basis in which directional material constants are interpreted. For orthotropic elasticity, verify that local axes 1, 2, and 3 correspond to the directions associated with \(E_1,E_2,E_3\), \(G_{12},G_{13},G_{23}\), and the Poisson-ratio convention used in the material definition.
+
+For shell Sections, the selected coordinate-system axis is projected into the shell plane to establish the local in-plane material/Section direction. The shell normal then completes the local shell basis. On curved shells, inspect both normal direction and in-plane orientation before interpreting anisotropic stiffness or shell resultants.
 
 \keywordpage{TRANSFORM}
 
-\cmd{TRANSFORM} is an Abaqus-input command that assigns a local degree-of-freedom coordinate system to a compiled node set. It is not registered in the native FEMaster reader. The command executes after \texttt{Model::compile()}, because the referenced \key{NSET} already contains dense compiled node identifiers at that point. It may appear at root or Assembly level in the Abaqus deck.
+\cmd{TRANSFORM} is supported in Abaqus input and assigns a local degree-of-freedom basis to a node set. It does not exist as a native FEMaster keyword because native FEMaster loads and supports can reference named orientations directly where a local basis is required.
 
-\key{TYPE=R} selects a rectangular transform and is the default. The data contain two three-component vectors/points \(a\) and \(b\). Both must be nonzero and non-collinear. FEMaster creates an internal rectangular coordinate system with a generated name associated with the node set and records that orientation for every node in the set.
+\key{NSET} identifies the nodes that use the transformation. \key{TYPE=R} selects a rectangular transform and is the default. The six data values define two directions or points that establish the local rectangular basis. The directions must be nonzero and non-collinear.
 
-\key{TYPE=C} selects a cylindrical transform. Here the two data points define the cylindrical axis: the axis vector is \(b-a\), so the points must be distinct. FEMaster constructs a cylindrical system from that axis and a deterministic orthogonal radial direction. Each target node then uses the resulting spatially varying local basis.
+\key{TYPE=C} selects a cylindrical transform. The two three-component points \(a\) and \(b\) define the cylindrical axis through
+\[
+\boldsymbol e_z \parallel \boldsymbol b-\boldsymbol a.
+\]
+The points must therefore be distinct. At each transformed node, the local radial and circumferential directions follow from the node position relative to that axis.
 
-A node may not silently receive two incompatible transformations. If overlapping transformed sets would assign different local systems to the same compiled node, the reader reports an error. The transform affects how supported Abaqus boundary and load components are interpreted for those nodes; it does not rotate the finite-element geometry itself.
+The transform affects how nodal vector components are interpreted. For example, a \cmd{BOUNDARY} or \cmd{CLOAD} component applied to a transformed node is expressed in the node's local transformed basis rather than directly in the global Cartesian basis. The transform does not rotate or translate the mesh itself.
+
+A node should have one unambiguous nodal basis. Avoid overlapping transformed sets that assign incompatible coordinate systems to the same node.
 
 \begin{keywordparameters}
-\key{NSET} & required & Compiled node set receiving the local nodal transformation. \\
+\key{NSET} & required & Node set receiving the local nodal transformation. \\
 \key{TYPE} & optional & \val{R} for rectangular or \val{C} for cylindrical; default \val{R}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{a1,a2,a3,b1,b2,b3} & Two vectors/points defining the rectangular directions or cylindrical axis. \\
+\val{a1,a2,a3,b1,b2,b3} & Two directions/points defining the rectangular basis or cylindrical axis. \\
 \end{keyworddata}
 
 \exampleheading
 
 \begin{dialectexamples}
 \begin{nofemaster}
-Native FEMaster does not register \cmd{TRANSFORM}. Use named \cmd{ORIENTATION} objects on features that accept a local coordinate system.
+Native FEMaster does not use a separate \cmd{TRANSFORM} keyword. Loads, supports, Sections, and other supported features reference named \cmd{ORIENTATION} definitions directly where needed.
 \end{nofemaster}
 \begin{abaqusdeck}
 *TRANSFORM, NSET=CYLINDER_NODES, TYPE=C
@@ -83,4 +97,4 @@ Native FEMaster does not register \cmd{TRANSFORM}. Use named \cmd{ORIENTATION} o
 
 \notesheading
 
-Do not use \cmd{TRANSFORM} to place an Instance. Rigid Part placement is defined by \cmd{INSTANCE}. A nodal transform changes the basis in which generalized nodal components are interpreted, whereas Instance placement changes the actual assembled node positions and element orientation.
+Do not confuse \cmd{TRANSFORM} with \cmd{INSTANCE}. \cmd{INSTANCE} changes the actual placement of a Part in the model. \cmd{TRANSFORM} leaves the geometry unchanged and only changes the local basis used to interpret generalized nodal components.
