@@ -63,27 +63,32 @@
   title=#1
 }
 
-% Side-by-side input examples. Each child box is an ordinary inputdeck listing,
-% which keeps verbatim material safe. Equal row height makes the relation between
-% both dialects visually immediate even when one representation needs more lines.
+% Side-by-side input examples. The two child boxes intentionally are not
+% breakable. A breakable tcblisting inside a raster can be split into fragments
+% and thereby occupy separate raster cells, which makes the Abaqus box fall below
+% the FEMaster box even though both easily fit next to each other. Keeping each
+% child box intact makes every dialectexamples environment one two-column row;
+% TeX moves that row to the next page if insufficient vertical space remains.
 \newenvironment{dialectexamples}{%
+  \par\medskip\noindent
   \begin{tcbraster}[
     raster columns=2,
     raster equal height=rows,
-    raster column skip=4mm,
-    raster row skip=2mm,
+    raster column skip=3mm,
+    raster row skip=0pt,
     raster left skip=0pt,
-    raster right skip=0pt
+    raster right skip=0pt,
+    raster width=\linewidth
   ]
 }{%
   \end{tcbraster}
+  \par\medskip
 }
 
 \newtcblisting{femasterdeck}{%
   listing only,
   listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
   enhanced,
-  breakable,
   sharp corners,
   colback=FMGray,
   colframe=FMBlue,
@@ -97,7 +102,6 @@
   listing only,
   listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
   enhanced,
-  breakable,
   sharp corners,
   colback=FMGray,
   colframe=FMAbaqus,
