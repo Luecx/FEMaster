@@ -1,20 +1,22 @@
 \chapter{Model Definition}
 \label{chap:model-definition}
 
-Model definition describes how finite-element topology is organized before properties, loads, constraints, or analysis procedures are applied. FEMaster supports two equally valid styles. A compact flat model places nodes and elements directly in the root context and is sufficient for many calculations. A structured model places reusable topology in named Parts and creates one or more rigid Instances. The latter is particularly useful for assemblies, repeated components, independent local identifier spaces, and models imported from Abaqus.
+Model definition describes the geometry and topology on which the analysis is built. A simple FEMaster model may be completely flat: nodes and elements can be defined directly without an explicit Part, Assembly, or Instance. The structured Part/Assembly form is optional and becomes useful when components are reused, when the same Part is placed more than once, when separate local ID spaces are desirable, or when an Abaqus-style assembly is imported.
 
-The distinction is semantic rather than merely syntactic. A Part stores sparse local node and element identifiers. An Instance references that Part and stores only its rigid placement. The source topology is not copied or transformed when the instance is parsed. During \texttt{Model::compile()}, every instance is expanded into dense assembly storage, local identifiers are mapped to compiled identifiers, and node coordinates are transformed. This creates a clean one-way boundary between user-facing topology and solver-facing data.
+From the user's point of view, the two forms describe the same kind of finite-element model. In a flat model there is one direct topology. In a structured model, each Part owns its local nodes, elements, sets, surfaces, and section assignments, while Instances place those Parts into the final assembly. Parts therefore describe \emph{what a component is}; Instances describe \emph{where that component is}.
+
+Node and element IDs are user labels. They are non-negative integers, may start at \textbf{0}, and may be sparse. Separate Parts may reuse the same numerical IDs because their topologies are independent. When an assembly-level definition needs to distinguish entities belonging to different Instances, the Instance name provides the required qualification.
 
 \section{Model organization}
 
 \keywordpage{MODEL}
 
-\cmd{MODEL} is an optional native FEMaster root marker. It gives a deck an explicit top-level model name and can improve readability in generated input, but a native FEMaster deck does not require it. Omitting \cmd{MODEL} does not change the default Part mechanism or the compile boundary. The Abaqus reader has no corresponding \cmd{MODEL} keyword; an Abaqus deck simply starts with its root-level definitions.
+\cmd{MODEL} is an optional native FEMaster root marker. It can attach a descriptive model name to a native deck and makes the top-level structure explicit, but it is not required. A file may begin directly with nodes, materials, Parts, or other root-level definitions.
 
-The command is allowed at root level. Its \key{NAME} parameter is optional and descriptive. It does not create a second nested finite-element model and cannot be used to switch between multiple models in one analysis run. In practice, use it when a deck benefits from an explicit title-like structural marker, while keeping \cmd{HEADING} for free-form descriptive text.
+\key{NAME} is optional. The command does not create a nested second model and is not used to select between several models in one input file. Use \cmd{HEADING} for free descriptive text and \cmd{MODEL} when an explicit native model marker improves readability.
 
 \begin{keywordparameters}
-\key{NAME} & optional & Descriptive name of the top-level FEMaster model. \\
+\key{NAME} & optional & Descriptive name of the native FEMaster model. \\
 \end{keywordparameters}
 
 \syntaxheading
@@ -23,7 +25,7 @@ The command is allowed at root level. Its \key{NAME} parameter is optional and d
 *MODEL, NAME=BRACKET_MODEL
 \end{syntax}
 
-No data lines follow the command. Geometry may immediately follow at root level, or the deck may proceed with explicit Part definitions.
+No data lines follow \cmd{MODEL}.
 
 \exampleheading
 
@@ -31,67 +33,67 @@ No data lines follow the command. Geometry may immediately follow at root level,
 \begin{femasterdeck}
 *MODEL, NAME=BRACKET_MODEL
 *NODE
-1, 0., 0., 0.
-2, 10., 0., 0.
+0, 0., 0., 0.
+1, 10., 0., 0.
 \end{femasterdeck}
 \begin{abaqusdeck}
-** Abaqus has no MODEL wrapper.
+** No MODEL wrapper is required.
 *NODE
-1, 0., 0., 0.
-2, 10., 0., 0.
+0, 0., 0., 0.
+1, 10., 0., 0.
 \end{abaqusdeck}
 \end{dialectexamples}
 
 \notesheading
 
-The model marker is deliberately optional so existing compact FEMaster decks remain valid. It should not be confused with \cmd{PART}: \cmd{PART} creates a reusable topology namespace, whereas \cmd{MODEL} only marks the root model context.
+\cmd{MODEL} is optional even when no explicit \cmd{PART} is used. It should not be confused with \cmd{PART}: a Part creates a reusable topology and its own local ID space, while \cmd{MODEL} is only the optional top-level native marker.
 
 \keywordpage{PART}
 
-\cmd{PART} begins a reusable finite-element topology definition. The command creates a named Part and makes it the active topology container. Nodes, elements, part-level sets, part-level surfaces, and section assignments that follow are stored relative to this Part until \cmd{END PART} closes the scope.
+\cmd{PART} begins a reusable finite-element component definition. Nodes, elements, part-level sets, surfaces, and section assignments that follow belong to the active Part until \cmd{END PART} closes it.
 
-Part-local identifiers are intentionally sparse and local. Node 1 in one Part and node 1 in another Part are unrelated objects. The Part has no assembly placement; all coordinates remain in the Part reference system. Reusing a component therefore does not require copying or renumbering its topology. Instead, each \cmd{INSTANCE} references the same Part and contributes a rigid placement during compilation.
+A Part is defined in its own local coordinate system. Its node coordinates describe the undeformed component geometry before any Instance placement. The Part itself has no global translation or rotation. If the same component is needed in several locations, define its topology once and create several \cmd{INSTANCE} entries.
 
-Explicit Parts are optional in native FEMaster input. Root-level nodes and elements are stored in the default Part. This means a one-component model can remain flat without losing access to the same solver architecture. Abaqus-style decks commonly use explicit Parts, and the supported Abaqus reader maps them to the same Part objects used by native FEMaster input.
+Part-local IDs are independent. Node \val{0} in Part \val{LEFT} and node \val{0} in Part \val{RIGHT} are different nodes even though they use the same numerical label. The same applies to element IDs. This is one of the main practical advantages of the Part representation: imported or reusable components do not need to be renumbered merely because another Part uses the same IDs.
+
+Explicit Parts are optional in native FEMaster input. If nodes and elements are written directly at root level, they belong to the flat model topology and can be used without writing \cmd{PART}, \cmd{ASSEMBLY}, or \cmd{INSTANCE}.
 
 \begin{keywordparameters}
-\key{NAME} & required & Unique name of the reusable Part. The name is referenced by \cmd{INSTANCE}. \\
+\key{NAME} & required & Unique Part name. The name is referenced by \cmd{INSTANCE}. \\
 \end{keywordparameters}
 
-No data line belongs directly to \cmd{PART}; the body consists of nested model-definition commands.
+No data line belongs directly to \cmd{PART}; the Part body consists of nested model-definition commands.
 
 \exampleheading
 
 \begin{dialectexamples}
 \begin{femasterdeck}
-*PART, NAME=BLOCK
-*NODE
-1, 0., 0., 0.
-2, 10., 0., 0.
+*PART, NAME=ROD
+*NODE, NSET=PNODES
+0,   0., 0., 0.
+1, 100., 0., 0.
 *ELEMENT, TYPE=T3, ELSET=BAR
-1, 1, 2
+0, 0, 1
 *END PART
 \end{femasterdeck}
 \begin{abaqusdeck}
-*PART, NAME=BLOCK
-*NODE
-1, 0., 0., 0.
-2, 10., 0., 0.
+*PART, NAME=ROD
+*NODE, NSET=PNODES
+0,   0., 0., 0.
+1, 100., 0., 0.
 *ELEMENT, TYPE=T3D2, ELSET=BAR
-1, 1, 2
+0, 0, 1
 *END PART
 \end{abaqusdeck}
 \end{dialectexamples}
 
 \notesheading
 
-Part-level node sets, element sets, and surfaces are copied through each Instance when the model is compiled. Section assignments remain associated with the part topology and therefore apply to every instance of that Part. Assembly-level sets can later combine entities from multiple instances.
+Part-level sets, surfaces, materials assigned through sections, and other part-level definitions follow the Part when it is instantiated. Define properties that belong to the component itself at Part level; define selections that combine several placed components at Assembly level.
 
 \keywordpage{END PART}
 
-\cmd{END PART} closes the active Part definition and restores the root/default model context. It carries no parameters and no data. Explicit closure is important because subsequent root-level definitions must not accidentally become part-local topology.
-
-The command is shared by native FEMaster and the supported Abaqus reader. Internally the parser deactivates the current named Part and restores the default context used by flat native input. It does not trigger compilation; Parts may be defined and closed before any Instances are created.
+\cmd{END PART} closes the active Part scope. It takes no parameters and no data lines. Definitions that follow are no longer part-local unless another \cmd{PART} is opened.
 
 \syntaxheading
 
@@ -116,31 +118,33 @@ The command is shared by native FEMaster and the supported Abaqus reader. Intern
 
 \notesheading
 
-Do not use the native loadcase \cmd{END} as a replacement for \cmd{END PART}. These commands close different scopes and are validated independently.
+Do not use native \cmd{END} as a replacement for \cmd{END PART}. \cmd{END} terminates a native loadcase, whereas \cmd{END PART} closes a Part definition.
 
 \keywordpage{ASSEMBLY}
 
-\cmd{ASSEMBLY} begins the assembly context. It is optional in native FEMaster models and is primarily useful when explicit Part Instances or assembly-level sets and surfaces are required. The supported Abaqus reader uses the familiar Abaqus Assembly scope for the same purpose.
+\cmd{ASSEMBLY} begins the optional Assembly scope. The Assembly is where placed Instances and regions that refer to the assembled model are defined. A model that does not need explicit Instances may omit this scope entirely.
 
-Assembly scope is the point at which reusable part topology is referenced rather than redefined. \cmd{INSTANCE} entries select Parts and assign placements. Node sets, element sets, and surfaces defined at assembly level can refer to compiled entities belonging to one or more instances. In contrast, region definitions inside a Part remain part-local and are automatically expanded with the Part.
+The Assembly is especially useful when several Parts are combined or one Part is repeated. Part-level topology remains expressed with local IDs, while Assembly-level sets and surfaces can select entities from particular Instances. This allows the model to preserve meaningful local numbering inside each component without forcing a single manually renumbered global mesh.
 
-The assembly itself does not duplicate topology at parse time. Compilation remains the single operation that expands Instances and establishes the dense global model. As a result, the conceptual order is Part definition, Instance placement, compilation, then materialization of assembly-dependent regions.
+\key{NAME} is optional and defaults to \val{ASSEMBLY}. The name is descriptive for the supported current workflow; the important user-visible objects inside the Assembly are the Instances and assembly-level regions.
 
-The native FEMaster Assembly command does not require a name. Abaqus Assembly input commonly includes \key{NAME}; the supported reader accepts the structural Assembly scope according to its registered grammar. The name has no effect on the solver matrices.
+\begin{keywordparameters}
+\key{NAME} & optional & Assembly name; default \val{ASSEMBLY}. \\
+\end{keywordparameters}
 
 \exampleheading
 
 \begin{dialectexamples}
 \begin{femasterdeck}
-*ASSEMBLY
-*INSTANCE, NAME=A, PART=BLOCK
+*ASSEMBLY, NAME=ASSEMBLY
+*INSTANCE, NAME=ROD_A, PART=ROD
 0., 0., 0.
 *END INSTANCE
 *END ASSEMBLY
 \end{femasterdeck}
 \begin{abaqusdeck}
 *ASSEMBLY, NAME=ASSEMBLY
-*INSTANCE, NAME=A, PART=BLOCK
+*INSTANCE, NAME=ROD_A, PART=ROD
 0., 0., 0.
 *END INSTANCE
 *END ASSEMBLY
@@ -149,13 +153,17 @@ The native FEMaster Assembly command does not require a name. Abaqus Assembly in
 
 \notesheading
 
-A model with no explicit Assembly remains valid. The compile step creates the solver-facing model from the default Part in the same way that an explicit instance expands a named Part. Use Assembly syntax for semantic organization, not because the solver requires an Assembly keyword.
+Use an Assembly because it improves the physical organization of the model, not because the solver requires one. A flat native model remains the simplest and clearest representation for many single-component analyses.
 
 \keywordpage{END ASSEMBLY}
 
-\cmd{END ASSEMBLY} terminates the Assembly context. The command carries no mechanical data. After the scope closes, later root-level definitions are no longer interpreted as assembly-level region construction.
+\cmd{END ASSEMBLY} closes the Assembly scope. It has no parameters and no data lines.
 
-Because assembly regions may depend on compiled instance maps, the reader can encounter the structural scope in more than one dependency pass while executing only the callbacks whose dependencies are available. This implementation detail is transparent to the deck: users write one \cmd{ASSEMBLY}/\cmd{END ASSEMBLY} pair.
+\syntaxheading
+
+\begin{syntax}
+*END ASSEMBLY
+\end{syntax}
 
 \exampleheading
 
@@ -174,30 +182,28 @@ Because assembly regions may depend on compiled instance maps, the reader can en
 
 \keywordpage{INSTANCE}
 
-\cmd{INSTANCE} creates a rigid placement of an existing Part. FEMaster intentionally uses the same placement syntax as the supported Abaqus reader. The command requires a unique Instance name and the name of the referenced Part. Up to two data lines then describe the placement: an optional translation vector and an optional axis-angle rotation.
+\cmd{INSTANCE} places an existing Part in the Assembly. Native FEMaster intentionally accepts the same placement representation used by the supported Abaqus reader. \key{NAME} gives the Instance a unique assembly name and \key{PART} selects the reusable Part.
 
-An Instance is lightweight before compilation. It references, rather than copies, the Part. The translation and rotation are stored as an affine rigid transformation. When compilation expands the Instance, every part-local node coordinate \(\boldsymbol X\) is mapped into the assembly coordinate system. For a translation \(\boldsymbol t\) followed by rotation \(\boldsymbol R\) about an axis passing through point \(\boldsymbol p\), the implemented mapping is
+An Instance may be placed by translation, rotation, both, or neither. A three-value data line gives a translation
 \[
-\boldsymbol x
-=
-\boldsymbol R\boldsymbol X
-+
-\boldsymbol R\boldsymbol t
-+
-\boldsymbol p-\boldsymbol R\boldsymbol p.
+\boldsymbol t=(t_x,t_y,t_z).
 \]
-The translation therefore acts first and the axis rotation second, matching the supported Abaqus placement semantics.
+A seven-value line defines a rotation by two points on the rotation axis and an angle in degrees:
+\[
+(x_1,y_1,z_1,x_2,y_2,z_2,\varphi).
+\]
+The two axis points must be distinct. If both translation and rotation are supplied, the translation is applied first and the axis-angle rotation second. With no placement data the Part is instantiated in its original position.
 
-The rotation line contains two points that define the global rotation axis followed by the angle in degrees. The two axis points must be distinct and all values must be finite. Rotation is evaluated using the normalized axis and Rodrigues' formula. If only a seven-value line is present, it is interpreted as a rotation without a preceding translation. If only a three-value line is present, it is a pure translation. With no data lines the Instance uses identity placement.
+Instance placement changes the position and orientation of the component in the assembled model; it does not require the Part coordinates or Part IDs to be rewritten. Several Instances may therefore reference the same Part with different placements.
 
 \begin{keywordparameters}
-\key{NAME} & required & Unique Instance name. Used to qualify assembly-level references. \\
-\key{PART} & required & Name of the previously defined Part that is instantiated. \\
+\key{NAME} & required & Unique Instance name used for assembly-level references. \\
+\key{PART} & required & Name of the Part to place. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{tx, ty, tz} & Optional translation in global coordinate components. \\
-\val{x1,y1,z1,x2,y2,z2,angle} & Optional rotation axis through two global points and angle in degrees. \\
+\val{tx, ty, tz} & Optional translation vector. \\
+\val{x1,y1,z1,x2,y2,z2,angle} & Optional rotation axis through two points and rotation angle in degrees. \\
 \end{keyworddata}
 
 \exampleheading
@@ -219,13 +225,11 @@ The rotation line contains two points that define the global rotation axis follo
 
 \notesheading
 
-The source Part remains unchanged regardless of how many Instances reference it. Part-level regions are expanded separately for each Instance. This is the key reason identifiers can stay local and sparse until compilation. A second Instance of the same Part may therefore use a completely different placement without any topology duplication in the input deck.
+Because the Part remains reusable, its local node and element labels remain meaningful in every Instance. Assembly-level sets can select a particular Instance when the same local ID appears in several placed copies.
 
 \keywordpage{END INSTANCE}
 
-\cmd{END INSTANCE} closes an Instance scope. The supported current placement syntax stores all placement information on the \cmd{INSTANCE} command itself; no nodes or elements are normally defined inside the Instance body. The explicit closing keyword is retained because it matches Abaqus structural syntax and makes nesting unambiguous.
-
-No parameters or data lines are accepted. Closing an Instance does not compile it immediately; all semantic Parts and Instances are completed before the one-way compile step expands them.
+\cmd{END INSTANCE} closes the current Instance definition. It takes no parameters or data lines.
 
 \exampleheading
 
@@ -246,19 +250,21 @@ No parameters or data lines are accepted. Closing an Instance does not compile i
 
 \keywordpage{NODE}
 
-\cmd{NODE} defines finite-element nodes by sparse user identifier and Cartesian reference coordinates. In a Part scope the nodes belong to that Part. At native FEMaster root level they belong to the default Part, which is why a simple deck can omit all explicit Part and Instance syntax. Node identifiers are not required to form a dense sequence; dense solver rows are assigned only during compilation.
+\cmd{NODE} defines finite-element nodes by user ID and Cartesian reference coordinates. In a Part scope the nodes belong to that Part. In a flat native model they belong directly to the model topology.
 
-The optional \key{NSET} parameter adds every node defined by this command block to a node set. Its native default is \val{NALL}. Coordinates omitted from the data record default to zero, so two-dimensional or one-dimensional geometries may use shorter records, although explicitly writing all three coordinates often improves readability.
+Node IDs are non-negative integers. \textbf{ID 0 is valid.} IDs need not be contiguous and may be chosen to preserve meaningful numbering from a mesh generator or external model. They must only be unique within the topology scope in which they are defined.
 
-Nodes defined inside separate Parts may reuse the same numerical identifier. Element connectivity inside a Part resolves against that Part's nodes. After instance expansion, compiled identifiers distinguish the otherwise identical local labels.
+The optional \key{NSET} parameter adds every node in the block to a node set. Native FEMaster defaults this set to \val{NALL}. Coordinates are Cartesian reference coordinates. Missing trailing coordinate components default to zero, although explicitly writing all three values is generally clearer in shared examples.
+
+Node order has no mechanical meaning by itself, but the order in which node IDs appear in an element connectivity is crucial because it determines the element's local topology and orientation.
 
 \begin{keywordparameters}
-\key{NSET} & optional & Node set receiving every node in the block. Native default: \val{NALL}. \\
+\key{NSET} & optional & Node set receiving all nodes in the block; native default \val{NALL}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{id} & Sparse node identifier in the active Part. \\
-\val{x, y, z} & Cartesian reference coordinates; missing components default to zero. \\
+\val{id} & Non-negative user node ID; \val{0} is valid. \\
+\val{x, y, z} & Cartesian reference coordinates. \\
 \end{keyworddata}
 
 \exampleheading
@@ -266,48 +272,40 @@ Nodes defined inside separate Parts may reuse the same numerical identifier. Ele
 \begin{dialectexamples}
 \begin{femasterdeck}
 *NODE, NSET=EDGE
-10, 0.,  0., 0.
-20, 25., 0., 0.
-30, 50., 0., 0.
+0,  0., 0., 0.
+10, 25., 0., 0.
+20, 50., 0., 0.
 \end{femasterdeck}
 \begin{abaqusdeck}
 *NODE, NSET=EDGE
-10, 0.,  0., 0.
-20, 25., 0., 0.
-30, 50., 0., 0.
+0,  0., 0., 0.
+10, 25., 0., 0.
+20, 50., 0., 0.
 \end{abaqusdeck}
 \end{dialectexamples}
 
 \notesheading
 
-A node coordinate is part of the undeformed/reference geometry. Prescribed displacement, initial velocity, and nodal transform data do not modify this stored reference coordinate. Instance placement is likewise applied at compilation rather than destructively changing the Part's node table.
+The coordinates define the undeformed geometry. Loads, prescribed displacements, initial velocities, and Instance placement do not change the meaning of the node's Part-local reference coordinates.
 
 \keywordpage{ELEMENT}
 
-\cmd{ELEMENT} defines element topology. Each record contains an element identifier followed by the node identifiers of its connectivity. The required \key{TYPE} parameter selects the formulation and therefore determines the required node count and interpolation. The optional \key{ELSET} parameter inserts each defined element into a named element set; native FEMaster defaults this set to \val{EALL}.
+\cmd{ELEMENT} defines element connectivity. Every data record begins with a user element ID followed by the node IDs in the formulation-specific connectivity order. \key{TYPE} selects the finite-element formulation. \key{ELSET} optionally adds all elements in the block to an element set and defaults to \val{EALL} in native FEMaster input.
 
-As with nodes, element identifiers remain sparse and local to the active Part until compilation. Connectivity is resolved in the Part's local node namespace. Long higher-order connectivities may span multiple physical input lines where allowed by the grammar.
+Element IDs are non-negative user labels and may also begin at \textbf{0}. They may be sparse. Connectivity is written using node IDs from the same topology scope as the element. The connectivity order determines local edges and faces, shell normal direction, solid face labels, element orientation, and the mapping from the reference element to the physical geometry.
 
-Native FEMaster and Abaqus input use many identical element labels for solids. Beam and truss naming differs in places, and the Abaqus shell labels are deliberately mapped to the FEMaster FRT shell implementations. In particular, Abaqus \val{T3D2} maps to FEMaster \val{T3}; Abaqus \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} map to the corresponding FRT shell implementations. Native FEMaster additionally exposes element formulations such as \val{MITC4}, \val{MITC8}, \val{QSPT}, and explicit \val{MITC*FRT} names.
+The complete formulation reference is given in Chapter~\ref{chap:elements}. That chapter documents the supported solid, shell, beam, and truss elements individually, including node ordering, numerical behaviour, recommended use, and the existing element schematics.
 
-The supported native element labels are currently
-\begin{itemize}
-  \item solids: \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, \val{C3D20R};
-  \item line elements: \val{B33} and \val{T3};
-  \item shells: \val{S3}, \val{S4}, \val{S6}, \val{S8}, \val{MITC4}, \val{MITC8}, \val{QSPT}, \val{MITC3FRT}, \val{MITC4FRT}, \val{MITC6FRT}, and \val{MITC8FRT}.
-\end{itemize}
-The Abaqus reader accepts the solid labels above together with \val{B33}, \val{T3D2}, and \val{S3/S3R/S4/S4R/S6/S6R/S8/S8R}.
-
-The five-node pyramid \val{C3D5} is represented internally using the supported eight-node solid topology with the apex repeated in the upper four connectivity slots. This mapping is handled by the reader; users still provide the natural five-node pyramid record.
+The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native \val{T3} corresponds to Abaqus \val{T3D2}. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster additionally exposes the legacy shell types, MITC variants, FRT names, and \val{QSPT} directly.
 
 \begin{keywordparameters}
-\key{TYPE} & required & Element formulation/type identifier; accepted values depend on the selected input dialect. \\
-\key{ELSET} & optional & Element set receiving all elements in this block. Native default: \val{EALL}. \\
+\key{TYPE} & required & Element formulation/type identifier. \\
+\key{ELSET} & optional & Element set receiving all elements in the block; native default \val{EALL}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{id} & Sparse element identifier in the active Part. \\
-\val{n1, n2, ...} & Part-local node connectivity in the formulation-specific order. \\
+\val{id} & Non-negative user element ID; \val{0} is valid. \\
+\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \\
 \end{keyworddata}
 
 \exampleheading
@@ -315,22 +313,22 @@ The five-node pyramid \val{C3D5} is represented internally using the supported e
 \begin{dialectexamples}
 \begin{femasterdeck}
 *ELEMENT, TYPE=T3, ELSET=BARS
-1, 1, 2
-2, 2, 3
+0, 0, 10
+1, 10, 20
 
-*ELEMENT, TYPE=MITC4, ELSET=PANEL
-10, 11, 12, 13, 14
+*ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
+10, 100, 110, 120, 130
 \end{femasterdeck}
 \begin{abaqusdeck}
 *ELEMENT, TYPE=T3D2, ELSET=BARS
-1, 1, 2
-2, 2, 3
+0, 0, 10
+1, 10, 20
 
 *ELEMENT, TYPE=S4, ELSET=PANEL
-10, 11, 12, 13, 14
+10, 100, 110, 120, 130
 \end{abaqusdeck}
 \end{dialectexamples}
 
 \notesheading
 
-The element type determines only topology and element formulation. Material and geometric properties are assigned separately through Sections. Consequently, creating a shell or solid element without an appropriate Section leaves the model structurally incomplete even though its connectivity is valid. Detailed formulation-specific node ordering, integration, output quantities, and kinematic assumptions are described in the element theory material retained elsewhere in the manual and source documentation.
+An element definition provides topology and kinematics, not the complete physical properties. Solids, shells, beams, and trusses require the corresponding section definitions before they have the intended material and geometric stiffness. The element chapter should therefore be read together with Chapter~\ref{chap:sections}.
