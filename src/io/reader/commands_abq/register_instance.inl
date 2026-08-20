@@ -78,37 +78,27 @@ inline void register_instance(fem::io::dsl::Registry& registry, model::Model& mo
                 "INSTANCE: active instance was not created");
         });
 
-        auto build_rotation = [](const Vec3& point_a,
-                         const Vec3& point_b,
-                         Precision angle) -> Mat3 {
-            logging::error(
-                point_a.allFinite() && point_b.allFinite() && std::isfinite(angle),
-                "INSTANCE: rotation definition must contain only finite values"
-            );
+        auto build_rotation = [](const Vec3& point_a, const Vec3& point_b, Precision angle) {
+            // Validate and normalize the global rotation axis
+            logging::error(point_a.allFinite() && point_b.allFinite() && std::isfinite(angle),
+                "INSTANCE: rotation definition must contain only finite values");
 
             const Vec3 axis = point_b - point_a;
-
-            logging::error(
-                axis.norm() > std::numeric_limits<Precision>::epsilon(),
-                "INSTANCE: rotation axis points must be distinct"
-            );
-
+            logging::error(axis.norm() > std::numeric_limits<Precision>::epsilon(),
+                "INSTANCE: rotation axis points must be distinct");
             const Vec3 unit = axis.normalized();
 
+            // Evaluate Rodrigues' formula for the proper axis-angle rotation
             Mat3 skew;
-            skew << Precision(0), -unit(2),      unit(1),
-                    unit(2),       Precision(0), -unit(0),
-                   -unit(1),       unit(0),       Precision(0);
+            skew << Precision(0), -unit(2), unit(1),
+                    unit(2), Precision(0), -unit(0),
+                   -unit(1), unit(0), Precision(0);
 
             const Precision c = std::cos(angle);
             const Precision s = std::sin(angle);
-
-            Mat3 rotation =
-                  c * Mat3::Identity()
-                + (Precision(1) - c) * (unit * unit.transpose())
-                + s * skew;
-
-            return rotation;
+            return c * Mat3::Identity()
+                 + (Precision(1) - c) * (unit * unit.transpose())
+                 + s * skew;
         };
 
         // Translation followed by rotation about a global two-point axis

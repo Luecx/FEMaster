@@ -533,12 +533,12 @@ void FrdWriter::write_model_data(const model::ModelData& model_data) {
         logging::error(instance != nullptr,
             "FrdWriter: dense node ", i, " has no source instance");
         logging::error(local_id < static_cast<ID>(100000000),
-            "FrdWriter: local node id ", local_id, " exceeds the supported instance range");
+            "FrdWriter: local node id ", local_id,
+            " exceeds the supported instance range");
 
         node_ids[i] =
-              static_cast<Index>(100000000)
-            * static_cast<Index>(instance->instance_id)
-            + static_cast<Index>(local_id);
+            static_cast<ID>(100000000) * static_cast<ID>(instance->instance_id)
+            + local_id;
     }
 
     // Emit geometry and connectivity using the fixed external numbering

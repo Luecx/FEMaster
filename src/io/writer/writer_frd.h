@@ -66,8 +66,8 @@ class FrdWriter {
     private:
     std::ofstream file_path;
 
-    // Dense global node id -> FRD node id (using Index for large numbers).
-    std::vector<Index> node_ids;
+    // Dense global node id -> FRD node id
+    std::vector<ID> node_ids;
 
     // Writer state
     bool model_data_written = false;
