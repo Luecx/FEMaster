@@ -154,6 +154,62 @@ No direct RBM-suppression keyword is currently imported by the supported Abaqus 
 
 \notesheading
 
-Use RBM when removing rigid-body motion is itself the intended mathematical constraint. Do not use it as a general cure for singular systems: a singularity may instead indicate disconnected parts, released mechanisms, missing sections, unsupported rotational degrees of freedom, or an incorrect constraint definition.
+Use RBM when removing rigid-body motion is itself the intended mathematical constraint. Do not use it as a general cure for singular systems: a singularity may instead indicate disconnected parts, released mechanisms, missing Sections, unsupported rotational degrees of freedom, or an incorrect constraint definition.
 
-\input{pages/11-contact-reference}
+\section{Contact}
+\label{sec:contact}
+
+Contact is a unilateral constraint between two surface regions. In contrast to a Tie, which permanently enforces compatible motion between associated regions, contact permits the surfaces to separate and transmits normal interaction only when the contact condition becomes active.
+
+The current FEMaster contact formulation is frictionless dual-mortar surface-to-surface contact with an augmented-Lagrange normal-contact law. The important modelling consequences are that contact acts over the physical overlap of slave and master facets, is nonlinear because the active contact region changes with deformation, and requires a sensible master/slave definition, surface orientation, and penalty scale.
+
+\keywordpage{CONTACT}
+
+\cmd{CONTACT} defines one frictionless contact pair between a nonempty master surface set and a nonempty slave surface set. \key{MASTER} and \key{SLAVE} name the two regions. \key{PENALTY} provides the initial contact penalty stiffness. \key{CLEARANCE} shifts the zero-gap condition and defaults to zero. \key{FLIP=YES} reverses the master-surface normal used by the contact pair; the default is \val{NO}.
+
+For each active slave contact degree of freedom, FEMaster uses an augmented-Lagrange relation of the form
+\[
+p_i=\max\left(0,\lambda_i-\varepsilon g_i\right),
+\]
+where \(g_i\) is the current normal gap, \(\lambda_i\) is the augmented-Lagrange multiplier, and \(\varepsilon\) is the effective penalty stiffness. With the sign convention used by the formulation, the \(\max\) operation suppresses tensile contact: surfaces may separate freely and normal contact pressure is generated only on the compressive side of the constraint.
+
+The mortar formulation determines interaction from the current physical overlap of slave and master facets rather than simply tying a slave node to one permanently selected master node. This makes the contact response considerably less mesh-position dependent than a simple node-to-node contact law, but it also means that changing overlap topology can introduce non-smooth changes into a nonlinear equilibrium iteration.
+
+The user-supplied \key{PENALTY} is a numerical stiffness scale, not a physical material constant. If it is too small, the solution may exhibit excessive penetration. If it is unnecessarily large, the global tangent system can become poorly conditioned. The augmented-Lagrange procedure can increase the effective penalty when additional enforcement is required, so the input value should be chosen as a reasonable starting scale relative to the structural stiffness of the contacting bodies.
+
+\begin{keywordparameters}
+\key{MASTER} & required & Nonempty master surface set. \\
+\key{SLAVE} & required & Nonempty slave surface set. \\
+\key{PENALTY} & required & Initial augmented-Lagrange penalty stiffness. \\
+\key{CLEARANCE} & optional & Contact-clearance offset; default \val{0}. \\
+\key{FLIP} & optional & \val{NO} (default) or \val{YES}; reverses the master-surface normal. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SURFACE, NAME=MASTER_FACE
+MASTER_ELEMENTS, S1
+*SURFACE, NAME=SLAVE_FACE
+SLAVE_ELEMENTS, S2
+
+*CONTACT, MASTER=MASTER_FACE,
+ SLAVE=SLAVE_FACE,
+ PENALTY=1.0e8,
+ CLEARANCE=0.0, FLIP=NO
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus reader currently does not import the Abaqus contact-definition family. Contact can be added with native FEMaster syntax using surface sets available in the model.
+\end{noabaqus}
+\end{dialectexamples}
+
+\notesheading
+
+\textbf{Master/slave choice.} The mortar formulation is not algebraically symmetric with respect to the two labels: the dual interpolation and normal multipliers are associated with the slave side. For similar discretizations either assignment may work well, but the choice should be kept consistent across comparable models. When the meshes differ strongly, the finer or more detailed side is commonly a sensible slave candidate, followed by a mesh-sensitivity check.
+
+\textbf{Normal orientation.} Contact sign depends on the surface orientation. If a physically separated pair appears active, or a penetrating pair does not develop reaction, check element connectivity and surface side labels first. Use \key{FLIP} only when the master normal is intentionally to be reversed.
+
+\textbf{Penalty magnitude.} Always judge the penalty from the resulting penetration and nonlinear convergence, not from the input number alone. A useful contact solution should have penetration small relative to the relevant geometric length scale without making the equilibrium iterations unnecessarily ill-conditioned.
+
+\textbf{Analysis type.} Contact changes with deformation and therefore belongs to nonlinear static analysis. A linear analysis cannot represent opening, closing, changing overlap, or an evolving unilateral active set.
