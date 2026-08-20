@@ -1,27 +1,37 @@
 \chapter{Regions and Selections}
 \label{chap:regions}
 
-Regions give names to subsets of a finite-element model. They are the connection between topology and nearly every higher-level modelling operation: Sections target element regions, supports and concentrated loads target node regions, pressure and traction loads target surfaces, and constraints and contact use combinations of node and surface regions. A well-structured deck therefore treats sets and surfaces as part of the semantic model rather than as incidental lists of identifiers.
+Regions give names to reusable parts of the mesh. They are used throughout a FEMaster model: Sections are assigned to element sets, supports and concentrated loads target nodes or node sets, pressure and traction loads act on surfaces, and constraints such as couplings, ties, and contact refer to named regions.
 
-FEMaster distinguishes between regions defined inside a Part and regions defined at Assembly level. Part-level regions store sparse local identifiers and are reusable with the Part. When a Part is instantiated, its regions are expanded through the corresponding local-to-compiled identifier maps. Assembly-level regions are materialized after compilation and can refer to one Instance explicitly or combine already compiled regions from several Instances.
+A region should therefore represent a meaningful modelling concept rather than only a convenient list of IDs. Names such as \val{ROOT}, \val{PRESSURE_FACE}, \val{DESIGN_DOMAIN}, or \val{CONTACT_SLAVE} make the intent of later commands much clearer than repeating numerical identifiers throughout the deck.
+
+Regions can be defined inside a Part or at Assembly level. A Part-level region belongs to that Part and is available for every Instance of the Part. An Assembly-level region refers to the placed model and is useful when a selection belongs to one particular Instance or combines entities from several Instances. The optional \key{INSTANCE} parameter identifies the Instance whose local IDs are being referenced.
+
+User node, element, and explicit surface IDs are non-negative labels and may start at \val{0}. Generated ranges therefore may also begin at zero.
 
 \keywordpage{NSET}
 
-\cmd{NSET} creates or extends a named node region. The same command is used by native FEMaster input and the supported Abaqus reader. The set can contain explicit node identifiers, references resolved at Assembly level, or an arithmetic sequence selected with \key{GENERATE}. The set name is supplied through \key{NSET}; \key{NAME} is accepted as an alternative spelling.
+\cmd{NSET} creates or extends a named node set. The same basic syntax is accepted by native FEMaster and by the supported Abaqus input format. \key{NSET} gives the set name; \key{NAME} is accepted as an alternative spelling. Data may contain explicit node references or generated arithmetic ranges.
 
-Inside a Part, numeric entries are stored exactly as local node identifiers. No dense global row is assigned at this stage. At Assembly level the situation is different: the semantic topology has already been compiled, so node references are translated through the Instance maps into compiled node identifiers. The optional \key{INSTANCE} parameter qualifies every unqualified target in the command block and is therefore valid only in Assembly scope.
+Inside a Part, numerical entries refer to that Part's local node IDs. Separate Parts may therefore contain sets with the same numerical members without referring to the same physical nodes. If a Part is instantiated more than once, its Part-level node sets remain available for every copy.
 
-The generated form contains a start identifier, an inclusive end identifier, and an optional increment. The increment defaults to one and may be positive or negative, but it may not be zero. A range whose direction is incompatible with the sign of the increment contributes no entries. Explicit-set input can also reference existing compiled node regions at Assembly level, allowing larger regions to be built from previously named subsets rather than repeating every identifier.
+At Assembly level, \key{INSTANCE=<name>} qualifies local IDs with one particular Instance. This is the most direct way to create a support or load region on one placed copy of a reusable Part. Assembly-level sets may also combine selections from different Instances by using the supported qualified references or by building larger sets from previously named regions.
+
+With \key{GENERATE}, every data row contains
+\[
+\text{start},\quad \text{end},\quad \text{increment}.
+\]
+The end value is inclusive. The increment defaults to 1 and must not be zero. Positive and negative increments are supported, so generated sequences can run in either direction as long as the sign agrees with the requested range.
 
 \begin{keywordparameters}
 \key{NSET} / \key{NAME} & required & Name of the node set to create or extend. \\
-\key{INSTANCE} & optional & Assembly-only Instance qualifier applied to unqualified node references. \\
-\key{GENERATE} & optional flag & Interpret each data row as start, end, increment rather than explicit targets. \\
+\key{INSTANCE} & optional & Assembly-level qualifier for local node references. \\
+\key{GENERATE} & optional flag & Interpret each data row as start, end, increment. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-Explicit targets & Node identifiers or, at Assembly level, resolvable node-set/reference tokens. \\
-\val{start, end, increment} & Arithmetic identifier range for \key{GENERATE}; increment defaults to 1. \\
+Explicit form & One or more node IDs or supported named/qualified node references. \\
+Generated form & \val{start, end, increment}; the increment defaults to \val{1} and must be nonzero. \\
 \end{keyworddata}
 
 \exampleheading
@@ -30,52 +40,75 @@ Explicit targets & Node identifiers or, at Assembly level, resolvable node-set/r
 \begin{femasterdeck}
 *PART, NAME=BEAM
 *NODE
-1, 0., 0., 0.
-2, 1., 0., 0.
-3, 2., 0., 0.
-4, 3., 0., 0.
+0, 0., 0., 0.
+1, 1., 0., 0.
+2, 2., 0., 0.
+3, 3., 0., 0.
 *NSET, NSET=ENDS
-1, 4
+0, 3
 *NSET, NSET=ALLN, GENERATE
-1, 4, 1
+0, 3, 1
 *END PART
 \end{femasterdeck}
 \begin{abaqusdeck}
 *PART, NAME=BEAM
 *NODE
-1, 0., 0., 0.
-2, 1., 0., 0.
-3, 2., 0., 0.
-4, 3., 0., 0.
+0, 0., 0., 0.
+1, 1., 0., 0.
+2, 2., 0., 0.
+3, 3., 0., 0.
 *NSET, NSET=ENDS
-1, 4
+0, 3
 *NSET, NSET=ALLN, GENERATE
-1, 4, 1
+0, 3, 1
 *END PART
 \end{abaqusdeck}
 \end{dialectexamples}
 
 \notesheading
 
-A set name is a stable modelling reference; the numerical IDs inside it are not. In a multi-instance model, use part-level sets wherever the region concept belongs to the component itself. Use Assembly-level sets when the selection is inherently an assembly concept, for example a support region that combines nodes from several placed components.
+Prefer Part-level sets for regions that are intrinsic to the component, such as a bolt row, a root edge, or a material domain. Prefer Assembly-level sets for selections whose meaning depends on placement, such as ``the left support of Instance A'' or a region combining nodes from several components.
+
+\clearpage
+\subsection*{Assembly-level Instance selection}
+
+A typical Assembly selection looks like
+\begin{syntax}
+*ASSEMBLY
+*INSTANCE, NAME=BEAM_A, PART=BEAM
+0., 0., 0.
+*END INSTANCE
+*INSTANCE, NAME=BEAM_B, PART=BEAM
+100., 0., 0.
+*END INSTANCE
+
+*NSET, NSET=SUPPORT_A, INSTANCE=BEAM_A
+0
+*NSET, NSET=SUPPORT_B, INSTANCE=BEAM_B
+0
+*END ASSEMBLY
+\end{syntax}
+Both sets contain a local node with ID \val{0}, but they refer to different placed Instances.
 
 \keywordpage{ELSET}
 
-\cmd{ELSET} is the element-domain counterpart of \cmd{NSET}. It creates or extends a named element region from explicit element references or generated arithmetic ranges. The command is shared by native FEMaster and the supported Abaqus reader, and \key{NAME} is accepted as an alternative to \key{ELSET} for the set name.
+\cmd{ELSET} is the element-domain counterpart of \cmd{NSET}. It creates or extends a named element set from explicit element references or generated ranges. \key{ELSET} supplies the name and \key{NAME} is accepted as an alternative.
 
-Within a Part, the entries remain sparse part-local element identifiers. This is the representation used by part-level section assignments and by part-level surfaces that refer to an element set. At Assembly level, entries are mapped to compiled global element rows. The optional \key{INSTANCE} qualifier resolves local element labels against one specific Instance; without it, targets must already be unambiguous in the compiled Assembly reference space.
+Element sets are central to property assignment. Solid, shell, beam, and truss Sections normally target an \cmd{ELSET}, so a good element-set structure often mirrors the physical construction of the model: different materials, thicknesses, beam profiles, or design domains should have separate meaningful names.
 
-As with node sets, \key{GENERATE} uses an inclusive start/end/increment record. The increment defaults to one and cannot be zero. Explicit Assembly entries may refer to previously defined element sets as well as individual resolvable elements, making it possible to form union-style regions without enumerating all members again.
+Inside a Part, entries refer to that Part's local element IDs. At Assembly level, \key{INSTANCE} qualifies local IDs with one placed Instance. This allows two Instances of the same Part to be selected independently even though they use identical local element numbering.
+
+\key{GENERATE} follows the same inclusive start/end/increment rule as \cmd{NSET}. ID \val{0} is valid, so for example \val{0, 99, 1} generates one hundred element IDs if they exist in the intended topology.
 
 \begin{keywordparameters}
 \key{ELSET} / \key{NAME} & required & Name of the element set to create or extend. \\
-\key{INSTANCE} & optional & Assembly-only Instance qualifier for local element references. \\
-\key{GENERATE} & optional flag & Generate an arithmetic sequence of element identifiers. \\
+\key{INSTANCE} & optional & Assembly-level qualifier for local element references. \\
+\key{GENERATE} & optional flag & Generate an arithmetic sequence of element IDs. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-Explicit targets & Element identifiers or Assembly-level references to resolvable element regions. \\
-\val{start, end, increment} & Inclusive generated sequence; increment defaults to 1 and must be nonzero. \\
+Explicit form & One or more element IDs or supported named/qualified element references. \\
+Generated form & \val{start, end, increment}; inclusive end, nonzero increment. \\
 \end{keyworddata}
 
 \exampleheading
@@ -83,44 +116,46 @@ Explicit targets & Element identifiers or Assembly-level references to resolvabl
 \begin{dialectexamples}
 \begin{femasterdeck}
 *ELSET, ELSET=DESIGN_DOMAIN, GENERATE
-1, 100, 1
+0, 99, 1
 
-*ELSET, ELSET=ODD_ELEMENTS, GENERATE
-1, 99, 2
+*ELSET, ELSET=EVEN_ELEMENTS, GENERATE
+0, 98, 2
 \end{femasterdeck}
 \begin{abaqusdeck}
 *ELSET, ELSET=DESIGN_DOMAIN, GENERATE
-1, 100, 1
+0, 99, 1
 
-*ELSET, ELSET=ODD_ELEMENTS, GENERATE
-1, 99, 2
+*ELSET, ELSET=EVEN_ELEMENTS, GENERATE
+0, 98, 2
 \end{abaqusdeck}
 \end{dialectexamples}
 
 \notesheading
 
-Element sets are the normal target of Section assignments. If the same Part is instantiated several times, a part-level Section assignment follows every copy automatically. An Assembly-level \cmd{ELSET} should therefore be used for a Section only when the intended property truly differs between compiled instances and the corresponding Section grammar permits such an assignment.
+A Section assigned to a Part-level element set belongs to that component and therefore follows every Instance of the Part. This is normally the desired behaviour for material and geometric properties. Assembly-level element sets are more useful for loads, diagnostics, or selections that depend on which copy of the Part is being addressed.
 
 \keywordpage{SURFACE}
 
-\cmd{SURFACE} constructs geometric boundary entities from element sides. A surface is not merely a list of nodes: it retains the element-side relationship required to evaluate normals, surface Jacobians, tractions, pressure loads, coupling weights, tie projections, and contact geometry. Depending on the source element, a requested boundary may produce a two-dimensional surface entity or a line entity.
+\cmd{SURFACE} defines a geometric boundary from element sides. A surface is more than a node set: it retains which element face is selected and therefore has a well-defined interpolation, area or line measure, and orientation. Surface information is required for pressure loads, distributed tractions, surface couplings, ties, and contact.
 
-Native FEMaster permits two closely related data forms. The explicit-ID form contains a user surface identifier, an element identifier, and a side token. The target form contains an element or element-set reference followed by the side token; FEMaster creates all corresponding boundary entities and inserts them into the surface set named by \key{SFSET} or \key{NAME}. The default set name is \val{SFALL}. At Assembly level only the target form is meaningful because compiled boundary identifiers are generated during materialization rather than chosen as sparse user IDs.
+A side is selected by an element or element-set target together with a side label such as \val{S1}, \val{S2}, and so on. The actual face represented by a side label depends on the element type and its connectivity. This makes element node ordering important: reversing or changing connectivity can also change the physical direction of a surface normal.
 
-Side tokens accept plain integer face numbers, the conventional \val{S1}, \val{S2}, \ldots form, and the shell-side aliases \val{SPOS} and \val{SNEG}. \val{SPOS} maps to side 1 and \val{SNEG} to side 2. If a target names an element set, the selected side is created for every element in that set.
+For shell elements the two sides of the midsurface can also be described by \val{SPOS} and \val{SNEG}. These represent the positive and negative shell sides and are useful when pressure direction or top/bottom interpretation matters.
 
-At Assembly level \key{INSTANCE} can qualify the target. The reader first resolves a qualified element set if one exists and otherwise resolves the token as one compiled element reference. This makes the same semantic surface definition usable whether it selects one face or a complete face family.
+Native FEMaster additionally supports an explicit surface-ID form in which a user surface ID is supplied together with the parent element and side. Explicit surface IDs are non-negative and may start at \val{0}. For most user-written decks, however, naming a surface directly from an element or element set is clearer and avoids managing a separate numerical surface-ID space.
 
-The supported Abaqus reader registers its own \cmd{SURFACE} grammar but materializes surfaces into the same FEMaster boundary representation. Abaqus-style examples should therefore use the supported element-based surface form rather than relying on arbitrary surface features from the full Abaqus product that are outside FEMaster's reader.
+At Assembly level, \key{INSTANCE} can qualify the target element or element set. This allows a face of one particular Instance to be selected even when several copies use the same local element IDs and set names.
+
+The Abaqus example uses the supported element-based \cmd{SURFACE, TYPE=ELEMENT} syntax. More specialized surface features available in the full Abaqus product should not be assumed to be accepted unless they are documented here.
 
 \begin{keywordparameters}
-\key{SFSET} / \key{NAME} & optional & Destination surface-set name. Native default: \val{SFALL}. \\
-\key{INSTANCE} & optional & Assembly-only qualifier for the target element or element set. \\
+\key{SFSET} / \key{NAME} & optional & Name of the destination surface region; native default \val{SFALL}. \\
+\key{INSTANCE} & optional & Assembly-level Instance qualifier. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-\val{surface_id, element_id, side} & Native part/root form with an explicit sparse surface identifier. \\
-\val{target, side} & Element or element-set target followed by a side token; valid at Part and Assembly level. \\
+Target form & \val{element-or-elset, side}. \\
+Explicit native form & \val{surface_id, element_id, side}. \\
 \end{keyworddata}
 
 \exampleheading
@@ -131,7 +166,7 @@ The supported Abaqus reader registers its own \cmd{SURFACE} grammar but material
 SOLIDS, S2
 
 *SURFACE, NAME=ONE_FACE
-17, 42, S1
+0, 42, S1
 \end{femasterdeck}
 \begin{abaqusdeck}
 *SURFACE, NAME=TOP, TYPE=ELEMENT
@@ -141,27 +176,27 @@ SOLIDS, S2
 
 \notesheading
 
-The geometric direction associated with a side is determined by the element formulation and its connectivity. Loads and contact should therefore target the intended element side rather than attempting to infer a normal direction from an unordered node set. For shells, positive and negative faces distinguish the two sides of the midsurface.
+Do not infer a pressure or contact normal from an unordered node set. Define the correct element side and inspect the surface orientation. For shell models, normal consistency is especially important because it also controls positive/negative shell faces and the sign convention of bending-related quantities.
 
 \keywordpage{SFSET}
 
-\cmd{SFSET} groups existing surface identifiers into a reusable surface region. It is a native FEMaster convenience command: whereas \cmd{SURFACE} creates boundary geometry from elements, \cmd{SFSET} collects already existing surface entities. This distinction matters for models in which explicit sparse surface IDs are used or several independently created surfaces should be combined into one target.
+\cmd{SFSET} groups existing native FEMaster surface entities into a named surface region. It is useful when surfaces have been created with explicit user surface IDs or when several previously defined surface groups should be combined into one target.
 
-The command accepts \key{SFSET} or \key{NAME} as the destination name; if neither is supplied the native default is \val{SFALL}. Entries may be explicit references or generated ranges selected with \key{GENERATE}. At Part level the values remain sparse local surface identifiers. At Assembly level they are resolved through the compiled surface maps, optionally qualified by \key{INSTANCE}.
+\cmd{SURFACE} and \cmd{SFSET} therefore serve different purposes: \cmd{SURFACE} creates geometric boundary entities from elements, while \cmd{SFSET} collects already existing surface entities. If the desired boundary can be expressed directly from one or more element sets, a named \cmd{SURFACE} is usually the simpler representation.
 
-The generated form follows the same start/end/increment convention as \cmd{NSET} and \cmd{ELSET}. The increment defaults to one and may be negative but not zero. Explicit Assembly-level entries can also merge existing compiled surface sets where the reference resolver can identify them.
+The destination name is supplied by \key{SFSET} or \key{NAME}; the native default is \val{SFALL}. Explicit surface references can be listed directly. With \key{GENERATE}, arithmetic ranges of surface IDs can be produced using the same inclusive start/end/increment convention as node and element sets. \key{INSTANCE} can be used for Assembly-level selection where applicable.
 
-The Abaqus reader does not register a separate \cmd{SFSET} keyword. Abaqus input normally names a surface directly with \cmd{SURFACE}; the resulting named surface already serves as the reusable region. The side-by-side example therefore shows the equivalent modelling intent rather than inventing unsupported Abaqus syntax.
+The supported Abaqus input format does not have a separate \cmd{SFSET} keyword. A named Abaqus \cmd{SURFACE} already serves as the reusable surface region, so the right-hand example expresses the same modelling intent directly through one combined surface definition.
 
 \begin{keywordparameters}
 \key{SFSET} / \key{NAME} & optional & Destination surface-region name; native default \val{SFALL}. \\
-\key{INSTANCE} & optional & Assembly-only Instance qualifier. \\
-\key{GENERATE} & optional flag & Generate surface identifiers from an arithmetic range. \\
+\key{INSTANCE} & optional & Assembly-level Instance qualifier. \\
+\key{GENERATE} & optional flag & Generate an arithmetic sequence of surface IDs. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-Explicit targets & Existing surface identifiers or resolvable Assembly surface-region references. \\
-\val{start, end, increment} & Inclusive generated surface-ID sequence; increment defaults to 1. \\
+Explicit form & Existing surface IDs or supported named surface references. \\
+Generated form & \val{start, end, increment}; inclusive end, nonzero increment. \\
 \end{keyworddata}
 
 \exampleheading
@@ -169,17 +204,15 @@ Explicit targets & Existing surface identifiers or resolvable Assembly surface-r
 \begin{dialectexamples}
 \begin{femasterdeck}
 *SURFACE, NAME=PATCH_A
-101, 20, S1
-102, 21, S1
+0, 20, S1
+1, 21, S1
 *SURFACE, NAME=PATCH_B
-103, 22, S1
+2, 22, S1
 
 *SFSET, NAME=CONTACT_FACE
-101, 102, 103
+0, 1, 2
 \end{femasterdeck}
 \begin{abaqusdeck}
-** Abaqus input names the combined
-** surface directly.
 *SURFACE, NAME=CONTACT_FACE, TYPE=ELEMENT
 20, S1
 21, S1
@@ -189,4 +222,4 @@ Explicit targets & Existing surface identifiers or resolvable Assembly surface-r
 
 \notesheading
 
-Prefer creating a named \cmd{SURFACE} directly when all required boundaries can be expressed from element or element-set targets. \cmd{SFSET} is most useful when explicit surface IDs already exist, when programmatic deck generation naturally creates surfaces in separate blocks, or when a later union of surface regions improves model readability.
+Use \cmd{SFSET} when combining explicit native surface IDs is genuinely useful. For most manually written models, direct named \cmd{SURFACE} definitions are easier to read and less error-prone.
