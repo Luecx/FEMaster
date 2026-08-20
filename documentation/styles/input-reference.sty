@@ -1,0 +1,171 @@
+% Additional layout for the FEMaster/Abaqus input-language reference.
+% Kept separate from femaster-manual.sty so the generic manual styling remains
+% reusable by older auxiliary documents.
+
+\NeedsTeXFormat{LaTeX2e}
+
+\definecolor{FMAbaqus}{HTML}{7A3E00}
+\definecolor{FMSoftBlue}{HTML}{EEF5FA}
+\definecolor{FMSoftOrange}{HTML}{FFF4E8}
+\definecolor{FMSoftGreen}{HTML}{EEF7EF}
+
+% Every documented input keyword starts on a fresh page. The page break is
+% intentional: the manual is both a continuous tutorial and a printable keyword
+% reference in which a single command can be opened or printed independently.
+\newcommand{\keywordpage}[1]{%
+  \clearpage
+  \section{\cmd{#1}}
+  \markright{\cmd{#1}}
+}
+
+\newcommand{\keywordpageshort}[1]{%
+  \section{\cmd{#1}}
+  \markright{\cmd{#1}}
+}
+
+
+\newcommand{\keywordsubpage}[2]{%
+  \clearpage
+  \section{#1: \cmd{#2}}
+  \markright{\cmd{#2}}
+}
+
+% Consistent introductory support labels. "Shared" means that the syntax shown
+% is accepted by both FEMaster and the supported Abaqus reader; it is not a claim
+% that every option implemented by Abaqus itself is supported.
+\newtcolorbox{supportnote}[1][]{%
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMSoftBlue,
+  colframe=FMBlue,
+  boxrule=0.4pt,
+  borderline west={2pt}{0pt}{FMBlue},
+  left=7pt,right=7pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+\newtcolorbox{abaqusnote}[1][]{%
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMSoftOrange,
+  colframe=FMAbaqus,
+  boxrule=0.4pt,
+  borderline west={2pt}{0pt}{FMAbaqus},
+  left=7pt,right=7pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+\newtcolorbox{implementationnote}[1][]{%
+  enhanced,
+  breakable,
+  sharp corners,
+  colback=FMSoftGreen,
+  colframe=FMGreen,
+  boxrule=0.4pt,
+  borderline west={2pt}{0pt}{FMGreen},
+  left=7pt,right=7pt,top=5pt,bottom=5pt,
+  title=#1
+}
+
+% Side-by-side input examples. The two child boxes intentionally are not
+% breakable. A breakable tcblisting inside a raster can be split into fragments
+% and thereby occupy separate raster cells, which makes the Abaqus box fall below
+% the FEMaster box even though both easily fit next to each other. Keeping each
+% child box intact makes every dialectexamples environment one two-column row;
+% TeX moves that row to the next page if insufficient vertical space remains.
+\newenvironment{dialectexamples}{%
+  \par\medskip\noindent
+  \begin{tcbraster}[
+    raster columns=2,
+    raster equal height=rows,
+    raster column skip=3mm,
+    raster row skip=0pt,
+    raster left skip=0pt,
+    raster right skip=0pt,
+    raster width=\linewidth
+  ]
+}{%
+  \end{tcbraster}
+  \par\medskip
+}
+
+\newtcblisting{femasterdeck}{%
+  listing only,
+  listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMBlue,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  left=5pt,right=5pt,top=5pt,bottom=5pt,
+  title=FEMaster
+}
+
+\newtcblisting{abaqusdeck}{%
+  listing only,
+  listing options={style=femasterInput,basicstyle=\ttfamily\footnotesize},
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMAbaqus,
+  borderline west={2pt}{0pt}{FMAbaqus},
+  boxrule=0.4pt,
+  left=5pt,right=5pt,top=5pt,bottom=5pt,
+  title=Abaqus input
+}
+
+% Used when the supported Abaqus reader has no equivalent keyword. Keeping the
+% right-hand box rather than dropping it preserves the visual comparison contract
+% throughout the manual.
+\newtcolorbox{noabaqus}{%
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMAbaqus,
+  borderline west={2pt}{0pt}{FMAbaqus},
+  boxrule=0.4pt,
+  left=7pt,right=7pt,top=7pt,bottom=7pt,
+  title=Abaqus input
+}
+
+\newtcolorbox{nofemaster}{%
+  enhanced,
+  sharp corners,
+  colback=FMGray,
+  colframe=FMBlue,
+  borderline west={2pt}{0pt}{FMBlue},
+  boxrule=0.4pt,
+  left=7pt,right=7pt,top=7pt,bottom=7pt,
+  title=FEMaster
+}
+
+% Do not wrap tabularx in another environment: tabularx must see its own literal
+% \end{tabularx} while collecting the body. Plain tabular columns avoid that
+% body-scanning restriction and are sufficient for these short reference tables.
+\newenvironment{keywordparameters}{%
+  \subsection*{Parameters}
+  \begin{tabular}{@{}p{0.20\linewidth}p{0.15\linewidth}p{0.59\linewidth}@{}}
+  \toprule
+  \textbf{Parameter} & \textbf{Status} & \textbf{Meaning} \\
+  \midrule
+}{%
+  \bottomrule
+  \end{tabular}
+}
+
+\newenvironment{keyworddata}{%
+  \subsection*{Data lines}
+  \begin{tabular}{@{}p{0.27\linewidth}p{0.67\linewidth}@{}}
+  \toprule
+  \textbf{Entry} & \textbf{Meaning} \\
+  \midrule
+}{%
+  \bottomrule
+  \end{tabular}
+}
+
+\newcommand{\syntaxheading}{\subsection*{Syntax and semantics}}
+\newcommand{\exampleheading}{\subsection*{FEMaster and Abaqus example}}

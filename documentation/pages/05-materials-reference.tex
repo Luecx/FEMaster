@@ -1,0 +1,258 @@
+\chapter{Materials}
+\label{chap:materials}
+
+Materials define constitutive and inertial properties independently of the mesh. A material is created once, given a name, and referenced by one or more Sections. The same material may therefore be used by several element regions, Parts, or Instances without duplicating its constants.
+
+\cmd{MATERIAL} begins a material definition. The material-property keywords that follow---for example \cmd{ELASTIC}, \cmd{HYPERELASTIC}, \cmd{DENSITY}, and thermal expansion---belong to that material until the material definition ends with the next appropriate root-level model definition. A material may contain only the properties required by the intended analyses; for example, density is unnecessary for a purely elastic static stiffness calculation but is required when mass participates in the mechanics.
+
+\keywordpage{MATERIAL}
+
+\cmd{MATERIAL} creates a named material and makes it the current target for subsequent material-property keywords. Native FEMaster accepts the identifier through \key{MATERIAL} or \key{NAME}; Abaqus input uses \key{NAME}.
+
+The command itself does not define a constitutive law. Elasticity, hyperelasticity, density, and thermal expansion are added with separate keywords. This makes the material definition modular and keeps the physical meaning of each property explicit.
+
+Material names must be unique. Sections reference the material by name, so one definition can be reused throughout the model.
+
+Materials are independent of Parts. The corresponding Section assignment connects a material to a particular mesh region.
+
+\begin{keywordparameters}
+\key{MATERIAL} / \key{NAME} & required & Unique material identifier. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC, TYPE=ISOTROPIC
+210000., 0.3
+*DENSITY
+7.85e-9
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*DENSITY
+7.85e-9
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{ELASTIC}
+
+\cmd{ELASTIC} defines a linear-elastic constitutive law. Native FEMaster supports isotropic elasticity, generalized isotropic elasticity with an independent shear modulus, orthotropic engineering constants, and an orthotropic stiffness-coefficient form. The supported Abaqus input covers the corresponding documented Abaqus forms.
+
+\subsection*{Isotropic elasticity}
+
+For \key{TYPE=ISOTROPIC} or \val{ISO}, the data are Young's modulus \(E\) and Poisson's ratio \(\nu\). This is the default form. The shear modulus is
+\[
+G=\frac{E}{2(1+\nu)},
+\]
+and the three-dimensional isotropic constitutive law follows from \(E\) and \(\nu\) in the usual way.
+
+For ordinary stable isotropic elasticity, \(E>0\) and \(-1<\nu<0.5\). Values very close to \(\nu=0.5\) describe nearly incompressible behaviour and may require element formulations and meshes that can represent that regime without excessive volumetric locking.
+
+\subsection*{Generalized isotropic elasticity}
+
+Native FEMaster also accepts \val{GENERALISEDISOTROPIC}, \val{GENERALISED_ISOTROPIC}, or \val{GENISO}. This form reads \(E\), \(\nu\), and an independent \(G\). It preserves the isotropic-style normal relation while allowing the shear response to differ from the classical identity \(G=E/[2(1+\nu)]\).
+
+This is a FEMaster-specific convenience for constitutive models with a physically independent shear modulus. It does not compensate for an inappropriate element formulation or mesh.
+
+\subsection*{Orthotropic engineering constants}
+
+\key{TYPE=ENGINEERINGCONSTANTS} defines the nine constants
+\[
+E_1,E_2,E_3,\nu_{12},\nu_{13},\nu_{23},G_{12},G_{13},G_{23}.
+\]
+These quantities are expressed in the material coordinate system. A Section orientation therefore determines which physical directions of the model correspond to material axes 1, 2, and 3.
+
+The Poisson ratios are directional. For example, \(\nu_{12}\) describes strain in direction 2 caused by stress in direction 1. The reciprocal values follow from elastic symmetry, e.g.
+\[
+\frac{\nu_{12}}{E_1}=\frac{\nu_{21}}{E_2}.
+\]
+Transferred orthotropic data are compatible only when the axis ordering and Poisson-ratio convention agree with this definition.
+
+\subsection*{Orthotropic stiffness coefficients}
+
+\key{TYPE=ORTHOTROPIC} or \val{ORTHO} accepts the nine coefficients
+\[
+D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},D_{1212},D_{1313},D_{2323}.
+\]
+The first six values form the symmetric normal-stiffness block
+\[
+\begin{bmatrix}
+D_{1111} & D_{1122} & D_{1133}\\
+D_{1122} & D_{2222} & D_{2233}\\
+D_{1133} & D_{2233} & D_{3333}
+\end{bmatrix},
+\]
+while \(D_{1212}\), \(D_{1313}\), and \(D_{2323}\) are the three shear stiffnesses. The normal block must be nonsingular. This form accepts constitutive stiffness coefficients directly rather than through engineering constants.
+
+Elastic constants follow the unit system of the model. If stresses are measured in MPa, the elastic moduli and stiffness coefficients are also entered in MPa. FEMaster does not attach units to numerical values, so dimensional consistency is determined by the complete set of input quantities.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & Elasticity form. Native default \val{ISOTROPIC}; supported forms and aliases are described above. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{E, nu} & Isotropic Young's modulus and Poisson ratio. \\
+\val{E, nu, G} & Native generalized-isotropic form. \\
+Engineering constants & \(E_1,E_2,E_3,\nu_{12},\nu_{13},\nu_{23},G_{12},G_{13},G_{23}\). \\
+Orthotropic stiffness & \(D_{1111},D_{1122},D_{2222},D_{1133},D_{2233},D_{3333},D_{1212},D_{1313},D_{2323}\). \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=UD
+*ELASTIC, TYPE=ENGINEERINGCONSTANTS
+135000., 10000., 10000.,
+0.30, 0.30, 0.40,
+5000., 5000., 3500.
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=UD
+*ELASTIC, TYPE=ENGINEERING CONSTANTS
+135000., 10000., 10000.,
+0.30, 0.30, 0.40,
+5000., 5000., 3500.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{HYPERELASTIC}
+
+\cmd{HYPERELASTIC} defines the currently supported finite-strain Neo-Hooke material law. Native FEMaster accepts the Neo-Hooke selector through the documented spellings \val{NEOHOOKE}, \val{NEO_HOOKE}, and \val{NEO-HOOKE}. The supported Abaqus input uses the corresponding \val{NEO HOOKE} form.
+
+The material is parameterized by \(C_{10}\) and \(D_1\). \(C_{10}\) controls the deviatoric stiffness and \(D_1\) controls compressibility. These parameters are distinct from Young's modulus and Poisson's ratio and do not accept \(E\) and \(\nu\) as direct substitutes.
+
+For the conventional compressible Neo-Hooke parameterization, the small-strain shear modulus is related to \(C_{10}\) by
+\[
+\mu=2C_{10}.
+\]
+The precise relation between \(D_1\) and bulk stiffness follows the Neo-Hooke energy convention used by the model. Converted test data or material cards are compatible only when they use the same parameter convention rather than merely matching parameter names.
+
+Hyperelasticity is a finite-strain constitutive model and requires a nonlinear analysis and an element formulation capable of evaluating the finite-deformation response. Defining a hyperelastic material does not by itself make a linear static loadcase nonlinear.
+
+For nearly incompressible rubber-like materials, the ratio between bulk and shear stiffness can become very large. Element formulation, mesh quality, nonlinear convergence, and contact penalty stiffness are then sensitive to the volumetric stiffness.
+
+\begin{keywordparameters}
+Neo-Hooke selector & required & Selects the supported Neo-Hooke constitutive model. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{C10} & Deviatoric Neo-Hooke coefficient. \\
+\val{D1} & Compressibility coefficient. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=RUBBER
+*HYPERELASTIC, NEOHOOKE
+0.348, 5.0e-6
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=RUBBER
+*HYPERELASTIC, NEO HOOKE
+0.348, 5.0e-6
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{DENSITY}
+
+\cmd{DENSITY} assigns mass density \(\rho\) to the current material. The keyword is shared by native FEMaster and the supported Abaqus input format.
+
+Density contributes wherever the model requires mass. For an element occupying volume \(V\), the total distributed mass scales with
+\[
+m=\int_V \rho\,\mathrm dV.
+\]
+The corresponding element mass matrix enters eigenfrequency and transient analyses, and density also affects gravity/body loads, inertial loading, and inertia-relief calculations where those features are used.
+
+Density must be consistent with the chosen length, force, mass, and time units. A common source of dynamic errors is to enter geometry in millimetres and elastic modulus in MPa while leaving density in kg/m\(^3\) without conversion. Such a model may have a plausible static stiffness but eigenfrequencies that are wrong by orders of magnitude.
+
+A purely stiffness-based linear static analysis can omit density. Eigenfrequency, transient, inertia-relief, and mass-dependent loadcases require mass data from density, explicitly modelled concentrated masses, or both.
+
+\begin{keyworddata}
+\val{rho} & Scalar mass density. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=STEEL
+*DENSITY
+7.85e-9
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=STEEL
+*DENSITY
+7.85e-9
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{THERMALEXPANSION}
+
+Native \cmd{THERMALEXPANSION} defines one constant isotropic coefficient of thermal expansion \(\alpha\). The coefficient describes the free thermal strain produced by a temperature change. In the isotropic case,
+\[
+\boldsymbol\varepsilon_{\mathrm{th}}
+=\alpha\,\Delta T
+\begin{bmatrix}1&1&1&0&0&0\end{bmatrix}^{T}.
+\]
+Defining \(\alpha\) alone does not load the structure; a temperature Field and reference temperature are required to create \(\Delta T\).
+
+The coefficient has units of inverse temperature, for example K\(^{-1}\). Temperature differences in kelvin and degrees Celsius are numerically identical, so either scale may be used for \(\Delta T\) as long as the coefficient is consistent.
+
+The current native property is scalar and isotropic. Direction-dependent or tabulated temperature-dependent expansion is not described by this keyword.
+
+Thermal stress arises when free thermal expansion is restrained or when temperature varies spatially. A uniformly heated completely free body expands without developing stress in an ordinary thermoelastic model.
+
+\begin{keyworddata}
+\val{alpha} & Constant isotropic coefficient of thermal expansion. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=ALUMINIUM
+*THERMALEXPANSION
+2.30e-5
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=ALUMINIUM
+*EXPANSION, TYPE=ISO
+2.30e-5
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{EXPANSION}
+
+\cmd{EXPANSION} is the supported Abaqus-input spelling for the same constant isotropic thermal-expansion property described above. \key{TYPE} is optional and accepts \val{ISO} or \val{ISOTROPIC}; the default is \val{ISO}.
+
+The single data value is the coefficient \(\alpha\). This separate keyword page reflects the accepted Abaqus spelling; for the supported constant isotropic case, native \cmd{THERMALEXPANSION} and Abaqus-style \cmd{EXPANSION} describe the same mechanical thermal strain law.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & \val{ISO} or \val{ISOTROPIC}; default \val{ISO}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{alpha} & Constant isotropic coefficient of thermal expansion. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*MATERIAL, NAME=ALUMINIUM
+*THERMALEXPANSION
+2.30e-5
+\end{femasterdeck}
+\begin{abaqusdeck}
+*MATERIAL, NAME=ALUMINIUM
+*EXPANSION
+2.30e-5
+\end{abaqusdeck}
+\end{dialectexamples}

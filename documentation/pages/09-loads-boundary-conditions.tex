@@ -1,0 +1,411 @@
+\chapter{Loads and Boundary Conditions}
+\label{chap:loads-bcs}
+
+Loads and boundary conditions define how the finite-element model is forced and supported. Native FEMaster groups reusable definitions in named collectors: \cmd{SUPPORT} fills support collectors, while mechanical and thermal load commands fill load collectors. A native \cmd{LOADCASE} then selects the collectors that participate in that analysis with \cmd{SUPPORTS} and \cmd{LOADS}. The same load definition can therefore be reused in several analyses.
+
+Abaqus input expresses loads and boundary conditions primarily inside a \cmd{STEP}. The supported \cmd{BOUNDARY}, \cmd{CLOAD}, \cmd{DLOAD}, and \cmd{DSLOAD} cards are interpreted according to the active analysis procedure. The side-by-side examples in this chapter show the equivalent FEMaster modelling intent.
+
+Throughout this chapter, remember that a numerical zero is a real physical value. For a native \cmd{SUPPORT}, \val{0} means that the corresponding displacement or rotation is constrained to zero, while an omitted or \val{NAN} component means that the degree of freedom remains unconstrained.
+
+\keywordpage{AMPLITUDE}
+
+\cmd{AMPLITUDE} defines a reusable scalar function that can scale a load as the analysis variable changes. In a transient analysis this variable is physical time. Native FEMaster supports \val{TYPE=LINEAR}, \val{STEP}, and \val{NEAREST} interpolation.
+
+For linear interpolation, a value between two samples \((t_i,a_i)\) and \((t_{i+1},a_{i+1})\) is obtained from
+\[
+a(t)=a_i+\frac{t-t_i}{t_{i+1}-t_i}\left(a_{i+1}-a_i\right).
+\]
+\val{STEP} holds the preceding sample value between tabulated points. \val{NEAREST} uses the closest sample. The amplitude is dimensionless unless the user deliberately assigns another interpretation; it multiplies the referenced load magnitude.
+
+An amplitude does not create a load by itself. It must be referenced by a supported load or boundary-condition keyword. This allows one time history to be reused by several load components.
+
+The supported Abaqus form is \cmd{AMPLITUDE, DEFINITION=TABULAR}. \key{TIME=STEPTIME} and \key{VALUE=RELATIVE} are accepted. Up to four time/value pairs may be written on one Abaqus data line.
+
+In a transient analysis, amplitude sample times use the same time unit as \cmd{TIME}. A model expressed in seconds therefore interprets the amplitude abscissa in seconds.
+
+\begin{keywordparameters}
+\key{NAME} & required & Unique amplitude name. \\
+\key{TYPE} & native optional & \val{LINEAR}, \val{STEP}, or \val{NEAREST}; default \val{LINEAR}. \\
+\key{DEFINITION} & Abaqus optional & Supported value \val{TABULAR}. \\
+\key{TIME} & Abaqus optional & Supported value \val{STEPTIME}. \\
+\key{VALUE} & Abaqus optional & Supported value \val{RELATIVE}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+Native & One \val{time, value} pair per record. \\
+Abaqus & Up to four \val{time, value} pairs per physical line. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*AMPLITUDE, NAME=RAMP, TYPE=LINEAR
+0.0, 0.0
+0.1, 1.0
+1.0, 1.0
+\end{femasterdeck}
+\begin{abaqusdeck}
+*AMPLITUDE, NAME=RAMP,
+ DEFINITION=TABULAR, TIME=STEPTIME
+0.0, 0.0, 0.1, 1.0,
+1.0, 1.0
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{SUPPORT}
+
+Native \cmd{SUPPORT} prescribes generalized nodal displacements and rotations. Every row contains a target node or node set followed by six components in the order
+\[
+(U_x,U_y,U_z,R_x,R_y,R_z).
+\]
+A finite number prescribes that component. \val{0} therefore creates a homogeneous constraint. An omitted entry or \val{NAN} leaves the component free.
+
+\key{SUPPORT_COLLECTOR} specifies the named collector receiving the support. A loadcase activates one or more such collectors using \cmd{SUPPORTS}. This separation represents several support cases, for example a fully fixed case and a second analysis with released directions.
+
+\key{ORIENTATION} optionally specifies a local coordinate system. The prescribed components are then expressed in that basis, including cylindrical supports, sliders, or boundaries whose constrained direction is not aligned with the global axes.
+
+Every constrained degree of freedom removes an admissible motion. Constraints without a corresponding physical support increase the model stiffness, while missing support constraints can leave a structural nullspace.
+
+\begin{keywordparameters}
+\key{SUPPORT_COLLECTOR} & required & Named support collector. \\
+\key{ORIENTATION} & optional & Named local basis for the prescribed components. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{target} & Node ID or node set. \\
+Six values & \(U_x,U_y,U_z,R_x,R_y,R_z\); omitted or \val{NAN} means free. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SUPPORT, SUPPORT_COLLECTOR=BC
+FIXED, 0., 0., 0., 0., 0., 0.
+GUIDE, NAN, 0., 0., NAN, NAN, NAN
+\end{femasterdeck}
+\begin{abaqusdeck}
+*BOUNDARY
+FIXED, 1, 6, 0.
+GUIDE, 2, 3, 0.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{BOUNDARY}
+
+\cmd{BOUNDARY} is the supported Abaqus displacement/rotation constraint keyword. \key{TYPE} currently supports \val{DISPLACEMENT} and defaults to that form.
+
+Each data row contains a target, a first degree of freedom, an optional last degree of freedom, and an optional prescribed value. Abaqus structural DOF numbers are one based:
+\[
+1\rightarrow U_x,\quad
+2\rightarrow U_y,\quad
+3\rightarrow U_z,\quad
+4\rightarrow R_x,\quad
+5\rightarrow R_y,\quad
+6\rightarrow R_z.
+\]
+If the last DOF is omitted, only the first is constrained. If the value is omitted it defaults to zero.
+
+If the target nodes have an Abaqus \cmd{TRANSFORM}, the boundary components are interpreted in that local nodal basis. Nonzero prescribed values are currently supported for the documented static procedures. Amplitude-dependent prescribed values are subject to the restrictions described for the corresponding analysis procedure.
+
+Native \cmd{SUPPORT} presents all six generalized components in one row. Abaqus \cmd{BOUNDARY} uses DOF ranges, so the same constraint can require several rows.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & Supported form \val{DISPLACEMENT}; default \val{DISPLACEMENT}. \\
+\key{AMPLITUDE} & optional & Supported subject to the active-procedure restrictions. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{target, first_dof, last_dof, value} & DOF range 1--6; last DOF defaults to first and value defaults to zero. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SUPPORT, SUPPORT_COLLECTOR=BC
+TIP, 1.5, 0., 0., NAN, NAN, NAN
+\end{femasterdeck}
+\begin{abaqusdeck}
+*BOUNDARY, TYPE=DISPLACEMENT
+TIP, 1, 1, 1.5
+TIP, 2, 3, 0.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{CLOAD}
+
+\cmd{CLOAD} applies concentrated nodal force and moment components. Native FEMaster writes all six generalized load components in one row:
+\[
+(F_x,F_y,F_z,M_x,M_y,M_z).
+\]
+Missing components default to zero.
+
+The target may be an individual node or a node set. When a node set is used, the specified vector is applied to \emph{every} node in the set. It is not divided by the number of nodes. A reference node with a structural/distributing \cmd{COUPLING} instead transfers one definite resultant force or moment to a surface.
+
+\key{ORIENTATION} optionally defines a local load basis. \key{AMPLITUDE} optionally multiplies the load by a named amplitude during analyses that evaluate time-dependent loading.
+
+Abaqus \cmd{CLOAD} uses one DOF and one magnitude per row. DOFs 1--3 represent forces and 4--6 represent nodal moments. The supported input accepts real non-follower loading; imaginary and follower concentrated loads are not supported.
+
+When a concentrated nodal load represents a physically distributed load, the idealization can create local stress singularities or mesh-dependent peaks. Surface loading and distributing couplings represent load introduction over a finite area.
+
+\begin{keywordparameters}
+\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
+\key{ORIENTATION} & native optional & Named local load basis. \\
+\key{AMPLITUDE} & optional & Named amplitude where supported. \\
+\key{FOLLOWER} & Abaqus flag & Currently unsupported. \\
+\key{REAL}/\key{IMAGINARY} & Abaqus flags & Real loading is supported; imaginary loading is not. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*CLOAD, LOAD_COLLECTOR=TIP_LOAD
+TIP, 1000., -250., 0., 0., 0., 0.
+\end{femasterdeck}
+\begin{abaqusdeck}
+*CLOAD
+TIP, 1, 1000.
+TIP, 2, -250.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{DLOAD}
+
+\cmd{DLOAD} has different meanings in native FEMaster and in the supported Abaqus input, so the input dialect matters.
+
+In native FEMaster, \cmd{DLOAD} applies a distributed vector traction to a surface or surface set. The three components describe traction force per unit area in the selected basis. If \key{ORIENTATION} is present, the vector is expressed in that local coordinate system. \key{AMPLITUDE} may provide time scaling.
+
+The consistent nodal force generated by a traction \(\boldsymbol t\) is obtained conceptually from the surface integral
+\[
+\boldsymbol f_e
+=\int_{A_e} N^T\boldsymbol t\,\mathrm dA,
+\]
+so mesh refinement changes the number of nodal force contributions but not the intended continuous traction magnitude.
+
+In supported Abaqus input, \cmd{DLOAD} currently represents the \val{GRAV} body-acceleration form rather than the native surface traction. Its data contain an element or element-set target, the label \val{GRAV}, an acceleration magnitude, and a direction vector. The body acceleration is
+\[
+\boldsymbol a=g\,\boldsymbol d.
+\]
+Other Abaqus \cmd{DLOAD} labels are not covered by this supported form.
+
+Supported Abaqus surface pressure and vector traction are expressed through \cmd{DSLOAD}.
+
+Traction has units of force per unit area. Its total resultant equals the surface integral and therefore coincides numerically with the traction magnitude only when the loaded area is one in the chosen unit system.
+
+\begin{keywordparameters}
+\key{LOAD_COLLECTOR} & native required & Destination native load collector. \\
+\key{ORIENTATION} & native optional & Local traction basis. \\
+\key{AMPLITUDE} & optional & Named time scaling where supported. \\
+\key{REAL}/\key{IMAGINARY} & Abaqus flags & Imaginary distributed loading is unsupported. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*DLOAD, LOAD_COLLECTOR=SHEAR
+SIDE, 0., 2.5, 0.
+\end{femasterdeck}
+\begin{abaqusdeck}
+*DSLOAD, FOLLOWER=NO
+SIDE, TRVEC, 2.5, 0., 1., 0.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{PLOAD}
+
+Native \cmd{PLOAD} applies scalar pressure to a surface or surface set. Unlike a vector traction, pressure acts normal to the selected finite-element surface. The sign therefore depends on the element side and surface orientation.
+
+For pressure \(p\) and oriented unit normal \(\boldsymbol n\), the surface traction is conceptually
+\[
+\boldsymbol t=p\boldsymbol n.
+\]
+The resulting nodal forces are obtained by surface integration. The load is therefore independent of how many nodes happen to lie on the surface, provided the discretization converges to the same geometry.
+
+\key{AMPLITUDE} may scale the pressure where supported. Abaqus input expresses the corresponding supported pressure through \cmd{DSLOAD} with type \val{P}.
+
+The surface side and element connectivity determine the pressure direction. Reversing the load sign can compensate numerically for an opposite orientation, but the same orientation continues to govern contact and shell-result conventions.
+
+\begin{keywordparameters}
+\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
+\key{AMPLITUDE} & optional & Named pressure scaling function. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*PLOAD, LOAD_COLLECTOR=PRESSURE
+INNER_FACE, 2.0
+\end{femasterdeck}
+\begin{abaqusdeck}
+*DSLOAD
+INNER_FACE, P, 2.0
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{DSLOAD}
+
+\cmd{DSLOAD} is the supported Abaqus surface-load keyword. Two load types are accepted: \val{P} for scalar pressure and \val{TRVEC} for vector traction.
+
+For \val{P}, the row is
+\[
+\text{surface},\ \texttt{P},\ p.
+\]
+No direction components are supplied because the surface normal defines the load direction.
+
+For \val{TRVEC}, the row additionally supplies a nonzero direction vector. FEMaster normalizes that vector and multiplies it by the requested magnitude. Thus the magnitude controls the traction norm and the direction entries control orientation rather than requiring the user to provide a pre-scaled vector.
+
+\key{ORIENTATION} can define a local basis for \val{TRVEC}. \key{AMPLITUDE} provides supported time scaling. \key{FOLLOWER} defaults to \val{YES}; current nonlinear-static support is restricted as documented by the reader, with nonlinear \val{TRVEC} requiring \val{FOLLOWER=NO} and nonlinear follower pressure not supported. Imaginary loading is not supported.
+
+\begin{keywordparameters}
+\key{AMPLITUDE} & optional & Named amplitude. \\
+\key{ORIENTATION} & optional & Named basis for \val{TRVEC}. \\
+\key{FOLLOWER} & optional & \val{YES} or \val{NO}; default \val{YES}, subject to nonlinear restrictions. \\
+\key{REAL}/\key{IMAGINARY} & optional flags & Imaginary loading is unsupported. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+Pressure & \val{surface, P, magnitude}. \\
+Traction & \val{surface, TRVEC, magnitude, dx, dy, dz}. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*PLOAD, LOAD_COLLECTOR=LOADS
+FACE_A, 5.0
+*DLOAD, LOAD_COLLECTOR=LOADS
+FACE_B, 0., 3.0, 0.
+\end{femasterdeck}
+\begin{abaqusdeck}
+*DSLOAD, FOLLOWER=NO
+FACE_A, P, 5.0
+FACE_B, TRVEC, 3.0, 0., 1., 0.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{VLOAD}
+
+Native \cmd{VLOAD} applies a distributed three-component body-force or acceleration-type vector to an element or element set. The load is integrated over element volume, so it represents a continuous volumetric loading rather than a set of manually chosen nodal forces.
+
+For mass-proportional acceleration such as gravity, the equivalent force density scales with material density. The intended acceleration vector must use units consistent with the model. In a mm--s system, standard gravity is approximately \(9810\,\mathrm{mm/s^2}\).
+
+\key{ORIENTATION} optionally supplies a local vector basis and \key{AMPLITUDE} optionally provides time scaling. The supported Abaqus equivalent is \cmd{DLOAD} with \val{GRAV}, where magnitude and direction are entered separately.
+
+\begin{keywordparameters}
+\key{LOAD_COLLECTOR} & native required & Destination load collector. \\
+\key{ORIENTATION} & native optional & Named local vector basis. \\
+\key{AMPLITUDE} & optional & Named time scaling. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*VLOAD, LOAD_COLLECTOR=GRAVITY
+EALL, 0., 0., -9810.
+\end{femasterdeck}
+\begin{abaqusdeck}
+*DLOAD
+EALL, GRAV, 9810., 0., 0., -1.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{TLOAD}
+
+Native \cmd{TLOAD} creates a thermal load from a scalar nodal temperature Field and a stress-free reference temperature. \key{TEMPERATUREFIELD} names the temperature Field and \key{REFERENCETEMPERATURE} gives the temperature at which the structure is assumed to be stress free.
+
+At a material point, the relevant temperature difference is conceptually
+\[
+\Delta T=T-T_\mathrm{ref}.
+\]
+For isotropic thermal expansion, the free thermal strain is
+\[
+\boldsymbol\varepsilon_\mathrm{th}
+=\alpha\Delta T
+\begin{bmatrix}1&1&1&0&0&0\end{bmatrix}^{T}.
+\]
+Thermal stress develops only to the extent that this free expansion is restrained by compatibility, supports, or spatial temperature gradients.
+
+The temperature Field must use \val{TYPE=NODE} and one component. The material used by the affected elements must define thermal expansion if a thermal strain contribution is expected.
+
+The supported Abaqus input currently has no corresponding generic thermal-load import.
+
+\begin{keywordparameters}
+\key{LOAD_COLLECTOR} & required & Destination load collector. \\
+\key{TEMPERATUREFIELD} & required & Scalar nodal temperature Field. \\
+\key{REFERENCETEMPERATURE} & required & Stress-free reference temperature. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=TEMPERATURE,
+ TYPE=NODE, COLS=1, FILL=ZERO
+0, 80.
+1, 100.
+
+*TLOAD, LOAD_COLLECTOR=THERMAL,
+ TEMPERATUREFIELD=TEMPERATURE,
+ REFERENCETEMPERATURE=20.
+\end{femasterdeck}
+\begin{noabaqus}
+No corresponding generic thermal-load command is currently supported by the Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{INERTIALOAD}
+
+The current native keyword is spelled \cmd{INERTIALOAD}. It defines rigid-body inertial loading over an element set. Every row specifies a reference centre, translational acceleration, angular velocity \(\boldsymbol\omega\), and angular acceleration \(\boldsymbol\alpha\).
+
+For position \(\boldsymbol r\) measured from the reference centre, the rigid-body acceleration field contains the familiar contributions
+\[
+\boldsymbol a(\boldsymbol r)
+=
+\boldsymbol a_0
++\boldsymbol\alpha\times\boldsymbol r
++\boldsymbol\omega\times(\boldsymbol\omega\times\boldsymbol r),
+\]
+for the prescribed instantaneous translational, tangential, and centrifugal terms. The corresponding inertial forces depend on the model's mass distribution.
+
+\key{CONSIDER_POINT_MASSES} controls whether native \cmd{POINTMASS} features are included in that mass distribution. When enabled, concentrated equipment and other lumped masses participate in the inertial loading.
+
+Density, concentrated masses, geometry, angular velocity, and acceleration must all use one consistent unit system. Centrifugal acceleration scales with \(\omega^2 r\), so a unit error in angular velocity or length can become especially severe.
+
+The spelling \cmd{INERTIALOAD} matches the currently accepted native keyword exactly.
+
+\begin{keywordparameters}
+\key{LOAD_COLLECTOR} & required & Destination load collector. \\
+\key{CONSIDER_POINT_MASSES} & optional & Boolean; default \val{0}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{target} & Element set receiving the inertial load. \\
+\val{cx,cy,cz} & Reference centre. \\
+\val{ax,ay,az} & Translational acceleration of the centre. \\
+\val{wx,wy,wz} & Angular velocity. \\
+\val{alphax,alphay,alphaz} & Angular acceleration. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*INERTIALOAD, LOAD_COLLECTOR=ROT_INERTIA,
+ CONSIDER_POINT_MASSES=1
+EALL,
+0., 0., 0.,
+0., 0., 0.,
+0., 0., 10.,
+0., 0., 2.
+\end{femasterdeck}
+\begin{noabaqus}
+No direct equivalent of the full native \cmd{INERTIALOAD} definition is currently supported by the Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}

@@ -9,7 +9,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 \end{shellcmd}
 
-A release build is the normal choice for analysis work. A debug build is useful for small diagnostic models, assertions, and development checks, but it is usually too slow for larger finite-element models.
+A release build provides optimized execution for analysis work. A debug build retains assertions and development diagnostics at substantially higher runtime cost for larger finite-element models.
 
 \section{CMake presets}
 
@@ -23,7 +23,7 @@ cmake --preset linux-mkl-omp
 cmake --build --preset linux-mkl-omp
 \end{shellcmd}
 
-The Linux presets cover CPU-only builds, OpenMP builds, oneMKL builds, CUDA builds, cuDSS builds, and combined CUDA/oneMKL configurations. Windows presets are split between MSVC and IntelLLVM toolchains. macOS currently provides CPU presets. The exact preset list should be read from \file{CMakePresets.json} for the checked-out version.
+The Linux presets cover CPU-only builds, OpenMP builds, oneMKL builds, CUDA builds, cuDSS builds, and combined CUDA/oneMKL configurations. Windows presets are split between MSVC and IntelLLVM toolchains. macOS currently provides CPU presets. \file{CMakePresets.json} contains the exact preset list for the checked-out version.
 
 \begin{longtable}{@{}p{0.32\linewidth}p{0.58\linewidth}@{}}
 \toprule
@@ -32,13 +32,13 @@ The Linux presets cover CPU-only builds, OpenMP builds, oneMKL builds, CUDA buil
 \endhead
 \key{FEMASTER_BUILD_TESTS} & Build and register the GoogleTest executable. \\
 \key{FEMASTER_ENABLE_CUDA} & Build CUDA solver backends. \\
-\key{FEMASTER_ENABLE_CUDSS} & Use NVIDIA cuDSS for CUDA sparse direct solves. Requires CUDA. \\
-\key{FEMASTER_ENABLE_MKL} & Use Intel oneMKL for Eigen operations and PARDISO. \\
-\key{FEMASTER_MKL_SEQUENTIAL} & Use the sequential oneMKL threading layer. \\
+\key{FEMASTER_ENABLE_CUDSS} & Enables NVIDIA cuDSS for CUDA sparse direct solves. Requires CUDA. \\
+\key{FEMASTER_ENABLE_MKL} & Enables Intel oneMKL for Eigen operations and PARDISO. \\
+\key{FEMASTER_MKL_SEQUENTIAL} & Selects the sequential oneMKL threading layer. \\
 \key{FEMASTER_MKL_STATIC} & Link oneMKL component libraries statically. \\
 \key{FEMASTER_ENABLE_OPENMP} & Enable OpenMP for FEMaster CPU loops. \\
-\key{FEMASTER_DOUBLE_PRECISION} & Use double precision arithmetic. \\
-\key{FEMASTER_FAST_EIGEN_COMPILE} & Use Eigen compile-time reduction flags. \\
+\key{FEMASTER_DOUBLE_PRECISION} & Enables double-precision arithmetic. \\
+\key{FEMASTER_FAST_EIGEN_COMPILE} & Enables Eigen compile-time reduction flags. \\
 \key{FEMASTER_STATIC_RUNTIME} & Link compiler C/C++ runtimes statically where supported. \\
 \key{FEMASTER_FULLY_STATIC} & Produce a fully static Linux executable. Incompatible with CUDA shared libraries. \\
 \key{FEMASTER_TIME_REPORT} & Enable compiler timing diagnostics where supported. \\
@@ -65,18 +65,18 @@ FEMaster model.inp --no-res
 \file{input_file} & Path to the input deck. If no \file{.inp} suffix is supplied, it is added automatically. \\
 \key{--output FILE} & Explicit output base or result file path. The suffix \file{.res}, \file{.frd}, or \file{.inp} is stripped before writers are opened, so \file{--output run.res} produces \file{run.res} and \file{run.frd}. \\
 \key{--ncpus N} & Number of threads allowed for parallel assembly and compute sections. \\
-\key{--no-res} & Disable native FEMaster \file{.res} result output. This is useful when only CalculiX/CGX \file{.frd} output is needed. \\
-\key{--no-frd} & Disable CalculiX/CGX \file{.frd} result output. This is useful when only the native FEMaster \file{.res} output is needed. \\
+\key{--no-res} & Disables native FEMaster \file{.res} result output, leaving \file{.frd} output enabled by default. \\
+\key{--no-frd} & Disables CalculiX/CGX \file{.frd} result output, leaving native \file{.res} output enabled by default. \\
 \bottomrule
 \end{longtable}
 
-By default both result writers are enabled. \key{--no-res} and \key{--no-frd} can be combined if a run should only parse, solve, and print console diagnostics without writing either result format.
+By default both result writers are enabled. Combining \key{--no-res} and \key{--no-frd} leaves parsing, solution, and console diagnostics enabled without writing either result format.
 
 At the end of a regular solver run, FEMaster prints a process timing summary in hours, minutes, seconds, milliseconds, and total milliseconds. This timing covers the full executable run, including parsing, solving, result writing, and shutdown.
 
 \section{DSL documentation mode}
 
-The executable can print DSL registration information for the installed version. This is useful when checking which commands, keywords, and variants a particular build accepts.
+The executable can print DSL registration information containing the commands, keywords, and variants accepted by the installed build.
 
 \begin{shellcmd}
 FEMaster --document --doc-list
@@ -98,7 +98,7 @@ FEMaster --document --doc-variants ELASTIC
 \key{--doc-all} & Print the full command overview. \\
 \key{--doc-format text|md|json} & Select the documentation output format. Currently the implementation falls back to text for non-text formats. \\
 \key{--doc-verbosity index|compact|full} & Select the detail level for command documentation. \\
-\key{--doc-width N} & Set the wrapping width for documentation output. Use 0 for no wrapping. \\
+\key{--doc-width N} & Set the wrapping width for documentation output; \val{0} disables wrapping. \\
 \key{--doc-no-wrap} & Disable wrapping. Equivalent to \key{--doc-width 0}. \\
 \key{--doc-regex} & Treat \key{--doc-search} as a regular expression. \\
 \bottomrule

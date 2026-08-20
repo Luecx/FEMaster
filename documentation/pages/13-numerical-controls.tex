@@ -1,0 +1,484 @@
+\chapter{Solver and Numerical Controls}
+\label{chap:numerical-controls}
+
+The commands in this chapter determine how an analysis is solved. They do not change the mesh or material model; instead they control the linear algebra, constraint treatment, nonlinear path following, time integration, damping, frequency sampling, eigenvalue extraction, and selected static balancing procedures.
+
+These settings can strongly affect robustness and computational cost, but they do not correct an inconsistent physical model. A mechanism, missing Section, disconnected mesh, or inadequate support definition remains a model-level cause of singularity regardless of the numerical regularization.
+
+\keywordpage{SOLVER}
+
+\cmd{SOLVER} selects the sparse linear solution strategy for supported native loadcases. \key{DEVICE} may be \val{CPU} or \val{GPU}; the default is \val{CPU}. \key{METHOD} may be \val{DIRECT} or \val{INDIRECT}; the default is \val{DIRECT}.
+
+A direct method factorizes the sparse equation matrix and then solves by substitutions. Its convergence does not depend on an iterative stopping process, while its factorization memory can become substantial for large three-dimensional models.
+
+An indirect method solves the linear system iteratively. For a system
+\[
+A x=b,
+\]
+the method improves an approximate \(x\) until the residual
+\[
+r=b-Ax
+\]
+is sufficiently small. Iterative methods can reduce memory use for suitable large systems, but their efficiency is strongly affected by conditioning, matrix definiteness, scaling, and the available preconditioning strategy.
+
+The chosen constraint formulation matters because it changes the algebraic character of the system. Nullspace and elimination methods lead to reduced structural systems and are suitable for direct or supported iterative solution. Lagrange multipliers create the indefinite saddle-point system
+\[
+\begin{bmatrix}
+K&C^T\\
+C&0
+\end{bmatrix}
+\begin{bmatrix}u\\\lambda\end{bmatrix}
+=
+\begin{bmatrix}f\\d\end{bmatrix},
+\]
+which requires a linear solver that can handle indefinite matrices and is therefore restricted to supported direct configurations.
+
+The actual CPU/GPU libraries available depend on the FEMaster build. Selecting \val{GPU} in a build without the required GPU backend cannot create GPU support by itself.
+
+The default CPU/direct configuration avoids iterative convergence and backend-specific GPU requirements. Indirect or GPU configurations exchange this baseline for different memory, scaling, and hardware characteristics; their numerical behaviour still depends on the physical model and constraint system.
+
+\begin{keywordparameters}
+\key{DEVICE} & optional & \val{CPU} (default) or \val{GPU}. \\
+\key{METHOD} & optional & \val{DIRECT} (default) or \val{INDIRECT}. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+*SOLVER, DEVICE=CPU, METHOD=DIRECT
+...
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus input does not translate Abaqus solver-selection controls to native \cmd{SOLVER} settings.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{CONSTRAINTMETHOD}
+
+\cmd{CONSTRAINTMETHOD} selects how equations of the form
+\[
+Cu=d
+\]
+are imposed on the structural system. Supported input values are \val{NULLSPACE}, \val{LAGRANGE}, and \val{ELIMINATION}. Not every analysis supports every method; in particular, nonlinear and harmonic procedures may impose stricter restrictions than linear static analysis.
+
+\subsection*{Nullspace projection}
+
+The nullspace method writes every admissible displacement vector as
+\[
+u=u_p+Tq,
+\]
+where
+\[
+Cu_p=d,\qquad CT=0.
+\]
+The columns of \(T\) span all homogeneous motions that satisfy the constraints, while \(u_p\) is one particular displacement satisfying the prescribed inhomogeneous values.
+
+For a linear static system
+\[
+Ku=f,
+\]
+substitution gives the reduced equation
+\[
+T^TKTq=T^T(f-Ku_p).
+\]
+Thus constrained directions are removed before the linear solve. The same projection applies naturally to mass and damping operators in dynamic analyses:
+\[
+K_r=T^TKT,\qquad
+M_r=T^TMT,\qquad
+C_r=T^TCT.
+\]
+
+Nullspace projection handles general linear constraint equations while keeping the reduced system in structural form. Couplings, ties, and other multi-point constraints can therefore be represented without requiring a favourable substitution ordering.
+
+\subsection*{Lagrange multipliers}
+
+The Lagrange method retains the original displacement vector and adds one multiplier per constraint equation:
+\[
+\begin{bmatrix}
+K&C^T\\
+C&0
+\end{bmatrix}
+\begin{bmatrix}u\\\lambda\end{bmatrix}
+=
+\begin{bmatrix}f\\d\end{bmatrix}.
+\]
+The multipliers \(\lambda\) represent generalized constraint reactions. The advantage is the direct enforcement of the equations without eliminating displacement variables. The disadvantage is the larger indefinite saddle-point system.
+
+This method requires a supported direct backend. Its additional unknowns provide multiplier reactions and preserve the original displacement variables.
+
+\subsection*{Elimination}
+
+Elimination chooses dependent degrees of freedom and expresses them in terms of independent degrees of freedom, again producing an affine relation
+\[
+u=u_p+Tq.
+\]
+Unlike a numerical nullspace basis, the transformation is constructed from explicit substitutions. This can be very efficient for constraints with a clear master/slave structure and an acyclic dependency graph.
+
+For dense or strongly coupled general equations, nullspace projection avoids the favourable substitution ordering required by efficient elimination.
+
+\begin{keywordparameters}
+\key{TYPE} & required & \val{NULLSPACE}, \val{LAGRANGE}, or \val{ELIMINATION}. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*LOADCASE, TYPE=LINEARSTATIC
+*CONSTRAINTMETHOD, TYPE=NULLSPACE
+*SOLVER, METHOD=INDIRECT
+...
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus input does not expose FEMaster's native constraint-method selection.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{NONLINEAR}
+
+\cmd{NONLINEAR} configures a native \val{NONLINEARSTATIC} analysis. It controls the equilibrium path, increment size, adaptive growth and cutback, Newton iteration limits, convergence tolerance, and optional weak-row regularization.
+
+At a prescribed load factor \(\lambda\), equilibrium is
+\[
+r(u,\lambda)=f_\mathrm{int}(u)-\lambda f_\mathrm{ext}=0.
+\]
+Newton's method linearizes the residual at iteration \(k\):
+\[
+K_T(u_k)\Delta u_k=-r(u_k,\lambda),
+\qquad
+u_{k+1}=u_k+\Delta u_k.
+\]
+The tangent stiffness \(K_T\) contains the current material, geometric, constraint, and contact contributions appropriate to the model.
+
+\subsection*{Load control}
+
+\key{CONTROL=LOAD} is the default. The load factor is advanced by a prescribed increment \(\Delta\lambda\), and Newton iterations solve only for the displacement correction. Load control is efficient on monotonic equilibrium paths but cannot generally pass a limit point where the physical equilibrium curve turns backward in load factor.
+
+\subsection*{Arc-length control}
+
+\key{CONTROL=ARC_LENGTH} solves displacement and load factor together under an additional path constraint. In generic form the constraint limits a combined displacement/load increment,
+\[
+\Delta u^T\Delta u
++\psi^2\,\Delta\lambda^2\,\|f_\mathrm{ext}\|^2
+=\Delta s^2,
+\]
+where \(\Delta s\) is the arc-length scale and \(\psi\) is controlled by \key{ARC_LENGTH_PSI}. This allows the solution to continue through snap-through or other limit points for which simple load control would stall.
+
+\subsection*{Increment control}
+
+\key{INITIAL_INCREMENT} defines the first normalized load or arc-length step. \key{MINIMUM_INCREMENT} and \key{MAXIMUM_INCREMENT} bound adaptive changes. \key{MAX_INCREMENTS} limits the number of accepted increments. The legacy \key{INCREMENTS=n} shorthand sets the initial scale to \(1/n\); an explicitly supplied \key{INITIAL_INCREMENT} takes precedence.
+
+With \key{ADAPTIVE=ON}, quickly converged increments can grow by \key{GROWTH_FACTOR}, while rejected or slowly converged attempts are reduced by \key{CUTBACK_FACTOR}. The default thresholds are \key{FAST_ITERATIONS=6}, \key{SLOW_ITERATIONS=10}, \key{GROWTH_FACTOR=1.5}, and \key{CUTBACK_FACTOR=0.5}. \key{MAXIMUM_CUTBACKS} limits repeated reductions of one attempted path segment.
+
+Adaptive stepping does not alter the equilibrium equations. It changes only how aggressively the solution path is traversed. Persistently small increments can result from contact transitions, material stiffness, element distortion, unstable mechanisms, or an inconsistent tangent; cutback only changes the attempted path discretization.
+
+\subsection*{Newton convergence}
+
+\key{MAXITER} limits Newton iterations per attempted increment; the default is 20. \key{TOL}, default \(10^{-8}\), controls the equilibrium convergence criterion. A small residual tolerance does not guarantee an accurate finite-element model: mesh discretization, constitutive assumptions, and load idealization remain independent error sources.
+
+\subsection*{Weak-row regularization}
+
+\key{REGULARIZE_ZERO_ROWS=ON} enables diagonal stabilization for tangent rows whose stiffness is effectively zero. \key{REGULARIZATION_ALPHA}, default \(10^{-4}\), controls the scale of that stabilization relative to representative nonzero tangent stiffness.
+
+This option stabilizes temporary zero-stiffness directions that can occur in nonlinear models, for example before an otherwise meaningful mechanism engages. It does not resolve a genuinely unconstrained rigid-body mode or disconnected component. A material change of the physical response with increasing regularization indicates sensitivity to the underlying model rather than only numerical stabilization.
+
+\begin{keywordparameters}
+\key{CONTROL} & optional & \val{LOAD} (default) or \val{ARC_LENGTH}. \\
+\key{INCREMENTS} & optional & Legacy count mapped to initial scale \(1/n\). \\
+\key{MAX_INCREMENTS} & optional & Maximum accepted nonlinear increments. \\
+\key{INITIAL_INCREMENT} & optional & Initial load/arc-length step scale. \\
+\key{MINIMUM_INCREMENT} & optional & Lower step-size bound. \\
+\key{MAXIMUM_INCREMENT} & optional & Upper step-size bound. \\
+\key{ARC_LENGTH_PSI} & optional & Arc-length load weighting; default 1.0. \\
+\key{ADAPTIVE} & optional & Adaptive growth/cutback; default \val{ON}. \\
+\key{GROWTH_FACTOR} & optional & Fast-convergence growth factor; default 1.5. \\
+\key{CUTBACK_FACTOR} & optional & Rejection/slow-convergence reduction factor; default 0.5. \\
+\key{FAST_ITERATIONS} & optional & Fast convergence threshold; default 6. \\
+\key{SLOW_ITERATIONS} & optional & Slow convergence threshold; default 10. \\
+\key{MAXIMUM_CUTBACKS} & optional & Cutback limit; default 20. \\
+\key{MAXITER} & optional & Newton iteration limit; default 20. \\
+\key{TOL} & optional & Equilibrium convergence tolerance; default \(10^{-8}\). \\
+\key{REGULARIZE_ZERO_ROWS} & optional & Enable weak-row regularization; default \val{ON}. \\
+\key{REGULARIZATION_ALPHA} & optional & Regularization scale; default \(10^{-4}\). \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NONLINEAR, CONTROL=ARC_LENGTH,
+ MAX_INCREMENTS=200,
+ INITIAL_INCREMENT=0.05,
+ MINIMUM_INCREMENT=1e-5,
+ MAXIMUM_INCREMENT=0.1,
+ MAXITER=40, TOL=1e-8,
+ ADAPTIVE=ON
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEP, NLGEOM=YES, INC=200
+*STATIC, RIKS
+0.05, 1.0, 1e-5, 0.1
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{TIME}
+
+\cmd{TIME} defines the time interval and fixed integration step for \val{LINEARTRANSIENT}. Two forms are accepted:
+\[
+t_\mathrm{start},\ t_\mathrm{end},\Delta t
+\]
+or the compact form
+\[
+t_\mathrm{end},\Delta t,
+\]
+which uses \(t_\mathrm{start}=0\).
+
+The time increment must resolve the highest response frequencies that matter to the analysis. Implicit time integration may remain numerically stable for a large \(\Delta t\) while still giving an inaccurate transient response. Stability and accuracy are not the same criterion.
+
+The ratio between \(\Delta t\) and the shortest relevant period \(T_\mathrm{min}\) determines the temporal resolution. Phase and peak-amplitude accuracy generally require many points per period.
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*TIME
+0.0, 2.0, 0.005
+\end{femasterdeck}
+\begin{abaqusdeck}
+*DYNAMIC, DIRECT
+0.005, 2.0
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{NEWMARK}
+
+\cmd{NEWMARK} sets the \(\beta\) and \(\gamma\) parameters of the implicit Newmark method. Defaults are
+\[
+\beta=0.25,\qquad\gamma=0.5,
+\]
+the constant-average-acceleration scheme.
+
+Newmark updates displacement and velocity according to
+\[
+u_{n+1}
+=u_n+\Delta t\,v_n
++\Delta t^2\left[\left(\frac12-\beta\right)a_n+\beta a_{n+1}\right],
+\]
+\[
+v_{n+1}
+=v_n+\Delta t\left[(1-\gamma)a_n+\gamma a_{n+1}\right].
+\]
+For the default parameters the linear method is unconditionally stable for the standard undamped problem and introduces no algorithmic high-frequency damping. Accuracy still requires a sufficiently small time step.
+
+\begin{keyworddata}
+\val{beta, gamma} & Newmark integration parameters. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NEWMARK
+0.25, 0.5
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus \cmd{DYNAMIC, DIRECT} mapping uses FEMaster's transient integration but does not expose a separate imported Newmark-parameter card.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{DAMPING}
+
+\cmd{DAMPING, TYPE=RAYLEIGH} defines proportional damping for transient or harmonic analysis:
+\[
+C=\alpha M+\beta K.
+\]
+The mass-proportional coefficient \(\alpha\) primarily affects low frequencies, while the stiffness-proportional coefficient \(\beta\) increasingly affects high frequencies.
+
+For a mode with circular frequency \(\omega_i\), the approximate modal damping ratio is
+\[
+\zeta_i
+=\frac12\left(\frac{\alpha}{\omega_i}+\beta\omega_i\right).
+\]
+This relation determines \(\alpha\) and \(\beta\) from specified damping ratios at two frequencies.
+
+Rayleigh damping is frequency dependent. Coefficients fitted at two frequencies produce different damping ratios elsewhere in the spectrum, especially for modes far below or above the fitting range.
+
+\begin{keywordparameters}
+\key{TYPE} & required & Currently \val{RAYLEIGH}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{alpha, beta} & Mass- and stiffness-proportional Rayleigh coefficients. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*DAMPING, TYPE=RAYLEIGH
+0.0, 1.0e-5
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus reader currently does not import a separate Step damping card.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{FREQUENCIES}
+
+\cmd{FREQUENCIES} defines the excitation-frequency sweep for \val{LINEARHARMONIC}. The native command currently supports linear spacing; \key{SCALE} may be omitted or set to \val{LINEAR}.
+
+The data line contains start frequency \(f_0\), end frequency \(f_1\), and integer point count \(n\). For \(n>1\),
+\[
+f_i=f_0+i\frac{f_1-f_0}{n-1},
+\qquad i=0,\ldots,n-1.
+\]
+For \(n=1\), the single solved frequency is \(f_0\).
+
+Frequency resolution determines which parts of the response curve are sampled. A coarse linear sweep can miss a narrow lightly damped resonance even though the endpoints cover the correct range; additional points near a resonance resolve its peak amplitude and phase more closely.
+
+\begin{keywordparameters}
+\key{SCALE} & optional & Currently \val{LINEAR}. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FREQUENCIES, SCALE=LINEAR
+10., 1000., 100
+\end{femasterdeck}
+\begin{abaqusdeck}
+*STEADY STATE DYNAMICS, DIRECT,
+ FREQUENCYSCALE=LINEAR
+10., 1000., 100, 1., 1.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{NUMEIGENVALUES}
+
+\cmd{NUMEIGENVALUES} sets the number of requested eigenpairs for \val{EIGENFREQ} or \val{LINEARBUCKLING}. The data value must be a positive integer.
+
+The requested value is a result count, not a frequency or buckling-factor cutoff. A request for ten modes therefore returns ten eigenpairs but does not independently define the covered spectral range, particularly in the presence of multiplicities or closely spaced eigenvalues.
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NUMEIGENVALUES
+20
+\end{femasterdeck}
+\begin{abaqusdeck}
+*FREQUENCY
+20
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{SIGMA}
+
+\cmd{SIGMA} sets the spectral shift used by native \val{LINEARBUCKLING}. The shift guides the eigensolver toward the targeted part of the buckling spectrum.
+
+For the reduced buckling problem written as
+\[
+A\phi=\lambda(-B)\phi,
+\]
+with elastic stiffness \(A\) and geometric stiffness contribution \(B\), shift-invert methods become most effective when the shift is placed near, but appropriately below, the eigenvalue range of interest.
+
+\val{SIGMA=0} requests the automatic shift strategy. FEMaster estimates a scale from the pre-buckling solution where possible and falls back to conservative stiffness/geometric-stiffness estimates if necessary. A manual shift directly targets a known approximate spectral range.
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SIGMA
+0.0
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus \cmd{BUCKLE} mapping does not expose native FEMaster's explicit \cmd{SIGMA} control.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{WRITEEVERY}
+
+\cmd{WRITEEVERY} controls how often transient results are written. It does not change the integration step or the computed transient trajectory.
+
+With \key{TYPE=STEPS}, the data value is the number of integration steps between written states. With \key{TYPE=TIME}, it is a physical time interval. Writing less frequently can greatly reduce output size when the integration time step is small.
+
+Output sampling must still be fine enough for the quantity being inspected. A transient can be integrated accurately but appear to miss a short peak if results are written too sparsely.
+
+\begin{keywordparameters}
+\key{TYPE} & optional & \val{STEPS} (default) or \val{TIME}. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*WRITEEVERY, TYPE=STEPS
+10
+\end{femasterdeck}
+\begin{noabaqus}
+Abaqus output-request cards currently do not control FEMaster's transient write cadence.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{INITIALVELOCITY}
+
+\cmd{INITIALVELOCITY} assigns initial generalized nodal velocity for \val{LINEARTRANSIENT} from an existing six-component nodal Field. The Field must use \val{TYPE=NODE} and component order
+\[
+(V_x,V_y,V_z,\Omega_x,\Omega_y,\Omega_z),
+\]
+corresponding to the translational and rotational nodal DOFs.
+
+\key{FIELD} names the Field that completely supplies the initial velocity state. Initial displacement is taken from the analysis/model state defined by the current procedure.
+
+\begin{keywordparameters}
+\key{FIELD} & required & Existing six-component \val{NODE} Field. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=V0, TYPE=NODE,
+ COLS=6, FILL=ZERO
+0, 1., 0., 0., 0., 0., 0.
+*INITIALVELOCITY, FIELD=V0
+\end{femasterdeck}
+\begin{noabaqus}
+No initial-velocity mapping is currently supported by the Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{INERTIARELIEF}
+
+\cmd{INERTIARELIEF} enables inertia relief for a linear static analysis of an intentionally free or insufficiently supported body.
+
+For a free body under a nonzero resultant external force or moment, the ordinary static equation has no physical equilibrium because the body accelerates. Inertia relief determines the rigid-body translational and angular acceleration associated with the applied load and model mass properties, forms the corresponding inertial forces, and balances the external resultant. The remaining static solution represents elastic deformation relative to the accelerating body.
+
+This represents free-flight or free-body loadcases without adding an artificial fixed support. It does not represent real bearings, bolts, fixtures, or other physical supports.
+
+\key{CONSIDER_POINT_MASSES} controls whether \cmd{POINTMASS} features contribute to the mass and inertia used for the balancing field; the default is true.
+
+\begin{keywordparameters}
+\key{CONSIDER_POINT_MASSES} & optional & Boolean; default \val{1}. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*INERTIARELIEF, CONSIDER_POINT_MASSES=1
+\end{femasterdeck}
+\begin{noabaqus}
+No inertia-relief procedure is currently imported by the supported Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{REBALANCELOADS}
+
+\cmd{REBALANCELOADS} adjusts the active external load system of a linear static analysis so that its resultant force and moment vanish. It is intended for a load that is theoretically self-equilibrated but contains a small numerical imbalance because of discretization, rounding, approximate surface selection, or equivalent-load construction.
+
+This differs physically from inertia relief. \cmd{REBALANCELOADS} assumes a theoretically self-equilibrated applied load and corrects its numerical residual. \cmd{INERTIARELIEF} accepts a genuinely unbalanced free-body load and represents the rigid-body acceleration needed to balance it.
+
+Rebalancing a load with a physical resultant removes that resultant and thereby defines a different loadcase; it does not supply support to an unsupported model.
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*REBALANCELOADS
+\end{femasterdeck}
+\begin{noabaqus}
+No corresponding load-rebalancing input card is currently supported by the Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}

@@ -1,0 +1,80 @@
+\chapter{Input Format}
+\label{chap:input-format}
+
+FEMaster reads keyword-based input decks. Both the native FEMaster language and the supported Abaqus input format use the familiar structure in which a command starts with an asterisk, optional parameters follow after commas, and command-specific data are supplied on one or more following lines.
+
+The two syntaxes describe the same types of finite-element objects but do not always expose them in the same way. Native FEMaster input provides direct access to FEMaster concepts such as load and support collectors, explicit loadcases, generic Fields, and numerical solver controls. Abaqus input uses Abaqus-style Parts, Assemblies, Steps, boundary conditions, and procedure keywords. The remainder of this manual explains both forms together and shows their accepted syntax side by side.
+
+\section{Command lines}
+
+A command line begins with \texttt{*}. The command name follows immediately and may be followed by comma-separated parameters. Parameters can be key/value pairs or flags. Data lines continue until the next command line begins.
+
+\begin{syntax}
+*COMMAND, KEY=value, FLAG
+value, value, value
+value, value, value
+\end{syntax}
+
+Command and parameter names are case insensitive. Whitespace inside command names is ignored, so compact names such as \cmd{SOLIDSECTION} and spaced names such as \cmd{SOLID SECTION} refer to the same command where that keyword is supported. The manual normally uses the spaced form when it improves readability and the compact form where it is customary in native FEMaster decks.
+
+Parameter values retain their meaning. Numerical values are read as integer or floating-point quantities according to the keyword definition. Boolean-style options may appear as flags or as explicit values where documented. Names are used to reference Parts, Instances, sets, surfaces, materials, sections, coordinate systems, Fields, amplitudes, collectors, and other model entities.
+
+\section{Data lines and multiline records}
+
+The number and meaning of data-line entries depend on the keyword. Some commands accept one record per line, such as \cmd{NODE}. Others read a fixed-size group of values, a matrix, a list of identifiers, or multiple records. The keyword pages describe the required ordering explicitly.
+
+Comma-separated values preserve the visibility of optional empty entries. Whitespace around values is ignored. Several native FEMaster commands use the literal \val{NAN} to mean that a generalized component is not prescribed. This is different from zero: zero is a physical numerical value, whereas an empty or NaN component may mean ``leave this degree of freedom unspecified'' for the corresponding keyword.
+
+Long connectivity or data records may continue over more than one physical line where that command permits multiline input. This representation accommodates higher-order elements and large fixed-size material or Section definitions.
+
+\section{Scopes}
+
+Several keywords open scopes. A Part contains reusable mesh topology and part-level regions. An Assembly contains Instance placement and assembly-level region definitions. Material subcommands apply to the active material. Native FEMaster \cmd{LOADCASE} opens an analysis definition. Abaqus \cmd{STEP} opens an Abaqus analysis step.
+
+Scopes are defined by keywords, not by indentation. Indentation may be used for readability but has no syntactic meaning. Closing commands such as \cmd{END PART}, \cmd{END ASSEMBLY}, \cmd{END INSTANCE}, \cmd{END STEP}, and native \cmd{END} make the end of the corresponding scope explicit.
+
+Parts, Assemblies, and Instances are optional for simple native FEMaster models. Nodes and elements may be defined directly without constructing an explicit Assembly. The structured form represents reusable Parts, repeated Instances, independent local ID spaces, and assembly-level selections.
+
+\section{Names, identifiers, and references}
+
+Node and element IDs are user-defined non-negative integer labels. They may start at \textbf{0}; they do not need to start at 1 and do not need to be contiguous. IDs only need to be unique within the topology scope in which they are defined. For example, \val{0}, \val{10}, and \val{1000} are valid node IDs.
+
+Inside separate Parts, the same numerical ID may be reused because each Part has its own local topology. Instances preserve these local labels from the user's point of view. When an assembly-level command needs to identify an entity from a particular Instance, the documented Instance-qualified reference syntax is used.
+
+Named resources are used throughout the rest of the deck. Node sets, element sets, surfaces, materials, profiles, orientations, Fields, amplitudes, collectors, and other definitions are referenced by name. Stable names expose the model structure without repeatedly addressing individual numerical IDs.
+
+\emph{User IDs} and \emph{local positional indices} represent different concepts. User node and element IDs may be sparse and may include zero. By contrast, indices such as a Field's \val{local_node}, \val{local_ip}, or \val{local_mp} identify a position inside an element and are explicitly zero based where documented.
+
+\section{FEMaster and Abaqus examples in this manual}
+
+Each keyword reference shows native FEMaster input on the left and the corresponding supported Abaqus input on the right. When the syntax is identical, both columns intentionally show the same form. When the modelling concepts differ, the two examples show the respective accepted representation. If no equivalent is currently read from Abaqus input, the Abaqus column states that directly rather than showing syntax that FEMaster would reject.
+
+The comparison shows how the same model operation is expressed in either accepted input style without exposing parser implementation details.
+
+\keywordpage{HEADING}
+
+\cmd{HEADING} adds descriptive text to an input deck. It does not change the finite-element equations or the numerical result. The keyword keeps exported, archived, and regression decks self-describing and is accepted in both native FEMaster and Abaqus input.
+
+A heading is metadata conventionally placed near the beginning of a file. Later model commands do not reference it by name, and it does not substitute for a Part name, material name, loadcase name, or other actual model identifier.
+
+Native FEMaster also accepts \cmd{MODEL, NAME=...} as an optional root-level model marker. \cmd{HEADING} is free descriptive text, while \cmd{MODEL} belongs to the model-definition syntax described in the next chapter.
+
+\syntaxheading
+
+\begin{syntax}
+*HEADING
+Descriptive model title
+\end{syntax}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*HEADING
+Cantilever verification model
+\end{femasterdeck}
+\begin{abaqusdeck}
+*HEADING
+Cantilever verification model
+\end{abaqusdeck}
+\end{dialectexamples}

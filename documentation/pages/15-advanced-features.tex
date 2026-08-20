@@ -1,0 +1,183 @@
+\chapter{Advanced Model Features}
+\label{chap:advanced-features}
+
+This chapter collects native FEMaster features that extend the basic mesh--material--load workflow. \cmd{POINTMASS} adds concentrated mass, rotary inertia, and optional nodal spring stiffness. The topology-static commands use element Fields to scale stiffness and rotate material directions without changing mesh connectivity.
+
+These capabilities are currently native FEMaster features; the supported Abaqus input subset does not provide direct equivalents unless stated otherwise.
+
+\keywordpage{POINTMASS}
+
+\cmd{POINTMASS} assigns concentrated mass and optional generalized spring properties to a named node set. \key{NSET} identifies the target nodes.
+
+The first value is one translational point mass \(m\). It contributes equally to the three translational inertia directions. The next three values are rotary inertias
+\[
+(I_x,I_y,I_z)
+\]
+associated with the nodal rotational degrees of freedom. Translational and rotational spring constants may then be supplied. Missing values default to zero, so a pure lumped mass requires only the first scalar.
+
+For one target node, the idealized diagonal generalized mass contribution has the form
+\[
+M_p=\operatorname{diag}(m,m,m,I_x,I_y,I_z),
+\]
+while the optional generalized spring contribution is
+\[
+K_p=\operatorname{diag}(k_x,k_y,k_z,k_{rx},k_{ry},k_{rz}).
+\]
+The exact active DOFs still depend on the surrounding structural model.
+
+Point masses represent equipment, payloads, actuators, engines, sensors, or other concentrated inertia in eigenfrequency, transient, inertial-load, or inertia-relief calculations without explicitly meshing the attached body.
+
+If the target set contains several nodes, the specified feature is applied at every target node. The mass value therefore represents mass \emph{per target node}, not the total mass of the whole set. A total payload distributed over several nodes requires corresponding per-node values or a reference-node representation.
+
+Spring constants must use consistent units. Translational stiffness has force/length units, while rotational stiffness has moment/radian units. Rotary inertia has mass-length\(^2\) units.
+
+Concentrated inertia placed away from a structure's centre of rotation contributes to rotational dynamics through both translational mass and rotary inertia. Omitting the rotary component changes the high-frequency response of a rigid payload idealization.
+
+\begin{keywordparameters}
+\key{NSET} & required & Target node set. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{mass} & Concentrated translational mass; default 0. \\
+\val{Ix, Iy, Iz} & Rotary inertia components; default 0. \\
+\val{kx, ky, kz} & Translational spring constants; default 0. \\
+\val{krx, kry, krz} & Rotational spring constants; default 0. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*POINTMASS, NSET=PAYLOAD
+0.025,
+1.2e-3, 1.2e-3, 2.0e-3,
+1000., 1000., 0.,
+0., 0., 0.
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus reader currently does not map concentrated-mass or spring cards to native \cmd{POINTMASS}.
+\end{noabaqus}
+\end{dialectexamples}
+
+\section{Topology-weighted linear statics}
+
+\val{LINEARSTATICTOPO} extends linear static analysis with element-wise density and optional material-orientation Fields. It is intended for topology/sizing workflows in which design variables are supplied externally or updated between solver runs.
+
+The density Field scales each element's constitutive stiffness by
+\[
+s_e=\rho_e^p,
+\]
+where \(\rho_e\) is the value selected by \cmd{TOPODENSITY} and \(p\) is set by \cmd{TOPOEXPONENT}. Thus an element with \(\rho=1\) retains its full stiffness, while intermediate density is penalized according to the exponent.
+
+If an orientation Field is supplied, its three components are interpreted as element-wise Euler rotation angles. The resulting additional rotation is applied to the material coordinate system for the topology-aware solid response. The Field therefore changes material orientation, not element geometry.
+
+The analysis also produces topology-related output such as density, compliance-related quantities, density sensitivity, volume, and orientation sensitivity where applicable.
+
+\keywordpage{TOPODENSITY}
+
+\cmd{TOPODENSITY} selects the scalar element Field \(\rho_e\) used by an active \val{LINEARSTATICTOPO} loadcase. \key{FIELD} is required; \key{NAME} is accepted as an alternative spelling. The referenced Field must use \val{TYPE=ELEMENT} and exactly one component.
+
+The stiffness multiplier is
+\[
+\rho_e^p.
+\]
+The command does not automatically force values into the interval \([0,1]\). An optimization based on physical density fractions therefore depends on an external workflow that supplies values consistent with that interpretation. Negative density values or inappropriate exponents can produce nonphysical stiffness scaling.
+
+For a SIMP-style topology problem, \(0<\rho_\mathrm{min}\leq\rho_e\leq1\) is commonly used to avoid exactly singular void elements, but the choice of minimum density belongs to the optimization strategy surrounding the FEM solve.
+
+Compliance sensitivity contains factors proportional to \(1/\rho_e\). Exactly zero density therefore introduces singular sensitivity behaviour in gradient-based topology workflows even though the associated zero-stiffness element has a direct conceptual interpretation.
+
+\begin{keywordparameters}
+\key{FIELD} / \key{NAME} & required & Scalar \val{ELEMENT} Field containing element densities. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=RHO, TYPE=ELEMENT,
+ COLS=1, FILL=ZERO
+0, 0.8
+1, 1.0
+
+*LOADCASE, TYPE=LINEARSTATICTOPO
+*TOPODENSITY, FIELD=RHO
+*TOPOEXPONENT
+3.0
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+Topology-density Fields and \val{LINEARSTATICTOPO} are native FEMaster capabilities.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{TOPOORIENT}
+
+\cmd{TOPOORIENT} selects a three-component \val{ELEMENT} Field containing additional material-orientation angles for \val{LINEARSTATICTOPO}. \key{FIELD} is required and \key{NAME} is accepted as an alias.
+
+The three Field components are Euler rotation angles
+\[
+(\theta_x,\theta_y,\theta_z)
+\]
+in \textbf{radians}. They define the additional material rotation
+\[
+R(\theta_x,\theta_y,\theta_z)
+=R_x(\theta_x)\,R_y(\theta_y)\,R_z(\theta_z).
+\]
+This rotation acts in addition to the Section's base material orientation. It is therefore intended for optimization or parameter studies in which the preferred anisotropic material direction varies from element to element.
+
+An orientation Field changes only directional constitutive response. It does not rotate the mesh and has no effect on a fully isotropic material law because isotropic stiffness is invariant under rotation.
+
+The rotation order is significant because finite rotations about different axes do not commute. An external optimization or preprocessing tool that generates \cmd{TOPOORIENT} values must therefore use the same \(R_xR_yR_z\) convention and radians. For example, a second-component value of \val{0.2} means a rotation of \(0.2\,\mathrm{rad}\), not \(0.2^\circ\).
+
+\begin{keywordparameters}
+\key{FIELD} / \key{NAME} & required & Three-component \val{ELEMENT} Field of Euler angles \((\theta_x,\theta_y,\theta_z)\) in radians. \\
+\end{keywordparameters}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*FIELD, NAME=ORIENT,
+ TYPE=ELEMENT, COLS=3, FILL=ZERO
+0, 0.0, 0.0, 0.0
+1, 0.0, 0.2, 0.0
+
+*LOADCASE, TYPE=LINEARSTATICTOPO
+*TOPODENSITY, FIELD=RHO
+*TOPOORIENT, FIELD=ORIENT
+*END
+\end{femasterdeck}
+\begin{noabaqus}
+No topology-orientation Field mapping is currently supported by the Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{TOPOEXPONENT}
+
+\cmd{TOPOEXPONENT} sets the scalar penalization exponent \(p\) used by \val{LINEARSTATICTOPO}:
+\[
+K_e(\rho_e)=\rho_e^p K_{e,0}
+\]
+for the element stiffness contribution represented by the topology scaling.
+
+With \(p=1\), stiffness varies linearly with density. Values \(p>1\) penalize intermediate densities increasingly strongly and are commonly used in SIMP-style topology optimization to drive the design toward a more nearly discrete solid/void distribution.
+
+The exponent also affects compliance sensitivity. If an element compliance contribution before the density derivative is denoted by \(c_e\), the density sensitivity scales conceptually with
+\[
+\frac{\partial C}{\partial\rho_e}
+\propto -p\,\rho_e^{p-1}c_e.
+\]
+The exact reported Field follows FEMaster's topology result definitions, while the sign and penalization dependence follow this standard stiffness-scaling idea.
+
+\begin{keyworddata}
+\val{exponent} & Scalar density penalization exponent \(p\). \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*TOPOEXPONENT
+3.0
+\end{femasterdeck}
+\begin{noabaqus}
+No corresponding topology penalization keyword is currently supported in Abaqus input.
+\end{noabaqus}
+\end{dialectexamples}

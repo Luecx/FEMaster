@@ -1,0 +1,201 @@
+\chapter{Constraints}
+\label{chap:constraints}
+
+Constraints introduce kinematic relations between degrees of freedom that go beyond ordinary supports. A support prescribes selected degrees of freedom directly. A constraint instead relates the motion of different nodes or regions, for example by connecting a reference node to a surface, tying two independently meshed regions together, defining an idealized joint, or removing rigid-body motion from an otherwise free component.
+
+The distinction between these constraint types is physical, not merely syntactic. A kinematic coupling imposes a rigid relation between selected motions. A structural/distributing coupling transfers generalized motion and loading between a reference point and a distributed region. A Tie creates a permanent compatibility relation between associated geometry. A Connector idealizes a joint between two points. RBM removes the rigid-body nullspace of a selected structural region. Contact, described at the end of this chapter, is unilateral and allows separation.
+
+Constraints are used by the active analysis together with the selected support collectors. The numerical method used to enforce the resulting equations is controlled separately by \cmd{CONSTRAINTMETHOD}; see Chapter~\ref{chap:numerical-controls}.
+
+\keywordpage{COUPLING}
+
+\cmd{COUPLING} relates one master or reference node to a slave region. The master is given as a node set and must contain exactly one node. The slave can be a nonempty node set selected with \key{SLAVE} or a nonempty surface set selected with \key{SFSET}; exactly one of these two slave definitions must be used.
+
+\key{TYPE=KINEMATIC} creates a kinematic coupling. The selected slave degrees of freedom follow the rigid kinematics induced by the reference node. This represents an idealized rigid flange, load-introduction point, or boundary where deformation of the coupled patch is suppressed in the selected directions.
+
+\key{TYPE=STRUCTURAL} creates the distributing form. It transfers generalized loads and motions between a reference point and a distributed region without making the complete slave region rigid in the same sense as a kinematic coupling. The connected surface therefore retains deformation modes that a kinematic coupling would suppress.
+
+The data line contains six selector values in the order
+\[
+(U_x,U_y,U_z,R_x,R_y,R_z).
+\]
+A component is active when the supplied value is greater than zero. Missing values are inactive. These six values are therefore \emph{selectors}; they are not prescribed displacement or rotation magnitudes.
+
+For a surface slave, the distribution is based on the selected surface geometry. For a node-set slave, the supplied node region itself defines the coupled region. In either case the reference-node set must contain exactly one node so that the generalized motion and loading have an unambiguous reference point.
+
+Applying identical concentrated nodal forces to all nodes of a surface changes the total load when the mesh is refined. A reference-point load combined with a distributing coupling instead represents a definite resultant force or moment. A kinematic coupling additionally imposes its selected rigid relation and can increase the stiffness of a deformable coupled region.
+
+\begin{keywordparameters}
+\key{MASTER} & required & Node set containing exactly one master/reference node. \\
+\key{TYPE} & required & \val{KINEMATIC} or \val{STRUCTURAL}. \\
+\key{SLAVE} & conditional & Nonempty slave node set; mutually exclusive with \key{SFSET}. \\
+\key{SFSET} & conditional & Nonempty slave surface set; mutually exclusive with \key{SLAVE}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+Six DOF selectors & Positive value enables the corresponding \(U_x,U_y,U_z,R_x,R_y,R_z\) relation; omitted values are inactive. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*COUPLING, MASTER=REF,
+ SFSET=LOADED_FACE, TYPE=STRUCTURAL
+1., 1., 1., 0., 0., 0.
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus reader currently does not import the Abaqus coupling keyword family. Coupling relations are available through native FEMaster syntax.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{TIE}
+
+\cmd{TIE} creates a permanent kinematic connection between slave geometry and master geometry located within a prescribed search distance. The slave may be a node set or a surface set. The master may be a surface set or a line set. FEMaster selects the appropriate supported tie relation from these region types.
+
+\key{DISTANCE} defines the geometric search tolerance used to associate slave locations with the master geometry. A distance below the interface separation leaves intended locations unmatched, whereas a distance extending to unrelated geometry admits additional candidates. \key{ADJUST=YES} permits the supported initial adjustment of slave geometry to the tie relation; the default is \val{NO}.
+
+A Tie represents a bonded or otherwise permanently connected interface. Once the relation has been established, opening or sliding that violates the selected compatibility equations is not permitted. It therefore represents idealized bonded interfaces, mesh transitions, or connections that do not separate. \cmd{CONTACT} instead represents interfaces that may open, close, or lose contact.
+
+The accuracy of a Tie depends on the geometric relation between the two discretizations. Highly nonmatching or strongly curved meshes and competing nearby master surfaces increase the sensitivity to the search distance.
+
+Tie and contact solve different modelling problems. A Tie is an equality-type connection and remains active. Contact is unilateral: it transmits normal interaction only while active and permits subsequent separation. The stiffness of a tied interface is governed by the surrounding structure rather than an artificial penalty spring; physical compliance of an adhesive layer or joint is not represented by the Tie relation itself.
+
+\begin{keywordparameters}
+\key{MASTER} & required & Nonempty master surface or line set. \\
+\key{SLAVE} & required & Nonempty slave node or surface set. \\
+\key{DISTANCE} & required & Search/projection distance used to associate slave and master geometry. \\
+\key{ADJUST} & optional & \val{NO} (default) or \val{YES}. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*TIE, MASTER=MASTER_FACE,
+ SLAVE=SLAVE_NODES,
+ DISTANCE=0.5, ADJUST=YES
+\end{femasterdeck}
+\begin{noabaqus}
+Abaqus \cmd{TIE} is currently not imported by the FEMaster Abaqus reader, even though the native solver provides Tie constraints.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{CONNECTOR}
+
+\cmd{CONNECTOR} defines an idealized kinematic joint between two nodes. \key{NSET1} and \key{NSET2} each identify a node set containing exactly one node. \key{COORDINATESYSTEM} specifies the local connector axes, and \key{TYPE} selects which relative translations and rotations are constrained or released.
+
+The supported connector types are \val{BEAM}, \val{HINGE}, \val{CYLINDRICAL}, \val{TRANSLATOR}, \val{JOIN}, and \val{JOINRX}. They represent different idealized joint kinematics. For example, a hinge is intended to release a rotational degree of freedom about its local hinge axis while constraining the remaining relative motion required by that joint idealization. A translator and a cylindrical connector likewise rely on their local axis system to define the permitted relative motion.
+
+The coordinate system is therefore part of the physical definition, not a cosmetic orientation. Different local connector axes produce different joint kinematics even when the connector type and nodal positions remain unchanged.
+
+Connectors idealize joints without resolving their internal geometry. Bearing deformation, bolt bending, local contact, joint clearance, and detailed connection stress require corresponding beam, shell, solid, spring, or contact representations.
+
+A coupling can reduce a distributed region to a reference node before two reference nodes are connected. This construction makes the idealized joint definition independent of the surface mesh density.
+
+\begin{keywordparameters}
+\key{TYPE} & required & \val{BEAM}, \val{HINGE}, \val{CYLINDRICAL}, \val{TRANSLATOR}, \val{JOIN}, or \val{JOINRX}. \\
+\key{NSET1} & required & First one-node set. \\
+\key{NSET2} & required & Second one-node set. \\
+\key{COORDINATESYSTEM} & required & Named coordinate system defining the connector axes. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*ORIENTATION, NAME=HINGE_AXES,
+ TYPE=RECTANGULAR
+1., 0., 0., 0., 1., 0.
+
+*CONNECTOR, TYPE=HINGE,
+ NSET1=PIN_A, NSET2=PIN_B,
+ COORDINATESYSTEM=HINGE_AXES
+\end{femasterdeck}
+\begin{noabaqus}
+Connector translation is currently not part of the supported Abaqus input subset.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{RBM}
+
+\cmd{RBM} suppresses the rigid-body modes of a selected structural element region without requiring the user to choose arbitrary fixed nodes. The target is specified by \key{ELSET} or its alias \key{SET}; if omitted, \val{EALL} is used.
+
+A free three-dimensional body has six rigid-body modes: three translations and three rotations. These modes have no elastic strain energy and therefore produce a structural nullspace when no physical support removes them. RBM constructs constraint equations that remove the rigid-body motion of the selected region while avoiding the strong local bias that can arise from fixing one arbitrary corner node in several directions.
+
+RBM removes the rigid-body nullspace without introducing a particular physical support point. It does not represent attachment through bearings, bolts, symmetry, contact, or other supports, and it does not complete missing physical boundary conditions.
+
+RBM is also different from inertia relief. RBM changes the admissible kinematics by suppressing rigid motion. Inertia relief retains the free-body interpretation and balances the applied load with an equivalent rigid-body inertial field.
+
+RBM addresses rigid-body motion itself. Other singularities can instead arise from disconnected parts, released mechanisms, missing Sections, unsupported rotational degrees of freedom, or incorrect constraint definitions and remain separate model conditions.
+
+\begin{keywordparameters}
+\key{ELSET} / \key{SET} & optional & Nonempty target structural element set; default \val{EALL}. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*RBM, ELSET=FREE_COMPONENT
+\end{femasterdeck}
+\begin{noabaqus}
+No direct RBM-suppression keyword is currently imported by the supported Abaqus reader.
+\end{noabaqus}
+\end{dialectexamples}
+
+\section{Contact}
+\label{sec:contact}
+
+Contact is a unilateral constraint between two surface regions. In contrast to a Tie, which permanently enforces compatible motion between associated regions, contact permits the surfaces to separate and transmits normal interaction only when the contact condition becomes active.
+
+The current FEMaster contact formulation is frictionless dual-mortar surface-to-surface contact with an augmented-Lagrange normal-contact law. Contact acts over the physical overlap of slave and master facets and is nonlinear because the active contact region changes with deformation. Its response depends on the master/slave assignment, surface orientation, and penalty scale.
+
+\keywordpage{CONTACT}
+
+\cmd{CONTACT} defines one frictionless contact pair between a nonempty master surface set and a nonempty slave surface set. \key{MASTER} and \key{SLAVE} name the two regions. \key{PENALTY} provides the initial contact penalty stiffness. \key{CLEARANCE} shifts the zero-gap condition and defaults to zero. \key{FLIP=YES} reverses the master-surface normal used by the contact pair; the default is \val{NO}.
+
+For each active slave contact degree of freedom, FEMaster uses an augmented-Lagrange relation of the form
+\[
+p_i=\max\left(0,\lambda_i-\varepsilon g_i\right),
+\]
+where \(g_i\) is the current normal gap, \(\lambda_i\) is the augmented-Lagrange multiplier, and \(\varepsilon\) is the effective penalty stiffness. With the sign convention used by the formulation, the \(\max\) operation suppresses tensile contact: surfaces may separate freely and normal contact pressure is generated only on the compressive side of the constraint.
+
+The mortar formulation determines interaction from the current physical overlap of slave and master facets rather than simply tying a slave node to one permanently selected master node. This makes the contact response considerably less mesh-position dependent than a simple node-to-node contact law, but it also means that changing overlap topology can introduce non-smooth changes into a nonlinear equilibrium iteration.
+
+The user-supplied \key{PENALTY} is a numerical stiffness scale, not a physical material constant. A small value permits greater penetration, whereas a large value can make the global tangent system poorly conditioned. The augmented-Lagrange procedure can increase the effective penalty when additional enforcement is required. The relevant scale is therefore set by the structural stiffness of the contacting bodies and evaluated through the resulting penetration and nonlinear conditioning.
+
+\textbf{Master/slave assignment.} The mortar formulation is not algebraically symmetric with respect to the two labels: the dual interpolation and normal multipliers are associated with the slave side. Similar discretizations can admit either assignment, but changing it between comparable models also changes the discrete formulation. With strongly different meshes, assigning the finer or more detailed side as slave places the dual interpolation on that discretization; mesh sensitivity remains part of the numerical comparison.
+
+\textbf{Normal orientation.} Contact sign depends on the surface orientation. A reversed surface orientation can make a physically separated pair appear active or prevent a penetrating pair from developing reaction. \key{FLIP} reverses the master normal for the contact pair but does not change the underlying element connectivity or surface side label.
+
+\textbf{Penalty magnitude.} Penetration decreases as contact enforcement becomes stiffer, while excessive stiffness degrades the conditioning of the equilibrium iterations. The input number alone therefore does not define contact accuracy independently of geometry and structural stiffness.
+
+\textbf{Analysis type.} Contact changes with deformation and belongs to nonlinear static analysis. A linear analysis cannot represent opening, closing, changing overlap, or an evolving unilateral active set.
+
+\begin{keywordparameters}
+\key{MASTER} & required & Nonempty master surface set. \\
+\key{SLAVE} & required & Nonempty slave surface set. \\
+\key{PENALTY} & required & Initial augmented-Lagrange penalty stiffness. \\
+\key{CLEARANCE} & optional & Contact-clearance offset; default \val{0}. \\
+\key{FLIP} & optional & \val{NO} (default) or \val{YES}; reverses the master-surface normal. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SURFACE, NAME=MASTER_FACE
+MASTER_ELEMENTS, S1
+*SURFACE, NAME=SLAVE_FACE
+SLAVE_ELEMENTS, S2
+
+*CONTACT, MASTER=MASTER_FACE,
+ SLAVE=SLAVE_FACE,
+ PENALTY=1.0e8,
+ CLEARANCE=0.0, FLIP=NO
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus reader currently does not import the Abaqus contact-definition family. Contact can be added with native FEMaster syntax using surface sets available in the model.
+\end{noabaqus}
+\end{dialectexamples}

@@ -1,0 +1,228 @@
+\chapter{Sections and Element Properties}
+\label{chap:sections}
+
+Element connectivity defines interpolation and kinematics, but it does not by itself provide a complete structural model. Sections connect element regions to material and geometric properties. For solids the Section selects a material and optionally a material orientation. Shells additionally require thickness or a generalized shell stiffness. Trusses require cross-sectional area. Beams combine material data with cross-section constants and a local section direction.
+
+A Section defined for an element set inside a Part belongs to that Part. If the Part is instantiated several times, every Instance carries the same Section assignment. Material, thickness, area, and profile data thereby remain properties of the physical component, while the Instance placement determines where that component is located.
+
+\keywordpage{PROFILE}
+
+\cmd{PROFILE} defines the cross-section constants used by native FEMaster beam Sections. A Profile is referenced by name from \cmd{BEAM SECTION}. It stores area, bending second moments, torsional constant, optional product of inertia, shear-centre offsets, and reference-line offsets.
+
+The data order is
+\[
+A,\ I_y,\ I_z,\ J_t,\ I_{yz},\ e_y,\ e_z,\ \mathrm{ref}_y,\ \mathrm{ref}_z.
+\]
+Only the first four values are required. The remaining quantities default to zero.
+
+FEMaster uses the convention
+\[
+I_{yz}=\int_A yz\,\mathrm dA
+\]
+without a leading minus sign. Some texts and tools define the product of inertia with the opposite sign, so imported Section properties can differ by this convention.
+
+The offsets \(e_y,e_z\) describe the relative position used for the section/shear-centre definition, while \(\mathrm{ref}_y,\mathrm{ref}_z\) describe the location of the beam reference line relative to the section reference point. In unsymmetric or eccentric Sections these offsets determine the different points about which axial force, shear, bending, and torsion act.
+
+Profile constants follow the unit system of the model. In a consistent N--mm model, \(A\) is in mm\(^2\), \(I_y\), \(I_z\), \(J_t\), and \(I_{yz}\) are in mm\(^4\), and all offsets are in mm.
+
+\begin{keywordparameters}
+\key{PROFILE} / \key{NAME} & required & Unique Profile name referenced by \cmd{BEAM SECTION}. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{A} & Cross-sectional area. \\
+\val{Iy, Iz} & Second moments of area about the local section axes. \\
+\val{Jt} & Torsional constant. \\
+\val{Iyz} & Product of inertia using \(I_{yz}=\int_A yz\,\mathrm dA\). \\
+\val{ey, ez} & Optional section/shear-centre offsets; default zero. \\
+\val{refy, refz} & Optional reference-line offsets; default zero. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*PROFILE, NAME=RECT_EQUIV
+200., 6666.67, 1666.67, 4577.,
+0., 0., 0., 0., 0.
+\end{femasterdeck}
+\begin{noabaqus}
+The supported Abaqus reader currently has no standalone Profile mapping for the native FEMaster beam-profile definition.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{SOLID SECTION}
+
+\cmd{SOLID SECTION} assigns material properties to a solid element region. Native FEMaster requires \key{ELSET} and \key{MATERIAL}; \key{MAT} is accepted as an alias. \key{ORIENTATION} is optional and defines the local basis in which directional material properties are interpreted.
+
+No thickness or area is required because a solid element represents its physical volume directly through the mesh geometry. The Section determines the constitutive law of the elements and the material coordinate system in which an anisotropic law is evaluated.
+
+For isotropic elasticity, changing the material orientation has no effect on the constitutive response because the stiffness is direction independent. For orthotropic or fully anisotropic material data, the orientation is physically significant and must be chosen consistently with the material axes.
+
+The supported Abaqus \cmd{SOLID SECTION} syntax is identical for ordinary solid regions. FEMaster also accepts a special Abaqus-reader use of \cmd{SOLID SECTION} for a pure \val{T3D2} truss set; in that case the data value is interpreted as the truss cross-sectional area. This special case is described again under \cmd{TRUSS SECTION}.
+
+A Section applies one material system and orientation to its target element set. Different material systems or orientations within one geometric component therefore require separate named element sets and Section assignments. A target set containing incompatible element families does not define a uniform Section interpretation.
+
+\begin{keywordparameters}
+\key{ELSET} & required & Solid element set receiving the Section. \\
+\key{MATERIAL} / \key{MAT} & required & Material assigned to the region. \\
+\key{ORIENTATION} & optional & Named material coordinate system. \\
+\end{keywordparameters}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SOLID SECTION, ELSET=SOLID,
+ MATERIAL=STEEL,
+ ORIENTATION=MAT_AXES
+\end{femasterdeck}
+\begin{abaqusdeck}
+*SOLID SECTION, ELSET=SOLID,
+ MATERIAL=STEEL,
+ ORIENTATION=MAT_AXES
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{SHELL SECTION}
+
+\cmd{SHELL SECTION} assigns thickness and constitutive properties to shell elements. Native FEMaster supports two forms:
+\begin{itemize}
+  \item \val{TYPE=INTEGRATED}, where a material law is integrated through the physical shell thickness;
+  \item \val{TYPE=ABD}, where the generalized membrane--bending and transverse-shear stiffnesses are supplied directly.
+\end{itemize}
+
+For \val{TYPE=INTEGRATED}, \key{ELSET} identifies the shell region and \key{MATERIAL} identifies the constitutive law. The data line supplies the physical shell thickness \(t\). The shell uses this thickness to form membrane, bending, shear, mass, and stress-recovery quantities according to the shell formulation.
+
+For a homogeneous linear elastic shell, the familiar generalized relation has the form
+\[
+\begin{bmatrix}
+\boldsymbol N\\
+\boldsymbol M
+\end{bmatrix}
+=
+\begin{bmatrix}
+A & B\\
+B & D
+\end{bmatrix}
+\begin{bmatrix}
+\boldsymbol\varepsilon_0\\
+\boldsymbol\kappa
+\end{bmatrix},
+\]
+with additional transverse-shear resultants governed by a \(2\times2\) shear stiffness. In an integrated Section these generalized stiffnesses arise from the material and thickness. In an ABD Section they are entered directly.
+
+For \val{TYPE=ABD}, FEMaster reads 40 numerical values: all 36 entries of the full \(6\times6\) generalized stiffness matrix in row-major order, followed by the four entries of the \(2\times2\) transverse-shear stiffness matrix. The matrix is not assumed to be symmetric from input; enter all values explicitly in the required order.
+
+\key{ORIENTATION} selects the local Section/material coordinate system. The ABD matrix is interpreted in this local shell basis. This is critical for laminates and anisotropic panels: an ABD matrix entered in one material direction but assigned with another orientation describes a different structure. \key{CSYSAXIS}=1,2,3 selects which axis of the named coordinate system establishes the in-plane reference direction; the default is axis 1.
+
+The supported Abaqus \cmd{SHELL SECTION} form represents a homogeneous integrated Section. Its data line gives thickness and optionally the number of Simpson integration points. FEMaster currently supports five through-thickness points for this imported form; if the count is omitted, five are used. Layered composite layups and other Abaqus-specific shell-section options are not implied by this syntax.
+
+The shell normal and in-plane Section direction together define the local shell basis in which \(N_{xx}\), \(N_{yy}\), \(M_{xx}\), \(M_{yy}\), top/bottom stresses, and an anisotropic ABD matrix are interpreted. On curved meshes both directions vary with the surface geometry. A 90-degree orientation difference can exchange strong and weak laminate directions while leaving the input syntactically valid.
+
+\begin{keywordparameters}
+\key{TYPE} & native optional & \val{INTEGRATED} (default) or \val{ABD}. \\
+\key{ELSET} & required & Shell element set. \\
+\key{MATERIAL} / \key{MAT} & integrated required & Material used by the integrated Section; optional for native ABD input. \\
+\key{THICKNESS} & native optional & Nominal thickness parameter; default \val{1.0}. \\
+\key{ORIENTATION} & optional & Named Section/material coordinate system. \\
+\key{CSYSAXIS} & native optional & Coordinate-system axis 1, 2, or 3 used for the in-plane reference direction; default 1. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+Integrated FEMaster & One positive shell thickness. \\
+ABD FEMaster & 36 row-major generalized-stiffness entries followed by 4 row-major transverse-shear entries. \\
+Abaqus homogeneous form & Thickness and optional integration-point count; the current supported count is 5. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*SHELL SECTION, ELSET=PANEL,
+ MATERIAL=ALUMINIUM,
+ TYPE=INTEGRATED
+2.0
+\end{femasterdeck}
+\begin{abaqusdeck}
+*SHELL SECTION, ELSET=PANEL,
+ MATERIAL=ALUMINIUM
+2.0, 5
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{BEAM SECTION}
+
+\cmd{BEAM SECTION} assigns material, profile, and orientation information to a native FEMaster beam element set. \key{MATERIAL} selects the constitutive law, \key{PROFILE} supplies cross-section constants, and the data line gives a nonzero direction vector used to construct the local beam cross-section axes.
+
+The beam axis itself is determined by the element geometry from node 1 to node 2. The Section orientation vector must therefore provide a second direction that is not parallel to the beam axis. Together they establish the local cross-section basis in which \(I_y\), \(I_z\), \(I_{yz}\), offsets, bending moments, and section forces are interpreted.
+
+The orientation vector belongs to the beam reference geometry. It is not a prescribed nodal rotation and it is not a load direction. For a curved or multi-element beam region, consistency of this vector determines continuity of the local frame along the complete member.
+
+The current supported Abaqus input subset does not provide the native FEMaster beam-profile/beam-section mapping. General Abaqus \cmd{BEAM SECTION} cards are outside the supported subset unless a reader extension explicitly documents their syntax.
+
+The local orientation determines which bending inertia acts about an applied-load direction. A beam can therefore have the specified area and inertias but a different bending stiffness when an unsymmetric profile or changing member direction produces different local axes.
+
+\begin{keywordparameters}
+\key{MATERIAL} / \key{MAT} & required & Beam material. \\
+\key{ELSET} & required & Beam element set. \\
+\key{PROFILE} & required & Previously defined native FEMaster Profile. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{n1x, n1y, n1z} & Nonzero direction used to define the initial local cross-section orientation. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*PROFILE, NAME=BEAM_PROFILE
+200., 6666.7, 1666.7, 4577.
+
+*BEAM SECTION, ELSET=BEAMS,
+ MATERIAL=STEEL, PROFILE=BEAM_PROFILE
+0., 1., 0.
+\end{femasterdeck}
+\begin{noabaqus}
+The current supported Abaqus input subset has no mapping to FEMaster's native Profile-based \cmd{BEAM SECTION} definition.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{TRUSS SECTION}
+
+Native \cmd{TRUSS SECTION} assigns a material and a positive cross-sectional area to a truss element set. A truss carries only axial force, so cross-sectional area is the only geometric Section property required by the current formulation.
+
+For an element of length \(L\), area \(A\), and Young's modulus \(E\), the small-strain axial stiffness scales as
+\[
+k=\frac{EA}{L}.
+\]
+The same area also determines material mass per unit length through \(\rho A\) and converts axial force to average axial stress through \(\sigma=N/A\).
+
+The area must therefore use the same unit system as the geometry and material constants and must be strictly positive.
+
+The supported Abaqus reader does not use a literal \cmd{TRUSS SECTION} keyword. Instead, a pure \val{T3D2} element set can be assigned through the supported \cmd{SOLID SECTION} syntax with the cross-sectional area on the data line. The resulting truss mechanics are the same even though the input spelling differs. This mapping is specific to the FEMaster-supported pure \val{T3D2} region and does not describe other Abaqus truss-section workflows.
+
+\begin{keywordparameters}
+\key{MATERIAL} / \key{MAT} & required & Truss material. \\
+\key{ELSET} & required & Truss element set. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{area} & Strictly positive cross-sectional area. \\
+\end{keyworddata}
+
+\exampleheading
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*TRUSS SECTION, ELSET=BARS,
+ MATERIAL=STEEL
+100.0
+\end{femasterdeck}
+\begin{abaqusdeck}
+*SOLID SECTION, ELSET=BARS,
+ MATERIAL=STEEL
+100.0
+\end{abaqusdeck}
+\end{dialectexamples}

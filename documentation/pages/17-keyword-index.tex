@@ -1,0 +1,173 @@
+\chapter{Keyword Index}
+\label{chap:keyword-index}
+
+This chapter provides a compact index of the input keywords accepted by the current FEMaster and supported Abaqus syntaxes. Every keyword has one canonical explanation in the preceding thematic chapters. A check mark means that the spelling is accepted in that input style; a dash means that the same keyword is not available there, although an equivalent modelling operation may be shown on the detailed page.
+
+Command names are displayed in the conventional spaced form used in the manual, for example \cmd{END PART}, \cmd{SOLID SECTION}, and \cmd{STEADY STATE DYNAMICS}. \cmd{INERTIALOAD} is shown with the exact native spelling currently accepted by FEMaster.
+
+\small
+\begin{longtable}{@{}p{0.29\linewidth}p{0.10\linewidth}p{0.10\linewidth}p{0.39\linewidth}@{}}
+\caption{Input keywords and their canonical documentation locations.}\label{tab:keyword-index}\\
+\toprule
+\textbf{Keyword} & \textbf{FEMaster} & \textbf{Abaqus} & \textbf{Canonical topic} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Keyword} & \textbf{FEMaster} & \textbf{Abaqus} & \textbf{Canonical topic} \\
+\midrule
+\endhead
+
+\cmd{HEADING} & \checkmark & \checkmark & Input Format \\
+\cmd{MODEL} & \checkmark & -- & Model Definition \\
+\cmd{PART} & \checkmark & \checkmark & Model Definition \\
+\cmd{END PART} & \checkmark & \checkmark & Model Definition \\
+\cmd{ASSEMBLY} & \checkmark & \checkmark & Model Definition \\
+\cmd{END ASSEMBLY} & \checkmark & \checkmark & Model Definition \\
+\cmd{INSTANCE} & \checkmark & \checkmark & Model Definition \\
+\cmd{END INSTANCE} & \checkmark & \checkmark & Model Definition \\
+\cmd{NODE} & \checkmark & \checkmark & Model Definition \\
+\cmd{ELEMENT} & \checkmark & \checkmark & Model Definition and Elements \\
+
+\midrule
+\cmd{NSET} & \checkmark & \checkmark & Regions and Selections \\
+\cmd{ELSET} & \checkmark & \checkmark & Regions and Selections \\
+\cmd{SURFACE} & \checkmark & \checkmark & Regions and Selections \\
+\cmd{SFSET} & \checkmark & -- & Regions and Selections \\
+
+\midrule
+\cmd{MATERIAL} & \checkmark & \checkmark & Materials \\
+\cmd{ELASTIC} & \checkmark & \checkmark & Materials \\
+\cmd{HYPERELASTIC} & \checkmark & \checkmark & Materials \\
+\cmd{DENSITY} & \checkmark & \checkmark & Materials \\
+\cmd{THERMALEXPANSION} & \checkmark & -- & Materials \\
+\cmd{EXPANSION} & -- & \checkmark & Materials \\
+
+\midrule
+\cmd{PROFILE} & \checkmark & -- & Sections and Element Properties \\
+\cmd{SOLID SECTION} & \checkmark & \checkmark & Sections and Element Properties \\
+\cmd{SHELL SECTION} & \checkmark & \checkmark & Sections and Element Properties \\
+\cmd{BEAM SECTION} & \checkmark & -- & Sections and Element Properties \\
+\cmd{TRUSS SECTION} & \checkmark & -- & Sections and Element Properties \\
+
+\midrule
+\cmd{ORIENTATION} & \checkmark & \checkmark & Coordinate Systems and Orientations \\
+\cmd{TRANSFORM} & -- & \checkmark & Coordinate Systems and Orientations \\
+
+\midrule
+\cmd{FIELD} & \checkmark & -- & Fields \\
+\cmd{NORMAL} & \checkmark & -- & Fields \\
+
+\midrule
+\cmd{AMPLITUDE} & \checkmark & \checkmark & Loads and Boundary Conditions \\
+\cmd{SUPPORT} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{BOUNDARY} & -- & \checkmark & Loads and Boundary Conditions \\
+\cmd{CLOAD} & \checkmark & \checkmark & Loads and Boundary Conditions \\
+\cmd{DLOAD} & \checkmark & \checkmark & Loads and Boundary Conditions; semantics differ by dialect \\
+\cmd{PLOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{DSLOAD} & -- & \checkmark & Loads and Boundary Conditions \\
+\cmd{VLOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{TLOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+\cmd{INERTIALOAD} & \checkmark & -- & Loads and Boundary Conditions \\
+
+\midrule
+\cmd{COUPLING} & \checkmark & -- & Constraints \\
+\cmd{TIE} & \checkmark & -- & Constraints \\
+\cmd{CONNECTOR} & \checkmark & -- & Constraints \\
+\cmd{RBM} & \checkmark & -- & Constraints \\
+\cmd{CONTACT} & \checkmark & -- & Constraints: Contact \\
+
+\midrule
+\cmd{LOADCASE} & \checkmark & -- & Analysis Procedures \\
+\cmd{SUPPORTS} & \checkmark & -- & Analysis Procedures \\
+\cmd{LOADS} & \checkmark & -- & Analysis Procedures \\
+\cmd{END} & \checkmark & -- & Analysis Procedures \\
+\cmd{STEP} & -- & \checkmark & Analysis Procedures \\
+\cmd{STATIC} & -- & \checkmark & Analysis Procedures \\
+\cmd{FREQUENCY} & -- & \checkmark & Analysis Procedures \\
+\cmd{BUCKLE} & -- & \checkmark & Analysis Procedures \\
+\cmd{DYNAMIC} & -- & \checkmark & Analysis Procedures \\
+\cmd{STEADY STATE DYNAMICS} & -- & \checkmark & Analysis Procedures \\
+\cmd{END STEP} & -- & \checkmark & Analysis Procedures \\
+
+\midrule
+\cmd{SOLVER} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{CONSTRAINTMETHOD} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{NONLINEAR} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{TIME} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{NEWMARK} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{DAMPING} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{FREQUENCIES} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{NUMEIGENVALUES} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{SIGMA} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{WRITEEVERY} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{INITIALVELOCITY} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{INERTIARELIEF} & \checkmark & -- & Solver and Numerical Controls \\
+\cmd{REBALANCELOADS} & \checkmark & -- & Solver and Numerical Controls \\
+
+\midrule
+\cmd{OVERVIEW} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{REQUESTSTIFFNESS} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{REQUESTSTGEOM} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{CONSTRAINTSUMMARY} & \checkmark & -- & Output, Diagnostics, and Results \\
+\cmd{NODE FILE} & -- & \checkmark & Output; accepted without controlling FEMaster writers \\
+\cmd{EL FILE} & -- & \checkmark & Output; accepted without controlling FEMaster writers \\
+\cmd{NODE PRINT} & -- & \checkmark & Output; accepted without controlling FEMaster writers \\
+\cmd{EL PRINT} & -- & \checkmark & Output; accepted without controlling FEMaster writers \\
+
+\midrule
+\cmd{POINTMASS} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPODENSITY} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPOORIENT} & \checkmark & -- & Advanced Model Features \\
+\cmd{TOPOEXPONENT} & \checkmark & -- & Advanced Model Features \\
+
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Supported element formulations}
+
+The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~\ref{chap:elements}. The following table provides a compact element-type index. The Abaqus column lists the spelling accepted in Abaqus input when it differs from the native FEMaster name.
+
+\small
+\begin{longtable}{@{}p{0.20\linewidth}p{0.20\linewidth}p{0.50\linewidth}@{}}
+\toprule
+\textbf{FEMaster formulation} & \textbf{Abaqus input} & \textbf{Family} \\
+\midrule
+\endhead
+\val{C3D4} & \val{C3D4} & 4-node linear tetrahedral solid \\
+\val{C3D5} & \val{C3D5} & 5-node pyramid input / transition solid \\
+\val{C3D6} & \val{C3D6} & 6-node linear wedge solid \\
+\val{C3D8} & \val{C3D8} & 8-node full-integration hexahedral solid \\
+\val{C3D8R} & \val{C3D8R} & 8-node reduced-integration hexahedral solid \\
+\val{C3D10} & \val{C3D10} & 10-node quadratic tetrahedral solid \\
+\val{C3D15} & \val{C3D15} & 15-node quadratic wedge solid \\
+\val{C3D20} & \val{C3D20} & 20-node quadratic hexahedral solid \\
+\val{C3D20R} & \val{C3D20R} & 20-node reduced-integration quadratic hexahedral solid \\
+\val{S3} & -- & Legacy native 3-node shell \\
+\val{MITC3FRT} & \val{S3}, \val{S3R} & Current finite-rotation 3-node shell \\
+\val{S4} & -- & Legacy native 4-node shell \\
+\val{MITC4} & -- & Legacy native 4-node MITC shell \\
+\val{MITC4FRT} & \val{S4}, \val{S4R} & Current finite-rotation 4-node MITC shell \\
+\val{S6} & -- & Legacy native 6-node shell \\
+\val{MITC6FRT} & \val{S6}, \val{S6R} & Current finite-rotation 6-node shell \\
+\val{S8} & -- & Legacy native 8-node shell \\
+\val{MITC8} & -- & Legacy native 8-node MITC shell \\
+\val{MITC8FRT} & \val{S8}, \val{S8R} & Current finite-rotation 8-node MITC shell \\
+\val{QSPT} & -- & Native quadrilateral shear-panel element \\
+\val{B33} & \val{B33} & 2-node 3D beam \\
+\val{T3} & \val{T3D2} & 2-node 3D truss \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4} and \val{S4R} select FEMaster's \val{MITC4FRT}; they do not select the legacy native \val{S4}. Detailed topology figures, formulation notes, and element-selection guidance are given in the Elements chapter.
+
+\section{Coverage notes}
+
+A check mark in the Abaqus column means that the documented subset of that keyword is accepted by FEMaster. It does not imply support for every option available in the complete Abaqus product.
+
+Likewise, identical names do not always imply identical data semantics. \cmd{DLOAD} is the clearest example: native FEMaster uses it for vector surface traction, while supported Abaqus \cmd{DLOAD} currently covers \val{GRAV} body acceleration. The detailed keyword page is authoritative whenever the two input styles differ.
+
+The four Abaqus output cards \cmd{NODE FILE}, \cmd{EL FILE}, \cmd{NODE PRINT}, and \cmd{EL PRINT} are listed because they are accepted input keywords. They do not currently configure FEMaster output selection.
+
+The index, detailed thematic documentation, and applicable complete examples together represent every added input keyword or element formulation. This keeps the manual aligned with the syntax users can actually run.
