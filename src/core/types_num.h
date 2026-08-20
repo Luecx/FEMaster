@@ -18,9 +18,9 @@
 namespace fem {
 
 using Time  = std::uint64_t; ///< Time value expressed in milliseconds.
-using ID    = std::int32_t;  ///< Identifier type for nodes, elements, etc.
-using Dim   = std::uint8_t;  ///< Spatial dimension (2 or 3).
-using Index = std::uint64_t; ///< Generic index type for large arrays.
+using ID    = std::int32_t;  ///< Semantic entity identifier.
+using Dim   = std::uint8_t;  ///< Spatial dimension or small fixed dimension.
+using Index = std::uint64_t; ///< Storage index, offset, count, or array position.
 
 #ifdef DOUBLE_PRECISION
 using Precision = double; ///< CPU precision type (double).
