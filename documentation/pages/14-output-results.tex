@@ -1,17 +1,19 @@
 \chapter{Output, Diagnostics, and Results}
 \label{chap:output-results}
 
-FEMaster separates analysis definition from result serialization. The active result writers receive the compiled model once and then receive fields and frames from each executed loadcase. Native input can additionally request diagnostic matrix and constraint output. Abaqus output-request cards that are useful for keeping imported decks syntactically intact are accepted where registered, but the current reader deliberately does not use them to control FEMaster's writers.
+FEMaster writes analysis results in its own result formats and provides several diagnostic commands for inspecting matrices, constraints, and the assembled model. These diagnostics do not change the physical problem; they are intended for verification, comparison, and troubleshooting.
 
-The executable output options determine which writer formats are enabled. The native \file{.res} representation preserves FEMaster Field domains and is the most complete textual result source. FRD output provides a CalculiX/CGX-compatible visualization path for supported nodal quantities. Other enabled writer backends use the same compiled model and loadcase result data.
+The native \file{.res} format preserves FEMaster Field domains and is the most complete textual result source. FRD output provides a CalculiX/CGX-compatible visualization format for supported nodal quantities. Additional writer formats may be available depending on the executable configuration.
+
+Abaqus output-request cards such as \cmd{NODE FILE} are accepted where documented so that otherwise supported Abaqus decks do not fail solely because they contain common output requests. These cards currently do not control FEMaster's result writers.
 
 \keywordpage{OVERVIEW}
 
-\cmd{OVERVIEW} prints a diagnostic description of the current compiled model. It is a native root-level, read-only command and carries no parameters or data lines. The command executes after semantic Part/Instance topology has crossed the compile boundary, so the report can present both the retained semantic organization and the resulting dense Assembly representation.
+\cmd{OVERVIEW} prints a diagnostic summary of the current model. It has no parameters or data lines and does not change the analysis.
 
-The report is intended for model verification rather than analysis control. It can expose Parts and Instances, dense node and element data, named definitions, regions, constraints, and boundary-condition collectors. This is especially useful after introducing explicit Parts or multiple Instances because it allows a user to verify that local topology has expanded as intended before interpreting solver behaviour.
+The overview is intended to answer basic model-verification questions before numerical results are interpreted: which Parts and Instances exist, how many nodes and elements are present, which named sets and surfaces are available, which materials and Sections have been defined, and which loads, supports, and constraints are present.
 
-Calling \cmd{OVERVIEW} does not trigger compilation itself and does not modify model state. The parser schedules it in the post-compile phase where the completed model is already available.
+This is especially useful after introducing a Part/Instance hierarchy or when a model has many named regions. A quick overview can reveal a missing Instance, empty set, unexpected entity count, or omitted property assignment before time is spent diagnosing the linear solver.
 
 \exampleheading
 \begin{dialectexamples}
@@ -19,24 +21,24 @@ Calling \cmd{OVERVIEW} does not trigger compilation itself and does not modify m
 *OVERVIEW
 \end{femasterdeck}
 \begin{noabaqus}
-No Abaqus input keyword maps to FEMaster's compiled-model overview. The command can be added only to a native FEMaster deck.
+No Abaqus input keyword maps directly to FEMaster's native \cmd{OVERVIEW} diagnostic.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-Use \cmd{OVERVIEW} as a structural diagnostic, not as a substitute for checking numerical results. A model can have the expected entity counts and still contain incorrect material properties, element orientations, surface sides, or boundary conditions.
+A structurally plausible overview does not prove that the model is physically correct. Material units, element orientations, shell normals, surface sides, load directions, and boundary conditions must still be checked.
 
 \keywordpage{REQUESTSTIFFNESS}
 
-\cmd{REQUESTSTIFFNESS} requests stiffness-matrix output from a supported native loadcase. It is valid for linear static, nonlinear static, and linear buckling analyses. The optional \key{FILE} parameter gives the matrix-output filename. If omitted, FEMaster derives a deterministic default of the form \file{stiffness_<loadcase-id>.txt}.
+\cmd{REQUESTSTIFFNESS} requests stiffness-matrix output from supported native analyses. It is available for linear static, nonlinear static, and linear buckling loadcases. \key{FILE} optionally specifies the output filename; otherwise FEMaster generates a deterministic default name.
 
-The command does not assemble or serialize a matrix when it is parsed. Instead it stores the requested filename on the active concrete loadcase. That loadcase decides which operator is meaningful at the relevant point in its solution sequence. In a linear analysis this is normally the assembled elastic/tangent operator associated with the solve. In nonlinear statics, stiffness may correspond to the tangent at the output point selected by the implementation. Buckling has both elastic and geometric stiffness operators, which is why geometric stiffness has a separate request keyword.
+For linear static analysis, the exported matrix is useful for checking symmetry, rank, sparsity, condition-related behaviour, or direct comparison with another finite-element implementation. For nonlinear static analysis, the relevant stiffness is the tangent operator associated with the state at which the output is produced. In buckling analysis, the elastic stiffness can be exported separately from the geometric stiffness.
 
-Matrix output is primarily a verification and development tool. It is useful for checking symmetry, rank, sparsity, comparing against external solvers, reproducing eigenvalue problems, or diagnosing unexpected solver conditioning. It should not be assumed that the requested text file is the canonical long-term results format.
+Matrix output is primarily a diagnostic and verification feature. It should not be confused with the ordinary result Field output used for engineering post-processing.
 
 \begin{keywordparameters}
-\key{FILE} & optional & Matrix output filename; otherwise a loadcase-ID-based default is generated. \\
+\key{FILE} & optional & Stiffness-matrix output filename. \\
 \end{keywordparameters}
 
 \exampleheading
@@ -48,20 +50,20 @@ Matrix output is primarily a verification and development tool. It is useful for
 *END
 \end{femasterdeck}
 \begin{noabaqus}
-Abaqus matrix-output controls are not translated by the current reader. Imported Steps use FEMaster's normal result writers.
+Abaqus matrix-output controls are currently not translated to FEMaster's native matrix diagnostics.
 \end{noabaqus}
 \end{dialectexamples}
 
 \keywordpage{REQUESTSTGEOM}
 
-\cmd{REQUESTSTGEOM} requests geometric-stiffness output from an active \val{LINEARBUCKLING} loadcase. The optional \key{FILE} parameter gives the output base; if omitted the default is \file{geom_<loadcase-id>.txt}. Use on other analysis types is rejected.
+\cmd{REQUESTSTGEOM} requests geometric-stiffness output for \val{LINEARBUCKLING}. \key{FILE} optionally specifies the output filename or base name.
 
-Linear buckling depends on the stress-dependent geometric stiffness assembled from the preloaded reference state. Exporting that operator separately from the elastic stiffness is valuable when validating buckling factors, comparing implementations, or inspecting whether a preload actually produces the expected destabilizing stiffness contribution.
+Linear buckling uses a stress-dependent geometric stiffness \(K_G\) generated by the reference preload state. Exporting \(K_G\) is useful when validating buckling factors or checking whether the applied preload produces the expected destabilizing contribution. Together with \cmd{REQUESTSTIFFNESS}, it permits the generalized buckling problem to be inspected independently.
 
-As with \cmd{REQUESTSTIFFNESS}, the command records an output request rather than changing the mechanical problem. Matrix construction and selection of active/reduced variants remain responsibilities of the buckling implementation.
+The command changes output only; it does not modify the preload or buckling eigenproblem.
 
 \begin{keywordparameters}
-\key{FILE} & optional & Geometric-stiffness output filename/base; otherwise a deterministic default is generated. \\
+\key{FILE} & optional & Geometric-stiffness output filename/base. \\
 \end{keywordparameters}
 
 \exampleheading
@@ -74,17 +76,19 @@ As with \cmd{REQUESTSTIFFNESS}, the command records an output request rather tha
 *END
 \end{femasterdeck}
 \begin{noabaqus}
-No corresponding geometric-stiffness export card is translated by the supported Abaqus reader.
+No corresponding geometric-stiffness export card is currently translated from Abaqus input.
 \end{noabaqus}
 \end{dialectexamples}
 
 \keywordpage{CONSTRAINTSUMMARY}
 
-\cmd{CONSTRAINTSUMMARY} enables diagnostic reporting of the constraint groups assembled for the active native loadcase. It has no parameters or data. The common \texttt{LoadCase::report_constraints} flag is set, after which the analysis reports the groups generated before reduction or solver assembly.
+\cmd{CONSTRAINTSUMMARY} enables diagnostic reporting of the constraint equations used by the active native loadcase. It takes no parameters or data lines.
 
-The summary is useful when several mechanisms contribute equations simultaneously: support collectors, rigid-body-motion suppression, couplings, ties, connectors, and other model constraints. It can help identify unexpected duplicate relations, missing constraints, or an equation count inconsistent with the intended model.
+The summary is particularly useful when several constraint sources act simultaneously: support collectors, RBM suppression, couplings, ties, connectors, and other kinematic relations can all contribute equations. The report helps answer whether the number and grouping of equations match the intended model.
 
-The command does not alter equations, choose a constraint method, or regularize the system. \cmd{CONSTRAINTMETHOD} remains the command that determines whether the resulting equation system is handled by nullspace projection, elimination, or Lagrange multipliers where supported.
+Use it when diagnosing an unexpectedly singular or over-constrained model. For example, a duplicate coupling or a support that accidentally constrains a reference node twice may be easier to identify from the constraint groups than from the final sparse matrix alone.
+
+\cmd{CONSTRAINTSUMMARY} does not choose the enforcement method. \cmd{CONSTRAINTMETHOD} separately determines whether the equations are handled by nullspace projection, elimination, or Lagrange multipliers where supported.
 
 \exampleheading
 \begin{dialectexamples}
@@ -100,20 +104,20 @@ No Abaqus output-request card maps to this FEMaster constraint diagnostic.
 \end{noabaqus}
 \end{dialectexamples}
 
-\section{Abaqus output requests}
+\section{Abaqus output-request keywords}
 
-The supported Abaqus reader accepts four traditional file/print request keywords so otherwise supported decks do not fail merely because they contain familiar Abaqus output cards. These commands are intentionally ignored: requested variable names are consumed, but they do not alter FEMaster writer configuration. Result availability is determined by the FEMaster loadcase and enabled result writers.
+The supported Abaqus reader accepts four common file/print request keywords: \cmd{NODE FILE}, \cmd{EL FILE}, \cmd{NODE PRINT}, and \cmd{EL PRINT}. Their requested variable names are read so that the deck remains syntactically acceptable, but the cards do not filter or configure FEMaster result output.
+
+This distinction is important: acceptance of an output card does not imply that FEMaster reproduces the corresponding Abaqus output-file semantics. Use FEMaster's documented result files and Fields for post-processing.
 
 \keywordpage{NODE FILE}
 
-\cmd{NODE FILE} is accepted by the Abaqus reader at root or Step level and its data records are consumed without producing a corresponding Abaqus-style node file. Up to the command grammar's supported variable tokens are read only to preserve deck structure. FEMaster continues to write its own configured result formats.
-
-This behaviour is intentional compatibility, not partial variable translation. A request such as \val{U} or \val{RF} does not filter the FEMaster result Field set. Users who need specific FEMaster output should use the writer/output facilities documented for FEMaster rather than relying on this ignored Abaqus card.
+\cmd{NODE FILE} is accepted in supported Abaqus input but does not create an Abaqus-style node file. Requested variables such as \val{U} or \val{RF} do not change which FEMaster result Fields are produced.
 
 \exampleheading
 \begin{dialectexamples}
 \begin{nofemaster}
-Native FEMaster has no \cmd{NODE FILE} input card. Nodal Fields are written by the enabled FEMaster result writers.
+Native FEMaster has no \cmd{NODE FILE} input keyword. Nodal results are written by the enabled FEMaster result writers.
 \end{nofemaster}
 \begin{abaqusdeck}
 *NODE FILE
@@ -123,12 +127,12 @@ U, RF
 
 \keywordpage{EL FILE}
 
-\cmd{EL FILE} is accepted and ignored by the Abaqus reader in the same manner as \cmd{NODE FILE}. Element-output variable names are consumed for syntactic continuity but do not create a separate Abaqus-style element result file and do not select FEMaster element Fields.
+\cmd{EL FILE} is accepted and ignored in the same sense as \cmd{NODE FILE}. It does not create a separate Abaqus-style element file and does not select a subset of FEMaster element Fields.
 
 \exampleheading
 \begin{dialectexamples}
 \begin{nofemaster}
-Native FEMaster result Fields are controlled by the analysis/writer implementation rather than an \cmd{EL FILE} card.
+Native FEMaster has no \cmd{EL FILE} keyword.
 \end{nofemaster}
 \begin{abaqusdeck}
 *EL FILE
@@ -138,12 +142,12 @@ S, E
 
 \keywordpage{NODE PRINT}
 
-\cmd{NODE PRINT} is accepted and ignored. It does not print a formatted Abaqus nodal table to standard output or a report file. The command exists so supported imported decks can retain common print-request sections without changing their mechanical meaning.
+\cmd{NODE PRINT} is accepted so that imported Abaqus decks may retain common print requests, but it does not generate an Abaqus-formatted nodal print table.
 
 \exampleheading
 \begin{dialectexamples}
 \begin{nofemaster}
-No native \cmd{NODE PRINT} keyword is registered.
+No native \cmd{NODE PRINT} keyword is used for FEMaster result selection.
 \end{nofemaster}
 \begin{abaqusdeck}
 *NODE PRINT
@@ -153,12 +157,12 @@ U, RF
 
 \keywordpage{EL PRINT}
 
-\cmd{EL PRINT} is the element counterpart of \cmd{NODE PRINT}. The Abaqus reader consumes the request but does not use it to configure FEMaster result output.
+\cmd{EL PRINT} is the element counterpart of \cmd{NODE PRINT}. The keyword is accepted but does not configure FEMaster result output.
 
 \exampleheading
 \begin{dialectexamples}
 \begin{nofemaster}
-No native \cmd{EL PRINT} keyword is registered.
+No native \cmd{EL PRINT} keyword is used for FEMaster result selection.
 \end{nofemaster}
 \begin{abaqusdeck}
 *EL PRINT
@@ -166,28 +170,84 @@ S, E
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\section{Native result files}
+\section{Native \file{.res} files}
 
-The native \file{.res} format is organized into loadcase and Field blocks. A loadcase header
+The native \file{.res} file is organized into loadcase and Field blocks. A loadcase header has the form
 \begin{syntax}
 LC <id>
 \end{syntax}
-is followed by the Fields written by that analysis. Dense Fields use a header of the form
+and is followed by the Fields produced by that analysis.
+
+A dense Field uses a header such as
 \begin{syntax}
 FIELD, NAME=<name>, TYPE=<type>, COLS=<cols>, ROWS=<rows>
+<v11> <v12> ...
 ...
 END FIELD
 \end{syntax}
-while element-local Fields carry explicit location indices. Domains include \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}. For element-local domains, element identity and zero-based local enumeration identify each stored row.
+with domains including \val{NODE} and \val{ELEMENT}.
 
-Typical result names depend on the analysis. Linear static calculations write displacement, strain, stress, shell resultants where applicable, external/reaction force data, and section-force quantities. Nonlinear static results include accepted-increment displacement/stress/load-factor states and final equilibrium Fields. Eigenfrequency analyses write mode shapes and spectral quantities; buckling writes buckling modes and factors; transient analyses write displacement, velocity, and acceleration at selected frames; harmonic analysis writes real and imaginary response components for every excitation frequency.
+Element-local Fields use explicit location information. Domains include \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}. As in the input \cmd{FIELD} command, element-local positions are zero-based positional indices; they are not user node or element IDs.
 
-Mechanical nodal motion Fields use \dofvec. Six-component stress and strain Fields instead use the engineering tensor order \(x,y,z,yz,zx,xy\). These two six-component conventions serve different quantities and must not be confused when processing the native result file.
+\subsection*{Common result quantities}
+
+Typical Fields depend on analysis type:
+\begin{longtable}{@{}p{0.27\linewidth}p{0.63\linewidth}@{}}
+\toprule
+\textbf{Analysis} & \textbf{Typical results} \\
+\midrule
+\endhead
+Linear static & Displacement, strain, stress, shell top/bottom stresses and resultants where applicable, external forces, reactions, section forces, and related recovered quantities. \\
+Nonlinear static & Accepted-increment displacement/stress/load-factor states plus final displacement, strain, stress, internal/external forces, and reactions. \\
+Eigenfrequency & Mode shapes, eigenvalues, eigenfrequencies/frequencies, and participation-related quantities where available. \\
+Linear buckling & Buckling mode shapes and buckling factors. \\
+Linear transient & Displacement, velocity, and acceleration at written time frames. \\
+Linear harmonic & Real and imaginary displacement, stress, and strain amplitudes for the requested excitation frequencies. \\
+\bottomrule
+\end{longtable}
+
+Generalized nodal motion and force vectors use the six-component nodal order \dofvec. Stress and strain tensors instead use the engineering order
+\[
+(x,y,z,yz,zx,xy).
+\]
+These conventions must not be mixed when reading raw result data.
+
+\subsection*{Harmonic results}
+
+A complex harmonic quantity is written as separate real and imaginary components:
+\[
+\hat q=q_\mathrm{real}+i q_\mathrm{imag}.
+\]
+Amplitude and phase can be reconstructed from
+\[
+|\hat q|=\sqrt{q_\mathrm{real}^2+q_\mathrm{imag}^2},
+\qquad
+\varphi=\operatorname{atan2}(q_\mathrm{imag},q_\mathrm{real}).
+\]
+When comparing harmonic results, always check whether the quantity of interest is the real part at a chosen phase, the complex amplitude magnitude, or a signed component. These are not interchangeable.
 
 \section{FRD visualization output}
 
-The FRD writer emits the mesh and supported nodal result blocks for CalculiX/CGX-compatible visualization. Element-local, integration-point, material-point, scalar-history, and other data that do not map naturally to FRD nodal blocks remain available in the native result representation.
+FRD provides a CalculiX/CGX-compatible representation of the mesh and supported nodal results. It is intended primarily for visualization. Data that do not naturally map to FRD nodal blocks---for example some element-local, integration-point, material-point, scalar-history, or participation quantities---remain available in the native result representation.
 
-Common mappings include displacement/mode/buckling vectors to \val{DISP}, velocity to \val{VELO}, acceleration to \val{ACCE}, reaction and applied nodal forces to force blocks, stress to \val{STRESS}, strain to \val{TOSTRAIN}, and shell resultants to \val{SHR}. Higher-order element connectivity is reordered where required by the FRD convention. If internal numbering includes zero, the writer shifts numbering as needed because conventional FRD consumers expect positive identifiers.
+Typical mappings include:
+\begin{longtable}{@{}p{0.30\linewidth}p{0.22\linewidth}p{0.38\linewidth}@{}}
+\toprule
+\textbf{FEMaster result} & \textbf{FRD block} & \textbf{Content} \\
+\midrule
+\endhead
+Displacement / mode / buckling vector & \val{DISP} & Translational and supported generalized displacement components. \\
+Velocity & \val{VELO} & Nodal velocity components. \\
+Acceleration & \val{ACCE} & Nodal acceleration components. \\
+Reaction force & \val{FORC} & Generalized reaction-force components. \\
+Stress & \val{STRESS} & Nodal recovered stress components. \\
+Strain & \val{TOSTRAIN} & Nodal recovered strain components. \\
+Shell resultants & \val{SHR} & Membrane, bending, and transverse-shear resultants. \\
+\bottomrule
+\end{longtable}
 
-For shell resultants, an explicitly assigned shell Section orientation defines the output basis. Without an explicit orientation, FEMaster constructs a deterministic tangent basis from the shell geometry. Transient FRD frames use physical time; eigenfrequency and buckling frames use the corresponding spectral value where supported by the writer.
+User node and element IDs in FEMaster may include \val{0}. Some FRD consumers expect strictly positive numbering, so FRD output may shift numbering when zero occurs. This does not mean ID 0 is invalid in the FEMaster input model.
+
+Higher-order element connectivity is reordered where necessary to satisfy FRD conventions. For shell resultants, an explicitly assigned Section orientation defines the local output basis. Without an explicit orientation, FEMaster uses a deterministic tangent basis derived from the shell geometry.
+
+Transient FRD frames use physical time. Eigenfrequency and buckling frames use the corresponding spectral value where supported by the writer.
