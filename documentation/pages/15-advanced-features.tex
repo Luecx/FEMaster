@@ -121,14 +121,19 @@ The three Field components are Euler rotation angles
 \[
 (\theta_x,\theta_y,\theta_z)
 \]
-used to construct an additional element-wise material rotation. This rotation acts in addition to the Section's base material orientation. It is therefore intended for optimization or parameter studies in which the preferred anisotropic material direction varies from element to element.
+in \textbf{radians}. They define the additional material rotation
+\[
+R(\theta_x,\theta_y,\theta_z)
+=R_x(\theta_x)\,R_y(\theta_y)\,R_z(\theta_z).
+\]
+This rotation acts in addition to the Section's base material orientation. It is therefore intended for optimization or parameter studies in which the preferred anisotropic material direction varies from element to element.
 
 An orientation Field changes only directional constitutive response. It does not rotate the mesh and has no effect on a fully isotropic material law because isotropic stiffness is invariant under rotation.
 
-The angle units must match FEMaster's Euler-angle convention used by this feature. When generating Fields from an external optimization program, use the same rotation order and sign convention consistently across all elements.
+The rotation order is significant because finite rotations about different axes do not commute. An external optimization or preprocessing tool that generates \cmd{TOPOORIENT} values must therefore use the same \(R_xR_yR_z\) convention and radians. For example, a second-component value of \val{0.2} means a rotation of \(0.2\,\mathrm{rad}\), not \(0.2^\circ\).
 
 \begin{keywordparameters}
-\key{FIELD} / \key{NAME} & required & Three-component \val{ELEMENT} Field of material-orientation angles. \\
+\key{FIELD} / \key{NAME} & required & Three-component \val{ELEMENT} Field of Euler angles \((\theta_x,\theta_y,\theta_z)\) in radians. \\
 \end{keywordparameters}
 
 \exampleheading
