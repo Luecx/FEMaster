@@ -178,16 +178,59 @@ LC <id>
 \end{syntax}
 and is followed by the Fields produced by that analysis.
 
-A dense Field uses a header such as
+\subsection*{Indexed Field storage}
+
+All standard result Fields associated with model entities are written in indexed form. Every row therefore contains one or more explicit index columns followed by the Field values. The header states both counts:
+
 \begin{syntax}
-FIELD, NAME=<name>, TYPE=<type>, COLS=<cols>, ROWS=<rows>
-<v11> <v12> ...
+FIELD, NAME=<name>, TYPE=<type>,
+INDEX_COLS=<nindex>, VALUE_COLS=<nvalue>, ROWS=<rows>
+<index-1> ... <index-n> <value-1> ... <value-m>
 ...
 END FIELD
 \end{syntax}
-with domains including \val{NODE} and \val{ELEMENT}.
 
-Element-local Fields use explicit location information. Domains include \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}. As in the input \cmd{FIELD} command, element-local positions are zero-based positional indices; they are not user node or element IDs.
+The indices identify the corresponding model entity rather than an implicit row number. Results therefore remain traceable to the user-visible node and element labels even when the model contains Parts and multiple Instances.
+
+Entities belonging to the implicit default Instance retain their unqualified local identifier, for example \val{8}. Entities belonging to an explicitly named Instance use a qualified identifier of the form
+
+\begin{syntax}
+<instance>.<local-id>
+\end{syntax}
+
+such as \val{TRUSS_A.8} or \val{TRUSS_B.10}. The same convention is used for node and element identifiers.
+
+The number and meaning of the index columns depend on the Field domain:
+
+\begin{center}
+\begin{tabular}{@{}p{0.27\linewidth}p{0.18\linewidth}p{0.45\linewidth}@{}}
+\toprule
+\textbf{Field type} & \textbf{Index columns} & \textbf{Meaning} \\
+\midrule
+\val{NODE}          & 1 & node identifier \\
+\val{ELEMENT}       & 1 & element identifier \\
+\val{ELEMENT_NODAL} & 2 & element identifier, local node index \\
+\val{ELEMENT_IP}    & 2 & element identifier, local integration-point index \\
+\val{ELEMENT_MP}    & 2 & element identifier, local material-point index \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Local node, integration-point, and material-point indices are zero based. User node and element identifiers are non-negative labels and may themselves also start at \val{0}; these are separate concepts.
+
+A typical nodal Field therefore looks like:
+
+\begin{syntax}
+FIELD, NAME=DISPLACEMENT, TYPE=NODE,
+INDEX_COLS=1, VALUE_COLS=6, ROWS=4
+               1    0.000000e+00    0.000000e+00 ...
+      TRUSS_A.8    4.761905e-02   -4.761905e-02 ...
+       TRUSS_B.1    0.000000e+00    0.000000e+00 ...
+      TRUSS_B.10    4.761905e-02    0.000000e+00 ...
+END FIELD
+\end{syntax}
+
+For \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}, the first index is the semantic element identifier and the second is the zero-based local position within that element. This keeps the external result format independent of any internal element ordering.
 
 \subsection*{Common result quantities}
 
