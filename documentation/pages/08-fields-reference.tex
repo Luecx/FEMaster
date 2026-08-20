@@ -1,36 +1,48 @@
-\chapter{Fields and Model Data}
+\chapter{Fields}
 \label{chap:fields}
 
-Fields store spatially varying data on the compiled finite-element model. They are deliberately more general than ordinary sets or scalar keyword parameters: a Field has a domain, a fixed number of components, and one row for every entity in that domain. FEMaster uses Fields for topology variables, user-provided shell directors, initial conditions, and other features whose data naturally vary from node to node, element to element, or through element-local enumeration.
+Fields store spatially varying data that belong to the finite-element model. They are more general than sets: a set only answers whether an entity belongs to a region, whereas a Field stores one or more numerical values at every addressed location. Typical uses are topology variables, prescribed shell directors, initial conditions, and other data that vary from node to node, element to element, or within an element.
 
-Fields are created after \texttt{Model::compile()} because their row counts depend on deterministic compiled enumeration. In addition to simple node and element domains, FEMaster explicitly enumerates element-nodal positions, integration points, and material points. These latter domains are indexed by an element reference and zero-based local index rather than by a globally visible sparse deck identifier.
+A Field has a \emph{domain} and a fixed number of components. The domain determines what one row refers to. For ordinary nodal and elemental Fields the rows are addressed by the same user-defined node and element identifiers that are used elsewhere in the input deck. For element-local Fields, such as values at local nodes or integration points, an element is named first and the location inside that element is given by a zero-based local index.
+
+User node and element identifiers are independent of these local indices. They are non-negative deck labels, may start at \textbf{0}, and do not have to be contiguous. For example, node IDs \val{0}, \val{10}, and \val{1000} are perfectly valid if they are unique in their scope. By contrast, the local node indices of a four-node element are \val{0}, \val{1}, \val{2}, and \val{3} because they refer to positions in that element's connectivity.
 
 \keywordpage{FIELD}
 
-\cmd{FIELD} creates and optionally populates a generic named Field. It is a native FEMaster command; the supported Abaqus reader does not register a generic equivalent. The command may appear at root level or in a native \cmd{LOADCASE} where a loadcase-specific field definition is useful.
+\cmd{FIELD} creates and optionally populates a named Field. It is a native FEMaster command; the supported Abaqus input format currently has no generic equivalent. The command may be used at model level and, where appropriate, in a native \cmd{LOADCASE}.
 
-\key{NAME} identifies the Field. \key{TYPE} selects its domain, \key{COLS} gives the number of components per row, and \key{FILL} selects the initialization of entries that are not explicitly overwritten. \val{FILL=ZERO} is the default; \val{FILL=NAN} initializes all components to IEEE NaN, which is useful when missing values should remain distinguishable from physical zero.
+\key{NAME} identifies the Field. \key{TYPE} selects its domain, \key{COLS} specifies the number of numerical components per location, and \key{FILL} defines how entries are initialized before explicit data rows are applied. \val{FILL=ZERO} is the default. \val{FILL=NAN} initializes unspecified components with NaN and is useful when missing data must remain distinguishable from a physical zero.
 
-The supported domains are \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, and \val{ELEMENT_MP}; aliases without underscores and the short forms \val{IP} and \val{MP} are accepted. Component count must be positive and may not exceed the internal maximum of 64.
+The supported domains are:
+\begin{itemize}
+  \item \val{NODE}: one row per addressed node;
+  \item \val{ELEMENT}: one row per addressed element;
+  \item \val{ELEMENT_NODAL}: values stored separately for the local nodes of an element;
+  \item \val{ELEMENT_IP}: values stored at an element's integration points;
+  \item \val{ELEMENT_MP}: values stored at material points associated with an integration point.
+\end{itemize}
+Aliases without underscores and the short forms \val{IP} and \val{MP} are accepted where documented. \key{COLS} must be positive and is currently limited to 64 components.
 
-For \val{NODE} and \val{ELEMENT}, each data row starts with a target identifier. The target can be a compiled reference such as an unqualified ID where unambiguous or an \val{INSTANCE.ID} reference. It is resolved through the same local-to-compiled mapping used by Assembly regions. The following entries are component values. Empty component fields are skipped rather than overwritten, which allows a sparse update of an initialized row.
+For \val{NODE} and \val{ELEMENT}, every data row begins with the node or element target followed by the Field components. A target may be an ordinary user ID or, for an assembled model, an instance-qualified reference such as \val{INSTANCE.ID}. Empty component entries leave the existing value unchanged. This permits sparse updates of a Field that was first initialized with \key{FILL}.
 
-For \val{ELEMENT_NODAL}, a row starts with an element reference and a zero-based local node index. The reader uses the element's compiled element-nodal offset to locate the field row. \val{ELEMENT_IP} similarly uses a zero-based local integration-point index. \val{ELEMENT_MP} uses both a local integration-point index and a zero-based local material-point index. Bounds are checked against the concrete element formulation.
+For \val{ELEMENT_NODAL}, every row starts with an element reference and a zero-based local node index. The local index refers to the position in that element's connectivity, not to the numerical ID of the connected node. Thus, for a four-node element with connectivity \val{10,20,30,40}, local node \val{0} refers to node \val{10}, local node \val{1} to node \val{20}, and so on.
 
-Numerical Field values accept normal floating-point tokens as well as \val{NAN}, \val{+NAN}, \val{-NAN}, \val{INF}, \val{+INF}, and \val{-INF}. This is useful for diagnostic or partially prescribed data fields but should be used carefully when a downstream algorithm expects finite physical values.
+\val{ELEMENT_IP} uses the same principle for integration points. The local integration-point index is zero based and must exist for the selected element formulation. \val{ELEMENT_MP} additionally specifies a zero-based material-point index. This representation allows different element formulations to expose different numbers of local storage positions without inventing global IDs for integration or material points.
+
+Field values may be ordinary floating-point numbers and may also use \val{NAN}, \val{+NAN}, \val{-NAN}, \val{INF}, \val{+INF}, and \val{-INF}. Non-finite values are mainly useful for partially prescribed or diagnostic Fields; they should only be used when the feature consuming the Field is defined to handle them.
 
 \begin{keywordparameters}
-\key{NAME} & required & Unique field name. \\
-\key{TYPE} & required & \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, or \val{ELEMENT_MP}, with documented aliases. \\
-\key{COLS} & required & Positive component count, currently at most 64. \\
+\key{NAME} & required & Unique Field name. \\
+\key{TYPE} & required & \val{NODE}, \val{ELEMENT}, \val{ELEMENT_NODAL}, \val{ELEMENT_IP}, or \val{ELEMENT_MP}. \\
+\key{COLS} & required & Number of components per location; must be positive and is currently limited to 64. \\
 \key{FILL} & optional & Initial value mode \val{ZERO} or \val{NAN}; default \val{ZERO}. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
 Node/element Field & \val{target, v1, v2, ...}. \\
-Element-nodal Field & \val{element, local_node, v1, v2, ...}, local node zero based. \\
-Integration-point Field & \val{element, local_ip, v1, v2, ...}, local IP zero based. \\
-Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}, local indices zero based. \\
+Element-nodal Field & \val{element, local_node, v1, v2, ...}; \val{local_node} is zero based. \\
+Integration-point Field & \val{element, local_ip, v1, v2, ...}; \val{local_ip} is zero based. \\
+Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}; both local indices are zero based. \\
 \end{keyworddata}
 
 \exampleheading
@@ -39,30 +51,31 @@ Material-point Field & \val{element, local_ip, local_mp, v1, v2, ...}, local ind
 \begin{femasterdeck}
 *FIELD, NAME=RHO, TYPE=ELEMENT,
  COLS=1, FILL=ZERO
-1, 0.8
-2, 1.0
+0, 0.8
+10, 1.0
 
-*FIELD, NAME=ANGLES, TYPE=ELEMENT,
- COLS=3, FILL=ZERO
-1, 0., 0., 0.
-2, 0., 0.2, 0.
+*FIELD, NAME=DIRECTORS,
+ TYPE=ELEMENT_NODAL,
+ COLS=3, FILL=NAN
+10, 0, 0., 0., 1.
+10, 1, 0., 0., 1.
 \end{femasterdeck}
 \begin{noabaqus}
-The supported Abaqus reader has no generic \cmd{FIELD} command. Abaqus-specific model data are translated only where a dedicated reader command is implemented.
+The supported Abaqus reader currently has no generic Field keyword. Abaqus model data are imported only where a dedicated supported keyword provides the corresponding information.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-Element-local indices are zero based because they address FEMaster's internal element enumeration directly. This differs from ordinary user node and element identifiers, which are sparse deck labels and may start at any convenient positive value.
+Do not confuse user IDs with element-local indices. User node and element IDs may include \val{0} and may be sparse. Element-local node, integration-point, and material-point indices are always positional indices beginning at \val{0}.
 
 \keywordpage{NORMAL}
 
-\cmd{NORMAL} selects an existing three-component \val{ELEMENT_NODAL} Field as the source of shell element-nodal normal/director data. It does not create the Field and it does not parse normal vectors directly. This separation allows shell director data to use the same generic Field storage and instance-aware addressing as any other element-nodal quantity.
+\cmd{NORMAL} selects an existing three-component \val{ELEMENT_NODAL} Field as the source of shell element-nodal normals or directors. The referenced Field must already exist, must use \val{TYPE=ELEMENT_NODAL}, and must contain exactly three components.
 
-The referenced Field must already exist, must use \val{TYPE=ELEMENT_NODAL}, and must have exactly three components. The command simply publishes the Field through \texttt{ModelData::shell_element_nodal_normals}. After the assembly Field pass, \texttt{Model::build_shell_element_normals()} completes missing geometric data and performs the existing shell-normal equalisation logic. The \cmd{NORMAL} command itself therefore neither normalizes vectors nor averages neighbouring entries.
+This mechanism is useful when shell orientation cannot be described adequately by a single normal per geometric node. Because the data are element-nodal, two neighbouring shell elements may intentionally prescribe different director vectors at the same geometric node. This is useful at folds, discontinuous shell normals, imported midsurfaces, or other locations where averaging a single nodal direction would be inappropriate.
 
-This mechanism is useful when a shell reference direction cannot be inferred satisfactorily from the raw mesh geometry, for example on curved shell meshes or when an imported midsurface needs controlled element-nodal directors. Entries not explicitly provided can be initialized as NaN so the model-side completion routine can distinguish supplied directions from missing values where supported by that workflow.
+The vectors supplied in the Field are used as prescribed shell-normal information. Missing entries may be left as NaN when the shell-normal workflow is intended to complete them from the element geometry. Users should nevertheless inspect the resulting shell orientations carefully: normal direction influences shell top/bottom interpretation, pressure direction, local section directions, and the sign of bending-related result quantities.
 
 \begin{keywordparameters}
 \key{FIELD} & required & Name of an existing three-component \val{ELEMENT_NODAL} Field. \\
@@ -82,10 +95,10 @@ This mechanism is useful when a shell reference direction cannot be inferred sat
 *NORMAL, FIELD=SHELL_NORMALS
 \end{femasterdeck}
 \begin{noabaqus}
-The supported Abaqus reader does not expose the native generic Field-based \cmd{NORMAL} selector. Shell normals imported through other supported Abaqus topology semantics are handled by the normal model-building path.
+The supported Abaqus reader does not expose FEMaster's generic Field-based \cmd{NORMAL} selector. Use the Abaqus syntax that is explicitly supported for the relevant model definition, or use native FEMaster input when element-nodal directors must be prescribed directly.
 \end{noabaqus}
 \end{dialectexamples}
 
 \notesheading
 
-The local node index in the Field is formulation local and zero based. It is not the global node identifier connected at that position. This makes element-nodal data capable of storing different directors for the same geometric node when adjoining shell elements intentionally require distinct local values.
+The local node index is the position inside the element connectivity and is zero based. It is not the connected node's user ID. This distinction is what allows two shell elements sharing one geometric node to store different element-nodal directors at that location.
