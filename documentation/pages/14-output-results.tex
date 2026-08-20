@@ -289,7 +289,13 @@ Shell resultants & \val{SHR} & Membrane, bending, and transverse-shear resultant
 \bottomrule
 \end{longtable}
 
-User node and element IDs in FEMaster may include \val{0}. Some FRD consumers expect strictly positive numbering, so FRD output may shift numbering when zero occurs. This does not mean ID 0 is invalid in the FEMaster input model.
+FRD requires numeric node identifiers and therefore cannot use the qualified string identifiers employed by \file{.res}. FEMaster assigns every written node the deterministic FRD identifier
+\[
+n_{\mathrm{FRD}} = 10^8\,i_{\mathrm{instance}} + n_{\mathrm{local}},
+\]
+where \(i_{\mathrm{instance}}\) is the numeric Instance identifier and \(n_{\mathrm{local}}\) is the original Part-local node ID. The local node ID must be smaller than \(10^8\). The same FRD node numbering is used consistently for coordinates, element connectivity, and nodal result blocks. Thus identifiers such as \val{100000001} and \val{200000001} represent the same local node label in different Instances; they are output identifiers and do not replace the semantic \val{INSTANCE.local-id} notation used in \file{.res}.
+
+User node and element IDs in FEMaster may include \val{0}. FRD numbering is an output-format concern and does not impose a positive-ID restriction on the FEMaster input model.
 
 Higher-order element connectivity is reordered where necessary to satisfy FRD conventions. For shell resultants, an explicitly assigned Section orientation defines the local output basis. Without an explicit orientation, FEMaster uses a deterministic tangent basis derived from the shell geometry.
 
