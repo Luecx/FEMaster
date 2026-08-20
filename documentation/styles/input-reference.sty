@@ -132,26 +132,29 @@
   title=FEMaster
 }
 
+% Do not wrap tabularx in another environment: tabularx must see its own literal
+% \end{tabularx} while collecting the body. Plain tabular columns avoid that
+% body-scanning restriction and are sufficient for these short reference tables.
 \newenvironment{keywordparameters}{%
   \subsection*{Parameters}
-  \begin{tabularx}{\linewidth}{@{}p{0.21\linewidth}p{0.16\linewidth}Y@{}}
+  \begin{tabular}{@{}p{0.20\linewidth}p{0.15\linewidth}p{0.59\linewidth}@{}}
   \toprule
   \textbf{Parameter} & \textbf{Status} & \textbf{Meaning} \\
   \midrule
 }{%
   \bottomrule
-  \end{tabularx}
+  \end{tabular}
 }
 
 \newenvironment{keyworddata}{%
   \subsection*{Data lines}
-  \begin{tabularx}{\linewidth}{@{}p{0.28\linewidth}Y@{}}
+  \begin{tabular}{@{}p{0.27\linewidth}p{0.67\linewidth}@{}}
   \toprule
   \textbf{Entry} & \textbf{Meaning} \\
   \midrule
 }{%
   \bottomrule
-  \end{tabularx}
+  \end{tabular}
 }
 
 \newcommand{\syntaxheading}{\subsection*{Syntax and semantics}}
