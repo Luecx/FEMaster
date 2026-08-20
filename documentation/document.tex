@@ -1,10 +1,11 @@
 \documentclass[10pt,a4paper,oneside]{book}
 
 \input{styles/femaster-manual.sty}
+\input{styles/input-reference.sty}
 
 \title{FEMaster User Manual}
 \author{Finn Eggers}
-\date{Version 2.6.13, 10 August 2026}
+\date{Version 2.6.25, 19 August 2026}
 
 \begin{document}
 
@@ -22,8 +23,8 @@
   \vspace{0.4cm}
   {\large Finite Elements in Mechanical Analysis and Simulation for Technical Engineering Research\par}
   \vfill
-  {\large Version 2.6.13\par}
-  {\large 10 August 2026\par}
+  {\large Version 2.6.25\par}
+  {\large 19 August 2026\par}
 \end{titlepage}
 
 \tableofcontents
@@ -31,28 +32,22 @@
 \mainmatter
 \include{pages/00-overview}
 \include{pages/01-build-and-cli}
-\include{pages/02-dsl-basics}
-\include{pages/03-command-reference}
-\include{pages/04-nodes}
+\include{pages/02-input-format}
+\include{pages/03-model-definition}
 \include{pages/05-elements}
-\input{pages/05a-shell-directors}
-\include{pages/06-surfaces}
-\include{pages/07-sets}
-\include{pages/08-sections}
-\include{pages/09-features}
-\include{pages/10-materials}
-\include{pages/11-coordinate-systems}
-\include{pages/12-fields}
-\include{pages/13-loads-and-supports}
-\include{pages/14-constraints}
-\include{pages/15-analysis-controls}
-\input{pages/15a-harmonic-controls}
-\include{pages/16-loadcases}
-\input{pages/16a-linear-harmonic}
-\include{pages/17-contact}
-\include{pages/18-results-format}
-\include{pages/19-examples}
-\input{pages/19a-recent-examples}
+\include{pages/04-regions}
+\include{pages/05-materials-reference}
+\include{pages/06-sections-reference}
+\include{pages/07-coordinate-systems-reference}
+\include{pages/08-fields-reference}
+\include{pages/09-loads-boundary-conditions}
+\include{pages/10-constraints-reference}
+\include{pages/12-analysis-procedures}
+\include{pages/13-numerical-controls}
+\include{pages/14-output-results}
+\include{pages/15-advanced-features}
+\include{pages/16-complete-examples}
+\include{pages/17-keyword-index}
 
 \appendix
 \include{pages/90-appendix-derivations}
