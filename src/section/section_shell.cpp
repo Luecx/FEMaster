@@ -54,7 +54,7 @@ ShellSection::ShellSection(
 
     // The external one-based CSYSAXIS value has already been converted to this
     // zero-based index before construction.
-    logging::error(csys_axis_ >= 0 && csys_axis_ < 3,
+    logging::error(csys_axis_ < 3,
         "ShellSection: CSYSAXIS must be 1, 2 or 3");
 
     // Store the associations inherited from the generic Section base class.

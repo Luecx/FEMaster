@@ -88,17 +88,27 @@ inline void register_instance(fem::io::dsl::Registry& registry, model::Model& mo
                 "INSTANCE: rotation axis points must be distinct");
             const Vec3 unit = axis.normalized();
 
-            // Evaluate Rodrigues' formula for the proper axis-angle rotation
-            Mat3 skew;
-            skew << Precision(0), -unit(2), unit(1),
-                    unit(2), Precision(0), -unit(0),
-                   -unit(1), unit(0), Precision(0);
-
+            // Evaluate every component of Rodrigues' formula explicitly. This
+            // keeps the fixed-size Eigen result fully initialized without an
+            // intermediate expression involving a skew-symmetric matrix.
+            const Precision x = unit(0);
+            const Precision y = unit(1);
+            const Precision z = unit(2);
             const Precision c = std::cos(angle);
             const Precision s = std::sin(angle);
-            return c * Mat3::Identity()
-                 + (Precision(1) - c) * (unit * unit.transpose())
-                 + s * skew;
+            const Precision t = Precision(1) - c;
+
+            Mat3 rotation;
+            rotation(0, 0) = c + t * x * x;
+            rotation(0, 1) = t * x * y - s * z;
+            rotation(0, 2) = t * x * z + s * y;
+            rotation(1, 0) = t * x * y + s * z;
+            rotation(1, 1) = c + t * y * y;
+            rotation(1, 2) = t * y * z - s * x;
+            rotation(2, 0) = t * x * z - s * y;
+            rotation(2, 1) = t * y * z + s * x;
+            rotation(2, 2) = c + t * z * z;
+            return rotation;
         };
 
         // Translation followed by rotation about a global two-point axis

@@ -24,9 +24,6 @@ namespace model {
 FieldMatrix::FieldMatrix(Index rows, Index cols)
     : rows_(rows),
       cols_(cols) {
-    logging::error(rows >= 0, "FieldMatrix: rows must be non-negative");
-    logging::error(cols >= 0, "FieldMatrix: cols must be non-negative");
-
     const auto row_count = static_cast<std::size_t>(rows);
     const auto col_count = static_cast<std::size_t>(cols);
 
@@ -86,7 +83,7 @@ bool FieldMatrix::has_any_finite() const {
 }
 
 std::size_t FieldMatrix::offset(Index row, Index col) const {
-    logging::error(row >= 0 && row < rows_ && col >= 0 && col < cols_,
+    logging::error(row < rows_ && col < cols_,
         "FieldMatrix: index (", row, ", ", col, ") is outside ", rows_, "x", cols_);
 
     return static_cast<std::size_t>(row) *

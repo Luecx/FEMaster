@@ -74,7 +74,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     PreprocessedSystem preprocessed{};
     preprocess_time = Timer::measure_time([&]() {
         preprocessed.C = system.C;
-        preprocessed.d = system.d.size() == system.equations
+        preprocessed.d = static_cast<Index>(system.d.size()) == system.equations
                              ? system.d
                              : DynamicVector::Zero(system.equations);
 

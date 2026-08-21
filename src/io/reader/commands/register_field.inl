@@ -135,7 +135,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                                          const std::array<std::string, detail::kMaxFieldCols>& values) {
             logging::error(ctx->field != nullptr,
                 "FIELD: internal error (field not initialized)");
-            logging::error(row >= 0 && row < ctx->field->rows,
+            logging::error(row < ctx->field->rows,
                 "FIELD: resolved row ", row, " is out of bounds for field ", ctx->field->name);
 
             for (Index c = 0; c < ctx->cols; ++c) {
@@ -240,7 +240,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                     logging::error(local_ip >= 0 && local_ip < element->num_ip(),
                         "FIELD: local integration point ", local_ip,
                         " is out of bounds for element ", target);
-                    logging::error(local_mp >= 0 && local_mp < element->num_mp_per_ip(),
+                    logging::error(local_mp >= 0 && static_cast<Index>(local_mp) < element->num_mp_per_ip(),
                         "FIELD: local material point ", local_mp,
                         " is out of bounds for element ", target);
                     assign_values(

@@ -18,11 +18,11 @@ AxialStrain::AxialStrain(Precision value)
     : value_(value) {}
 
 // Access the only axial component through the component interface
-Precision& AxialStrain::operator[](Component component) {
+Precision& AxialStrain::operator[](Component) {
     return value_;
 }
 
-Precision AxialStrain::operator[](Component component) const {
+Precision AxialStrain::operator[](Component) const {
     return value_;
 }
 

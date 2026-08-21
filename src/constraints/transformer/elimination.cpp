@@ -90,7 +90,9 @@ std::pair<ConstraintMap, ConstraintBuildReport> build_elimination(const Constrai
     // Eliminate previously selected slave DOFs before choosing each new pivot
     for (Index row = 0; row < system.equations; ++row) {
         const auto& entries = rows[static_cast<std::size_t>(row)];
-        Precision rhs = system.d.size() == system.equations ? system.d[row] : Precision(0);
+        Precision rhs = static_cast<Index>(system.d.size()) == system.equations
+                            ? system.d[row]
+                            : Precision(0);
 
         if (entries.empty()) {
             logging::error(std::abs(rhs) <= tolerance,

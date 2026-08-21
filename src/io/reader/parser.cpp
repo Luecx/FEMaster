@@ -405,7 +405,7 @@ void Parser::configure_topology_pass(io::dsl::Registry& registry) {
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
 
     // Activate commands that construct semantic Parts and Instances
-    for (const std::string& command : {
+    for (const char* command : {
         "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
         "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
         "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION"
@@ -430,7 +430,7 @@ void Parser::configure_assembly_pass(io::dsl::Registry& registry) {
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
 
     // Activate post-compile assembly and field materialization commands
-    for (const std::string& command : {
+    for (const char* command : {
         "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "SFSET", "FIELD", "NORMAL"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
@@ -453,7 +453,7 @@ void Parser::configure_analysis_pass(io::dsl::Registry& registry) {
     registry.set_active_mode(io::dsl::ActiveMode::Active);
 
     // Consume commands whose state was finalized by an earlier parser pass
-    for (const std::string& command : {
+    for (const char* command : {
         "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
         "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
         "MATERIAL", "ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION",

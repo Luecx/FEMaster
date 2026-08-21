@@ -80,14 +80,14 @@ SparseMatrix build_block_matrix(const SparseMatrix& A, const SparseMatrix& B) {
     std::vector<Triplet> triplets;
     triplets.reserve(2 * (A.nonZeros() + B.nonZeros()));
 
-    for (Index outer = 0; outer < A.outerSize(); ++outer) {
+    for (Index outer = 0; outer < static_cast<Index>(A.outerSize()); ++outer) {
         for (SparseMatrix::InnerIterator it(A, outer); it; ++it) {
             triplets.emplace_back(it.row(),     it.col(),     it.value());
             triplets.emplace_back(it.row() + n, it.col() + n, it.value());
         }
     }
 
-    for (Index outer = 0; outer < B.outerSize(); ++outer) {
+    for (Index outer = 0; outer < static_cast<Index>(B.outerSize()); ++outer) {
         for (SparseMatrix::InnerIterator it(B, outer); it; ++it) {
             triplets.emplace_back(it.row(),     it.col() + n, -it.value());
             triplets.emplace_back(it.row() + n, it.col(),      it.value());

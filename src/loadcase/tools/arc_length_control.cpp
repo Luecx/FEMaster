@@ -237,7 +237,7 @@ bool ArcLengthControl::solve(
 
                         logging::error(tangent.rows() == tangent.cols(),
                             "ArcLengthControl: tangent matrix must be square");
-                        logging::error(reference_load.size() == n,
+                        logging::error(static_cast<Index>(reference_load.size()) == n,
                             "ArcLengthControl: reference load has invalid size");
 
                         const DynamicVector delta_q      = q - q_accepted_;
@@ -255,7 +255,7 @@ bool ArcLengthControl::solve(
                           + 1
                         );
 
-                        for (Index col = 0; col < tangent.outerSize(); ++col) {
+                        for (Index col = 0; col < static_cast<Index>(tangent.outerSize()); ++col) {
                             for (SparseMatrix::InnerIterator it(tangent, col); it; ++it) {
                                 triplets.emplace_back(it.row(), it.col(), it.value());
                             }
@@ -285,8 +285,7 @@ bool ArcLengthControl::solve(
 
                         const DynamicMatrix solution = matrix_solve(augmented, rhs);
 
-                        logging::error(solution.rows() == n + 1 &&
-                                       solution.cols() == 1,
+                        logging::error(static_cast<Index>(solution.rows()) == n + 1 && solution.cols() == 1,
                             "ArcLengthControl: augmented solve returned an invalid shape");
                         logging::error(solution.allFinite(),
                             "ArcLengthControl: correction contains NaN/Inf entries");
