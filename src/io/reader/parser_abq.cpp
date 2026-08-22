@@ -37,6 +37,7 @@
 #include "commands_abq/register_element.inl"
 #include "commands_abq/register_end_assembly.inl"
 #include "commands_abq/register_end_instance.inl"
+#include "commands_abq/register_equation.inl"
 #include "commands_abq/register_expansion.inl"
 #include "commands_abq/register_instance.inl"
 #include "commands_abq/register_orientation.inl"
@@ -122,6 +123,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry,
     commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
+    commands_abq::register_equation(registry, *this);
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);
@@ -191,7 +193,7 @@ void ParserAbq::configure_analysis_pass(io::dsl::Registry& registry) {
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
-        "STEP", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
+        "EQUATION", "STEP", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
         "CLOAD", "BOUNDARY", "DLOAD", "DSLOAD", "ENDSTEP"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
