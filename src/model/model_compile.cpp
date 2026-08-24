@@ -1,18 +1,18 @@
 /**
  * @file model_compile.cpp
- * @brief Compiles part/instance topology into dense solver storage.
+ * @brief Compiles part/instance topology and local assignments into solver storage.
  *
  * `Model::compile()` is intentionally narrow: it freezes only the semantic
- * part/instance topology that must be flattened into the assembly. Nodes,
- * elements, surfaces and lines are copied from every instance, transformed and
- * rewired to dense global identifiers. Instance-local sets and section regions
- * are materialized in the same global identifier space.
+ * part/instance data that must be flattened into the assembly. Nodes, elements,
+ * surfaces and lines are copied from every instance, transformed and rewired to
+ * dense global identifiers. Instance-local sets, section regions and point-mass
+ * features are materialized in the same global identifier space.
  *
  * Definition objects such as materials, profiles and coordinate systems are not
  * part of that one-way topology transition. They may be registered before or
  * after compilation. Sections may likewise be added after compilation when they
- * already reference a compiled element set; pre-compile sections remain part
- * definitions and are copied once per instance during this routine.
+ * already reference a compiled element set; pre-compile sections and point-mass
+ * features remain part definitions and are copied once per instance here.
  *
  * Section orientations require the same rigid placement as their owning part.
  * A compiled section therefore receives an independent transformed coordinate
@@ -21,8 +21,8 @@
  *
  * Dense identifiers are deterministic: instance names and every part-local
  * entity identifier are sorted before enumeration. The resulting Instance maps
- * remain available for resolving qualified semantic references after the model
- * has crossed the one-way compilation boundary.
+ * remain available for resolving qualified local references after the model has
+ * crossed the one-way compilation boundary.
  *
  * @see Model
  * @see ModelData
@@ -30,11 +30,12 @@
  * @see Instance
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #include "model.h"
 
+#include "../feature/point_mass.h"
 #include "../section/section_beam.h"
 #include "../section/section_shell_abd.h"
 #include "../section/section_shell_integrated.h"
@@ -260,10 +261,9 @@ void Model::add_section(Section::Ptr section) {
  * topology objects are copied and rewired through instance maps, and inherited
  * regions receive qualified assembly names.
  *
- * Part-local sections become independent assembly assignments per Instance.
- * Their element regions are remapped, beam directions are rotated and spatial
- * coordinate systems are rigidly transformed while shared material and profile
- * definitions remain referenced.
+ * Part-local sections and point masses become independent assembly assignments
+ * per Instance. Point-mass node regions are remapped, while section spatial data
+ * is additionally transformed with the rigid instance placement.
  *
  * Finally, sections are bound to dense elements, element-nodal/IP/MP offsets are
  * initialized and the semantic topology is frozen. Recompilation is unsupported
@@ -486,6 +486,33 @@ void Model::compile() {
             }
         }
 
+        // Point masses are semantic part features. Copy their complete property
+        // data while remapping only their local node targets into this Instance's
+        // dense assembly identifier space.
+        for (const auto& source_point_mass : source->point_masses) {
+            logging::error(source_point_mass != nullptr && source_point_mass->region_ != nullptr,
+                "Model: point mass in part ", source->name, " has no node region");
+
+            auto region = std::make_shared<NodeRegion>(
+                qualified_name(source_point_mass->region_->name));
+            for (const ID local_id : *source_point_mass->region_) {
+                const auto it = node_map.find(local_id);
+                logging::error(it != node_map.end(),
+                    "Model: point-mass region ", source_point_mass->region_->name,
+                    " in part ", source->name,
+                    " references undefined node ", local_id);
+                region->add(it->second);
+            }
+
+            auto point_mass = std::make_shared<feature::PointMass>();
+            point_mass->region_                  = std::move(region);
+            point_mass->mass_                    = source_point_mass->mass_;
+            point_mass->rotary_inertia_          = source_point_mass->rotary_inertia_;
+            point_mass->spring_constants_        = source_point_mass->spring_constants_;
+            point_mass->rotary_spring_constants_ = source_point_mass->rotary_spring_constants_;
+            _data->features.push_back(std::move(point_mass));
+        }
+
         // Sort and copy part-local surfaces into dense assembly topology
         std::vector<ID> surface_ids;
         surface_ids.reserve(source->surfaces.size());
@@ -544,7 +571,7 @@ void Model::compile() {
             const ID global_id     = next_line++;
             auto line              = source_line->copy();
 
-            for (Index local = 0; local < line->n_nodes; ++local) {
+            for (Index local = 0; local < source_line->n_nodes; ++local) {
                 const ID local_node = source_line->nodes()[local];
                 const auto node_it  = node_map.find(local_node);
                 logging::error(node_it != node_map.end(),

@@ -8,17 +8,18 @@
  * common `Model::compile()` boundary creates dense solver data before assembly
  * sets/surfaces, transforms and analysis commands execute.
  *
- * The reader accepts at most one analysis `*STEP`, so no mechanical or
- * load-definition history is stored between steps. Parser-local state is limited
- * to nodal `*TRANSFORM` assignments and controls required while translating that
- * step to a FEMaster load case.
+ * Parser-local state is limited to nodal `*TRANSFORM` assignments and controls
+ * required while translating one supported analysis step. Part-local features
+ * such as Abaqus MASS definitions live on `model::Part` and are expanded by
+ * `Model::compile()` together with their owning topology.
  *
  * @see Parser
  * @see commands_abq::register_transform
+ * @see commands_abq::register_mass
  * @see commands_abq::register_step
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
@@ -56,6 +57,9 @@ public:
     const ParserAbqState& abaqus_state() const;
 
     std::pair<Precision, std::string> resolve_load_amplitude(const std::string& amplitude);
+
+    // Create one compiled PointMass feature for one assembly-level Abaqus MASS element.
+    void add_abaqus_mass_feature(ID element_id, Precision mass);
 
 protected:
     void configure_definition_pass(io::dsl::Registry& registry) override;
