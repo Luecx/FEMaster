@@ -110,6 +110,14 @@ struct Model {
     ID compiled_surface_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_line_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
 
+    // Named region construction from string references. A source may name an
+    // existing set or one entity identifier. Before compilation the operation
+    // targets the active Part; afterwards optional Instance qualification is
+    // resolved through the compiled local-to-global maps.
+    void add_nodes_to_set   (const std::string& set, const std::string& source, const std::string& instance = "");
+    void add_elements_to_set(const std::string& set, const std::string& source, const std::string& instance = "");
+    void add_surfaces_to_set(const std::string& set, const std::string& source, const std::string& instance = "");
+
     // Part-local topology construction in the currently active semantic Part.
     // Nodes and element connectivity retain their input identifiers, while
     // boundary extraction creates a local surface or line from an element side.
