@@ -56,6 +56,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "../reference.h"
 #include "../../../constraints/types/coupling.h"
@@ -87,6 +88,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
     struct Context {
         std::string master;
         std::string surface;
+        std::string type;
 
         ID master_node = -1;
 
@@ -142,6 +144,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
             *ctx = Context{};
             ctx->master  = keys.raw("MASTER");
             ctx->surface = keys.raw("SURFACE");
+            ctx->type    = keys.has("TYPE") ? keys.raw("TYPE") : std::string{};
 
             logging::error(model._data->compiled,
                 "COUPLING: constraints require a compiled model");
@@ -194,10 +197,10 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                         dofs(i) = raw[static_cast<std::size_t>(i)] > Precision(0);
                     }
 
-                    const auto type = ctx->defined
+                    const auto type = ctx->type == "KINEMATIC"
                         ? constraint::CouplingType::KINEMATIC
-                        : constraint::CouplingType::KINEMATIC;
-                    (void) type;
+                        : constraint::CouplingType::STRUCTURAL;
+                    emit(dofs, type);
                 })
             )
         );
