@@ -96,6 +96,13 @@ jobs:
             binary: build/windows-intel-mkl-omp/bin/FEMaster.exe
             archive: FEMaster-windows-intel-mkl-omp.zip
 
+          - name: macos-arm64-omp-accelerate
+            os: macos-15
+            configure_preset: macos-omp-accelerate
+            build_preset: macos-omp-accelerate
+            binary: build/macos-omp-accelerate/bin/FEMaster
+            archive: FEMaster-macos-arm64-omp-accelerate.tar.gz
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,6 +169,15 @@ jobs:
           where icx-cl
           icx-cl --version
 
+      - name: Install OpenMP macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install libomp ninja
+          echo "macOS: $(sw_vers -productVersion)"
+          echo "arch : $(uname -m)"
+          [[ "$(uname -m)" == "arm64" ]]
+
       - name: Configure Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
@@ -195,6 +211,29 @@ jobs:
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
           cmake --build --preset %BUILD_PRESET%
 
+      - name: Configure macOS ARM64 OpenMP Accelerate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          LIBOMP_PREFIX="$(brew --prefix libomp)"
+
+          cmake --preset ${{ matrix.configure_preset }} \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_PREFIX_PATH="${LIBOMP_PREFIX}" \
+            -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include" \
+            -DOpenMP_CXX_LIB_NAMES=omp \
+            -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib"
+
+      - name: Build macOS ARM64 OpenMP Accelerate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cmake --build --preset ${{ matrix.build_preset }}
+          file "${{ matrix.binary }}"
+          file "${{ matrix.binary }}" | grep -q "arm64"
+          otool -L "${{ matrix.binary }}"
+
       - name: Package Linux MKL OpenMP
         if: runner.os == 'Linux'
         shell: bash
@@ -223,6 +262,34 @@ jobs:
           Copy-Item "documentation.pdf" package/ -ErrorAction SilentlyContinue
 
           Compress-Archive -Path package/* -DestinationPath "${{ matrix.archive }}"
+
+      - name: Package macOS ARM64 OpenMP Accelerate
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          LIBOMP_PREFIX="$(brew --prefix libomp)"
+
+          mkdir -p package
+
+          cp "${{ matrix.binary }}" package/FEMaster
+          cp "${LIBOMP_PREFIX}/lib/libomp.dylib" package/libomp.dylib
+          cp LICENSE.txt package/ || true
+          cp THIRD_PARTY_NOTICES.txt package/ || true
+          cp -r licenses package/ || true
+          cp documentation.pdf package/ || true
+
+          libomp_ref="$(otool -L package/FEMaster | awk '/libomp\.dylib/{print $1; exit}')"
+          if [[ -n "${libomp_ref}" ]]; then
+            install_name_tool -change "${libomp_ref}" "@executable_path/libomp.dylib" package/FEMaster
+          fi
+
+          chmod +x package/FEMaster
+          codesign --force --sign - package/FEMaster
+
+          file package/FEMaster
+          otool -L package/FEMaster
+
+          tar -czf "${{ matrix.archive }}" -C package .
 
       - name: Upload release asset candidate
         uses: actions/upload-artifact@v4
