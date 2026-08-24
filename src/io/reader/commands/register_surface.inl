@@ -1,11 +1,32 @@
 /**
  * @file register_surface.inl
- * @brief Registers shared FEMaster and Abaqus surface definitions.
+ * @brief Registers part-local and assembly-level node- and element-based surfaces.
  *
- * Element-based surfaces are materialized as surface/line regions while
- * TYPE=NODE surfaces are represented by node regions with the same name. The
- * shared grammar accepts both FEMaster SFSET and Abaqus NAME naming, preserves
- * FEMaster explicit surface-id rows and supports assembly Instance qualification.
+ * The command provides the shared `SURFACE` grammar used by FEMaster and Abaqus
+ * input decks. Element-based rows associate an element or element set with one
+ * of its boundary sides, construct the corresponding element-specific surface
+ * or line representation and register the resulting identifiers under the
+ * requested surface name.
+ *
+ * Before compilation, element-based definitions remain part-local and retain
+ * sparse semantic identifiers. Assembly-level definitions are replayed after
+ * compilation so Instance-qualified references can be resolved through the
+ * dense local-to-global maps without duplicating geometric topology.
+ *
+ * `TYPE=NODE` represents a node-based surface as a named `NodeRegion`. Its data
+ * rows may reference individual nodes or existing node sets and therefore share
+ * the same Model-level set population path used by assembly `NSET` definitions.
+ * The optional Abaqus nodal-area value is parsed for syntax compatibility but is
+ * currently not stored because `NodeRegion` carries identifiers rather than
+ * per-node weighting data.
+ *
+ * The shared keyword grammar accepts FEMaster `SFSET` and Abaqus `NAME` naming,
+ * preserves the FEMaster explicit surface-ID row form, and supports optional
+ * assembly `INSTANCE` qualification for both input formats.
+ *
+ * @see model::NodeRegion
+ * @see model::SurfaceRegion
+ * @see model::LineRegion
  *
  * @author Finn Eggers
  * @date 24.08.2026
@@ -201,15 +222,7 @@ inline void register_surface(fem::io::dsl::Registry& registry,
                     (void) area;
                     if (!ctx->node_destination) return;
                     if (ctx->assembly) {
-                        io::reader::add_compiled_reference(
-                            model._data->node_sets,
-                            ctx->node_destination,
-                            target,
-                            ctx->instance,
-                            [&model](const std::string& reference) {
-                                return io::reader::compiled_node_id(model, reference);
-                            }
-                        );
+                        model.add_nodes_to_set(ctx->name, target, ctx->instance);
                         return;
                     }
 
