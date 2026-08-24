@@ -46,7 +46,7 @@ struct QSPT : ShellElement<4> {
     MapMatrix  mass(Precision* buffer) override;
     const math::quadrature::Quadrature& integration_scheme() const override;
 
-    Dim    num_ip() const override { return 0; }
+    Dim    num_ip() const override { return 1; }
     ElDofs dofs() const override { return ElDofs{true, true, true, false, false, false}; }
 
     void compute_internal_force_nonlinear(Field& node_forces,
