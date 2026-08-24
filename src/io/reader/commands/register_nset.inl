@@ -2,16 +2,25 @@
  * @file register_nset.inl
  * @brief Registers part-local and assembly-level node sets.
  *
- * `NSET` accepts explicit identifiers and generated arithmetic ranges. Before
- * compilation it stores sparse local node IDs in the active Part; during the
- * assembly pass it resolves optional Instance-qualified references through the
- * compiled local-to-global maps.
+ * `NSET` accepts explicit node or node-set references and generated arithmetic
+ * ranges. String references are delegated to `Model::add_nodes_to_set()` so the
+ * same set-composition semantics apply before and after compilation. Part-local
+ * definitions retain sparse node IDs in the active Part, whereas assembly-level
+ * references may use optional Instance qualification and are resolved through
+ * the compiled local-to-global node maps.
+ *
+ * `GENERATE` remains a numeric path because its arithmetic range already
+ * provides node identifiers directly and does not require string-reference
+ * interpretation.
  *
  * The resulting `NodeRegion` is registered under its deck name for supports,
  * loads, couplings and later assembly commands.
  *
+ * @see model::Model::add_nodes_to_set
+ * @see model::NodeRegion
+ *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
