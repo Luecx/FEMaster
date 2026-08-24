@@ -2,7 +2,9 @@
 
 namespace fem::solver {
 
-std::string get_solver_name(SolverDevice device, SolverMethod method) {
+std::string get_solver_name(SolverDevice device,
+                            SolverMethod method,
+                            DirectSolverMatrixType matrix_type) {
 #ifndef SUPPORT_GPU
     device = CPU;
 #endif
@@ -22,9 +24,17 @@ std::string get_solver_name(SolverDevice device, SolverMethod method) {
     }
 
 #ifdef USE_MKL
-    return "CPU DIRECT MKL PardisoLDLT";
+    return matrix_type == DirectSolverMatrixType::General
+        ? "CPU DIRECT MKL PardisoLU"
+        : "CPU DIRECT MKL PardisoLDLT";
+#elif defined(USE_ACCELERATE)
+    return matrix_type == DirectSolverMatrixType::General
+        ? "CPU DIRECT Eigen SparseLU"
+        : "CPU DIRECT Apple Accelerate LDLT";
 #else
-    return "CPU DIRECT Eigen SimplicialLDLT";
+    return matrix_type == DirectSolverMatrixType::General
+        ? "CPU DIRECT Eigen SparseLU"
+        : "CPU DIRECT Eigen SimplicialLDLT";
 #endif
 }
 

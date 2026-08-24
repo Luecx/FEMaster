@@ -1,0 +1,137 @@
+name: macOS ARM debug build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS ARM64 + OpenMP + Accelerate
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "macOS: $(sw_vers -productVersion)"
+          echo "arch : $(uname -m)"
+          echo "clang: $(clang++ --version | head -n 1)"
+          echo "cmake: $(cmake --version | head -n 1)"
+
+          [[ "$(uname -m)" == "arm64" ]]
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install libomp ninja
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Configure macOS ARM64 OpenMP Accelerate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LIBOMP_PREFIX="$(brew --prefix libomp)"
+
+          cmake --preset macos-omp-accelerate \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${GITHUB_WORKSPACE}/deps/include" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_PREFIX_PATH="${LIBOMP_PREFIX}" \
+            -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I${LIBOMP_PREFIX}/include" \
+            -DOpenMP_CXX_LIB_NAMES=omp \
+            -DOpenMP_omp_LIBRARY="${LIBOMP_PREFIX}/lib/libomp.dylib" \
+            2>&1 | tee configure.log
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+
+          cmake --build --preset macos-omp-accelerate -j3 \
+            2>&1 | tee build.log
+
+      - name: Inspect binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BINARY="build/macos-omp-accelerate/bin/FEMaster"
+
+          file "${BINARY}" | tee binary-info.log
+          otool -L "${BINARY}" | tee -a binary-info.log
+
+          file "${BINARY}" | grep -q "arm64"
+
+      - name: Package portable debug build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BINARY="build/macos-omp-accelerate/bin/FEMaster"
+          LIBOMP_PREFIX="$(brew --prefix libomp)"
+          ARCHIVE="FEMaster-macos-arm64-omp-accelerate.tar.gz"
+
+          mkdir -p package
+
+          cp "${BINARY}" package/FEMaster
+          cp "${LIBOMP_PREFIX}/lib/libomp.dylib" package/libomp.dylib
+          cp LICENSE.txt package/ || true
+          cp THIRD_PARTY_NOTICES.txt package/ || true
+          cp -r licenses package/ || true
+
+          libomp_ref="$(otool -L package/FEMaster | awk '/libomp\.dylib/{print $1; exit}')"
+          if [[ -n "${libomp_ref}" ]]; then
+            install_name_tool -change "${libomp_ref}" "@executable_path/libomp.dylib" package/FEMaster
+          fi
+
+          chmod +x package/FEMaster
+          codesign --force --sign - package/FEMaster
+
+          echo "Packaged binary:"
+          file package/FEMaster
+          otool -L package/FEMaster
+
+          tar -czf "${ARCHIVE}" -C package .
+
+      - name: Upload macOS ARM64 build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FEMaster-macos-arm64-omp-accelerate
+          path: FEMaster-macos-arm64-omp-accelerate.tar.gz
+          retention-days: 7
+
+      - name: Upload debug logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FEMaster-macos-arm64-build-logs
+          path: |
+            configure.log
+            build.log
+            binary-info.log
+          if-no-files-found: ignore
+          retention-days: 7
