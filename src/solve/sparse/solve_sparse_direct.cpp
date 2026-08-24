@@ -21,7 +21,7 @@ DynamicMatrix solve_direct(SolverDevice device,
     logging::info(true, "");
     logging::info(true, "Solving system with N=", mat.cols(), " nnz=", mat.nonZeros(),
                   " nrhs=", rhs.cols(),
-                  " using ", get_solver_name(device, DIRECT),
+                  " using ", get_solver_name(device, DIRECT, matrix_type),
                   matrix_type == DirectSolverMatrixType::SPD ? " (SPD)" : " (general)");
 
     logging::up();

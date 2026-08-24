@@ -3,9 +3,11 @@ FEMaster Third-Party Software Notices
 
 FEMaster itself is licensed under the MIT License. See LICENSE.txt.
 
-This distribution contains or links against the third-party components listed
-below. Their original license texts and required notices are preserved in the
-licenses directory. Those original files govern the corresponding components.
+FEMaster contains, links against or optionally uses the third-party components
+listed below. License texts and notices for components distributed with FEMaster
+are preserved in the licenses directory. System frameworks supplied by the
+operating system are identified separately and are not redistributed by
+FEMaster.
 
 argparse
 --------
@@ -18,10 +20,9 @@ Eigen
 Header-only linear algebra library. Eigen is primarily licensed under the
 Mozilla Public License 2.0 and contains files under additional compatible
 licenses.
-FEMaster is currently built against Eigen development headers reporting
-version 3.4.90.
-Upstream source (current master):
-  https://gitlab.com/libeigen/eigen/-/tree/master
+FEMaster release builds currently use Eigen 5.0.1.
+Upstream source:
+  https://gitlab.com/libeigen/eigen
 License and notice files:
   licenses/eigen-COPYING.README.txt
   licenses/eigen-COPYING.MPL2.txt
@@ -50,5 +51,12 @@ License, notice, and redistributable-list files:
   licenses/intel-compiler-EULA.rtf
   licenses/intel-openmp-third-party-programs.txt
   licenses/intel-compiler-redistributables.txt
+
+Apple Accelerate
+----------------
+Accelerate-enabled macOS builds link against the Apple Accelerate system
+framework for sparse linear algebra. Accelerate is supplied by macOS and the
+Apple SDK and is not distributed with FEMaster. No Apple framework binaries or
+license files are included in FEMaster distributions.
 
 No endorsement by any third-party project or vendor is implied.

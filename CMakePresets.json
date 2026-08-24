@@ -213,6 +213,9 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "FEMASTER_ENABLE_ACCELERATE": "OFF"
       }
     },
     {
@@ -221,11 +224,28 @@
       "inherits": "macos-base"
     },
     {
-      "name": "macos-openmp",
+      "name": "macos-accelerate",
+      "displayName": "macOS CPU + Accelerate",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_ACCELERATE": "ON"
+      }
+    },
+    {
+      "name": "macos-omp",
       "displayName": "macOS CPU + OpenMP",
       "inherits": "macos-base",
       "cacheVariables": {
         "FEMASTER_ENABLE_OPENMP": "ON"
+      }
+    },
+    {
+      "name": "macos-omp-accelerate",
+      "displayName": "macOS CPU + OpenMP + Accelerate",
+      "inherits": "macos-base",
+      "cacheVariables": {
+        "FEMASTER_ENABLE_OPENMP": "ON",
+        "FEMASTER_ENABLE_ACCELERATE": "ON"
       }
     }
   ],
@@ -322,8 +342,18 @@
       "jobs": 8
     },
     {
-      "name": "macos-openmp",
-      "configurePreset": "macos-openmp",
+      "name": "macos-accelerate",
+      "configurePreset": "macos-accelerate",
+      "jobs": 8
+    },
+    {
+      "name": "macos-omp",
+      "configurePreset": "macos-omp",
+      "jobs": 8
+    },
+    {
+      "name": "macos-omp-accelerate",
+      "configurePreset": "macos-omp-accelerate",
       "jobs": 8
     }
   ]

@@ -1,107 +1,98 @@
 /**
  * @file solve_eigval_shiftinvert_op_general.h
- * @brief Spectra-compatible operator: y = (A - σ B)^{-1} x for symmetric A,B.
+ * @brief Defines the Spectra shift-invert operator for generalized symmetric eigenproblems.
  *
- * @details
- * This operator is used by Spectra’s generalized shift–invert solvers:
- * ShiftInvert, Buckling, and Cayley. It maintains a cached factorization of
- * (A - σ B) and only re-factorizes when σ changes.
+ * The operator applies
  *
- * Backends:
- *   - If USE_MKL is defined: uses MKL PardisoLDLT.
- *   - Otherwise: uses Eigen SimplicialLDLT.
+ *     y = (A - sigma B)^-1 x
  *
- * Threading:
- *   - When built with MKL, the MKL thread count is set from
- *     global_config.max_threads inside perform_op().
+ * for Spectra's generalized shift-invert, buckling and Cayley formulations.
+ * The shifted matrix is factorized lazily and the factorization is cached while
+ * the shift remains unchanged, so repeated operator applications only perform
+ * sparse triangular solves.
  *
- * Usage pattern with Spectra:
- *   - Spectra calls perform_op() many times with constant σ per solve, so
- *     caching the factorization is critical for performance.
+ * The sparse factorization backend follows the FEMaster CPU configuration:
+ * Intel oneMKL uses PardisoLDLT, Apple Accelerate uses AccelerateLDLT and the
+ * portable fallback uses Eigen SimplicialLDLT. Spectra owns the eigensolver
+ * iteration while this class is responsible only for the shifted linear solve.
  *
- * @author
- *   Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
- *   All rights reserved.
- * @date Created on 19.09.2025
+ * @author Finn Eggers
+ * @date 19.09.2025
  */
 
 #pragma once
 
 #include "../../core/types_eig.h"
+
 #include <Eigen/SparseCore>
 
-#ifndef USE_MKL
-  #include <Eigen/SparseCholesky>     // SimplicialLDLT
+#if defined(USE_MKL)
+#include "../../core/config.h"
+#include <Eigen/PardisoSupport>
+#include <mkl.h>
+#elif defined(USE_ACCELERATE)
+#include <Eigen/AccelerateSupport>
 #else
-  #include <Eigen/PardisoSupport>     // PardisoLDLT
-  #include "../../core/config.h"         // global_config.max_threads
-  #include <mkl.h>
+#include <Eigen/SparseCholesky>
 #endif
 
-#include <limits>   // std::numeric_limits
+#include <limits>
 
 namespace fem::solver {
 
 /**
- * @class ShiftInvertOpGeneral
- * @brief Applies y = (A - σ B)^{-1} x with cached factorization.
+ * @brief Spectra operator for generalized symmetric shift-invert eigenvalue solves.
+ *
+ * The class stores references to the symmetric matrices of the generalized
+ * eigenproblem and the active spectral shift. A factorization of
+ * `A - sigma B` is created on demand and remains valid until `set_shift()`
+ * changes the requested shift.
+ *
+ * `perform_op()` therefore has the cost of a sparse solve during the regular
+ * Spectra iteration and only triggers a new factorization after a shift change.
+ * The concrete LDLT implementation is selected at compile time from oneMKL,
+ * Apple Accelerate or Eigen.
  */
 class ShiftInvertOpGeneral {
 public:
     using Scalar = Precision;
 
-    /**
-     * @brief Construct with matrices A,B and initial shift σ.
-     * @param A     Reference to symmetric matrix A (kept by reference).
-     * @param B     Reference to symmetric matrix B (kept by reference).
-     * @param sigma Initial shift value.
-     */
-    ShiftInvertOpGeneral(const SparseMatrix& A,
-                         const SparseMatrix& B,
-                         Scalar sigma);
-
-    /** @return number of rows (equals A.rows()). */
-    int rows() const;
-
-    /** @return number of columns (equals A.cols()). */
-    int cols() const;
-
-    /**
-     * @brief Update the shift σ. The next apply will re-factorize.
-     * @param sigma New shift value.
-     */
-    void set_shift(const Scalar& sigma);
-
-    /**
-     * @brief Compute y = (A - σ B)^{-1} x.
-     * @param x_in  Pointer to input vector x (size = rows()).
-     * @param y_out Pointer to output vector y (size = rows()).
-     */
-    void perform_op(const Scalar* x_in, Scalar* y_out) const;
-
 private:
-    // Matrix A (by reference).
+    // Symmetric matrices kept by reference for the complete Spectra solve
     const SparseMatrix& _A_ref;
-
-    // Matrix B (by reference).
     const SparseMatrix& _B_ref;
 
-    // Target shift σ requested by the solver.
-    Scalar _sigma{0};
+    // Requested shift and the shift represented by the cached factorization
+    Scalar         _sigma      = Scalar(0);
+    mutable Scalar _sigma_fact = std::numeric_limits<Scalar>::quiet_NaN();
 
-    // Shift value that the cached factorization currently corresponds to.
-    // Initialized to NaN to force the first factorization.
-    mutable Scalar _sigma_fact{std::numeric_limits<Scalar>::quiet_NaN()};
-
-#ifdef USE_MKL
-    // MKL backend factorization object (LDLT of (A - σ B)).
+    // Cached factorization of A - sigma B
+#if defined(USE_MKL)
     mutable Eigen::PardisoLDLT<SparseMatrix> _ldl;
+#elif defined(USE_ACCELERATE)
+    mutable Eigen::AccelerateLDLT<SparseMatrix> _ldl;
 #else
-    // Eigen backend factorization object (SimplicialLDLT of (A - σ B)).
     mutable Eigen::SimplicialLDLT<SparseMatrix> _ldl;
 #endif
 
-    // Ensure a valid factorization exists for the current _sigma.
+public:
+    // Construction
+    ShiftInvertOpGeneral(const SparseMatrix& A, const SparseMatrix& B, Scalar sigma);
+
+    // Spectra operator dimensions
+    int rows() const;
+    int cols() const;
+
+    // Shift control. Changing the shift invalidates the cached factorization
+    // logically; the new factorization is built lazily on the next application.
+    void set_shift(const Scalar& sigma);
+
+    // Apply the inverse shifted operator to one Spectra vector
+    void perform_op(const Scalar* x_in, Scalar* y_out) const;
+
+private:
+    // Refresh the cached factorization when it does not represent the active shift
     void _factorize_if_needed() const;
 };
+
 } // namespace fem::solver
