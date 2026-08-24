@@ -11,6 +11,7 @@ option(FEMASTER_BUILD_TESTS "Build and register the GoogleTest executable" OFF)
 option(FEMASTER_ENABLE_CUDA "Build CUDA solver backends" OFF)
 option(FEMASTER_ENABLE_CUDSS "Use NVIDIA cuDSS for CUDA sparse direct solves" OFF)
 option(FEMASTER_ENABLE_MKL "Use Intel oneMKL for Eigen operations and PARDISO" OFF)
+option(FEMASTER_ENABLE_ACCELERATE "Use Apple Accelerate for sparse direct solves" ${APPLE})
 option(FEMASTER_MKL_SEQUENTIAL "Use the sequential oneMKL threading layer" OFF)
 option(FEMASTER_MKL_STATIC "Link the oneMKL component libraries statically" ON)
 option(FEMASTER_ENABLE_OPENMP "Enable OpenMP for FEMaster CPU loops" OFF)
@@ -63,6 +64,14 @@ endif()
 
 if(FEMASTER_ENABLE_CUDA AND APPLE)
     message(FATAL_ERROR "CUDA is not supported by current NVIDIA toolkits on macOS")
+endif()
+
+if(FEMASTER_ENABLE_ACCELERATE AND NOT APPLE)
+    message(FATAL_ERROR "FEMASTER_ENABLE_ACCELERATE is supported only on Apple platforms")
+endif()
+
+if(FEMASTER_ENABLE_ACCELERATE AND FEMASTER_ENABLE_MKL)
+    message(FATAL_ERROR "FEMASTER_ENABLE_ACCELERATE and FEMASTER_ENABLE_MKL are mutually exclusive")
 endif()
 
 if(FEMASTER_FULLY_STATIC AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux"))
@@ -297,6 +306,15 @@ if(FEMASTER_ENABLE_MKL)
             )
         endif()
     endif()
+endif()
+
+# -----------------------------------------------------------------------------
+# Apple Accelerate
+# -----------------------------------------------------------------------------
+if(FEMASTER_ENABLE_ACCELERATE)
+    find_library(FEMASTER_ACCELERATE_FRAMEWORK Accelerate REQUIRED)
+    target_link_libraries(femaster_core PUBLIC "${FEMASTER_ACCELERATE_FRAMEWORK}")
+    target_compile_definitions(femaster_core PUBLIC USE_ACCELERATE)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -537,6 +555,7 @@ message(STATUS "  Double precision     : ${FEMASTER_DOUBLE_PRECISION}")
 message(STATUS "  OpenMP loops         : ${FEMASTER_ENABLE_OPENMP} (${FEMASTER_OPENMP_RUNTIME})")
 message(STATUS "  oneMKL               : ${FEMASTER_ENABLE_MKL}")
 message(STATUS "    link/threading     : ${FEMASTER_MKL_LINK} / ${FEMASTER_MKL_THREADING}")
+message(STATUS "  Apple Accelerate     : ${FEMASTER_ENABLE_ACCELERATE}")
 message(STATUS "  CUDA                 : ${FEMASTER_ENABLE_CUDA} (${FEMASTER_CUDA_VERSION})")
 message(STATUS "  cuDSS                : ${FEMASTER_ENABLE_CUDSS} (${FEMASTER_CUDSS_VERSION})")
 message(STATUS "  Static C/C++ runtime : ${FEMASTER_STATIC_RUNTIME}")
@@ -551,6 +570,7 @@ add_custom_target(femaster-info
         COMMAND ${CMAKE_COMMAND} -E echo "Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
         COMMAND ${CMAKE_COMMAND} -E echo "OpenMP: ${FEMASTER_ENABLE_OPENMP} (${FEMASTER_OPENMP_RUNTIME})"
         COMMAND ${CMAKE_COMMAND} -E echo "oneMKL: ${FEMASTER_ENABLE_MKL} (${FEMASTER_MKL_LINK}, ${FEMASTER_MKL_THREADING})"
+        COMMAND ${CMAKE_COMMAND} -E echo "Apple Accelerate: ${FEMASTER_ENABLE_ACCELERATE}"
         COMMAND ${CMAKE_COMMAND} -E echo "CUDA: ${FEMASTER_ENABLE_CUDA} (${FEMASTER_CUDA_VERSION})"
         COMMAND ${CMAKE_COMMAND} -E echo "cuDSS: ${FEMASTER_ENABLE_CUDSS} (${FEMASTER_CUDSS_VERSION})"
         VERBATIM
