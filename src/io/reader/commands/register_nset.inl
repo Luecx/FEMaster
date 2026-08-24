@@ -35,6 +35,7 @@ inline void register_nset(fem::io::dsl::Registry& registry,
 
         struct Context {
             bool assembly = false;
+            std::string name;
             std::string instance;
             model::NodeRegion::Ptr destination = nullptr;
         };
@@ -48,6 +49,7 @@ inline void register_nset(fem::io::dsl::Registry& registry,
         );
         command.on_enter([&model, assembly_scope, ctx](const fem::io::dsl::Keys& keys) {
             ctx->assembly    = *assembly_scope;
+            ctx->name        = keys.raw("NSET");
             ctx->instance    = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
             ctx->destination = nullptr;
 
@@ -58,12 +60,12 @@ inline void register_nset(fem::io::dsl::Registry& registry,
                 if (!model._data->compiled) return;
                 logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
                     "NSET: instance ", ctx->instance, " is not defined");
-                ctx->destination = model._data->node_sets.activate(keys.raw("NSET"));
+                ctx->destination = model._data->node_sets.activate(ctx->name);
             } else if (!model._data->compiled) {
                 const auto part = model._data->parts.get();
                 logging::error(part != nullptr,
                     "NSET: no active part is available");
-                ctx->destination = part->node_sets.activate(keys.raw("NSET"));
+                ctx->destination = part->node_sets.activate(ctx->name);
             }
         });
 
@@ -115,15 +117,7 @@ inline void register_nset(fem::io::dsl::Registry& registry,
                     for (const std::string& target : targets) {
                         if (target == missing_token) continue;
                         if (ctx->assembly) {
-                            io::reader::add_compiled_reference(
-                                model._data->node_sets,
-                                ctx->destination,
-                                target,
-                                ctx->instance,
-                                [&model](const std::string& reference) {
-                                    return io::reader::compiled_node_id(model, reference);
-                                }
-                            );
+                            model.add_nodes_to_set(ctx->name, target, ctx->instance);
                         } else {
                             ctx->destination->add(io::reader::parse_local_id(target, "NSET"));
                         }
