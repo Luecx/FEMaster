@@ -28,6 +28,7 @@
 #include "commands/register_node.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_part.inl"
+#include "commands/register_surface.inl"
 #include "commands_abq/register_amplitude.inl"
 #include "commands_abq/register_assembly.inl"
 #include "commands_abq/register_boundary.inl"
@@ -44,7 +45,6 @@
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
 #include "commands_abq/register_step.inl"
-#include "commands_abq/register_surface.inl"
 #include "commands_abq/register_transform.inl"
 
 #include "../dsl/registry.h"
@@ -112,7 +112,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry,
     commands_abq::register_end_instance(registry);
     commands::register_nset(registry, model(), assembly_scope);
     commands::register_elset(registry, model(), assembly_scope);
-    commands_abq::register_surface(registry, model(), assembly_scope);
+    commands::register_surface(registry, model(), assembly_scope);
     commands::register_material(registry, model());
     commands::register_density(registry, model());
     commands::register_elastic(registry, model());
