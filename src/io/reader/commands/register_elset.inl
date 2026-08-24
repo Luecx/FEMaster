@@ -2,16 +2,26 @@
  * @file register_elset.inl
  * @brief Registers part-local and assembly-level element sets.
  *
- * `ELSET` consumes explicit element identifiers or generated ranges. Part-local
- * definitions retain sparse IDs in semantic topology, whereas assembly-level
- * definitions resolve Instance-qualified references to compiled global element
- * rows during the post-compile pass.
+ * `ELSET` accepts explicit element or element-set references and generated
+ * arithmetic ranges. String references are delegated to
+ * `Model::add_elements_to_set()` so the same set-composition semantics apply
+ * before and after compilation. Part-local definitions retain sparse element
+ * IDs in the active Part, whereas assembly-level references may use optional
+ * Instance qualification and are resolved through the compiled local-to-global
+ * element maps.
+ *
+ * `GENERATE` remains a numeric path because its arithmetic range already
+ * provides element identifiers directly and does not require string-reference
+ * interpretation.
  *
  * The completed `ElementRegion` is shared by section assignments, distributed
  * loads, output requests and other element-domain operations.
  *
+ * @see model::Model::add_elements_to_set
+ * @see model::ElementRegion
+ *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
