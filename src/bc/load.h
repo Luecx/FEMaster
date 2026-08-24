@@ -33,7 +33,7 @@
 
 namespace fem {
 namespace model {
-class ModelData;
+struct ModelData;
 }
 }
 

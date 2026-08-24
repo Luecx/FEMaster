@@ -71,7 +71,11 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
 
     // Convert sparse component input into a complete numerical vector. A load
     // with no finite component can return before traversing any surfaces.
-    auto [local_values, has_values] = sanitize_vector(values_);
+    auto sanitized = sanitize_vector(values_);
+
+    Vec3       local_values = std::move(sanitized.first);
+    const bool has_values   = sanitized.second;
+
     if (!has_values) {
         return;
     }

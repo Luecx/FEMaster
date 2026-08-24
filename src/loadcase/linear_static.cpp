@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <limits>
+#include <tuple>
 #include <utility>
 
 namespace fem {
@@ -214,13 +215,17 @@ void LinearStatic::run() {
         [&]() { return model->compute_shear_flow(global_disp_mat); },
         "computing shear-flow output");
 
-    auto [stress, strain] = Timer::measure(
+    auto stress_strain = Timer::measure(
         [&]() { return model->compute_stress_nodal(global_disp_mat, false); },
         "interpolating stress and strain at nodes");
+    auto stress = std::move(std::get<0>(stress_strain));
+    auto strain = std::move(std::get<1>(stress_strain));
 
-    auto [stress_top, stress_bot] = Timer::measure(
+    auto stress_top_bottom = Timer::measure(
         [&]() { return model->compute_stress_top_bot(global_disp_mat, false); },
         "interpolating top/bottom stress at nodes");
+    auto stress_top = std::move(std::get<0>(stress_top_bottom));
+    auto stress_bot = std::move(std::get<1>(stress_top_bottom));
 
     auto shell_resultants = Timer::measure(
         [&]() { return model->compute_shell_resultants(global_disp_mat); },

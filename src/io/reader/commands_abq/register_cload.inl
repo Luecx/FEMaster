@@ -68,7 +68,9 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     logging::error(dof >= 1 && dof <= 6,
                         "CLOAD: DOF must be in [1,6]");
 
-                    const auto [scale, resolved_amplitude] = parser.resolve_load_amplitude(*amplitude);
+                    const auto        amplitude_data     = parser.resolve_load_amplitude(*amplitude);
+                    const Precision   scale              = amplitude_data.first;
+                    const std::string resolved_amplitude = amplitude_data.second;
                     magnitude *= scale;
                     if (magnitude == Precision(0)) return;
 

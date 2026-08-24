@@ -28,7 +28,7 @@
 
 namespace fem {
 namespace model {
-class Model;
+struct Model;
 }
 
 namespace loadcase {

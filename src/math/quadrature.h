@@ -206,6 +206,7 @@ public:
      */
     template<int M, int N>
     StaticVector<N> extrapolate(const StaticMatrix<M, N>& values) const {
+        (void) values;
         runtime_assert(M == count(), "Number of values must match number of quadrature points");
         return StaticVector<N>::Zero();
     }
