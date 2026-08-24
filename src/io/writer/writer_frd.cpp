@@ -633,6 +633,8 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
  *
  * CalculiX requires different connectivity ordering for 20-node hexahedra and
  * 15-node wedges, so these two element families are reordered explicitly.
+ * Node-only models omit the connectivity block while retaining their nodal
+ * geometry and result fields.
  *
  * @param model_data Compiled model containing structural element topology.
  */
@@ -646,8 +648,10 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
         }
     }
 
-    logging::error(element_count > 0,
-        "FrdWriter: no supported elements found for FRD output");
+    // Keep node-only feature models valid without emitting an empty element block
+    if (element_count == 0) {
+        return;
+    }
 
     file_path << "    3C"
               << std::string(18, ' ')

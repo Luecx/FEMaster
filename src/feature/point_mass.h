@@ -23,9 +23,8 @@ namespace feature {
  * @struct PointMass
  * @brief Concentrated nodal mass, rotary inertia and spring feature.
  *
- * The feature assembles only diagonal entries. It does not activate missing
- * DOFs; inactive DOFs are skipped through the global DOF id checks in the
- * implementation.
+ * The feature activates every component carrying non-zero mass, inertia or
+ * spring data and assembles the corresponding diagonal operator entries.
  */
 struct PointMass : Feature {
     using Ptr = std::shared_ptr<PointMass>; ///< Shared pointer alias for point-mass features.
@@ -35,6 +34,9 @@ struct PointMass : Feature {
     Vec3                   rotary_inertia_          = Vec3::Zero(); ///< Rotary inertia on rx, ry and rz.
     Vec3                   spring_constants_        = Vec3::Zero(); ///< Translational spring constants.
     Vec3                   rotary_spring_constants_ = Vec3::Zero(); ///< Rotational spring constants.
+
+    // DOF activation and diagonal operator assembly
+    void activate_dofs(SystemDofs& mask) const override;
 
     /**
      * @brief Adds translational and rotational spring constants to stiffness.

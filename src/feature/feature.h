@@ -22,8 +22,8 @@ namespace feature {
  * @struct Feature
  * @brief Abstract base interface for non-element matrix contributions.
  *
- * Implementations assemble directly into the global stiffness or mass triplet
- * list, but only for already active system DOFs.
+ * Implementations activate the generalized nodal components required by their
+ * data and assemble directly into the global stiffness or mass triplet list.
  */
 struct Feature {
     using Ptr = std::shared_ptr<Feature>; ///< Shared pointer alias for feature ownership.
@@ -32,6 +32,9 @@ struct Feature {
      * @brief Defaulted virtual destructor for polymorphic deletion.
      */
     virtual ~Feature() = default;
+
+    // Generalized nodal components required for feature assembly
+    virtual void activate_dofs(SystemDofs& mask) const = 0;
 
     /**
      * @brief Adds this feature's stiffness terms to a global triplet list.

@@ -30,6 +30,31 @@ void add_diagonal_triplet(int global_dof, Precision value, TripletList& triplets
 } // namespace
 
 /**
+ * Activates the generalized nodal components carrying point-mass data.
+ *
+ * Translational components are required by either the common scalar mass or
+ * their directional spring constant. Rotational components are required by
+ * their directional inertia or rotary spring constant. Components without any
+ * mass, inertia or stiffness remain inactive.
+ *
+ * @param mask Node-by-six model activity mask updated in place.
+ */
+void PointMass::activate_dofs(SystemDofs& mask) const {
+    if (!region_) {
+        return;
+    }
+
+    // Activate exactly the components receiving non-zero diagonal contributions
+    for (const ID node_id : *region_) {
+        for (Dim dof = 0; dof < 3; ++dof) {
+            mask(node_id, dof)     |= mass_ != Precision(0) || spring_constants_(dof) != Precision(0);
+            mask(node_id, dof + 3) |= rotary_inertia_(dof) != Precision(0)
+                                   || rotary_spring_constants_(dof) != Precision(0);
+        }
+    }
+}
+
+/**
  * @copydoc PointMass::assemble_stiffness
  */
 void PointMass::assemble_stiffness(const SystemDofIds& indices, TripletList& out) const {

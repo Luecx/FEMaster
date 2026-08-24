@@ -89,6 +89,12 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
     const Index element_count      = static_cast<Index>(_data->elements.size());
     const Index expected_rows      = static_cast<Index>((*_data->element_nodal_offsets)(element_count));
 
+    // Models consisting only of nodal features have no element-local normals
+    if (expected_rows == 0) {
+        _data->shell_element_nodal_normals = nullptr;
+        return;
+    }
+
     // Create the result field or validate a pre-existing field with prescribed data
     Field::Ptr normals = _data->shell_element_nodal_normals;
     if (normals == nullptr) {
@@ -211,7 +217,8 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
  * Enumerates every unconstrained generalized DOF required by the model.
  *
  * Element DOF masks activate the translational and rotational components used by
- * their formulations. Couplings may additionally require master-node DOFs, and
+ * their formulations. Non-element features activate components carrying mass,
+ * inertia or stiffness. Couplings may additionally require master-node DOFs, and
  * connectors activate their constrained components at both endpoint nodes. The
  * final boolean mask is converted to contiguous zero-based system indices;
  * inactive components receive negative identifiers.
@@ -237,6 +244,11 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
                 mask(node_id, dof) |= dofs(0, dof);
             }
         }
+    }
+
+    // Activate generalized components carrying non-element feature data
+    for (const auto& feature : _data->features) {
+        if (feature) feature->activate_dofs(mask);
     }
 
     // Add master-node components required to represent coupling kinematics
