@@ -15,10 +15,10 @@
  *
  * `TYPE=NODE` represents a node-based surface as a named `NodeRegion`. Its data
  * rows may reference individual nodes or existing node sets and therefore share
- * the same Model-level set population path used by assembly `NSET` definitions.
- * The optional Abaqus nodal-area value is parsed for syntax compatibility but is
- * currently not stored because `NodeRegion` carries identifiers rather than
- * per-node weighting data.
+ * the same Model-level set population path used by `NSET` definitions before
+ * and after compilation. The optional Abaqus nodal-area value is parsed for
+ * syntax compatibility but is currently not stored because `NodeRegion` carries
+ * identifiers rather than per-node weighting data.
  *
  * The shared keyword grammar accepts FEMaster `SFSET` and Abaqus `NAME` naming,
  * preserves the FEMaster explicit surface-ID row form, and supports optional
@@ -221,22 +221,7 @@ inline void register_surface(fem::io::dsl::Registry& registry,
                 .bind([&model, ctx](const std::string& target, Precision area) {
                     (void) area;
                     if (!ctx->node_destination) return;
-                    if (ctx->assembly) {
-                        model.add_nodes_to_set(ctx->name, target, ctx->instance);
-                        return;
-                    }
-
-                    const auto part = model._data->parts.get();
-                    logging::error(part != nullptr,
-                        "SURFACE: no active part is available");
-                    if (part->node_sets.has(target)) {
-                        const auto source = part->node_sets.get(target);
-                        logging::error(source != nullptr,
-                            "SURFACE: node set ", target, " is not initialized");
-                        if (source != ctx->node_destination) ctx->node_destination->add(*source);
-                    } else {
-                        ctx->node_destination->add(io::reader::parse_local_id(target, "SURFACE"));
-                    }
+                    model.add_nodes_to_set(ctx->name, target, ctx->instance);
                 })
             )
         );
