@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -115,11 +114,7 @@ inline void register_sfset(fem::io::dsl::Registry& registry,
                     if (!ctx->destination) return;
                     for (const std::string& target : targets) {
                         if (target == missing_token) continue;
-                        if (ctx->assembly) {
-                            model.add_surfaces_to_set(ctx->name, target, ctx->instance);
-                        } else {
-                            ctx->destination->add(io::reader::parse_local_id(target, "SFSET"));
-                        }
+                        model.add_surfaces_to_set(ctx->name, target, ctx->instance);
                     }
                 })
             )
