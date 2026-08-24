@@ -124,6 +124,28 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
         ctx->defined = true;
     };
 
+    // Apply one inclusive Abaqus-style DOF range to a child coupling mask. The
+    // first explicit range replaces the default "all six" selection.
+    const auto add_dof_range = [](Dofs& dofs,
+                                  bool& has_range,
+                                  Index first,
+                                  Index last,
+                                  const char* command) {
+        logging::error(first >= 1 && first <= 6,
+            command, ": first DOF must be between 1 and 6");
+        if (last < 0) last = first;
+        logging::error(last >= first && last <= 6,
+            command, ": last DOF must be between first DOF and 6");
+
+        if (!has_range) {
+            dofs = Dofs{false, false, false, false, false, false};
+            has_range = true;
+        }
+        for (Index dof = first; dof <= last; ++dof) {
+            dofs(dof - 1) = true;
+        }
+    };
+
     registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
         command.doc("Define a coupling reference node and slave surface or node set.");
@@ -216,7 +238,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
 
     // `KINEMATIC` is valid only as a child of a COUPLING without direct TYPE.
     // Multiple range lines can select non-contiguous DOFs; no lines means all six.
-    auto kinematic_dofs = std::make_shared<Dofs>();
+    auto kinematic_dofs      = std::make_shared<Dofs>();
     auto kinematic_has_range = std::make_shared<bool>(false);
 
     registry.command("KINEMATIC", [&](fem::io::dsl::Command& command) {
@@ -227,12 +249,11 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
             )
         }));
         command.doc("Select a kinematic coupling and optional inclusive DOF ranges.");
-        command.keyword(fem::io::dsl::KeywordSpec::make());
 
         command.on_enter([ctx, kinematic_dofs, kinematic_has_range](const fem::io::dsl::Keys&) {
             logging::error(!ctx->defined,
                 "KINEMATIC: coupling behavior is already defined");
-            *kinematic_dofs = Dofs{true, true, true, true, true, true};
+            *kinematic_dofs      = Dofs{true, true, true, true, true, true};
             *kinematic_has_range = false;
         });
 
@@ -247,20 +268,8 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                     .one<Index>().name("FIRST")
                     .one<Index>().name("LAST").on_missing(Index{-1}).on_empty(Index{-1})
                 )
-                .bind([kinematic_dofs, kinematic_has_range](Index first, Index last) {
-                    logging::error(first >= 1 && first <= 6,
-                        "KINEMATIC: first DOF must be between 1 and 6");
-                    if (last < 0) last = first;
-                    logging::error(last >= first && last <= 6,
-                        "KINEMATIC: last DOF must be between first DOF and 6");
-
-                    if (!*kinematic_has_range) {
-                        *kinematic_dofs = Dofs{false, false, false, false, false, false};
-                        *kinematic_has_range = true;
-                    }
-                    for (Index dof = first; dof <= last; ++dof) {
-                        (*kinematic_dofs)(dof - 1) = true;
-                    }
+                .bind([kinematic_dofs, kinematic_has_range, add_dof_range](Index first, Index last) {
+                    add_dof_range(*kinematic_dofs, *kinematic_has_range, first, last, "KINEMATIC");
                 })
             )
         );
@@ -269,7 +278,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
     // `DISTRIBUTING` deliberately maps to FEMaster STRUCTURAL behavior. The
     // Abaqus continuum/structural selector is syntax-compatible but does not
     // change the internal implementation.
-    auto distributing_dofs = std::make_shared<Dofs>();
+    auto distributing_dofs      = std::make_shared<Dofs>();
     auto distributing_has_range = std::make_shared<bool>(false);
 
     registry.command("DISTRIBUTING", [&](fem::io::dsl::Command& command) {
@@ -289,7 +298,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
         command.on_enter([ctx, distributing_dofs, distributing_has_range](const fem::io::dsl::Keys&) {
             logging::error(!ctx->defined,
                 "DISTRIBUTING: coupling behavior is already defined");
-            *distributing_dofs = Dofs{true, true, true, true, true, true};
+            *distributing_dofs      = Dofs{true, true, true, true, true, true};
             *distributing_has_range = false;
         });
 
@@ -304,20 +313,8 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                     .one<Index>().name("FIRST")
                     .one<Index>().name("LAST").on_missing(Index{-1}).on_empty(Index{-1})
                 )
-                .bind([distributing_dofs, distributing_has_range](Index first, Index last) {
-                    logging::error(first >= 1 && first <= 6,
-                        "DISTRIBUTING: first DOF must be between 1 and 6");
-                    if (last < 0) last = first;
-                    logging::error(last >= first && last <= 6,
-                        "DISTRIBUTING: last DOF must be between first DOF and 6");
-
-                    if (!*distributing_has_range) {
-                        *distributing_dofs = Dofs{false, false, false, false, false, false};
-                        *distributing_has_range = true;
-                    }
-                    for (Index dof = first; dof <= last; ++dof) {
-                        (*distributing_dofs)(dof - 1) = true;
-                    }
+                .bind([distributing_dofs, distributing_has_range, add_dof_range](Index first, Index last) {
+                    add_dof_range(*distributing_dofs, *distributing_has_range, first, last, "DISTRIBUTING");
                 })
             )
         );
