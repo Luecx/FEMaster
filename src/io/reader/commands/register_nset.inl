@@ -2,16 +2,25 @@
  * @file register_nset.inl
  * @brief Registers part-local and assembly-level node sets.
  *
- * `NSET` accepts explicit identifiers and generated arithmetic ranges. Before
- * compilation it stores sparse local node IDs in the active Part; during the
- * assembly pass it resolves optional Instance-qualified references through the
- * compiled local-to-global maps.
+ * `NSET` accepts explicit node or node-set references and generated arithmetic
+ * ranges. String references are delegated to `Model::add_nodes_to_set()` so the
+ * same set-composition semantics apply before and after compilation. Part-local
+ * definitions retain sparse node IDs in the active Part, whereas assembly-level
+ * references may use optional Instance qualification and are resolved through
+ * the compiled local-to-global node maps.
+ *
+ * `GENERATE` remains a numeric path because its arithmetic range already
+ * provides node identifiers directly and does not require string-reference
+ * interpretation.
  *
  * The resulting `NodeRegion` is registered under its deck name for supports,
  * loads, couplings and later assembly commands.
  *
+ * @see model::Model::add_nodes_to_set
+ * @see model::NodeRegion
+ *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
@@ -20,7 +29,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -35,6 +43,7 @@ inline void register_nset(fem::io::dsl::Registry& registry,
 
         struct Context {
             bool assembly = false;
+            std::string name;
             std::string instance;
             model::NodeRegion::Ptr destination = nullptr;
         };
@@ -48,6 +57,7 @@ inline void register_nset(fem::io::dsl::Registry& registry,
         );
         command.on_enter([&model, assembly_scope, ctx](const fem::io::dsl::Keys& keys) {
             ctx->assembly    = *assembly_scope;
+            ctx->name        = keys.raw("NSET");
             ctx->instance    = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
             ctx->destination = nullptr;
 
@@ -58,12 +68,12 @@ inline void register_nset(fem::io::dsl::Registry& registry,
                 if (!model._data->compiled) return;
                 logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
                     "NSET: instance ", ctx->instance, " is not defined");
-                ctx->destination = model._data->node_sets.activate(keys.raw("NSET"));
+                ctx->destination = model._data->node_sets.activate(ctx->name);
             } else if (!model._data->compiled) {
                 const auto part = model._data->parts.get();
                 logging::error(part != nullptr,
                     "NSET: no active part is available");
-                ctx->destination = part->node_sets.activate(keys.raw("NSET"));
+                ctx->destination = part->node_sets.activate(ctx->name);
             }
         });
 
@@ -114,19 +124,7 @@ inline void register_nset(fem::io::dsl::Registry& registry,
                     if (!ctx->destination) return;
                     for (const std::string& target : targets) {
                         if (target == missing_token) continue;
-                        if (ctx->assembly) {
-                            io::reader::add_compiled_reference(
-                                model._data->node_sets,
-                                ctx->destination,
-                                target,
-                                ctx->instance,
-                                [&model](const std::string& reference) {
-                                    return io::reader::compiled_node_id(model, reference);
-                                }
-                            );
-                        } else {
-                            ctx->destination->add(io::reader::parse_local_id(target, "NSET"));
-                        }
+                        model.add_nodes_to_set(ctx->name, target, ctx->instance);
                     }
                 })
             )

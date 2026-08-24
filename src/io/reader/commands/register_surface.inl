@@ -1,18 +1,35 @@
 /**
  * @file register_surface.inl
- * @brief Registers part-local and post-compile assembly surfaces.
+ * @brief Registers part-local and assembly-level node- and element-based surfaces.
  *
- * Surface rows associate a sparse surface identifier with an element and one
- * of its boundary sides. The command accepts numeric and conventional side
- * labels, creates the element-specific surface representation and stores it in
- * the active Part before compilation.
+ * The command provides the shared `SURFACE` grammar used by FEMaster and Abaqus
+ * input decks. Element-based rows associate an element or element set with one
+ * of its boundary sides, construct the corresponding element-specific surface
+ * or line representation and register the resulting identifiers under the
+ * requested surface name.
  *
- * Assembly-level definitions are replayed after compilation so Instance-qualified
- * element references can be translated to dense global IDs without duplicating
- * semantic topology.
+ * Before compilation, element-based definitions remain part-local and retain
+ * sparse semantic identifiers. Assembly-level definitions are replayed after
+ * compilation so Instance-qualified references can be resolved through the
+ * dense local-to-global maps without duplicating geometric topology.
+ *
+ * `TYPE=NODE` represents a node-based surface as a named `NodeRegion`. Its data
+ * rows may reference individual nodes or existing node sets and therefore share
+ * the same Model-level set population path used by `NSET` definitions before
+ * and after compilation. The optional Abaqus nodal-area value is parsed for
+ * syntax compatibility but is currently not stored because `NodeRegion` carries
+ * identifiers rather than per-node weighting data.
+ *
+ * The shared keyword grammar accepts FEMaster `SFSET` and Abaqus `NAME` naming,
+ * preserves the FEMaster explicit surface-ID row form, and supports optional
+ * assembly `INSTANCE` qualification for both input formats.
+ *
+ * @see model::NodeRegion
+ * @see model::SurfaceRegion
+ * @see model::LineRegion
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
@@ -39,19 +56,24 @@ inline void register_surface(fem::io::dsl::Registry& registry,
         struct Context {
             bool assembly = false;
             std::string name;
+            std::string type;
             std::string instance;
+            model::NodeRegion::Ptr node_destination = nullptr;
         };
         auto ctx = std::make_shared<Context>();
 
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
                 .key("SFSET").alternative("NAME").optional("SFALL")
+                .key("TYPE").optional("ELEMENT").allowed({"ELEMENT", "NODE"})
                 .key("INSTANCE").optional()
         );
         command.on_enter([&model, assembly_scope, ctx](const fem::io::dsl::Keys& keys) {
-            ctx->assembly = *assembly_scope;
-            ctx->name     = keys.raw("SFSET");
-            ctx->instance = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
+            ctx->assembly         = *assembly_scope;
+            ctx->name             = keys.raw("SFSET");
+            ctx->type             = keys.raw("TYPE");
+            ctx->instance         = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
+            ctx->node_destination = nullptr;
 
             logging::error(ctx->assembly || ctx->instance.empty(),
                 "SURFACE: INSTANCE is only valid at assembly level");
@@ -60,12 +82,22 @@ inline void register_surface(fem::io::dsl::Registry& registry,
                 if (!model._data->compiled) return;
                 logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
                     "SURFACE: instance ", ctx->instance, " is not defined");
-                model._data->surface_sets.activate(ctx->name)->sorted(true).duplicates(false);
-                model._data->line_sets.activate(ctx->name)->sorted(true).duplicates(false);
-            } else if (!model._data->compiled) {
-                const auto part = model._data->parts.get();
-                logging::error(part != nullptr,
-                    "SURFACE: no active part is available");
+                if (ctx->type == "NODE") {
+                    ctx->node_destination = model._data->node_sets.activate(ctx->name);
+                } else {
+                    model._data->surface_sets.activate(ctx->name)->sorted(true).duplicates(false);
+                    model._data->line_sets.activate(ctx->name)->sorted(true).duplicates(false);
+                }
+                return;
+            }
+
+            if (model._data->compiled) return;
+            const auto part = model._data->parts.get();
+            logging::error(part != nullptr,
+                "SURFACE: no active part is available");
+            if (ctx->type == "NODE") {
+                ctx->node_destination = part->node_sets.activate(ctx->name);
+            } else {
                 part->surface_sets.activate(ctx->name)->sorted(true).duplicates(false);
                 part->line_sets.activate(ctx->name)->sorted(true).duplicates(false);
             }
@@ -118,6 +150,7 @@ inline void register_surface(fem::io::dsl::Registry& registry,
 
         command.variant(fem::io::dsl::Variant::make()
             .rank(20)
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT"}))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
@@ -137,6 +170,7 @@ inline void register_surface(fem::io::dsl::Registry& registry,
 
         command.variant(fem::io::dsl::Variant::make()
             .rank(10)
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"ELEMENT"}))
             .segment(fem::io::dsl::Segment::make()
                 .range(fem::io::dsl::LineRange{}.min(1))
                 .pattern(fem::io::dsl::Pattern::make()
@@ -172,6 +206,22 @@ inline void register_surface(fem::io::dsl::Registry& registry,
                     } else {
                         model.set_surface(-1, io::reader::parse_local_id(target, "SURFACE"), side);
                     }
+                })
+            )
+        );
+
+        command.variant(fem::io::dsl::Variant::make()
+            .when(fem::io::dsl::Condition::key_equals("TYPE", {"NODE"}))
+            .segment(fem::io::dsl::Segment::make()
+                .range(fem::io::dsl::LineRange{}.min(1))
+                .pattern(fem::io::dsl::Pattern::make()
+                    .one<std::string>().name("TARGET")
+                    .one<Precision>().name("AREA").on_missing(Precision{1}).on_empty(Precision{1})
+                )
+                .bind([&model, ctx](const std::string& target, Precision area) {
+                    (void) area;
+                    if (!ctx->node_destination) return;
+                    model.add_nodes_to_set(ctx->name, target, ctx->instance);
                 })
             )
         );

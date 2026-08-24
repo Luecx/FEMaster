@@ -1,26 +1,29 @@
 /**
  * @file reference.h
- * @brief Resolves reader-facing instance-qualified entity references.
+ * @brief Resolves reader-facing instance-qualified entity identifiers.
  *
  * Input decks address semantic entities before and after model compilation with
  * the same compact notation. An unqualified integer refers to the implicit
  * default instance, while `INSTANCE.ID` addresses the corresponding local entity
- * of a named instance. Named set references may use the same optional instance
- * prefix and are resolved from the compiled `ModelData` registries.
+ * of a named instance. These helpers parse that scalar entity notation and map
+ * it through the compiled Model identifier maps where required.
  *
- * These helpers deliberately remain free functions. They do not introduce a
- * parallel reference-object hierarchy and keep compiled identifiers confined to
- * parser/model internals.
+ * Named set composition is intentionally not handled here. Adding node, element
+ * or surface references to named regions belongs to `Model::add_nodes_to_set()`,
+ * `Model::add_elements_to_set()` and `Model::add_surfaces_to_set()`, so parser
+ * formats share the same model-level set semantics without a generic reader-side
+ * container helper.
+ *
+ * @see model::Model
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
 
 #include "../../core/logging.h"
 #include "../../core/types_num.h"
-#include "../../data/sets.h"
 #include "../../model/model.h"
 
 #include <charconv>
@@ -80,29 +83,6 @@ inline ID compiled_surface_id(const model::Model& model, const std::string& targ
 inline ID compiled_line_id(const model::Model& model, const std::string& target) {
     const auto [instance, id] = split_entity_reference(target);
     return model.compiled_line_id(id, instance);
-}
-
-template<typename Region, typename Resolver>
-inline void add_compiled_reference(model::Sets<Region>& sets,
-                                   typename Region::Ptr destination,
-                                   const std::string& target,
-                                   const std::string& instance,
-                                   Resolver&& resolver) {
-    logging::error(destination != nullptr,
-        "Assembly set destination is not initialized");
-
-    const std::string qualified = qualify_reference(target, instance);
-    if (sets.has(qualified)) {
-        auto source = sets.get(qualified);
-        logging::error(source != nullptr,
-            "Assembly set reference ", qualified, " is not initialized");
-        if (source != destination) {
-            destination->add(*source);
-        }
-        return;
-    }
-
-    destination->add(resolver(qualified));
 }
 
 } // namespace fem::io::reader
