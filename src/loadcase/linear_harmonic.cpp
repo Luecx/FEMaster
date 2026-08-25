@@ -11,14 +11,15 @@
  *     [ A -B ] [u_r] = [f_r]
  *     [ B  A ] [u_i]   [f_i]
  *
- * with A = K - omega^2 M and B = omega C. The implementation assumes real
- * reference loads, hence f_i = 0, and Rayleigh damping C = alpha M + beta K.
- * Named load amplitudes are evaluated at the current sweep frequency so the same
- * scalar `Amplitude` representation can describe frequency-dependent forcing.
+ * with A = K - omega^2 M and B = omega C. The damping matrix combines direct
+ * diagonal point-ground damping with the existing Rayleigh contribution
+ * C_R = alpha M + beta K. Named load amplitudes are evaluated at the current
+ * sweep frequency so the same scalar `Amplitude` representation can describe
+ * frequency-dependent forcing.
  *
  * @see src/loadcase/linear_harmonic.h
  * @author Finn Eggers
- * @date 05.08.2026
+ * @date 25.08.2026
  */
 
 #include "linear_harmonic.h"
@@ -152,6 +153,10 @@ void LinearHarmonic::run() {
         [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
         "constructing mass matrix M");
 
+    auto C_point = Timer::measure(
+        [&]() { return model->build_point_damping_matrix(active_dof_idx_mat); },
+        "constructing point-ground damping matrix C_point");
+
     auto transformer = Timer::measure(
         [&]() {
             ConstraintTransformer::Options options;
@@ -178,8 +183,12 @@ void LinearHarmonic::run() {
         "assembling reduced mass matrix Mr");
 
     auto Cr = Timer::measure(
-        [&]() { return damping.build(Mr, Kr); },
-        "constructing reduced Rayleigh damping matrix Cr");
+        [&]() {
+            SparseMatrix result = transformer->reduce_secondary_matrix(C_point);
+            result += damping.build(Mr, Kr);
+            return result;
+        },
+        "constructing reduced damping matrix Cr");
 
     writer->add_loadcase(id, io::writer::WriterStepType::Dynamic);
 
