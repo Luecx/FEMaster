@@ -20,30 +20,24 @@ namespace fem {
  * Constructs a concentrated point-element property on an element region.
  *
  * The section is intentionally material-free. Negative values are rejected for
- * mass, inertia, stiffness and damping because each stored coefficient
- * contributes a diagonal physical operator entry.
+ * mass, inertia and stiffness because each stored coefficient contributes a
+ * diagonal physical operator entry.
  *
  * @param region Element region receiving the point property.
  * @param mass Isotropic translational point mass.
  * @param rotary_inertia Rotary inertia about rx, ry and rz.
  * @param spring_constants Translational ground stiffnesses.
  * @param rotary_spring_constants Rotational ground stiffnesses.
- * @param damping_constants Translational viscous damping against ground.
- * @param rotary_damping_constants Rotational viscous damping against ground.
  */
 PointMassSection::PointMassSection(model::ElementRegion::Ptr region,
                                    Precision                 mass,
                                    Vec3                      rotary_inertia,
                                    Vec3                      spring_constants,
-                                   Vec3                      rotary_spring_constants,
-                                   Vec3                      damping_constants,
-                                   Vec3                      rotary_damping_constants)
+                                   Vec3                      rotary_spring_constants)
     : mass_(mass),
       rotary_inertia_(std::move(rotary_inertia)),
       spring_constants_(std::move(spring_constants)),
-      rotary_spring_constants_(std::move(rotary_spring_constants)),
-      damping_constants_(std::move(damping_constants)),
-      rotary_damping_constants_(std::move(rotary_damping_constants)) {
+      rotary_spring_constants_(std::move(rotary_spring_constants)) {
     logging::error(region != nullptr,
         "PointMassSection: element region must not be null");
     logging::error(mass_ >= Precision(0),
@@ -54,10 +48,6 @@ PointMassSection::PointMassSection(model::ElementRegion::Ptr region,
         "PointMassSection: translational stiffness must be non-negative");
     logging::error((rotary_spring_constants_.array() >= Precision(0)).all(),
         "PointMassSection: rotational stiffness must be non-negative");
-    logging::error((damping_constants_.array() >= Precision(0)).all(),
-        "PointMassSection: translational damping must be non-negative");
-    logging::error((rotary_damping_constants_.array() >= Precision(0)).all(),
-        "PointMassSection: rotational damping must be non-negative");
 
     region_ = std::move(region);
 }
@@ -67,13 +57,11 @@ PointMassSection::PointMassSection(model::ElementRegion::Ptr region,
  */
 void PointMassSection::info() {
     logging::info(true, "PointMassSection:");
-    logging::info(true, "   Region            : ", (region_ ? region_->name : "-"));
-    logging::info(true, "   Mass              : ", mass_);
-    logging::info(true, "   Rotary inertia    : ", rotary_inertia_.transpose());
-    logging::info(true, "   Spring            : ", spring_constants_.transpose());
-    logging::info(true, "   Rotational spring : ", rotary_spring_constants_.transpose());
-    logging::info(true, "   Damping           : ", damping_constants_.transpose());
-    logging::info(true, "   Rotational damping: ", rotary_damping_constants_.transpose());
+    logging::info(true, "   Region           : ", (region_ ? region_->name : "-"));
+    logging::info(true, "   Mass             : ", mass_);
+    logging::info(true, "   Rotary inertia   : ", rotary_inertia_.transpose());
+    logging::info(true, "   Spring           : ", spring_constants_.transpose());
+    logging::info(true, "   Rotational spring: ", rotary_spring_constants_.transpose());
 }
 
 /**
@@ -90,9 +78,7 @@ std::string PointMassSection::str() const {
        << ", mass=" << mass_
        << ", inertia=[" << rotary_inertia_(0) << ", " << rotary_inertia_(1) << ", " << rotary_inertia_(2) << "]"
        << ", spring=[" << spring_constants_(0) << ", " << spring_constants_(1) << ", " << spring_constants_(2) << "]"
-       << ", rotspring=[" << rotary_spring_constants_(0) << ", " << rotary_spring_constants_(1) << ", " << rotary_spring_constants_(2) << "]"
-       << ", damping=[" << damping_constants_(0) << ", " << damping_constants_(1) << ", " << damping_constants_(2) << "]"
-       << ", rotdamping=[" << rotary_damping_constants_(0) << ", " << rotary_damping_constants_(1) << ", " << rotary_damping_constants_(2) << "]";
+       << ", rotspring=[" << rotary_spring_constants_(0) << ", " << rotary_spring_constants_(1) << ", " << rotary_spring_constants_(2) << "]";
 
     return os.str();
 }
