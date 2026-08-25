@@ -5,21 +5,25 @@
  * The routines operate on the dense assembly created by `Model::compile()`.
  * They bind sections to compiled elements, construct shared shell reference
  * normals, enumerate active generalized DOFs, assemble loads and constraint
- * equations, and combine element, contact and feature contributions into global
- * sparse operators and nodal internal-force fields.
+ * equations, and combine regular elements, post-compile point elements, contact
+ * and generic feature contributions into global sparse operators and nodal
+ * internal-force fields.
+ *
+ * FEMaster `POINTMASS` commands create auxiliary `PointElement` objects after
+ * compilation because they target compiled NSETs. Those point elements are kept
+ * outside dense ELSET and element-field enumeration, but participate in the same
+ * DOF, stiffness and mass operators as regular structural elements.
  *
  * Element-local matrix evaluation remains the responsibility of each structural
  * formulation. `mattools::assemble_matrix()` owns local-to-global DOF mapping,
- * sparse triplet accumulation and parallel reduction; this file supplies the
- * formulation-specific callbacks and adds model-level contributions that are not
- * represented by regular elements.
+ * sparse triplet accumulation and parallel reduction.
  *
  * @see Model
  * @see Model::compile
  * @see mattools::assemble_matrix
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #include "../mattools/assemble.h"
@@ -43,7 +47,8 @@ namespace model {
  * Section regions already contain dense assembly element identifiers. Each
  * represented non-null element receives the shared section pointer so later
  * stiffness, mass, constitutive and result-recovery operations can access the
- * assigned material and section properties.
+ * assigned material and section properties. Auxiliary point elements are bound
+ * directly when the post-compile POINTMASS command creates them.
  */
 void Model::assign_sections() {
     // Apply each compiled section to all non-null elements in its dense region
@@ -89,7 +94,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
     const Index element_count      = static_cast<Index>(_data->elements.size());
     const Index expected_rows      = static_cast<Index>((*_data->element_nodal_offsets)(element_count));
 
-    // Models consisting only of nodal features have no element-local normals
+    // Models without element-local rows do not require shell-normal storage
     if (expected_rows == 0) {
         _data->shell_element_nodal_normals = nullptr;
         return;
@@ -136,8 +141,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
 
         // Natural nodal coordinates must follow the shell connectivity ordering
         const DynamicMatrix natural_coords = surface->node_coords_natural();
-        logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes
-                    && static_cast<Index>(natural_coords.cols()) == 2,
+        logging::error(static_cast<Index>(natural_coords.rows()) == n_nodes && static_cast<Index>(natural_coords.cols()) == 2,
             "Model: natural surface node coordinates do not match shell element ",
             structural->elem_id);
 
@@ -216,24 +220,21 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
 /**
  * Enumerates every unconstrained generalized DOF required by the model.
  *
- * Element DOF masks activate the translational and rotational components used by
- * their formulations. Non-element features activate components carrying mass,
- * inertia or stiffness. Couplings may additionally require master-node DOFs, and
- * connectors activate their constrained components at both endpoint nodes. The
- * final boolean mask is converted to contiguous zero-based system indices;
- * inactive components receive negative identifiers.
+ * Dense elements and post-compile point elements activate the components used by
+ * their formulations. Generic non-element features, couplings and connectors may
+ * additionally activate generalized nodal directions. The final boolean mask is
+ * converted to contiguous zero-based system indices.
  *
  * @return Node-by-six matrix of global unconstrained system DOF identifiers.
  */
 SystemDofIds Model::build_unconstrained_index_matrix() {
-    // Validate the compiled nodal dimension and initialize an inactive DOF mask
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
     SystemDofs mask{_data->positions->rows, 6};
     mask.fill(false);
 
-    // Activate every generalized DOF used by compiled element formulations
+    // Activate generalized DOFs used by regular compiled elements
     for (auto& element : _data->elements) {
         if (element == nullptr) continue;
 
@@ -246,7 +247,20 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
         }
     }
 
-    // Activate generalized components carrying non-element feature data
+    // Native POINTMASS objects are point elements created after compilation.
+    for (auto& element : _data->point_elements) {
+        if (element == nullptr) continue;
+
+        const auto dofs = element->dofs();
+        for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
+            const ID node_id = element->nodes()[local_node];
+            for (ID dof = 0; dof < 6; ++dof) {
+                mask(node_id, dof) |= dofs(0, dof);
+            }
+        }
+    }
+
+    // Activate generalized components carrying other non-element feature data
     for (const auto& feature : _data->features) {
         if (feature) feature->activate_dofs(mask);
     }
@@ -272,7 +286,6 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
         }
     }
 
-    // Convert the boolean activity mask to contiguous global equation numbers
     return mattools::numerate_dofs(mask);
 }
 
@@ -289,17 +302,14 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
  * @return Six-component global nodal load field.
  */
 Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
-    // Allocate a zeroed generalized load row for every compiled node
     Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
     load_matrix.set_zero();
 
-    // Accumulate all requested collectors at the supplied physical time
     for (auto& key : load_sets) {
         auto data = _data->load_cols.get(key);
         data->apply(*_data, load_matrix, time);
     }
 
-    // Replace supported master loads by their statically equivalent slave loads
     for (auto& coupling : _data->couplings) {
         coupling.apply_loads(*_data, load_matrix);
     }
@@ -324,7 +334,6 @@ std::vector<std::pair<bc::Amplitude::Ptr, Field>>
 Model::build_load_basis(std::vector<std::string> load_sets) {
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> basis;
 
-    // Reuse one spatial field for every distinct shared amplitude definition
     auto field_for = [this, &basis](const bc::Amplitude::Ptr& amplitude) -> Field& {
         for (auto& entry : basis) {
             if (entry.first == amplitude) return entry.second;
@@ -336,7 +345,6 @@ Model::build_load_basis(std::vector<std::string> load_sets) {
         return basis.back().second;
     };
 
-    // Assemble nominal load magnitudes without applying their scalar histories
     for (auto& key : load_sets) {
         auto data = _data->load_cols.get(key);
         for (const auto& load : data->entries()) {
@@ -346,7 +354,6 @@ Model::build_load_basis(std::vector<std::string> load_sets) {
         }
     }
 
-    // Redistribute master-node loads independently in every amplitude basis
     for (auto& entry : basis) {
         for (auto& coupling : _data->couplings) {
             coupling.apply_loads(*_data, entry.second);
@@ -364,10 +371,6 @@ Model::build_load_basis(std::vector<std::string> load_sets) {
  * Connector, coupling, tie and rigid-body-mode objects generate their equations
  * in model order. Manually stored equations are copied into the fallback group.
  *
- * Every generated row receives source-kind and source-index metadata before it
- * is moved into `ConstraintGroups`. Contact is excluded because its unilateral
- * residual and tangent are assembled directly during nonlinear evaluation.
- *
  * @param system_dof_ids Active global DOF identifiers used by constraint builders.
  * @param supp_sets Optional names of support collectors to include.
  * @return Constraint equations grouped and annotated by their origin.
@@ -378,7 +381,6 @@ constraint::ConstraintGroups Model::collect_constraints(
 ) {
     constraint::ConstraintGroups groups{};
 
-    // Generate support equations from the aggregate or explicitly selected sets
     Index support_idx = 0;
     if (supp_sets.empty() && _data->supp_cols.has_all()) {
         if (auto all = _data->supp_cols.all()) {
@@ -404,7 +406,6 @@ constraint::ConstraintGroups Model::collect_constraints(
         }
     }
 
-    // Generate connector equations and retain their originating object indices
     Index connector_idx = 0;
     for (auto& connector : _data->connectors) {
         auto eqs = connector.get_equations(system_dof_ids, *_data);
@@ -416,7 +417,6 @@ constraint::ConstraintGroups Model::collect_constraints(
         ++connector_idx;
     }
 
-    // Generate kinematic or structural coupling equations
     Index coupling_idx = 0;
     for (auto& coupling : _data->couplings) {
         auto eqs = coupling.get_equations(system_dof_ids, *_data);
@@ -428,7 +428,6 @@ constraint::ConstraintGroups Model::collect_constraints(
         ++coupling_idx;
     }
 
-    // Generate line/surface tie equations from current compiled geometry
     Index tie_idx = 0;
     for (auto& tie : _data->ties) {
         auto eqs = tie.get_equations(system_dof_ids, *_data);
@@ -440,7 +439,6 @@ constraint::ConstraintGroups Model::collect_constraints(
         ++tie_idx;
     }
 
-    // Generate rigid-body-mode suppression equations
     Index rbm_idx = 0;
     for (auto& rbm : _data->rbms) {
         auto eqs = rbm.get_equations(system_dof_ids, *_data);
@@ -452,7 +450,6 @@ constraint::ConstraintGroups Model::collect_constraints(
         ++rbm_idx;
     }
 
-    // Preserve explicit equations as manual or otherwise categorized rows
     if (!_data->equations.empty()) {
         Index manual_idx = 0;
         for (auto eq : _data->equations) {
@@ -470,24 +467,19 @@ constraint::ConstraintGroups Model::collect_constraints(
 /**
  * Assembles the linear global structural stiffness matrix.
  *
- * Every structural element contributes its formulation-specific local stiffness
- * through the common sparse assembly pipeline. An optional scalar
- * `ELEMENT`-domain field scales each local matrix before global insertion.
- * Non-element features append their stiffness triplets afterwards.
- *
- * Unilateral contact is intentionally rejected because its active set, residual
- * and tangent depend on the current nonlinear configuration.
+ * Regular compiled elements and post-compile native point elements both use the
+ * common sparse element assembly path. The optional ELEMENT-domain stiffness
+ * scale applies only to dense compiled elements because auxiliary point elements
+ * have no element-domain row.
  *
  * @param indices Active global DOF identifiers used for local-to-global mapping.
  * @param stiffness_scalar Optional one-component element stiffness scale.
  * @return Assembled sparse linear stiffness matrix.
  */
 SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* stiffness_scalar) {
-    // Reject configuration-dependent contact from the linear assembly path
     logging::error(_data->contacts.empty(),
         "CONTACT requires NONLINEARSTATIC; linear stiffness assembly cannot include contact");
 
-    // Define the structural element callback and optional element-wise scaling
     auto lambda = [&](const ElementPtr& element, Precision* storage) {
         if (auto structural = element->as<StructuralElement>()) {
             MapMatrix stiffness = structural->stiffness(storage);
@@ -505,10 +497,19 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
         return matrix;
     };
 
-    // Assemble all element-local matrices over the active global DOFs
     SparseMatrix matrix = mattools::assemble_matrix(_data->elements, indices, lambda);
 
-    // Append stiffness contributions represented by non-element features
+    if (!_data->point_elements.empty()) {
+        auto point_lambda = [](const ElementPtr& element, Precision* storage) {
+            if (auto structural = element->as<StructuralElement>()) {
+                return structural->stiffness(storage);
+            }
+            MapMatrix matrix{storage, 0, 0};
+            return matrix;
+        };
+        matrix += mattools::assemble_matrix(_data->point_elements, indices, point_lambda);
+    }
+
     if (!_data->features.empty()) {
         TripletList triplets;
         for (const auto& feature : _data->features) {
@@ -523,16 +524,10 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
 /**
  * Assembles the nonlinear tangent and matching nodal internal-force vector.
  *
- * Structural elements evaluate their consistent tangent in the current
- * displacement configuration while accumulating generalized internal forces in
- * the supplied nodal field. A temporary integration-point stress-state field
- * provides shared scratch storage required by the element interfaces. Optional
- * element stiffness scaling applies to the structural tangent matrices.
- *
- * Contact contributes its current dual-mortar residual directly to
- * `nodal_forces` and supplies frozen-geometry tangent triplets. Non-element
- * features append their stiffness contributions after contact assembly. The
- * completed force field is checked for finite values.
+ * Dense structural elements evaluate their consistent tangent in the current
+ * displacement configuration. Native POINTMASS elements have linear ground
+ * stiffness, so their tangent is assembled directly and their matching internal
+ * force is added from the same PointElement implementation.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param nodal_forces Six-component nodal field receiving internal and contact
@@ -547,7 +542,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     const Field&  displacement,
     const Field*  stiffness_scalar
 ) {
-    // Validate the nodal force output field before parallel accumulation
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "tangent internal force output must use NODE domain");
     logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
@@ -555,13 +549,11 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     logging::error(nodal_forces.components >= 6,
         "tangent internal force output requires at least 6 components");
 
-    // Allocate zeroed integration-point scratch storage for element evaluation
     Field ip_stress_state{
         "IP_STRESS_STATE", FieldDomain::ELEMENT_IP,
         _data->field_rows(FieldDomain::ELEMENT_IP), 8};
     ip_stress_state.set_zero();
 
-    // Define the structural tangent/internal-force callback used by sparse assembly
     auto lambda = [&](const ElementPtr& element,
                       Precision*        local_matrix_storage,
                       NodeData&         local_nodal_forces) -> MapMatrix {
@@ -589,7 +581,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         return tangent;
     };
 
-    // Assemble structural tangents and nodal forces with the common parallel path
     SparseMatrix global_matrix = mattools::assemble_matrix(
         _data->elements,
         indices,
@@ -597,7 +588,24 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         &nodal_forces
     );
 
-    // Assemble configuration-dependent contact residuals and tangent triplets
+    if (!_data->point_elements.empty()) {
+        auto point_lambda = [](const ElementPtr& element, Precision* storage) {
+            if (auto structural = element->as<StructuralElement>()) {
+                return structural->stiffness(storage);
+            }
+            MapMatrix matrix{storage, 0, 0};
+            return matrix;
+        };
+        global_matrix += mattools::assemble_matrix(_data->point_elements, indices, point_lambda);
+
+        for (const auto& element : _data->point_elements) {
+            if (!element) continue;
+            auto* structural = element->as<StructuralElement>();
+            if (!structural) continue;
+            structural->internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
+        }
+    }
+
     TripletList contact_triplets;
     for (const auto& contact : _data->contacts) {
         contact.assemble(indices, *_data, nodal_forces, contact_triplets);
@@ -609,7 +617,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         global_matrix += contact_matrix;
     }
 
-    // Append stiffness contributions represented by non-element features
     if (!_data->features.empty()) {
         TripletList feature_triplets;
         for (const auto& feature : _data->features) {
@@ -620,20 +627,16 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
         }
     }
 
-    // Reject invalid structural or contact force contributions
     nodal_forces.check_finite("Internal force");
-
     return global_matrix;
 }
 
 /**
  * Evaluates nonlinear internal and contact forces without retaining a tangent.
  *
- * The output field is reset before structural elements accumulate their current
- * generalized internal forces. Contact then evaluates the same residual path as
- * tangent assembly, but its generated tangent triplets are deliberately
- * discarded. This supports residual-only evaluations used by nonlinear control
- * and line-search algorithms.
+ * Both regular structural elements and auxiliary point elements contribute their
+ * current internal forces. Contact then evaluates the same residual path as
+ * tangent assembly while discarding its tangent triplets.
  *
  * @param indices Active global DOF identifiers required by contact assembly.
  * @param nodal_forces Six-component nodal field overwritten with the resulting
@@ -645,7 +648,6 @@ void Model::build_internal_force_nonlinear(
     NodeData&     nodal_forces,
     const Field&  displacement
 ) {
-    // Validate the nodal force output field
     logging::error(nodal_forces.domain == FieldDomain::NODE,
         "nonlinear internal force output must use NODE domain");
     logging::error(nodal_forces.rows == _data->field_rows(FieldDomain::NODE),
@@ -653,47 +655,39 @@ void Model::build_internal_force_nonlinear(
     logging::error(nodal_forces.components >= 6,
         "nonlinear internal force output requires at least 6 components");
 
-    // Initialize element scratch state and clear all previous force contributions
     Field ip_stress_state{
         "IP_STRESS_STATE", FieldDomain::ELEMENT_IP,
         _data->field_rows(FieldDomain::ELEMENT_IP), 8};
     ip_stress_state.set_zero();
     nodal_forces.set_zero();
 
-    // Accumulate nonlinear internal forces from every structural element
     for (const auto& element : _data->elements) {
         if (!element) continue;
-
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-
-        structural->internal_force_nonlinear(
-            ip_stress_state,
-            nodal_forces,
-            displacement
-        );
+        structural->internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
     }
 
-    // Evaluate contact residuals while intentionally discarding tangent entries
+    for (const auto& element : _data->point_elements) {
+        if (!element) continue;
+        auto* structural = element->as<StructuralElement>();
+        if (!structural) continue;
+        structural->internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
+    }
+
     TripletList discarded_contact_triplets;
     for (const auto& contact : _data->contacts) {
         contact.assemble(indices, *_data, nodal_forces, discarded_contact_triplets);
     }
 
-    // Reject invalid structural or contact force contributions
     nodal_forces.check_finite("Internal force");
 }
 
 /**
  * Assembles the global geometric stiffness matrix from integration-point stress.
  *
- * The compiled element-IP offset field identifies the first stress row belonging
- * to each structural element. Formulations use that stress state to compute
- * their local initial-stress/geometric matrix. An optional scalar
- * `ELEMENT`-domain field scales each local contribution before sparse assembly.
- *
- * Contact and non-element features do not contribute to this dedicated
- * geometric operator.
+ * Only dense compiled elements participate. Auxiliary point elements have no
+ * integration points and therefore no geometric stiffness.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param ip_stress Integration-point stress field driving geometric stiffness.
@@ -705,13 +699,11 @@ SparseMatrix Model::build_geom_stiffness_matrix(
     const Field&  ip_stress,
     const Field*  stiffness_scalar
 ) {
-    // Validate and access the compiled integration-point enumeration
     logging::error(_data->element_ip_offsets != nullptr,
         "element IP offset field has not been initialized");
 
     const Field& ip_enum = *_data->element_ip_offsets;
 
-    // Define element-local geometric stiffness and optional scaling
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
             const ID element_id = structural->elem_id;
@@ -736,23 +728,21 @@ SparseMatrix Model::build_geom_stiffness_matrix(
         return matrix;
     };
 
-    // Assemble all element-local geometric matrices over active global DOFs
     return mattools::assemble_matrix(_data->elements, indices, lambda);
 }
 
 /**
  * Assembles the global lumped mass matrix.
  *
- * Structural elements provide their local lumped translational and rotational
- * mass matrices through the common sparse assembly path. Non-element features,
- * including concentrated point masses and rotary inertias, append additional
- * diagonal mass triplets afterwards.
+ * Regular structural elements and post-compile native point elements both
+ * provide local translational/rotational mass matrices through the common sparse
+ * assembly path. Other generic features may still append independent mass
+ * triplets afterwards.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @return Assembled sparse lumped mass matrix.
  */
 SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
-    // Define the structural element mass callback
     auto lambda = [&](const ElementPtr& element, Precision* storage) {
         if (auto structural = element->as<StructuralElement>()) {
             return structural->mass(storage);
@@ -762,10 +752,12 @@ SparseMatrix Model::build_lumped_mass_matrix(SystemDofIds& indices) {
         return matrix;
     };
 
-    // Assemble all structural element mass contributions
     SparseMatrix matrix = mattools::assemble_matrix(_data->elements, indices, lambda);
 
-    // Append concentrated mass contributions represented by model features
+    if (!_data->point_elements.empty()) {
+        matrix += mattools::assemble_matrix(_data->point_elements, indices, lambda);
+    }
+
     if (!_data->features.empty()) {
         TripletList triplets;
         for (const auto& feature : _data->features) {

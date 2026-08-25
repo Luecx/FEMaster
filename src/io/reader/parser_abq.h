@@ -8,17 +8,18 @@
  * common `Model::compile()` boundary creates dense solver data before assembly
  * sets/surfaces, transforms and analysis commands execute.
  *
- * The reader accepts at most one analysis `*STEP`, so no mechanical or
- * load-definition history is stored between steps. Parser-local state is limited
- * to nodal `*TRANSFORM` assignments and controls required while translating that
- * step to a FEMaster load case.
+ * Parser-local state is limited to nodal `*TRANSFORM` assignments and controls
+ * required while translating one supported analysis step. Abaqus `MASS`
+ * properties are ordinary section assignments and therefore require no
+ * parser-local deferred state or feature helper.
  *
  * @see Parser
  * @see commands_abq::register_transform
+ * @see commands_abq::register_mass
  * @see commands_abq::register_step
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once

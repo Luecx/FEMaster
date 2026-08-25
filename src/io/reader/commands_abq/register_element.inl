@@ -7,12 +7,18 @@
  * semantic Part. Dedicated mappings handle topology differences where an Abaqus
  * label requires adaptation to a supported FEMaster element.
  *
+ * Abaqus `MASS` is represented by the one-node zero-dimensional `PointElement`.
+ * The point element preserves element identity, ELSET membership and instance
+ * expansion but contributes no matrices or active DOFs itself. A later `*MASS`
+ * property reads its node connectivity and creates a separate nodal
+ * `feature::PointMass`.
+ *
  * Sparse part-local identifiers are retained during parsing. Instance expansion,
  * coordinate placement and dense assembly enumeration remain deferred to
  * `Model::compile()`.
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 24.08.2026
  */
 
 #pragma once
@@ -22,6 +28,7 @@
 #include <utility>
 
 #include "../../../model/beam/b33.h"
+#include "../../../model/element/point.h"
 #include "../../../model/model.h"
 #include "../../../model/shell/frt_shell_s3.h"
 #include "../../../model/shell/frt_shell_s4.h"
@@ -64,7 +71,7 @@ inline void register_element(fem::io::dsl::Registry& registry,
                 .key("ELSET").optional("EALL")
                 .key("TYPE").required().allowed({
                     "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                    "B33", "T3D2", "S3", "S3R", "S4", "S4R", "S6", "S6R", "S8", "S8R"
+                    "B33", "T3D2", "S3", "S3R", "S4", "S4R", "S6", "S6R", "S8", "S8R", "MASS"
                 })
         );
         command.on_enter([&model, assembly_scope](const fem::io::dsl::Keys& keys) {
@@ -111,6 +118,7 @@ inline void register_element(fem::io::dsl::Registry& registry,
         FEM_ABQ_ELEMENT("S6R", FRTShellS6, 6);
         FEM_ABQ_ELEMENT("S8", FRTShellS8, 8);
         FEM_ABQ_ELEMENT("S8R", FRTShellS8, 8);
+        FEM_ABQ_ELEMENT("MASS", PointElement, 1);
 
 #undef FEM_ABQ_ELEMENT
 

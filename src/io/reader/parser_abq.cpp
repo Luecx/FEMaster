@@ -4,8 +4,9 @@
  *
  * Abaqus decks are replayed in four semantic passes. Definitions are loaded
  * first, followed by part/instance topology. `Model::compile()` then flattens
- * that topology exactly once. Assembly sets, surfaces and nodal transforms are
- * materialized against the compiled assembly before the final step/load pass.
+ * that topology and its part-local section assignments exactly once. Assembly
+ * sets, surfaces, sections and nodal transforms are materialized against the
+ * compiled assembly before the final step/load pass.
  *
  * Each pass registers the same command grammar but activates only commands whose
  * dependencies are satisfied at that point. All other keywords are consumed so
@@ -13,7 +14,7 @@
  * early.
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #include "parser_abq.h"
@@ -41,6 +42,7 @@
 #include "commands_abq/register_equation.inl"
 #include "commands_abq/register_expansion.inl"
 #include "commands_abq/register_instance.inl"
+#include "commands_abq/register_mass.inl"
 #include "commands_abq/register_orientation.inl"
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
@@ -123,6 +125,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry,
     commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
+    commands_abq::register_mass(registry, model());
     commands_abq::register_equation(registry, *this);
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
@@ -148,9 +151,9 @@ void ParserAbq::configure_definition_pass(io::dsl::Registry& registry) {
 }
 
 void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
-    // The topology pass builds semantic parts and instances only. Assembly-level
-    // sets/surfaces may be syntactically encountered here, but their callbacks
-    // defer compiled materialization to the post-compile pass.
+    // Build semantic parts, instances and part-local section assignments. MASS
+    // variants select ROOT/PART scope declaratively and assembly records are only
+    // consumed until the compiled assembly pass.
     m_abq_state = ParserAbqState{};
     auto assembly_scope = std::make_shared<bool>(false);
     commands::register_node(registry, model(), assembly_scope);
@@ -160,16 +163,16 @@ void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
         "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
-        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "AMPLITUDE", "SOLIDSECTION", "SHELLSECTION"
+        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "MASS", "AMPLITUDE", "SOLIDSECTION", "SHELLSECTION"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }
 }
 
 void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
-    // This pass runs after Model::compile(). Assembly-level regions are now
-    // resolvable in dense global ids and *TRANSFORM can bind its coordinate
-    // system directly to the compiled nodes of the target NSET.
+    // Part-local sections were already expanded by Model::compile(). This pass
+    // materializes assembly-local regions, MASS sections and nodal transforms
+    // directly in dense identifier space.
     auto assembly_scope = std::make_shared<bool>(false);
     commands::register_node(registry, model(), assembly_scope);
     commands_abq::register_element(registry, model(), assembly_scope);
@@ -177,7 +180,7 @@ void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
-        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "TRANSFORM"
+        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "MASS", "TRANSFORM"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }

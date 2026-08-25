@@ -10,9 +10,9 @@
  *
  * The data root also owns shared material/profile definitions, compiled section
  * assignments, global field registration and prefix-sum enumerations for
- * element-nodal, integration-point and material-point storage. Public model
- * operations coordinate transitions and validation; `ModelData` provides the
- * common storage and domain-level utilities.
+ * element-nodal, integration-point and material-point storage. FEMaster-native
+ * `POINTMASS` definitions are created only after compilation and are therefore
+ * kept as auxiliary point elements outside the frozen dense topology.
  *
  * @see Model
  * @see Part
@@ -20,7 +20,7 @@
  * @see Field
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once
@@ -73,6 +73,12 @@ struct Instance;
  * `ELEMENT_MP` domains. Each offset field has one terminal entry so the span of
  * element `e` is `[offset[e], offset[e + 1])`.
  *
+ * `point_elements` are different only in ownership: they are synthesized from
+ * FEMaster `POINTMASS, NSET=...` commands after the dense topology has already
+ * been compiled. They participate in DOF, stiffness, mass and inertia assembly,
+ * but do not alter dense element ids, ELSETs or element-domain fields. Generic
+ * non-point features remain supported independently.
+ *
  * Named fields are owned through shared pointers in `fields`. Dedicated handles
  * expose fields with central solver meaning, such as current/reference nodal
  * positions, material history and shell reference normals. A dedicated handle
@@ -102,8 +108,12 @@ struct ModelData {
     std::vector<SurfacePtr> surfaces;
     std::vector<LinePtr>    lines;
 
+    // Auxiliary point elements created from post-compile FEMaster POINTMASS
+    // commands. They reference compiled node ids but deliberately stay outside
+    // the frozen dense element namespace and its element-domain enumerations.
+    std::vector<ElementPtr> point_elements;
+
     // Assembly section assignments and shared non-topological definitions.
-    // Features contribute matrices or loads outside regular element topology.
     std::vector<Section::Ptr>          sections;
     Dict<Profile>                      profiles;
     std::vector<feature::Feature::Ptr> features;

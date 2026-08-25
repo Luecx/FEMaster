@@ -1,12 +1,12 @@
 /**
  * @file part.h
- * @brief Defines reusable finite-element part topology before model compilation.
+ * @brief Defines reusable finite-element part data before model compilation.
  *
- * A `Part` owns the local topology and named regions that may be instantiated
- * multiple times in one `Model`. Node and element identifiers are local to the
- * part and therefore need not form dense ranges. Surfaces and lines retain the
- * same local node connectivity, while section assignments reference the local
- * element regions on which they were defined.
+ * A `Part` owns local topology, named regions and section assignments that may
+ * be instantiated multiple times in one `Model`. Node and element identifiers
+ * are local to the part and therefore need not form dense ranges. Surfaces and
+ * lines retain the same local node connectivity, while sections reference local
+ * element regions.
  *
  * `Instance` adds only placement information and never duplicates the part
  * definition. `Model::compile()` expands every instance into the dense,
@@ -17,7 +17,7 @@
  * @see ModelData
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once
@@ -38,17 +38,16 @@
 namespace fem::model {
 
 /**
- * @brief Reusable local finite-element topology referenced by model instances.
+ * @brief Reusable local finite-element definition referenced by model instances.
  *
  * A part stores nodes, elements, geometric boundary entities, named regions and
  * section assignments in its own identifier space. These identifiers remain
  * stable while the model is being constructed and may be sparse or otherwise
  * unrelated to the dense solver indices generated later.
  *
- * Section objects stored by the part reference local element regions. During
- * compilation each instance receives an independent section assignment with a
- * corresponding compiled region, while material, profile and coordinate-system
- * resources remain shared.
+ * Sections stored by the part reference local element regions. During
+ * compilation each instance receives independent compiled assignments with the
+ * affected element identifiers remapped into assembly space.
  *
  * The class intentionally contains no compilation or solver logic. Expansion,
  * coordinate transformation and dense enumeration are responsibilities of
@@ -79,14 +78,13 @@ struct Part : public Namable {
     Sets<LineRegion>    line_sets   {SET_LINE_ALL};
 
     // Section assignments defined on local element regions. Every instance
-    // receives an independent compiled section whose region and orientation are
-    // transformed into assembly space while shared material and profile
-    // definitions remain referenced.
+    // receives an independent compiled section whose region and any spatial
+    // properties are transformed or remapped into assembly space.
     std::vector<Section::Ptr> sections;
 
-    // Construction of an empty named part. Topology, regions and section
-    // assignments are populated by the parser or the public model interface
-    // before the one-way model compilation pass.
+    // Construction of an empty named part. Topology, regions and sections are
+    // populated by the parser or public model interface before the one-way model
+    // compilation pass.
     explicit Part(std::string name)
         : Namable(std::move(name)) {}
 };
