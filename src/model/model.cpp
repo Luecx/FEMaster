@@ -5,8 +5,7 @@
  * This file contains the small behavioral operations that act directly on
  * `ModelData`: named node, element and surface set population from string
  * references, nonlinear step-cache coordination, registration of loads,
- * supports and amplitudes, construction of point-mass features and the compact
- * stream representation of a model.
+ * supports and amplitudes, and the compact stream representation of a model.
  *
  * Named set population remains independent of the parser format. Before
  * compilation references address the active Part and retain sparse local IDs;
@@ -23,14 +22,13 @@
  * @see Instance
  *
  * @author Finn Eggers
- * @date 24.08.2026
+ * @date 25.08.2026
  */
 
 #include "model.h"
 
 #include "../bc/load_collector.h"
 #include "../bc/support_collector.h"
-#include "../feature/point_mass.h"
 
 #include <charconv>
 #include <iterator>
@@ -422,42 +420,6 @@ void Model::add_support(bc::Support support) {
 
     // Transfer the support into the selected collector
     _data->supp_cols.get()->add(std::move(support));
-}
-
-/**
- * Adds a concentrated mass, inertia and spring contribution to a node region.
- *
- * The target node set must already exist in compiled assembly space. A
- * `PointMass` feature stores the resolved region together with translational
- * mass, rotary inertia and the translational and rotational spring coefficients.
- * Later stiffness and mass assembly operations evaluate the registered feature
- * on the active global DOFs.
- *
- * @param nset Name of the compiled target node region.
- * @param mass Concentrated translational mass.
- * @param rotary_inertia Rotary inertia about the three global axes.
- * @param spring Translational spring coefficients along the global axes.
- * @param rotary_spring Rotational spring coefficients about the global axes.
- */
-void Model::add_point_mass_feature(const std::string& nset,
-                                   Precision mass,
-                                   Vec3 rotary_inertia,
-                                   Vec3 spring,
-                                   Vec3 rotary_spring) {
-    // Validate the compiled assembly and resolve the target node region
-    logging::error(_data != nullptr && _data->compiled,
-        "Model: point-mass features require a compiled model");
-    logging::error(_data->node_sets.has(nset),
-        "Node set ", nset, " is not a defined node set");
-
-    // Construct the non-element contribution and retain it for global assembly
-    auto feature = std::make_shared<feature::PointMass>();
-    feature->region_                  = _data->node_sets.get(nset);
-    feature->mass_                    = mass;
-    feature->rotary_inertia_          = rotary_inertia;
-    feature->spring_constants_        = spring;
-    feature->rotary_spring_constants_ = rotary_spring;
-    _data->features.push_back(std::move(feature));
 }
 
 /**
