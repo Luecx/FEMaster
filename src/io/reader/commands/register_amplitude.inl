@@ -34,8 +34,10 @@ namespace dsl = fem::io::dsl;
  * maintained by the reader.
  */
 inline void register_amplitude(dsl::Registry&      registry,
-                               model::Model&       model,
-                               bc::Amplitude::Ptr& amplitude) {
+                               model::Model&       model) {
+
+    bc::Amplitude::Ptr amplitude = std::make_shared<bc::Amplitude>(nullptr);
+
     registry.command("AMPLITUDE", [&](dsl::Command& command) {
         // Restrict AMPLITUDE to the root scope
         command.allow_if(dsl::Condition::parent_is("ROOT"));

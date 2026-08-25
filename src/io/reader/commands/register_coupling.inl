@@ -132,7 +132,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                                   const char* command) {
         logging::error(first >= 1 && first <= 6,
             command, ": first DOF must be between 1 and 6");
-        if (last < 0) last = first;
+        if (last >= static_cast<Index>(-1)) last = first;
         logging::error(last >= first && last <= 6,
             command, ": last DOF must be between first DOF and 6");
 
@@ -265,7 +265,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<Index>().name("FIRST")
-                    .one<Index>().name("LAST").on_missing(Index{-1}).on_empty(Index{-1})
+                    .one<Index>().name("LAST").on_missing(static_cast<Index>(-1)).on_empty(static_cast<Index>(-1))
                 )
                 .bind([kinematic_dofs, kinematic_has_range, add_dof_range](Index first, Index last) {
                     add_dof_range(*kinematic_dofs, *kinematic_has_range, first, last, "KINEMATIC");
@@ -310,7 +310,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                 .range(fem::io::dsl::LineRange{}.min(0))
                 .pattern(fem::io::dsl::Pattern::make()
                     .one<Index>().name("FIRST")
-                    .one<Index>().name("LAST").on_missing(Index{-1}).on_empty(Index{-1})
+                    .one<Index>().name("LAST").on_missing(static_cast<Index>(-1)).on_empty(static_cast<Index>(-1))
                 )
                 .bind([distributing_dofs, distributing_has_range, add_dof_range](Index first, Index last) {
                     add_dof_range(*distributing_dofs, *distributing_has_range, first, last, "DISTRIBUTING");
