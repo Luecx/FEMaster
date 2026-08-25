@@ -8,6 +8,10 @@
  * assembling those coefficients directly keeps the broader element hierarchy
  * free of a damping callback that most formulations do not need.
  *
+ * Both regular compiled PointElements (for example Abaqus MASS topology) and
+ * auxiliary post-compile PointElements created by native `POINTMASS, NSET=...`
+ * contribute through the same section coefficients.
+ *
  * @see PointElement
  * @see PointMassSection
  * @see Model::build_point_damping_matrix
@@ -23,7 +27,7 @@
 namespace fem::model {
 
 /**
- * Assembles the global viscous damping matrix of all compiled point elements.
+ * Assembles the global viscous damping matrix of all point elements.
  *
  * Each `PointElement` contributes the six diagonal coefficients stored in its
  * `PointMassSection`. Inactive generalized DOFs have negative global indices and
@@ -39,31 +43,36 @@ SparseMatrix Model::build_point_damping_matrix(SystemDofIds& indices) {
     TripletList triplets;
 
     // One point element contributes at most six diagonal entries.
-    triplets.reserve(_data->elements.size() * 6);
+    triplets.reserve((_data->elements.size() + _data->point_elements.size()) * 6);
 
-    for (const auto& element : _data->elements) {
-        if (!element) continue;
+    auto append = [&](const std::vector<ElementPtr>& elements) {
+        for (const auto& element : elements) {
+            if (!element) continue;
 
-        const auto* point = element->as<PointElement>();
-        if (!point || !point->_section) continue;
+            const auto* point = element->as<PointElement>();
+            if (!point || !point->_section) continue;
 
-        const auto* section = point->_section->as<PointMassSection>();
-        logging::error(section != nullptr,
-            "Model: point element ", point->elem_id, " has a non-point-mass section");
+            const auto* section = point->_section->as<PointMassSection>();
+            logging::error(section != nullptr,
+                "Model: point element ", point->elem_id, " has a non-point-mass section");
 
-        const ID node = point->nodes()[0];
-        for (Index dof = 0; dof < 3; ++dof) {
-            const Index translation = indices(node, dof);
-            const Index rotation    = indices(node, dof + 3);
+            const ID node = point->nodes()[0];
+            for (Index dof = 0; dof < 3; ++dof) {
+                const Index translation = indices(node, dof);
+                const Index rotation    = indices(node, dof + 3);
 
-            if (translation >= 0 && section->damping_constants_(dof) != Precision(0)) {
-                triplets.emplace_back(translation, translation, section->damping_constants_(dof));
-            }
-            if (rotation >= 0 && section->rotary_damping_constants_(dof) != Precision(0)) {
-                triplets.emplace_back(rotation, rotation, section->rotary_damping_constants_(dof));
+                if (translation >= 0 && section->damping_constants_(dof) != Precision(0)) {
+                    triplets.emplace_back(translation, translation, section->damping_constants_(dof));
+                }
+                if (rotation >= 0 && section->rotary_damping_constants_(dof) != Precision(0)) {
+                    triplets.emplace_back(rotation, rotation, section->rotary_damping_constants_(dof));
+                }
             }
         }
-    }
+    };
+
+    append(_data->elements);
+    append(_data->point_elements);
 
     SparseMatrix damping(global_size, global_size);
     damping.setFromTriplets(triplets.begin(), triplets.end());
