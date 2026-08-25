@@ -23,7 +23,7 @@
  * @see Part
  * @see Instance
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once
@@ -148,16 +148,6 @@ struct Model {
     void add_amplitude(bc::Amplitude::Ptr amplitude);
     void add_support  (bc::Support support);
 
-    // Non-element mass and spring contribution acting on a compiled node region.
-    // The generated PointMass feature contributes translational mass, rotary
-    // inertia and optional translational/rotational stiffness during later global
-    // operator assembly.
-    void add_point_mass_feature(const std::string& nset,
-                                Precision mass,
-                                Vec3 rotary_inertia,
-                                Vec3 spring_constants,
-                                Vec3 rotary_spring_constants);
-
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal
     // construction prepares element-nodal reference geometry. step_begin() and
@@ -176,8 +166,8 @@ struct Model {
 
     // Global system construction. These operations enumerate active DOFs,
     // collect prescribed loads and constraints, and assemble structural tangent,
-    // geometric, mass and internal-force contributions in global coordinates.
-    // Optional stiffness-scaling fields act per compiled element.
+    // geometric, mass, point-ground damping and internal-force contributions in
+    // global coordinates. Optional stiffness-scaling fields act per element.
     SystemDofIds build_unconstrained_index_matrix();
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
@@ -203,8 +193,8 @@ struct Model {
         SystemDofIds& indices,
         NodeData& nodal_forces,
         const Field& displacement);
-    SparseMatrix build_lumped_mass_matrix(
-        SystemDofIds& indices);
+    SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
+    SparseMatrix build_point_damping_matrix(SystemDofIds& indices);
 
     // Result recovery from compiled structural elements. Returned fields use the
     // domain appropriate to each quantity, including integration-point stress,
