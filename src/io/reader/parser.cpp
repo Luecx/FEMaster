@@ -367,8 +367,9 @@ void Parser::run_analysis_pass(const std::string& input_path,
 /**
  * Configures the pass that collects shared model definitions.
  *
- * A fresh registry recognizes the entire FEMaster grammar but activates only
- * shared definitions required by later topology and section commands.
+ * The complete grammar remains available for nesting and validation, but only
+ * material laws, profiles and coordinate orientations execute callbacks. These
+ * definitions may therefore be referenced later regardless of deck order.
  *
  * @param registry Empty pass-local registry to configure.
  */
@@ -391,8 +392,9 @@ void Parser::configure_definition_pass(io::dsl::Registry& registry) {
 /**
  * Configures construction of sparse semantic topology before compilation.
  *
- * Parts, Instances, local topology and part-level section assignments execute while
- * global assembly fields and analyses are consumed without mutating state.
+ * Part and Instance scopes, local entities, regions and part-level section
+ * assignments execute while global assembly fields and analyses are consumed
+ * without mutating state.
  *
  * @param registry Empty pass-local registry to configure.
  */
