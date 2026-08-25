@@ -4,8 +4,8 @@
  *
  * Abaqus decks are replayed in four semantic passes. Definitions are loaded
  * first, followed by part/instance topology. `Model::compile()` then flattens
- * that topology, including part-local point-mass features, exactly once.
- * Assembly sets, surfaces and nodal transforms are materialized against the
+ * that topology and its part-local section assignments exactly once. Assembly
+ * sets, surfaces, sections and nodal transforms are materialized against the
  * compiled assembly before the final step/load pass.
  *
  * Each pass registers the same command grammar but activates only commands whose
@@ -14,7 +14,7 @@
  * early.
  *
  * @author Finn Eggers
- * @date 24.08.2026
+ * @date 25.08.2026
  */
 
 #include "parser_abq.h"
@@ -51,9 +51,7 @@
 
 #include "../dsl/registry.h"
 #include "../../bc/amplitude.h"
-#include "../../feature/point_mass.h"
 #include "../../loadcase/loadcase.h"
-#include "../../model/element/point.h"
 #include "../../model/model.h"
 
 #include <memory>
@@ -64,41 +62,6 @@ namespace fem::io::reader {
 
 ParserAbqState& ParserAbq::abaqus_state() { return m_abq_state; }
 const ParserAbqState& ParserAbq::abaqus_state() const { return m_abq_state; }
-
-/**
- * Creates one concentrated PointMass feature from a compiled Abaqus MASS element.
- *
- * This helper is used only for assembly-level `*MASS` records whose target
- * PointElement already lives in dense assembly space. The PointElement is used
- * only to resolve its single target node; the resulting PointMass remains a
- * purely nodal feature with no retained element association.
- *
- * @param element_id Dense compiled PointElement identifier.
- * @param mass Isotropic translational mass assigned by Abaqus `*MASS`.
- */
-void ParserAbq::add_abaqus_mass_feature(ID element_id, Precision mass) {
-    auto& data = *model()._data;
-
-    logging::error(data.compiled,
-        "MASS: point-mass features require a compiled model");
-    logging::error(element_id >= 0 && static_cast<std::size_t>(element_id) < data.elements.size() && data.elements[static_cast<std::size_t>(element_id)] != nullptr,
-        "MASS: compiled element ", element_id, " does not exist");
-
-    auto* point = data.elements[static_cast<std::size_t>(element_id)]->as<model::PointElement>();
-    logging::error(point != nullptr,
-        "MASS: element ", element_id, " is not a MASS element");
-
-    // Keep one independent feature per element so two MASS elements attached to
-    // the same node remain two additive concentrated masses.
-    auto region = std::make_shared<model::NodeRegion>(
-        "__ABQ_MASS_" + std::to_string(element_id));
-    region->add(point->nodes()[0]);
-
-    auto point_mass = std::make_shared<feature::PointMass>();
-    point_mass->region_ = std::move(region);
-    point_mass->mass_   = mass;
-    data.features.push_back(std::move(point_mass));
-}
 
 std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::string& amplitude) {
     auto& data = *model()._data;
@@ -162,7 +125,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry,
     commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
-    commands_abq::register_mass(registry, *this, assembly_scope);
+    commands_abq::register_mass(registry, model());
     commands_abq::register_equation(registry, *this);
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
@@ -188,9 +151,9 @@ void ParserAbq::configure_definition_pass(io::dsl::Registry& registry) {
 }
 
 void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
-    // The topology pass builds semantic parts, instances and part-local MASS
-    // features. Assembly-level MASS records are consumed until compiled ELSETs
-    // become available in the following pass.
+    // Build semantic parts, instances and part-local section assignments. MASS
+    // variants select ROOT/PART scope declaratively and assembly records are only
+    // consumed until the compiled assembly pass.
     m_abq_state = ParserAbqState{};
     auto assembly_scope = std::make_shared<bool>(false);
     commands::register_node(registry, model(), assembly_scope);
@@ -207,9 +170,9 @@ void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
 }
 
 void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
-    // Part-local point masses were already expanded by Model::compile(). This
-    // pass only materializes assembly-local regions, MASS properties and nodal
-    // transforms against dense identifiers.
+    // Part-local sections were already expanded by Model::compile(). This pass
+    // materializes assembly-local regions, MASS sections and nodal transforms
+    // directly in dense identifier space.
     auto assembly_scope = std::make_shared<bool>(false);
     commands::register_node(registry, model(), assembly_scope);
     commands_abq::register_element(registry, model(), assembly_scope);
