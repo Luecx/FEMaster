@@ -26,7 +26,6 @@
 
 #include "parser.h"
 
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -65,8 +64,7 @@ protected:
     void configure_analysis_pass  (io::dsl::Registry& registry) override;
 
 private:
-    void register_common_commands(io::dsl::Registry& registry,
-                                  std::shared_ptr<bool> assembly_scope);
+    void register_common_commands(io::dsl::Registry& registry);
 };
 
 } // namespace fem::io::reader

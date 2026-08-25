@@ -3,24 +3,18 @@
  * @brief Registers part-local and assembly-level node sets.
  *
  * `NSET` accepts explicit node or node-set references and generated arithmetic
- * ranges. String references are delegated to `Model::add_nodes_to_set()` so the
- * same set-composition semantics apply before and after compilation. Part-local
- * definitions retain sparse node IDs in the active Part, whereas assembly-level
- * references may use optional Instance qualification and are resolved through
- * the compiled local-to-global node maps.
+ * ranges. Part/root variants retain sparse node identifiers in the active Part,
+ * while assembly variants are replayed after compilation and resolve optional
+ * Instance qualification through compiled node maps.
  *
- * `GENERATE` remains a numeric path because its arithmetic range already
- * provides node identifiers directly and does not require string-reference
- * interpretation.
- *
- * The resulting `NodeRegion` is registered under its deck name for supports,
- * loads, couplings and later assembly commands.
+ * Scope-dependent behavior is selected declaratively through DSL variants. No
+ * separate parser-level assembly flag is required.
  *
  * @see model::Model::add_nodes_to_set
  * @see model::NodeRegion
  *
  * @author Finn Eggers
- * @date 24.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once
@@ -35,93 +29,151 @@
 
 namespace fem::io::reader::commands {
 
-inline void register_nset(fem::io::dsl::Registry& registry,
-                          model::Model& model,
-                          std::shared_ptr<bool> assembly_scope) {
-    registry.command("NSET", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
+namespace dsl = fem::io::dsl;
+
+/**
+ * @brief Registers the `NSET` command for part-local and compiled assembly scopes.
+ */
+inline void register_nset(dsl::Registry& registry, model::Model& model) {
+    registry.command("NSET", [&](dsl::Command& command) {
+        // Allow node sets in the unqualified root, part and assembly scopes
+        command.allow_if(dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
 
         struct Context {
-            bool assembly = false;
             std::string name;
             std::string instance;
-            model::NodeRegion::Ptr destination = nullptr;
         };
         auto ctx = std::make_shared<Context>();
 
+        // Define the set name, optional assembly Instance and generated-range mode
         command.keyword(
-            fem::io::dsl::KeywordSpec::make()
+            dsl::KeywordSpec::make()
                 .key("NSET").alternative("NAME").required()
                 .key("INSTANCE").optional()
                 .flag("GENERATE")
         );
-        command.on_enter([&model, assembly_scope, ctx](const fem::io::dsl::Keys& keys) {
-            ctx->assembly    = *assembly_scope;
-            ctx->name        = keys.raw("NSET");
-            ctx->instance    = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
-            ctx->destination = nullptr;
 
-            logging::error(ctx->assembly || ctx->instance.empty(),
-                "NSET: INSTANCE is only valid at assembly level");
-
-            if (ctx->assembly) {
-                if (!model._data->compiled) return;
-                logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
-                    "NSET: instance ", ctx->instance, " is not defined");
-                ctx->destination = model._data->node_sets.activate(ctx->name);
-            } else if (!model._data->compiled) {
-                const auto part = model._data->parts.get();
-                logging::error(part != nullptr,
-                    "NSET: no active part is available");
-                ctx->destination = part->node_sets.activate(ctx->name);
-            }
+        // Store keyword state shared by all data-layout variants
+        command.on_enter([ctx](const dsl::Keys& keys) {
+            ctx->name     = keys.raw("NSET");
+            ctx->instance = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
         });
 
-        const std::string missing_token = "__MISSING__";
+        const auto part_scope     = dsl::Condition::parent_is({"ROOT", "PART"});
+        const auto assembly_scope = dsl::Condition::parent_is("ASSEMBLY");
+        const auto generated      = dsl::Condition::key_true("GENERATE");
+        const auto listed         = dsl::Condition::any_of({
+            dsl::Condition::negate(dsl::Condition::key_present("GENERATE")),
+            dsl::Condition::key_false("GENERATE")
+        });
 
-        command.variant(fem::io::dsl::Variant::make()
+        // Expand generated ranges directly into sparse part-local node identifiers
+        command.variant(dsl::Variant::make()
             .rank(10)
-            .when(fem::io::dsl::Condition::key_true("GENERATE"))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
-                    .one<fem::ID>().name("START")
-                    .one<fem::ID>().name("END")
-                    .one<fem::ID>().name("INC").on_missing(fem::ID{1}).on_empty(fem::ID{1})
+            .when(dsl::Condition::all_of({part_scope, generated}))
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1))
+                .pattern(dsl::Pattern::make()
+                    .one<ID>().name("START")
+                    .one<ID>().name("END")
+                    .one<ID>().name("INC").on_missing(ID{1}).on_empty(ID{1})
                 )
-                .bind([&model, ctx](fem::ID first, fem::ID last, fem::ID inc) {
+                .bind([&model, ctx](ID first, ID last, ID inc) {
+                    logging::error(ctx->instance.empty(),
+                        "NSET: INSTANCE is only valid at assembly level");
                     logging::error(inc != 0,
                         "NSET/GENERATE: increment must not be zero");
-                    if (!ctx->destination) return;
+                    if (model._data->compiled) return;
                     if ((inc > 0 && first > last) || (inc < 0 && first < last)) return;
 
-                    for (fem::ID id = first;; id += inc) {
-                        const fem::ID value = ctx->assembly
-                            ? (ctx->instance.empty() ? model.compiled_node_id(id)
-                                                     : model.compiled_node_id(id, ctx->instance))
-                            : id;
-                        ctx->destination->add(value);
+                    const auto part = model._data->parts.get();
+                    logging::error(part != nullptr,
+                        "NSET: no active part is available");
+                    const auto destination = part->node_sets.activate(ctx->name);
 
-                        const fem::ID next = static_cast<fem::ID>(id + inc);
+                    for (ID id = first;; id += inc) {
+                        destination->add(id);
+
+                        const ID next = static_cast<ID>(id + inc);
                         if (inc > 0 ? next > last : next < last) break;
                     }
                 })
             )
         );
 
-        command.variant(fem::io::dsl::Variant::make()
-            .when(fem::io::dsl::Condition::any_of({
-                fem::io::dsl::Condition::negate(fem::io::dsl::Condition::key_present("GENERATE")),
-                fem::io::dsl::Condition::key_false("GENERATE")
-            }))
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(0))
-                .pattern(fem::io::dsl::Pattern::make()
+        // Expand generated assembly ranges through the compiled Instance mapping
+        command.variant(dsl::Variant::make()
+            .rank(10)
+            .when(dsl::Condition::all_of({assembly_scope, generated}))
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1))
+                .pattern(dsl::Pattern::make()
+                    .one<ID>().name("START")
+                    .one<ID>().name("END")
+                    .one<ID>().name("INC").on_missing(ID{1}).on_empty(ID{1})
+                )
+                .bind([&model, ctx](ID first, ID last, ID inc) {
+                    logging::error(inc != 0,
+                        "NSET/GENERATE: increment must not be zero");
+                    if (!model._data->compiled) return;
+                    if ((inc > 0 && first > last) || (inc < 0 && first < last)) return;
+
+                    logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
+                        "NSET: instance ", ctx->instance, " is not defined");
+                    const auto destination = model._data->node_sets.activate(ctx->name);
+
+                    for (ID id = first;; id += inc) {
+                        const ID value = ctx->instance.empty()
+                            ? model.compiled_node_id(id)
+                            : model.compiled_node_id(id, ctx->instance);
+                        destination->add(value);
+
+                        const ID next = static_cast<ID>(id + inc);
+                        if (inc > 0 ? next > last : next < last) break;
+                    }
+                })
+            )
+        );
+
+        const std::string missing_token = "__MISSING__";
+
+        // Resolve listed part-local node or node-set references in the active Part
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::all_of({part_scope, listed}))
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(0))
+                .pattern(dsl::Pattern::make()
                     .fixed<std::string, 32>().name("TARGET")
                         .on_missing(missing_token).on_empty(missing_token)
                 )
                 .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
-                    if (!ctx->destination) return;
+                    logging::error(ctx->instance.empty(),
+                        "NSET: INSTANCE is only valid at assembly level");
+                    if (model._data->compiled) return;
+
+                    for (const std::string& target : targets) {
+                        if (target == missing_token) continue;
+                        model.add_nodes_to_set(ctx->name, target);
+                    }
+                })
+            )
+        );
+
+        // Resolve listed assembly references with optional Instance qualification
+        command.variant(dsl::Variant::make()
+            .when(dsl::Condition::all_of({assembly_scope, listed}))
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(0))
+                .pattern(dsl::Pattern::make()
+                    .fixed<std::string, 32>().name("TARGET")
+                        .on_missing(missing_token).on_empty(missing_token)
+                )
+                .bind([&model, ctx, missing_token](const std::array<std::string, 32>& targets) {
+                    if (!model._data->compiled) return;
+
+                    logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
+                        "NSET: instance ", ctx->instance, " is not defined");
+
                     for (const std::string& target : targets) {
                         if (target == missing_token) continue;
                         model.add_nodes_to_set(ctx->name, target, ctx->instance);
