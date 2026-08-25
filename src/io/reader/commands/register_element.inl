@@ -3,15 +3,16 @@
  * @brief Registers part-local and unqualified assembly finite elements.
  *
  * The `ELEMENT` command dispatches supported FEMaster type names to their
- * concrete point, beam, truss, shell and solid element classes. Connectivity is
- * stored in the active semantic Part before compilation; unqualified root
- * definitions use the model's default part.
+ * concrete beam, truss, shell and solid element classes. Connectivity is stored
+ * in the active semantic Part before compilation; unqualified root definitions
+ * use the model's default part.
  *
- * Sparse part-local identifiers are retained during parsing. Instance expansion
- * and dense global enumeration remain deferred to `Model::compile()`.
+ * The registration preserves sparse user identifiers and natural connectivity.
+ * Instance expansion and dense global enumeration are deliberately deferred to
+ * `Model::compile()`.
  *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 19.08.2026
  */
 
 #pragma once
@@ -22,7 +23,6 @@
 #include <utility>
 
 #include "../../../model/beam/b33.h"
-#include "../../../model/element/point.h"
 #include "../../../model/model.h"
 #include "../../../model/shell/frt_shell_s3.h"
 #include "../../../model/shell/frt_shell_s4.h"
@@ -71,7 +71,7 @@ inline void register_element(fem::io::dsl::Registry& registry,
             fem::io::dsl::KeywordSpec::make()
                 .key("ELSET").optional("EALL")
                 .key("TYPE").required().allowed({
-                    "POINT", "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
+                    "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
                     "B33", "T3", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
                     "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT"
                 })
@@ -104,7 +104,6 @@ inline void register_element(fem::io::dsl::Registry& registry,
             ) \
         );
 
-        FEM_ADD_ELEMENT_VARIANT("POINT", PointElement, 1);
         FEM_ADD_ELEMENT_VARIANT("C3D4", C3D4, 4);
         FEM_ADD_ELEMENT_VARIANT("C3D6", C3D6, 6);
         FEM_ADD_ELEMENT_VARIANT("C3D8", C3D8, 8);
