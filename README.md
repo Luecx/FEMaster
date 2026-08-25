@@ -11,7 +11,7 @@ Open-source finite-element solver developed by [Finn Eggers](https://github.com/
 [Wiki](https://github.com/Luecx/FEMaster/wiki) ·
 [Documentation](https://github.com/Luecx/FEMaster/tree/master/documentation) ·
 [Releases](https://github.com/Luecx/FEMaster/releases) ·
-[Contributors](https://github.com/Luecx/FEMaster/graphs/contributors) ·
+[Contributors](https://github.com/Luecx/FEMaster/blob/master/CONTRIBUTORS.md) ·
 [Issues](https://github.com/Luecx/FEMaster/issues)
 
 </div>
