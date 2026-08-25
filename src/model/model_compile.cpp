@@ -5,19 +5,20 @@
  * `Model::compile()` is intentionally narrow: it freezes only the semantic
  * part/instance data that must be flattened into the assembly. Nodes, elements,
  * surfaces and lines are copied from every instance, transformed and rewired to
- * dense global identifiers. Instance-local sets, section regions and point-mass
- * features are materialized in the same global identifier space.
+ * dense global identifiers. Instance-local sets and section regions are
+ * materialized in the same global identifier space.
  *
  * Definition objects such as materials, profiles and coordinate systems are not
  * part of that one-way topology transition. They may be registered before or
  * after compilation. Sections may likewise be added after compilation when they
- * already reference a compiled element set; pre-compile sections and point-mass
- * features remain part definitions and are copied once per instance here.
+ * already reference a compiled element set; pre-compile sections remain part
+ * definitions and are copied once per instance here.
  *
  * Section orientations require the same rigid placement as their owning part.
  * A compiled section therefore receives an independent transformed coordinate
  * system: orientation axes rotate with the instance and spatial origins also
- * receive the instance translation.
+ * receive the instance translation. Point-mass sections contain no spatial
+ * orientation and are copied by value after their element region is remapped.
  *
  * Dense identifiers are deterministic: instance names and every part-local
  * entity identifier are sorted before enumeration. The resulting Instance maps
@@ -30,13 +31,13 @@
  * @see Instance
  *
  * @author Finn Eggers
- * @date 24.08.2026
+ * @date 25.08.2026
  */
 
 #include "model.h"
 
-#include "../feature/point_mass.h"
 #include "../section/section_beam.h"
+#include "../section/section_point_mass.h"
 #include "../section/section_shell_abd.h"
 #include "../section/section_shell_integrated.h"
 #include "../section/section_solid.h"
@@ -225,8 +226,7 @@ void Model::add_section(Section::Ptr section) {
         // Post-compile sections already live in assembly space. Requiring the
         // exact registered region pointer prevents accidentally feeding a
         // stale part-local ELSET into dense solver storage.
-        logging::error(_data->elem_sets.has(section->region_->name)
-                    && _data->elem_sets.get(section->region_->name) == section->region_,
+        logging::error(_data->elem_sets.has(section->region_->name) && _data->elem_sets.get(section->region_->name) == section->region_,
             "Model: post-compile section region ", section->region_->name,
             " is not a compiled element set");
 
@@ -242,8 +242,7 @@ void Model::add_section(Section::Ptr section) {
     const auto active = _data->parts.get();
     logging::error(active != nullptr,
         "Model: no active part is available");
-    logging::error(active->elem_sets.has(section->region_->name)
-                && active->elem_sets.get(section->region_->name) == section->region_,
+    logging::error(active->elem_sets.has(section->region_->name) && active->elem_sets.get(section->region_->name) == section->region_,
         "Model: section region ", section->region_->name,
         " does not belong to active part ", active->name);
 
@@ -261,9 +260,9 @@ void Model::add_section(Section::Ptr section) {
  * topology objects are copied and rewired through instance maps, and inherited
  * regions receive qualified assembly names.
  *
- * Part-local sections and point masses become independent assembly assignments
- * per Instance. Point-mass node regions are remapped, while section spatial data
- * is additionally transformed with the rigid instance placement.
+ * Part-local sections become independent assembly assignments per Instance.
+ * Their element regions are remapped; spatial section data is additionally
+ * transformed with the rigid instance placement where required.
  *
  * Finally, sections are bound to dense elements, element-nodal/IP/MP offsets are
  * initialized and the semantic topology is frozen. Recompilation is unsupported
@@ -486,33 +485,6 @@ void Model::compile() {
             }
         }
 
-        // Point masses are semantic part features. Copy their complete property
-        // data while remapping only their local node targets into this Instance's
-        // dense assembly identifier space.
-        for (const auto& source_point_mass : source->point_masses) {
-            logging::error(source_point_mass != nullptr && source_point_mass->region_ != nullptr,
-                "Model: point mass in part ", source->name, " has no node region");
-
-            auto region = std::make_shared<NodeRegion>(
-                qualified_name(source_point_mass->region_->name));
-            for (const ID local_id : *source_point_mass->region_) {
-                const auto it = node_map.find(local_id);
-                logging::error(it != node_map.end(),
-                    "Model: point-mass region ", source_point_mass->region_->name,
-                    " in part ", source->name,
-                    " references undefined node ", local_id);
-                region->add(it->second);
-            }
-
-            auto point_mass = std::make_shared<feature::PointMass>();
-            point_mass->region_                  = std::move(region);
-            point_mass->mass_                    = source_point_mass->mass_;
-            point_mass->rotary_inertia_          = source_point_mass->rotary_inertia_;
-            point_mass->spring_constants_        = source_point_mass->spring_constants_;
-            point_mass->rotary_spring_constants_ = source_point_mass->rotary_spring_constants_;
-            _data->features.push_back(std::move(point_mass));
-        }
-
         // Sort and copy part-local surfaces into dense assembly topology
         std::vector<ID> surface_ids;
         surface_ids.reserve(source->surfaces.size());
@@ -615,7 +587,7 @@ void Model::compile() {
                 region->add(it->second);
             }
 
-            // Copy the concrete section and transform its spatial orientation data
+            // Copy the concrete section and transform spatial data where needed.
             Section::Ptr section = nullptr;
             if (auto* solid = source_section->as<SolidSection>()) {
                 auto copy = std::make_shared<SolidSection>();
@@ -633,6 +605,16 @@ void Model::compile() {
             } else if (auto* truss = source_section->as<TrussSection>()) {
                 section = std::make_shared<TrussSection>(
                     truss->material_, region, truss->area_);
+            } else if (auto* point = source_section->as<PointMassSection>()) {
+                section = std::make_shared<PointMassSection>(
+                    region,
+                    point->mass_,
+                    point->rotary_inertia_,
+                    point->spring_constants_,
+                    point->rotary_spring_constants_,
+                    point->damping_constants_,
+                    point->rotary_damping_constants_
+                );
             } else if (auto* shell = source_section->as<IntegratedShellSection>()) {
                 section = std::make_shared<IntegratedShellSection>(
                     shell->material_,
