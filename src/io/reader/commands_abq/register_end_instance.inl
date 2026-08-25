@@ -23,6 +23,7 @@ namespace fem::io::reader::commands_abq {
 inline void register_end_instance(fem::io::dsl::Registry& registry) {
     registry.command("ENDINSTANCE", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("INSTANCE"));
+        command.closes_parent();
         command.doc("Terminate the current Abaqus instance scope.");
         command.variant(fem::io::dsl::Variant::make());
     });
