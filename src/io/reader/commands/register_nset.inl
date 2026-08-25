@@ -53,10 +53,30 @@ inline void register_nset(dsl::Registry& registry, model::Model& model) {
                 .flag("GENERATE")
         );
 
-        // Store keyword state shared by all data-layout variants
-        command.on_enter([ctx](const dsl::Keys& keys) {
+        // Store keyword state and create the destination even for an empty listed set
+        command.on_enter([&model, ctx](const dsl::ParentInfo& parent, const dsl::Keys& keys) {
             ctx->name     = keys.raw("NSET");
             ctx->instance = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
+
+            if (parent.command == "ASSEMBLY") {
+                if (!model._data->compiled) return;
+
+                logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
+                    "NSET: instance ", ctx->instance, " is not defined");
+
+                model._data->node_sets.activate(ctx->name);
+                return;
+            }
+
+            logging::error(ctx->instance.empty(),
+                "NSET: INSTANCE is only valid at assembly level");
+            if (model._data->compiled) return;
+
+            const auto part = model._data->parts.get();
+            logging::error(part != nullptr,
+                "NSET: no active part is available");
+
+            part->node_sets.activate(ctx->name);
         });
 
         const auto part_scope     = dsl::Condition::parent_is({"ROOT", "PART"});

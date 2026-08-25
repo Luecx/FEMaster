@@ -53,10 +53,30 @@ inline void register_sfset(dsl::Registry& registry, model::Model& model) {
                 .flag("GENERATE")
         );
 
-        // Store keyword state shared by all data-layout variants
-        command.on_enter([ctx](const dsl::Keys& keys) {
+        // Store keyword state and create the destination even when no data rows follow
+        command.on_enter([&model, ctx](const dsl::ParentInfo& parent, const dsl::Keys& keys) {
             ctx->name     = keys.raw("SFSET");
             ctx->instance = keys.has("INSTANCE") ? keys.raw("INSTANCE") : std::string{};
+
+            if (parent.command == "ASSEMBLY") {
+                if (!model._data->compiled) return;
+
+                logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
+                    "SFSET: instance ", ctx->instance, " is not defined");
+
+                model._data->surface_sets.activate(ctx->name);
+                return;
+            }
+
+            logging::error(ctx->instance.empty(),
+                "SFSET: INSTANCE is only valid at assembly level");
+            if (model._data->compiled) return;
+
+            const auto part = model._data->parts.get();
+            logging::error(part != nullptr,
+                "SFSET: no active part is available");
+
+            part->surface_sets.activate(ctx->name);
         });
 
         const auto part_scope     = dsl::Condition::parent_is({"ROOT", "PART"});

@@ -34,7 +34,8 @@
  *  - If no admission condition is set (`allow_if` never called), `admit_` defaults to
  *    `Condition{}` which is the `Always` condition (i.e., admissible under any parent).
  *  - Variants are checked in the order they were added; the first matching one is used.
- *  - `on_enter` is executed before segments of the variant run.
+ *  - `on_enter` is executed before segments of the variant run and may inspect the
+ *    selected parent scope.
  *  - `on_exit` is executed when the command scope leaves (e.g. next command climbs up
  *    the scope stack or at end-of-file if still active).
  *
@@ -78,8 +79,8 @@ struct Command {
     /** Stage-local execution mode. */
     ActiveMode active_ = ActiveMode::Active;
 
-    /** Optional hook executed once when the command is entered (before segments run). */
-    std::function<void(const Keys&)> on_enter_;
+    /** Optional hook executed once with the selected parent and command keys. */
+    std::function<void(const ParentInfo&, const Keys&)> on_enter_;
 
     /** Optional hook executed when the command's scope is exited. */
     std::function<void(const Keys&)> on_exit_;
@@ -142,16 +143,33 @@ struct Command {
     }
 
     /**
-     * @brief Registers a hook invoked once per keyword before any variant segments.
+     * @brief Registers a parent-aware hook invoked before any variant segments.
      *
-     * Typical use-cases: activate target sets, allocate per-command context, etc.
-     * The hook receives the keyword-line keys (parsed via `Keys::from_keyword_line`).
+     * The parent is the scope selected by command admission after the engine has
+     * climbed and popped the scope stack. The keys are the normalized arguments of
+     * the current keyword line.
+     *
+     * @param fn Callback taking the selected parent and command keyword keys.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& on_enter(std::function<void(const ParentInfo&, const Keys&)> fn) {
+        on_enter_ = std::move(fn);
+        return *this;
+    }
+
+    /**
+     * @brief Registers a key-only hook invoked before any variant segments.
+     *
+     * This overload preserves the compact callback form for commands that do not
+     * depend on their parent scope.
      *
      * @param fn Callback taking the command's keyword keys.
      * @return Reference to `*this` for fluent chaining.
      */
     Command& on_enter(std::function<void(const Keys&)> fn) {
-        on_enter_ = std::move(fn);
+        on_enter_ = [fn = std::move(fn)](const ParentInfo&, const Keys& keys) {
+            fn(keys);
+        };
         return *this;
     }
 

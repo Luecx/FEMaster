@@ -310,10 +310,10 @@ public:
             if (!consume_only) {
                 logging::info("Processing command: *", cmd);
 
-                // on_enter runs only after a variant was selected, but before segment callbacks.
+                // Run command setup with the selected parent before segment callbacks
                 if (spec->on_enter_) {
                     try {
-                        spec->on_enter_(self_keys);
+                        spec->on_enter_(scope.back(), self_keys);
                     } catch (const std::exception& e) {
                         throw_at(ln.location(), e.what());
                     }
