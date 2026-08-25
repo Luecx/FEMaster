@@ -29,6 +29,7 @@ inline void register_end_assembly(dsl::Registry& registry) {
     registry.command("ENDASSEMBLY", [&](dsl::Command& command) {
         // ENDASSEMBLY is only valid for an active assembly scope
         command.allow_if(dsl::Condition::parent_is("ASSEMBLY"));
+        command.closes_parent();
 
         // The command only closes the grammar scope
         command.variant(dsl::Variant::make());
