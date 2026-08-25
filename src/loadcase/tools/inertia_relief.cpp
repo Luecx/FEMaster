@@ -9,15 +9,22 @@
  *
  * The implementation performs the following operations:
  *
- * 1. Integrate the structural mass and first mass moment.
- * 2. Optionally include concentrated point masses.
+ * 1. Integrate the compiled structural mass and first mass moment.
+ * 2. Optionally include auxiliary PointElements created by native POINTMASS.
  * 3. Compute the center of gravity.
  * 4. Reduce the external nodal loads to a resultant force and moment.
  * 5. Integrate the inertia tensor about the center of gravity.
- * 6. Optionally include translational and rotary point-mass inertia.
+ * 6. Optionally include translational and rotary inertia of auxiliary
+ *    PointElements.
  * 7. Solve the translational and rotational rigid-body equations.
  * 8. Assemble the resulting inertia loads through `bc::InertialLoad`.
  * 9. Verify the final rigid-body equilibrium.
+ *
+ * Regular compiled PointElements are structural elements and therefore
+ * participate in the normal element integration path. Auxiliary PointElements
+ * are stored separately in `ModelData::point_elements`; they participate only
+ * when `consider_point_masses` is enabled, preserving the existing FEMaster
+ * inertia-relief option for native POINTMASS definitions.
  *
  * The rotational equation may be singular when the mass distribution does not
  * provide inertia about one or more axes. The symmetric inertia tensor is
@@ -26,18 +33,20 @@
  *
  * @see apply_inertia_relief
  * @see bc::InertialLoad
- * @see feature::PointMass
+ * @see model::PointElement
+ * @see PointMassSection
  *
  * @author Finn Eggers
- * @date 26.07.2026
+ * @date 25.08.2026
  */
 
 #include "inertia_relief.h"
 
 #include "../../bc/load_inertial.h"
 #include "../../core/logging.h"
-#include "../../feature/point_mass.h"
 #include "../../model/element/element_structural.h"
+#include "../../model/element/point.h"
+#include "../../section/section_point_mass.h"
 
 #include <Eigen/Eigenvalues>
 
@@ -109,7 +118,7 @@ Mat3 inertia_about_point(const Vec3& relative_position) {
 }
 
 /**
- * Integrates the structural mass and first mass moment.
+ * Integrates the compiled structural mass and first mass moment.
  *
  * The structural integration routines use the same physical mass measure as
  * the inertial-load implementation. Therefore,
@@ -117,225 +126,191 @@ Mat3 inertia_about_point(const Vec3& relative_position) {
  *     m     = integral dm,
  *     s_m   = integral x dm.
  *
- * The accumulated first mass moment is later used to determine the center of
- * gravity through
+ * This includes regular compiled PointElements because their density-scaled
+ * integration interprets `PointMassSection::mass_` as a concentrated mass
+ * measure. Auxiliary PointElements are not part of `ModelData::elements` and
+ * are added separately when requested.
  *
- *     x_c = s_m / m.
- *
- * Empty element entries and elements that are not structural elements do not
- * contribute.
- *
- * @param model_data Global model data containing the element collection.
+ * @param model_data Global model data containing the compiled element collection.
  * @param mass Accumulated structural mass.
- * @param first_mass_moment Accumulated first mass moment about the global
- *                          origin.
+ * @param first_mass_moment Accumulated first mass moment about the global origin.
  */
-void accumulate_structural_mass(
-    const model::ModelData& model_data,
-    Precision&              mass,
-    Vec3&                   first_mass_moment
-) {
-    // Integrate all structural finite elements
+void accumulate_structural_mass(const model::ModelData& model_data,
+                                Precision&              mass,
+                                Vec3&                   first_mass_moment) {
+    // Integrate all regular compiled structural elements
     for (const auto& element : model_data.elements) {
-        // Empty slots do not represent physical model contributions
-        if (!element) {
-            continue;
-        }
+        if (!element) continue;
 
-        // Only structural elements provide the mass-weighted integration
-        // operations required by inertia relief
         auto* structural_element = element->as<model::StructuralElement>();
+        if (!structural_element) continue;
 
-        if (!structural_element) {
-            continue;
-        }
-
-        // Integrating the scalar value one gives
-        //
-        //     m_e = integral_Omega_e 1 dm
-        //
-        // for the current element
+        // Integrating one gives the physical mass contribution of the element.
         mass += structural_element->integrate_scalar_field(true,
             [](const Vec3&) { return Precision(1); });
 
-        // Integrating the global position gives the first mass moment
-        //
-        //     s_e = integral_Omega_e x dm
+        // Integrating position gives the first mass moment about the origin.
         first_mass_moment += structural_element->integrate_vector_field(true,
             [](const Vec3& position) { return position; });
     }
 }
 
 /**
- * Adds concentrated point masses to the total mass and first mass moment.
+ * Adds the auxiliary native point masses to total mass and first mass moment.
  *
- * For every point mass `m_i` at position `x_i`,
+ * Native `POINTMASS, NSET=...` definitions are represented by one auxiliary
+ * `PointElement` per target node and stored in `ModelData::point_elements` after
+ * compilation. They are deliberately excluded from the regular element array,
+ * so `consider_point_masses` adds them explicitly here.
+ *
+ * For every auxiliary point element with mass `m_i` at `x_i`,
  *
  *     m   += m_i,
  *     s_m += m_i x_i.
  *
- * Rotary inertia does not affect the center of gravity and is therefore not
- * included in this phase.
+ * Rotary inertia does not affect the center of gravity.
  *
- * A point-mass feature contributes its configured mass once for every node in
- * its region, matching the existing point-mass feature convention.
- *
- * @param model_data Global model data containing point-mass features.
+ * @param model_data Global model data containing auxiliary point elements.
  * @param positions Global nodal coordinate field.
  * @param mass Accumulated total mass.
  * @param first_mass_moment Accumulated first mass moment.
  */
-void accumulate_point_mass_mass(
-    const model::ModelData& model_data,
-    const model::Field&     positions,
-    Precision&              mass,
-    Vec3&                   first_mass_moment
-) {
-    // Extract all concentrated point-mass features
-    for (const auto& feature_ptr : model_data.features) {
-        const auto* point_mass =
-            dynamic_cast<const feature::PointMass*>(feature_ptr.get());
+void accumulate_point_mass_mass(const model::ModelData& model_data,
+                                const model::Field&     positions,
+                                Precision&              mass,
+                                Vec3&                   first_mass_moment) {
+    // `consider_point_masses` refers exactly to these post-compile auxiliary
+    // PointElements. Do not inspect the generic feature collection here.
+    for (const auto& element : model_data.point_elements) {
+        if (!element) continue;
 
-        // Features without a valid region cannot be associated with physical
-        // nodal positions
-        if (!point_mass || !point_mass->region_) {
-            continue;
-        }
+        const auto* point = element->as<model::PointElement>();
+        logging::error(point != nullptr,
+            "InertiaRelief: auxiliary point-element storage contains a non-point element");
+        logging::error(point->_section != nullptr,
+            "InertiaRelief: auxiliary point element ", point->elem_id, " has no section");
 
-        // A zero translational mass contributes neither to the total mass nor
-        // to the first mass moment
-        if (point_mass->mass_ == Precision(0)) {
-            continue;
-        }
+        const auto* section = point->_section->as<PointMassSection>();
+        logging::error(section != nullptr,
+            "InertiaRelief: auxiliary point element ", point->elem_id,
+            " has a non-point-mass section");
 
-        // Add one concentrated mass contribution for every node in the region
-        for (const ID node_id : *point_mass->region_) {
-            logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
-                "InertiaRelief: point-mass node ", node_id,
-                " is outside the positions field with ", positions.rows, " rows");
+        if (section->mass_ == Precision(0)) continue;
 
-            const Index node     = static_cast<Index>(node_id);
-            const Vec3  position = positions.row_vec3(node);
+        const ID node_id = point->nodes()[0];
+        logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+            "InertiaRelief: point-mass node ", node_id,
+            " is outside the positions field with ", positions.rows, " rows");
 
-            // Accumulate
-            //
-            //     m   <- m   + m_i,
-            //     s_m <- s_m + m_i x_i
-            mass              += point_mass->mass_;
-            first_mass_moment += point_mass->mass_ * position;
-        }
+        const Index node     = static_cast<Index>(node_id);
+        const Vec3  position = positions.row_vec3(node);
+
+        mass              += section->mass_;
+        first_mass_moment += section->mass_ * position;
     }
 }
 
 /**
- * Integrates the structural inertia tensor about the center of gravity.
+ * Integrates the inertia tensor of regular compiled structural elements about
+ * the center of gravity.
  *
  * For every mass point with relative position
  *
  *     r = x - x_c,
  *
- * the inertia contribution is
+ * the translational inertia contribution is
  *
  *     dI = [(r^T r) I - r r^T] dm.
  *
- * The complete structural inertia tensor is therefore
+ * Regular PointElements contribute through the same mass-weighted integration.
+ * Their diagonal rotary inertia is added explicitly because it is an intrinsic
+ * nodal inertia and is not part of the geometric parallel-axis kernel.
  *
- *     I_c = integral [(r^T r) I - r r^T] dm.
- *
- * Evaluating the tensor directly relative to the center of gravity avoids a
- * separate parallel-axis transformation after integration.
- *
- * @param model_data Global model data containing structural elements.
+ * @param model_data Global model data containing compiled structural elements.
  * @param center_of_gravity Global center of gravity.
  * @param inertia Accumulated inertia tensor about the center of gravity.
  */
-void accumulate_structural_inertia(
-    const model::ModelData& model_data,
-    const Vec3&             center_of_gravity,
-    Mat3&                   inertia
-) {
-    // Integrate the distributed inertia of every structural element
+void accumulate_structural_inertia(const model::ModelData& model_data,
+                                   const Vec3&             center_of_gravity,
+                                   Mat3&                   inertia) {
+    // Integrate the translational inertia of every compiled structural element
     for (const auto& element : model_data.elements) {
-        if (!element) {
-            continue;
-        }
+        if (!element) continue;
 
         auto* structural_element = element->as<model::StructuralElement>();
-
-        if (!structural_element) {
-            continue;
-        }
+        if (!structural_element) continue;
 
         inertia += structural_element->integrate_tensor_field(true,
             [&](const Vec3& position) {
-                // Express the current mass point relative to the center of
-                // gravity because the external moment is evaluated about the
-                // same reference point
                 const Vec3 relative_position = position - center_of_gravity;
-
-                // The element integration supplies dm, while this callback
-                // supplies the geometric inertia kernel
                 return inertia_about_point(relative_position);
             });
+
+        // PointMassSection may additionally carry intrinsic rotary inertia. It
+        // contributes directly about the nodal axes and must not be multiplied
+        // by the point position or translational mass again.
+        if (const auto* point = element->as<model::PointElement>()) {
+            if (!point->_section) continue;
+
+            const auto* section = point->_section->as<PointMassSection>();
+            logging::error(section != nullptr,
+                "InertiaRelief: point element ", point->elem_id,
+                " has a non-point-mass section");
+            inertia.diagonal() += section->rotary_inertia_;
+        }
     }
 }
 
 /**
- * Adds concentrated point-mass inertia about the center of gravity.
+ * Adds the inertia of auxiliary native PointElements about the center of gravity.
  *
- * Each point mass contributes two independent parts:
+ * Each auxiliary element contributes
  *
- * 1. Translational inertia caused by its offset from the center of gravity:
+ *     I_trans = m [(r^T r) I - r r^T]
  *
- *        I_trans = m [(r^T r) I - r r^T].
+ * from its concentrated translational mass and
  *
- * 2. Rotary inertia stored directly by the point-mass feature:
+ *     I_rot = diag(Jx, Jy, Jz)
  *
- *        I_rot = diag(Jx, Jy, Jz).
+ * from `PointMassSection::rotary_inertia_`. These objects are considered only
+ * when the caller enables `consider_point_masses`.
  *
- * The rotary inertia values are assumed to refer to the global nodal rotation
- * directions, matching their use by the point-mass implementation.
- *
- * @param model_data Global model data containing point-mass features.
+ * @param model_data Global model data containing auxiliary point elements.
  * @param positions Global nodal coordinate field.
  * @param center_of_gravity Global center of gravity.
  * @param inertia Accumulated inertia tensor.
  */
-void accumulate_point_mass_inertia(
-    const model::ModelData& model_data,
-    const model::Field&     positions,
-    const Vec3&             center_of_gravity,
-    Mat3&                   inertia
-) {
-    // Extract all concentrated point-mass features
-    for (const auto& feature_ptr : model_data.features) {
-        const auto* point_mass =
-            dynamic_cast<const feature::PointMass*>(feature_ptr.get());
+void accumulate_point_mass_inertia(const model::ModelData& model_data,
+                                   const model::Field&     positions,
+                                   const Vec3&             center_of_gravity,
+                                   Mat3&                   inertia) {
+    // Traverse the same auxiliary PointElements used by InertialLoad when
+    // `consider_point_masses_` is enabled.
+    for (const auto& element : model_data.point_elements) {
+        if (!element) continue;
 
-        if (!point_mass || !point_mass->region_) {
-            continue;
-        }
+        const auto* point = element->as<model::PointElement>();
+        logging::error(point != nullptr,
+            "InertiaRelief: auxiliary point-element storage contains a non-point element");
+        logging::error(point->_section != nullptr,
+            "InertiaRelief: auxiliary point element ", point->elem_id, " has no section");
 
-        // Add inertia contributions for every node belonging to the feature
-        for (const ID node_id : *point_mass->region_) {
-            logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
-                "InertiaRelief: point-mass node ", node_id,
-                " is outside the positions field with ", positions.rows, " rows");
+        const auto* section = point->_section->as<PointMassSection>();
+        logging::error(section != nullptr,
+            "InertiaRelief: auxiliary point element ", point->elem_id,
+            " has a non-point-mass section");
 
-            const Index node              = static_cast<Index>(node_id);
-            const Vec3  position          = positions.row_vec3(node);
-            const Vec3  relative_position = position - center_of_gravity;
+        const ID node_id = point->nodes()[0];
+        logging::error(node_id >= 0 && static_cast<Index>(node_id) < positions.rows,
+            "InertiaRelief: point-mass node ", node_id,
+            " is outside the positions field with ", positions.rows, " rows");
 
-            // Apply the parallel-axis contribution of the concentrated
-            // translational mass:
-            //
-            //     I_trans = m_i [(r_i^T r_i) I - r_i r_i^T]
-            inertia += point_mass->mass_ * inertia_about_point(relative_position);
+        const Index node              = static_cast<Index>(node_id);
+        const Vec3  position          = positions.row_vec3(node);
+        const Vec3  relative_position = position - center_of_gravity;
 
-            // Add the explicitly defined rotary inertia about the global nodal
-            // rotation axes
-            inertia.diagonal() += point_mass->rotary_inertia_;
-        }
+        inertia += section->mass_ * inertia_about_point(relative_position);
+        inertia.diagonal() += section->rotary_inertia_;
     }
 }
 
@@ -373,19 +348,18 @@ void accumulate_point_mass_inertia(
  * Consequently, no angular acceleration is generated about a direction for
  * which the model possesses no meaningful rotational inertia.
  *
- * The accelerations are passed to `bc::InertialLoad`, which assembles the
- * signed inertia-force contribution according to the existing FEMaster sign
- * convention. The resulting load field is added to the external load field.
+ * Compiled structural elements always participate. Auxiliary PointElements from
+ * native POINTMASS commands participate in the mass properties and in the
+ * resulting `bc::InertialLoad` only when `consider_point_masses` is enabled.
  *
  * @param model_data Global model data.
  * @param global_load_mat Nodal load field modified directly by inertia relief.
- * @param consider_point_masses Include point masses and their rotary inertia.
+ * @param consider_point_masses Include auxiliary native PointElements and their
+ *                              translational/rotary inertia.
  */
-void apply_inertia_relief(
-    model::ModelData& model_data,
-    model::Field&     global_load_mat,
-    bool              consider_point_masses
-) {
+void apply_inertia_relief(model::ModelData& model_data,
+                          model::Field&     global_load_mat,
+                          bool              consider_point_masses) {
     // Absolute lower bound used when constructing the pseudo-inverse of the
     // rotational inertia tensor
     constexpr Precision minimum_inertia_eigenvalue = Precision(1e-12);
@@ -481,10 +455,11 @@ void apply_inertia_relief(
     Precision total_mass        = Precision(0);
     Vec3      first_mass_moment = Vec3::Zero();
 
-    // Distributed structural mass always participates in inertia relief
+    // Regular compiled structural elements, including compiled PointElements,
+    // always participate in inertia relief.
     accumulate_structural_mass(model_data, total_mass, first_mass_moment);
 
-    // Concentrated point masses participate only when explicitly requested
+    // Native post-compile POINTMASS elements participate only when requested.
     if (consider_point_masses) {
         accumulate_point_mass_mass(model_data, positions, total_mass, first_mass_moment);
     }
@@ -525,14 +500,10 @@ void apply_inertia_relief(
 
     Mat3 inertia = Mat3::Zero();
 
-    // Distributed structural contribution:
-    //
-    //     I_struct = integral [(r^T r) I - r r^T] dm
+    // Regular compiled structural contribution, including PointElements.
     accumulate_structural_inertia(model_data, center_of_gravity, inertia);
 
-    // Optional point-mass contribution:
-    //
-    //     I_point = sum_i m_i [(r_i^T r_i) I - r_i r_i^T] + I_rot,i
+    // Optional native post-compile PointElement contribution.
     if (consider_point_masses) {
         accumulate_point_mass_inertia(model_data, positions, center_of_gravity, inertia);
     }
@@ -601,15 +572,13 @@ void apply_inertia_relief(
     Vec3 inverse_principal_inertias = Vec3::Zero();
 
     for (Index direction = 0; direction < 3; ++direction) {
-        const Precision principal_inertia =
-            principal_inertias(direction);
+        const Precision principal_inertia = principal_inertias(direction);
 
         // Supported rotational directions receive the normal reciprocal
         //
         //     I_i^+ = 1 / I_i
         if (std::abs(principal_inertia) > inertia_cutoff) {
-            inverse_principal_inertias(direction) =
-                Precision(1) / principal_inertia;
+            inverse_principal_inertias(direction) = Precision(1) / principal_inertia;
         }
 
         // Unsupported or numerically singular directions retain
@@ -685,7 +654,8 @@ void apply_inertia_relief(
     // velocity and therefore produces no centrifugal contribution
     inertia_load.omega_                 = Vec3::Zero();
 
-    // Apply the inertia load to all structural elements
+    // Apply to all compiled structural elements. InertialLoad additionally
+    // traverses ModelData::point_elements when this flag is enabled.
     inertia_load.region_                = model_data.elem_sets.all();
     inertia_load.consider_point_masses_ = consider_point_masses;
 
