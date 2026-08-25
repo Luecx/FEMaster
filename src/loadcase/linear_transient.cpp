@@ -1,13 +1,6 @@
 /**
  * @file transient.cpp
  * @brief Linear transient analysis (implicit Newmark-β) using affine null-space map u = u_p + T q.
- *
- * Structural stiffness and mass are augmented by the diagonal viscous ground
- * damping contributed by PointMassSection assignments. Rayleigh damping remains
- * an independent proportional contribution and is added in reduced space.
- *
- * @author Finn Eggers
- * @date 25.08.2026
  */
 
 #include "linear_transient.h"
@@ -55,7 +48,7 @@ void Transient::run() {
         "building constraints"
     );
 
-    // (3) Active stiffness K, mass M and direct point-ground damping C_point
+    // (3) Active stiffness K and mass M
     auto K = Timer::measure(
         [&]() { return model->build_stiffness_matrix(active_dof_idx_mat); },
         "constructing stiffness matrix K"
@@ -63,10 +56,6 @@ void Transient::run() {
     auto M = Timer::measure(
         [&]() { return model->build_lumped_mass_matrix(active_dof_idx_mat); },
         "constructing mass matrix M"
-    );
-    auto C_point = Timer::measure(
-        [&]() { return model->build_point_damping_matrix(active_dof_idx_mat); },
-        "constructing point-ground damping matrix C_point"
     );
 
     // (4) Build constraint transformer (u = u_p + T q)
@@ -103,14 +92,13 @@ void Transient::run() {
         [&]() { return CT->assemble_system_matrix(M); },
         "assembling reduced mass Mr = T^T M T"
     );
-    auto Cr = Timer::measure(
-        [&]() { return CT->assemble_system_matrix(C_point); },
-        "assembling reduced point damping Cr = T^T C_point T"
-    );
 
-    // (6) Add optional Rayleigh damping in reduced space.
+    // (6) Rayleigh damping in reduced space: Cr = α Mr + β A
+    SparseMatrix Cr(A.rows(), A.cols());
     if (rayleigh.has_value()) {
-        Cr += rayleigh->build(Mr, A);
+        Cr = rayleigh->build(Mr, A);
+    } else {
+        Cr.setZero();
     }
 
     // Optional: dump matrices
