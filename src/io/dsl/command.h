@@ -12,7 +12,8 @@
  *    variant whose condition evaluates to true (or that has no condition) and then
  *    executes its segments;
  *  - register **entry** and **exit hooks** (`on_enter(...)`, `on_exit(...)`) that are
- *    executed when the command is entered or left in the parsing scope hierarchy.
+ *    executed when the command is entered or left in the parsing scope hierarchy;
+ *  - mark a command as a parent terminator (`closes_parent()`).
  *
  * Typical usage:
  * @code
@@ -38,6 +39,8 @@
  *    selected parent scope.
  *  - `on_exit` is executed when the command scope leaves (e.g. next command climbs up
  *    the scope stack or at end-of-file if still active).
+ *  - A command marked with `closes_parent()` is processed under its admitted parent and
+ *    then removes that parent instead of becoming a new scope itself.
  *
  * @see variant.h
  * @see condition.h
@@ -78,6 +81,9 @@ struct Command {
 
     /** Stage-local execution mode. */
     ActiveMode active_ = ActiveMode::Active;
+
+    /** Whether successful processing closes the admitted parent scope. */
+    bool closes_parent_ = false;
 
     /** Optional hook executed once with the selected parent and command keys. */
     std::function<void(const ParentInfo&, const Keys&)> on_enter_;
@@ -139,6 +145,20 @@ struct Command {
      */
     Command& active(ActiveMode mode) {
         active_ = mode;
+        return *this;
+    }
+
+    /**
+     * @brief Marks this command as a terminator for its admitted parent scope.
+     *
+     * The command is validated and processed normally under the selected parent. After
+     * successful processing the engine pops that parent, firing its `on_exit` hook, and
+     * does not push this command as a new scope.
+     *
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& closes_parent() {
+        closes_parent_ = true;
         return *this;
     }
 
