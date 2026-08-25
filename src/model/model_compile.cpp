@@ -611,9 +611,7 @@ void Model::compile() {
                     point->mass_,
                     point->rotary_inertia_,
                     point->spring_constants_,
-                    point->rotary_spring_constants_,
-                    point->damping_constants_,
-                    point->rotary_damping_constants_
+                    point->rotary_spring_constants_
                 );
             } else if (auto* shell = source_section->as<IntegratedShellSection>()) {
                 section = std::make_shared<IntegratedShellSection>(
