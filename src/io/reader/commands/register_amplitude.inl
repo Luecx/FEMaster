@@ -22,6 +22,8 @@
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 
+#include <memory>
+
 namespace fem::io::reader::commands {
 
 namespace dsl = fem::io::dsl;
@@ -33,10 +35,9 @@ namespace dsl = fem::io::dsl;
  * Subsequent data lines append `(time, value)` samples to the active amplitude
  * maintained by the reader.
  */
-inline void register_amplitude(dsl::Registry&      registry,
-                               model::Model&       model) {
-
-    bc::Amplitude::Ptr amplitude = std::make_shared<bc::Amplitude>(nullptr);
+inline void register_amplitude(dsl::Registry& registry,
+                               model::Model&  model) {
+    auto amplitude = std::make_shared<bc::Amplitude::Ptr>();
 
     registry.command("AMPLITUDE", [&](dsl::Command& command) {
         // Restrict AMPLITUDE to the root scope
@@ -50,7 +51,7 @@ inline void register_amplitude(dsl::Registry&      registry,
         );
 
         // Create the amplitude before processing its tabular samples
-        command.on_enter([&model, &amplitude](const dsl::Keys& keys) {
+        command.on_enter([&model, amplitude](const dsl::Keys& keys) {
             bc::Interpolation interpolation = bc::Interpolation::Linear;
 
             const std::string type = keys.raw("TYPE");
@@ -63,10 +64,10 @@ inline void register_amplitude(dsl::Registry&      registry,
             }
 
             // Keep the new amplitude active while its data lines are processed
-            amplitude = std::make_shared<bc::Amplitude>(keys.raw("NAME"), interpolation);
+            *amplitude = std::make_shared<bc::Amplitude>(keys.raw("NAME"), interpolation);
 
             // Store the amplitude permanently in the model
-            model.add_amplitude(amplitude);
+            model.add_amplitude(*amplitude);
         });
 
         // Read one (time, value) sample from every following data line
@@ -77,13 +78,13 @@ inline void register_amplitude(dsl::Registry&      registry,
                     .one<fem::Precision>().name("TIME")
                     .one<fem::Precision>().name("VALUE")
                 )
-                .bind([&amplitude](fem::Precision time, fem::Precision value) {
+                .bind([amplitude](fem::Precision time, fem::Precision value) {
                     // Ensure that the keyword created an amplitude before data is consumed
-                    logging::error(amplitude != nullptr,
+                    logging::error(*amplitude != nullptr,
                         "AMPLITUDE: no active amplitude is available");
 
                     // Append the tabular sample to the active amplitude
-                    amplitude->add_sample(time, value);
+                    (*amplitude)->add_sample(time, value);
                 })
             )
         );
