@@ -102,21 +102,29 @@ struct Model {
     // enumeration. The operation may be called exactly once.
     void compile();
 
-    // Resolution of semantic local identifiers after compilation. Qualified
-    // references use the corresponding Instance maps; unqualified references
-    // resolve through the implicit identity instance.
+    // Resolution of semantic local identifiers after compilation. The typed
+    // overloads address a specified Instance map. String overloads accept
+    // either `ID` or `INSTANCE.ID` and use the implicit identity Instance for
+    // unqualified references.
     ID compiled_node_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_element_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_surface_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_line_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
 
-    // Named region construction from string references. A source may name an
-    // existing set or one entity identifier. Before compilation the operation
-    // targets the active Part; afterwards optional Instance qualification is
-    // resolved through the compiled local-to-global maps.
-    void add_nodes_to_set   (const std::string& set, const std::string& source, const std::string& instance = "");
-    void add_elements_to_set(const std::string& set, const std::string& source, const std::string& instance = "");
-    void add_surfaces_to_set(const std::string& set, const std::string& source, const std::string& instance = "");
+    ID compiled_node_id   (const std::string& reference) const;
+    ID compiled_element_id(const std::string& reference) const;
+    ID compiled_surface_id(const std::string& reference) const;
+
+    // Named-region population in explicit semantic identifier spaces. Part
+    // operations use the active Part and retain sparse local identifiers;
+    // assembly operations use compiled regions and map scalar `ID` or
+    // `INSTANCE.ID` references into dense identifiers.
+    void add_nodes_to_part_set         (const std::string& set, const std::string& source);
+    void add_nodes_to_assembly_set     (const std::string& set, const std::string& source);
+    void add_elements_to_part_set      (const std::string& set, const std::string& source);
+    void add_elements_to_assembly_set  (const std::string& set, const std::string& source);
+    void add_surfaces_to_part_set      (const std::string& set, const std::string& source);
+    void add_surfaces_to_assembly_set  (const std::string& set, const std::string& source);
 
     // Part-local topology construction in the currently active semantic Part.
     // Nodes and element connectivity retain their input identifiers, while

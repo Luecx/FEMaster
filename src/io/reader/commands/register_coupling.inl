@@ -58,7 +58,6 @@
 #include <string>
 #include <utility>
 
-#include "../reference.h"
 #include "../../../constraints/types/coupling.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -179,7 +178,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
                     "COUPLING: master node set ", ctx->master, " must contain exactly one node");
                 ctx->master_node = ctx->master_region->first();
             } else {
-                ctx->master_node = io::reader::compiled_node_id(model, ctx->master);
+                ctx->master_node = model.compiled_node_id(ctx->master);
             }
 
             // Resolve the common slave target once. A geometric surface wins if

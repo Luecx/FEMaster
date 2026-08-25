@@ -10,7 +10,8 @@
  * Scope-dependent behavior is selected declaratively through DSL variants. No
  * separate parser-level assembly flag is required.
  *
- * @see model::Model::add_surfaces_to_set
+ * @see model::Model::add_surfaces_to_part_set
+ * @see model::Model::add_surfaces_to_assembly_set
  * @see model::SurfaceRegion
  *
  * @author Finn Eggers
@@ -23,6 +24,7 @@
 #include <memory>
 #include <string>
 
+#include "../reference.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -173,7 +175,7 @@ inline void register_sfset(dsl::Registry& registry, model::Model& model) {
 
                     for (const std::string& target : targets) {
                         if (target == missing_token) continue;
-                        model.add_surfaces_to_set(ctx->name, target);
+                        model.add_surfaces_to_part_set(ctx->name, target);
                     }
                 })
             )
@@ -193,10 +195,11 @@ inline void register_sfset(dsl::Registry& registry, model::Model& model) {
 
                     logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
                         "SFSET: instance ", ctx->instance, " is not defined");
-
                     for (const std::string& target : targets) {
                         if (target == missing_token) continue;
-                        model.add_surfaces_to_set(ctx->name, target, ctx->instance);
+
+                        const std::string reference = io::reader::qualify_reference(target, ctx->instance);
+                        model.add_surfaces_to_assembly_set(ctx->name, reference);
                     }
                 })
             )

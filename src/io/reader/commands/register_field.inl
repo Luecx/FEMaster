@@ -23,7 +23,6 @@
 #include <sstream>
 #include <string>
 
-#include "../reference.h"
 #include "../../../core/logging.h"
 #include "../../../core/types_num.h"
 #include "../../../data/field.h"
@@ -151,7 +150,7 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
         };
 
         const auto get_element = [&model](const std::string& target) {
-            const ID element_id = io::reader::compiled_element_id(model, target);
+            const ID element_id = model.compiled_element_id(target);
             logging::error(element_id >= 0
                         && static_cast<std::size_t>(element_id) < model._data->elements.size()
                         && model._data->elements[static_cast<std::size_t>(element_id)] != nullptr,
@@ -171,8 +170,8 @@ inline void register_field(fem::io::dsl::Registry& registry, model::Model& model
                 .bind([&model, ctx, assign_values](const std::string& target,
                                                    const std::array<std::string, detail::kMaxFieldCols>& values) {
                     const ID row = ctx->field->domain == model::FieldDomain::NODE
-                        ? io::reader::compiled_node_id(model, target)
-                        : io::reader::compiled_element_id(model, target);
+                        ? model.compiled_node_id(target)
+                        : model.compiled_element_id(target);
                     assign_values(static_cast<Index>(row), values);
                 })
             )

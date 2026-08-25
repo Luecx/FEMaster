@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../parser_abq.h"
 #include "../../../bc/load_v.h"
 #include "../../../loadcase/loadcase.h"
@@ -79,7 +78,7 @@ inline void register_dload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                         region = model._data->elem_sets.get(target);
                     } else {
                         region = std::make_shared<model::ElementRegion>("INTERNAL");
-                        region->add(io::reader::compiled_element_id(model, target));
+                        region->add(model.compiled_element_id(target));
                     }
 
                     bc::Amplitude::Ptr amplitude_ptr = nullptr;

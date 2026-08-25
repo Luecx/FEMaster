@@ -21,7 +21,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../../../bc/support.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -60,7 +59,7 @@ inline void register_support(fem::io::dsl::Registry& registry, model::Model& mod
                         region = model._data->node_sets.get(target);
                     } else {
                         region = std::make_shared<model::NodeRegion>("INTERNAL");
-                        region->add(io::reader::compiled_node_id(model, target));
+                        region->add(model.compiled_node_id(target));
                     }
 
                     cos::CoordinateSystem::Ptr orientation_ptr = nullptr;

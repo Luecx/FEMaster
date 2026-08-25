@@ -24,19 +24,28 @@ namespace dsl = fem::io::dsl;
 
 /**
  * @brief Registers the root-level `ASSEMBLY` grammar scope.
+ *
+ * The command accepts the optional assembly name used by the input format but
+ * does not create or activate a separate model object. Its admitted DSL scope
+ * provides the parent context required by assembly-level child commands.
+ *
+ * @param registry Parser registry receiving the command definition.
  */
 inline void register_assembly(dsl::Registry& registry) {
     registry.command("ASSEMBLY", [&](dsl::Command& command) {
         // Restrict ASSEMBLY to the root scope
         command.allow_if(dsl::Condition::parent_is("ROOT"));
 
-        // Define the optional assembly name accepted by the input format
+        // Describe the syntactic scope in the generated command documentation
+        command.doc("Begin the model-level assembly scope.");
+
+        // Accept the optional input name without creating a separate assembly object
         command.keyword(
             dsl::KeywordSpec::make()
-                .key("NAME").optional("ASSEMBLY").doc("Optional assembly name")
+                .key("NAME").optional("ASSEMBLY").doc("Optional input-deck assembly name")
         );
 
-        // ASSEMBLY only introduces a grammar scope
+        // Declare an empty payload because ASSEMBLY only introduces a grammar scope
         command.variant(dsl::Variant::make());
     });
 }

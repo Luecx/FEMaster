@@ -3,9 +3,9 @@
  * @brief Implements model-level registration, set population, lifecycle and compact reporting.
  *
  * This file contains the small behavioral operations that act directly on
- * `ModelData`: named node, element and surface set population from string
- * references, nonlinear step-cache coordination, registration of loads,
- * supports and amplitudes, and the compact stream representation of a model.
+ * `ModelData`: insertion of named-set or scalar references into existing
+ * regions, nonlinear step-cache coordination, registration of loads, supports
+ * and amplitudes, and the compact stream representation of a model.
  *
  * Named set population remains independent of the parser format. Before
  * compilation references address the active Part and retain sparse local IDs;
@@ -36,6 +36,32 @@
 #include <system_error>
 
 namespace fem::model {
+
+namespace {
+
+/**
+ * Parses one sparse Part-local entity identifier.
+ *
+ * The complete source token must represent an integer. Named-region lookup is
+ * performed by the calling set operation before this scalar parser is used.
+ *
+ * @param source Local identifier token.
+ * @param entity Entity name used in validation diagnostics.
+ * @return Parsed sparse local identifier.
+ */
+ID parse_local_id(const std::string& source, const char* entity) {
+    // Convert the complete token without accepting trailing characters
+    ID id{};
+    const char* begin = source.data();
+    const char* end   = begin + source.size();
+    const auto [ptr, ec] = std::from_chars(begin, end, id);
+
+    logging::error(ec == std::errc{} && ptr == end,
+        "Model: ", entity, " reference '", source, "' is not a valid local identifier");
+    return id;
+}
+
+} // namespace
 
 /**
  * Initializes persistent element state required during one analysis step.
@@ -85,279 +111,197 @@ void Model::step_end() {
 }
 
 /**
- * Adds one node reference to a named node set.
+ * Adds one local node-set or node identifier to a set in the active Part.
  *
- * The destination and source are expressed entirely through their deck-facing
- * string names. `source` may name another node set or one node identifier.
- * Before compilation the operation addresses the currently active Part and
- * stores sparse local identifiers directly. After compilation it addresses the
- * assembly node-set registry and resolves optional `instance` qualification
- * through the corresponding local-to-global node map.
+ * A named source set is copied within the same Part namespace. Otherwise the
+ * source is parsed as one sparse local node identifier and inserted directly.
  *
- * A source that already contains an `INSTANCE.` prefix keeps that explicit
- * qualification instead of receiving the separate `instance` argument. Copying
- * a set onto itself is treated as a no-op.
- *
- * @param set Destination node-set name.
- * @param source Source node-set name or node identifier.
- * @param instance Optional Instance name used for an unqualified assembly source.
+ * @param set Destination node-set name in the active Part.
+ * @param source Local node-set name or node identifier.
  */
-void Model::add_nodes_to_set(const std::string& set,
-                             const std::string& source,
-                             const std::string& instance) {
-    // Validate the model and the destination name before selecting identifier space
-    logging::error(_data != nullptr,
-        "Model: model data is not initialized");
+void Model::add_nodes_to_part_set(const std::string& set, const std::string& source) {
+    // Validate the semantic identifier space and active Part
+    logging::error(_data != nullptr && !_data->compiled,
+        "Model: part node sets cannot be modified after compile()");
     logging::error(!set.empty(),
         "Model: node set name cannot be empty");
-    logging::error(_data->compiled || instance.empty(),
-        "Model: node set Instance qualification requires a compiled model");
 
-    if (!_data->compiled) {
-        // Resolve the destination in the active semantic Part
-        const auto part = _data->parts.get();
-        logging::error(part != nullptr,
-            "Model: no active part is available for node set ", set);
-        auto destination = part->node_sets.activate(set);
+    const auto part = _data->parts.get();
+    logging::error(part != nullptr,
+        "Model: no active part is available for node set ", set);
 
-        // Copy a named local set when the source resolves in the same Part
-        if (part->node_sets.has(source)) {
-            const auto source_set = part->node_sets.get(source);
-            logging::error(source_set != nullptr,
-                "Model: node set ", source, " is not initialized");
-            if (source_set != destination) destination->add(*source_set);
-            return;
-        }
-
-        // Otherwise interpret the source as one sparse local node identifier
-        ID id{};
-        const char* begin = source.data();
-        const char* end   = begin + source.size();
-        const auto [ptr, ec] = std::from_chars(begin, end, id);
-        logging::error(ec == std::errc{} && ptr == end,
-            "Model: node reference '", source, "' is neither a node set nor a valid node identifier");
-        destination->add(id);
-        return;
-    }
-
-    // Resolve optional assembly Instance qualification without overriding an
-    // already qualified source such as INSTANCE.NSET or INSTANCE.ID
-    logging::error(instance.empty() || _data->instances.has(instance),
-        "Model: instance ", instance, " is not defined");
-    const std::string qualified = instance.empty() || source.find('.') != std::string::npos
-        ? source : instance + "." + source;
-    auto destination = _data->node_sets.activate(set);
-
-    // Copy an existing assembly node set when the qualified name resolves directly
-    if (_data->node_sets.has(qualified)) {
-        const auto source_set = _data->node_sets.get(qualified);
+    // Select the destination and prefer a named source set over scalar parsing
+    const auto destination = part->node_sets.activate(set);
+    if (part->node_sets.has(source)) {
+        const auto source_set = part->node_sets.get(source);
         logging::error(source_set != nullptr,
-            "Model: node set ", qualified, " is not initialized");
+            "Model: node set ", source, " is not initialized");
         if (source_set != destination) destination->add(*source_set);
         return;
     }
 
-    // Split an entity reference into Instance and local identifier components
-    std::string resolved_instance = DEFAULT_INSTANCE_NAME;
-    std::string local             = qualified;
-    const auto separator = qualified.rfind('.');
-    if (separator != std::string::npos) {
-        resolved_instance = qualified.substr(0, separator);
-        local             = qualified.substr(separator + 1);
-        logging::error(!resolved_instance.empty() && !local.empty(),
-            "Model: node reference '", qualified, "' must use INSTANCE.ID");
-    }
-
-    // Convert the local identifier and map it into dense assembly node space
-    ID id{};
-    const char* begin = local.data();
-    const char* end   = begin + local.size();
-    const auto [ptr, ec] = std::from_chars(begin, end, id);
-    logging::error(ec == std::errc{} && ptr == end,
-        "Model: node reference '", qualified, "' is neither a node set nor a valid node identifier");
-    destination->add(compiled_node_id(id, resolved_instance));
+    // Retain one sparse Part-local node identifier
+    destination->add(parse_local_id(source, "node"));
 }
 
 /**
- * Adds one element reference to a named element set.
+ * Adds one compiled node-set or scalar node reference to an assembly set.
  *
- * `source` may refer to another element set or to one element identifier. The
- * active Part owns the operation before compilation. Afterwards the compiled
- * assembly element-set registry is used and optional Instance qualification is
- * resolved through the corresponding element identifier map.
+ * A named source set is copied within assembly node space. Otherwise `source`
+ * is resolved as `ID` or `INSTANCE.ID` through the compiled node maps.
  *
- * A source that is already qualified as `INSTANCE.SET` or `INSTANCE.ID` keeps
- * that qualification. Copying a set onto itself leaves the destination unchanged.
- *
- * @param set Destination element-set name.
- * @param source Source element-set name or element identifier.
- * @param instance Optional Instance name used for an unqualified assembly source.
+ * @param set Destination assembly node-set name.
+ * @param source Compiled node-set name or scalar node reference.
  */
-void Model::add_elements_to_set(const std::string& set,
-                                const std::string& source,
-                                const std::string& instance) {
-    // Validate the model and the destination name before selecting identifier space
-    logging::error(_data != nullptr,
-        "Model: model data is not initialized");
+void Model::add_nodes_to_assembly_set(const std::string& set, const std::string& source) {
+    // Validate the compiled identifier space and destination name
+    logging::error(_data != nullptr && _data->compiled,
+        "Model: assembly node sets require a compiled model");
+    logging::error(!set.empty(),
+        "Model: node set name cannot be empty");
+
+    // Select the destination and prefer a named compiled source set
+    const auto destination = _data->node_sets.activate(set);
+    if (_data->node_sets.has(source)) {
+        const auto source_set = _data->node_sets.get(source);
+        logging::error(source_set != nullptr,
+            "Model: node set ", source, " is not initialized");
+        if (source_set != destination) destination->add(*source_set);
+        return;
+    }
+
+    // Map one semantic node reference into dense assembly space
+    destination->add(compiled_node_id(source));
+}
+
+/**
+ * Adds one local element-set or element identifier to a set in the active Part.
+ *
+ * A named source set is copied within the same Part namespace. Otherwise the
+ * source is parsed as one sparse local element identifier and inserted directly.
+ *
+ * @param set Destination element-set name in the active Part.
+ * @param source Local element-set name or element identifier.
+ */
+void Model::add_elements_to_part_set(const std::string& set, const std::string& source) {
+    // Validate the semantic identifier space and active Part
+    logging::error(_data != nullptr && !_data->compiled,
+        "Model: part element sets cannot be modified after compile()");
     logging::error(!set.empty(),
         "Model: element set name cannot be empty");
-    logging::error(_data->compiled || instance.empty(),
-        "Model: element set Instance qualification requires a compiled model");
 
-    if (!_data->compiled) {
-        // Resolve the destination in the active semantic Part
-        const auto part = _data->parts.get();
-        logging::error(part != nullptr,
-            "Model: no active part is available for element set ", set);
-        auto destination = part->elem_sets.activate(set);
+    const auto part = _data->parts.get();
+    logging::error(part != nullptr,
+        "Model: no active part is available for element set ", set);
 
-        // Copy a named local set when the source resolves in the same Part
-        if (part->elem_sets.has(source)) {
-            const auto source_set = part->elem_sets.get(source);
-            logging::error(source_set != nullptr,
-                "Model: element set ", source, " is not initialized");
-            if (source_set != destination) destination->add(*source_set);
-            return;
-        }
-
-        // Otherwise interpret the source as one sparse local element identifier
-        ID id{};
-        const char* begin = source.data();
-        const char* end   = begin + source.size();
-        const auto [ptr, ec] = std::from_chars(begin, end, id);
-        logging::error(ec == std::errc{} && ptr == end,
-            "Model: element reference '", source, "' is neither an element set nor a valid element identifier");
-        destination->add(id);
-        return;
-    }
-
-    // Resolve optional assembly Instance qualification without overriding an
-    // already qualified source such as INSTANCE.ELSET or INSTANCE.ID
-    logging::error(instance.empty() || _data->instances.has(instance),
-        "Model: instance ", instance, " is not defined");
-    const std::string qualified = instance.empty() || source.find('.') != std::string::npos
-        ? source : instance + "." + source;
-    auto destination = _data->elem_sets.activate(set);
-
-    // Copy an existing assembly element set when the qualified name resolves directly
-    if (_data->elem_sets.has(qualified)) {
-        const auto source_set = _data->elem_sets.get(qualified);
+    // Select the destination and prefer a named source set over scalar parsing
+    const auto destination = part->elem_sets.activate(set);
+    if (part->elem_sets.has(source)) {
+        const auto source_set = part->elem_sets.get(source);
         logging::error(source_set != nullptr,
-            "Model: element set ", qualified, " is not initialized");
+            "Model: element set ", source, " is not initialized");
         if (source_set != destination) destination->add(*source_set);
         return;
     }
 
-    // Split an entity reference into Instance and local identifier components
-    std::string resolved_instance = DEFAULT_INSTANCE_NAME;
-    std::string local             = qualified;
-    const auto separator = qualified.rfind('.');
-    if (separator != std::string::npos) {
-        resolved_instance = qualified.substr(0, separator);
-        local             = qualified.substr(separator + 1);
-        logging::error(!resolved_instance.empty() && !local.empty(),
-            "Model: element reference '", qualified, "' must use INSTANCE.ID");
-    }
-
-    // Convert the local identifier and map it into dense assembly element space
-    ID id{};
-    const char* begin = local.data();
-    const char* end   = begin + local.size();
-    const auto [ptr, ec] = std::from_chars(begin, end, id);
-    logging::error(ec == std::errc{} && ptr == end,
-        "Model: element reference '", qualified, "' is neither an element set nor a valid element identifier");
-    destination->add(compiled_element_id(id, resolved_instance));
+    // Retain one sparse Part-local element identifier
+    destination->add(parse_local_id(source, "element"));
 }
 
 /**
- * Adds one surface reference to a named surface set.
+ * Adds one compiled element-set or scalar element reference to an assembly set.
  *
- * `source` may name another surface set or one surface identifier. Before
- * compilation references remain in the active Part's sparse surface space.
- * After compilation they are added to the assembly surface-set registry and
- * optional Instance qualification is translated through the compiled surface map.
+ * A named source set is copied within assembly element space. Otherwise
+ * `source` is resolved as `ID` or `INSTANCE.ID` through the compiled element
+ * maps.
  *
- * Explicitly qualified sources keep their own Instance prefix. Copying a set
- * onto itself is ignored rather than duplicating its entries.
- *
- * @param set Destination surface-set name.
- * @param source Source surface-set name or surface identifier.
- * @param instance Optional Instance name used for an unqualified assembly source.
+ * @param set Destination assembly element-set name.
+ * @param source Compiled element-set name or scalar element reference.
  */
-void Model::add_surfaces_to_set(const std::string& set,
-                                const std::string& source,
-                                const std::string& instance) {
-    // Validate the model and the destination name before selecting identifier space
-    logging::error(_data != nullptr,
-        "Model: model data is not initialized");
+void Model::add_elements_to_assembly_set(const std::string& set, const std::string& source) {
+    // Validate the compiled identifier space and destination name
+    logging::error(_data != nullptr && _data->compiled,
+        "Model: assembly element sets require a compiled model");
     logging::error(!set.empty(),
-        "Model: surface set name cannot be empty");
-    logging::error(_data->compiled || instance.empty(),
-        "Model: surface set Instance qualification requires a compiled model");
+        "Model: element set name cannot be empty");
 
-    if (!_data->compiled) {
-        // Resolve the destination in the active semantic Part
-        const auto part = _data->parts.get();
-        logging::error(part != nullptr,
-            "Model: no active part is available for surface set ", set);
-        auto destination = part->surface_sets.activate(set);
-
-        // Copy a named local set when the source resolves in the same Part
-        if (part->surface_sets.has(source)) {
-            const auto source_set = part->surface_sets.get(source);
-            logging::error(source_set != nullptr,
-                "Model: surface set ", source, " is not initialized");
-            if (source_set != destination) destination->add(*source_set);
-            return;
-        }
-
-        // Otherwise interpret the source as one sparse local surface identifier
-        ID id{};
-        const char* begin = source.data();
-        const char* end   = begin + source.size();
-        const auto [ptr, ec] = std::from_chars(begin, end, id);
-        logging::error(ec == std::errc{} && ptr == end,
-            "Model: surface reference '", source, "' is neither a surface set nor a valid surface identifier");
-        destination->add(id);
-        return;
-    }
-
-    // Resolve optional assembly Instance qualification without overriding an
-    // already qualified source such as INSTANCE.SFSET or INSTANCE.ID
-    logging::error(instance.empty() || _data->instances.has(instance),
-        "Model: instance ", instance, " is not defined");
-    const std::string qualified = instance.empty() || source.find('.') != std::string::npos
-        ? source : instance + "." + source;
-    auto destination = _data->surface_sets.activate(set);
-
-    // Copy an existing assembly surface set when the qualified name resolves directly
-    if (_data->surface_sets.has(qualified)) {
-        const auto source_set = _data->surface_sets.get(qualified);
+    // Select the destination and prefer a named compiled source set
+    const auto destination = _data->elem_sets.activate(set);
+    if (_data->elem_sets.has(source)) {
+        const auto source_set = _data->elem_sets.get(source);
         logging::error(source_set != nullptr,
-            "Model: surface set ", qualified, " is not initialized");
+            "Model: element set ", source, " is not initialized");
         if (source_set != destination) destination->add(*source_set);
         return;
     }
 
-    // Split an entity reference into Instance and local identifier components
-    std::string resolved_instance = DEFAULT_INSTANCE_NAME;
-    std::string local             = qualified;
-    const auto separator = qualified.rfind('.');
-    if (separator != std::string::npos) {
-        resolved_instance = qualified.substr(0, separator);
-        local             = qualified.substr(separator + 1);
-        logging::error(!resolved_instance.empty() && !local.empty(),
-            "Model: surface reference '", qualified, "' must use INSTANCE.ID");
+    // Map one semantic element reference into dense assembly space
+    destination->add(compiled_element_id(source));
+}
+
+/**
+ * Adds one local surface-set or surface identifier to a set in the active Part.
+ *
+ * A named source set is copied within the same Part namespace. Otherwise the
+ * source is parsed as one sparse local surface identifier and inserted directly.
+ *
+ * @param set Destination surface-set name in the active Part.
+ * @param source Local surface-set name or surface identifier.
+ */
+void Model::add_surfaces_to_part_set(const std::string& set, const std::string& source) {
+    // Validate the semantic identifier space and active Part
+    logging::error(_data != nullptr && !_data->compiled,
+        "Model: part surface sets cannot be modified after compile()");
+    logging::error(!set.empty(),
+        "Model: surface set name cannot be empty");
+
+    const auto part = _data->parts.get();
+    logging::error(part != nullptr,
+        "Model: no active part is available for surface set ", set);
+
+    // Select the destination and prefer a named source set over scalar parsing
+    const auto destination = part->surface_sets.activate(set);
+    if (part->surface_sets.has(source)) {
+        const auto source_set = part->surface_sets.get(source);
+        logging::error(source_set != nullptr,
+            "Model: surface set ", source, " is not initialized");
+        if (source_set != destination) destination->add(*source_set);
+        return;
     }
 
-    // Convert the local identifier and map it into dense assembly surface space
-    ID id{};
-    const char* begin = local.data();
-    const char* end   = begin + local.size();
-    const auto [ptr, ec] = std::from_chars(begin, end, id);
-    logging::error(ec == std::errc{} && ptr == end,
-        "Model: surface reference '", qualified, "' is neither a surface set nor a valid surface identifier");
-    destination->add(compiled_surface_id(id, resolved_instance));
+    // Retain one sparse Part-local surface identifier
+    destination->add(parse_local_id(source, "surface"));
+}
+
+/**
+ * Adds one compiled surface-set or scalar surface reference to an assembly set.
+ *
+ * A named source set is copied within assembly surface space. Otherwise
+ * `source` is resolved as `ID` or `INSTANCE.ID` through the compiled surface
+ * maps.
+ *
+ * @param set Destination assembly surface-set name.
+ * @param source Compiled surface-set name or scalar surface reference.
+ */
+void Model::add_surfaces_to_assembly_set(const std::string& set, const std::string& source) {
+    // Validate the compiled identifier space and destination name
+    logging::error(_data != nullptr && _data->compiled,
+        "Model: assembly surface sets require a compiled model");
+    logging::error(!set.empty(),
+        "Model: surface set name cannot be empty");
+
+    // Select the destination and prefer a named compiled source set
+    const auto destination = _data->surface_sets.activate(set);
+    if (_data->surface_sets.has(source)) {
+        const auto source_set = _data->surface_sets.get(source);
+        logging::error(source_set != nullptr,
+            "Model: surface set ", source, " is not initialized");
+        if (source_set != destination) destination->add(*source_set);
+        return;
+    }
+
+    // Map one semantic surface reference into dense assembly space
+    destination->add(compiled_surface_id(source));
 }
 
 /**

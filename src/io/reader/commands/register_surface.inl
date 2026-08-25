@@ -210,7 +210,7 @@ inline void register_surface(dsl::Registry& registry, model::Model& model) {
                             add_compiled_boundary(element_id, side, ctx->name);
                         }
                     } else {
-                        add_compiled_boundary(io::reader::compiled_element_id(model, reference), side, ctx->name);
+                        add_compiled_boundary(model.compiled_element_id(reference), side, ctx->name);
                     }
                 })
             )
@@ -231,7 +231,7 @@ inline void register_surface(dsl::Registry& registry, model::Model& model) {
                         "SURFACE: INSTANCE is only valid at assembly level");
                     if (model._data->compiled) return;
 
-                    model.add_nodes_to_set(ctx->name, target);
+                    model.add_nodes_to_part_set(ctx->name, target);
                 })
             )
         );
@@ -252,7 +252,8 @@ inline void register_surface(dsl::Registry& registry, model::Model& model) {
                     logging::error(ctx->instance.empty() || model._data->instances.has(ctx->instance),
                         "SURFACE: instance ", ctx->instance, " is not defined");
 
-                    model.add_nodes_to_set(ctx->name, target, ctx->instance);
+                    const std::string reference = io::reader::qualify_reference(target, ctx->instance);
+                    model.add_nodes_to_assembly_set(ctx->name, reference);
                 })
             )
         );

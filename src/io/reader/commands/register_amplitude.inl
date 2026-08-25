@@ -1,14 +1,15 @@
 /**
  * @file register_amplitude.inl
- * @brief Registers reusable scalar amplitudes.
+ * @brief Registers the AMPLITUDE input command.
  *
- * The root-level `AMPLITUDE` command builds named time-dependent scalar
- * functions from tabular samples. Supported interpolation modes are mapped to
- * `bc::Amplitude` and the completed object is stored in `ModelData` for later
- * use by transient, harmonic and other amplitude-aware loads.
+ * The root-level `AMPLITUDE` command creates named time-dependent scalar
+ * functions from tabular `(time, value)` samples. The interpolation mode is
+ * mapped to `bc::Interpolation` and the resulting `bc::Amplitude` is stored
+ * in the model for later use by amplitude-aware loads and analyses.
  *
- * This file owns input validation and sample transfer only. Evaluation at a
- * physical analysis time remains the responsibility of the amplitude object.
+ * The active amplitude pointer is maintained by the reader and identifies the
+ * object currently receiving tabular samples. Evaluation at a physical
+ * analysis time remains the responsibility of `bc::Amplitude`.
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -23,35 +24,63 @@
 
 namespace fem::io::reader::commands {
 
-inline void register_amplitude(fem::io::dsl::Registry& registry, model::Model& model) {
-    registry.command("AMPLITUDE", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
+namespace dsl = fem::io::dsl;
+
+/**
+ * @brief Registers the root-level `AMPLITUDE` command.
+ *
+ * The command creates the named amplitude when its keyword line is entered.
+ * Subsequent data lines append `(time, value)` samples to the active amplitude
+ * maintained by the reader.
+ */
+inline void register_amplitude(dsl::Registry&      registry,
+                               model::Model&       model,
+                               bc::Amplitude::Ptr& amplitude) {
+    registry.command("AMPLITUDE", [&](dsl::Command& command) {
+        // Restrict AMPLITUDE to the root scope
+        command.allow_if(dsl::Condition::parent_is("ROOT"));
+
+        // Define the amplitude name and interpolation mode
         command.keyword(
-            fem::io::dsl::KeywordSpec::make()
+            dsl::KeywordSpec::make()
                 .key("NAME").required()
-                .key("TYPE").optional("LINEAR").allowed({"STEP", "NEAREST", "LINEAR"})
+                .key("TYPE").optional("LINEAR").allowed({"LINEAR", "STEP", "NEAREST"})
         );
-        command.on_enter([&model](const fem::io::dsl::Keys& keys) {
+
+        // Create the amplitude before processing its tabular samples
+        command.on_enter([&model, &amplitude](const dsl::Keys& keys) {
             bc::Interpolation interpolation = bc::Interpolation::Linear;
+
             const std::string type = keys.raw("TYPE");
+
+            // Map the textual interpolation mode to the amplitude representation
             if (type == "STEP") {
                 interpolation = bc::Interpolation::Step;
             } else if (type == "NEAREST") {
                 interpolation = bc::Interpolation::Nearest;
             }
-            model.add_amplitude(std::make_shared<bc::Amplitude>(keys.raw("NAME"), interpolation));
+
+            // Keep the new amplitude active while its data lines are processed
+            amplitude = std::make_shared<bc::Amplitude>(keys.raw("NAME"), interpolation);
+
+            // Store the amplitude permanently in the model
+            model.add_amplitude(amplitude);
         });
-        command.variant(fem::io::dsl::Variant::make()
-            .segment(fem::io::dsl::Segment::make()
-                .range(fem::io::dsl::LineRange{}.min(1))
-                .pattern(fem::io::dsl::Pattern::make()
+
+        // Read one (time, value) sample from every following data line
+        command.variant(dsl::Variant::make()
+            .segment(dsl::Segment::make()
+                .range(dsl::LineRange{}.min(1))
+                .pattern(dsl::Pattern::make()
                     .one<fem::Precision>().name("TIME")
                     .one<fem::Precision>().name("VALUE")
                 )
-                .bind([&model](fem::Precision time, fem::Precision value) {
-                    const auto amplitude = model._data->amplitudes.get();
+                .bind([&amplitude](fem::Precision time, fem::Precision value) {
+                    // Ensure that the keyword created an amplitude before data is consumed
                     logging::error(amplitude != nullptr,
                         "AMPLITUDE: no active amplitude is available");
+
+                    // Append the tabular sample to the active amplitude
                     amplitude->add_sample(time, value);
                 })
             )

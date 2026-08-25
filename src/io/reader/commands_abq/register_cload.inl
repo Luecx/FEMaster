@@ -19,7 +19,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../parser_abq.h"
 #include "../../../bc/load_c.h"
 #include "../../../loadcase/loadcase.h"
@@ -108,7 +107,7 @@ inline void register_cload(fem::io::dsl::Registry& registry, ParserAbq& parser) 
                     if (model._data->node_sets.has(target)) {
                         for (const ID node_id : *model._data->node_sets.get(target)) add_node(node_id);
                     } else {
-                        add_node(io::reader::compiled_node_id(model, target));
+                        add_node(model.compiled_node_id(target));
                     }
                 })
             )

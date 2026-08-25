@@ -44,12 +44,55 @@
 #include "../section/section_truss.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <string>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace fem::model {
+
+namespace {
+
+/**
+ * Parses a compact reference to one semantic entity in an Instance namespace.
+ *
+ * A plain local identifier is associated with the implicit identity Instance.
+ * A qualified reference is split at its final separator into `INSTANCE.ID`.
+ * The complete identifier token must represent one valid integer value.
+ *
+ * @param reference Local `ID` or qualified `INSTANCE.ID` reference.
+ * @param entity Entity name used in validation diagnostics.
+ * @return Instance name and local semantic identifier.
+ */
+std::pair<std::string, ID> split_compiled_reference(const std::string& reference, const char* entity) {
+    // Separate an optional Instance prefix from the local identifier token
+    std::string instance = Model::DEFAULT_INSTANCE_NAME;
+    std::string local    = reference;
+
+    const auto separator = reference.rfind('.');
+    if (separator != std::string::npos) {
+        instance = reference.substr(0, separator);
+        local    = reference.substr(separator + 1);
+
+        logging::error(!instance.empty() && !local.empty(),
+            "Model: ", entity, " reference '", reference, "' must use INSTANCE.ID");
+    }
+
+    // Convert the complete local token without accepting trailing characters
+    ID id{};
+    const char* begin = local.data();
+    const char* end   = begin + local.size();
+    const auto [ptr, ec] = std::from_chars(begin, end, id);
+
+    logging::error(ec == std::errc{} && ptr == end,
+        "Model: ", entity, " reference '", reference, "' does not contain a valid local identifier");
+    return {std::move(instance), id};
+}
+
+} // namespace
 
 /**
  * Constructs an empty model with an implicit root part and identity instance.
@@ -645,6 +688,48 @@ void Model::compile() {
     assign_sections();
     _data->initialize_element_enumeration();
     _data->compiled = true;
+}
+
+/**
+ * Resolves a compact node reference into dense assembly node space.
+ *
+ * The reference may contain a local identifier for the implicit identity
+ * Instance or an explicitly qualified `INSTANCE.ID` value.
+ *
+ * @param reference Local `ID` or qualified `INSTANCE.ID` node reference.
+ * @return Dense assembly node identifier.
+ */
+ID Model::compiled_node_id(const std::string& reference) const {
+    const auto [instance, id] = split_compiled_reference(reference, "node");
+    return compiled_node_id(id, instance);
+}
+
+/**
+ * Resolves a compact element reference into dense assembly element space.
+ *
+ * The reference may contain a local identifier for the implicit identity
+ * Instance or an explicitly qualified `INSTANCE.ID` value.
+ *
+ * @param reference Local `ID` or qualified `INSTANCE.ID` element reference.
+ * @return Dense assembly element identifier.
+ */
+ID Model::compiled_element_id(const std::string& reference) const {
+    const auto [instance, id] = split_compiled_reference(reference, "element");
+    return compiled_element_id(id, instance);
+}
+
+/**
+ * Resolves a compact surface reference into dense assembly surface space.
+ *
+ * The reference may contain a local identifier for the implicit identity
+ * Instance or an explicitly qualified `INSTANCE.ID` value.
+ *
+ * @param reference Local `ID` or qualified `INSTANCE.ID` surface reference.
+ * @return Dense assembly surface identifier.
+ */
+ID Model::compiled_surface_id(const std::string& reference) const {
+    const auto [instance, id] = split_compiled_reference(reference, "surface");
+    return compiled_surface_id(id, instance);
 }
 
 /**

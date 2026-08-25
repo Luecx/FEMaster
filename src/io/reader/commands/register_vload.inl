@@ -19,7 +19,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../../../bc/load_v.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -61,7 +60,7 @@ inline void register_vload(fem::io::dsl::Registry& registry, model::Model& model
                         region = model._data->elem_sets.get(target);
                     } else {
                         region = std::make_shared<model::ElementRegion>("INTERNAL");
-                        region->add(io::reader::compiled_element_id(model, target));
+                        region->add(model.compiled_element_id(target));
                     }
 
                     cos::CoordinateSystem::Ptr orientation_ptr = nullptr;

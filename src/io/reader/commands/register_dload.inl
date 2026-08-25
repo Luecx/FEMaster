@@ -20,7 +20,6 @@
 #include <memory>
 #include <string>
 
-#include "../reference.h"
 #include "../../../bc/load_d.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -62,7 +61,7 @@ inline void register_dload(fem::io::dsl::Registry& registry, model::Model& model
                         region = model._data->surface_sets.get(target);
                     } else {
                         region = std::make_shared<model::SurfaceRegion>("INTERNAL");
-                        region->add(io::reader::compiled_surface_id(model, target));
+                        region->add(model.compiled_surface_id(target));
                     }
 
                     cos::CoordinateSystem::Ptr orientation_ptr = nullptr;
