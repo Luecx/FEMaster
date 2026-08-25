@@ -100,21 +100,19 @@ std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::s
     return {Precision(1), std::string{}};
 }
 
-void ParserAbq::register_common_commands(io::dsl::Registry& registry,
-                                         std::shared_ptr<bool> assembly_scope) {
+void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     // Register the complete Abaqus subset once per parser pass. ActiveMode below
-    // controls execution; keeping one common grammar preserves scope handling
-    // even when a command is only consumed in the current pass.
+    // controls execution while the DSL scope stack provides all parent context.
     commands::register_heading(registry);
     commands::register_part(registry, model());
     commands::register_end_part(registry, model());
-    commands_abq::register_assembly(registry, assembly_scope);
-    commands_abq::register_end_assembly(registry, assembly_scope);
+    commands_abq::register_assembly(registry);
+    commands_abq::register_end_assembly(registry);
     commands_abq::register_instance(registry, model());
     commands_abq::register_end_instance(registry);
-    commands::register_nset(registry, model(), assembly_scope);
-    commands::register_elset(registry, model(), assembly_scope);
-    commands::register_surface(registry, model(), assembly_scope);
+    commands::register_nset(registry, model());
+    commands::register_elset(registry, model());
+    commands::register_surface(registry, model());
     commands::register_material(registry, model());
     commands::register_density(registry, model());
     commands::register_elastic(registry, model());
@@ -137,10 +135,9 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry,
 void ParserAbq::configure_definition_pass(io::dsl::Registry& registry) {
     // Definitions may be referenced by part sections during the topology pass.
     // They therefore execute before any part or instance construction.
-    auto assembly_scope = std::make_shared<bool>(false);
-    commands::register_node(registry, model(), assembly_scope);
-    commands_abq::register_element(registry, model(), assembly_scope);
-    register_common_commands(registry, assembly_scope);
+    commands::register_node(registry, model());
+    commands_abq::register_element(registry, model());
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
@@ -151,14 +148,12 @@ void ParserAbq::configure_definition_pass(io::dsl::Registry& registry) {
 }
 
 void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
-    // Build semantic parts, instances and part-local section assignments. MASS
-    // variants select ROOT/PART scope declaratively and assembly records are only
-    // consumed until the compiled assembly pass.
+    // Build semantic parts, instances and part-local section assignments. Scope
+    // variants defer assembly records until the compiled assembly pass.
     m_abq_state = ParserAbqState{};
-    auto assembly_scope = std::make_shared<bool>(false);
-    commands::register_node(registry, model(), assembly_scope);
-    commands_abq::register_element(registry, model(), assembly_scope);
-    register_common_commands(registry, assembly_scope);
+    commands::register_node(registry, model());
+    commands_abq::register_element(registry, model());
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
@@ -173,10 +168,9 @@ void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
     // Part-local sections were already expanded by Model::compile(). This pass
     // materializes assembly-local regions, MASS sections and nodal transforms
     // directly in dense identifier space.
-    auto assembly_scope = std::make_shared<bool>(false);
-    commands::register_node(registry, model(), assembly_scope);
-    commands_abq::register_element(registry, model(), assembly_scope);
-    register_common_commands(registry, assembly_scope);
+    commands::register_node(registry, model());
+    commands_abq::register_element(registry, model());
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
@@ -189,10 +183,9 @@ void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
 void ParserAbq::configure_analysis_pass(io::dsl::Registry& registry) {
     // Analysis procedures and boundary/load data consume the final compiled
     // assembly, including all post-compile sets and nodal transforms.
-    auto assembly_scope = std::make_shared<bool>(false);
-    commands::register_node(registry, model(), assembly_scope);
-    commands_abq::register_element(registry, model(), assembly_scope);
-    register_common_commands(registry, assembly_scope);
+    commands::register_node(registry, model());
+    commands_abq::register_element(registry, model());
+    register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {

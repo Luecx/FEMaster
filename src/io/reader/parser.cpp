@@ -148,7 +148,7 @@ void Parser::run(const std::string& input_path,
     // Cross the one-way boundary into deterministic dense assembly storage
     model_->compile();
 
-    // Materialize post-compile regions, fields and shell reference normals
+    // Materialize post-compile assembly regions, fields and shell normals
     run_assembly_pass(input_path);
 
     // Execute loads, constraints and load cases against the completed assembly
@@ -482,8 +482,8 @@ void Parser::configure_documentation_registry() {
  *
  * Every parsing pass uses the same grammar. Active modes control whether a
  * command executes its callback or is only consumed to preserve the original
- * scope hierarchy. The assembly-scope flag is shared by topology callbacks
- * belonging to this registry and therefore resets naturally for every replay.
+ * scope hierarchy. Parent-dependent behavior is represented directly by DSL
+ * conditions and variants rather than duplicated parser-local scope flags.
  *
  * Model-oriented commands receive the current Model directly. Load-case commands
  * receive the Parser because they coordinate consecutive commands through the
@@ -492,26 +492,25 @@ void Parser::configure_documentation_registry() {
  * @param registry Registry that receives the complete command definitions.
  */
 void Parser::register_commands(io::dsl::Registry& registry) {
-    // Validate the callback target and initialize registry-local assembly scope
+    // Validate the callback target before registering model-oriented commands
     logging::error(model_ != nullptr,
         "Parser: model must exist before registering commands");
 
     auto& mdl = *model_;
-    auto assembly_scope = std::make_shared<bool>(false);
 
-    // Register semantic Part/Instance topology and assembly-scope commands
+    // Register semantic Part/Instance topology and scope-aware assembly commands
     commands::register_part        (registry, mdl);
     commands::register_end_part    (registry, mdl);
-    commands::register_assembly    (registry, assembly_scope);
-    commands::register_end_assembly(registry, assembly_scope);
+    commands::register_assembly    (registry);
+    commands::register_end_assembly(registry);
     commands_abq::register_instance(registry, mdl);
     commands::register_end_instance(registry);
-    commands::register_node        (registry, mdl, assembly_scope);
-    commands::register_element     (registry, mdl, assembly_scope);
-    commands::register_nset        (registry, mdl, assembly_scope);
-    commands::register_elset       (registry, mdl, assembly_scope);
-    commands::register_surface     (registry, mdl, assembly_scope);
-    commands::register_sfset       (registry, mdl, assembly_scope);
+    commands::register_node        (registry, mdl);
+    commands::register_element     (registry, mdl);
+    commands::register_nset        (registry, mdl);
+    commands::register_elset       (registry, mdl);
+    commands::register_surface     (registry, mdl);
+    commands::register_sfset       (registry, mdl);
 
     // Register the root model and load-case terminator scopes
     registry.command("MODEL", [](io::dsl::Command& command) {
@@ -521,6 +520,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     });
     registry.command("END", [](io::dsl::Command& command) {
         command.allow_if(io::dsl::Condition::parent_is("LOADCASE"));
+        command.closes_parent();
         command.variant(io::dsl::Variant::make());
     });
 

@@ -498,6 +498,7 @@ inline void register_step(fem::io::dsl::Registry& registry, ParserAbq& parser) {
     // ---------------------------------------------------------------------
     registry.command("ENDSTEP", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("STEP"));
+        command.closes_parent();
         command.doc("Execute and finish the active Abaqus analysis step.");
 
         command.on_enter([&parser](const fem::io::dsl::Keys&) {

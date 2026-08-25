@@ -15,7 +15,8 @@
  *          - Attempt to **admit** it against the current scope (climb upwards until allowed).
  *          - Choose the **highest-ranked fitting variant**.
  *          - Execute its **segments** according to their `LineRange` and `Pattern`.
- *          - Push this command as the new parent (scope goes “down”).
+ *          - Push this command as the new parent, or close the admitted parent for a
+ *            `closes_parent()` terminator.
  *
  * ## Variant selection (ranked trial & backtrack)
  *  - Variants whose conditions hold are ordered by descending `Variant::rank()`; ties keep
@@ -125,7 +126,7 @@ public:
      *      a. If command is unregistered → report an unknown keyword.
      *      b. If registered → climb scope upwards until the command is admitted.
      *      c. Try fitting variants in descending rank with backtracking.
-     *      d. Execute its segments and push the processed command as the new parent.
+     *      d. Execute its segments and either push the command or close its admitted parent.
      *  4. At EOF, call `on_exit` for **all scopes still open** (except ROOT).
      *
      * @param file Input file object providing normalized lines (with include support).
@@ -310,10 +311,10 @@ public:
             if (!consume_only) {
                 logging::info("Processing command: *", cmd);
 
-                // on_enter runs only after a variant was selected, but before segment callbacks.
+                // Run command setup with the selected parent before segment callbacks
                 if (spec->on_enter_) {
                     try {
-                        spec->on_enter_(self_keys);
+                        spec->on_enter_(scope.back(), self_keys);
                     } catch (const std::exception& e) {
                         throw_at(ln.location(), e.what());
                     }
@@ -328,6 +329,15 @@ public:
                         }
                     }
                 }
+            }
+
+            // Terminators process normally, then close the admitted parent without becoming a scope
+            if (spec->closes_parent_) {
+                if (chosen_parent_index == 0) {
+                    throw_at(ln.location(), "Command '" + cmd + "' cannot close the ROOT scope");
+                }
+                pop_scope_to(static_cast<std::size_t>(chosen_parent_index));
+                continue;
             }
 
             // After successful processing, this keyword becomes the new parent (scope descends)

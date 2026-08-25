@@ -1,41 +1,43 @@
 /**
  * @file register_assembly.inl
- * @brief Registers the ASSEMBLY scope.
+ * @brief Registers the ASSEMBLY input scope.
  *
- * FEMaster represents the assembly directly through `Model`, so this command
- * does not create a second assembly object. Instead it opens the grammar scope
- * and updates registry-local state used by node, element, set and surface
- * commands to distinguish assembly-level definitions from part-local data.
+ * FEMaster represents the assembly directly through `Model` and therefore does
+ * not create a separate assembly object. `ASSEMBLY` only introduces a grammar
+ * scope under which assembly-specific command variants may be selected.
  *
- * The shared scope flag belongs to one parser pass and is cleared by the
- * corresponding `ENDASSEMBLY` registration.
+ * Scope ownership remains entirely inside the DSL engine; no parallel parser
+ * flag is required.
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once
-
-#include <memory>
 
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 
 namespace fem::io::reader::commands {
 
-inline void register_assembly(fem::io::dsl::Registry& registry,
-                              std::shared_ptr<bool> assembly_scope) {
-    registry.command("ASSEMBLY", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
-        command.doc("Begin the assembly scope represented directly by Model.");
+namespace dsl = fem::io::dsl;
+
+/**
+ * @brief Registers the root-level `ASSEMBLY` grammar scope.
+ */
+inline void register_assembly(dsl::Registry& registry) {
+    registry.command("ASSEMBLY", [&](dsl::Command& command) {
+        // Restrict ASSEMBLY to the root scope
+        command.allow_if(dsl::Condition::parent_is("ROOT"));
+
+        // Define the optional assembly name accepted by the input format
         command.keyword(
-            fem::io::dsl::KeywordSpec::make()
+            dsl::KeywordSpec::make()
                 .key("NAME").optional("ASSEMBLY").doc("Optional assembly name")
         );
-        command.on_enter([assembly_scope](const fem::io::dsl::Keys&) {
-            *assembly_scope = true;
-        });
-        command.variant(fem::io::dsl::Variant::make());
+
+        // ASSEMBLY only introduces a grammar scope
+        command.variant(dsl::Variant::make());
     });
 }
 

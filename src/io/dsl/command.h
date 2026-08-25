@@ -12,7 +12,8 @@
  *    variant whose condition evaluates to true (or that has no condition) and then
  *    executes its segments;
  *  - register **entry** and **exit hooks** (`on_enter(...)`, `on_exit(...)`) that are
- *    executed when the command is entered or left in the parsing scope hierarchy.
+ *    executed when the command is entered or left in the parsing scope hierarchy;
+ *  - mark a command as a parent terminator (`closes_parent()`).
  *
  * Typical usage:
  * @code
@@ -34,9 +35,12 @@
  *  - If no admission condition is set (`allow_if` never called), `admit_` defaults to
  *    `Condition{}` which is the `Always` condition (i.e., admissible under any parent).
  *  - Variants are checked in the order they were added; the first matching one is used.
- *  - `on_enter` is executed before segments of the variant run.
+ *  - `on_enter` is executed before segments of the variant run and may inspect the
+ *    selected parent scope.
  *  - `on_exit` is executed when the command scope leaves (e.g. next command climbs up
  *    the scope stack or at end-of-file if still active).
+ *  - A command marked with `closes_parent()` is processed under its admitted parent and
+ *    then removes that parent instead of becoming a new scope itself.
  *
  * @see variant.h
  * @see condition.h
@@ -78,8 +82,11 @@ struct Command {
     /** Stage-local execution mode. */
     ActiveMode active_ = ActiveMode::Active;
 
-    /** Optional hook executed once when the command is entered (before segments run). */
-    std::function<void(const Keys&)> on_enter_;
+    /** Whether successful processing closes the admitted parent scope. */
+    bool closes_parent_ = false;
+
+    /** Optional hook executed once with the selected parent and command keys. */
+    std::function<void(const ParentInfo&, const Keys&)> on_enter_;
 
     /** Optional hook executed when the command's scope is exited. */
     std::function<void(const Keys&)> on_exit_;
@@ -142,16 +149,47 @@ struct Command {
     }
 
     /**
-     * @brief Registers a hook invoked once per keyword before any variant segments.
+     * @brief Marks this command as a terminator for its admitted parent scope.
      *
-     * Typical use-cases: activate target sets, allocate per-command context, etc.
-     * The hook receives the keyword-line keys (parsed via `Keys::from_keyword_line`).
+     * The command is validated and processed normally under the selected parent. After
+     * successful processing the engine pops that parent, firing its `on_exit` hook, and
+     * does not push this command as a new scope.
+     *
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& closes_parent() {
+        closes_parent_ = true;
+        return *this;
+    }
+
+    /**
+     * @brief Registers a parent-aware hook invoked before any variant segments.
+     *
+     * The parent is the scope selected by command admission after the engine has
+     * climbed and popped the scope stack. The keys are the normalized arguments of
+     * the current keyword line.
+     *
+     * @param fn Callback taking the selected parent and command keyword keys.
+     * @return Reference to `*this` for fluent chaining.
+     */
+    Command& on_enter(std::function<void(const ParentInfo&, const Keys&)> fn) {
+        on_enter_ = std::move(fn);
+        return *this;
+    }
+
+    /**
+     * @brief Registers a key-only hook invoked before any variant segments.
+     *
+     * This overload preserves the compact callback form for commands that do not
+     * depend on their parent scope.
      *
      * @param fn Callback taking the command's keyword keys.
      * @return Reference to `*this` for fluent chaining.
      */
     Command& on_enter(std::function<void(const Keys&)> fn) {
-        on_enter_ = std::move(fn);
+        on_enter_ = [fn = std::move(fn)](const ParentInfo&, const Keys& keys) {
+            fn(keys);
+        };
         return *this;
     }
 

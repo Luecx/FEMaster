@@ -4,7 +4,9 @@
  *
  * A `PART` command creates and activates a named reusable semantic topology
  * container. Subsequent nodes, elements, local regions and section assignments
- * are stored against that Part until `ENDPART` restores the default context.
+ * are stored against that Part until the grammar scope is left, either
+ * explicitly through `ENDPART` or implicitly by a command admitted at a higher
+ * scope.
  *
  * Parts retain sparse local identifiers and remain independent of assembly
  * placement. Rigid transforms and dense global expansion are handled later by
@@ -32,6 +34,9 @@ inline void register_part(fem::io::dsl::Registry& registry, model::Model& model)
         );
         command.on_enter([&model](const fem::io::dsl::Keys& keys) {
             model.add_part(keys.raw("NAME"));
+        });
+        command.on_exit([&model](const fem::io::dsl::Keys&) {
+            model._data->parts.activate(model::Model::DEFAULT_PART_NAME);
         });
         command.variant(fem::io::dsl::Variant::make());
     });

@@ -2,36 +2,37 @@
  * @file register_end_assembly.inl
  * @brief Registers the ENDASSEMBLY scope terminator.
  *
- * `ENDASSEMBLY` closes the assembly grammar scope and clears the registry-local
- * flag shared with assembly-aware topology commands. The flag determines
- * whether sets, surfaces and other qualified definitions address compiled
- * assembly entities rather than active Part storage.
+ * `ENDASSEMBLY` closes the assembly grammar scope. FEMaster does not destroy or
+ * modify a separate assembly object because the assembled domain is represented
+ * directly by the persistent `Model`.
  *
- * No model object is destroyed when the scope ends because FEMaster represents
- * the assembly directly through the persistent `Model`.
+ * Scope ownership remains entirely inside the DSL engine; no parser-local flag
+ * needs to be cleared explicitly.
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 25.08.2026
  */
 
 #pragma once
-
-#include <memory>
 
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 
 namespace fem::io::reader::commands {
 
-inline void register_end_assembly(fem::io::dsl::Registry& registry,
-                                  std::shared_ptr<bool> assembly_scope) {
-    registry.command("ENDASSEMBLY", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ASSEMBLY"));
-        command.doc("Terminate the assembly scope.");
-        command.on_enter([assembly_scope](const fem::io::dsl::Keys&) {
-            *assembly_scope = false;
-        });
-        command.variant(fem::io::dsl::Variant::make());
+namespace dsl = fem::io::dsl;
+
+/**
+ * @brief Registers the `ENDASSEMBLY` grammar-scope terminator.
+ */
+inline void register_end_assembly(dsl::Registry& registry) {
+    registry.command("ENDASSEMBLY", [&](dsl::Command& command) {
+        // ENDASSEMBLY is only valid for an active assembly scope
+        command.allow_if(dsl::Condition::parent_is("ASSEMBLY"));
+        command.closes_parent();
+
+        // The command only closes the grammar scope
+        command.variant(dsl::Variant::make());
     });
 }
 
