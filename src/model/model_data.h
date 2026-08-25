@@ -75,9 +75,9 @@ struct Instance;
  *
  * `point_elements` are different only in ownership: they are synthesized from
  * FEMaster `POINTMASS, NSET=...` commands after the dense topology has already
- * been compiled. They participate in DOF, stiffness, damping, mass and inertia
- * assembly, but do not alter dense element ids, ELSETs or element-domain fields.
- * Generic non-point features remain supported independently.
+ * been compiled. They participate in DOF, stiffness, mass and inertia assembly,
+ * but do not alter dense element ids, ELSETs or element-domain fields. Generic
+ * non-point features remain supported independently.
  *
  * Named fields are owned through shared pointers in `fields`. Dedicated handles
  * expose fields with central solver meaning, such as current/reference nodal
