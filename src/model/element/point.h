@@ -8,10 +8,10 @@
  *
  * Without a point-mass section the element is inert and activates no DOFs. With
  * a section it contributes concentrated translational mass, rotary inertia and
- * diagonal translational/rotational stiffness against ground. Density-scaled
- * field integration interprets the section mass as the complete concentrated
- * mass measure, which makes element-based gravity and inertia loads work through
- * the ordinary structural-element path.
+ * diagonal translational/rotational stiffness and damping against ground.
+ * Density-scaled field integration interprets the section mass as the complete
+ * concentrated mass measure, which makes element-based gravity and inertia
+ * loads work through the ordinary structural-element path.
  *
  * @see StructuralElement
  * @see PointMassSection
@@ -36,7 +36,7 @@ namespace fem::model {
  * @brief One-node structural element using a concentrated point-mass section.
  *
  * The element has no geometric integration measure and no constitutive state.
- * Its section directly defines the six diagonal mass/inertia and ground-spring
+ * Its section directly defines diagonal mass/inertia, stiffness and damping
  * coefficients. Missing sections are permitted and leave the topology entirely
  * inactive.
  */
@@ -62,12 +62,12 @@ struct PointElement : StructuralElement {
             "PointElement: section is not a PointMassSection for element ", elem_id);
 
         return ElDofs{
-            section->mass_ != Precision(0) || section->spring_constants_(0) != Precision(0),
-            section->mass_ != Precision(0) || section->spring_constants_(1) != Precision(0),
-            section->mass_ != Precision(0) || section->spring_constants_(2) != Precision(0),
-            section->rotary_inertia_(0) != Precision(0) || section->rotary_spring_constants_(0) != Precision(0),
-            section->rotary_inertia_(1) != Precision(0) || section->rotary_spring_constants_(1) != Precision(0),
-            section->rotary_inertia_(2) != Precision(0) || section->rotary_spring_constants_(2) != Precision(0)
+            section->mass_ != Precision(0) || section->spring_constants_(0) != Precision(0) || section->damping_constants_(0) != Precision(0),
+            section->mass_ != Precision(0) || section->spring_constants_(1) != Precision(0) || section->damping_constants_(1) != Precision(0),
+            section->mass_ != Precision(0) || section->spring_constants_(2) != Precision(0) || section->damping_constants_(2) != Precision(0),
+            section->rotary_inertia_(0) != Precision(0) || section->rotary_spring_constants_(0) != Precision(0) || section->rotary_damping_constants_(0) != Precision(0),
+            section->rotary_inertia_(1) != Precision(0) || section->rotary_spring_constants_(1) != Precision(0) || section->rotary_damping_constants_(1) != Precision(0),
+            section->rotary_inertia_(2) != Precision(0) || section->rotary_spring_constants_(2) != Precision(0) || section->rotary_damping_constants_(2) != Precision(0)
         };
     }
 
@@ -97,6 +97,24 @@ struct PointElement : StructuralElement {
         return result;
     }
 
+    MapMatrix damping(Precision* buffer) const {
+        MapMatrix result(buffer, 6, 6);
+        result.setZero();
+        if (!_section) return result;
+
+        const auto* section = _section->as<PointMassSection>();
+        logging::error(section != nullptr,
+            "PointElement: section is not a PointMassSection for element ", elem_id);
+
+        result(0, 0) = section->damping_constants_(0);
+        result(1, 1) = section->damping_constants_(1);
+        result(2, 2) = section->damping_constants_(2);
+        result(3, 3) = section->rotary_damping_constants_(0);
+        result(4, 4) = section->rotary_damping_constants_(1);
+        result(5, 5) = section->rotary_damping_constants_(2);
+        return result;
+    }
+
     MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
         (void) ip_stress;
         (void) ip_start_idx;
@@ -109,7 +127,6 @@ struct PointElement : StructuralElement {
                                 Field& ip_stress_state,
                                 NodeData& nodal_forces,
                                 const Field& displacement) override {
-        (void) ip_stress_state;
         internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
         return stiffness(buffer);
     }
