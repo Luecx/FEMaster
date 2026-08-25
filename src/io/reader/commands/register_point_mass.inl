@@ -9,8 +9,8 @@
  *
  * The generated point elements deliberately stay outside the frozen dense
  * element namespace because the command runs after `Model::compile()`. They
- * participate in DOF, stiffness, mass, damping and inertia assembly without
- * changing ELSETs or element-domain field enumeration.
+ * participate in DOF, stiffness, mass and inertia assembly without changing
+ * ELSETs or element-domain field enumeration.
  *
  * @author Finn Eggers
  * @date 25.08.2026
@@ -37,8 +37,7 @@ namespace fem::io::reader::commands {
  *
  * The data layout remains unchanged: scalar translational mass, three rotary
  * inertias, three translational ground stiffnesses and three rotational ground
- * stiffnesses. Ground damping is supported by `PointMassSection` itself but is
- * not exposed by this legacy command syntax.
+ * stiffnesses.
  *
  * @param registry Parser registry receiving the command.
  * @param model Compiled model receiving auxiliary point elements.
