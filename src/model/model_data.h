@@ -43,6 +43,7 @@
 #include "../data/field.h"
 #include "../data/region.h"
 #include "../data/sets.h"
+#include "../feature/feature.h"
 #include "../material/material.h"
 #include "../section/profile.h"
 #include "../section/section.h"
@@ -76,6 +77,7 @@ struct Instance;
  * FEMaster `POINTMASS, NSET=...` commands after the dense topology has already
  * been compiled. They participate in DOF, stiffness, damping, mass and inertia
  * assembly, but do not alter dense element ids, ELSETs or element-domain fields.
+ * Generic non-point features remain supported independently.
  *
  * Named fields are owned through shared pointers in `fields`. Dedicated handles
  * expose fields with central solver meaning, such as current/reference nodal
@@ -112,8 +114,9 @@ struct ModelData {
     std::vector<ElementPtr> point_elements;
 
     // Assembly section assignments and shared non-topological definitions.
-    std::vector<Section::Ptr> sections;
-    Dict<Profile>             profiles;
+    std::vector<Section::Ptr>          sections;
+    Dict<Profile>                      profiles;
+    std::vector<feature::Feature::Ptr> features;
 
     // Named definitions shared across the complete assembly. Coordinate systems
     // and amplitudes are global resources rather than part-local topology.
