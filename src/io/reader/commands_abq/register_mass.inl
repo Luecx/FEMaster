@@ -1,35 +1,43 @@
 /**
  * @file register_mass.inl
- * @brief Registers Abaqus `*MASS` properties as `PointMassSection` assignments.
+ * @brief Registers the Abaqus `*MASS` property command in the replay-based reader.
  *
- * Abaqus represents concentrated mass with two separate model concepts:
- * `*ELEMENT, TYPE=MASS` defines one-node element topology and `*MASS, ELSET=...`
- * assigns the physical mass property to a set of those elements. FEMaster maps
- * this directly to `model::PointElement` plus `PointMassSection`.
+ * This file translates Abaqus concentrated-mass properties into FEMaster section
+ * assignments. Abaqus separates the one-node `MASS` element topology from the
+ * property assigned to that topology: `*ELEMENT, TYPE=MASS` defines element ids,
+ * connectivity and ELSET membership, while `*MASS, ELSET=...` assigns the scalar
+ * isotropic mass. FEMaster represents the same separation with
+ * `model::PointElement` and `PointMassSection`.
  *
- * The Abaqus reader replays the same input deck across multiple parser passes.
- * Part-local topology and section assignments are available before
- * `Model::compile()`, while assembly ELSETs are materialized only afterwards
- * because their references must be resolved through compiled Instance mappings.
- * Consequently the same `*MASS` record is encountered both before and after the
- * compilation boundary, but it must mutate the model in exactly one pass:
+ * The Abaqus reader processes the same input deck in multiple semantic passes
+ * around the one-way `Model::compile()` boundary. This is relevant for `*MASS`
+ * because the target ELSET lives in different identifier spaces depending on
+ * its parent scope:
  *
- * - ROOT/PART `*MASS` is executed before compilation and stored as a part-local
- *   section assignment. `Model::compile()` later copies and remaps that section
+ * - ROOT/PART records reference semantic Part-local element sets. They can be
+ *   resolved before compilation and are stored as Part-local section
+ *   assignments. `Model::compile()` later copies and remaps those assignments
  *   for every Instance of the Part.
- * - ASSEMBLY `*MASS` is only consumed before compilation, then executed in the
- *   post-compile assembly pass once the referenced assembly ELSET exists.
- * - On the opposite replay pass the already handled scope is still parsed, but
- *   its variant deliberately has no bind callback and therefore has no effect.
+ * - ASSEMBLY records reference assembly element sets. Those sets are
+ *   materialized only after compilation, when local Instance element ids can be
+ *   resolved to dense assembly ids.
  *
- * Scope dispatch is expressed with `Condition::parent_is(...)` on the variants.
- * The model compile state is consulted only while constructing the registry to
- * decide which scope receives the active bind in the current replay. The bind
- * callbacks themselves contain only the operation for their semantic scope and
- * do not inspect parser stage or parent state.
+ * The command therefore uses two DSL variants in each relevant reader replay.
+ * One variant performs the model mutation for the scope that is resolvable in
+ * that replay, while the other variant only consumes and validates the same
+ * input syntax. This prevents duplicate section creation although the complete
+ * deck is parsed more than once.
  *
- * Only isotropic Abaqus mass is translated here. Anisotropic mass, orientation
- * and Abaqus damping parameters are outside the current implementation.
+ * Parent-scope dispatch belongs to the DSL and is expressed exclusively through
+ * `Condition::parent_is(...)` on each variant. The bind callbacks themselves do
+ * not inspect parser parent state. The model compile state is used only while
+ * registering the command to select which replay receives the mutating bind.
+ *
+ * This translation currently supports only the isotropic Abaqus `*MASS` form.
+ * Anisotropic mass, orientation-dependent mass and Abaqus damping parameters are
+ * not represented here. Mass, rotary inertia and ground-spring behavior of the
+ * FEMaster `PointMassSection` remain responsibilities of the section and point
+ * element implementations rather than of this parser command.
  *
  * @see model::PointElement
  * @see PointMassSection
@@ -54,30 +62,41 @@
 namespace fem::io::reader::commands_abq {
 
 /**
- * Registers the Abaqus `*MASS, ELSET=...` command.
+ * Registers `*MASS, ELSET=...` for Part-local and assembly-level MASS elements.
  *
- * Every accepted record contains one isotropic mass value and targets an ELSET
- * containing only `model::PointElement` objects. The command has separate DSL
- * variants for ROOT/PART and ASSEMBLY scope because those regions live in
- * different identifier spaces on opposite sides of `Model::compile()`.
+ * The command accepts one isotropic mass value and requires an ELSET containing
+ * only `model::PointElement` objects. The target region is validated before a
+ * `PointMassSection` is created so a mixed ELSET cannot silently assign point
+ * properties to unrelated structural formulations.
  *
- * The registry is reconstructed for each reader replay. Before compilation the
- * ROOT/PART variant owns the bind and the ASSEMBLY variant is consume-only.
- * After compilation the roles are reversed: ROOT/PART is consume-only and the
- * ASSEMBLY variant owns the bind. This prevents duplicate section creation while
- * still allowing the complete deck to be parsed on every pass.
+ * Registration depends on which side of `Model::compile()` the current parser
+ * replay runs:
+ *
+ * 1. Before compilation, ROOT/PART records are executed against the active
+ *    semantic Part. ASSEMBLY records are parsed without a bind because their
+ *    assembly ELSETs do not exist yet.
+ * 2. After compilation, ROOT/PART records are parsed without a bind because
+ *    their sections have already been copied into assembly space. ASSEMBLY
+ *    records are now executed against compiled ELSETs and dense element ids.
+ *
+ * The consume-only variants are necessary because the Abaqus reader replays the
+ * complete input deck. They preserve syntax handling in every pass while making
+ * the section assignment itself occur exactly once. Scope routing remains
+ * declarative through `parent_is(...)`; no bind callback branches on parser
+ * stage or parent scope.
  *
  * @param registry Parser registry receiving the command definition.
- * @param model Model receiving part-local or compiled section assignments.
+ * @param model Model receiving either semantic Part-local or compiled assembly
+ *              section assignments.
  */
 inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("MASS", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
         command.doc("Assign isotropic mass to Abaqus MASS elements in an ELSET.");
 
-        // The keyword is replayed in multiple parser passes. Keep its ELSET name
-        // in command-local state so whichever variant is active for this replay
-        // can resolve the target in the appropriate identifier space.
+        // The ELSET name belongs to one keyword occurrence but is needed later
+        // when the selected data variant executes. Shared command-local storage
+        // therefore carries it from keyword parsing into the variant bind.
         auto elset = std::make_shared<std::string>();
 
         command.keyword(
@@ -94,17 +113,22 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
         // ------------------------------------------------------------------
         // Pre-compile replay
         // ------------------------------------------------------------------
-        //
-        // Part-local ELSETs and PointElements already exist at this point, so
-        // ROOT/PART MASS properties can be stored immediately as semantic
-        // section assignments on the active Part. Assembly ELSETs do not yet
-        // exist in compiled identifier space and therefore cannot be resolved.
+        // ROOT/PART topology and ELSETs already exist in their semantic Part
+        // identifier spaces. Assembly ELSETs, in contrast, are intentionally
+        // deferred until after compile() because Instance-local element ids must
+        // first be mapped into the dense assembly namespace.
         if (!model._data->compiled) {
-            // ROOT/PART: execute the MASS property now.
+            // ROOT/PART variant -- execute before compile().
             //
-            // The region belongs to the active semantic Part. Model::add_section()
-            // therefore stores the PointMassSection on that Part, and compile()
-            // later copies/remaps it once for every Instance.
+            // This is the mutating variant for semantic input. `parent_is(...)`
+            // guarantees that the bind is entered only for a MASS record whose
+            // parent is ROOT or PART; the callback therefore does not need to
+            // inspect any parser stage or scope flag. The referenced ELSET is
+            // resolved directly from the active Part and validated to contain
+            // only PointElements. `Model::add_section()` sees an uncompiled model
+            // and stores the resulting PointMassSection on that Part. During
+            // compile(), the ordinary section-copy path creates one remapped
+            // assignment for every Instance of the Part.
             command.variant(fem::io::dsl::Variant::make()
                 .when(fem::io::dsl::Condition::parent_is({"ROOT", "PART"}))
                 .segment(fem::io::dsl::Segment::make()
@@ -113,6 +137,8 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                         .one<Precision>().name("MASS").desc("Isotropic mass magnitude")
                     )
                     .bind([&model, elset](Precision mass) {
+                        // Resolve the semantic target region from the currently
+                        // active Part. At this stage ids are still Part-local.
                         const auto part = model._data->parts.get();
                         logging::error(part != nullptr,
                             "MASS: no active part is available");
@@ -123,9 +149,9 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                         logging::error(region != nullptr && region->size() > 0,
                             "MASS: element set ", *elset, " is empty in part ", part->name);
 
-                        // `*MASS` is a property of Abaqus MASS elements. Reject a
-                        // mixed ELSET instead of silently assigning the section to
-                        // unrelated structural element formulations.
+                        // Abaqus *MASS is a property of MASS elements. Validate
+                        // the complete region before creating the section so a
+                        // partially valid mixed ELSET never mutates the model.
                         for (const ID id : *region) {
                             const auto it = part->elements.find(id);
                             logging::error(it != part->elements.end() && it->second != nullptr,
@@ -134,18 +160,23 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                                 "MASS: element set ", *elset, " contains non-MASS element ", id);
                         }
 
+                        // add_section() stores this assignment on the active Part
+                        // because the model has not crossed compile() yet.
                         model.add_section(std::make_shared<PointMassSection>(region, mass));
                     })
                 )
             );
 
-            // ASSEMBLY: consume only during the pre-compile replay.
+            // ASSEMBLY variant -- consume only before compile().
             //
-            // The parser must still recognize the data line so the deck remains
-            // syntactically valid, but no bind is attached because assembly
-            // ELSETs are materialized only after Model::compile(). The same
-            // record will be replayed later and handled by the active ASSEMBLY
-            // variant below.
+            // The complete deck is already being replayed, so an assembly-level
+            // MASS record must still match its normal data grammar. Its target
+            // ELSET cannot be resolved yet, however, because assembly ELSETs are
+            // built only after Instance element mappings exist. This variant
+            // therefore deliberately has no bind callback: it consumes the data
+            // line without modifying the model. The same record is encountered
+            // again in the post-compile assembly replay, where the corresponding
+            // ASSEMBLY variant below performs the actual section assignment.
             command.variant(fem::io::dsl::Variant::make()
                 .when(fem::io::dsl::Condition::parent_is("ASSEMBLY"))
                 .segment(fem::io::dsl::Segment::make()
@@ -161,16 +192,20 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
         // ------------------------------------------------------------------
         // Post-compile assembly replay
         // ------------------------------------------------------------------
-        //
-        // Part-local MASS sections have already been expanded by compile(). The
-        // compiled assembly ELSET namespace is now available, so this replay must
-        // ignore ROOT/PART records and execute only ASSEMBLY records.
+        // Part-local PointMassSections have already been expanded and assigned
+        // to their compiled Instance elements by compile(). Assembly ELSETs now
+        // exist in dense identifier space, so the mutating responsibility moves
+        // from ROOT/PART to ASSEMBLY for this replay.
 
-        // ROOT/PART: consume only after compilation.
+        // ROOT/PART variant -- consume only after compile().
         //
-        // These records already created their semantic PointMassSection during
-        // the pre-compile replay. Replaying their bind here would create a second
-        // property assignment, so the variant intentionally has no callback.
+        // These records were already executed in the pre-compile replay and the
+        // resulting Part-local sections were copied by compile(). Because the
+        // complete input deck is replayed again, the parser still needs a valid
+        // ROOT/PART grammar here, but attaching the original bind would create a
+        // duplicate section assignment. The missing bind is therefore deliberate:
+        // this variant recognizes and consumes the record without touching the
+        // compiled model.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::parent_is({"ROOT", "PART"}))
             .segment(fem::io::dsl::Segment::make()
@@ -181,11 +216,15 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
             )
         );
 
-        // ASSEMBLY: execute the MASS property after compilation.
+        // ASSEMBLY variant -- execute after compile().
         //
-        // The target ELSET now contains dense compiled element ids. The section
-        // is therefore created directly in assembly space and Model::add_section()
-        // assigns it immediately to the referenced compiled PointElements.
+        // Assembly ELSETs have now been materialized from their Instance/local
+        // references into dense global element ids. `parent_is("ASSEMBLY")`
+        // routes only assembly-level MASS records into this bind. The callback
+        // validates that every referenced compiled element exists and is a
+        // PointElement, then creates the PointMassSection directly in assembly
+        // space. Because the model is compiled, `Model::add_section()` stores and
+        // immediately assigns the section to the referenced compiled elements.
         command.variant(fem::io::dsl::Variant::make()
             .when(fem::io::dsl::Condition::parent_is("ASSEMBLY"))
             .segment(fem::io::dsl::Segment::make()
@@ -194,6 +233,8 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                     .one<Precision>().name("MASS").desc("Isotropic mass magnitude")
                 )
                 .bind([&model, elset](Precision mass) {
+                    // Resolve and validate the target against the compiled
+                    // assembly namespace before creating any section object.
                     logging::error(model._data->elem_sets.has(*elset),
                         "MASS: compiled element set ", *elset, " does not exist");
 
@@ -201,8 +242,8 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                     logging::error(region != nullptr && region->size() > 0,
                         "MASS: compiled element set ", *elset, " is empty");
 
-                    // Apply the same topology validation as in semantic Part
-                    // space, now against dense compiled element storage.
+                    // Validate the complete region first so section assignment is
+                    // atomic with respect to invalid or mixed element sets.
                     for (const ID id : *region) {
                         logging::error(id >= 0 && static_cast<std::size_t>(id) < model._data->elements.size() && model._data->elements[static_cast<std::size_t>(id)] != nullptr,
                             "MASS: compiled element ", id, " does not exist");
@@ -210,6 +251,8 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                             "MASS: compiled element set ", *elset, " contains non-MASS element ", id);
                     }
 
+                    // add_section() now receives an assembly-space region and
+                    // therefore stores and binds the section directly.
                     model.add_section(std::make_shared<PointMassSection>(region, mass));
                 })
             )
