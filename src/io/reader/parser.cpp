@@ -151,25 +151,23 @@ void Parser::run(const std::string& input_path,
 /**
  * Executes the parsed native FEMaster deck in model-dependency order.
  *
- * Part-local entities are constructed before compilation while assembly-level
- * sets and properties are deliberately deferred until dense Instance mappings
- * exist. The real ROOT node makes every processing step use the same child API,
- * so the complete semantic order remains visible directly in this function.
+ * The function intentionally contains only the semantic execution sequence.
+ * Repetition over Parts, Assemblies, Couplings and Loadcases is owned by `Deck`,
+ * so dependency ordering remains visible as one linear top-to-bottom program.
+ * `Model::compile()` forms the explicit boundary between sparse Part/Instance
+ * topology and dense assembly materialization.
  */
 void Parser::process_deck(const io::dsl::Deck&                  deck,
                           const std::string&                    input_path,
                           const std::string&                    output_path,
                           const io::writer::WriterFileFormats& writer_formats) {
-    using NodeId = io::dsl::Deck::NodeId;
-
-    const NodeId root = deck.root();
-    const auto assemblies = deck.children(root, "ASSEMBLY");
+    const auto root = deck.root();
 
     // ---------------------------------------------------------------------
     // Global definitions required by sections and later load definitions
     // ---------------------------------------------------------------------
     deck.execute_children(root, "HEADING");
-    deck.execute_children(root, "MATERIAL", {"ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION"});
+    deck.execute_path(root, {"MATERIAL"}, {"ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION"});
     deck.execute_children(root, {"PROFILE", "ORIENTATION", "AMPLITUDE"});
 
     // ---------------------------------------------------------------------
@@ -182,16 +180,15 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         "MASS", "ROTARYINERTIA", "SPRING"
     });
 
-    deck.execute_children(root, "PART", {
+    deck.execute_path(root, {"PART"}, {
         "NODE", "ELEMENT",
         "NSET", "ELSET", "SURFACE", "SFSET",
         "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
         "MASS", "ROTARYINERTIA", "SPRING"
     });
 
-    // Instances depend on completed Parts but still belong to sparse topology.
     deck.execute_children(root, "INSTANCE");
-    for (const NodeId assembly : assemblies) deck.execute_children(assembly, "INSTANCE");
+    deck.execute_path(root, {"ASSEMBLY"}, {"INSTANCE"});
 
     // ---------------------------------------------------------------------
     // One-way transition from semantic Parts/Instances to dense assembly data
@@ -202,15 +199,12 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // Assembly regions, properties and dense fields after compilation
     // ---------------------------------------------------------------------
     deck.execute_children(root, {"FIELD", "NORMAL"});
-    for (const NodeId assembly : assemblies) {
-        deck.execute_children(assembly, {
-            "NSET", "ELSET", "SURFACE", "SFSET",
-            "MASS", "ROTARYINERTIA", "SPRING",
-            "FIELD", "NORMAL"
-        });
-    }
+    deck.execute_path(root, {"ASSEMBLY"}, {
+        "NSET", "ELSET", "SURFACE", "SFSET",
+        "MASS", "ROTARYINERTIA", "SPRING",
+        "FIELD", "NORMAL"
+    });
 
-    // Complete reference normals before constraints or analyses consume shells.
     model_->build_shell_element_normals();
 
     // ---------------------------------------------------------------------
@@ -223,19 +217,14 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
     });
 
-    for (const NodeId assembly : assemblies) {
-        deck.execute_children(assembly, {
-            "SUPPORT",
-            "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
-            "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
-        });
-    }
+    deck.execute_path(root, {"ASSEMBLY"}, {
+        "SUPPORT",
+        "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
+        "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
+    });
 
-    // COUPLING remains entered while its selected formulation emits the constraint.
-    deck.execute_children(root, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
-    for (const NodeId assembly : assemblies) {
-        deck.execute_children(assembly, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
-    }
+    deck.execute_path(root, {"COUPLING"}, {"KINEMATIC", "DISTRIBUTING"});
+    deck.execute_path(root, {"ASSEMBLY", "COUPLING"}, {"KINEMATIC", "DISTRIBUTING"});
 
     deck.execute_children(root, "OVERVIEW");
 
@@ -243,10 +232,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // Result writers and final load-case execution
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
-
-    // An empty child selection preserves source order for every load-case card.
-    deck.execute_children(root, "LOADCASE", {});
-
+    deck.execute_path(root, {"LOADCASE"}, {});
     close_writers();
 }
 
