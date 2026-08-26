@@ -9,44 +9,142 @@ Constraints are used by the active analysis together with the selected support c
 
 \keywordpage{COUPLING}
 
-\cmd{COUPLING} relates one master or reference node to a slave region. The master is given as a node set and must contain exactly one node. The slave can be a nonempty node set selected with \key{SLAVE} or a nonempty surface set selected with \key{SFSET}; exactly one of these two slave definitions must be used.
+\cmd{COUPLING} relates one master/reference node to a slave region. It is accepted at root and Assembly level after the model has been compiled. The reference is supplied by \key{MASTER}; \key{REF NODE} is accepted as an alias. The reference may name a node set containing exactly one node or a direct compiled node reference such as \val{42} or \val{INSTANCE.42}.
 
-\key{TYPE=KINEMATIC} creates a kinematic coupling. The selected slave degrees of freedom follow the rigid kinematics induced by the reference node. This represents an idealized rigid flange, load-introduction point, or boundary where deformation of the coupled patch is suppressed in the selected directions.
+The coupled target is supplied by \key{SURFACE}. The legacy spellings \key{SLAVE} and \key{SFSET} remain aliases for the same target. FEMaster first resolves the name as a surface region and falls back to a node set. Thus element-based surfaces, node-based coupling regions, and existing native coupling decks use one common constraint path. If the same name exists in both namespaces, the surface region takes precedence.
 
-\key{TYPE=STRUCTURAL} creates the distributing form. It transfers generalized loads and motions between a reference point and a distributed region without making the complete slave region rigid in the same sense as a kinematic coupling. The connected surface therefore retains deformation modes that a kinematic coupling would suppress.
-
-The data line contains six selector values in the order
+Native FEMaster accepts two syntax styles. The legacy direct form places \key{TYPE=KINEMATIC} or \key{TYPE=STRUCTURAL} on \cmd{COUPLING} and follows it with exactly six selector values in the order
 \[
 (U_x,U_y,U_z,R_x,R_y,R_z).
 \]
-A component is active when the supplied value is greater than zero. Missing values are inactive. These six values are therefore \emph{selectors}; they are not prescribed displacement or rotation magnitudes.
+A component is active when the supplied value is greater than zero. Missing values are inactive. These six values are selectors rather than prescribed displacement or rotation magnitudes.
 
-For a surface slave, the distribution is based on the selected surface geometry. For a node-set slave, the supplied node region itself defines the coupled region. In either case the reference-node set must contain exactly one node so that the generalized motion and loading have an unambiguous reference point.
+The scoped form is shared by the native and Abaqus readers. If \key{TYPE} is omitted, \cmd{COUPLING} opens a scope and exactly one child command selects its behavior: \cmd{KINEMATIC} or \cmd{DISTRIBUTING}. The child form uses inclusive Abaqus-style degree-of-freedom ranges. A line \val{first,last} activates all DOFs in that range, a single value activates only that DOF, and several lines may select several ranges. With no child data lines all six DOFs are selected.
 
-Applying identical concentrated nodal forces to all nodes of a surface changes the total load when the mesh is refined. A reference-point load combined with a distributing coupling instead represents a definite resultant force or moment. A kinematic coupling additionally imposes its selected rigid relation and can increase the stiffness of a deformable coupled region.
+\cmd{KINEMATIC} creates a kinematic coupling. The selected slave degrees of freedom follow the rigid kinematics induced by the reference node. This represents an idealized rigid flange, load-introduction point, or boundary where deformation of the coupled patch is suppressed in the selected directions.
+
+\cmd{DISTRIBUTING} creates FEMaster's structural load-distribution coupling. The optional \key{COUPLING=CONTINUUM} and \key{COUPLING=STRUCTURAL} spellings are both accepted and deliberately map to the same internal \val{STRUCTURAL} coupling implementation. This transfers generalized loads and motions between the reference point and distributed region without making the complete target region rigid in the same sense as a kinematic coupling.
+
+For a surface target, the distribution is based on the selected surface geometry. For a node-set target, the supplied node region itself defines the coupled region. A reference-point load combined with a distributing coupling represents a definite resultant force or moment independently of surface mesh density, whereas applying identical concentrated loads at every surface node changes the total load under mesh refinement.
+
+The Abaqus reader supports the scoped \cmd{COUPLING}/\cmd{KINEMATIC}/\cmd{DISTRIBUTING} subset documented here. This does not imply support for every Abaqus coupling option; parameters outside the documented subset are not part of the FEMaster compatibility contract.
 
 \begin{keywordparameters}
-\key{MASTER} & required & Node set containing exactly one master/reference node. \\
-\key{TYPE} & required & \val{KINEMATIC} or \val{STRUCTURAL}. \\
-\key{SLAVE} & conditional & Nonempty slave node set; mutually exclusive with \key{SFSET}. \\
-\key{SFSET} & conditional & Nonempty slave surface set; mutually exclusive with \key{SLAVE}. \\
+\key{MASTER} / \key{REF NODE} & required & Reference node or one-node node set. \\
+\key{SURFACE} / \key{SLAVE} / \key{SFSET} & required & Nonempty slave surface or node set. \\
+\key{TYPE} & optional & Native legacy direct form: \val{KINEMATIC} or \val{STRUCTURAL}. Omit to use a child scope. \\
 \end{keywordparameters}
 
 \begin{keyworddata}
-Six DOF selectors & Positive value enables the corresponding \(U_x,U_y,U_z,R_x,R_y,R_z\) relation; omitted values are inactive. \\
+Direct form & Six positive/inactive selectors for \(U_x,U_y,U_z,R_x,R_y,R_z\). \\
+Scoped form & Data belong to \cmd{KINEMATIC} or \cmd{DISTRIBUTING} and use inclusive DOF ranges. \\
 \end{keyworddata}
 
 \exampleheading
 
 \begin{dialectexamples}
 \begin{femasterdeck}
+** Legacy direct form
 *COUPLING, MASTER=REF,
- SFSET=LOADED_FACE, TYPE=STRUCTURAL
+ SURFACE=LOADED_FACE, TYPE=STRUCTURAL
 1., 1., 1., 0., 0., 0.
+
+** Scoped form
+*COUPLING, REF NODE=REF, SURFACE=LOADED_FACE
+*DISTRIBUTING, COUPLING=STRUCTURAL
+1, 3
 \end{femasterdeck}
-\begin{noabaqus}
-The supported Abaqus reader currently does not import the Abaqus coupling keyword family. Coupling relations are available through native FEMaster syntax.
-\end{noabaqus}
+\begin{abaqusdeck}
+*COUPLING, REF NODE=REF, SURFACE=LOADED_FACE
+*DISTRIBUTING, COUPLING=STRUCTURAL
+1, 3
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{KINEMATIC}
+
+\cmd{KINEMATIC} is a child command of a \cmd{COUPLING} for which \key{TYPE} was omitted. It selects the kinematic coupling behavior and optionally restricts the active generalized degrees of freedom. The command is shared by the native and Abaqus readers.
+
+Each data line contains an inclusive DOF range \val{first,last}. Valid DOF numbers are 1 through 6 and correspond to \(U_x,U_y,U_z,R_x,R_y,R_z\). If \val{last} is omitted, only \val{first} is selected. If all data lines are omitted, all six DOFs are active.
+
+\begin{keyworddata}
+\val{first, last} & Optional inclusive range of generalized DOFs 1--6. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*COUPLING, MASTER=RP, SURFACE=FLANGE
+*KINEMATIC
+1, 3
+6
+\end{femasterdeck}
+\begin{abaqusdeck}
+*COUPLING, REF NODE=RP, SURFACE=FLANGE
+*KINEMATIC
+1, 3
+6
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{DISTRIBUTING}
+
+\cmd{DISTRIBUTING} is the structural/distributing child of a scoped \cmd{COUPLING} and is shared by the native and Abaqus readers. The optional \key{COUPLING} parameter accepts \val{CONTINUUM} or \val{STRUCTURAL}; both currently select FEMaster's structural load-distribution implementation.
+
+Its optional DOF data uses the same inclusive 1--6 range syntax as \cmd{KINEMATIC}. With no range lines all generalized DOFs are selected.
+
+\begin{keywordparameters}
+\key{COUPLING} & optional & \val{CONTINUUM} (default) or \val{STRUCTURAL}; both map to FEMaster \val{STRUCTURAL}. \\
+\end{keywordparameters}
+\begin{keyworddata}
+\val{first, last} & Optional inclusive range of generalized DOFs 1--6. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*COUPLING, MASTER=RP, SURFACE=LOADED_FACE
+*DISTRIBUTING, COUPLING=CONTINUUM
+1, 3
+\end{femasterdeck}
+\begin{abaqusdeck}
+*COUPLING, REF NODE=RP, SURFACE=LOADED_FACE
+*DISTRIBUTING, COUPLING=CONTINUUM
+1, 3
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{EQUATION}
+
+\cmd{EQUATION} defines a homogeneous linear multi-point constraint from weighted nodal degrees of freedom. It is accepted at root or Assembly level after model topology has been compiled.
+
+The first data line contains the total number of terms and must declare at least two. Following physical data lines contain one to four complete triples
+\[
+\text{target},\quad \text{dof},\quad \text{coefficient},
+\]
+until exactly the declared number of terms has been read. The degree of freedom is an integer from 1 through 6, corresponding to \(U_x,U_y,U_z,R_x,R_y,R_z\), and coefficients must be finite.
+
+A target may be a direct node reference or a node set. If the first target is a single node, one scalar constraint equation is created. If the first target is an NSET, FEMaster expands the input into one equation per member of that set. Subsequent NSET targets are then paired with the first set in their existing compiled order and must have the same number of entries. Subsequent single-node targets are reused in every expanded equation.
+
+For example, two equally sized sets \val{LEFT} and \val{RIGHT} can impose pairwise equality of one displacement component without manually writing one equation for every node pair. The ordering of the two sets therefore forms part of the equation definition.
+
+\begin{keyworddata}
+First line & Number of terms \(N\ge2\). \\
+Following lines & One to four \val{target, dof, coefficient} triples per line until \(N\) terms are complete. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*EQUATION
+2
+LEFT, 1, 1.0, RIGHT, 1, -1.0
+\end{femasterdeck}
+\begin{abaqusdeck}
+*EQUATION
+2
+LEFT, 1, 1.0, RIGHT, 1, -1.0
+\end{abaqusdeck}
 \end{dialectexamples}
 
 \keywordpage{TIE}
@@ -101,7 +199,6 @@ A coupling can reduce a distributed region to a reference node before two refere
 \end{keywordparameters}
 
 \exampleheading
-
 \begin{dialectexamples}
 \begin{femasterdeck}
 *ORIENTATION, NAME=HINGE_AXES,
@@ -134,7 +231,6 @@ RBM addresses rigid-body motion itself. Other singularities can instead arise fr
 \end{keywordparameters}
 
 \exampleheading
-
 \begin{dialectexamples}
 \begin{femasterdeck}
 *RBM, ELSET=FREE_COMPONENT
@@ -182,7 +278,6 @@ The user-supplied \key{PENALTY} is a numerical stiffness scale, not a physical m
 \end{keywordparameters}
 
 \exampleheading
-
 \begin{dialectexamples}
 \begin{femasterdeck}
 *SURFACE, NAME=MASTER_FACE

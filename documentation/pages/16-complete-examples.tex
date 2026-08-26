@@ -330,7 +330,7 @@ For \val{C3D8}, the physical face represented by \val{S2} and its normal directi
 
 \section{Eigenfrequency analysis}
 
-The modal example uses a two-element truss with distributed material density and requests the lowest five eigenpairs. Only axial motion is left free. The common example intentionally uses distributed density rather than \cmd{POINTMASS}, because the current Abaqus input subset does not provide an equivalent concentrated-mass mapping.
+The modal example uses a two-element truss with distributed material density and requests the lowest five eigenpairs. Only axial motion is left free. It demonstrates distributed structural mass; the following complete example separately demonstrates the shared concentrated \val{MASS} element/property syntax.
 
 The natural frequencies are governed by
 \[
@@ -400,6 +400,105 @@ GUIDED, 2, 3, 0.
 \end{dialectexamples}
 
 The first mode shapes identify whether the corresponding numerical frequencies belong to structural deformation or to an unintended mechanism. A plausible frequency attached to an unintended mechanism is not a valid modal result.
+
+\section{Eigenfrequency with a concentrated MASS element}
+
+This benchmark isolates the new one-node concentrated-mass path. Two identical axial rods connect a central mass node to fixed supports on both sides. The rods carry no material density, so the only inertia is the \val{MASS} element at the centre. The centre node is guided so only \(U_x\) is free.
+
+The example uses N, mm, and s. In this consistent unit system the mass unit is tonne, because
+\[
+1\ \mathrm{N}\,\mathrm{s}^2/\mathrm{mm}=1\ \mathrm{t}.
+\]
+Thus \(m=0.01\) represents \(10\,\mathrm{kg}\).
+
+Each rod has
+\[
+k=\frac{EA}{L}
+=\frac{210000\cdot1}{1000}
+=210\ \mathrm{N/mm}.
+\]
+A positive displacement of the central node extends one rod and shortens the other, so both provide restoring stiffness and
+\[
+k_\mathrm{eq}=2k=420\ \mathrm{N/mm}.
+\]
+The exact circular eigenfrequency and frequency are therefore
+\[
+\omega_1=\sqrt{\frac{k_\mathrm{eq}}{m}}
+=\sqrt{\frac{420}{0.01}}
+\approx204.939\ \mathrm{s}^{-1},
+\]
+\[
+f_1=\frac{\omega_1}{2\pi}
+\approx32.617\ \mathrm{Hz}.
+\]
+
+\begin{dialectexamples}
+\begin{femasterdeck}
+*NODE
+1, -1000., 0., 0.
+2,     0., 0., 0.
+3,  1000., 0., 0.
+
+*ELEMENT, TYPE=T3, ELSET=BARS
+1, 1, 2
+2, 2, 3
+*ELEMENT, TYPE=MASS, ELSET=POINT_MASS
+100, 2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*TRUSS SECTION, ELSET=BARS,
+ MATERIAL=STEEL
+1.0
+*MASS, ELSET=POINT_MASS
+0.01
+
+*SUPPORT, SUPPORT_COLLECTOR=BC
+1, 0., 0., 0., NAN, NAN, NAN
+2, NAN, 0., 0., NAN, NAN, NAN
+3, 0., 0., 0., NAN, NAN, NAN
+
+*LOADCASE, TYPE=EIGENFREQ
+*SUPPORTS
+BC
+*NUMEIGENVALUES
+1
+*END
+\end{femasterdeck}
+\begin{abaqusdeck}
+*NODE
+1, -1000., 0., 0.
+2,     0., 0., 0.
+3,  1000., 0., 0.
+
+*ELEMENT, TYPE=T3D2, ELSET=BARS
+1, 1, 2
+2, 2, 3
+*ELEMENT, TYPE=MASS, ELSET=POINT_MASS
+100, 2
+
+*MATERIAL, NAME=STEEL
+*ELASTIC
+210000., 0.3
+*SOLID SECTION, ELSET=BARS,
+ MATERIAL=STEEL
+1.0
+*MASS, ELSET=POINT_MASS
+0.01
+
+*STEP, PERTURBATION
+*FREQUENCY
+1
+*BOUNDARY
+1, 1, 3, 0.
+2, 2, 3, 0.
+3, 1, 3, 0.
+*END STEP
+\end{abaqusdeck}
+\end{dialectexamples}
+
+This model is useful as a direct regression check for \cmd{ELEMENT, TYPE=MASS} and \cmd{MASS}: the stiffness comes entirely from the two trusses, the inertia comes entirely from the point element, and the expected finite eigenfrequency is approximately \(32.617\,\mathrm{Hz}\).
 
 \section{Linear buckling of a compressed member}
 

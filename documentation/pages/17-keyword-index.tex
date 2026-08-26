@@ -18,7 +18,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \endhead
 
 \cmd{HEADING} & \checkmark & \checkmark & Input Format \\
-\cmd{MODEL} & \checkmark & -- & Model Definition \\
+\cmd{MODEL} & \checkmark & -- & Input Format; optional native root marker \\
 \cmd{PART} & \checkmark & \checkmark & Model Definition \\
 \cmd{END PART} & \checkmark & \checkmark & Model Definition \\
 \cmd{ASSEMBLY} & \checkmark & \checkmark & Model Definition \\
@@ -48,6 +48,7 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{SHELL SECTION} & \checkmark & \checkmark & Sections and Element Properties \\
 \cmd{BEAM SECTION} & \checkmark & -- & Sections and Element Properties \\
 \cmd{TRUSS SECTION} & \checkmark & -- & Sections and Element Properties \\
+\cmd{MASS} & \checkmark & \checkmark & Advanced Model Features; isotropic point-element mass \\
 
 \midrule
 \cmd{ORIENTATION} & \checkmark & \checkmark & Coordinate Systems and Orientations \\
@@ -70,7 +71,10 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{INERTIALOAD} & \checkmark & -- & Loads and Boundary Conditions \\
 
 \midrule
-\cmd{COUPLING} & \checkmark & -- & Constraints \\
+\cmd{COUPLING} & \checkmark & \checkmark & Constraints \\
+\cmd{KINEMATIC} & \checkmark & \checkmark & Constraints; child of scoped \cmd{COUPLING} \\
+\cmd{DISTRIBUTING} & \checkmark & \checkmark & Constraints; child of scoped \cmd{COUPLING} \\
+\cmd{EQUATION} & \checkmark & \checkmark & Constraints \\
 \cmd{TIE} & \checkmark & -- & Constraints \\
 \cmd{CONNECTOR} & \checkmark & -- & Constraints \\
 \cmd{RBM} & \checkmark & -- & Constraints \\
@@ -155,7 +159,8 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \val{MITC8FRT} & \val{S8}, \val{S8R} & Current finite-rotation 8-node MITC shell \\
 \val{QSPT} & -- & Native quadrilateral shear-panel element \\
 \val{B33} & \val{B33} & 2-node 3D beam \\
-\val{T3} & \val{T3D2} & 2-node 3D truss \\
+\val{T3} / \val{T3D2} & \val{T3D2} & 2-node 3D truss; native parser accepts both spellings \\
+\val{MASS} & \val{MASS} & 1-node point element carrying a separately assigned isotropic \cmd{MASS} property \\
 \bottomrule
 \end{longtable}
 \normalsize
@@ -167,6 +172,12 @@ The Abaqus shell mapping is intentionally explicit. For example, Abaqus \val{S4}
 A check mark in the Abaqus column means that the documented subset of that keyword is accepted by FEMaster. It does not imply support for every option available in the complete Abaqus product.
 
 Likewise, identical names do not always imply identical data semantics. \cmd{DLOAD} is the clearest example: native FEMaster uses it for vector surface traction, while supported Abaqus \cmd{DLOAD} currently covers \val{GRAV} body acceleration. The detailed keyword page is authoritative whenever the two input styles differ.
+
+\cmd{COUPLING}, \cmd{KINEMATIC}, and \cmd{DISTRIBUTING} are shared by the native and Abaqus parsers. The supported Abaqus subset covers reference-node coupling to a surface or node set with kinematic or distributing behavior and inclusive DOF ranges. Native FEMaster additionally retains the legacy direct \key{TYPE=KINEMATIC|STRUCTURAL} form with six selector values. Unsupported Abaqus-specific coupling options are outside the documented subset.
+
+\cmd{EQUATION} and the \val{MASS} element/property pair are shared by the native and Abaqus parsers. The current \cmd{MASS} subset is isotropic translational mass only; native \cmd{POINTMASS} remains the more general NSET-based representation for rotary inertia and ground-spring terms. Regular \val{MASS} elements remain ordinary ELSET members and therefore participate in element-targeted mass-proportional loads and regular inertia-relief mass properties.
+
+The optional native \cmd{MODEL} marker is documented as input-file framing rather than as a separate level in the model-definition hierarchy.
 
 The four Abaqus output cards \cmd{NODE FILE}, \cmd{EL FILE}, \cmd{NODE PRINT}, and \cmd{EL PRINT} are listed because they are accepted input keywords. They do not currently configure FEMaster output selection.
 

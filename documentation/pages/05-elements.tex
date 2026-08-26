@@ -36,10 +36,11 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \val{QSPT} & 4 & Specialized quadrilateral shear-panel element. \\
 \val{B33} & 2 & Three-dimensional beam element. \\
 \val{T3} & 2 & Three-dimensional truss element. \\
+\val{MASS} & 1 & Zero-dimensional point element with separately assigned concentrated mass. \\
 \bottomrule
 \end{longtable}
 
-The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. Abaqus shell names are translated as shown below.
+The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. The one-node \val{MASS} type is shared directly by both input dialects. Abaqus shell names are translated as shown below.
 
 \begin{table}[H]
 \centering
@@ -65,7 +66,7 @@ Solid elements model a three-dimensional continuum. They use translational nodal
 Low-order solids are inexpensive but may require significant refinement in bending-dominated problems. Higher-order solids generally represent curvature and stress gradients more efficiently, but they contain more degrees of freedom per element and are more sensitive to poor midside-node placement and distorted mappings. Mesh quality remains essential for every formulation.
 
 \clearpage
-\section{\val{C3D4}: 4-node tetrahedral solid}
+\subsection{\val{C3D4}: 4-node tetrahedral solid}
 
 \begin{figure}[H]
     \centering
@@ -84,10 +85,10 @@ The principal advantage of \val{C3D4} is meshing flexibility. Tetrahedra can fil
 
 The limitation is stiffness and stress resolution. Linear tetrahedra tend to be overly stiff in bending-dominated problems unless the mesh is fine. Since the strain state is constant in each element, stress fields can appear piecewise constant or patchy and steep gradients near holes, fillets, notches, and concentrated loads require substantial refinement.
 
-Compared with \val{C3D4}, \val{C3D10} provides higher-order stress and bending resolution in tetrahedral meshes. The sensitivity of \val{C3D4} results to refinement appears in displacements, reactions, strain energy, and averaged stresses, while a single coarse local peak is not a convergence measure.
+Compared with \val{C3D4}, \val{C3D10} provides higher-order tetrahedral stress resolution in tetrahedral meshes. The sensitivity of \val{C3D4} results to refinement appears in displacements, reactions, strain energy, and averaged stresses, while a single coarse local peak is not a convergence measure.
 
 \clearpage
-\section{\val{C3D5}: 5-node pyramid input}
+\subsection{\val{C3D5}: 5-node pyramid input}
 
 \begin{figure}[H]
     \centering
@@ -109,7 +110,7 @@ A degenerated mapping is generally less predictable than a regular hexahedron, w
 In models with many pyramids in the primary load path, reactions and global stiffness can remain plausible even when local stress quality differs significantly from an alternative regular-element mesh.
 
 \clearpage
-\section{\val{C3D6}: 6-node wedge solid}
+\subsection{\val{C3D6}: 6-node wedge solid}
 
 \begin{figure}[H]
     \centering
@@ -131,7 +132,7 @@ Like other low-order elements, \val{C3D6} has limited bending and gradient resol
 \val{C3D6} matches geometries with a natural wedge topology. \val{C3D15} provides the corresponding higher-order interpolation for quadratic swept meshes.
 
 \clearpage
-\section{\val{C3D8}: 8-node hexahedral solid}
+\subsection{\val{C3D8}: 8-node hexahedral solid}
 
 \begin{figure}[H]
     \centering
@@ -153,7 +154,7 @@ The element remains low order. A coarse mesh can be too stiff in bending, and st
 Warping, skew, negative Jacobians, and extreme aspect ratios can remove the numerical advantages of the hexahedral topology. A clean quadratic tetrahedral mesh can provide a more accurate mapping than a badly distorted hexahedral mesh; topology alone does not determine mesh quality.
 
 \clearpage
-\section{\val{C3D8R}: reduced-integration 8-node hexahedral solid}
+\subsection{\val{C3D8R}: reduced-integration 8-node hexahedral solid}
 
 \begin{figure}[H]
     \centering
@@ -182,7 +183,7 @@ Newton convergence alone does not characterize \val{C3D8R}; the deformation patt
 Severe finite rotations and highly distorted elements increase sensitivity to reduced-integration stabilization. Relative to \val{C3D8}, \val{C3D8R} exchanges lower integration cost and locking tendency for dependence on hourglass control.
 
 \clearpage
-\section{\val{C3D10}: 10-node quadratic tetrahedral solid}
+\subsection{\val{C3D10}: 10-node quadratic tetrahedral solid}
 
 \begin{figure}[H]
     \centering
@@ -204,7 +205,7 @@ The quadratic geometry mapping also represents curved boundaries more accurately
 The element costs more per cell than \val{C3D4}, but substantially fewer cells may be required for comparable displacement and stress accuracy. Refinement is still required near singularities, sharp re-entrant corners, and concentrated loads where no polynomial element can make a mathematical singularity disappear.
 
 \clearpage
-\section{\val{C3D15}: 15-node quadratic wedge solid}
+\subsection{\val{C3D15}: 15-node quadratic wedge solid}
 
 \begin{figure}[H]
     \centering
@@ -226,7 +227,7 @@ Higher-order mapping increases sensitivity to midside-node placement. Poorly sha
 \val{C3D15} represents quadratic wedge meshes. A structured quadratic hexahedral mesh provides the more regular \val{C3D20} topology where geometry permits it, whereas \val{C3D10} supports fully unstructured complex geometry.
 
 \clearpage
-\section{\val{C3D20}: 20-node quadratic hexahedral solid}
+\subsection{\val{C3D20}: 20-node quadratic hexahedral solid}
 
 \begin{figure}[H]
     \centering
@@ -248,7 +249,7 @@ The main costs are larger element matrices and stricter geometric quality requir
 Relative to \val{C3D8}, \val{C3D20} exchanges larger element matrices for higher-order accuracy. A fine regular \val{C3D8} mesh can remain less expensive for models dominated by linear global stiffness.
 
 \clearpage
-\section{\val{C3D20R}: 20-node reduced-integration hexahedral solid}
+\subsection{\val{C3D20R}: 20-node reduced-integration hexahedral solid}
 
 \begin{figure}[H]
     \centering
@@ -278,7 +279,7 @@ The native shell elements \val{S3}, \val{S4}, \val{MITC4}, \val{S6}, \val{S8}, a
 \end{warningbox}
 
 \clearpage
-\section{\val{S3}: legacy 3-node triangular shell}
+\subsection{\val{S3}: legacy 3-node triangular shell}
 
 \begin{figure}[H]
     \centering
@@ -298,7 +299,7 @@ The element remains accepted so older FEMaster decks continue to run and legacy 
 Extremely acute angles, abrupt size changes, and inconsistent normal orientation degrade triangular shell meshes. A dense mesh of poor triangles can still give inferior bending behaviour compared with a smaller set of well-shaped elements.
 
 \clearpage
-\section{\val{MITC3FRT}: finite-rotation 3-node shell}
+\subsection{\val{MITC3FRT}: finite-rotation 3-node shell}
 
 \begin{figure}[H]
     \centering
@@ -318,7 +319,7 @@ Its triangular topology represents irregular shell boundaries, local mesh transi
 For imported Abaqus input, both \val{S3} and \val{S3R} are translated to this formulation. The Abaqus suffix therefore does not select a separate reduced-integration implementation inside FEMaster.
 
 \clearpage
-\section{\val{S4}: legacy 4-node quadrilateral shell}
+\subsection{\val{S4}: legacy 4-node quadrilateral shell}
 
 \begin{figure}[H]
     \centering
@@ -338,7 +339,7 @@ The low-order formulation can suffer severe transverse-shear locking in thin ben
 \val{MITC4FRT} is the corresponding current finite-rotation four-node formulation. \val{S4} remains available for compatibility, regression comparisons, and controlled studies of the legacy formulation.
 
 \clearpage
-\section{\val{MITC4}: legacy 4-node shell with tied shear interpolation}
+\subsection{\val{MITC4}: legacy 4-node shell with tied shear interpolation}
 
 \begin{figure}[H]
     \centering
@@ -358,7 +359,7 @@ This element historically provided substantially less shear locking than \val{S4
 MITC interpolation does not make a quadrilateral insensitive to mesh quality. Excessive warping, skew, poor aspect ratio, and inconsistent normals can still degrade both stiffness and stress recovery.
 
 \clearpage
-\section{\val{MITC4FRT}: finite-rotation 4-node MITC shell}
+\subsection{\val{MITC4FRT}: finite-rotation 4-node MITC shell}
 
 \begin{figure}[H]
     \centering
@@ -380,7 +381,7 @@ Tied shear interpolation addresses shear locking but does not eliminate geometri
 The supported Abaqus labels \val{S4} and \val{S4R} are both translated to \val{MITC4FRT}.
 
 \clearpage
-\section{\val{S6}: legacy 6-node triangular shell}
+\subsection{\val{S6}: legacy 6-node triangular shell}
 
 \begin{figure}[H]
     \centering
@@ -398,7 +399,7 @@ Native \val{S6} is the legacy six-node quadratic triangular shell. The midside n
 \val{MITC6FRT} provides the corresponding current finite-rotation formulation. The higher-order triangle can represent curved boundaries effectively, but badly curved or highly skewed elements can create poor mappings despite the higher interpolation order.
 
 \clearpage
-\section{\val{MITC6FRT}: finite-rotation 6-node shell}
+\subsection{\val{MITC6FRT}: finite-rotation 6-node shell}
 
 \begin{figure}[H]
     \centering
@@ -418,7 +419,7 @@ The element represents curved shell regions with triangular topology at higher o
 Both Abaqus \val{S6} and \val{S6R} are translated to this formulation by the current reader.
 
 \clearpage
-\section{\val{S8}: legacy 8-node quadrilateral shell}
+\subsection{\val{S8}: legacy 8-node quadrilateral shell}
 
 \begin{figure}[H]
     \centering
@@ -436,7 +437,7 @@ Native \val{S8} is the legacy eight-node quadratic quadrilateral shell. Four cor
 The formulation remains available for older models and comparison studies. \val{MITC8FRT} provides the corresponding current finite-rotation formulation. Higher order does not remove sensitivity to midside-node placement, aspect ratio, and warping.
 
 \clearpage
-\section{\val{MITC8}: legacy 8-node MITC shell}
+\subsection{\val{MITC8}: legacy 8-node MITC shell}
 
 \begin{figure}[H]
     \centering
@@ -456,7 +457,7 @@ Because the interpolation is quadratic, a regular \val{MITC8} mesh can reproduce
 \val{MITC8FRT} provides the corresponding finite-rotation formulation for nonlinear and general-purpose shell models. Native \val{MITC8} retains the legacy linear shell behaviour for comparison studies.
 
 \clearpage
-\section{\val{MITC8FRT}: finite-rotation 8-node MITC shell}
+\subsection{\val{MITC8FRT}: finite-rotation 8-node MITC shell}
 
 \begin{figure}[H]
     \centering
@@ -477,8 +478,12 @@ Higher order does not make the formulation insensitive to distortion. Warped qua
 
 Both Abaqus \val{S8} and \val{S8R} are translated to \val{MITC8FRT}.
 
+\section{Specialized panel elements}
+
+\val{QSPT} is retained as a distinct panel idealization rather than grouping it with the general shell family, because it does not provide the complete membrane/bending/shear shell response documented above.
+
 \clearpage
-\section{\val{QSPT}: quadrilateral shear-panel element}
+\subsection{\val{QSPT}: quadrilateral shear-panel element}
 
 \begin{figure}[H]
     \centering
@@ -497,12 +502,42 @@ Typical applications are preliminary thin-walled structures, webs, aircraft-styl
 
 \val{QSPT} is not a general replacement for \val{MITC4FRT} despite sharing a four-node quadrilateral topology. It does not provide the bending stiffness, local shell curvature, full shell resultants, or detailed top/bottom stresses of a shell formulation.
 
+\section{Point elements}
+
+Point elements are zero-dimensional structural elements attached to a single node. They preserve element identity and ELSET membership while their physical contribution is supplied by an assigned point-mass section rather than by continuum geometry or a material law.
+
+\clearpage
+\subsection{\val{MASS}: 1-node concentrated-mass element}
+
+\begin{syntax}
+*ELEMENT, TYPE=MASS, ELSET=<set>
+<id>, <node>
+*MASS, ELSET=<set>
+<mass>
+\end{syntax}
+
+\val{MASS} is a one-node point element accepted by both the native FEMaster and Abaqus readers. The \cmd{ELEMENT} record creates only topology: an element ID, one connected node, and normal ELSET membership. The scalar physical mass is assigned separately by \cmd{MASS, ELSET=...}. This separation allows point elements to participate in Parts, Instances, assembly-level sets, output numbering, and element-targeted loading like other regular elements.
+
+A point element without an assigned point-mass property is intentionally inert. It has zero stiffness, zero mass, no stress or strain state, and activates no degrees of freedom. Once the supported isotropic \cmd{MASS} property is assigned, its element mass matrix is
+\[
+M_e=\operatorname{diag}(m,m,m,0,0,0),
+\]
+so the three translational components at the connected node are active. The supported input mapping does not assign rotary inertia or ground-spring stiffness to \val{MASS} elements.
+
+The mass value belongs to each element in the target ELSET. Several \val{MASS} elements may therefore reference the same node; each represents an independent concentrated contribution and the assembled mass is additive. Conversely, an ELSET used by \cmd{MASS} must contain only point elements; mixed structural/point sets are rejected before assignment.
+
+The point element has zero geometric volume, but its density-scaled field integration interprets \(m\) as the complete concentrated mass measure. Consequently, a regular \val{MASS} element contributes to the global mass matrix, eigenfrequency and transient analyses, inertia relief, and element-targeted mass-proportional body or inertial loads. For example, a native \cmd{VLOAD} or supported Abaqus \cmd{DLOAD} with \val{GRAV} produces the concentrated force \(m\boldsymbol a\) when the selected element region contains the point element.
+
+Part-local \val{MASS} elements and their \cmd{MASS} property assignments are copied to every Instance during model compilation. An assembly-level \cmd{MASS} assignment instead targets compiled point elements through an assembly ELSET. This makes the same one-node topology usable in flat, Part/Instance, and assembly-selected models.
+
+Native \cmd{POINTMASS} provides a second user-facing way to define concentrated properties directly on an NSET. It is more general because it additionally supports rotary inertia and diagonal translational/rotational ground stiffness. Internally both paths use the same point-element/point-mass-section mechanics, but native \cmd{POINTMASS} creates auxiliary post-compile point elements that are not public ELSET members; the regular \val{MASS} topology documented here remains an ordinary element in the compiled model.
+
 \section{Beam and truss elements}
 
 Line elements idealize slender three-dimensional members by describing the cross-section through section properties instead of meshing it explicitly. This can reduce the number of degrees of freedom by orders of magnitude compared with shell or solid modelling. The trade-off is that local three-dimensional connection behaviour, detailed cross-section distortion, holes, welds, and local stress concentrations are not resolved.
 
 \clearpage
-\section{\val{B33}: 3D beam element}
+\subsection{\val{B33}: 3D beam element}
 
 \begin{figure}[H]
     \centering
@@ -526,7 +561,7 @@ The beam idealization does not resolve local connection stresses, bolt or weld g
 The supported Abaqus reader accepts \val{B33} with the same two-node connectivity.
 
 \clearpage
-\section{\val{T3}: 2-node truss element}
+\subsection{\val{T3}: 2-node truss element}
 
 \begin{figure}[H]
     \centering
@@ -557,6 +592,7 @@ No element is universally optimal. The following relationships summarize the pri
   \item reduced-integration solids introduce deformation modes and refinement sensitivity that solver convergence alone does not characterize;
   \item the FRT shell family provides finite-rotation kinematics, while the non-FRT shell types retain legacy formulations;
   \item shells omit detailed three-dimensional through-thickness stress in exchange for a midsurface representation of thin structures;
+  \item \val{MASS} provides concentrated translational inertia without continuum geometry or stress recovery;
   \item beams and trusses impose one-dimensional kinematic assumptions on the represented member;
   \item reactions, deformed shapes, energy trends, and mesh convergence characterize the discretization error associated with element and mesh selection.
 \end{itemize}

@@ -449,10 +449,12 @@ For a free body under a nonzero resultant external force or moment, the ordinary
 
 This represents free-flight or free-body loadcases without adding an artificial fixed support. It does not represent real bearings, bolts, fixtures, or other physical supports.
 
-\key{CONSIDER_POINT_MASSES} controls whether \cmd{POINTMASS} features contribute to the mass and inertia used for the balancing field; the default is true.
+All regular compiled structural elements contribute to the mass properties used by inertia relief. This includes ordinary \val{ELEMENT, TYPE=MASS} point elements: their concentrated translational mass contributes to total mass, center of gravity, and parallel-axis inertia automatically, and any point-section rotary inertia contributes directly to the inertia tensor.
+
+\key{CONSIDER_POINT_MASSES} controls only the additional auxiliary point elements generated after compilation by native \cmd{POINTMASS, NSET=...}. When enabled, their translational mass and rotary inertia are added to the regular compiled mass properties. The default is true. Disabling the option does not remove regular \val{TYPE=MASS} elements from the calculation.
 
 \begin{keywordparameters}
-\key{CONSIDER_POINT_MASSES} & optional & Boolean; default \val{1}. \\
+\key{CONSIDER_POINT_MASSES} & optional & Include auxiliary native \cmd{POINTMASS} objects; Boolean, default \val{1}. \\
 \end{keywordparameters}
 
 \exampleheading
