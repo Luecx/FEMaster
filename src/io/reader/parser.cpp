@@ -10,7 +10,7 @@
  * stages.
  *
  * The registered `.inl` command callbacks remain the semantic implementation.
- * `Deck::enter()`, `execute()` and `leave()` only control when those existing
+ * `ParsedCommand::enter()`, `execute()` and `leave()` control when those existing
  * callbacks run; syntax validation, variant selection and data aggregation have
  * already completed in `dsl::DeckParser`.
  *
@@ -161,83 +161,81 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
                           const std::string&                    input_path,
                           const std::string&                    output_path,
                           const io::writer::WriterFileFormats& writer_formats) {
-    using NodeId = io::dsl::Deck::NodeId;
-
-    const NodeId root = deck.root();
+    const auto& root = deck.root();
 
     // ---------------------------------------------------------------------
     // Global definitions required by sections and later load definitions
     // ---------------------------------------------------------------------
-    deck.execute_children(root, "HEADING");
+    root.execute_children("HEADING");
 
-    for (const NodeId material : deck.children(root, "MATERIAL")) {
-        deck.enter(material);
+    for (const auto* material : root.children("MATERIAL")) {
+        material->enter();
 
-        deck.execute_children(material, "ELASTIC");
-        deck.execute_children(material, "HYPERELASTIC");
-        deck.execute_children(material, "DENSITY");
-        deck.execute_children(material, "THERMALEXPANSION");
+        material->execute_children("ELASTIC");
+        material->execute_children("HYPERELASTIC");
+        material->execute_children("DENSITY");
+        material->execute_children("THERMALEXPANSION");
 
-        deck.leave(material);
+        material->leave();
     }
 
-    deck.execute_children(root, "PROFILE");
-    deck.execute_children(root, "ORIENTATION");
-    deck.execute_children(root, "AMPLITUDE");
+    root.execute_children("PROFILE");
+    root.execute_children("ORIENTATION");
+    root.execute_children("AMPLITUDE");
 
     // ---------------------------------------------------------------------
     // Default-Part topology before Model::compile()
     // ---------------------------------------------------------------------
-    deck.execute_children(root, "NODE");
-    deck.execute_children(root, "ELEMENT");
+    root.execute_children("NODE");
+    root.execute_children("ELEMENT");
 
-    deck.execute_children(root, "NSET");
-    deck.execute_children(root, "ELSET");
-    deck.execute_children(root, "SURFACE");
-    deck.execute_children(root, "SFSET");
+    root.execute_children("NSET");
+    root.execute_children("ELSET");
+    root.execute_children("SURFACE");
+    root.execute_children("SFSET");
 
-    deck.execute_children(root, "SOLIDSECTION");
-    deck.execute_children(root, "BEAMSECTION");
-    deck.execute_children(root, "TRUSSSECTION");
-    deck.execute_children(root, "SHELLSECTION");
+    root.execute_children("SOLIDSECTION");
+    root.execute_children("BEAMSECTION");
+    root.execute_children("TRUSSSECTION");
+    root.execute_children("SHELLSECTION");
 
-    deck.execute_children(root, "MASS");
-    deck.execute_children(root, "ROTARYINERTIA");
-    deck.execute_children(root, "SPRING");
+    root.execute_children("MASS");
+    root.execute_children("ROTARYINERTIA");
+    root.execute_children("SPRING");
 
     // ---------------------------------------------------------------------
     // Explicit Part topology before Model::compile()
     // ---------------------------------------------------------------------
-    for (const NodeId part : deck.children(root, "PART")) {
-        deck.enter(part);
+    for (const auto* part : root.children("PART")) {
+        part->enter();
 
-        deck.execute_children(part, "NODE");
-        deck.execute_children(part, "ELEMENT");
+        part->execute_children("NODE");
+        part->execute_children("ELEMENT");
 
-        deck.execute_children(part, "NSET");
-        deck.execute_children(part, "ELSET");
-        deck.execute_children(part, "SURFACE");
-        deck.execute_children(part, "SFSET");
+        part->execute_children("NSET");
+        part->execute_children("ELSET");
+        part->execute_children("SURFACE");
+        part->execute_children("SFSET");
 
-        deck.execute_children(part, "SOLIDSECTION");
-        deck.execute_children(part, "BEAMSECTION");
-        deck.execute_children(part, "TRUSSSECTION");
-        deck.execute_children(part, "SHELLSECTION");
+        part->execute_children("SOLIDSECTION");
+        part->execute_children("BEAMSECTION");
+        part->execute_children("TRUSSSECTION");
+        part->execute_children("SHELLSECTION");
 
-        deck.execute_children(part, "MASS");
-        deck.execute_children(part, "ROTARYINERTIA");
-        deck.execute_children(part, "SPRING");
+        part->execute_children("MASS");
+        part->execute_children("ROTARYINERTIA");
+        part->execute_children("SPRING");
 
-        deck.leave(part);
+        part->leave();
     }
 
     // ---------------------------------------------------------------------
     // Instances depend on completed Parts
     // ---------------------------------------------------------------------
-    deck.execute_children(root, "INSTANCE");
+    root.execute_children("INSTANCE");
 
-    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
-        deck.execute_children(assembly, "INSTANCE");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("INSTANCE");
     }
 
     // ---------------------------------------------------------------------
@@ -248,21 +246,21 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Assembly regions, properties and dense fields
     // ---------------------------------------------------------------------
-    deck.execute_children(root, "FIELD");
-    deck.execute_children(root, "NORMAL");
+    root.execute_children("FIELD");
+    root.execute_children("NORMAL");
 
-    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
-        deck.execute_children(assembly, "NSET");
-        deck.execute_children(assembly, "ELSET");
-        deck.execute_children(assembly, "SURFACE");
-        deck.execute_children(assembly, "SFSET");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("NSET");
+        assembly->execute_children("ELSET");
+        assembly->execute_children("SURFACE");
+        assembly->execute_children("SFSET");
 
-        deck.execute_children(assembly, "MASS");
-        deck.execute_children(assembly, "ROTARYINERTIA");
-        deck.execute_children(assembly, "SPRING");
+        assembly->execute_children("MASS");
+        assembly->execute_children("ROTARYINERTIA");
+        assembly->execute_children("SPRING");
 
-        deck.execute_children(assembly, "FIELD");
-        deck.execute_children(assembly, "NORMAL");
+        assembly->execute_children("FIELD");
+        assembly->execute_children("NORMAL");
     }
 
     // Complete reference normals before constraints or analyses consume shells.
@@ -271,80 +269,80 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Compiled model features
     // ---------------------------------------------------------------------
-    deck.execute_children(root, "POINTMASS");
+    root.execute_children("POINTMASS");
 
     // ---------------------------------------------------------------------
     // Root-level collectors and constraints
     // ---------------------------------------------------------------------
-    deck.execute_children(root, "SUPPORT");
+    root.execute_children("SUPPORT");
 
-    deck.execute_children(root, "CLOAD");
-    deck.execute_children(root, "DLOAD");
-    deck.execute_children(root, "PLOAD");
-    deck.execute_children(root, "TLOAD");
-    deck.execute_children(root, "VLOAD");
-    deck.execute_children(root, "INERTIALLOAD");
+    root.execute_children("CLOAD");
+    root.execute_children("DLOAD");
+    root.execute_children("PLOAD");
+    root.execute_children("TLOAD");
+    root.execute_children("VLOAD");
+    root.execute_children("INERTIALLOAD");
 
-    deck.execute_children(root, "RBM");
-    deck.execute_children(root, "CONNECTOR");
-    deck.execute_children(root, "TIE");
-    deck.execute_children(root, "CONTACT");
-    deck.execute_children(root, "EQUATION");
+    root.execute_children("RBM");
+    root.execute_children("CONNECTOR");
+    root.execute_children("TIE");
+    root.execute_children("CONTACT");
+    root.execute_children("EQUATION");
 
     // ---------------------------------------------------------------------
     // Assembly-level collectors and constraints
     // ---------------------------------------------------------------------
-    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
-        deck.execute_children(assembly, "SUPPORT");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("SUPPORT");
 
-        deck.execute_children(assembly, "CLOAD");
-        deck.execute_children(assembly, "DLOAD");
-        deck.execute_children(assembly, "PLOAD");
-        deck.execute_children(assembly, "TLOAD");
-        deck.execute_children(assembly, "VLOAD");
-        deck.execute_children(assembly, "INERTIALLOAD");
+        assembly->execute_children("CLOAD");
+        assembly->execute_children("DLOAD");
+        assembly->execute_children("PLOAD");
+        assembly->execute_children("TLOAD");
+        assembly->execute_children("VLOAD");
+        assembly->execute_children("INERTIALLOAD");
 
-        deck.execute_children(assembly, "RBM");
-        deck.execute_children(assembly, "CONNECTOR");
-        deck.execute_children(assembly, "TIE");
-        deck.execute_children(assembly, "CONTACT");
-        deck.execute_children(assembly, "EQUATION");
+        assembly->execute_children("RBM");
+        assembly->execute_children("CONNECTOR");
+        assembly->execute_children("TIE");
+        assembly->execute_children("CONTACT");
+        assembly->execute_children("EQUATION");
     }
 
     // ---------------------------------------------------------------------
     // Couplings
     // ---------------------------------------------------------------------
-    for (const NodeId coupling : deck.children(root, "COUPLING")) {
-        deck.enter(coupling);
+    for (const auto* coupling : root.children("COUPLING")) {
+        coupling->enter();
 
-        deck.execute_children(coupling, "KINEMATIC");
-        deck.execute_children(coupling, "DISTRIBUTING");
+        coupling->execute_children("KINEMATIC");
+        coupling->execute_children("DISTRIBUTING");
 
-        deck.leave(coupling);
+        coupling->leave();
     }
 
-    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
-        for (const NodeId coupling : deck.children(assembly, "COUPLING")) {
-            deck.enter(coupling);
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        for (const auto* coupling : assembly->children("COUPLING")) {
+            coupling->enter();
 
-            deck.execute_children(coupling, "KINEMATIC");
-            deck.execute_children(coupling, "DISTRIBUTING");
+            coupling->execute_children("KINEMATIC");
+            coupling->execute_children("DISTRIBUTING");
 
-            deck.leave(coupling);
+            coupling->leave();
         }
     }
 
-    deck.execute_children(root, "OVERVIEW");
+    root.execute_children("OVERVIEW");
 
     // ---------------------------------------------------------------------
     // Result writers and load-case execution
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
 
-    for (const NodeId loadcase : deck.children(root, "LOADCASE")) {
-        deck.enter(loadcase);
-        deck.execute_children(loadcase);
-        deck.leave(loadcase);
+    for (const auto* loadcase : root.children("LOADCASE")) {
+        loadcase->enter();
+        loadcase->execute_children();
+        loadcase->leave();
     }
 
     close_writers();
