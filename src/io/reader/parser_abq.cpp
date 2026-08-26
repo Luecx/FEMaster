@@ -156,28 +156,24 @@ void ParserAbq::register_commands(io::dsl::Registry& registry) {
 /**
  * Executes the parsed Abaqus deck in explicit model-dependency order.
  *
- * Part-local sections and point properties are assigned before compilation so
- * ordinary Instance expansion copies them into assembly space. Assembly NSET,
- * ELSET, SURFACE, point properties and TRANSFORM records execute only after the
- * dense mappings exist. The real ROOT node keeps all top-level access on the
- * same child API used for nested scopes.
+ * The function contains only the semantic execution sequence. Repetition over
+ * Parts, Assemblies, Couplings and Steps is delegated to `Deck`, while the
+ * compile boundary and all dependency-sensitive command groups remain visible
+ * directly from top to bottom.
  */
 void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
                              const std::string&                    input_path,
                              const std::string&                    output_path,
                              const io::writer::WriterFileFormats& writer_formats) {
-    using NodeId = io::dsl::Deck::NodeId;
-
     m_abq_state = ParserAbqState{};
 
-    const NodeId root = deck.root();
-    const auto assemblies = deck.children(root, "ASSEMBLY");
+    const auto root = deck.root();
 
     // ---------------------------------------------------------------------
     // Global material resources, orientations and amplitudes
     // ---------------------------------------------------------------------
     deck.execute_children(root, "HEADING");
-    deck.execute_children(root, "MATERIAL", {"ELASTIC", "HYPERELASTIC", "DENSITY", "EXPANSION"});
+    deck.execute_path(root, {"MATERIAL"}, {"ELASTIC", "HYPERELASTIC", "DENSITY", "EXPANSION"});
     deck.execute_children(root, {"ORIENTATION", "AMPLITUDE"});
 
     // ---------------------------------------------------------------------
@@ -190,16 +186,15 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
         "MASS", "ROTARYINERTIA", "SPRING"
     });
 
-    deck.execute_children(root, "PART", {
+    deck.execute_path(root, {"PART"}, {
         "NODE", "ELEMENT",
         "NSET", "ELSET", "SURFACE",
         "SOLIDSECTION", "SHELLSECTION",
         "MASS", "ROTARYINERTIA", "SPRING"
     });
 
-    // Instances require complete Parts but are still semantic pre-compile objects.
     deck.execute_children(root, "INSTANCE");
-    for (const NodeId assembly : assemblies) deck.execute_children(assembly, "INSTANCE");
+    deck.execute_path(root, {"ASSEMBLY"}, {"INSTANCE"});
 
     // ---------------------------------------------------------------------
     // Flatten Parts and Instances into the dense assembly exactly once
@@ -210,12 +205,10 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     // Assembly regions, point properties and nodal transforms
     // ---------------------------------------------------------------------
     deck.execute_children(root, "TRANSFORM");
-    for (const NodeId assembly : assemblies) {
-        deck.execute_children(assembly, {
-            "NSET", "ELSET", "SURFACE",
-            "MASS", "ROTARYINERTIA", "SPRING", "TRANSFORM"
-        });
-    }
+    deck.execute_path(root, {"ASSEMBLY"}, {
+        "NSET", "ELSET", "SURFACE",
+        "MASS", "ROTARYINERTIA", "SPRING", "TRANSFORM"
+    });
 
     model().build_shell_element_normals();
 
@@ -223,23 +216,16 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     // Compiled initial boundaries and global constraints
     // ---------------------------------------------------------------------
     deck.execute_children(root, {"BOUNDARY", "EQUATION"});
-    for (const NodeId assembly : assemblies) {
-        deck.execute_children(assembly, {"BOUNDARY", "EQUATION"});
-    }
+    deck.execute_path(root, {"ASSEMBLY"}, {"BOUNDARY", "EQUATION"});
 
-    deck.execute_children(root, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
-    for (const NodeId assembly : assemblies) {
-        deck.execute_children(assembly, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
-    }
+    deck.execute_path(root, {"COUPLING"}, {"KINEMATIC", "DISTRIBUTING"});
+    deck.execute_path(root, {"ASSEMBLY", "COUPLING"}, {"KINEMATIC", "DISTRIBUTING"});
 
     // ---------------------------------------------------------------------
     // Result writers and final Abaqus STEP execution
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
-
-    // Procedure and step-local commands retain their original source order.
-    deck.execute_children(root, "STEP", {});
-
+    deck.execute_path(root, {"STEP"}, {});
     close_writers();
 }
 
