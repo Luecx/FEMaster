@@ -1,20 +1,19 @@
 /**
  * @file parser_abq.cpp
- * @brief Implements dependency-ordered Abaqus input-deck parsing.
+ * @brief Implements one-shot Abaqus parsing and explicit semantic processing.
  *
- * Abaqus decks are replayed in four semantic passes. Definitions are loaded
- * first, followed by part/instance topology. `Model::compile()` then flattens
- * that topology and its part-local section assignments exactly once. Assembly
- * sets, surfaces, sections and nodal transforms are materialized against the
- * compiled assembly before the final step/load pass.
+ * The Abaqus grammar is registered once and the source file is parsed once by
+ * the common `Parser::run()` lifecycle. This file then exposes the semantic
+ * dependency order directly: definitions, Part topology, Instances,
+ * `Model::compile()`, assembly regions/properties/transforms, constraints and
+ * finally the Abaqus analysis step.
  *
- * Each pass registers the same command grammar but activates only commands whose
- * dependencies are satisfied at that point. All other keywords are consumed so
- * the original Abaqus nesting remains intact without executing callbacks too
- * early.
+ * Scope-sensitive records are selected from the stored parsed tree. No parser
+ * stages or command activation modes are required, and syntax/variant matching
+ * is never repeated after the initial parse.
  *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 26.08.2026
  */
 
 #include "parser_abq.h"
@@ -62,6 +61,12 @@
 
 namespace fem::io::reader {
 
+ParserAbq::ParserAbq() {
+    // The base constructor can only dispatch the native virtual implementation.
+    // Rebuild documentation here after the complete Abaqus dynamic type exists.
+    configure_documentation_registry();
+}
+
 ParserAbqState& ParserAbq::abaqus_state() { return m_abq_state; }
 const ParserAbqState& ParserAbq::abaqus_state() const { return m_abq_state; }
 
@@ -102,9 +107,10 @@ std::pair<Precision, std::string> ParserAbq::resolve_load_amplitude(const std::s
     return {Precision(1), std::string{}};
 }
 
+/**
+ * Registers command definitions shared by the supported Abaqus subset.
+ */
 void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
-    // Register the complete Abaqus subset once per parser pass. ActiveMode below
-    // controls execution while the DSL scope stack provides all parent context.
     commands::register_heading(registry);
     commands::register_part(registry, model());
     commands::register_end_part(registry, model());
@@ -138,71 +144,132 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands_abq::register_dsload(registry, *this);
 }
 
-void ParserAbq::configure_definition_pass(io::dsl::Registry& registry) {
-    // Definitions may be referenced by part sections during the topology pass.
-    // They therefore execute before any part or instance construction.
+/**
+ * Registers the complete supported Abaqus grammar once for parsing and processing.
+ */
+void ParserAbq::register_commands(io::dsl::Registry& registry) {
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
     register_common_commands(registry);
-
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    for (const char* command : {
-        "MATERIAL", "DENSITY", "ELASTIC", "HYPERELASTIC", "EXPANSION", "ORIENTATION"
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::Active);
-    }
 }
 
-void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
-    // Build semantic parts, instances and part-local section assignments. Scope
-    // variants defer assembly records until the compiled assembly pass.
+/**
+ * Executes the parsed Abaqus deck in explicit model-dependency order.
+ *
+ * Part-local sections and point properties are assigned before compilation so
+ * ordinary Instance expansion copies them into assembly space. Assembly NSET,
+ * ELSET, SURFACE, point properties and TRANSFORM records execute only after the
+ * dense mappings exist. The STEP subtree remains source-ordered because its
+ * procedure card establishes one active load case consumed by following load and
+ * boundary cards until ENDSTEP executes it.
+ */
+void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
+                             const std::string&                    input_path,
+                             const std::string&                    output_path,
+                             const io::writer::WriterFileFormats& writer_formats) {
+    using NodeId = io::dsl::Deck::NodeId;
+
     m_abq_state = ParserAbqState{};
-    commands::register_node(registry, model());
-    commands_abq::register_element(registry, model());
-    register_common_commands(registry);
 
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    for (const char* command : {
-        "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
-        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "MASS", "ROTARYINERTIA", "SPRING",
-        "AMPLITUDE", "SOLIDSECTION", "SHELLSECTION"
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::Active);
+    // ---------------------------------------------------------------------
+    // Global material resources, orientations and amplitudes
+    // ---------------------------------------------------------------------
+    deck.execute_roots("HEADING");
+
+    for (const NodeId material : deck.roots("MATERIAL")) {
+        deck.enter(material);
+        deck.execute_children(material, {"ELASTIC", "HYPERELASTIC", "DENSITY", "EXPANSION"});
+        deck.leave(material);
     }
-}
 
-void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
-    // Part-local sections were already expanded by Model::compile(). This pass
-    // materializes assembly-local regions, point-element properties and nodal
-    // transforms directly in dense identifier space.
-    commands::register_node(registry, model());
-    commands_abq::register_element(registry, model());
-    register_common_commands(registry);
+    deck.execute_roots({"ORIENTATION", "AMPLITUDE"});
 
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    for (const char* command : {
-        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE",
-        "MASS", "ROTARYINERTIA", "SPRING", "TRANSFORM"
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::Active);
+    // ---------------------------------------------------------------------
+    // Default-Part and explicit Part topology before compilation
+    // ---------------------------------------------------------------------
+    const auto process_part_topology = [&deck](NodeId part) {
+        deck.execute_children(part, {
+            "NODE", "ELEMENT",
+            "NSET", "ELSET", "SURFACE",
+            "SOLIDSECTION", "SHELLSECTION",
+            "MASS", "ROTARYINERTIA", "SPRING"
+        });
+    };
+
+    deck.execute_roots({
+        "NODE", "ELEMENT",
+        "NSET", "ELSET", "SURFACE",
+        "SOLIDSECTION", "SHELLSECTION",
+        "MASS", "ROTARYINERTIA", "SPRING"
+    });
+
+    for (const NodeId part : deck.roots("PART")) {
+        deck.enter(part);
+        process_part_topology(part);
+        deck.leave(part);
     }
-}
 
-void ParserAbq::configure_analysis_pass(io::dsl::Registry& registry) {
-    // Analysis procedures and boundary/load data consume the final compiled
-    // assembly, including all post-compile sets and nodal transforms.
-    commands::register_node(registry, model());
-    commands_abq::register_element(registry, model());
-    register_common_commands(registry);
-
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-    for (const char* command : {
-        "EQUATION", "COUPLING", "KINEMATIC", "DISTRIBUTING", "STEP",
-        "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
-        "CLOAD", "BOUNDARY", "DLOAD", "DSLOAD", "ENDSTEP"
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::Active);
+    // Instances require complete Parts but are still semantic pre-compile objects.
+    deck.execute_roots("INSTANCE");
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        deck.execute_children(assembly, "INSTANCE");
     }
+
+    // ---------------------------------------------------------------------
+    // Flatten Parts and Instances into the dense assembly exactly once
+    // ---------------------------------------------------------------------
+    model().compile();
+
+    // ---------------------------------------------------------------------
+    // Assembly regions, point properties and nodal transforms
+    // ---------------------------------------------------------------------
+    deck.execute_roots("TRANSFORM");
+
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        deck.execute_children(assembly, {
+            "NSET", "ELSET", "SURFACE",
+            "MASS", "ROTARYINERTIA", "SPRING", "TRANSFORM"
+        });
+    }
+
+    model().build_shell_element_normals();
+
+    // ---------------------------------------------------------------------
+    // Compiled initial boundaries and global constraints
+    // ---------------------------------------------------------------------
+    deck.execute_roots("BOUNDARY");
+    deck.execute_roots("EQUATION");
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        deck.execute_children(assembly, {"BOUNDARY", "EQUATION"});
+    }
+
+    const auto process_coupling = [&deck](NodeId coupling) {
+        deck.enter(coupling);
+        deck.execute_children(coupling, {"KINEMATIC", "DISTRIBUTING"});
+        deck.leave(coupling);
+    };
+
+    for (const NodeId coupling : deck.roots("COUPLING")) process_coupling(coupling);
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        for (const NodeId coupling : deck.children(assembly, "COUPLING")) process_coupling(coupling);
+    }
+
+    // ---------------------------------------------------------------------
+    // Result writers and final Abaqus STEP execution
+    // ---------------------------------------------------------------------
+    initialize_writers(input_path, output_path, writer_formats);
+
+    for (const NodeId step : deck.roots("STEP")) {
+        deck.enter(step);
+
+        // Procedure, loads, boundaries, output requests and ENDSTEP retain their
+        // original order because they operate on one active Abaqus step state.
+        deck.execute_children(step);
+
+        deck.leave(step);
+    }
+
+    close_writers();
 }
 
 } // namespace fem::io::reader
