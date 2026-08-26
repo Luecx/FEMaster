@@ -159,9 +159,8 @@ void ParserAbq::register_commands(io::dsl::Registry& registry) {
  * Part-local sections and point properties are assigned before compilation so
  * ordinary Instance expansion copies them into assembly space. Assembly NSET,
  * ELSET, SURFACE, point properties and TRANSFORM records execute only after the
- * dense mappings exist. The STEP subtree remains source-ordered because its
- * procedure card establishes one active load case consumed by following load and
- * boundary cards until ENDSTEP executes it.
+ * dense mappings exist. The real ROOT node keeps all top-level access on the
+ * same child API used for nested scopes.
  */
 void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
                              const std::string&                    input_path,
@@ -171,49 +170,36 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
 
     m_abq_state = ParserAbqState{};
 
+    const NodeId root = deck.root();
+    const auto assemblies = deck.children(root, "ASSEMBLY");
+
     // ---------------------------------------------------------------------
     // Global material resources, orientations and amplitudes
     // ---------------------------------------------------------------------
-    deck.execute_roots("HEADING");
-
-    for (const NodeId material : deck.roots("MATERIAL")) {
-        deck.enter(material);
-        deck.execute_children(material, {"ELASTIC", "HYPERELASTIC", "DENSITY", "EXPANSION"});
-        deck.leave(material);
-    }
-
-    deck.execute_roots({"ORIENTATION", "AMPLITUDE"});
+    deck.execute_children(root, "HEADING");
+    deck.execute_children(root, "MATERIAL", {"ELASTIC", "HYPERELASTIC", "DENSITY", "EXPANSION"});
+    deck.execute_children(root, {"ORIENTATION", "AMPLITUDE"});
 
     // ---------------------------------------------------------------------
     // Default-Part and explicit Part topology before compilation
     // ---------------------------------------------------------------------
-    const auto process_part_topology = [&deck](NodeId part) {
-        deck.execute_children(part, {
-            "NODE", "ELEMENT",
-            "NSET", "ELSET", "SURFACE",
-            "SOLIDSECTION", "SHELLSECTION",
-            "MASS", "ROTARYINERTIA", "SPRING"
-        });
-    };
-
-    deck.execute_roots({
+    deck.execute_children(root, {
         "NODE", "ELEMENT",
         "NSET", "ELSET", "SURFACE",
         "SOLIDSECTION", "SHELLSECTION",
         "MASS", "ROTARYINERTIA", "SPRING"
     });
 
-    for (const NodeId part : deck.roots("PART")) {
-        deck.enter(part);
-        process_part_topology(part);
-        deck.leave(part);
-    }
+    deck.execute_children(root, "PART", {
+        "NODE", "ELEMENT",
+        "NSET", "ELSET", "SURFACE",
+        "SOLIDSECTION", "SHELLSECTION",
+        "MASS", "ROTARYINERTIA", "SPRING"
+    });
 
     // Instances require complete Parts but are still semantic pre-compile objects.
-    deck.execute_roots("INSTANCE");
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
-        deck.execute_children(assembly, "INSTANCE");
-    }
+    deck.execute_children(root, "INSTANCE");
+    for (const NodeId assembly : assemblies) deck.execute_children(assembly, "INSTANCE");
 
     // ---------------------------------------------------------------------
     // Flatten Parts and Instances into the dense assembly exactly once
@@ -223,9 +209,8 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Assembly regions, point properties and nodal transforms
     // ---------------------------------------------------------------------
-    deck.execute_roots("TRANSFORM");
-
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+    deck.execute_children(root, "TRANSFORM");
+    for (const NodeId assembly : assemblies) {
         deck.execute_children(assembly, {
             "NSET", "ELSET", "SURFACE",
             "MASS", "ROTARYINERTIA", "SPRING", "TRANSFORM"
@@ -237,21 +222,14 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Compiled initial boundaries and global constraints
     // ---------------------------------------------------------------------
-    deck.execute_roots("BOUNDARY");
-    deck.execute_roots("EQUATION");
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+    deck.execute_children(root, {"BOUNDARY", "EQUATION"});
+    for (const NodeId assembly : assemblies) {
         deck.execute_children(assembly, {"BOUNDARY", "EQUATION"});
     }
 
-    const auto process_coupling = [&deck](NodeId coupling) {
-        deck.enter(coupling);
-        deck.execute_children(coupling, {"KINEMATIC", "DISTRIBUTING"});
-        deck.leave(coupling);
-    };
-
-    for (const NodeId coupling : deck.roots("COUPLING")) process_coupling(coupling);
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
-        for (const NodeId coupling : deck.children(assembly, "COUPLING")) process_coupling(coupling);
+    deck.execute_children(root, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
+    for (const NodeId assembly : assemblies) {
+        deck.execute_children(assembly, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
     }
 
     // ---------------------------------------------------------------------
@@ -259,15 +237,8 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
 
-    for (const NodeId step : deck.roots("STEP")) {
-        deck.enter(step);
-
-        // Procedure, loads, boundaries, output requests and ENDSTEP retain their
-        // original order because they operate on one active Abaqus step state.
-        deck.execute_children(step);
-
-        deck.leave(step);
-    }
+    // Procedure and step-local commands retain their original source order.
+    deck.execute_children(root, "STEP", {});
 
     close_writers();
 }
