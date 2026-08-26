@@ -230,7 +230,15 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     }
 
     // ---------------------------------------------------------------------
-    // Instances depend on completed Parts
+    // Assembly orphan topology before Model::compile()
+    // ---------------------------------------------------------------------
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("NODE");
+        assembly->execute_children("ELEMENT");
+    }
+
+    // ---------------------------------------------------------------------
+    // Instances depend on completed Parts and orphan assembly topology
     // ---------------------------------------------------------------------
     root.execute_children("INSTANCE");
 
