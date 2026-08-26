@@ -153,9 +153,8 @@ void Parser::run(const std::string& input_path,
  *
  * Part-local entities are constructed before compilation while assembly-level
  * sets and properties are deliberately deferred until dense Instance mappings
- * exist. Within Part scopes, fundamental topology is processed before regions
- * and section assignments so forward placement of those input cards no longer
- * requires a complete-file parser replay.
+ * exist. The real ROOT node makes every processing step use the same child API,
+ * so the complete semantic order remains visible directly in this function.
  */
 void Parser::process_deck(const io::dsl::Deck&                  deck,
                           const std::string&                    input_path,
@@ -163,51 +162,36 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
                           const io::writer::WriterFileFormats& writer_formats) {
     using NodeId = io::dsl::Deck::NodeId;
 
+    const NodeId root = deck.root();
+    const auto assemblies = deck.children(root, "ASSEMBLY");
+
     // ---------------------------------------------------------------------
     // Global definitions required by sections and later load definitions
     // ---------------------------------------------------------------------
-    deck.execute_roots("HEADING");
-
-    for (const NodeId material : deck.roots("MATERIAL")) {
-        deck.enter(material);
-        deck.execute_children(material, {"ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION"});
-        deck.leave(material);
-    }
-
-    deck.execute_roots({"PROFILE", "ORIENTATION", "AMPLITUDE"});
+    deck.execute_children(root, "HEADING");
+    deck.execute_children(root, "MATERIAL", {"ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION"});
+    deck.execute_children(root, {"PROFILE", "ORIENTATION", "AMPLITUDE"});
 
     // ---------------------------------------------------------------------
     // Default-Part and explicit Part topology before Model::compile()
     // ---------------------------------------------------------------------
-    const auto process_part_topology = [&deck](NodeId part) {
-        deck.execute_children(part, {
-            "NODE", "ELEMENT",
-            "NSET", "ELSET", "SURFACE", "SFSET",
-            "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
-            "MASS", "ROTARYINERTIA", "SPRING"
-        });
-    };
-
-    // ROOT-level topology belongs to FEMaster's default Part.
-    deck.execute_roots({
+    deck.execute_children(root, {
         "NODE", "ELEMENT",
         "NSET", "ELSET", "SURFACE", "SFSET",
         "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
         "MASS", "ROTARYINERTIA", "SPRING"
     });
 
-    // Explicit Parts keep their existing active-Part callbacks around all children.
-    for (const NodeId part : deck.roots("PART")) {
-        deck.enter(part);
-        process_part_topology(part);
-        deck.leave(part);
-    }
+    deck.execute_children(root, "PART", {
+        "NODE", "ELEMENT",
+        "NSET", "ELSET", "SURFACE", "SFSET",
+        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
+        "MASS", "ROTARYINERTIA", "SPRING"
+    });
 
     // Instances depend on completed Parts but still belong to sparse topology.
-    deck.execute_roots("INSTANCE");
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
-        deck.execute_children(assembly, "INSTANCE");
-    }
+    deck.execute_children(root, "INSTANCE");
+    for (const NodeId assembly : assemblies) deck.execute_children(assembly, "INSTANCE");
 
     // ---------------------------------------------------------------------
     // One-way transition from semantic Parts/Instances to dense assembly data
@@ -217,9 +201,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Assembly regions, properties and dense fields after compilation
     // ---------------------------------------------------------------------
-    deck.execute_roots({"FIELD", "NORMAL"});
-
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+    deck.execute_children(root, {"FIELD", "NORMAL"});
+    for (const NodeId assembly : assemblies) {
         deck.execute_children(assembly, {
             "NSET", "ELSET", "SURFACE", "SFSET",
             "MASS", "ROTARYINERTIA", "SPRING",
@@ -233,15 +216,14 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     // Compiled model features, collectors, constraints and diagnostics
     // ---------------------------------------------------------------------
-    deck.execute_roots("POINTMASS");
-
-    deck.execute_roots({
+    deck.execute_children(root, "POINTMASS");
+    deck.execute_children(root, {
         "SUPPORT",
         "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
         "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
     });
 
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+    for (const NodeId assembly : assemblies) {
         deck.execute_children(assembly, {
             "SUPPORT",
             "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
@@ -249,36 +231,21 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         });
     }
 
-    // COUPLING may own a KINEMATIC or DISTRIBUTING child and must remain entered
-    // until that child has emitted the final constraint.
-    const auto process_coupling = [&deck](NodeId coupling) {
-        deck.enter(coupling);
-        deck.execute_children(coupling, {"KINEMATIC", "DISTRIBUTING"});
-        deck.leave(coupling);
-    };
-
-    for (const NodeId coupling : deck.roots("COUPLING")) process_coupling(coupling);
-    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
-        for (const NodeId coupling : deck.children(assembly, "COUPLING")) process_coupling(coupling);
+    // COUPLING remains entered while its selected formulation emits the constraint.
+    deck.execute_children(root, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
+    for (const NodeId assembly : assemblies) {
+        deck.execute_children(assembly, "COUPLING", {"KINEMATIC", "DISTRIBUTING"});
     }
 
-    deck.execute_roots("OVERVIEW");
+    deck.execute_children(root, "OVERVIEW");
 
     // ---------------------------------------------------------------------
     // Result writers and final load-case execution
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
 
-    for (const NodeId loadcase : deck.roots("LOADCASE")) {
-        deck.enter(loadcase);
-
-        // Load-case configuration remains source-ordered inside the explicit
-        // analysis scope because these cards configure one active object.
-        deck.execute_children(loadcase);
-
-        // Closing the stored scope executes and releases the active analysis.
-        deck.leave(loadcase);
-    }
+    // An empty child selection preserves source order for every load-case card.
+    deck.execute_children(root, "LOADCASE", {});
 
     close_writers();
 }
