@@ -1,25 +1,21 @@
 /**
  * @file parser_abq.h
- * @brief Declares the Abaqus input reader and its parser-local state.
+ * @brief Declares the Abaqus reader and its parser-local analysis state.
  *
- * `ParserAbq` specializes the semantic parser passes used by the common
- * `Parser::run()` pipeline. Global material resources are collected before
- * topology, nodes and elements are constructed in reusable parts, and the
- * common `Model::compile()` boundary creates dense solver data before assembly
- * sets/surfaces, transforms and analysis commands execute.
+ * `ParserAbq` registers the supported Abaqus grammar once and then processes the
+ * resulting `dsl::Deck` in an explicit dependency order. Materials and Part
+ * topology are created first, `Model::compile()` forms the dense assembly, and
+ * assembly regions/transforms plus the final analysis step execute afterwards.
  *
  * Parser-local state is limited to nodal `*TRANSFORM` assignments and controls
- * required while translating one supported analysis step. Abaqus `MASS`
- * properties are ordinary section assignments and therefore require no
- * parser-local deferred state or feature helper.
+ * required while translating one supported analysis step.
  *
  * @see Parser
  * @see commands_abq::register_transform
- * @see commands_abq::register_mass
  * @see commands_abq::register_step
  *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 26.08.2026
  */
 
 #pragma once
@@ -32,6 +28,9 @@
 
 namespace fem::io::reader {
 
+/**
+ * @brief Runtime state required while translating one supported Abaqus step.
+ */
 struct ParserAbqState {
     std::unordered_map<ID, std::string> node_transforms;
 
@@ -44,12 +43,15 @@ struct ParserAbqState {
     std::string step_amplitude;
 };
 
+/**
+ * @brief Abaqus dialect specialization of the common parsed-deck reader.
+ */
 class ParserAbq : public Parser {
 private:
     ParserAbqState m_abq_state;
 
 public:
-    ParserAbq() = default;
+    ParserAbq();
     ~ParserAbq() override = default;
 
     ParserAbqState& abaqus_state();
@@ -58,10 +60,11 @@ public:
     std::pair<Precision, std::string> resolve_load_amplitude(const std::string& amplitude);
 
 protected:
-    void configure_definition_pass(io::dsl::Registry& registry) override;
-    void configure_topology_pass  (io::dsl::Registry& registry) override;
-    void configure_assembly_pass  (io::dsl::Registry& registry) override;
-    void configure_analysis_pass  (io::dsl::Registry& registry) override;
+    void register_commands(io::dsl::Registry& registry) override;
+    void process_deck(const io::dsl::Deck&                  deck,
+                      const std::string&                    input_path,
+                      const std::string&                    output_path,
+                      const io::writer::WriterFileFormats& writer_formats) override;
 
 private:
     void register_common_commands(io::dsl::Registry& registry);
