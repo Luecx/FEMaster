@@ -36,11 +36,13 @@ Element IDs are non-negative user labels and may start at \val{0}. Connectivity 
 \val{QSPT} & 4 & Specialized quadrilateral shear-panel element. \\
 \val{B33} & 2 & Three-dimensional beam element. \\
 \val{T3} & 2 & Three-dimensional truss element. \\
-\val{MASS} & 1 & Zero-dimensional point element with separately assigned concentrated mass. \\
+\val{MASS} & 1 & Zero-dimensional point element with separately assigned translational mass. \\
+\val{ROTARYI} & 1 & Zero-dimensional point element with separately assigned rotary inertia. \\
+\val{SPRING1} & 1 & Zero-dimensional point-to-ground spring acting in one generalized nodal direction. \\
 \bottomrule
 \end{longtable}
 
-The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. The one-node \val{MASS} type is shared directly by both input dialects. Abaqus shell names are translated as shown below.
+The Abaqus reader accepts the same solid names \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R}. Abaqus \val{T3D2} is mapped to FEMaster \val{T3}. Abaqus \val{B33} is mapped to FEMaster \val{B33}. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} types are shared directly by both input dialects and map to the same internal point-element implementation. Abaqus shell names are translated as shown below.
 
 \begin{table}[H]
 \centering
@@ -254,7 +256,7 @@ Relative to \val{C3D8}, \val{C3D20} exchanges larger element matrices for higher
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.82\linewidth]{pages/figures/element_schematics/c3d20r_schematic.png}
-    \caption{\val{C3D20R} reduced-integration quadratic hexahedral element.}
+    \caption{\val{C3D20R} reduced-integration quadratic hexahedral solid element.}
 \end{figure}
 
 \begin{syntax}
@@ -504,7 +506,9 @@ Typical applications are preliminary thin-walled structures, webs, aircraft-styl
 
 \section{Point elements}
 
-Point elements are zero-dimensional structural elements attached to a single node. They preserve element identity and ELSET membership while their physical contribution is supplied by an assigned point-mass section rather than by continuum geometry or a material law.
+Point elements are zero-dimensional structural elements attached to a single node. They preserve element identity and ELSET membership while their physical contribution is supplied by an assigned point-mass section rather than by continuum geometry or a material law. The native FEMaster and supported Abaqus readers expose three regular one-node topologies: \val{MASS}, \val{ROTARYI}, and \val{SPRING1}. Internally all three use the same \texttt{PointElement}; the corresponding property keyword determines which generalized diagonal coefficient is populated.
+
+A point element without an assigned point property is intentionally inert. It has zero stiffness, zero mass, no stress or strain state, and activates no degrees of freedom. Property definitions are documented in Chapter~\ref{chap:sections}; this section focuses on the element topology and kinematic role.
 
 \clearpage
 \subsection{\val{MASS}: 1-node concentrated-mass element}
@@ -516,21 +520,56 @@ Point elements are zero-dimensional structural elements attached to a single nod
 <mass>
 \end{syntax}
 
-\val{MASS} is a one-node point element accepted by both the native FEMaster and Abaqus readers. The \cmd{ELEMENT} record creates only topology: an element ID, one connected node, and normal ELSET membership. The scalar physical mass is assigned separately by \cmd{MASS, ELSET=...}. This separation allows point elements to participate in Parts, Instances, assembly-level sets, output numbering, and element-targeted loading like other regular elements.
+\val{MASS} is a one-node point element accepted by both input dialects. The \cmd{ELEMENT} record creates only topology: an element ID, one connected node, and normal ELSET membership. The scalar physical mass is assigned separately by \cmd{MASS, ELSET=...}.
 
-A point element without an assigned point-mass property is intentionally inert. It has zero stiffness, zero mass, no stress or strain state, and activates no degrees of freedom. Once the supported isotropic \cmd{MASS} property is assigned, its element mass matrix is
+For the supported isotropic property, the element mass matrix is
 \[
 M_e=\operatorname{diag}(m,m,m,0,0,0),
 \]
-so the three translational components at the connected node are active. The supported input mapping does not assign rotary inertia or ground-spring stiffness to \val{MASS} elements.
-
-The mass value belongs to each element in the target ELSET. Several \val{MASS} elements may therefore reference the same node; each represents an independent concentrated contribution and the assembled mass is additive. Conversely, an ELSET used by \cmd{MASS} must contain only point elements; mixed structural/point sets are rejected before assignment.
+so a positive mass activates the three translational components at the connected node. Several \val{MASS} elements may reference the same node; each represents an independent concentrated contribution and the assembled mass is additive.
 
 The point element has zero geometric volume, but its density-scaled field integration interprets \(m\) as the complete concentrated mass measure. Consequently, a regular \val{MASS} element contributes to the global mass matrix, eigenfrequency and transient analyses, inertia relief, and element-targeted mass-proportional body or inertial loads. For example, a native \cmd{VLOAD} or supported Abaqus \cmd{DLOAD} with \val{GRAV} produces the concentrated force \(m\boldsymbol a\) when the selected element region contains the point element.
 
-Part-local \val{MASS} elements and their \cmd{MASS} property assignments are copied to every Instance during model compilation. An assembly-level \cmd{MASS} assignment instead targets compiled point elements through an assembly ELSET. This makes the same one-node topology usable in flat, Part/Instance, and assembly-selected models.
+Part-local \val{MASS} elements and their \cmd{MASS} property assignments are copied to every Instance during model compilation. An assembly-level \cmd{MASS} assignment instead targets compiled point elements through an assembly ELSET.
 
-Native \cmd{POINTMASS} provides a second user-facing way to define concentrated properties directly on an NSET. It is more general because it additionally supports rotary inertia and diagonal translational/rotational ground stiffness. Internally both paths use the same point-element/point-mass-section mechanics, but native \cmd{POINTMASS} creates auxiliary post-compile point elements that are not public ELSET members; the regular \val{MASS} topology documented here remains an ordinary element in the compiled model.
+\clearpage
+\subsection{\val{ROTARYI}: 1-node rotary-inertia element}
+
+\begin{syntax}
+*ELEMENT, TYPE=ROTARYI, ELSET=<set>
+<id>, <node>
+*ROTARY INERTIA, ELSET=<set>
+<I11>, <I22>, <I33>, <I12>, <I13>, <I23>
+\end{syntax}
+
+\val{ROTARYI} is the rotational-inertia counterpart of \val{MASS}. Its one-node topology is identical, but the property acts on the rotational degrees of freedom. FEMaster's supported diagonal mapping produces
+\[
+M_e=\operatorname{diag}(0,0,0,I_{11},I_{22},I_{33}).
+\]
+Each nonzero diagonal inertia activates its corresponding nodal rotation.
+
+Abaqus permits the full symmetric rotary-inertia tensor. The current FEMaster point section stores only the diagonal moments, so the data positions \(I_{12}\), \(I_{13}\), and \(I_{23}\) are accepted only when zero. Orientation-dependent rotary inertia is likewise outside the current mapping.
+
+A \val{ROTARYI} element can share its connected node with a \val{MASS} element. This is the regular element-based way to represent translational mass and rotary inertia at the same physical point while preserving the Abaqus separation between the two element families.
+
+\clearpage
+\subsection{\val{SPRING1}: 1-node point-to-ground spring}
+
+\begin{syntax}
+*ELEMENT, TYPE=SPRING1, ELSET=<set>
+<id>, <node>
+*SPRING, ELSET=<set>
+<dof>
+<stiffness>
+\end{syntax}
+
+\val{SPRING1} is a one-node spring between the connected node and ground. The first \cmd{SPRING} data line selects the generalized nodal direction; the second gives the constant linear stiffness. Degrees of freedom 1--3 act on translations and degrees of freedom 4--6 act on rotations.
+
+For one selected direction the point-element stiffness matrix contains exactly one nonzero diagonal entry. Translational DOFs therefore represent ordinary point-to-ground springs, whereas rotational DOFs represent torsional point-to-ground springs. Multiple independent directions are represented by multiple \val{SPRING1} elements, which may all reference the same node.
+
+The current mapping is deliberately narrower than the complete Abaqus spring family. It supports only real, constant, linear \val{SPRING1} behavior in the global nodal system. \val{SPRING2}, \val{SPRINGA}, local orientations, nonlinear force--displacement curves, frequency or field dependence, and complex stiffness are not mapped.
+
+Native \cmd{POINTMASS} provides an alternative NSET-based convenience syntax when mass, rotary inertia, and several diagonal translational or rotational springs should be combined directly on the same target nodes. It creates auxiliary post-compile point elements rather than regular ELSET members.
 
 \section{Beam and truss elements}
 
@@ -592,7 +631,7 @@ No element is universally optimal. The following relationships summarize the pri
   \item reduced-integration solids introduce deformation modes and refinement sensitivity that solver convergence alone does not characterize;
   \item the FRT shell family provides finite-rotation kinematics, while the non-FRT shell types retain legacy formulations;
   \item shells omit detailed three-dimensional through-thickness stress in exchange for a midsurface representation of thin structures;
-  \item \val{MASS} provides concentrated translational inertia without continuum geometry or stress recovery;
+  \item \val{MASS}, \val{ROTARYI}, and \val{SPRING1} provide concentrated diagonal point inertia or ground stiffness without continuum geometry or stress recovery;
   \item beams and trusses impose one-dimensional kinematic assumptions on the represented member;
   \item reactions, deformed shapes, energy trends, and mesh convergence characterize the discretization error associated with element and mesh selection.
 \end{itemize}

@@ -1,18 +1,22 @@
 /**
  * @file register_mass.inl
- * @brief Registers the Abaqus `*MASS` property command in the replay-based reader.
+ * @brief Registers shared `*MASS` point-element properties.
  *
- * This file translates Abaqus concentrated-mass properties into FEMaster section
- * assignments. Abaqus separates the one-node `MASS` element topology from the
- * property assigned to that topology: `*ELEMENT, TYPE=MASS` defines element ids,
- * connectivity and ELSET membership, while `*MASS, ELSET=...` assigns the scalar
- * isotropic mass. FEMaster represents the same separation with
- * `model::PointElement` and `PointMassSection`.
+ * This file translates concentrated-mass properties into FEMaster section
+ * assignments. The input syntax separates the one-node `MASS` element topology
+ * from the property assigned to that topology: `*ELEMENT, TYPE=MASS` defines
+ * element ids, connectivity and ELSET membership, while `*MASS, ELSET=...`
+ * assigns the scalar isotropic mass. FEMaster represents the same separation
+ * with `model::PointElement` and `PointMassSection`.
  *
- * The Abaqus reader processes the same input deck in multiple semantic passes
- * around the one-way `Model::compile()` boundary. This is relevant for `*MASS`
- * because the target ELSET lives in different identifier spaces depending on
- * its parent scope:
+ * Native FEMaster also retains the legacy `*POINTMASS, NSET=...` variant. It can
+ * assign the same translational mass directly to nodes while optionally combining
+ * it with diagonal rotary inertia and translational/rotational ground stiffness.
+ *
+ * The reader processes the same input deck in multiple semantic passes around
+ * the one-way `Model::compile()` boundary. This is relevant for `*MASS` because
+ * the target ELSET lives in different identifier spaces depending on its parent
+ * scope:
  *
  * - ROOT/PART records reference semantic Part-local element sets. They can be
  *   resolved before compilation and are stored as Part-local section
@@ -33,7 +37,7 @@
  * not inspect parser parent state. The model compile state is used only while
  * registering the command to select which replay receives the mutating bind.
  *
- * This translation currently supports only the isotropic Abaqus `*MASS` form.
+ * This translation currently supports only the isotropic `*MASS` form.
  * Anisotropic mass, orientation-dependent mass and Abaqus damping parameters are
  * not represented here. Mass, rotary inertia and ground-spring behavior of the
  * FEMaster `PointMassSection` remain responsibilities of the section and point
@@ -43,6 +47,7 @@
  * @see PointMassSection
  * @see model::Model::compile
  * @see commands::register_elset
+ * @see commands::register_point_mass
  *
  * @author Finn Eggers
  * @date 25.08.2026
@@ -67,7 +72,8 @@ namespace fem::io::reader::commands {
  * The command accepts one isotropic mass value and requires an ELSET containing
  * only `model::PointElement` objects. The target region is validated before a
  * `PointMassSection` is created so a mixed ELSET cannot silently assign point
- * properties to unrelated structural formulations.
+ * properties to unrelated structural formulations. Native `*POINTMASS` remains
+ * the legacy NSET-based alternative for concentrated point properties.
  *
  * Registration depends on which side of `Model::compile()` the current parser
  * replay runs:
@@ -79,7 +85,7 @@ namespace fem::io::reader::commands {
  *    their sections have already been copied into assembly space. ASSEMBLY
  *    records are now executed against compiled ELSETs and dense element ids.
  *
- * The consume-only variants are necessary because the Abaqus reader replays the
+ * The consume-only variants are necessary because the reader replays the
  * complete input deck. They preserve syntax handling in every pass while making
  * the section assignment itself occur exactly once. Scope routing remains
  * declarative through `parent_is(...)`; no bind callback branches on parser
@@ -92,7 +98,7 @@ namespace fem::io::reader::commands {
 inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("MASS", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "PART", "ASSEMBLY"}));
-        command.doc("Assign isotropic mass to Abaqus MASS elements in an ELSET.");
+        command.doc("Assign isotropic mass to MASS point elements in an ELSET; native legacy alternative: POINTMASS.");
 
         // The ELSET name belongs to one keyword occurrence but is needed later
         // when the selected data variant executes. Shared command-local storage
@@ -149,7 +155,7 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
                         logging::error(region != nullptr && region->size() > 0,
                             "MASS: element set ", *elset, " is empty in part ", part->name);
 
-                        // Abaqus *MASS is a property of MASS elements. Validate
+                        // *MASS is a property of MASS point elements. Validate
                         // the complete region before creating the section so a
                         // partially valid mixed ELSET never mutates the model.
                         for (const ID id : *region) {

@@ -48,7 +48,10 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{SHELL SECTION} & \checkmark & \checkmark & Sections and Element Properties \\
 \cmd{BEAM SECTION} & \checkmark & -- & Sections and Element Properties \\
 \cmd{TRUSS SECTION} & \checkmark & -- & Sections and Element Properties \\
-\cmd{MASS} & \checkmark & \checkmark & Advanced Model Features; isotropic point-element mass \\
+\cmd{POINTMASS} & \checkmark & -- & Sections and Element Properties; legacy native NSET-based point properties \\
+\cmd{MASS} & \checkmark & \checkmark & Sections and Element Properties; \val{MASS} point elements \\
+\cmd{ROTARY INERTIA} & \checkmark & \checkmark & Sections and Element Properties; \val{ROTARYI} point elements \\
+\cmd{SPRING} & \checkmark & \checkmark & Sections and Element Properties; linear \val{SPRING1} point elements \\
 
 \midrule
 \cmd{ORIENTATION} & \checkmark & \checkmark & Coordinate Systems and Orientations \\
@@ -119,7 +122,6 @@ Command names are displayed in the conventional spaced form used in the manual, 
 \cmd{EL PRINT} & -- & \checkmark & Output; accepted without controlling FEMaster writers \\
 
 \midrule
-\cmd{POINTMASS} & \checkmark & -- & Advanced Model Features \\
 \cmd{TOPODENSITY} & \checkmark & -- & Advanced Model Features \\
 \cmd{TOPOORIENT} & \checkmark & -- & Advanced Model Features \\
 \cmd{TOPOEXPONENT} & \checkmark & -- & Advanced Model Features \\
@@ -160,7 +162,9 @@ The \cmd{ELEMENT} keyword selects one of the formulations documented in Chapter~
 \val{QSPT} & -- & Native quadrilateral shear-panel element \\
 \val{B33} & \val{B33} & 2-node 3D beam \\
 \val{T3} / \val{T3D2} & \val{T3D2} & 2-node 3D truss; native parser accepts both spellings \\
-\val{MASS} & \val{MASS} & 1-node point element carrying a separately assigned isotropic \cmd{MASS} property \\
+\val{MASS} & \val{MASS} & 1-node point element with an isotropic \cmd{MASS} property \\
+\val{ROTARYI} & \val{ROTARYI} & 1-node point element with a diagonal \cmd{ROTARY INERTIA} property \\
+\val{SPRING1} & \val{SPRING1} & 1-node point-to-ground element with a linear \cmd{SPRING} property \\
 \bottomrule
 \end{longtable}
 \normalsize
@@ -175,7 +179,7 @@ Likewise, identical names do not always imply identical data semantics. \cmd{DLO
 
 \cmd{COUPLING}, \cmd{KINEMATIC}, and \cmd{DISTRIBUTING} are shared by the native and Abaqus parsers. The supported Abaqus subset covers reference-node coupling to a surface or node set with kinematic or distributing behavior and inclusive DOF ranges. Native FEMaster additionally retains the legacy direct \key{TYPE=KINEMATIC|STRUCTURAL} form with six selector values. Unsupported Abaqus-specific coupling options are outside the documented subset.
 
-\cmd{EQUATION} and the \val{MASS} element/property pair are shared by the native and Abaqus parsers. The current \cmd{MASS} subset is isotropic translational mass only; native \cmd{POINTMASS} remains the more general NSET-based representation for rotary inertia and ground-spring terms. Regular \val{MASS} elements remain ordinary ELSET members and therefore participate in element-targeted mass-proportional loads and regular inertia-relief mass properties.
+\cmd{EQUATION} and the point-element property pairs are shared by the native and Abaqus parsers. The supported concentrated-element subset consists of isotropic \val{MASS}, diagonal \val{ROTARYI}, and constant linear point-to-ground \val{SPRING1}. Off-diagonal rotary inertia, oriented point properties, \val{SPRING2}/\val{SPRINGA}, nonlinear springs, and frequency/field-dependent spring data are outside the current mapping. Native \cmd{POINTMASS} remains the legacy NSET-based representation when several diagonal point properties should be combined on the same target nodes.
 
 The optional native \cmd{MODEL} marker is documented as input-file framing rather than as a separate level in the model-definition hierarchy.
 
