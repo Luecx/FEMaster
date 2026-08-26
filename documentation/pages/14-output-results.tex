@@ -267,6 +267,8 @@ Amplitude and phase can be reconstructed from
 \]
 Harmonic results distinguish the real part at a chosen phase, the complex amplitude magnitude, and signed components. These quantities are not interchangeable.
 
+The FRD writer preserves this separation rather than discarding the imaginary component. Harmonic displacement Fields are written as \val{DISPREAL} and \val{DISPIMAG}; harmonic stress as \val{STRREAL} and \val{STRIMAG}; and harmonic strain as \val{STRNREAL} and \val{STRNIMAG}. This permits direct visualization or reconstruction of the complex response from the paired FRD blocks.
+
 \section{FRD visualization output}
 
 FRD provides a CalculiX/CGX-compatible representation of the mesh and supported nodal results. It is intended primarily for visualization. Data that do not naturally map to FRD nodal blocks---for example some element-local, integration-point, material-point, scalar-history, or participation quantities---remain available in the native result representation.
@@ -278,11 +280,14 @@ Typical mappings include:
 \midrule
 \endhead
 Displacement / mode / buckling vector & \val{DISP} & Translational and supported generalized displacement components. \\
+Harmonic displacement, real / imaginary & \val{DISPREAL} / \val{DISPIMAG} & Separate components of the complex harmonic displacement. \\
 Velocity & \val{VELO} & Nodal velocity components. \\
 Acceleration & \val{ACCE} & Nodal acceleration components. \\
 Reaction force & \val{FORC} & Generalized reaction-force components. \\
 Stress & \val{STRESS} & Nodal recovered stress components. \\
+Harmonic stress, real / imaginary & \val{STRREAL} / \val{STRIMAG} & Separate components of the complex harmonic stress. \\
 Strain & \val{TOSTRAIN} & Nodal recovered strain components. \\
+Harmonic strain, real / imaginary & \val{STRNREAL} / \val{STRNIMAG} & Separate components of the complex harmonic strain. \\
 Shell resultants & \val{SHR} & Membrane, bending, and transverse-shear resultants. \\
 \bottomrule
 \end{longtable}
@@ -296,5 +301,7 @@ where \(i_{\mathrm{instance}}\) is the numeric Instance identifier and \(n_{\mat
 User node and element IDs in FEMaster may include \val{0}. FRD numbering is an output-format concern and does not impose a positive-ID restriction on the FEMaster input model.
 
 Higher-order element connectivity is reordered where necessary to satisfy FRD conventions. For shell resultants, an explicitly assigned Section orientation defines the local output basis. Without an explicit orientation, FEMaster uses a deterministic tangent basis derived from the shell geometry.
+
+Models containing nodes and nodal features but no supported structural elements remain valid FRD models. In this case FEMaster writes the nodal geometry and applicable nodal result fields and simply omits the element-connectivity block.
 
 Transient FRD frames use physical time. Eigenfrequency and buckling frames use the corresponding spectral value where supported by the writer.

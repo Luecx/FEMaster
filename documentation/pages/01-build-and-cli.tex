@@ -21,9 +21,14 @@ cmake --build --preset linux
 
 cmake --preset linux-mkl-omp
 cmake --build --preset linux-mkl-omp
+
+cmake --preset macos-accelerate
+cmake --build --preset macos-accelerate
 \end{shellcmd}
 
-The Linux presets cover CPU-only builds, OpenMP builds, oneMKL builds, CUDA builds, cuDSS builds, and combined CUDA/oneMKL configurations. Windows presets are split between MSVC and IntelLLVM toolchains. macOS currently provides CPU presets. \file{CMakePresets.json} contains the exact preset list for the checked-out version.
+The Linux presets cover CPU-only builds, OpenMP builds, oneMKL builds, CUDA builds, cuDSS builds, and combined CUDA/oneMKL configurations. Windows presets are split between MSVC and IntelLLVM toolchains. macOS provides CPU, OpenMP, Apple Accelerate, and combined OpenMP/Accelerate presets. The current preset names are \val{macos}, \val{macos-omp}, \val{macos-accelerate}, and \val{macos-omp-accelerate}. \file{CMakePresets.json} contains the exact preset list for the checked-out version.
+
+Apple Accelerate is available only on macOS. When enabled, supported symmetric CPU-direct sparse systems use the Accelerate LDLT backend. General nonsymmetric CPU-direct systems continue to use Eigen SparseLU. Accelerate and oneMKL are mutually exclusive build options.
 
 \begin{longtable}{@{}p{0.32\linewidth}p{0.58\linewidth}@{}}
 \toprule
@@ -34,6 +39,7 @@ The Linux presets cover CPU-only builds, OpenMP builds, oneMKL builds, CUDA buil
 \key{FEMASTER_ENABLE_CUDA} & Build CUDA solver backends. \\
 \key{FEMASTER_ENABLE_CUDSS} & Enables NVIDIA cuDSS for CUDA sparse direct solves. Requires CUDA. \\
 \key{FEMASTER_ENABLE_MKL} & Enables Intel oneMKL for Eigen operations and PARDISO. \\
+\key{FEMASTER_ENABLE_ACCELERATE} & Enables Apple Accelerate for supported sparse direct solves on macOS. Mutually exclusive with oneMKL. \\
 \key{FEMASTER_MKL_SEQUENTIAL} & Selects the sequential oneMKL threading layer. \\
 \key{FEMASTER_MKL_STATIC} & Link oneMKL component libraries statically. \\
 \key{FEMASTER_ENABLE_OPENMP} & Enable OpenMP for FEMaster CPU loops. \\

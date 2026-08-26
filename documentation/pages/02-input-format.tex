@@ -35,6 +35,15 @@ Scopes are defined by keywords, not by indentation. Indentation may be used for 
 
 Parts, Assemblies, and Instances are optional for simple native FEMaster models. Nodes and elements may be defined directly without constructing an explicit Assembly. The structured form represents reusable Parts, repeated Instances, independent local ID spaces, and assembly-level selections.
 
+\paragraph{Optional native \cmd{MODEL} marker.}
+Native FEMaster may optionally place \cmd{MODEL} at root level as a descriptive marker. It does not open a scope, create a second model object, or select among several models; omitting it has no effect on the topology or analysis. \key{NAME} is optional and may be used to attach a descriptive model name.
+
+\begin{syntax}
+*MODEL, NAME=BRACKET_MODEL
+\end{syntax}
+
+This marker is part of the native input-file framing rather than a separate model-definition hierarchy level. Abaqus input does not require or use a corresponding wrapper.
+
 \section{Names, identifiers, and references}
 
 Node and element IDs are user-defined non-negative integer labels. They may start at \textbf{0}; they do not need to start at 1 and do not need to be contiguous. IDs only need to be unique within the topology scope in which they are defined. For example, \val{0}, \val{10}, and \val{1000} are valid node IDs.
@@ -57,7 +66,7 @@ The comparison shows how the same model operation is expressed in either accepte
 
 A heading is metadata conventionally placed near the beginning of a file. Later model commands do not reference it by name, and it does not substitute for a Part name, material name, loadcase name, or other actual model identifier.
 
-Native FEMaster also accepts \cmd{MODEL, NAME=...} as an optional root-level model marker. \cmd{HEADING} is free descriptive text, while \cmd{MODEL} belongs to the model-definition syntax described in the next chapter.
+Native FEMaster also accepts the optional root-level \cmd{MODEL, NAME=...} marker described above. \cmd{HEADING} is free descriptive text, whereas \cmd{MODEL} is a compact native file marker.
 
 \syntaxheading
 

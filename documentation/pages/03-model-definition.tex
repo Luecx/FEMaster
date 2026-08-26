@@ -7,35 +7,6 @@ From the user's point of view, the two forms describe the same kind of finite-el
 
 Node and element IDs are user labels. They are non-negative integers, may start at \textbf{0}, and may be sparse. Separate Parts may reuse the same numerical IDs because their topologies are independent. When an assembly-level definition needs to distinguish entities belonging to different Instances, the Instance name provides the required qualification.
 
-\section{Model organization}
-
-\keywordpageshort{MODEL}
-
-\cmd{MODEL} is an optional native FEMaster root marker. It can attach a descriptive model name to a native deck and makes the top-level structure explicit, but it is not required. A file may begin directly with nodes, materials, Parts, or other root-level definitions.
-
-\key{NAME} is optional. The command does not create a nested second model and is not used to select between several models in one input file. \cmd{HEADING} provides free descriptive text, whereas \cmd{MODEL} provides an explicit native model marker.
-
-\begin{keywordparameters}
-\key{NAME} & optional & Descriptive name of the native FEMaster model. \\
-\end{keywordparameters}
-
-\exampleheading
-
-\begin{dialectexamples}
-\begin{femasterdeck}
-*MODEL, NAME=BRACKET_MODEL
-*NODE
-0, 0., 0., 0.
-1, 10., 0., 0.
-\end{femasterdeck}
-\begin{abaqusdeck}
-** No MODEL wrapper is required.
-*NODE
-0, 0., 0., 0.
-1, 10., 0., 0.
-\end{abaqusdeck}
-\end{dialectexamples}
-
 \keywordpage{PART}
 
 \cmd{PART} begins a reusable finite-element component definition. Nodes, elements, part-level sets, surfaces, and section assignments that follow belong to the active Part until \cmd{END PART} closes it.
@@ -222,8 +193,6 @@ The Part-local node and element labels remain associated with every Instance. As
 \end{abaqusdeck}
 \end{dialectexamples}
 
-\section{Mesh definition}
-
 \keywordpage{NODE}
 
 \cmd{NODE} defines finite-element nodes by user ID and Cartesian reference coordinates. In a Part scope the nodes belong to that Part. In a flat native model they belong directly to the model topology.
@@ -268,11 +237,13 @@ The coordinates define the undeformed geometry. Loads, prescribed displacements,
 
 Element IDs are non-negative user labels and may also begin at \textbf{0}. They may be sparse. Connectivity is written using node IDs from the same topology scope as the element. The connectivity order determines local edges and faces, shell normal direction, solid face labels, element orientation, and the mapping from the reference element to the physical geometry.
 
-The complete formulation reference is given in Chapter~\ref{chap:elements}. That chapter documents the supported solid, shell, beam, and truss elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
+The complete formulation reference is given in Chapter~\ref{chap:elements}. That chapter documents the supported solid, shell, beam, truss, and point elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
 
-The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native \val{T3} corresponds to Abaqus \val{T3D2}. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster additionally exposes the legacy shell types, MITC variants, FRT names, and \val{QSPT} directly.
+The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native FEMaster accepts both \val{T3} and the Abaqus spelling \val{T3D2} for the two-node truss. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster additionally exposes the legacy shell types, MITC variants, FRT names, and \val{QSPT} directly.
 
-An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness; Chapter~\ref{chap:sections} documents these assignments.
+\val{TYPE=MASS} defines a one-node point element in both input dialects. The element preserves its own element ID, one-node connectivity, ELSET membership, Part/Instance expansion, and property assignment. Without a point-mass property it is inert and activates no degrees of freedom. Its concentrated isotropic mass is assigned separately with \cmd{MASS, ELSET=...}; see Chapter~\ref{chap:advanced-features} and the point-element section of Chapter~\ref{chap:elements}.
+
+An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness; Chapter~\ref{chap:sections} documents these assignments. Likewise, a \val{MASS} point element requires a \cmd{MASS} property before it contributes concentrated inertia.
 
 \begin{keywordparameters}
 \key{TYPE} & required & Element formulation/type identifier. \\
@@ -281,7 +252,7 @@ An element definition provides topology and kinematics, but not the complete phy
 
 \begin{keyworddata}
 \val{id} & Non-negative user element ID; \val{0} is valid. \\
-\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \\
+\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \val{TYPE=MASS} uses exactly one node. \\
 \end{keyworddata}
 
 \exampleheading
@@ -292,6 +263,9 @@ An element definition provides topology and kinematics, but not the complete phy
 0, 0, 10
 1, 10, 20
 
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD
+100, 20
+
 *ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
 10, 100, 110, 120, 130
 \end{femasterdeck}
@@ -299,6 +273,9 @@ An element definition provides topology and kinematics, but not the complete phy
 *ELEMENT, TYPE=T3D2, ELSET=BARS
 0, 0, 10
 1, 10, 20
+
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD
+100, 20
 
 *ELEMENT, TYPE=S4, ELSET=PANEL
 10, 100, 110, 120, 130
