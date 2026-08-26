@@ -179,15 +179,15 @@ TEST(DSL_DeckParser, FailedVariantDoesNotCommitCallbacks) {
     // Parsing is syntax-only and must not execute semantic callbacks.
     EXPECT_TRUE(calls.empty());
 
-    // ROOT is a real node and every top-level command is its direct child.
-    EXPECT_EQ(deck.root(), 0u);
-    EXPECT_EQ(deck.node(deck.root()).command->name_, std::string("ROOT"));
-    EXPECT_EQ(deck.node(deck.root()).parent, deck.root());
+    // ROOT is a real node and every top-level command points directly to it.
+    const auto& root = deck.root();
+    EXPECT_EQ(root.command().name_, std::string("ROOT"));
+    EXPECT_EQ(&root.parent(), &root);
 
-    const auto commands = deck.children(deck.root(), "CMD");
+    const auto commands = root.children("CMD");
     ASSERT_EQ(commands.size(), 1u);
-    EXPECT_EQ(deck.node(commands.front()).parent, deck.root());
-    ASSERT_NO_THROW(deck.execute(commands.front()));
+    EXPECT_EQ(&commands.front()->parent(), &root);
+    ASSERT_NO_THROW(commands.front()->execute());
 
     ASSERT_EQ(calls.size(), 2u);
     EXPECT_EQ(calls[0], 10);
