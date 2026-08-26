@@ -149,90 +149,204 @@ void Parser::run(const std::string& input_path,
 }
 
 /**
- * Executes the parsed native FEMaster deck in model-dependency order.
+ * Executes the parsed native FEMaster deck in explicit model-dependency order.
  *
- * The function intentionally contains only the semantic execution sequence.
- * Repetition over Parts, Assemblies, Couplings and Loadcases is owned by `Deck`,
- * so dependency ordering remains visible as one linear top-to-bottom program.
- * `Model::compile()` forms the explicit boundary between sparse Part/Instance
- * topology and dense assembly materialization.
+ * The function deliberately spells out the semantic order from top to bottom.
+ * Loops only iterate repeated input scopes such as MATERIAL, PART, ASSEMBLY,
+ * COUPLING and LOADCASE; command ordering inside each scope remains visible at
+ * the call site. `Model::compile()` forms the one-way boundary between sparse
+ * Part/Instance topology and dense assembly materialization.
  */
 void Parser::process_deck(const io::dsl::Deck&                  deck,
                           const std::string&                    input_path,
                           const std::string&                    output_path,
                           const io::writer::WriterFileFormats& writer_formats) {
-    const auto root = deck.root();
+    using NodeId = io::dsl::Deck::NodeId;
+
+    const NodeId root = deck.root();
 
     // ---------------------------------------------------------------------
     // Global definitions required by sections and later load definitions
     // ---------------------------------------------------------------------
     deck.execute_children(root, "HEADING");
-    deck.execute_path(root, {"MATERIAL"}, {"ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION"});
-    deck.execute_children(root, {"PROFILE", "ORIENTATION", "AMPLITUDE"});
+
+    for (const NodeId material : deck.children(root, "MATERIAL")) {
+        deck.enter(material);
+
+        deck.execute_children(material, "ELASTIC");
+        deck.execute_children(material, "HYPERELASTIC");
+        deck.execute_children(material, "DENSITY");
+        deck.execute_children(material, "THERMALEXPANSION");
+
+        deck.leave(material);
+    }
+
+    deck.execute_children(root, "PROFILE");
+    deck.execute_children(root, "ORIENTATION");
+    deck.execute_children(root, "AMPLITUDE");
 
     // ---------------------------------------------------------------------
-    // Default-Part and explicit Part topology before Model::compile()
+    // Default-Part topology before Model::compile()
     // ---------------------------------------------------------------------
-    deck.execute_children(root, {
-        "NODE", "ELEMENT",
-        "NSET", "ELSET", "SURFACE", "SFSET",
-        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
-        "MASS", "ROTARYINERTIA", "SPRING"
-    });
+    deck.execute_children(root, "NODE");
+    deck.execute_children(root, "ELEMENT");
 
-    deck.execute_path(root, {"PART"}, {
-        "NODE", "ELEMENT",
-        "NSET", "ELSET", "SURFACE", "SFSET",
-        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
-        "MASS", "ROTARYINERTIA", "SPRING"
-    });
+    deck.execute_children(root, "NSET");
+    deck.execute_children(root, "ELSET");
+    deck.execute_children(root, "SURFACE");
+    deck.execute_children(root, "SFSET");
 
+    deck.execute_children(root, "SOLIDSECTION");
+    deck.execute_children(root, "BEAMSECTION");
+    deck.execute_children(root, "TRUSSSECTION");
+    deck.execute_children(root, "SHELLSECTION");
+
+    deck.execute_children(root, "MASS");
+    deck.execute_children(root, "ROTARYINERTIA");
+    deck.execute_children(root, "SPRING");
+
+    // ---------------------------------------------------------------------
+    // Explicit Part topology before Model::compile()
+    // ---------------------------------------------------------------------
+    for (const NodeId part : deck.children(root, "PART")) {
+        deck.enter(part);
+
+        deck.execute_children(part, "NODE");
+        deck.execute_children(part, "ELEMENT");
+
+        deck.execute_children(part, "NSET");
+        deck.execute_children(part, "ELSET");
+        deck.execute_children(part, "SURFACE");
+        deck.execute_children(part, "SFSET");
+
+        deck.execute_children(part, "SOLIDSECTION");
+        deck.execute_children(part, "BEAMSECTION");
+        deck.execute_children(part, "TRUSSSECTION");
+        deck.execute_children(part, "SHELLSECTION");
+
+        deck.execute_children(part, "MASS");
+        deck.execute_children(part, "ROTARYINERTIA");
+        deck.execute_children(part, "SPRING");
+
+        deck.leave(part);
+    }
+
+    // ---------------------------------------------------------------------
+    // Instances depend on completed Parts
+    // ---------------------------------------------------------------------
     deck.execute_children(root, "INSTANCE");
-    deck.execute_path(root, {"ASSEMBLY"}, {"INSTANCE"});
+
+    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
+        deck.execute_children(assembly, "INSTANCE");
+    }
 
     // ---------------------------------------------------------------------
-    // One-way transition from semantic Parts/Instances to dense assembly data
+    // Transition from sparse topology to dense assembly data
     // ---------------------------------------------------------------------
     model_->compile();
 
     // ---------------------------------------------------------------------
-    // Assembly regions, properties and dense fields after compilation
+    // Assembly regions, properties and dense fields
     // ---------------------------------------------------------------------
-    deck.execute_children(root, {"FIELD", "NORMAL"});
-    deck.execute_path(root, {"ASSEMBLY"}, {
-        "NSET", "ELSET", "SURFACE", "SFSET",
-        "MASS", "ROTARYINERTIA", "SPRING",
-        "FIELD", "NORMAL"
-    });
+    deck.execute_children(root, "FIELD");
+    deck.execute_children(root, "NORMAL");
 
+    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
+        deck.execute_children(assembly, "NSET");
+        deck.execute_children(assembly, "ELSET");
+        deck.execute_children(assembly, "SURFACE");
+        deck.execute_children(assembly, "SFSET");
+
+        deck.execute_children(assembly, "MASS");
+        deck.execute_children(assembly, "ROTARYINERTIA");
+        deck.execute_children(assembly, "SPRING");
+
+        deck.execute_children(assembly, "FIELD");
+        deck.execute_children(assembly, "NORMAL");
+    }
+
+    // Complete reference normals before constraints or analyses consume shells.
     model_->build_shell_element_normals();
 
     // ---------------------------------------------------------------------
-    // Compiled model features, collectors, constraints and diagnostics
+    // Compiled model features
     // ---------------------------------------------------------------------
     deck.execute_children(root, "POINTMASS");
-    deck.execute_children(root, {
-        "SUPPORT",
-        "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
-        "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
-    });
 
-    deck.execute_path(root, {"ASSEMBLY"}, {
-        "SUPPORT",
-        "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
-        "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
-    });
+    // ---------------------------------------------------------------------
+    // Root-level collectors and constraints
+    // ---------------------------------------------------------------------
+    deck.execute_children(root, "SUPPORT");
 
-    deck.execute_path(root, {"COUPLING"}, {"KINEMATIC", "DISTRIBUTING"});
-    deck.execute_path(root, {"ASSEMBLY", "COUPLING"}, {"KINEMATIC", "DISTRIBUTING"});
+    deck.execute_children(root, "CLOAD");
+    deck.execute_children(root, "DLOAD");
+    deck.execute_children(root, "PLOAD");
+    deck.execute_children(root, "TLOAD");
+    deck.execute_children(root, "VLOAD");
+    deck.execute_children(root, "INERTIALLOAD");
+
+    deck.execute_children(root, "RBM");
+    deck.execute_children(root, "CONNECTOR");
+    deck.execute_children(root, "TIE");
+    deck.execute_children(root, "CONTACT");
+    deck.execute_children(root, "EQUATION");
+
+    // ---------------------------------------------------------------------
+    // Assembly-level collectors and constraints
+    // ---------------------------------------------------------------------
+    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
+        deck.execute_children(assembly, "SUPPORT");
+
+        deck.execute_children(assembly, "CLOAD");
+        deck.execute_children(assembly, "DLOAD");
+        deck.execute_children(assembly, "PLOAD");
+        deck.execute_children(assembly, "TLOAD");
+        deck.execute_children(assembly, "VLOAD");
+        deck.execute_children(assembly, "INERTIALLOAD");
+
+        deck.execute_children(assembly, "RBM");
+        deck.execute_children(assembly, "CONNECTOR");
+        deck.execute_children(assembly, "TIE");
+        deck.execute_children(assembly, "CONTACT");
+        deck.execute_children(assembly, "EQUATION");
+    }
+
+    // ---------------------------------------------------------------------
+    // Couplings
+    // ---------------------------------------------------------------------
+    for (const NodeId coupling : deck.children(root, "COUPLING")) {
+        deck.enter(coupling);
+
+        deck.execute_children(coupling, "KINEMATIC");
+        deck.execute_children(coupling, "DISTRIBUTING");
+
+        deck.leave(coupling);
+    }
+
+    for (const NodeId assembly : deck.children(root, "ASSEMBLY")) {
+        for (const NodeId coupling : deck.children(assembly, "COUPLING")) {
+            deck.enter(coupling);
+
+            deck.execute_children(coupling, "KINEMATIC");
+            deck.execute_children(coupling, "DISTRIBUTING");
+
+            deck.leave(coupling);
+        }
+    }
 
     deck.execute_children(root, "OVERVIEW");
 
     // ---------------------------------------------------------------------
-    // Result writers and final load-case execution
+    // Result writers and load-case execution
     // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
-    deck.execute_path(root, {"LOADCASE"}, {});
+
+    for (const NodeId loadcase : deck.children(root, "LOADCASE")) {
+        deck.enter(loadcase);
+        deck.execute_children(loadcase);
+        deck.leave(loadcase);
+    }
+
     close_writers();
 }
 
