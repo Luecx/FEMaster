@@ -11,10 +11,10 @@
  *
  * The hierarchy has one real `ROOT` command at node zero. Every parsed command,
  * including top-level commands, therefore has a valid parent node and all tree
- * access uses the same `children()` and `execute_children()` operations.
- * Parsing and semantic execution remain intentionally separated: `DeckParser`
- * determines scopes, variants and record layouts once, while the higher-level
- * FEMaster reader chooses the dependency order in which stored commands execute.
+ * access uses the same child hierarchy. Parsing and semantic execution remain
+ * intentionally separated: `DeckParser` determines scopes, variants and record
+ * layouts once, while the higher-level FEMaster reader chooses the dependency
+ * order in which stored commands execute.
  *
  * The stored command and segment pointers refer to the `Registry` used to parse
  * the deck. That registry must therefore outlive the `Deck` and all semantic
@@ -87,9 +87,9 @@ struct ParsedCommand {
  * `Deck` owns one real ROOT node followed by the ordered command occurrences
  * produced by `DeckParser`. Queries return stable integer node ids, while
  * `enter()`, `leave()` and `execute()` invoke callbacks already registered on
- * the corresponding DSL command. Semantic readers can therefore state their
- * dependency order directly without maintaining a parallel root collection or
- * sentinel parent id.
+ * the corresponding DSL command. `execute_path()` selects repeated nested scopes
+ * structurally and keeps only the final matching scope active around its selected
+ * children, allowing semantic readers to remain completely linear.
  */
 class Deck {
 public:
@@ -175,20 +175,17 @@ public:
         for (const NodeId id : children(parent)) execute(id);
     }
 
-    // Execute matching child scopes while keeping their callbacks active around
-    // either the selected child commands or, for an empty list, all direct children.
-    void execute_children(NodeId parent,
-                          const std::string& command,
-                          std::initializer_list<const char*> child_commands) const {
-        for (const NodeId id : children(parent, command)) {
-            enter(id);
-            if (child_commands.size() == 0) {
-                execute_children(id);
-            } else {
-                execute_children(id, child_commands);
-            }
-            leave(id);
+    // Select one or more nested scope names and execute the final matching scope.
+    // Intermediate path nodes are structural selectors only; only the final scope
+    // is entered so repeated assembly traversals do not replay assembly semantics.
+    void execute_path(NodeId parent,
+                      std::initializer_list<const char*> path,
+                      std::initializer_list<const char*> child_commands) const {
+        if (path.size() == 0) {
+            throw std::invalid_argument("Deck::execute_path requires at least one command");
         }
+
+        execute_path(parent, path.begin(), path.end(), child_commands);
     }
 
 private:
@@ -204,6 +201,27 @@ private:
     ParentInfo parent_info(const ParsedCommand& current) const {
         const ParsedCommand& parent = nodes_.at(current.parent);
         return ParentInfo{parent.command->name_, parent.keys};
+    }
+
+    void execute_path(NodeId parent,
+                      const char* const* path,
+                      const char* const* path_end,
+                      std::initializer_list<const char*> child_commands) const {
+        for (const NodeId id : children(parent, *path)) {
+            const char* const* next = path + 1;
+            if (next != path_end) {
+                execute_path(id, next, path_end, child_commands);
+                continue;
+            }
+
+            enter(id);
+            if (child_commands.size() == 0) {
+                execute_children(id);
+            } else {
+                execute_children(id, child_commands);
+            }
+            leave(id);
+        }
     }
 
     [[noreturn]] static void throw_at(const SourceLocation& location, const std::string& message) {
