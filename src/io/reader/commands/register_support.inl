@@ -35,7 +35,7 @@ inline void register_support(fem::io::dsl::Registry& registry, model::Model& mod
         auto orientation = std::make_shared<std::string>();
         command.keyword(
             fem::io::dsl::KeywordSpec::make()
-                .key("SUPPORT_COLLECTOR").required()
+                .key("SUPPORT_COLLECTOR").required().alternative("SUPPORT COLLECTOR").alternative("NAME")
                 .key("ORIENTATION").optional()
         );
         command.on_enter([&model, orientation](const fem::io::dsl::Keys& keys) {

@@ -31,6 +31,7 @@
 #include "commands/register_end_instance.inl"
 #include "commands/register_end_part.inl"
 #include "commands/register_equation.inl"
+#include "commands/register_coupling.inl"
 #include "commands/register_heading.inl"
 #include "commands/register_hyperelastic.inl"
 #include "commands/register_instance.inl"
@@ -118,6 +119,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_hyperelastic(registry, model());
     commands::register_mass(registry, model());
     commands::register_equation(registry, model());
+    commands::register_coupling(registry, model());
 
     commands_abq::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
@@ -189,7 +191,7 @@ void ParserAbq::configure_analysis_pass(io::dsl::Registry& registry) {
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
-        "EQUATION", "STEP", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
+        "EQUATION", "COUPLING", "STEP", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
         "CLOAD", "BOUNDARY", "DLOAD", "DSLOAD", "ENDSTEP"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
