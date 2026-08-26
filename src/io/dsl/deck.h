@@ -176,8 +176,8 @@ public:
     }
 
     // Select one or more nested scope names and execute the final matching scope.
-    // Intermediate path nodes are structural selectors only; only the final scope
-    // is entered so repeated assembly traversals do not replay assembly semantics.
+    // Intermediate path nodes only select hierarchy; callbacks run for the final
+    // scope whose children are processed in the requested semantic order.
     void execute_path(NodeId parent,
                       std::initializer_list<const char*> path,
                       std::initializer_list<const char*> child_commands) const {
