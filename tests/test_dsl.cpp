@@ -1,13 +1,13 @@
-#include "../src/io/dsl/line.h"
+#include "../src/io/dsl/deck_parser.h"
 #include "../src/io/dsl/file.h"
 #include "../src/io/dsl/keys.h"
+#include "../src/io/dsl/line.h"
 #include "../src/io/dsl/registry.h"
-#include "../src/io/dsl/engine.h"
 
 #include <gtest/gtest.h>
+#include <filesystem>
 #include <fstream>
 #include <string>
-#include <filesystem>
 #include <vector>
 
 using namespace fem;
@@ -120,7 +120,7 @@ TEST(DSL_Keys_Registry, KeysAndRegistry) {
     reg.print_help();
 }
 
-TEST(DSL_Engine, FailedVariantDoesNotCommitCallbacks) {
+TEST(DSL_DeckParser, FailedVariantDoesNotCommitCallbacks) {
     const std::string input_path = "tests/TMP_DSL_BACKTRACK.INP";
     std::filesystem::remove(input_path);
 
@@ -172,8 +172,16 @@ TEST(DSL_Engine, FailedVariantDoesNotCommitCallbacks) {
     });
 
     io::dsl::File file(input_path);
-    io::dsl::Engine engine(reg);
-    ASSERT_NO_THROW(engine.run(file));
+    io::dsl::DeckParser parser(reg);
+    io::dsl::Deck deck;
+    ASSERT_NO_THROW(deck = parser.parse(file));
+
+    // Parsing is syntax-only and must not execute semantic callbacks.
+    EXPECT_TRUE(calls.empty());
+
+    const auto commands = deck.roots("CMD");
+    ASSERT_EQ(commands.size(), 1u);
+    ASSERT_NO_THROW(deck.execute(commands.front()));
 
     ASSERT_EQ(calls.size(), 2u);
     EXPECT_EQ(calls[0], 10);
@@ -182,7 +190,7 @@ TEST(DSL_Engine, FailedVariantDoesNotCommitCallbacks) {
     std::filesystem::remove(input_path);
 }
 
-TEST(DSL_Engine, OnEnterDoesNotRunWhenNoVariantMatches) {
+TEST(DSL_DeckParser, OnEnterDoesNotRunWhenNoVariantMatches) {
     const std::string input_path = "tests/TMP_DSL_NO_MATCH.INP";
     std::filesystem::remove(input_path);
 
@@ -213,8 +221,8 @@ TEST(DSL_Engine, OnEnterDoesNotRunWhenNoVariantMatches) {
     });
 
     io::dsl::File file(input_path);
-    io::dsl::Engine engine(reg);
-    EXPECT_THROW(engine.run(file), std::runtime_error);
+    io::dsl::DeckParser parser(reg);
+    EXPECT_THROW(parser.parse(file), std::runtime_error);
 
     EXPECT_EQ(enter_count, 0);
     EXPECT_EQ(callback_count, 0);
