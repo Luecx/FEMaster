@@ -1,20 +1,23 @@
 /**
  * @file deck.h
- * @brief Defines the parsed input-deck representation used by FEMaster readers.
+ * @brief Defines the parsed input-deck tree used by FEMaster readers.
  *
  * `Deck` stores the syntactic result of one complete DSL parse. Each keyword
  * occurrence becomes one `ParsedCommand` with normalized keyword arguments,
- * its selected parent scope and the already validated segment invocations that
- * belong to its data block. Data lines are therefore not represented as tree
- * nodes; they remain grouped below their owning command exactly as required by
- * the selected DSL variant.
+ * its parent scope, child commands and the already validated segment invocations
+ * belonging to its data block. Physical data lines therefore never become tree
+ * nodes; they remain grouped below their owning command as logical invocations.
  *
- * The hierarchy has one real `ROOT` command at node zero. Every parsed command,
- * including top-level commands, therefore has a valid parent node and all tree
- * access uses the same child hierarchy. Parsing and semantic execution remain
- * intentionally separated: `DeckParser` determines scopes, variants and record
- * layouts once, while the higher-level FEMaster reader chooses the dependency
- * order in which stored commands execute.
+ * The hierarchy has one real `ROOT` command. Parsed commands own their children
+ * directly through `std::unique_ptr`, while non-owning parent pointers provide
+ * upward navigation. Node addresses remain stable when child containers grow,
+ * so semantic processing can operate directly on command objects without
+ * integer node ids or a parallel flat node store.
+ *
+ * Parsing and semantic execution remain intentionally separated. `DeckParser`
+ * determines scopes, variants and record layouts once, while higher-level readers
+ * later choose the dependency order through the node-local `children()`,
+ * `enter()`, `leave()` and `execute_children()` operations.
  *
  * The stored command and segment pointers refer to the `Registry` used to parse
  * the deck. That registry must therefore outlive the `Deck` and all semantic
@@ -34,8 +37,8 @@
 #include "command.h"
 #include "line.h"
 
-#include <cstddef>
 #include <initializer_list>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -58,85 +61,66 @@ struct ParsedInvocation {
 };
 
 /**
- * @brief One keyword occurrence in a parsed input deck.
+ * @brief One keyword occurrence and tree node in a parsed input deck.
  *
- * Commands form a compact tree through integer parent/child indices. A node owns
- * only command-level state and its logical data-record invocations; individual
- * physical data lines never become tree nodes. Node zero is the synthetic ROOT
- * command and is its own parent, so every stored parent id is always valid.
- * Closing keywords such as `ENDPART` and `ENDSTEP` remain ordinary children of
- * the scope they terminate so their callbacks stay available during processing.
- */
-struct ParsedCommand {
-    using NodeId = std::size_t;
-
-    const Command* command = nullptr;
-    Keys           keys;
-
-    NodeId parent = 0;
-
-    std::vector<NodeId>           children;
-    std::vector<ParsedInvocation> invocations;
-
-    SourceLocation location;
-};
-
-/**
- * @brief Immutable parsed deck with explicit semantic execution operations.
+ * Each node owns its direct children and stores a non-owning pointer to its
+ * parent. The ROOT node is its own parent, so every parsed command always has a
+ * valid parent object. Child ownership through `std::unique_ptr` keeps addresses
+ * stable while the parser appends further siblings and allows the scope stack to
+ * store direct pointers instead of integer ids.
  *
- * `Deck` owns one real ROOT node followed by the ordered command occurrences
- * produced by `DeckParser`. Queries return stable integer node ids, while
- * `enter()`, `leave()` and `execute()` invoke callbacks already registered on
- * the corresponding DSL command. Higher-level readers traverse scopes explicitly
- * through `children()` and decide which child commands execute at each point.
+ * The node also owns all logical data-record invocations selected for this
+ * keyword. `enter()` executes the command's entry hook followed by those records,
+ * while `leave()` executes the exit hook. Children are never traversed implicitly;
+ * the semantic reader decides their order explicitly.
  */
-class Deck {
+class ParsedCommand {
 public:
-    using NodeId = ParsedCommand::NodeId;
+    ParsedCommand() = default;
 
-    Deck() {
-        ParsedCommand root_node;
-        root_node.command = &root_command();
-        root_node.parent  = root();
-        nodes_.push_back(std::move(root_node));
+    ParsedCommand(const ParsedCommand&)            = delete;
+    ParsedCommand& operator=(const ParsedCommand&) = delete;
+    ParsedCommand(ParsedCommand&&)                 = delete;
+    ParsedCommand& operator=(ParsedCommand&&)      = delete;
+
+    // Command identity and tree navigation
+    const Command& command() const {
+        return *command_;
     }
 
-    static constexpr NodeId root() {
-        return 0;
+    const Keys& keys() const {
+        return keys_;
     }
 
-    // Access parsed command occurrences and filtered direct-child ranges
-    const ParsedCommand& node(NodeId id) const {
-        return nodes_.at(id);
+    const ParsedCommand& parent() const {
+        return *parent_;
     }
 
-    std::vector<NodeId> children(NodeId parent, const std::string& command = {}) const {
-        const auto& source = nodes_.at(parent).children;
-
-        std::vector<NodeId> result;
-        for (const NodeId id : source) {
-            if (command.empty() || nodes_[id].command->name_ == command) {
-                result.push_back(id);
+    std::vector<const ParsedCommand*> children(const std::string& command = {}) const {
+        std::vector<const ParsedCommand*> result;
+        for (const auto& child : children_) {
+            if (command.empty() || child->command_->name_ == command) {
+                result.push_back(child.get());
             }
         }
         return result;
     }
 
-    // Execute one stored command without implicitly traversing its children
-    void enter(NodeId id) const {
-        const ParsedCommand& current = nodes_.at(id);
-        logging::info("Processing command: *", current.command->name_);
+    // Execute this command without implicitly traversing its children
+    void enter() const {
+        logging::info("Processing command: *", command_->name_);
 
-        if (current.command->on_enter_) {
+        if (command_->on_enter_) {
             try {
-                current.command->on_enter_(parent_info(current), current.keys);
+                command_->on_enter_(parent_info(), keys_);
             } catch (const std::exception& e) {
-                throw_at(current.location, e.what());
+                throw_at(location_, e.what());
             }
         }
 
-        for (const ParsedInvocation& invocation : current.invocations) {
+        for (const ParsedInvocation& invocation : invocations_) {
             if (!invocation.segment || !invocation.segment->_invoke) continue;
+
             try {
                 invocation.segment->_invoke(invocation.tokens);
             } catch (const std::exception& e) {
@@ -145,53 +129,88 @@ public:
         }
     }
 
-    void leave(NodeId id) const {
-        const ParsedCommand& current = nodes_.at(id);
-        if (!current.command->on_exit_) return;
+    void leave() const {
+        if (!command_->on_exit_) return;
 
         try {
-            current.command->on_exit_(current.keys);
+            command_->on_exit_(keys_);
         } catch (const std::exception& e) {
-            throw_at(current.location, e.what());
+            throw_at(location_, e.what());
         }
     }
 
-    void execute(NodeId id) const {
-        enter(id);
-        leave(id);
+    void execute() const {
+        enter();
+        leave();
     }
 
     // Execute selected direct children in the requested semantic order
-    void execute_children(NodeId parent, const std::string& command) const {
-        for (const NodeId id : children(parent, command)) execute(id);
+    void execute_children(const std::string& command) const {
+        for (const auto& child : children_) {
+            if (child->command_->name_ == command) child->execute();
+        }
     }
 
-    void execute_children(NodeId parent, std::initializer_list<const char*> commands) const {
-        for (const char* command : commands) execute_children(parent, command);
+    void execute_children(std::initializer_list<const char*> commands) const {
+        for (const char* command : commands) execute_children(command);
     }
 
-    void execute_children(NodeId parent) const {
-        for (const NodeId id : children(parent)) execute(id);
+    void execute_children() const {
+        for (const auto& child : children_) child->execute();
     }
 
 private:
-    std::vector<ParsedCommand> nodes_;
+    const Command* command_ = nullptr;
+    Keys           keys_;
+
+    ParsedCommand* parent_ = nullptr;
+
+    std::vector<std::unique_ptr<ParsedCommand>> children_;
+    std::vector<ParsedInvocation>               invocations_;
+
+    SourceLocation location_;
+
+    friend class Deck;
+    friend class DeckParser;
+
+    ParentInfo parent_info() const {
+        return ParentInfo{parent_->command_->name_, parent_->keys_};
+    }
+
+    [[noreturn]] static void throw_at(const SourceLocation& location, const std::string& message) {
+        const std::string source = location.str();
+        throw std::runtime_error(source.empty() ? message : source + ": " + message);
+    }
+};
+
+/**
+ * @brief Owns the root of one immutable parsed command tree.
+ *
+ * The ROOT command is allocated like every other node so its address remains
+ * stable when a `Deck` is moved. All remaining nodes are owned recursively by
+ * their parent commands. `Deck` therefore only exposes the root; navigation and
+ * semantic execution belong directly to `ParsedCommand`.
+ */
+class Deck {
+public:
+    Deck()
+        : root_(std::make_unique<ParsedCommand>()) {
+        root_->command_ = &root_command();
+        root_->parent_  = root_.get();
+    }
+
+    const ParsedCommand& root() const {
+        return *root_;
+    }
+
+private:
+    std::unique_ptr<ParsedCommand> root_;
 
     friend class DeckParser;
 
     static const Command& root_command() {
         static const Command command{"ROOT"};
         return command;
-    }
-
-    ParentInfo parent_info(const ParsedCommand& current) const {
-        const ParsedCommand& parent = nodes_.at(current.parent);
-        return ParentInfo{parent.command->name_, parent.keys};
-    }
-
-    [[noreturn]] static void throw_at(const SourceLocation& location, const std::string& message) {
-        const std::string source = location.str();
-        throw std::runtime_error(source.empty() ? message : source + ": " + message);
     }
 };
 
