@@ -1,23 +1,26 @@
 /**
  * @file parser.cpp
- * @brief Implements dependency-ordered FEMaster input-deck parsing.
+ * @brief Implements one-shot parsing and explicit FEMaster deck processing.
  *
- * A complete command grammar is registered independently for every pass. The
- * registry then consumes inactive commands to preserve deck nesting while only
- * executing callbacks whose model dependencies have already been established.
+ * The input file is parsed exactly once into `dsl::Deck`. Semantic model
+ * construction then follows a visible dependency order: global definitions,
+ * Part-local topology, Instances, `Model::compile()`, assembly materialization,
+ * compiled model features and finally load cases. Scope-sensitive commands are
+ * selected from their stored parent nodes instead of being replayed in parser
+ * stages.
  *
- * The implementation deliberately keeps the four passes explicit: definitions,
- * semantic topology, compiled assembly materialization and analysis. This makes
- * the one-way `Model::compile()` boundary and the state available to every
- * command visible in the top-level parser lifecycle.
+ * The registered `.inl` command callbacks remain the semantic implementation.
+ * `Deck::enter()`, `execute()` and `leave()` only control when those existing
+ * callbacks run; syntax validation, variant selection and data aggregation have
+ * already completed in `dsl::DeckParser`.
  *
  * @see Parser
- * @see io::dsl::Registry
- * @see io::dsl::Engine
+ * @see io::dsl::Deck
+ * @see io::dsl::DeckParser
  * @see model::Model::compile
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 26.08.2026
  */
 
 #include "parser.h"
@@ -25,7 +28,7 @@
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
 #include "../../model/model.h"
-#include "../dsl/engine.h"
+#include "../dsl/deck_parser.h"
 #include "../dsl/file.h"
 #include "../writer/writers.h"
 #include "commands/register_amplitude.inl"
@@ -103,11 +106,7 @@
 namespace fem::io::reader {
 
 /**
- * Constructs an idle parser and prepares the complete documentation grammar.
- *
- * Parsing itself starts with a fresh Model in `run()`. The initial model exists
- * so command callbacks required for registry documentation can be registered
- * immediately without executing a deck.
+ * Constructs an idle parser and prepares the native FEMaster documentation grammar.
  */
 Parser::Parser()
     : model_(std::make_shared<model::Model>()),
@@ -118,53 +117,201 @@ Parser::Parser()
 Parser::~Parser() = default;
 
 /**
- * Evaluates a FEMaster deck through four dependency-ordered complete-file passes.
+ * Parses one complete input deck and executes its semantic commands afterwards.
  *
- * Every invocation resets model and load-case construction state. The definition
- * pass first creates resources referenced by sections. The topology pass then
- * builds sparse semantic Parts and Instances before the explicit one-way compile
- * operation creates dense assembly storage. The assembly pass materializes
- * compiled regions, fields and shell normals, and the analysis pass finally
- * executes loads, constraints and load cases while writing results.
+ * Every run owns one registry for the entire parse/process lifetime. This is
+ * required because parsed command and segment pointers refer directly to that
+ * registry. The file itself is consumed only once; all later dependency ordering
+ * operates on the in-memory deck representation.
  *
- * @param input_path Input deck evaluated by every parser pass.
- * @param output_path Optional base path for result files. The input path is used
- *                    when this value is empty.
+ * @param input_path Input deck parsed exactly once.
+ * @param output_path Optional base path for result files.
  * @param writer_formats Result formats enabled for analysis output.
  */
 void Parser::run(const std::string& input_path,
                  const std::string& output_path,
                  const io::writer::WriterFileFormats& writer_formats) {
-    // Reset all mutable state so each run represents an independent deck
+    // Reset all mutable state so each run represents an independent deck.
     model_ = std::make_shared<model::Model>();
     active_loadcase_.reset();
     next_loadcase_id_ = 1;
 
-    // Collect shared definitions before sections resolve their dependencies
-    run_definition_pass(input_path);
+    // Register the complete grammar once and parse the complete source once.
+    io::dsl::Registry registry;
+    register_commands(registry);
 
-    // Construct semantic Parts, Instances and part-local topology
-    run_topology_pass(input_path);
+    io::dsl::File       file(input_path);
+    io::dsl::DeckParser deck_parser(registry);
+    const io::dsl::Deck deck = deck_parser.parse(file);
 
-    // Cross the one-way boundary into deterministic dense assembly storage
+    // Semantic dependencies are now explicit and independent of source order.
+    process_deck(deck, input_path, output_path, writer_formats);
+}
+
+/**
+ * Executes the parsed native FEMaster deck in model-dependency order.
+ *
+ * Part-local entities are constructed before compilation while assembly-level
+ * sets and properties are deliberately deferred until dense Instance mappings
+ * exist. Within Part scopes, fundamental topology is processed before regions
+ * and section assignments so forward placement of those input cards no longer
+ * requires a complete-file parser replay.
+ */
+void Parser::process_deck(const io::dsl::Deck&                  deck,
+                          const std::string&                    input_path,
+                          const std::string&                    output_path,
+                          const io::writer::WriterFileFormats& writer_formats) {
+    using NodeId = io::dsl::Deck::NodeId;
+
+    // ---------------------------------------------------------------------
+    // Global definitions required by sections and later load definitions
+    // ---------------------------------------------------------------------
+    deck.execute_roots("HEADING");
+
+    for (const NodeId material : deck.roots("MATERIAL")) {
+        deck.enter(material);
+        deck.execute_children(material, {"ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION"});
+        deck.leave(material);
+    }
+
+    deck.execute_roots({"PROFILE", "ORIENTATION", "AMPLITUDE"});
+
+    // ---------------------------------------------------------------------
+    // Default-Part and explicit Part topology before Model::compile()
+    // ---------------------------------------------------------------------
+    const auto process_part_topology = [&deck](NodeId part) {
+        deck.execute_children(part, {
+            "NODE", "ELEMENT",
+            "NSET", "ELSET", "SURFACE", "SFSET",
+            "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
+            "MASS", "ROTARYINERTIA", "SPRING"
+        });
+    };
+
+    // ROOT-level topology belongs to FEMaster's default Part.
+    deck.execute_roots({
+        "NODE", "ELEMENT",
+        "NSET", "ELSET", "SURFACE", "SFSET",
+        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
+        "MASS", "ROTARYINERTIA", "SPRING"
+    });
+
+    // Explicit Parts keep their existing active-Part callbacks around all children.
+    for (const NodeId part : deck.roots("PART")) {
+        deck.enter(part);
+        process_part_topology(part);
+        deck.leave(part);
+    }
+
+    // Instances depend on completed Parts but still belong to sparse topology.
+    deck.execute_roots("INSTANCE");
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        deck.execute_children(assembly, "INSTANCE");
+    }
+
+    // ---------------------------------------------------------------------
+    // One-way transition from semantic Parts/Instances to dense assembly data
+    // ---------------------------------------------------------------------
     model_->compile();
 
-    // Materialize post-compile assembly regions, fields and shell normals
-    run_assembly_pass(input_path);
+    // ---------------------------------------------------------------------
+    // Assembly regions, properties and dense fields after compilation
+    // ---------------------------------------------------------------------
+    deck.execute_roots({"FIELD", "NORMAL"});
 
-    // Execute loads, constraints and load cases against the completed assembly
-    run_analysis_pass(input_path, output_path, writer_formats);
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        deck.execute_children(assembly, {
+            "NSET", "ELSET", "SURFACE", "SFSET",
+            "MASS", "ROTARYINERTIA", "SPRING",
+            "FIELD", "NORMAL"
+        });
+    }
+
+    // Complete reference normals before constraints or analyses consume shells.
+    model_->build_shell_element_normals();
+
+    // ---------------------------------------------------------------------
+    // Compiled model features, collectors, constraints and diagnostics
+    // ---------------------------------------------------------------------
+    deck.execute_roots("POINTMASS");
+
+    deck.execute_roots({
+        "SUPPORT",
+        "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
+        "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
+    });
+
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        deck.execute_children(assembly, {
+            "SUPPORT",
+            "CLOAD", "DLOAD", "PLOAD", "TLOAD", "VLOAD", "INERTIALLOAD",
+            "RBM", "CONNECTOR", "TIE", "CONTACT", "EQUATION"
+        });
+    }
+
+    // COUPLING may own a KINEMATIC or DISTRIBUTING child and must remain entered
+    // until that child has emitted the final constraint.
+    const auto process_coupling = [&deck](NodeId coupling) {
+        deck.enter(coupling);
+        deck.execute_children(coupling, {"KINEMATIC", "DISTRIBUTING"});
+        deck.leave(coupling);
+    };
+
+    for (const NodeId coupling : deck.roots("COUPLING")) process_coupling(coupling);
+    for (const NodeId assembly : deck.roots("ASSEMBLY")) {
+        for (const NodeId coupling : deck.children(assembly, "COUPLING")) process_coupling(coupling);
+    }
+
+    deck.execute_roots("OVERVIEW");
+
+    // ---------------------------------------------------------------------
+    // Result writers and final load-case execution
+    // ---------------------------------------------------------------------
+    initialize_writers(input_path, output_path, writer_formats);
+
+    for (const NodeId loadcase : deck.roots("LOADCASE")) {
+        deck.enter(loadcase);
+
+        // Load-case configuration remains source-ordered inside the explicit
+        // analysis scope because these cards configure one active object.
+        deck.execute_children(loadcase);
+
+        // Closing the stored scope executes and releases the active analysis.
+        deck.leave(loadcase);
+    }
+
+    close_writers();
+}
+
+/**
+ * Initializes enabled result writers from the requested output path and publishes
+ * the completely materialized model before any load case starts writing frames.
+ */
+void Parser::initialize_writers(const std::string&                    input_path,
+                                const std::string&                    output_path,
+                                const io::writer::WriterFileFormats& writer_formats) {
+    std::string writer_base = output_path.empty() ? input_path : output_path;
+    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
+        if (writer_base.size() >= ext.size()
+         && writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
+            writer_base.resize(writer_base.size() - ext.size());
+            break;
+        }
+    }
+
+    writer_ = io::writer::ResultWriters(writer_base, writer_formats);
+    writer_.write_model_data(*model_->_data);
+}
+
+/**
+ * Flushes and closes every enabled result writer after semantic analysis processing.
+ */
+void Parser::close_writers() {
+    writer_.close();
 }
 
 /**
  * Prints one requested view of the registered FEMaster command grammar.
- *
- * Documentation operates on the persistent registry prepared independently of
- * the temporary registries used for actual deck passes. Unsupported output
- * formats currently fall back to the text renderer without changing the
- * requested action.
- *
- * @param opts Documentation action, query and formatting selection.
  */
 void Parser::document(const DocOptions& opts) const {
     using A = DocOptions::Action;
@@ -175,7 +322,6 @@ void Parser::document(const DocOptions& opts) const {
         std::cout << "(Note) Only text output is implemented currently. Falling back to text.\n\n";
     }
 
-    // Dispatch the selected documentation view to the complete grammar registry
     switch (opts.action) {
         case A::List:       documentation_registry_.print_index(); break;
         case A::Show:       documentation_registry_.print_help(opts.cmd, opts.verbosity == V::Compact); break;
@@ -189,12 +335,6 @@ void Parser::document(const DocOptions& opts) const {
 
 /**
  * Returns the mutable model currently constructed or analyzed by the parser.
- *
- * The model is replaced at the beginning of every `run()` invocation. Access
- * is rejected when no current model exists so command callbacks never operate
- * on an invalid parser context.
- *
- * @return Mutable current model.
  */
 model::Model& Parser::model() {
     logging::error(model_ != nullptr,
@@ -204,11 +344,6 @@ model::Model& Parser::model() {
 
 /**
  * Returns the model currently constructed or analyzed by the parser.
- *
- * The same initialization invariant as the mutable overload is enforced for
- * read-only parser and documentation operations.
- *
- * @return Read-only current model.
  */
 const model::Model& Parser::model() const {
     logging::error(model_ != nullptr,
@@ -220,12 +355,6 @@ const io::dsl::Registry& Parser::registry() const { return documentation_registr
 
 /**
  * Activates a load case and supplies its parser-owned analysis context.
- *
- * Activation assigns the next sequential load-case identifier together with
- * the current result writer and compiled model. The parser then retains sole
- * ownership while consecutive load-case commands configure the analysis.
- *
- * @param loadcase Newly constructed concrete load case.
  */
 void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     logging::error(active_loadcase_ == nullptr,
@@ -243,10 +372,6 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
 
 /**
  * Completes and executes the active load case.
- *
- * Ownership is removed from the parser before execution so the definition
- * scope is already closed while the solver runs. The load case is destroyed
- * automatically after the analysis finishes or propagates an exception.
  */
 void Parser::end_loadcase() {
     logging::error(active_loadcase_ != nullptr,
@@ -258,251 +383,33 @@ void Parser::end_loadcase() {
 
 /**
  * Returns the load case currently configured by consecutive parser commands.
- *
- * The returned pointer is non-owning and remains valid only until
- * `end_loadcase()` executes and releases the active analysis.
- *
- * @return Active load case, or `nullptr` outside a load-case scope.
  */
 loadcase::LoadCase* Parser::active_loadcase() {
     return active_loadcase_.get();
 }
 
 /**
- * Executes the definition pass over the complete input deck.
- *
- * A fresh registry recognizes the entire FEMaster grammar but activates only
- * shared definitions required by later topology and section commands.
- *
- * @param input_path Input deck replayed for definition callbacks.
- */
-void Parser::run_definition_pass(const std::string& input_path) {
-    // Configure an independent grammar and replay the complete deck once
-    io::dsl::Registry registry;
-    configure_definition_pass(registry);
-    io::dsl::File file(input_path);
-    io::dsl::Engine engine(registry);
-    engine.run(file);
-}
-
-/**
- * Executes the semantic-topology pass over the complete input deck.
- *
- * Parts, Instances, local topology and section assignments are constructed while
- * dense assembly-dependent callbacks remain consume-only.
- *
- * @param input_path Input deck replayed for topology callbacks.
- */
-void Parser::run_topology_pass(const std::string& input_path) {
-    // Configure an independent grammar and replay the complete deck once
-    io::dsl::Registry registry;
-    configure_topology_pass(registry);
-    io::dsl::File file(input_path);
-    io::dsl::Engine engine(registry);
-    engine.run(file);
-}
-
-/**
- * Executes post-compile assembly materialization over the complete input deck.
- *
- * Assembly regions, fields and prescribed normals can now resolve dense global
- * identifiers and compiled element-domain dimensions. After parsing, missing
- * shell element-nodal normals are reconstructed and equalized so all subsequent
- * analyses see a complete reference-normal field.
- *
- * @param input_path Input deck replayed for assembly callbacks.
- */
-void Parser::run_assembly_pass(const std::string& input_path) {
-    // Materialize commands whose storage or identifiers require compilation
-    io::dsl::Registry registry;
-    configure_assembly_pass(registry);
-    io::dsl::File file(input_path);
-    io::dsl::Engine engine(registry);
-    engine.run(file);
-
-    // Complete solver-facing shell reference data before any load case executes
-    model_->build_shell_element_normals();
-}
-
-/**
- * Executes loads, constraints and load cases over the completed assembly.
- *
- * Result writers are initialized from the requested output base and receive the
- * compiled model before analysis callbacks begin. A final complete-deck pass then
- * executes only commands not consumed by the preceding construction passes. The
- * writers are closed after the last load case finishes.
- *
- * @param input_path Input deck replayed for analysis callbacks and used as the
- *                   default result base.
- * @param output_path Optional explicit result base or result filename.
- * @param writer_formats Result formats enabled for analysis output.
- */
-void Parser::run_analysis_pass(const std::string& input_path,
-                               const std::string& output_path,
-                               const io::writer::WriterFileFormats& writer_formats) {
-    // Derive a format-independent writer base by removing a known result suffix
-    std::string writer_base = output_path.empty() ? input_path : output_path;
-    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
-        if (writer_base.size() >= ext.size()
-         && writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
-            writer_base.resize(writer_base.size() - ext.size());
-            break;
-        }
-    }
-
-    // Publish the completed model before load-case commands start producing frames
-    writer_ = io::writer::ResultWriters(writer_base, writer_formats);
-    writer_.write_model_data(*model_->_data);
-
-    // Execute the final pass against the fully materialized assembly
-    io::dsl::Registry registry;
-    configure_analysis_pass(registry);
-    io::dsl::File file(input_path);
-    io::dsl::Engine engine(registry);
-    engine.run(file);
-
-    // Flush and close every enabled result format after the final command
-    writer_.close();
-}
-
-/**
- * Configures the pass that collects shared model definitions.
- *
- * The complete grammar remains available for nesting and validation, but only
- * material laws, profiles and coordinate orientations execute callbacks. These
- * definitions may therefore be referenced later regardless of deck order.
- *
- * @param registry Empty pass-local registry to configure.
- */
-void Parser::configure_definition_pass(io::dsl::Registry& registry) {
-    // Register the complete grammar while suppressing all callbacks by default
-    register_commands(registry);
-
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-
-    // Activate global definitions required by later section construction
-    registry.set_active_mode("MATERIAL", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ELASTIC", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("HYPERELASTIC", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("DENSITY", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("THERMALEXPANSION", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("PROFILE", io::dsl::ActiveMode::Active);
-    registry.set_active_mode("ORIENTATION", io::dsl::ActiveMode::Active);
-}
-
-/**
- * Configures construction of sparse semantic topology before compilation.
- *
- * Part and Instance scopes, local entities, regions and part-level section
- * assignments execute while global assembly fields and analyses are consumed
- * without mutating state.
- *
- * @param registry Empty pass-local registry to configure.
- */
-void Parser::configure_topology_pass(io::dsl::Registry& registry) {
-    // Register the complete grammar while suppressing all callbacks by default
-    register_commands(registry);
-
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-
-    // Activate commands that construct semantic Parts and Instances
-    for (const char* command : {
-        "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
-        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
-        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
-        "MASS", "ROTARYINERTIA", "SPRING",
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::Active);
-    }
-}
-
-/**
- * Configures materialization of assembly entities after model compilation.
- *
- * Assembly scope is replayed so global regions and surfaces can resolve Instance
- * maps. Fields and prescribed normals may now use compiled domain dimensions and
- * dense global identifiers. Point-element properties are also materialized here
- * so assembly-level ELSET assignments exist before result writers are initialized.
- *
- * @param registry Empty pass-local registry to configure.
- */
-void Parser::configure_assembly_pass(io::dsl::Registry& registry) {
-    // Register the complete grammar while suppressing all callbacks by default
-    register_commands(registry);
-
-    registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
-
-    // Activate post-compile assembly, point-property and field materialization commands
-    for (const char* command : {
-        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "SFSET", "FIELD", "NORMAL",
-        "MASS", "ROTARYINERTIA", "SPRING"
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::Active);
-    }
-}
-
-/**
- * Configures the final load, constraint and load-case execution pass.
- *
- * Commands are active by default because this pass owns all remaining model and
- * analysis operations. Definitions, topology and assembly materialization are
- * switched to consume-only so their callbacks cannot duplicate established
- * state while their scopes remain syntactically available.
- *
- * @param registry Empty pass-local registry to configure.
- */
-void Parser::configure_analysis_pass(io::dsl::Registry& registry) {
-    // Register the complete grammar and activate remaining callbacks by default
-    register_commands(registry);
-    registry.set_active_mode(io::dsl::ActiveMode::Active);
-
-    // Consume commands whose state was finalized by an earlier parser pass
-    for (const char* command : {
-        "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
-        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
-        "MATERIAL", "ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION",
-        "PROFILE", "ORIENTATION", "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION",
-        "SHELLSECTION", "FIELD", "NORMAL", "MASS", "ROTARYINERTIA", "SPRING"
-    }) {
-        registry.set_active_mode(command, io::dsl::ActiveMode::ConsumeOnly);
-    }
-}
-
-/**
  * Rebuilds the persistent registry used for command-language documentation.
- *
- * All registered commands are active so index, token, variant and search output
- * can inspect the complete FEMaster grammar independently of parser-pass masks.
  */
 void Parser::configure_documentation_registry() {
-    // Replace any previous grammar and expose every command to documentation
     documentation_registry_ = io::dsl::Registry{};
     register_commands(documentation_registry_);
-    documentation_registry_.set_active_mode(io::dsl::ActiveMode::Active);
 }
 
 /**
- * Registers the complete FEMaster command grammar for one independent registry.
+ * Registers the complete native FEMaster command grammar exactly once per run.
  *
- * Every parsing pass uses the same grammar. Active modes control whether a
- * command executes its callback or is only consumed to preserve the original
- * scope hierarchy. Parent-dependent behavior is represented directly by DSL
- * conditions and variants rather than duplicated parser-local scope flags.
- *
- * Model-oriented commands receive the current Model directly. Load-case commands
- * receive the Parser because they coordinate consecutive commands through the
- * active load-case state and result writers.
- *
- * @param registry Registry that receives the complete command definitions.
+ * Registration describes syntax and semantic callbacks only. No parser stage or
+ * command activation mode is attached to the grammar; execution timing belongs
+ * exclusively to `process_deck()`.
  */
 void Parser::register_commands(io::dsl::Registry& registry) {
-    // Validate the callback target before registering model-oriented commands
     logging::error(model_ != nullptr,
         "Parser: model must exist before registering commands");
 
     auto& mdl = *model_;
 
-    // Register semantic Part/Instance topology and scope-aware assembly commands
+    // Semantic Part/Instance topology and scope-aware assembly commands
     commands::register_part        (registry, mdl);
     commands::register_end_part    (registry, mdl);
     commands::register_assembly    (registry);
@@ -516,7 +423,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_surface     (registry, mdl);
     commands::register_sfset       (registry, mdl);
 
-    // Register the root model and load-case terminator scopes
+    // Root model and native load-case terminator scopes
     registry.command("MODEL", [](io::dsl::Command& command) {
         command.allow_if(io::dsl::Condition::parent_is("ROOT"));
         command.keyword(io::dsl::KeywordSpec::make().key("NAME").optional());
@@ -528,7 +435,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
         command.variant(io::dsl::Variant::make());
     });
 
-    // Register field, material, profile and section definitions
+    // Field, material, profile and section definitions
     commands::register_heading(registry);
     commands::register_field(registry, mdl);
     commands::register_normal(registry, mdl);
@@ -547,7 +454,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_rotary_inertia(registry, mdl);
     commands::register_spring(registry, mdl);
 
-    // Register loads, constraints, features and model diagnostics
+    // Loads, constraints, features and model diagnostics
     commands::register_cload(registry, mdl);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
@@ -565,7 +472,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_overview(registry, mdl);
     commands::register_equation(registry, mdl);
 
-    // Register load-case creation, solver settings and result requests
+    // Load-case creation, solver settings and result requests
     commands::register_loadcase_begin(registry, *this);
     commands::register_loadcase_supports(registry, *this);
     commands::register_loadcase_loads(registry, *this);
