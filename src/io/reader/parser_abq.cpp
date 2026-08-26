@@ -191,7 +191,8 @@ void ParserAbq::configure_analysis_pass(io::dsl::Registry& registry) {
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
-        "EQUATION", "COUPLING", "STEP", "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
+        "EQUATION", "COUPLING", "KINEMATIC", "DISTRIBUTING", "STEP",
+        "STATIC", "FREQUENCY", "BUCKLE", "DYNAMIC", "STEADYSTATEDYNAMICS",
         "CLOAD", "BOUNDARY", "DLOAD", "DSLOAD", "ENDSTEP"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);

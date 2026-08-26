@@ -146,7 +146,7 @@ inline void register_coupling(fem::io::dsl::Registry& registry, model::Model& mo
     };
 
     registry.command("COUPLING", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT"));
+        command.allow_if(fem::io::dsl::Condition::parent_is("ROOT", "ASSEMBLY"));
         command.doc("Define a coupling reference node and slave surface or node set.");
 
         command.keyword(
