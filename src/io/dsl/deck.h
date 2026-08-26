@@ -87,9 +87,8 @@ struct ParsedCommand {
  * `Deck` owns one real ROOT node followed by the ordered command occurrences
  * produced by `DeckParser`. Queries return stable integer node ids, while
  * `enter()`, `leave()` and `execute()` invoke callbacks already registered on
- * the corresponding DSL command. `execute_path()` selects repeated nested scopes
- * structurally and keeps only the final matching scope active around its selected
- * children, allowing semantic readers to remain completely linear.
+ * the corresponding DSL command. Higher-level readers traverse scopes explicitly
+ * through `children()` and decide which child commands execute at each point.
  */
 class Deck {
 public:
@@ -175,19 +174,6 @@ public:
         for (const NodeId id : children(parent)) execute(id);
     }
 
-    // Select one or more nested scope names and execute the final matching scope.
-    // Intermediate path nodes only select hierarchy; callbacks run for the final
-    // scope whose children are processed in the requested semantic order.
-    void execute_path(NodeId parent,
-                      std::initializer_list<const char*> path,
-                      std::initializer_list<const char*> child_commands) const {
-        if (path.size() == 0) {
-            throw std::invalid_argument("Deck::execute_path requires at least one command");
-        }
-
-        execute_path(parent, path.begin(), path.end(), child_commands);
-    }
-
 private:
     std::vector<ParsedCommand> nodes_;
 
@@ -201,27 +187,6 @@ private:
     ParentInfo parent_info(const ParsedCommand& current) const {
         const ParsedCommand& parent = nodes_.at(current.parent);
         return ParentInfo{parent.command->name_, parent.keys};
-    }
-
-    void execute_path(NodeId parent,
-                      const char* const* path,
-                      const char* const* path_end,
-                      std::initializer_list<const char*> child_commands) const {
-        for (const NodeId id : children(parent, *path)) {
-            const char* const* next = path + 1;
-            if (next != path_end) {
-                execute_path(id, next, path_end, child_commands);
-                continue;
-            }
-
-            enter(id);
-            if (child_commands.size() == 0) {
-                execute_children(id);
-            } else {
-                execute_children(id, child_commands);
-            }
-            leave(id);
-        }
     }
 
     [[noreturn]] static void throw_at(const SourceLocation& location, const std::string& message) {
