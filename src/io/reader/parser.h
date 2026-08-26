@@ -2,31 +2,31 @@
  * @file parser.h
  * @brief Declares the common FEMaster input-deck parser lifecycle.
  *
- * `Parser` separates input processing according to semantic dependencies rather
- * than dense allocation requirements. Definition resources such as materials
- * and profiles are collected first so later part sections may resolve forward
- * references. Topology is then constructed in reusable parts and instances,
- * after which `Model::compile()` creates the dense solver representation.
- * Assembly-level sets/surfaces and enumeration-dependent fields are materialized
- * only after compilation; the final analysis pass executes loads, constraints
- * and load cases on compiled `ModelData`.
+ * The reader now separates syntax from semantic model construction. A complete
+ * command grammar is registered once, the source deck is parsed once into a
+ * reusable `dsl::Deck`, and semantic commands are then executed explicitly in
+ * dependency order. `Model::compile()` remains the visible one-way boundary
+ * between Part/Instance construction and assembly-level materialization.
  *
- * The former identifier-counting stage is intentionally absent. Node, element
- * and surface identifiers remain sparse and part-local until compilation, so no
- * maximum-id capacities are required while parsing.
+ * This removes parser stages and command activation modes entirely from the
+ * reader lifecycle. Scope-dependent commands such as `NSET`, `ELSET`, `SURFACE`
+ * and point-element properties are parsed once and later selected by their
+ * stored parent occurrence when the required model state exists.
  *
  * @see ParserAbq
- * @see model::Model
+ * @see io::dsl::Deck
+ * @see io::dsl::DeckParser
  * @see model::Model::compile
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 26.08.2026
  */
 
 #pragma once
 
 #include "../../core/types_num.h"
 #include "../../loadcase/loadcase.h"
+#include "../dsl/deck.h"
 #include "../dsl/registry.h"
 #include "../writer/writers.h"
 
@@ -34,7 +34,6 @@
 #include <string>
 
 namespace fem {
-namespace io { namespace dsl { class File; struct Line; } }
 namespace model { struct Model; }
 
 namespace io::reader {
@@ -68,26 +67,17 @@ struct DocOptions {
 };
 
 /**
- * @brief Executes the common dependency-ordered input-deck workflow.
+ * @brief Parses one deck once and executes its semantic commands explicitly.
  *
- * The parser replays the complete deck in four dependency-ordered passes. Every
- * pass registers the same command grammar so nested scopes remain valid, but
- * `ActiveMode` selects which callbacks may mutate parser or model state:
+ * `Parser::run()` performs only the common lifecycle: reset state, register the
+ * complete grammar, parse the file into a reusable tree and delegate semantic
+ * construction to `process_deck()`. The base FEMaster reader and specialized
+ * Abaqus reader provide their own explicit command order while sharing the same
+ * parsed-deck representation and load-case ownership.
  *
- * 1. collect global resources required by topology definitions,
- * 2. construct parts, instances and all part-local/default topology,
- * 3. materialize compiled assembly sets/surfaces plus dense fields,
- * 4. execute remaining loads, constraints and analysis commands.
- *
- * `Model::compile()` forms the explicit boundary between the topology and
- * assembly passes. Shell normals are completed at the end of the assembly pass
- * before any load case can access the compiled solver fields.
- *
- * `Parser` also owns the active load case while its consecutive commands are
- * interpreted, the result writers used during analysis and a separate registry
- * containing the complete grammar for documentation queries. Derived parsers
- * may specialize command activation for another deck dialect by overriding the
- * four pass-configuration functions.
+ * `Model::compile()` is called from semantic processing exactly where the model
+ * crosses from sparse Part/Instance topology to dense assembly storage. No
+ * command activation state is stored in the DSL registry.
  */
 class Parser {
     // Persistent model and result-output state
@@ -97,7 +87,7 @@ class Parser {
     // Complete command grammar used exclusively for documentation queries
     mutable io::dsl::Registry documentation_registry_;
 
-    // Load case currently assembled by consecutive analysis-pass commands
+    // Load case currently assembled by consecutive analysis commands
     loadcase::LoadCase::Ptr active_loadcase_;
     int                     next_loadcase_id_ = 1;
 
@@ -106,7 +96,7 @@ public:
     Parser();
     virtual ~Parser();
 
-    // Complete dependency-ordered deck evaluation and command documentation
+    // Parse once, process explicitly and expose command documentation
     void run(const std::string&                   input_path,
              const std::string&                   output_path,
              const io::writer::WriterFileFormats& writer_formats = io::writer::WriterFileFormats());
@@ -117,33 +107,27 @@ public:
           model::Model& model();
     const io::dsl::Registry& registry() const;
 
-    // Active load-case ownership. Activation assigns the next internal id and
-    // common parser dependencies; completion executes and releases the case.
+    // Active load-case ownership used by LOADCASE/STEP command callbacks
     void                begin_loadcase(loadcase::LoadCase::Ptr loadcase);
     void                end_loadcase();
     loadcase::LoadCase* active_loadcase();
 
 protected:
-    // Per-pass command activation. Derived deck readers may change which
-    // callbacks execute while retaining the common four-pass lifecycle.
-    virtual void configure_definition_pass(io::dsl::Registry& registry);
-    virtual void configure_topology_pass  (io::dsl::Registry& registry);
-    virtual void configure_assembly_pass  (io::dsl::Registry& registry);
-    virtual void configure_analysis_pass  (io::dsl::Registry& registry);
+    // Dialect-specific grammar and explicit semantic processing order
+    virtual void register_commands(io::dsl::Registry& registry);
+    virtual void process_deck(const io::dsl::Deck&                  deck,
+                              const std::string&                    input_path,
+                              const std::string&                    output_path,
+                              const io::writer::WriterFileFormats& writer_formats);
 
-private:
-    // Individual complete-deck passes
-    void run_definition_pass(const std::string& input_path);
-    void run_topology_pass  (const std::string& input_path);
-    void run_assembly_pass  (const std::string& input_path);
-    void run_analysis_pass  (const std::string&                   input_path,
-                             const std::string&                   output_path,
-                             const io::writer::WriterFileFormats& writer_formats);
+    // Result writers are shared by the native and Abaqus processing paths
+    void initialize_writers(const std::string&                    input_path,
+                            const std::string&                    output_path,
+                            const io::writer::WriterFileFormats& writer_formats);
+    void close_writers();
 
-    // Complete FEMaster grammar and the persistent documentation view
-    void register_commands(io::dsl::Registry& registry);
+    // Rebuild documentation after the complete dialect grammar is known
     void configure_documentation_registry();
-
 };
 
 } // namespace io::reader

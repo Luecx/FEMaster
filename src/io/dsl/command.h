@@ -2,160 +2,94 @@
  * @file command.h
  * @brief Declares `Command`, the top-level specification for a DSL keyword.
  *
- * A `Command` represents a registered keyword (e.g. `"ELASTIC"`, `"NUMEIGENVALUES"`).
- * Each command may:
- *
- *  - define an optional **admission condition** (`allow_if(...)`) that decides whether
- *    the command is allowed under the current parent scope (evaluated against
- *    `ParentInfo` and the command's own `Keys`);
- *  - provide one or more **variants** (`variant(...)`). The engine selects the first
- *    variant whose condition evaluates to true (or that has no condition) and then
- *    executes its segments;
- *  - register **entry** and **exit hooks** (`on_enter(...)`, `on_exit(...)`) that are
- *    executed when the command is entered or left in the parsing scope hierarchy;
- *  - mark a command as a parent terminator (`closes_parent()`).
- *
- * Typical usage:
- * @code
- * reg.command("ELASTIC", [](Command& c) {
- *     c.allow_if( parent_is("MATERIAL") );
- *     c.on_enter([](const Keys& k) { ... }); // before segments
- *     c.on_exit([](const Keys& k) { ... });  // after scope exits
- *     c.variant( Variant::make()
- *         .segment( Segment::make()
- *             .range(LineRange{}.min(1).max(1))
- *             .pattern(Pattern::make().fixed<double,1>().fixed<double,1>())
- *             .bind([](double E, double nu) { ... })
- *         )
- *     );
- * });
- * @endcode
- *
- * Semantics:
- *  - If no admission condition is set (`allow_if` never called), `admit_` defaults to
- *    `Condition{}` which is the `Always` condition (i.e., admissible under any parent).
- *  - Variants are checked in the order they were added; the first matching one is used.
- *  - `on_enter` is executed before segments of the variant run and may inspect the
- *    selected parent scope.
- *  - `on_exit` is executed when the command scope leaves (e.g. next command climbs up
- *    the scope stack or at end-of-file if still active).
- *  - A command marked with `closes_parent()` is processed under its admitted parent and
- *    then removes that parent instead of becoming a new scope itself.
+ * A `Command` describes one registered keyword independently of when its
+ * semantic callback will execute. It defines scope admission, keyword arguments,
+ * candidate data variants and optional entry/exit hooks. `DeckParser` applies
+ * the syntactic rules once and stores the resulting command occurrences;
+ * higher-level readers later choose the semantic execution order explicitly.
  *
  * @see variant.h
  * @see condition.h
  * @see keyword.h
- * @date 14.10.2025
+ * @see deck_parser.h
+ *
+ * @author Finn Eggers
+ * @date 26.08.2026
  */
 
 #pragma once
+
+#include "condition.h"
+#include "keyword.h"
+#include "variant.h"
+
 #include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "active.h"
-#include "condition.h"
-#include "variant.h"
-#include "keyword.h"
+namespace fem::io::dsl {
 
-namespace fem {
-namespace io {
-namespace dsl {
 /**
- * @class Command
- * @brief Top-level specification for a registered DSL keyword.
+ * @brief Complete grammar and callback specification for one DSL keyword.
+ *
+ * The command owns no parser-stage state. Admission and variants describe only
+ * syntax, while semantic timing remains a responsibility of the reader that
+ * executes the parsed deck.
  */
 struct Command {
-    /** Command name as it appears in the input (normalized, e.g. `"ELASTIC"`). */
-    std::string name_;
-
-    /** Admission rule for this command; defaults to `Always`. */
-    Condition admit_ = Condition{};
-
-    /** Ordered list of variants; the engine picks the first matching one. */
+    // Command identity, scope admission and data layouts
+    std::string          name_;
+    Condition            admit_ = Condition{};
     std::vector<Variant> variants_;
+    std::string          doc_;
 
-    /** Optional short description used by documentation printers. */
-    std::string doc_;
-
-    /** Stage-local execution mode. */
-    ActiveMode active_ = ActiveMode::Active;
-
-    /** Whether successful processing closes the admitted parent scope. */
+    // Scope behavior and semantic callbacks
     bool closes_parent_ = false;
 
-    /** Optional hook executed once with the selected parent and command keys. */
     std::function<void(const ParentInfo&, const Keys&)> on_enter_;
+    std::function<void(const Keys&)>                    on_exit_;
 
-    /** Optional hook executed when the command's scope is exited. */
-    std::function<void(const Keys&)> on_exit_;
-
-    /** Optional keyword-argument specification for normalization and validation. */
+    // Keyword-argument normalization and validation
     KeywordSpec keyword_spec_;
-    bool has_keyword_spec_ = false;
+    bool        has_keyword_spec_ = false;
+
+    explicit Command(std::string name) : name_(std::move(name)) {}
 
     /**
-     * @brief Constructs a command with the given name.
+     * @brief Restricts this keyword to parents satisfying the supplied condition.
      */
-    explicit Command(std::string n) : name_(std::move(n)) {}
-
-    /**
-     * @brief Sets the admission condition for this command.
-     *
-     * When set, the engine evaluates the condition against the current parent context
-     * and the command's own keys. If the condition returns false, the engine climbs
-     * the scope upwards until an ancestor admits the command or the scope is exhausted.
-     *
-     * @param c Condition tree to store by value (use helpers from `condition.h`).
-     * @return Reference to `*this` for fluent chaining.
-     */
-    Command& allow_if(Condition c) {
-        admit_ = std::move(c);
+    Command& allow_if(Condition condition) {
+        admit_ = std::move(condition);
         return *this;
     }
 
     /**
-     * @brief Appends a variant definition to this command.
+     * @brief Appends one candidate data layout for this command.
      *
-     * Variants are evaluated in descending `rank()` order; ties keep the insertion
-     * sequence. The first variant in that ordering whose condition holds (or has no
-     * condition) is selected and executed.
-     *
-     * @param v Variant to add (moved in).
-     * @return Reference to `*this` for fluent chaining.
+     * `DeckParser` evaluates compatible variants in descending rank order and
+     * retains the first layout whose complete upcoming data block fits.
      */
-    Command& variant(Variant v) {
-        variants_.push_back(std::move(v));
+    Command& variant(Variant variant) {
+        variants_.push_back(std::move(variant));
         return *this;
     }
 
     /**
-     * @brief Sets a human-readable description for this command (shown in help output).
-     * @param d Short description text.
-     * @return Reference to `*this` for fluent chaining.
+     * @brief Sets the short description shown by DSL documentation output.
      */
-    Command& doc(std::string d) {
-        doc_ = std::move(d);
+    Command& doc(std::string description) {
+        doc_ = std::move(description);
         return *this;
     }
 
     /**
-     * @brief Sets whether this command executes, only consumes input, or is disabled.
-     */
-    Command& active(ActiveMode mode) {
-        active_ = mode;
-        return *this;
-    }
-
-    /**
-     * @brief Marks this command as a terminator for its admitted parent scope.
+     * @brief Marks this keyword as a terminator of its admitted parent scope.
      *
-     * The command is validated and processed normally under the selected parent. After
-     * successful processing the engine pops that parent, firing its `on_exit` hook, and
-     * does not push this command as a new scope.
-     *
-     * @return Reference to `*this` for fluent chaining.
+     * During parsing the terminator remains stored as a child occurrence of the
+     * parent it closes, while the syntactic scope stack immediately returns to
+     * the parent's parent. Its own callbacks can therefore still be executed
+     * later at the explicit semantic point chosen by the reader.
      */
     Command& closes_parent() {
         closes_parent_ = true;
@@ -163,70 +97,43 @@ struct Command {
     }
 
     /**
-     * @brief Registers a parent-aware hook invoked before any variant segments.
-     *
-     * The parent is the scope selected by command admission after the engine has
-     * climbed and popped the scope stack. The keys are the normalized arguments of
-     * the current keyword line.
-     *
-     * @param fn Callback taking the selected parent and command keyword keys.
-     * @return Reference to `*this` for fluent chaining.
+     * @brief Registers a parent-aware hook executed before stored data records.
      */
-    Command& on_enter(std::function<void(const ParentInfo&, const Keys&)> fn) {
-        on_enter_ = std::move(fn);
+    Command& on_enter(std::function<void(const ParentInfo&, const Keys&)> callback) {
+        on_enter_ = std::move(callback);
         return *this;
     }
 
     /**
-     * @brief Registers a key-only hook invoked before any variant segments.
-     *
-     * This overload preserves the compact callback form for commands that do not
-     * depend on their parent scope.
-     *
-     * @param fn Callback taking the command's keyword keys.
-     * @return Reference to `*this` for fluent chaining.
+     * @brief Registers a key-only hook executed before stored data records.
      */
-    Command& on_enter(std::function<void(const Keys&)> fn) {
-        on_enter_ = [fn = std::move(fn)](const ParentInfo&, const Keys& keys) {
-            fn(keys);
+    Command& on_enter(std::function<void(const Keys&)> callback) {
+        on_enter_ = [callback = std::move(callback)](const ParentInfo&, const Keys& keys) {
+            callback(keys);
         };
         return *this;
     }
 
     /**
-     * @brief Registers a hook invoked when the command's scope exits.
+     * @brief Registers a hook executed when semantic processing leaves this scope.
      *
-     * This is useful for cleanup or finalization actions such as closing blocks
-     * (e.g. `END`), committing accumulated data, or restoring global state.
-     * The hook receives the same `Keys` that were passed to `on_enter`.
-     *
-     * Note: The engine must explicitly trigger `on_exit_` when a command's
-     * scope is popped from the scope stack (for example, when another command
-     * is encountered that is not admitted under the same parent).
-     *
-     * @param fn Callback taking the command's keyword keys.
-     * @return Reference to `*this` for fluent chaining.
+     * The reader decides when a parsed scope is left. This preserves command-local
+     * finalization such as restoring the default Part or executing a completed
+     * load case without coupling that behavior to source-file streaming.
      */
-    Command& on_exit(std::function<void(const Keys&)> fn) {
-        on_exit_ = std::move(fn);
+    Command& on_exit(std::function<void(const Keys&)> callback) {
+        on_exit_ = std::move(callback);
         return *this;
     }
 
     /**
-     * @brief Declares the keyword argument specification for this command.
-     *
-     * The engine uses the specification to normalize aliases (e.g. `NAME` → `NSET`),
-     * inject defaults, and validate value domains before variants execute.
-     *
-     * @param spec Keyword argument specification (moved in).
-     * @return Reference to `*this` for fluent chaining.
+     * @brief Declares keyword arguments, aliases, defaults and value constraints.
      */
     Command& keyword(KeywordSpec spec) {
-        keyword_spec_ = std::move(spec);
+        keyword_spec_     = std::move(spec);
         has_keyword_spec_ = true;
         return *this;
     }
 };
-} // namespace dsl
-} // namespace io
-} // namespace fem
+
+} // namespace fem::io::dsl

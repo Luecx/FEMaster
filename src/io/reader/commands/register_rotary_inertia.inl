@@ -3,22 +3,17 @@
  * @brief Registers concentrated rotary-inertia properties for point elements.
  *
  * `ROTARY INERTIA, ELSET=...` assigns the diagonal rotary inertia of one-node
- * `ROTARYI` topology. Both the native FEMaster and supported Abaqus readers use
- * the same command and represent the property through `PointMassSection` on the
- * existing `model::PointElement` implementation.
+ * `ROTARYI` topology. ROOT/PART records resolve semantic Part-local element sets
+ * before `Model::compile()`, while ASSEMBLY records resolve dense compiled
+ * element sets afterwards.
  *
- * Native FEMaster also retains the legacy `*POINTMASS, NSET=...` variant. It can
- * assign the same diagonal rotary inertia directly to nodes while optionally
- * combining it with translational mass and diagonal ground-spring stiffness.
+ * Both scope variants are registered once. The parsed-deck reader controls when
+ * each occurrence executes, so the command contains no parser-stage or
+ * registration-time compile-state branching.
  *
  * Abaqus permits a full symmetric inertia tensor. FEMaster's current point
  * section stores only the three diagonal moments, so the supported subset accepts
- * all six Abaqus data fields but requires the products of inertia I12, I13 and
- * I23 to be zero. Orientation-dependent inertia is not part of this mapping.
- *
- * As with `MASS`, Part-local assignments are created before `Model::compile()`
- * and copied through Instances. Assembly-level assignments are deferred until
- * the compiled ELSET namespace exists.
+ * all six Abaqus data fields but requires I12, I13 and I23 to be zero.
  *
  * @see model::PointElement
  * @see PointMassSection
@@ -46,16 +41,12 @@ namespace fem::io::reader::commands {
 namespace dsl = fem::io::dsl;
 
 /**
- * Registers diagonal `*ROTARY INERTIA` properties on point-element ELSETs.
+ * @brief Registers diagonal rotary inertia for Part-local and assembly ELSETs.
  *
- * The first three data values are mapped to the rotational entries of
- * `PointMassSection`. The optional off-diagonal Abaqus tensor entries are parsed
- * for syntax compatibility and rejected unless they are zero because the
- * current point element assembles only a diagonal rotational mass matrix.
- * Native `*POINTMASS` remains the legacy NSET-based alternative.
- *
- * @param registry Parser registry receiving the command definition.
- * @param model Model receiving Part-local or compiled section assignments.
+ * The two variants share the same six-value syntax but resolve their targets in
+ * different model namespaces. Explicit compile-state checks document the required
+ * semantic processing order and reject accidental execution on the wrong side of
+ * the `Model::compile()` boundary.
  */
 inline void register_rotary_inertia(dsl::Registry& registry, model::Model& model) {
     registry.command("ROTARYINERTIA", [&](dsl::Command& command) {
@@ -73,68 +64,8 @@ inline void register_rotary_inertia(dsl::Registry& registry, model::Model& model
             *elset = keys.raw("ELSET");
         });
 
-        if (!model._data->compiled) {
-            // ROOT/PART assignments are resolvable in the active semantic Part.
-            command.variant(dsl::Variant::make()
-                .when(dsl::Condition::parent_is({"ROOT", "PART"}))
-                .segment(dsl::Segment::make()
-                    .range(dsl::LineRange{}.min(1).max(1))
-                    .pattern(dsl::Pattern::make()
-                        .fixed<Precision, 6>().name("INERTIA").desc("I11,I22,I33,I12,I13,I23")
-                            .on_missing(Precision(0)).on_empty(Precision(0))
-                    )
-                    .bind([&model, elset](const std::array<Precision, 6>& values) {
-                        // Resolve and validate the complete Part-local point region.
-                        const auto part = model._data->parts.get();
-                        logging::error(part != nullptr,
-                            "ROTARY INERTIA: no active part is available");
-                        logging::error(part->elem_sets.has(*elset),
-                            "ROTARY INERTIA: element set ", *elset,
-                            " does not exist in part ", part->name);
-
-                        const auto region = part->elem_sets.get(*elset);
-                        logging::error(region != nullptr && region->size() > 0,
-                            "ROTARY INERTIA: element set ", *elset,
-                            " is empty in part ", part->name);
-
-                        for (const ID id : *region) {
-                            const auto it = part->elements.find(id);
-                            logging::error(it != part->elements.end() && it->second != nullptr,
-                                "ROTARY INERTIA: element ", id,
-                                " does not exist in part ", part->name);
-                            logging::error(it->second->as<model::PointElement>() != nullptr,
-                                "ROTARY INERTIA: element set ", *elset,
-                                " contains non-point element ", id);
-                        }
-
-                        // Only diagonal rotary inertia is represented by PointMassSection.
-                        logging::error(values[3] == Precision(0)
-                                    && values[4] == Precision(0)
-                                    && values[5] == Precision(0),
-                            "ROTARY INERTIA: products of inertia I12, I13 and I23 are not supported");
-
-                        const Vec3 inertia{values[0], values[1], values[2]};
-                        model.add_section(std::make_shared<PointMassSection>(
-                            region, Precision(0), inertia));
-                    })
-                )
-            );
-
-            // Assembly ELSETs do not exist until after compile().
-            command.variant(dsl::Variant::make()
-                .when(dsl::Condition::parent_is("ASSEMBLY"))
-                .segment(dsl::Segment::make()
-                    .range(dsl::LineRange{}.min(1).max(1))
-                    .pattern(dsl::Pattern::make()
-                        .fixed<Precision, 6>().name("INERTIA").desc("I11,I22,I33,I12,I13,I23")
-                            .on_missing(Precision(0)).on_empty(Precision(0))
-                    )
-                )
-            );
-            return;
-        }
-
-        // ROOT/PART assignments were already copied through compile().
+        // Part-local assignments are attached before compile() and copied through
+        // every Instance by the ordinary section-expansion path.
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::parent_is({"ROOT", "PART"}))
             .segment(dsl::Segment::make()
@@ -143,10 +74,45 @@ inline void register_rotary_inertia(dsl::Registry& registry, model::Model& model
                     .fixed<Precision, 6>().name("INERTIA").desc("I11,I22,I33,I12,I13,I23")
                         .on_missing(Precision(0)).on_empty(Precision(0))
                 )
+                .bind([&model, elset](const std::array<Precision, 6>& values) {
+                    logging::error(!model._data->compiled,
+                        "ROTARY INERTIA: ROOT/PART assignment must be processed before model compilation");
+
+                    const auto part = model._data->parts.get();
+                    logging::error(part != nullptr,
+                        "ROTARY INERTIA: no active part is available");
+                    logging::error(part->elem_sets.has(*elset),
+                        "ROTARY INERTIA: element set ", *elset,
+                        " does not exist in part ", part->name);
+
+                    const auto region = part->elem_sets.get(*elset);
+                    logging::error(region != nullptr && region->size() > 0,
+                        "ROTARY INERTIA: element set ", *elset,
+                        " is empty in part ", part->name);
+
+                    for (const ID id : *region) {
+                        const auto it = part->elements.find(id);
+                        logging::error(it != part->elements.end() && it->second != nullptr,
+                            "ROTARY INERTIA: element ", id,
+                            " does not exist in part ", part->name);
+                        logging::error(it->second->as<model::PointElement>() != nullptr,
+                            "ROTARY INERTIA: element set ", *elset,
+                            " contains non-point element ", id);
+                    }
+
+                    logging::error(values[3] == Precision(0)
+                                && values[4] == Precision(0)
+                                && values[5] == Precision(0),
+                        "ROTARY INERTIA: products of inertia I12, I13 and I23 are not supported");
+
+                    const Vec3 inertia{values[0], values[1], values[2]};
+                    model.add_section(std::make_shared<PointMassSection>(
+                        region, Precision(0), inertia));
+                })
             )
         );
 
-        // Assembly assignments resolve the compiled point-element region directly.
+        // Assembly assignments resolve dense element ids after compile().
         command.variant(dsl::Variant::make()
             .when(dsl::Condition::parent_is("ASSEMBLY"))
             .segment(dsl::Segment::make()
@@ -156,7 +122,8 @@ inline void register_rotary_inertia(dsl::Registry& registry, model::Model& model
                         .on_missing(Precision(0)).on_empty(Precision(0))
                 )
                 .bind([&model, elset](const std::array<Precision, 6>& values) {
-                    // Resolve and validate the complete compiled point region.
+                    logging::error(model._data->compiled,
+                        "ROTARY INERTIA: ASSEMBLY assignment requires a compiled model");
                     logging::error(model._data->elem_sets.has(*elset),
                         "ROTARY INERTIA: compiled element set ", *elset, " does not exist");
 
