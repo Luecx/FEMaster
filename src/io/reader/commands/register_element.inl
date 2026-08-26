@@ -42,6 +42,7 @@
 #include "../../../model/solid/c3d6.h"
 #include "../../../model/solid/c3d8.h"
 #include "../../../model/solid/c3d8r.h"
+#include "../../../model/element/point.h"
 #include "../../../model/truss/truss.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
@@ -77,8 +78,8 @@ inline void register_element(dsl::Registry& registry, model::Model& model) {
                 .key("ELSET").optional("EALL")
                 .key("TYPE").required().allowed({
                     "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                    "B33", "T3", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
-                    "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT"
+                    "B33", "T3", "T3D2", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
+                    "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT", "MASS"
                 })
         );
 
@@ -119,19 +120,23 @@ inline void register_element(dsl::Registry& registry, model::Model& model) {
         FEM_ADD_ELEMENT_VARIANT("C3D15", C3D15, 15);
         FEM_ADD_ELEMENT_VARIANT("C3D20", C3D20, 20);
         FEM_ADD_ELEMENT_VARIANT("C3D20R", C3D20R, 20);
+
         FEM_ADD_ELEMENT_VARIANT("B33", B33, 2);
         FEM_ADD_ELEMENT_VARIANT("T3", T3, 2);
+        FEM_ADD_ELEMENT_VARIANT("T3D2", T3, 2);
+
         FEM_ADD_ELEMENT_VARIANT("S3", S3, 3);
         FEM_ADD_ELEMENT_VARIANT("S4", S4, 4);
+        FEM_ADD_ELEMENT_VARIANT("S6", S6, 6);
+        FEM_ADD_ELEMENT_VARIANT("S8", S8, 8);
         FEM_ADD_ELEMENT_VARIANT("QSPT", QSPT, 4);
         FEM_ADD_ELEMENT_VARIANT("MITC4", MITC4, 4);
         FEM_ADD_ELEMENT_VARIANT("MITC3FRT", FRTShellS3, 3);
         FEM_ADD_ELEMENT_VARIANT("MITC4FRT", FRTShellS4, 4);
         FEM_ADD_ELEMENT_VARIANT("MITC6FRT", FRTShellS6, 6);
         FEM_ADD_ELEMENT_VARIANT("MITC8FRT", FRTShellS8, 8);
-        FEM_ADD_ELEMENT_VARIANT("S6", S6, 6);
-        FEM_ADD_ELEMENT_VARIANT("S8", S8, 8);
         FEM_ADD_ELEMENT_VARIANT("MITC8", MITC8, 8);
+        FEM_ADD_ELEMENT_VARIANT("MASS", PointElement, 1);
 
 #undef FEM_ADD_ELEMENT_VARIANT
 

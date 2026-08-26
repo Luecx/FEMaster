@@ -25,17 +25,17 @@
 
 #pragma once
 
+#include "../../../core/logging.h"
+#include "../../../model/model.h"
+#include "../../dsl/condition.h"
+#include "../../dsl/keyword.h"
+
 #include <array>
 #include <cmath>
 #include <limits>
 #include <memory>
 
-#include "../../../core/logging.h"
-#include "../../dsl/condition.h"
-#include "../../dsl/keyword.h"
-#include "../../../model/model.h"
-
-namespace fem::io::reader::commands_abq {
+namespace fem::io::reader::commands {
 
 /**
  * Registers the shared FEMaster/Abaqus instance-placement grammar.
@@ -192,4 +192,4 @@ inline void register_instance(fem::io::dsl::Registry& registry, model::Model& mo
     });
 }
 
-} // namespace fem::io::reader::commands_abq
+} // namespace fem::io::reader::commands

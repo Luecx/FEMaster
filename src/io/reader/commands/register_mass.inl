@@ -50,16 +50,16 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-
 #include "../../../model/element/point.h"
 #include "../../../model/model.h"
 #include "../../../section/section_point_mass.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"
 
-namespace fem::io::reader::commands_abq {
+#include <memory>
+#include <string>
+
+namespace fem::io::reader::commands {
 
 /**
  * Registers `*MASS, ELSET=...` for Part-local and assembly-level MASS elements.
@@ -260,4 +260,4 @@ inline void register_mass(fem::io::dsl::Registry& registry, model::Model& model)
     });
 }
 
-} // namespace fem::io::reader::commands_abq
+} // namespace fem::io::reader::commands

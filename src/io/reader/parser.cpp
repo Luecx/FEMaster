@@ -22,17 +22,12 @@
 
 #include "parser.h"
 
-#include "../dsl/engine.h"
-#include "../dsl/file.h"
-#include "../writer/writers.h"
 #include "../../core/logging.h"
 #include "../../loadcase/loadcase.h"
 #include "../../model/model.h"
-
-#include <iostream>
-#include <memory>
-#include <utility>
-
+#include "../dsl/engine.h"
+#include "../dsl/file.h"
+#include "../writer/writers.h"
 #include "commands/register_amplitude.inl"
 #include "commands/register_assembly.inl"
 #include "commands/register_beam_section.inl"
@@ -48,32 +43,12 @@
 #include "commands/register_end_assembly.inl"
 #include "commands/register_end_instance.inl"
 #include "commands/register_end_part.inl"
+#include "commands/register_equation.inl"
 #include "commands/register_field.inl"
 #include "commands/register_heading.inl"
 #include "commands/register_hyperelastic.inl"
 #include "commands/register_inertialload.inl"
-#include "commands/register_material.inl"
-#include "commands/register_node.inl"
-#include "commands/register_normal.inl"
-#include "commands/register_nset.inl"
-#include "commands/register_orientation.inl"
-#include "commands/register_overview.inl"
-#include "commands/register_part.inl"
-#include "commands/register_pload.inl"
-#include "commands/register_point_mass.inl"
-#include "commands/register_profile.inl"
-#include "commands/register_rbm.inl"
-#include "commands/register_sfset.inl"
-#include "commands/register_shell_section.inl"
-#include "commands/register_solid_section.inl"
-#include "commands/register_support.inl"
-#include "commands/register_surface.inl"
-#include "commands/register_thermalexpansion.inl"
-#include "commands/register_tie.inl"
-#include "commands/register_tload.inl"
-#include "commands/register_truss_section.inl"
-#include "commands/register_vload.inl"
-
+#include "commands/register_instance.inl"
 #include "commands/register_loadcase_begin.inl"
 #include "commands/register_loadcase_constraintmethod.inl"
 #include "commands/register_loadcase_constraintsummary.inl"
@@ -96,8 +71,32 @@
 #include "commands/register_loadcase_topoexponent.inl"
 #include "commands/register_loadcase_topoorient.inl"
 #include "commands/register_loadcase_write_every.inl"
+#include "commands/register_mass.inl"
+#include "commands/register_material.inl"
+#include "commands/register_node.inl"
+#include "commands/register_normal.inl"
+#include "commands/register_nset.inl"
+#include "commands/register_orientation.inl"
+#include "commands/register_overview.inl"
+#include "commands/register_part.inl"
+#include "commands/register_pload.inl"
+#include "commands/register_point_mass.inl"
+#include "commands/register_profile.inl"
+#include "commands/register_rbm.inl"
+#include "commands/register_sfset.inl"
+#include "commands/register_shell_section.inl"
+#include "commands/register_solid_section.inl"
+#include "commands/register_support.inl"
+#include "commands/register_surface.inl"
+#include "commands/register_thermalexpansion.inl"
+#include "commands/register_tie.inl"
+#include "commands/register_tload.inl"
+#include "commands/register_truss_section.inl"
+#include "commands/register_vload.inl"
 
-#include "commands_abq/register_instance.inl"
+#include <iostream>
+#include <memory>
+#include <utility>
 
 namespace fem::io::reader {
 
@@ -408,7 +407,7 @@ void Parser::configure_topology_pass(io::dsl::Registry& registry) {
     for (const char* command : {
         "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
         "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
-        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION"
+        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION", "MASS",
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }
@@ -503,7 +502,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_end_part    (registry, mdl);
     commands::register_assembly    (registry);
     commands::register_end_assembly(registry);
-    commands_abq::register_instance(registry, mdl);
+    commands::register_instance    (registry, mdl);
     commands::register_end_instance(registry);
     commands::register_node        (registry, mdl);
     commands::register_element     (registry, mdl);
@@ -556,6 +555,8 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_contact(registry, mdl);
     commands::register_point_mass(registry, mdl);
     commands::register_overview(registry, mdl);
+    commands::register_mass(registry, mdl);
+    commands::register_equation(registry, mdl);
 
     // Register load-case creation, solver settings and result requests
     commands::register_loadcase_begin(registry, *this);

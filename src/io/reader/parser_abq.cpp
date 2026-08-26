@@ -19,40 +19,39 @@
 
 #include "parser_abq.h"
 
+#include "../../bc/amplitude.h"
+#include "../../loadcase/loadcase.h"
+#include "../../model/model.h"
+#include "../dsl/registry.h"
+#include "commands/register_assembly.inl"
 #include "commands/register_density.inl"
 #include "commands/register_elastic.inl"
 #include "commands/register_elset.inl"
+#include "commands/register_end_assembly.inl"
+#include "commands/register_end_instance.inl"
 #include "commands/register_end_part.inl"
+#include "commands/register_equation.inl"
 #include "commands/register_heading.inl"
 #include "commands/register_hyperelastic.inl"
+#include "commands/register_instance.inl"
+#include "commands/register_mass.inl"
 #include "commands/register_material.inl"
 #include "commands/register_node.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_part.inl"
 #include "commands/register_surface.inl"
 #include "commands_abq/register_amplitude.inl"
-#include "commands_abq/register_assembly.inl"
 #include "commands_abq/register_boundary.inl"
 #include "commands_abq/register_cload.inl"
 #include "commands_abq/register_dload.inl"
 #include "commands_abq/register_dsload.inl"
 #include "commands_abq/register_element.inl"
-#include "commands_abq/register_end_assembly.inl"
-#include "commands_abq/register_end_instance.inl"
-#include "commands_abq/register_equation.inl"
 #include "commands_abq/register_expansion.inl"
-#include "commands_abq/register_instance.inl"
-#include "commands_abq/register_mass.inl"
 #include "commands_abq/register_orientation.inl"
 #include "commands_abq/register_shell_section.inl"
 #include "commands_abq/register_solid_section.inl"
 #include "commands_abq/register_step.inl"
 #include "commands_abq/register_transform.inl"
-
-#include "../dsl/registry.h"
-#include "../../bc/amplitude.h"
-#include "../../loadcase/loadcase.h"
-#include "../../model/model.h"
 
 #include <memory>
 #include <string>
@@ -106,10 +105,10 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_heading(registry);
     commands::register_part(registry, model());
     commands::register_end_part(registry, model());
-    commands_abq::register_assembly(registry);
-    commands_abq::register_end_assembly(registry);
-    commands_abq::register_instance(registry, model());
-    commands_abq::register_end_instance(registry);
+    commands::register_assembly(registry);
+    commands::register_end_assembly(registry);
+    commands::register_instance(registry, model());
+    commands::register_end_instance(registry);
     commands::register_nset(registry, model());
     commands::register_elset(registry, model());
     commands::register_surface(registry, model());
@@ -117,14 +116,15 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_density(registry, model());
     commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
+    commands::register_mass(registry, model());
+    commands::register_equation(registry, model());
+
     commands_abq::register_expansion(registry, model());
     commands_abq::register_orientation(registry, model());
     commands_abq::register_transform(registry, *this);
     commands_abq::register_amplitude(registry, model());
     commands_abq::register_solid_section(registry, model());
     commands_abq::register_shell_section(registry, model());
-    commands_abq::register_mass(registry, model());
-    commands_abq::register_equation(registry, *this);
     commands_abq::register_step(registry, *this);
     commands_abq::register_cload(registry, *this);
     commands_abq::register_boundary(registry, *this);

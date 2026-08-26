@@ -13,6 +13,12 @@
 
 #pragma once
 
+#include "../../../constraints/types/equation.h"
+#include "../../../model/model.h"
+#include "../../dsl/condition.h"
+#include "../../dsl/keyword.h"
+#include "../parser_abq.h"
+
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -21,13 +27,7 @@
 #include <string>
 #include <utility>
 
-#include "../parser_abq.h"
-#include "../../../constraints/types/equation.h"
-#include "../../../model/model.h"
-#include "../../dsl/condition.h"
-#include "../../dsl/keyword.h"
-
-namespace fem::io::reader::commands_abq {
+namespace fem::io::reader::commands {
 
 /**
  * Registers the Abaqus `EQUATION` grammar in the post-compile analysis pass.
@@ -46,7 +46,7 @@ namespace fem::io::reader::commands_abq {
  * @param registry Parser registry receiving the command definition.
  * @param parser Abaqus parser owning the compiled model and analysis state.
  */
-inline void register_equation(fem::io::dsl::Registry& registry, ParserAbq& parser) {
+inline void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("EQUATION", [&](fem::io::dsl::Command& command) {
         // Temporary state for one Abaqus equation definition. `equations` already
         // contains the final expanded rows; no separate term representation is needed.
@@ -63,11 +63,9 @@ inline void register_equation(fem::io::dsl::Registry& registry, ParserAbq& parse
 
         // EQUATION is interpreted after topology compilation, so all node and NSET
         // references can be resolved immediately into the global assembly namespace.
-        command.on_enter([&parser, ctx](const fem::io::dsl::Keys&) {
-            logging::error(parser.model()._data->compiled,
+        command.on_enter([&model, ctx](const fem::io::dsl::Keys&) {
+            logging::error(model._data->compiled,
                 "EQUATION: requires a compiled model");
-            logging::error(!parser.abaqus_state().step_seen,
-                "EQUATION: must be defined before STEP");
 
             ctx->remaining    = 0;
             ctx->first_is_set = false;
@@ -105,11 +103,10 @@ inline void register_equation(fem::io::dsl::Registry& registry, ParserAbq& parse
                     .fixed<std::string, 12>().name("DATA")
                         .on_missing(std::string{}).on_empty(std::string{})
                 )
-                .bind([&parser, ctx](const std::array<std::string, 12>& data) {
+                .bind([&model, ctx](const std::array<std::string, 12>& data) {
                     logging::error(ctx->remaining > 0,
                         "EQUATION: more term data provided than declared");
 
-                    auto& model         = parser.model();
                     Index terms_on_line = 0;
 
                     // Parse each complete target/DOF/coefficient triple and append it
@@ -206,4 +203,4 @@ inline void register_equation(fem::io::dsl::Registry& registry, ParserAbq& parse
     });
 }
 
-} // namespace fem::io::reader::commands_abq
+} // namespace fem::io::reader::commands
