@@ -10,11 +10,13 @@
  * explicit dependency order without reopening or re-tokenizing the source file.
  *
  * Variant trial and rewind semantics are unchanged from the streaming engine.
- * The syntactic scope is represented directly by parsed node ids and starts at
- * the deck's real ROOT node. Closing commands remain stored as children of the
- * scope they terminate while the scope stack is updated immediately.
+ * The syntactic scope stack contains direct pointers to stable `ParsedCommand`
+ * objects and starts at the deck's real ROOT node. Closing commands remain stored
+ * as children of the scope they terminate while the scope stack is updated
+ * immediately.
  *
  * @see Deck
+ * @see ParsedCommand
  * @see Registry
  * @see Variant
  * @see Segment
@@ -33,6 +35,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -65,14 +68,13 @@ public:
      * @return Fully validated parsed deck.
      */
     Deck parse(File& file) const {
-        using LT     = LineType;
-        using NodeId = Deck::NodeId;
+        using LT = LineType;
 
         Deck deck;
 
-        // The scope stack contains only real parsed nodes. ROOT is node zero and
-        // remains the final ancestor throughout parsing.
-        std::vector<NodeId> scope{deck.root()};
+        // Parsed nodes have stable addresses because every child is separately
+        // owned. The scope therefore points directly into the resulting tree.
+        std::vector<ParsedCommand*> scope{deck.root_.get()};
 
         auto pop_scope_to = [&](std::size_t new_size) {
             while (scope.size() > new_size) scope.pop_back();
@@ -123,12 +125,12 @@ public:
             }
 
             // Climb to the nearest syntactic ancestor admitting this command.
-            const int parent_index = admit_command(*command, deck, scope, self_keys);
-            if (parent_index < 0) throw_unadmitted(line, deck, scope);
+            const int parent_index = admit_command(*command, scope, self_keys);
+            if (parent_index < 0) throw_unadmitted(line, scope);
             pop_scope_to(static_cast<std::size_t>(parent_index + 1));
 
-            const NodeId parent_id = scope.back();
-            const ParentInfo parent_info = command_info(deck, parent_id);
+            ParsedCommand* parent = scope.back();
+            const ParentInfo parent_info = command_info(*parent);
 
             // Try all condition-compatible variants by rank with full input rewind.
             struct Candidate {
@@ -192,29 +194,31 @@ public:
                 throw_at(line.location(), message.str());
             }
 
-            // Every keyword is inserted through the same tree path, including
-            // top-level commands whose parent is the real ROOT node.
-            const NodeId node_id = deck.nodes_.size();
-            ParsedCommand parsed;
-            parsed.command     = command;
-            parsed.keys        = self_keys;
-            parsed.parent      = parent_id;
-            parsed.invocations = std::move(invocations);
-            parsed.location    = line.location();
-            deck.nodes_.push_back(std::move(parsed));
-            deck.nodes_[parent_id].children.push_back(node_id);
+            // A terminator may close any admitted scope except the real ROOT.
+            if (command->closes_parent_ && parent == deck.root_.get()) {
+                throw_at(line.location(), "Command '" + command_name + "' cannot close the ROOT scope");
+            }
 
-            // Terminators are retained as child nodes but close their parent scope.
+            // Every keyword is owned directly by its syntactic parent. The raw
+            // pointer remains stable after insertion and can become the next scope.
+            auto parsed = std::make_unique<ParsedCommand>();
+            parsed->command_     = command;
+            parsed->keys_        = std::move(self_keys);
+            parsed->parent_      = parent;
+            parsed->invocations_ = std::move(invocations);
+            parsed->location_    = line.location();
+
+            ParsedCommand* node = parsed.get();
+            parent->children_.push_back(std::move(parsed));
+
+            // Terminators stay in the tree but immediately close their parent.
             if (command->closes_parent_) {
-                if (parent_id == deck.root()) {
-                    throw_at(line.location(), "Command '" + command_name + "' cannot close the ROOT scope");
-                }
                 pop_scope_to(static_cast<std::size_t>(parent_index));
                 continue;
             }
 
             // Ordinary commands become the new syntactic parent for later admission.
-            scope.push_back(node_id);
+            scope.push_back(node);
         }
 
         return deck;
@@ -228,30 +232,27 @@ private:
         throw std::runtime_error(source.empty() ? message : source + ": " + message);
     }
 
-    static ParentInfo command_info(const Deck& deck, Deck::NodeId id) {
-        const ParsedCommand& command = deck.nodes_.at(id);
-        return ParentInfo{command.command->name_, command.keys};
+    static ParentInfo command_info(const ParsedCommand& command) {
+        return ParentInfo{command.command_->name_, command.keys_};
     }
 
     [[noreturn]] static void throw_unadmitted(const Line& line,
-                                              const Deck& deck,
-                                              const std::vector<Deck::NodeId>& scope) {
+                                              const std::vector<ParsedCommand*>& scope) {
         std::ostringstream message;
         message << "Command '" << line.command() << "' not admitted in current scope (stack: ";
         for (std::size_t index = 0; index < scope.size(); ++index) {
             if (index) message << " > ";
-            message << deck.nodes_[scope[index]].command->name_;
+            message << scope[index]->command_->name_;
         }
         message << ")";
         throw_at(line.location(), message.str());
     }
 
     static int admit_command(const Command& command,
-                             const Deck& deck,
-                             const std::vector<Deck::NodeId>& scope,
+                             const std::vector<ParsedCommand*>& scope,
                              const Keys& self_keys) {
         for (int index = static_cast<int>(scope.size()) - 1; index >= 0; --index) {
-            if (command.admit_.eval(command_info(deck, scope[static_cast<std::size_t>(index)]), self_keys)) {
+            if (command.admit_.eval(command_info(*scope[static_cast<std::size_t>(index)]), self_keys)) {
                 return index;
             }
         }
