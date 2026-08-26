@@ -83,9 +83,11 @@
 #include "commands/register_point_mass.inl"
 #include "commands/register_profile.inl"
 #include "commands/register_rbm.inl"
+#include "commands/register_rotary_inertia.inl"
 #include "commands/register_sfset.inl"
 #include "commands/register_shell_section.inl"
 #include "commands/register_solid_section.inl"
+#include "commands/register_spring.inl"
 #include "commands/register_support.inl"
 #include "commands/register_surface.inl"
 #include "commands/register_thermalexpansion.inl"
@@ -407,7 +409,8 @@ void Parser::configure_topology_pass(io::dsl::Registry& registry) {
     for (const char* command : {
         "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
         "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
-        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION", "MASS",
+        "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION", "SHELLSECTION",
+        "MASS", "ROTARYINERTIA", "SPRING",
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }
@@ -418,7 +421,8 @@ void Parser::configure_topology_pass(io::dsl::Registry& registry) {
  *
  * Assembly scope is replayed so global regions and surfaces can resolve Instance
  * maps. Fields and prescribed normals may now use compiled domain dimensions and
- * dense global identifiers.
+ * dense global identifiers. Point-element properties are also materialized here
+ * so assembly-level ELSET assignments exist before result writers are initialized.
  *
  * @param registry Empty pass-local registry to configure.
  */
@@ -428,9 +432,10 @@ void Parser::configure_assembly_pass(io::dsl::Registry& registry) {
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
 
-    // Activate post-compile assembly and field materialization commands
+    // Activate post-compile assembly, point-property and field materialization commands
     for (const char* command : {
-        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "SFSET", "FIELD", "NORMAL"
+        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "SFSET", "FIELD", "NORMAL",
+        "MASS", "ROTARYINERTIA", "SPRING"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }
@@ -457,7 +462,7 @@ void Parser::configure_analysis_pass(io::dsl::Registry& registry) {
         "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "SFSET",
         "MATERIAL", "ELASTIC", "HYPERELASTIC", "DENSITY", "THERMALEXPANSION",
         "PROFILE", "ORIENTATION", "SOLIDSECTION", "BEAMSECTION", "TRUSSSECTION",
-        "SHELLSECTION", "FIELD", "NORMAL"
+        "SHELLSECTION", "FIELD", "NORMAL", "MASS", "ROTARYINERTIA", "SPRING"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::ConsumeOnly);
     }
@@ -538,6 +543,9 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_beam_section(registry, mdl);
     commands::register_truss_section(registry, mdl);
     commands::register_shell_section(registry, mdl);
+    commands::register_mass(registry, mdl);
+    commands::register_rotary_inertia(registry, mdl);
+    commands::register_spring(registry, mdl);
 
     // Register loads, constraints, features and model diagnostics
     commands::register_cload(registry, mdl);
@@ -555,7 +563,6 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_contact(registry, mdl);
     commands::register_point_mass(registry, mdl);
     commands::register_overview(registry, mdl);
-    commands::register_mass(registry, mdl);
     commands::register_equation(registry, mdl);
 
     // Register load-case creation, solver settings and result requests

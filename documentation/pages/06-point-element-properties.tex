@@ -1,0 +1,177 @@
+\keywordpage{POINTMASS}
+
+\cmd{POINTMASS} is the native NSET-based concentrated-property command. It is evaluated on the compiled model and creates one auxiliary point element for every node in the target NSET. All point elements created by one command share the supplied mass, rotary inertia, and optional ground-spring properties.
+
+The first value is one translational point mass \(m\). It contributes equally to the three translational inertia directions. The next three values are rotary inertias
+\[
+(I_x,I_y,I_z)
+\]
+associated with the nodal rotational degrees of freedom. Translational and rotational spring constants may then be supplied. Missing values default to zero, so a pure lumped mass requires only the first scalar.
+
+For one target node, the diagonal generalized contributions are
+\[
+M_p=\operatorname{diag}(m,m,m,I_x,I_y,I_z),
+\]
+and
+\[
+K_p=\operatorname{diag}(k_x,k_y,k_z,k_{rx},k_{ry},k_{rz}).
+\]
+All coefficients must be non-negative.
+
+The point element activates only generalized components that carry a nonzero physical coefficient. A nonzero translational mass activates \(U_x,U_y,U_z\); a nonzero rotary inertia activates its corresponding rotational component; translational and rotational springs likewise activate their associated directions. A point element with all coefficients zero is mechanically inactive.
+
+If the target set contains several nodes, the complete property is applied independently at every target node. The specified mass is therefore mass \emph{per node}, not the total mass of the NSET. A total payload distributed over four target nodes requires four appropriately chosen nodal masses whose sum equals the intended total.
+
+The auxiliary point elements created by \cmd{POINTMASS} are deliberately not inserted into the public compiled element array or any ELSET. This preserves ordinary element numbering and element-domain Field offsets. They nevertheless participate in active-DOF enumeration, global stiffness assembly, global mass assembly, eigenfrequency and transient analyses, and the dedicated point-mass-aware inertia paths.
+
+This distinction matters for loads. Native \cmd{VLOAD} and supported Abaqus \cmd{DLOAD, GRAV} operate on ordinary element regions and therefore do not select auxiliary \cmd{POINTMASS} objects. Native \cmd{INERTIALOAD} includes them only when \key{CONSIDER_POINT_MASSES=1}. Likewise, native \cmd{INERTIARELIEF} includes them in total mass, center of gravity, and rotary inertia only when its \key{CONSIDER_POINT_MASSES} option is enabled.
+
+Because the auxiliary point elements activate their own DOFs, a model may consist entirely of nodes plus \cmd{POINTMASS} definitions without requiring an unrelated structural element merely to activate translational or rotational components. Node-only models can also be written to FRD; the writer omits the element-connectivity block when no regular output element topology exists.
+
+Point masses represent equipment, payloads, actuators, engines, sensors, or other concentrated inertia without explicitly meshing the attached body. Translational stiffness has force/length units, rotational stiffness has moment/radian units, and rotary inertia has mass-length\(^2\) units in the chosen consistent system.
+
+\begin{keywordparameters}
+\key{NSET} & required & Target compiled node set. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{mass} & Concentrated translational mass; default 0. \\
+\val{Ix, Iy, Iz} & Rotary inertia components; default 0. \\
+\val{kx, ky, kz} & Translational ground-spring constants; default 0. \\
+\val{krx, kry, krz} & Rotational ground-spring constants; default 0. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*POINTMASS, NSET=PAYLOAD
+0.025,
+1.2e-3, 1.2e-3, 2.0e-3,
+1000., 1000., 0.,
+0., 0., 0.
+\end{femasterdeck}
+\begin{noabaqus}
+Abaqus-style input uses regular \val{MASS}, \val{ROTARYI}, and \val{SPRING1} elements together with \cmd{MASS}, \cmd{ROTARY INERTIA}, and \cmd{SPRING}. Native \cmd{POINTMASS} is the legacy FEMaster variant that combines these diagonal properties directly on an NSET.
+\end{noabaqus}
+\end{dialectexamples}
+
+\keywordpage{MASS}
+
+\cmd{MASS} assigns an isotropic concentrated translational mass to one-node \val{MASS} elements. One scalar value \(m\) is applied independently to every point element in the target ELSET and produces
+\[
+M_e=\operatorname{diag}(m,m,m,0,0,0).
+\]
+A positive mass activates the three translational nodal directions. Several \val{MASS} elements may reference the same node; their assembled contributions are additive.
+
+The supported mapping is the isotropic form only. Abaqus anisotropic mass, orientation-dependent mass, and damping parameters are outside the current subset. Native FEMaster also retains \cmd{POINTMASS} as the legacy NSET-based variant when several diagonal point properties should be assigned together.
+
+\begin{keywordparameters}
+\key{ELSET} & required & Nonempty element set containing point elements. \\
+\key{TYPE} & optional & \val{ISOTROPIC}; currently the only supported form and the default. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{mass} & Non-negative isotropic translational mass assigned to every target element. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
+100, 2
+*MASS, ELSET=PAYLOAD_MASS
+0.01
+\end{femasterdeck}
+\begin{abaqusdeck}
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
+100, 2
+*MASS, ELSET=PAYLOAD_MASS
+0.01
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{ROTARY INERTIA}
+
+\cmd{ROTARY INERTIA} assigns concentrated rotary inertia to one-node \val{ROTARYI} elements. The first three data values are the diagonal moments \(I_{11}\), \(I_{22}\), and \(I_{33}\), which map directly to the three rotational nodal directions:
+\[
+M_e=\operatorname{diag}(0,0,0,I_{11},I_{22},I_{33}).
+\]
+
+The Abaqus data format additionally contains the products of inertia \(I_{12}\), \(I_{13}\), and \(I_{23}\). FEMaster parses these fields for input compatibility but currently requires all three to be zero because \texttt{PointMassSection} stores only diagonal rotary inertia. Missing off-diagonal fields are treated as zero. The \key{ORIENTATION} form is not supported by this mapping, so the three supported inertia directions are the point element's global nodal rotational directions. Native FEMaster also retains \cmd{POINTMASS} as the legacy NSET-based variant for diagonal rotary inertia.
+
+\begin{keywordparameters}
+\key{ELSET} & required & Nonempty element set containing \val{ROTARYI} point elements. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{I11, I22, I33} & Non-negative rotary inertias about the three supported axes. \\
+\val{I12, I13, I23} & Optional Abaqus tensor fields; currently required to be zero. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_INERTIA
+101, 2
+*ROTARY INERTIA, ELSET=PAYLOAD_INERTIA
+1.2e-3, 1.2e-3, 2.0e-3, 0., 0., 0.
+\end{femasterdeck}
+\begin{abaqusdeck}
+*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_INERTIA
+101, 2
+*ROTARY INERTIA, ELSET=PAYLOAD_INERTIA
+1.2e-3, 1.2e-3, 2.0e-3, 0., 0., 0.
+\end{abaqusdeck}
+\end{dialectexamples}
+
+\keywordpage{SPRING}
+
+\cmd{SPRING} assigns a constant linear ground stiffness to one-node \val{SPRING1} elements. The first data line selects one nodal degree of freedom and the second data line gives the corresponding scalar stiffness. Degrees of freedom 1--3 create translational springs; degrees of freedom 4--6 create rotational springs:
+\[
+\begin{array}{c|cccccc}
+\text{DOF} & 1 & 2 & 3 & 4 & 5 & 6 \\
+\hline
+\text{coefficient} & k_x & k_y & k_z & k_{rx} & k_{ry} & k_{rz}
+\end{array}
+\]
+
+The current mapping supports only real, constant, non-negative linear stiffness in the global nodal system. Abaqus \val{SPRING2} and \val{SPRINGA} elements, local \key{ORIENTATION}, nonlinear force--displacement data, frequency or field dependence, and complex stiffness are outside the supported subset. Native FEMaster also retains \cmd{POINTMASS} as the legacy NSET-based variant for diagonal translational and rotational ground springs.
+
+\begin{keywordparameters}
+\key{ELSET} & required & Nonempty element set containing \val{SPRING1} point elements. \\
+\end{keywordparameters}
+
+\begin{keyworddata}
+\val{dof} & Integer nodal degree of freedom from 1 through 6. \\
+\val{stiffness} & Non-negative constant linear spring stiffness. \\
+\end{keyworddata}
+
+\exampleheading
+\begin{dialectexamples}
+\begin{femasterdeck}
+*ELEMENT, TYPE=SPRING1, ELSET=SPRING_X
+102, 2
+*SPRING, ELSET=SPRING_X
+1
+1000.0
+
+*ELEMENT, TYPE=SPRING1, ELSET=ROTSPRING_Z
+103, 2
+*SPRING, ELSET=ROTSPRING_Z
+6
+25.0
+\end{femasterdeck}
+\begin{abaqusdeck}
+*ELEMENT, TYPE=SPRING1, ELSET=SPRING_X
+102, 2
+*SPRING, ELSET=SPRING_X
+1
+1000.0
+
+*ELEMENT, TYPE=SPRING1, ELSET=ROTSPRING_Z
+103, 2
+*SPRING, ELSET=ROTSPRING_Z
+6
+25.0
+\end{abaqusdeck}
+\end{dialectexamples}

@@ -7,12 +7,17 @@
  * in the active semantic Part before compilation; unqualified root definitions
  * use the model's default part.
  *
+ * One-node point-element labels `MASS`, `ROTARYI` and `SPRING1` share the
+ * zero-dimensional `model::PointElement` implementation. Their physical mass,
+ * rotary-inertia or ground-spring contribution is supplied later by the
+ * corresponding element-property command.
+ *
  * The registration preserves sparse user identifiers and natural connectivity.
  * Instance expansion and dense global enumeration are deliberately deferred to
  * `Model::compile()`.
  *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 26.08.2026
  */
 
 #pragma once
@@ -79,7 +84,7 @@ inline void register_element(dsl::Registry& registry, model::Model& model) {
                 .key("TYPE").required().allowed({
                     "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
                     "B33", "T3", "T3D2", "S3", "S4", "MITC4", "S6", "S8", "MITC8", "QSPT",
-                    "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT", "MASS"
+                    "MITC3FRT", "MITC4FRT", "MITC6FRT", "MITC8FRT", "MASS", "ROTARYI", "SPRING1"
                 })
         );
 
@@ -136,7 +141,11 @@ inline void register_element(dsl::Registry& registry, model::Model& model) {
         FEM_ADD_ELEMENT_VARIANT("MITC6FRT", FRTShellS6, 6);
         FEM_ADD_ELEMENT_VARIANT("MITC8FRT", FRTShellS8, 8);
         FEM_ADD_ELEMENT_VARIANT("MITC8", MITC8, 8);
+
+        // All supported one-node concentrated formulations share PointElement.
         FEM_ADD_ELEMENT_VARIANT("MASS", PointElement, 1);
+        FEM_ADD_ELEMENT_VARIANT("ROTARYI", PointElement, 1);
+        FEM_ADD_ELEMENT_VARIANT("SPRING1", PointElement, 1);
 
 #undef FEM_ADD_ELEMENT_VARIANT
 

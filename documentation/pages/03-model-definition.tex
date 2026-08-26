@@ -239,11 +239,11 @@ Element IDs are non-negative user labels and may also begin at \textbf{0}. They 
 
 The complete formulation reference is given in Chapter~\ref{chap:elements}. That chapter documents the supported solid, shell, beam, truss, and point elements individually, including node ordering, numerical behaviour, applicability, and the existing element schematics.
 
-The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native FEMaster accepts both \val{T3} and the Abaqus spelling \val{T3D2} for the two-node truss. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster additionally exposes the legacy shell types, MITC variants, FRT names, and \val{QSPT} directly.
+The native and Abaqus input names are not always identical. The solid labels \val{C3D4}, \val{C3D5}, \val{C3D6}, \val{C3D8}, \val{C3D8R}, \val{C3D10}, \val{C3D15}, \val{C3D20}, and \val{C3D20R} are shared. Native FEMaster accepts both \val{T3} and the Abaqus spelling \val{T3D2} for the two-node truss. Abaqus shell labels \val{S3/S3R}, \val{S4/S4R}, \val{S6/S6R}, and \val{S8/S8R} are read into the corresponding finite-rotation shell formulations. Native FEMaster additionally exposes the legacy shell types, MITC variants, FRT names, and \val{QSPT} directly. The one-node \val{MASS}, \val{ROTARYI}, and \val{SPRING1} labels are shared by both input dialects.
 
-\val{TYPE=MASS} defines a one-node point element in both input dialects. The element preserves its own element ID, one-node connectivity, ELSET membership, Part/Instance expansion, and property assignment. Without a point-mass property it is inert and activates no degrees of freedom. Its concentrated isotropic mass is assigned separately with \cmd{MASS, ELSET=...}; see Chapter~\ref{chap:advanced-features} and the point-element section of Chapter~\ref{chap:elements}.
+\val{TYPE=MASS}, \val{TYPE=ROTARYI}, and \val{TYPE=SPRING1} define one-node point elements. Each preserves its own element ID, one-node connectivity, ELSET membership, and Part/Instance expansion. Internally the three labels use the same point-element topology; the associated property keyword supplies the mechanical contribution. \cmd{MASS} assigns translational mass, \cmd{ROTARY INERTIA} assigns diagonal rotary inertia, and \cmd{SPRING} assigns one constant linear point-to-ground stiffness. The formulations and property syntax are documented in Chapter~\ref{chap:elements} and Chapter~\ref{chap:sections}.
 
-An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness; Chapter~\ref{chap:sections} documents these assignments. Likewise, a \val{MASS} point element requires a \cmd{MASS} property before it contributes concentrated inertia.
+An element definition provides topology and kinematics, but not the complete physical properties. Solids, shells, beams, and trusses require the corresponding Section definitions to obtain their intended material and geometric stiffness. Likewise, regular point elements remain mechanically inactive until the corresponding point property is assigned; Chapter~\ref{chap:sections} documents these assignments.
 
 \begin{keywordparameters}
 \key{TYPE} & required & Element formulation/type identifier. \\
@@ -252,7 +252,7 @@ An element definition provides topology and kinematics, but not the complete phy
 
 \begin{keyworddata}
 \val{id} & Non-negative user element ID; \val{0} is valid. \\
-\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \val{TYPE=MASS} uses exactly one node. \\
+\val{n1, n2, ...} & Node connectivity in the formulation-specific order. \val{MASS}, \val{ROTARYI}, and \val{SPRING1} use exactly one node. \\
 \end{keyworddata}
 
 \exampleheading
@@ -263,8 +263,12 @@ An element definition provides topology and kinematics, but not the complete phy
 0, 0, 10
 1, 10, 20
 
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
 100, 20
+*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_ROTARY
+101, 20
+*ELEMENT, TYPE=SPRING1, ELSET=PAYLOAD_SPRING
+102, 20
 
 *ELEMENT, TYPE=MITC4FRT, ELSET=PANEL
 10, 100, 110, 120, 130
@@ -274,8 +278,12 @@ An element definition provides topology and kinematics, but not the complete phy
 0, 0, 10
 1, 10, 20
 
-*ELEMENT, TYPE=MASS, ELSET=PAYLOAD
+*ELEMENT, TYPE=MASS, ELSET=PAYLOAD_MASS
 100, 20
+*ELEMENT, TYPE=ROTARYI, ELSET=PAYLOAD_ROTARY
+101, 20
+*ELEMENT, TYPE=SPRING1, ELSET=PAYLOAD_SPRING
+102, 20
 
 *ELEMENT, TYPE=S4, ELSET=PANEL
 10, 100, 110, 120, 130

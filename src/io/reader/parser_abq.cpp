@@ -40,6 +40,8 @@
 #include "commands/register_node.inl"
 #include "commands/register_nset.inl"
 #include "commands/register_part.inl"
+#include "commands/register_rotary_inertia.inl"
+#include "commands/register_spring.inl"
 #include "commands/register_surface.inl"
 #include "commands_abq/register_amplitude.inl"
 #include "commands_abq/register_boundary.inl"
@@ -118,6 +120,8 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
     commands::register_mass(registry, model());
+    commands::register_rotary_inertia(registry, model());
+    commands::register_spring(registry, model());
     commands::register_equation(registry, model());
     commands::register_coupling(registry, model());
 
@@ -160,7 +164,8 @@ void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
         "PART", "ENDPART", "ASSEMBLY", "ENDASSEMBLY", "INSTANCE", "ENDINSTANCE",
-        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "MASS", "AMPLITUDE", "SOLIDSECTION", "SHELLSECTION"
+        "NODE", "ELEMENT", "NSET", "ELSET", "SURFACE", "MASS", "ROTARYINERTIA", "SPRING",
+        "AMPLITUDE", "SOLIDSECTION", "SHELLSECTION"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }
@@ -168,15 +173,16 @@ void ParserAbq::configure_topology_pass(io::dsl::Registry& registry) {
 
 void ParserAbq::configure_assembly_pass(io::dsl::Registry& registry) {
     // Part-local sections were already expanded by Model::compile(). This pass
-    // materializes assembly-local regions, MASS sections and nodal transforms
-    // directly in dense identifier space.
+    // materializes assembly-local regions, point-element properties and nodal
+    // transforms directly in dense identifier space.
     commands::register_node(registry, model());
     commands_abq::register_element(registry, model());
     register_common_commands(registry);
 
     registry.set_active_mode(io::dsl::ActiveMode::ConsumeOnly);
     for (const char* command : {
-        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE", "MASS", "TRANSFORM"
+        "ASSEMBLY", "ENDASSEMBLY", "NSET", "ELSET", "SURFACE",
+        "MASS", "ROTARYINERTIA", "SPRING", "TRANSFORM"
     }) {
         registry.set_active_mode(command, io::dsl::ActiveMode::Active);
     }

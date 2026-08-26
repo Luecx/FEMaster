@@ -7,18 +7,17 @@
  * semantic Part. Dedicated mappings handle topology differences where an Abaqus
  * label requires adaptation to a supported FEMaster element.
  *
- * Abaqus `MASS` is represented by the one-node zero-dimensional `PointElement`.
- * The point element preserves element identity, ELSET membership and instance
- * expansion but contributes no matrices or active DOFs itself. A later `*MASS`
- * property reads its node connectivity and creates a separate nodal
- * `feature::PointMass`.
+ * Abaqus `MASS`, `ROTARYI` and `SPRING1` are represented by the same one-node
+ * zero-dimensional `PointElement`. The element preserves identity, ELSET
+ * membership and instance expansion; the corresponding `*MASS`,
+ * `*ROTARY INERTIA` or `*SPRING` property later supplies its physical section.
  *
  * Sparse part-local identifiers are retained during parsing. Instance expansion,
  * coordinate placement and dense assembly enumeration remain deferred to
  * `Model::compile()`.
  *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 26.08.2026
  */
 
 #pragma once
@@ -76,7 +75,8 @@ inline void register_element(dsl::Registry& registry, model::Model& model) {
                 .key("ELSET").optional("EALL")
                 .key("TYPE").required().allowed({
                     "C3D4", "C3D5", "C3D6", "C3D8", "C3D8R", "C3D10", "C3D15", "C3D20", "C3D20R",
-                    "B33", "T3D2", "S3", "S3R", "S4", "S4R", "S6", "S6R", "S8", "S8R", "MASS"
+                    "B33", "T3D2", "S3", "S3R", "S4", "S4R", "S6", "S6R", "S8", "S8R",
+                    "MASS", "ROTARYI", "SPRING1"
                 })
         );
 
@@ -127,7 +127,11 @@ inline void register_element(dsl::Registry& registry, model::Model& model) {
         FEM_ABQ_ELEMENT("S6R", FRTShellS6, 6);
         FEM_ABQ_ELEMENT("S8", FRTShellS8, 8);
         FEM_ABQ_ELEMENT("S8R", FRTShellS8, 8);
+
+        // Abaqus one-node concentrated formulations share PointElement internally.
         FEM_ABQ_ELEMENT("MASS", PointElement, 1);
+        FEM_ABQ_ELEMENT("ROTARYI", PointElement, 1);
+        FEM_ABQ_ELEMENT("SPRING1", PointElement, 1);
 
 #undef FEM_ABQ_ELEMENT
 
