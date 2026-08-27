@@ -22,6 +22,10 @@
  * therefore use identical external identifiers without repeated Instance
  * lookups.
  *
+ * Large mesh and result blocks are formatted into independent thread-local
+ * string buffers. The completed buffers are written sequentially in their
+ * original order so parallel formatting does not alter the FRD record order.
+ *
  * All compiled nodes are emitted, including nodes not referenced by supported
  * elements. Compiled element identifiers are written unchanged.
  *
@@ -34,14 +38,18 @@
 
 #include "writer_frd.h"
 
+#include "../../core/config.h"
 #include "../../model/element/element.h"
 #include "../../model/element/element_structural.h"
 #include "../../model/model_data.h"
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cmath>
-#include <iomanip>
+#include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace fem {
@@ -64,12 +72,137 @@ struct FRDComponent {
     static FRDComponent vcnorm(const std::string& name)               { return {name, 2, 0, 0, true };}
 };
 
-// FRD field definition and accepted FEMaster aliases
+/**
+ * @brief Defines one supported FRD result field.
+ *
+ * Aliases contain the normalized FEMaster names accepted for this field.
+ * Components describe the scalar, vector and tensor metadata emitted through
+ * FRD -5 records.
+ */
 struct FRDField {
     std::vector<std::string> aliases;
     std::string name;
     std::vector<FRDComponent> components;
 };
+
+
+/**
+ * Appends a left-aligned string using FRD fixed-width formatting.
+ */
+void append_string_left(std::string& buffer,
+                        std::string_view value,
+                        std::size_t width) {
+    buffer.append(value);
+
+    if (value.size() < width) {
+        buffer.append(width - value.size(), ' ');
+    }
+}
+
+/**
+ * Appends a right-aligned integer using locale-independent conversion.
+ */
+template<typename T>
+void append_integer(std::string& buffer,
+                    T value,
+                    std::size_t width = 0) {
+    char tmp[32];
+
+    const auto [end, ec] = std::to_chars(tmp, tmp + sizeof(tmp), value);
+
+    logging::error(ec == std::errc{},
+        "FrdWriter: failed to format integer");
+
+    const std::size_t length = static_cast<std::size_t>(end - tmp);
+
+    if (length < width) {
+        buffer.append(width - length, ' ');
+    }
+
+    buffer.append(tmp, length);
+}
+
+/**
+ * Appends one FRD floating-point value in uppercase scientific notation.
+ *
+ * FRD numerical records use five digits after the decimal point. Non-finite
+ * values are replaced by zero before formatting, preserving the previous writer
+ * behavior.
+ */
+void append_float(std::string& buffer,
+                  Precision value,
+                  std::size_t width = 12) {
+    char tmp[64];
+
+    if (!std::isfinite(value)) {
+        value = Precision(0);
+    }
+
+    const auto [end, ec] = std::to_chars(
+        tmp,
+        tmp + sizeof(tmp),
+        value,
+        std::chars_format::scientific,
+        5
+    );
+
+    logging::error(ec == std::errc{},
+        "FrdWriter: failed to format floating-point value");
+
+    const std::size_t length = static_cast<std::size_t>(end - tmp);
+
+    if (length < width) {
+        buffer.append(width - length, ' ');
+    }
+
+    for (char* ptr = tmp; ptr != end; ++ptr) {
+        buffer.push_back(*ptr == 'e' ? 'E' : *ptr);
+    }
+}
+
+/**
+ * Selects the number of formatting workers for one output block.
+ *
+ * Approximately one worker is enabled per 4096 rows or elements. The count is
+ * bounded by the configured FEMaster thread count and by 32 writer threads.
+ */
+ID output_thread_count(Index work_items) {
+#ifndef _OPENMP
+    (void) work_items;
+    return 1;
+#else
+    const Index blocks = std::max<Index>(1, (work_items + 4095) / 4096);
+    const ID useful_threads = static_cast<ID>(std::min<Index>(blocks, 32));
+
+    return std::max<ID>(1, std::min<ID>(global_config.max_threads, useful_threads));
+#endif
+}
+
+/**
+ * Creates one independent text buffer for every formatting worker.
+ */
+std::vector<std::string> create_thread_buffers(ID num_threads) {
+    std::vector<std::string> buffers(static_cast<std::size_t>(num_threads));
+
+    for (auto& buffer : buffers) {
+        buffer.reserve(4 * 1024 * 1024);
+    }
+
+    return buffers;
+}
+
+/**
+ * Writes completed worker buffers in their original block order.
+ */
+void write_thread_buffers(std::ofstream& file_path,
+                          const std::vector<std::string>& buffers) {
+    for (const auto& buffer : buffers) {
+        file_path.write(
+            buffer.data(),
+            static_cast<std::streamsize>(buffer.size())
+        );
+    }
+}
 
 /**
  * Extracts the numeric frame identifier encoded in a field name.
@@ -455,24 +588,214 @@ Precision field_value(const model::Field& field,
 }
 
 /**
- * Writes one finite floating-point value in the fixed FRD scientific format.
- *
- * Non-finite values are replaced by zero to prevent invalid numerical tokens
- * from entering the result file.
- *
- * @param file_path Active FRD output stream.
- * @param value Value to write.
- * @param width Output field width.
+ * Appends the FRD node-block header.
  */
-void write_float(std::ofstream& file_path,
-                 Precision value,
-                 int width = 12) {
-    file_path << std::right
-              << std::uppercase
-              << std::scientific
-              << std::setprecision(5)
-              << std::setw(width)
-              << (std::isfinite(value) ? value : 0);
+void append_node_block_header(std::string& buffer, Index node_count) {
+    buffer.append("    2C");
+    buffer.append(18, ' ');
+    append_integer(buffer, node_count, 12);
+    buffer.append(37, ' ');
+    buffer.push_back('1');
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends one -1 node-coordinate record.
+ */
+void append_node_line(std::string& buffer,
+                      ID node_id,
+                      Precision x,
+                      Precision y,
+                      Precision z) {
+    buffer.append(" -1");
+    append_integer(buffer, node_id, 10);
+    append_float(buffer, x);
+    append_float(buffer, y);
+    append_float(buffer, z);
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends the FRD element-block header.
+ */
+void append_element_block_header(std::string& buffer,
+                                 std::size_t element_count) {
+    buffer.append("    3C");
+    buffer.append(18, ' ');
+    append_integer(buffer, element_count, 12);
+    buffer.append(37, ' ');
+    buffer.push_back('1');
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends one -1 element-definition record.
+ */
+void append_element_header_line(std::string& buffer,
+                                ID element_id,
+                                int type) {
+    buffer.append(" -1");
+    append_integer(buffer, element_id, 10);
+    append_integer(buffer, type, 5);
+    append_integer(buffer, 0, 5);
+    append_integer(buffer, 0, 5);
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends the -2 connectivity records belonging to one element.
+ *
+ * FRD stores at most ten node identifiers on one connectivity line. Additional
+ * nodes continue on a new -2 record.
+ */
+void append_element_connectivity(std::string& buffer,
+                                 const std::vector<ID>& connectivity,
+                                 const std::vector<ID>& node_ids,
+                                 ID element_id) {
+    for (std::size_t local = 0; local < connectivity.size(); ++local) {
+        const ID node_id = connectivity[local];
+
+        logging::error(static_cast<std::size_t>(node_id) < node_ids.size(),
+            "FrdWriter: element ", element_id,
+            " references node ", node_id,
+            " outside the FRD node mapping");
+
+        if (local % 10 == 0) {
+            if (local != 0) {
+                buffer.push_back('\n');
+            }
+
+            buffer.append(" -2");
+        }
+
+        append_integer(
+            buffer,
+            node_ids[static_cast<std::size_t>(node_id)],
+            10
+        );
+    }
+
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends one 1PSTEP result-step metadata record.
+ */
+void append_result_step_line(std::string& buffer,
+                             int block,
+                             int frame,
+                             int step) {
+    buffer.append("    1PSTEP");
+    append_integer(buffer, block, 26);
+    append_integer(buffer, frame, 12);
+    append_integer(buffer, step, 12);
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends one 1PMODE metadata record.
+ */
+void append_result_mode_line(std::string& buffer, int frame) {
+    buffer.append("    1PMODE");
+    append_integer(buffer, frame, 26);
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends the 100CL result-control record.
+ */
+void append_result_control_line(std::string& buffer,
+                                int global_frame,
+                                Precision value,
+                                Index rows,
+                                int ictype,
+                                const char* analysis) {
+    buffer.append("  100CL  ");
+    append_integer(buffer, 100 + global_frame, 3);
+    buffer.push_back(' ');
+
+    append_float(buffer, value, 11);
+    append_integer(buffer, rows, 12);
+
+    buffer.append(21, ' ');
+    append_integer(buffer, ictype);
+    append_integer(buffer, global_frame, 5);
+
+    if (analysis[0] == '\0') {
+        buffer.append(11, ' ');
+    } else {
+        append_string_left(buffer, analysis, 11);
+    }
+
+    buffer.push_back('1');
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends the -4 field-definition record.
+ */
+void append_field_definition_line(std::string& buffer,
+                                  const FRDField& field) {
+    buffer.append(" -4  ");
+    append_string_left(buffer, field.name, 8);
+    append_integer(buffer, static_cast<int>(field.components.size()), 5);
+    append_integer(buffer, 1, 5);
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends one -5 component-definition record.
+ */
+void append_component_definition_line(std::string& buffer,
+                                      const FRDComponent& component) {
+    buffer.append(" -5  ");
+    append_string_left(buffer, component.name, 8);
+    append_integer(buffer, 1, 5);
+    append_integer(buffer, component.entity, 5);
+    append_integer(buffer, component.index_1, 5);
+    append_integer(buffer, component.index_2, 5);
+
+    if (component.derived) {
+        append_integer(buffer, 1, 5);
+        buffer.append(component.name);
+    }
+
+    buffer.push_back('\n');
+}
+
+/**
+ * Appends all -1/-2 numerical result records for one node.
+ *
+ * The first result line starts with the external node identifier. Additional
+ * components continue on -2 records after every six values.
+ */
+void append_result_node_lines(std::string& buffer,
+                              ID node_id,
+                              const model::Field& field,
+                              Index row,
+                              const FRDField& frd) {
+    constexpr Index values_per_line = 6;
+
+    for (Index component = 0;
+         component < static_cast<Index>(frd.components.size());
+         ++component) {
+
+        if (component == 0) {
+            buffer.append(" -1");
+            append_integer(buffer, node_id, 10);
+        } else if (component % values_per_line == 0) {
+            buffer.push_back('\n');
+            buffer.append(" -2");
+            buffer.append(10, ' ');
+        }
+
+        append_float(
+            buffer,
+            field_value(field, row, component, frd.components[component])
+        );
+    }
+
+    buffer.push_back('\n');
 }
 
 } // namespace
@@ -660,6 +983,10 @@ void FrdWriter::write_field(const model::Field& field,
  * not filtered by element connectivity, so isolated and otherwise unused nodes
  * remain represented in the FRD mesh.
  *
+ * Coordinate rows are formatted in contiguous blocks by independent workers.
+ * The buffers are subsequently written in block order to preserve dense node
+ * ordering.
+ *
  * @param model_data Compiled model providing the nodal position field.
  */
 void FrdWriter::write_nodes(const model::ModelData& model_data) {
@@ -668,26 +995,38 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
     logging::error(node_ids.size() == static_cast<std::size_t>(positions.rows),
         "FrdWriter: node id mapping does not match positions field");
 
-    file_path << "    2C"
-              << std::string(18, ' ')
-              << std::setw(12)
-              << static_cast<long long>(positions.rows)
-              << std::string(37, ' ')
-              << 1
-              << '\n';
+    // Write the block header before the parallel node data
+    std::string header;
+    header.reserve(128);
+    append_node_block_header(header, positions.rows);
+    file_path.write(header.data(), static_cast<std::streamsize>(header.size()));
 
-    for (Index row = 0; row < positions.rows; ++row) {
-        file_path << " -1"
-                  << std::setw(10)
-                  << static_cast<long long>(
-                         node_ids[static_cast<std::size_t>(row)]);
+    // Format contiguous node ranges independently
+    const ID num_threads = output_thread_count(positions.rows);
+    auto thread_buffers = create_thread_buffers(num_threads);
 
-        write_float(file_path, positions(row, 0));
-        write_float(file_path, positions(row, 1));
-        write_float(file_path, positions(row, 2));
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
+#endif
+    for (ID thread = 0; thread < num_threads; ++thread) {
+        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        file_path << '\n';
+        const Index begin = positions.rows * thread       / num_threads;
+        const Index end   = positions.rows * (thread + 1) / num_threads;
+
+        for (Index row = begin; row < end; ++row) {
+            append_node_line(
+                buffer,
+                node_ids[static_cast<std::size_t>(row)],
+                positions(row, 0),
+                positions(row, 1),
+                positions(row, 2)
+            );
+        }
     }
+
+    // Commit node ranges in their original dense order
+    write_thread_buffers(file_path, thread_buffers);
 
     file_path << " -3\n";
 }
@@ -703,6 +1042,9 @@ void FrdWriter::write_nodes(const model::ModelData& model_data) {
  * 15-node wedges, so these two element families are reordered explicitly.
  * Node-only models omit the connectivity block while retaining their nodal
  * geometry and result fields.
+ *
+ * Each worker formats complete elements so FRD connectivity records never cross
+ * thread-buffer boundaries.
  *
  * @param model_data Compiled model containing structural element topology.
  */
@@ -721,92 +1063,87 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
         return;
     }
 
-    file_path << "    3C"
-              << std::string(18, ' ')
-              << std::setw(12)
-              << static_cast<long long>(element_count)
-              << std::string(37, ' ')
-              << 1
-              << '\n';
+    // Write the element block header before the parallel element data
+    std::string header;
+    header.reserve(128);
+    append_element_block_header(header, element_count);
+    file_path.write(header.data(), static_cast<std::streamsize>(header.size()));
 
-    // Emit every supported element in compiled order
-    for (const auto& element : model_data.elements) {
-        if (!element) {
-            continue;
-        }
+    // Divide the compiled element range into contiguous worker blocks
+    const Index compiled_count = static_cast<Index>(model_data.elements.size());
+    const ID num_threads = output_thread_count(compiled_count);
+    auto thread_buffers = create_thread_buffers(num_threads);
 
-        const int type = frd_element_type(*element);
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
+#endif
+    for (ID thread = 0; thread < num_threads; ++thread) {
+        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        if (type == 0) {
-            continue;
-        }
+        const Index begin = compiled_count * thread       / num_threads;
+        const Index end   = compiled_count * (thread + 1) / num_threads;
 
-        file_path << " -1"
-                  << std::setw(10)
-                  << static_cast<long long>(element->elem_id)
-                  << std::setw(5) << type
-                  << std::setw(5) << 0
-                  << std::setw(5) << 0
-                  << '\n';
+        for (Index elem_row = begin; elem_row < end; ++elem_row) {
+            const auto& element =
+                model_data.elements[static_cast<std::size_t>(elem_row)];
 
-        // Copy connectivity so FRD-specific high-order permutations remain local
-        std::vector<ID> connectivity;
-        connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
-
-        for (ID node_id : *element) {
-            connectivity.push_back(node_id);
-        }
-
-        if (type == 4 && connectivity.size() == 20) {
-            const std::vector<ID> internal = connectivity;
-            const int order[] = {
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                10, 11, 16, 17, 18, 19, 12, 13, 14, 15
-            };
-
-            for (std::size_t i = 0; i < connectivity.size(); ++i) {
-                connectivity[i] = internal[order[i]];
+            if (!element) {
+                continue;
             }
-        }
 
-        if (type == 5 && connectivity.size() == 15) {
-            const std::vector<ID> internal = connectivity;
-            const int order[] = {
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
-                13, 14, 9, 10, 11
-            };
+            const int type = frd_element_type(*element);
 
-            for (std::size_t i = 0; i < connectivity.size(); ++i) {
-                connectivity[i] = internal[order[i]];
+            if (type == 0) {
+                continue;
             }
-        }
 
-        // Translate dense connectivity to the external FRD node numbering
-        Dim local = 0;
+            append_element_header_line(buffer, element->elem_id, type);
 
-        for (ID node_id : connectivity) {
-            if (local % static_cast<Dim>(10) == 0) {
-                if (local != 0) {
-                    file_path << '\n';
+            // Copy connectivity so FRD-specific high-order permutations remain local
+            std::vector<ID> connectivity;
+            connectivity.reserve(static_cast<std::size_t>(element->n_nodes()));
+
+            for (ID node_id : *element) {
+                connectivity.push_back(node_id);
+            }
+
+            if (type == 4 && connectivity.size() == 20) {
+                const std::vector<ID> internal = connectivity;
+
+                const int order[] = {
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    10, 11, 16, 17, 18, 19, 12, 13, 14, 15
+                };
+
+                for (std::size_t i = 0; i < connectivity.size(); ++i) {
+                    connectivity[i] = internal[order[i]];
                 }
-
-                file_path << " -2";
             }
 
-            logging::error(static_cast<std::size_t>(node_id) < node_ids.size(),
-                "FrdWriter: element ", element->elem_id,
-                " references node ", node_id,
-                " outside the FRD node mapping");
+            if (type == 5 && connectivity.size() == 15) {
+                const std::vector<ID> internal = connectivity;
 
-            file_path << std::setw(10)
-                      << static_cast<long long>(
-                             node_ids[static_cast<std::size_t>(node_id)]);
+                const int order[] = {
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
+                    13, 14, 9, 10, 11
+                };
 
-            ++local;
+                for (std::size_t i = 0; i < connectivity.size(); ++i) {
+                    connectivity[i] = internal[order[i]];
+                }
+            }
+
+            append_element_connectivity(
+                buffer,
+                connectivity,
+                node_ids,
+                element->elem_id
+            );
         }
-
-        file_path << '\n';
     }
+
+    // Commit complete element ranges in compiled order
+    write_thread_buffers(file_path, thread_buffers);
 
     file_path << " -3\n";
 }
@@ -818,6 +1155,8 @@ void FrdWriter::write_elements(const model::ModelData& model_data) {
  * therefore translated by indexing the same `node_ids` vector used for mesh
  * connectivity, guaranteeing consistent numbering across geometry and results.
  *
+ * Result metadata is small and remains serial. The potentially large -1/-2
+ * numerical record block is formatted in parallel using contiguous node ranges.
  * Derived vector norms are evaluated during scalar output through `field_value`.
  *
  * @param field Nodal result field.
@@ -858,92 +1197,62 @@ void FrdWriter::write_nodal_field(const model::Field& field,
     const int ictype       = frd_increment_type(current_step_type);
     const char* analysis   = frd_analysis_name(current_step_type);
 
-    // Write FRD result-step metadata
-    file_path << "    1PSTEP"
-              << std::setw(26) << block
-              << std::setw(12) << frame
-              << std::setw(12) << step
-              << '\n';
+    // Build all compact result metadata records in one local buffer
+    std::string metadata;
+    metadata.reserve(1024);
+
+    append_result_step_line(metadata, block, frame, step);
 
     if (current_step_type == WriterStepType::Eigenfrequency) {
-        file_path << "    1PMODE"
-                  << std::setw(26) << frame
-                  << '\n';
+        append_result_mode_line(metadata, frame);
     }
 
-    file_path << "  100CL  "
-              << std::setw(3) << 100 + global_frame
-              << ' ';
+    append_result_control_line(
+        metadata,
+        global_frame,
+        value,
+        field.rows,
+        ictype,
+        analysis
+    );
 
-    write_float(file_path, value, 11);
-
-    file_path << std::setw(12) << field.rows
-              << std::string(21, ' ')
-              << ictype
-              << std::setw(5) << global_frame;
-
-    if (analysis[0] == '\0') {
-        file_path << std::string(11, ' ');
-    } else {
-        file_path << std::left
-                  << std::setw(11) << analysis
-                  << std::right;
-    }
-
-    file_path << 1 << '\n';
-
-    // Describe the field and its scalar/vector/tensor components
-    file_path << " -4  "
-              << std::left
-              << std::setw(8) << frd.name
-              << std::right
-              << std::setw(5) << static_cast<int>(frd.components.size())
-              << std::setw(5) << 1
-              << '\n';
+    append_field_definition_line(metadata, frd);
 
     for (const FRDComponent& component : frd.components) {
-        file_path << " -5  "
-                  << std::left
-                  << std::setw(8) << component.name
-                  << std::right
-                  << std::setw(5) << 1
-                  << std::setw(5) << component.entity
-                  << std::setw(5) << component.index_1
-                  << std::setw(5) << component.index_2;
-
-        if (component.derived) {
-            file_path << std::setw(5)
-                      << 1
-                      << component.name;
-        }
-
-        file_path << '\n';
+        append_component_definition_line(metadata, component);
     }
 
-    // Emit values in dense row order but address each row by its FRD node id
-    constexpr Index values_per_line = 6;
+    file_path.write(
+        metadata.data(),
+        static_cast<std::streamsize>(metadata.size())
+    );
 
-    for (Index row = 0; row < field.rows; ++row) {
-        for (Index component = 0;
-             component < static_cast<Index>(frd.components.size());
-             ++component) {
-            if (component == 0) {
-                file_path << " -1"
-                          << std::setw(10)
-                          << static_cast<long long>(
-                                 node_ids[static_cast<std::size_t>(row)]);
-            } else if (component % values_per_line == 0) {
-                file_path << '\n'
-                          << " -2"
-                          << std::string(10, ' ');
-            }
+    // Format contiguous node-result ranges independently
+    const ID num_threads = output_thread_count(field.rows);
+    auto thread_buffers = create_thread_buffers(num_threads);
 
-            write_float(file_path,
-                field_value(field, row, component, frd.components[component]));
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
+#endif
+    for (ID thread = 0; thread < num_threads; ++thread) {
+        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+
+        const Index begin = field.rows * thread       / num_threads;
+        const Index end   = field.rows * (thread + 1) / num_threads;
+
+        for (Index row = begin; row < end; ++row) {
+            append_result_node_lines(
+                buffer,
+                node_ids[static_cast<std::size_t>(row)],
+                field,
+                row,
+                frd
+            );
         }
-
-        file_path << '\n';
     }
+
+    // Preserve dense node order in the completed result block
+    write_thread_buffers(file_path, thread_buffers);
 
     file_path << " -3\n";
 }
