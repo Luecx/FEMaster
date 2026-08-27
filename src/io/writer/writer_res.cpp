@@ -6,6 +6,10 @@
  * converts dense assembly identifiers to semantic result identifiers once from
  * the compiled Part/Instance topology and caches the resulting strings.
  *
+ * Numerical field data is formatted into thread-local text buffers before being
+ * written to disk. Large fields may therefore be formatted in parallel while
+ * preserving their deterministic row order in the final RES file.
+ *
  * The implicit default Instance preserves the original part-local identifier:
  *
  *     17
@@ -26,18 +30,156 @@
 
 #include "writer_res.h"
 
+#include "../../core/config.h"
 #include "../../model/element/element.h"
 #include "../../model/model_data.h"
 
+#include <algorithm>
+#include <charconv>
 #include <cstddef>
-#include <iomanip>
+#include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace fem {
 namespace io {
 namespace writer {
 
 namespace {
+
+/**
+ * Appends a right-aligned string value to a RES output buffer.
+ *
+ * The requested width is a minimum width and therefore follows the behavior of
+ * `std::setw`: values longer than the requested width are written completely.
+ */
+void append_string(std::string& buffer,
+                   std::string_view value,
+                   std::size_t width = 16) {
+    if (value.size() < width) {
+        buffer.append(width - value.size(), ' ');
+    }
+
+    buffer.append(value);
+}
+
+/**
+ * Appends a right-aligned integer value to a RES output buffer.
+ *
+ * Integer conversion uses `std::to_chars` to avoid locale handling and stream
+ * formatting overhead in the inner result-writing loops.
+ */
+template<typename T>
+void append_integer(std::string& buffer,
+                    T value,
+                    std::size_t width = 16) {
+    char tmp[32];
+
+    const auto [end, ec] = std::to_chars(tmp, tmp + sizeof(tmp), value);
+
+    logging::error(ec == std::errc{},
+        "ResWriter: failed to format integer");
+
+    const std::size_t length = static_cast<std::size_t>(end - tmp);
+
+    if (length < width) {
+        buffer.append(width - length, ' ');
+    }
+
+    buffer.append(tmp, length);
+}
+
+/**
+ * Appends a right-aligned floating-point value in scientific notation.
+ *
+ * Six digits after the decimal point preserve the formatting previously
+ * produced by an `std::ofstream` in scientific mode with its default precision.
+ */
+void append_precision(std::string& buffer,
+                      Precision value,
+                      std::size_t width = 16) {
+    char tmp[64];
+
+    const auto [end, ec] = std::to_chars(
+        tmp,
+        tmp + sizeof(tmp),
+        value,
+        std::chars_format::scientific,
+        6
+    );
+
+    logging::error(ec == std::errc{},
+        "ResWriter: failed to format floating-point value");
+
+    const std::size_t length = static_cast<std::size_t>(end - tmp);
+
+    if (length < width) {
+        buffer.append(width - length, ' ');
+    }
+
+    buffer.append(tmp, length);
+}
+
+/**
+ * Appends all numerical components of one field row and terminates the row.
+ */
+void append_field_values(std::string& buffer,
+                         const model::Field& field,
+                         Index row) {
+    for (Index component = 0; component < field.components; ++component) {
+        append_precision(buffer, field(row, component));
+    }
+
+    buffer.push_back('\n');
+}
+
+/**
+ * Selects the number of workers used to format one RES field.
+ *
+ * Small fields remain single-threaded to avoid OpenMP and buffer-management
+ * overhead. Large fields use at most one worker per 4096 work items and never
+ * exceed either the configured FEMaster thread count or 32 writer threads.
+ */
+ID output_thread_count(Index work_items) {
+#ifndef _OPENMP
+    (void) work_items;
+    return 1;
+#else
+    const ID useful_threads = static_cast<ID>(
+        std::min<Index>(std::max<Index>(1, work_items / 4096), 32)
+    );
+
+    return std::max<ID>(1, std::min<ID>(global_config.max_threads, useful_threads));
+#endif
+}
+
+/**
+ * Creates one independent output buffer for every formatting worker.
+ */
+std::vector<std::string> create_thread_buffers(ID num_threads) {
+    std::vector<std::string> buffers(static_cast<std::size_t>(num_threads));
+
+    for (auto& buffer : buffers) {
+        buffer.reserve(16 * 1024 * 1024);
+    }
+
+    return buffers;
+}
+
+/**
+ * Writes completed worker buffers sequentially to preserve field row order.
+ */
+void write_thread_buffers(std::ofstream& file_path,
+                          const std::vector<std::string>& buffers) {
+    for (const auto& buffer : buffers) {
+        file_path.write(
+            buffer.data(),
+            static_cast<std::streamsize>(buffer.size())
+        );
+    }
+}
 
 /**
  * Converts a field domain to its textual RES representation.
@@ -86,20 +228,11 @@ void write_indexed_field_header(std::ofstream& file_path,
 }
 
 /**
- * Writes all numerical components of one field row.
- */
-void write_field_values(std::ofstream& file_path,
-                        const model::Field& field,
-                        Index row) {
-    for (Index j = 0; j < field.components; ++j) {
-        file_path << std::setw(16) << field(row, j);
-    }
-
-    file_path << '\n';
-}
-
-/**
  * Writes a field without explicit entity identifiers.
+ *
+ * Numerical rows are divided into contiguous ranges. Each worker formats one
+ * range into an independent string buffer, after which the buffers are written
+ * sequentially so the original dense row ordering is retained.
  *
  * This path is retained for UNKNOWN fields. All entity-based NODE and ELEMENT
  * domains are written through indexed output instead.
@@ -115,11 +248,27 @@ void write_dense_field(std::ofstream& file_path,
         static_cast<int>(field.rows)
     );
 
-    file_path.setf(std::ios::scientific, std::ios::floatfield);
+    // Allocate one contiguous output buffer for every formatting worker
+    const ID num_threads = output_thread_count(field.rows);
+    auto thread_buffers = create_thread_buffers(num_threads);
 
-    for (Index i = 0; i < field.rows; ++i) {
-        write_field_values(file_path, field, i);
+    // Format contiguous row ranges independently
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
+#endif
+    for (ID thread = 0; thread < num_threads; ++thread) {
+        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
+
+        const Index begin = field.rows * thread       / num_threads;
+        const Index end   = field.rows * (thread + 1) / num_threads;
+
+        for (Index row = begin; row < end; ++row) {
+            append_field_values(buffer, field, row);
+        }
     }
+
+    // Preserve dense row order while committing the formatted text to disk
+    write_thread_buffers(file_path, thread_buffers);
 
     file_path << "END FIELD\n";
 }
@@ -127,9 +276,15 @@ void write_dense_field(std::ofstream& file_path,
 /**
  * Writes one NODE or ELEMENT field with an explicit semantic entity identifier.
  *
- * Field rows remain in dense assembly order. The corresponding semantic
- * identifier is supplied through `ids`, so no result interpretation depends on
- * the dense row number.
+ * Field rows remain in dense assembly order. Each worker receives one contiguous
+ * row range and formats both the semantic identifier and numerical field values
+ * into its private output buffer. Worker buffers are subsequently written in
+ * their original range order.
+ *
+ * @param file_path Active RES output stream.
+ * @param field Field whose rows are written.
+ * @param field_name Name stored in the RES field header.
+ * @param ids Semantic identifier corresponding to every dense field row.
  */
 void write_indexed_field(std::ofstream& file_path,
                          const model::Field& field,
@@ -147,14 +302,28 @@ void write_indexed_field(std::ofstream& file_path,
         static_cast<int>(field.rows)
     );
 
-    file_path.setf(std::ios::scientific, std::ios::floatfield);
+    // Allocate one contiguous output buffer for every formatting worker
+    const ID num_threads = output_thread_count(field.rows);
+    auto thread_buffers = create_thread_buffers(num_threads);
 
-    for (Index row = 0; row < field.rows; ++row) {
-        file_path << std::setw(16)
-                  << ids[static_cast<std::size_t>(row)];
+    // Format semantic identifiers and field rows independently
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
+#endif
+    for (ID thread = 0; thread < num_threads; ++thread) {
+        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        write_field_values(file_path, field, row);
+        const Index begin = field.rows * thread       / num_threads;
+        const Index end   = field.rows * (thread + 1) / num_threads;
+
+        for (Index row = begin; row < end; ++row) {
+            append_string(buffer, ids[static_cast<std::size_t>(row)]);
+            append_field_values(buffer, field, row);
+        }
     }
+
+    // Preserve dense row order while committing the formatted text to disk
+    write_thread_buffers(file_path, thread_buffers);
 
     file_path << "END FIELD\n";
 }
@@ -165,6 +334,19 @@ void write_indexed_field(std::ofstream& file_path,
  * The first index identifies the element using its RES identifier. The second
  * index retains the existing local node, integration-point or material-point
  * enumeration within that element.
+ *
+ * Elements are split into contiguous ranges so every worker owns complete
+ * elements and their associated local rows. This preserves the established
+ * element-major ordering while allowing numerical text conversion to run in
+ * parallel without synchronization.
+ *
+ * @param file_path Active RES output stream.
+ * @param field Element-location field whose rows are written.
+ * @param field_name Name stored in the RES field header.
+ * @param model_data Compiled model providing the element enumeration.
+ * @param element_ids Semantic identifier corresponding to every dense element.
+ * @param offsets Prefix offsets mapping elements to field-row ranges.
+ * @param offset_name Human-readable offset name used in diagnostics.
  */
 void write_element_location_field(std::ofstream& file_path,
                                   const model::Field& field,
@@ -191,34 +373,49 @@ void write_element_location_field(std::ofstream& file_path,
         static_cast<int>(field.rows)
     );
 
-    file_path.setf(std::ios::scientific, std::ios::floatfield);
+    // Keep complete element ranges together inside one formatting worker
+    const ID num_threads = output_thread_count(element_count);
+    auto thread_buffers = create_thread_buffers(num_threads);
 
-    for (Index elem_row = 0; elem_row < element_count; ++elem_row) {
-        const auto& element =
-            model_data.elements[static_cast<std::size_t>(elem_row)];
+    // Format each contiguous element range into its private output buffer
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(num_threads) schedule(static, 1)
+#endif
+    for (ID thread = 0; thread < num_threads; ++thread) {
+        auto& buffer = thread_buffers[static_cast<std::size_t>(thread)];
 
-        if (!element) {
-            continue;
-        }
+        const Index start_index = element_count * thread       / num_threads;
+        const Index end_index   = element_count * (thread + 1) / num_threads;
 
-        const Index begin = static_cast<Index>(offsets(elem_row, 0));
-        const Index end   = static_cast<Index>(offsets(elem_row + 1, 0));
+        for (Index elem_row = start_index; elem_row < end_index; ++elem_row) {
+            const auto& element =
+                model_data.elements[static_cast<std::size_t>(elem_row)];
 
-        logging::error(begin <= end && end <= field.rows,
-            "ResWriter: invalid ", offset_name, " span for element ", elem_row);
+            if (!element) {
+                continue;
+            }
 
-        const std::string& elem_id =
-            element_ids[static_cast<std::size_t>(elem_row)];
+            const Index begin = static_cast<Index>(offsets(elem_row, 0));
+            const Index end   = static_cast<Index>(offsets(elem_row + 1, 0));
 
-        for (Index local = 0; local < end - begin; ++local) {
-            const Index row = begin + local;
+            logging::error(begin <= end && end <= field.rows,
+                "ResWriter: invalid ", offset_name, " span for element ", elem_row);
 
-            file_path << std::setw(16) << elem_id
-                      << std::setw(16) << local;
+            const std::string& elem_id =
+                element_ids[static_cast<std::size_t>(elem_row)];
 
-            write_field_values(file_path, field, row);
+            for (Index local = 0; local < end - begin; ++local) {
+                const Index row = begin + local;
+
+                append_string(buffer, elem_id);
+                append_integer(buffer, local);
+                append_field_values(buffer, field, row);
+            }
         }
     }
+
+    // Preserve element-major ordering while committing the buffers to disk
+    write_thread_buffers(file_path, thread_buffers);
 
     file_path << "END FIELD\n";
 }
