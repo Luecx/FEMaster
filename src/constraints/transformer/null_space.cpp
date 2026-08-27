@@ -156,6 +156,21 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
             }
         }
 
+        // Place sparsely participating DOFs first so the basic null-space
+        // partition preferentially eliminates local slave variables instead of
+        // strongly connected interpolation masters. Keeping the global DOF as
+        // a deterministic tie breaker makes the resulting map independent of
+        // sparse insertion order.
+        std::stable_sort(
+            preprocessed.used_columns.begin(),
+            preprocessed.used_columns.end(),
+            [&](int lhs, int rhs) {
+                const Index lhs_count = preprocessed.C.col(lhs).nonZeros();
+                const Index rhs_count = preprocessed.C.col(rhs).nonZeros();
+                return lhs_count != rhs_count ? lhs_count < rhs_count : lhs < rhs;
+            }
+        );
+
         TripletList compact_entries{};
         compact_entries.reserve(preprocessed.C.nonZeros());
         for (int local_column = 0;
@@ -218,7 +233,7 @@ build_null_space(const ConstraintSystem& system, const NullSpaceOptions& options
     }
 
     // Factorize unresolved constraints with column pivoting
-    Eigen::SparseQR<SparseMatrix, Eigen::COLAMDOrdering<int>> qr{};
+    Eigen::SparseQR<SparseMatrix, Eigen::NaturalOrdering<int>> qr{};
     SparseMatrix R{};
     qr_time = Timer::measure_time([&]() {
         const Precision pivot_tolerance = std::min<Precision>(
