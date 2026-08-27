@@ -1,0 +1,79 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout FEMaster
+        uses: actions/checkout@v4
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Install Intel oneMKL
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gpg
+
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
+            gpg --dearmor | \
+            sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | \
+            sudo tee /etc/apt/sources.list.d/oneAPI.list
+
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-mkl-devel intel-oneapi-openmp
+
+      - name: Configure FEMaster
+        shell: bash
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+
+          cmake --preset linux-mkl-omp \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build FEMaster
+        shell: bash
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset linux-mkl-omp
+
+      - name: Checkout benchmarks
+        uses: actions/checkout@v4
+        with:
+          repository: Luecx/FEMaster-Benchmarks
+          path: benchmarks
+          lfs: true
+
+      - name: Install benchmark dependencies
+        run: pip install rich
+
+      - name: Run benchmarks
+        run: |
+          python benchmarks/_scripts/run.py \
+            build/linux-mkl-omp/bin/FEMaster \
+            --runs 3
