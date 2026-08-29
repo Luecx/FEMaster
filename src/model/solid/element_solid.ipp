@@ -392,6 +392,78 @@ SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) 
     return res;
 }
 
+template<Index N>
+MapMatrix
+SolidElement<N>::conductivity(Precision* buffer) {
+    StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+
+    // store the section / material properties
+    auto* section = this->get_section();
+
+    logging::error(section->material_->has_thermal_conductivity(),
+        "Material has no thermal conductivity at element ", elem_id);
+
+    auto cond = section->material_->get_thermal_conductivity();
+
+    // Evaluate one constitutive state row for every stiffness quadrature point
+    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
+        [this, &reference_coords, &cond](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
+            Precision det0;
+            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+            return StaticMatrix<N, N>(dN_dX * cond * dN_dX.transpose() * det0);
+    };
+    StaticMatrix<N, N> conductivity = integration_scheme().integrate(func);
+
+    // Remove only numerical asymmetry from the analytically symmetric material tangent
+    conductivity = 0.5 * (conductivity + conductivity.transpose()); // Symmetrize
+
+    MapMatrix mapped{buffer, N, N};
+    mapped = conductivity;
+    return mapped;
+}
+
+template<Index N>
+MapMatrix
+SolidElement<N>::capacity(Precision* buffer) {
+    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+
+    auto* section = this->get_section();
+
+    logging::error(section->material_->has_density(),
+        "Material has no density at element ", elem_id);
+    logging::error(section->material_->has_thermal_specific_heat(),
+        "Material has no specific heat at element ", elem_id);
+
+    const Precision rho = section->material_->get_density();
+    const Precision cp  = section->material_->get_thermal_specific_heat();
+
+    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
+        [this, &reference_coords, rho, cp](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
+            Precision det0;
+
+            const StaticMatrix<N, 1> Nf =
+                this->shape_function(r, s, t);
+
+            const StaticMatrix<N, D> dN_dX =
+                this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+
+            (void) dN_dX;
+
+            return StaticMatrix<N, N>(Nf * Nf.transpose() * (rho * cp * det0));
+    };
+
+    StaticMatrix<N, N> capacity =
+        integration_scheme().integrate(func);
+
+    capacity = StaticMatrix<N, N>(
+        0.5 * (capacity + capacity.transpose())
+    );
+
+    MapMatrix mapped{buffer, N, N};
+    mapped = capacity;
+    return mapped;
+}
+
 /**
  * Integrates the current Total-Lagrangian material stiffness.
  *
@@ -409,7 +481,7 @@ MapMatrix
 SolidElement<N>::stiffness(Precision* buffer) {
     // Collect both configurations once for all stiffness integration points
     StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-    StaticMatrix<N, D> current_coords = this->node_coords_current();
+    StaticMatrix<N, D> current_coords   = this->node_coords_current();
 
     Index ip = 0;
 

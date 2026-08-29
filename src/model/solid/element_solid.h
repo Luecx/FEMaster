@@ -23,6 +23,7 @@
 #include "../../material/stress/volume_stress_cauchy.h"
 #include "../../material/stress/volume_stress_pk2.h"
 #include "../element/element_structural.h"
+#include "../element/element_thermal.h"
 #include "../geometry/surface/surface.h"
 
 #include <array>
@@ -41,7 +42,7 @@ namespace fem::model {
  * evaluation.
  */
 template<Index N>
-struct SolidElement : StructuralElement {
+struct SolidElement : StructuralElement, ThermalElement{
     static constexpr Dim D        = 3;
     static constexpr Dim n_strain = 6;
 
@@ -167,13 +168,15 @@ public:
     // performs exactly one in-place constitutive update per quadrature point and
     // reuses the resulting PK2 stress for material tangent, geometric tangent,
     // stored integration-point state and matching internal force.
-    MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
+    MapMatrix mass             (Precision* buffer) override;
+    MapMatrix conductivity     (Precision* buffer) override;
+    MapMatrix capacity         (Precision* buffer) override;
+    MapMatrix stiffness        (Precision* buffer) override;
+    MapMatrix stiffness_geom   (Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
     MapMatrix stiffness_tangent(Precision* buffer,
                                 Field&       ip_stress_state,
                                 NodeData&    nodal_forces,
                                 const Field& displacement) override;
-    MapMatrix mass(Precision* buffer) override;
 
     Precision volume() override;
 
@@ -198,20 +201,30 @@ public:
     // state for arbitrary output coordinates. Nonlinear stored stress remains
     // PK2 for Total-Lagrangian force and geometric-stiffness recovery; user
     // stress output is pushed forward to Cauchy stress.
-    void compute_stress_strain(Field*           strain,
-                               Field*           stress,
-                               const Field&     displacement,
-                               const RowMatrix& rst,
-                               int              offset,
-                               bool             use_green_lagrange_nl) override;
-    void compute_stress_state(Field&       stress_state,
-                              const Field& displacement,
-                              int          offset,
-                              bool         use_green_lagrange_nl) override;
-    void compute_internal_force_nonlinear(Field&       node_forces,
-                                          const Field& ip_stress) override;
-    void compute_compliance(Field& displacement, Field& result) override;
-    void compute_compliance_angle_derivative(Field& displacement, Field& result) override;
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        bool             use_green_lagrange_nl) override;
+    void compute_stress_state(
+        Field&       stress_state,
+        const Field& displacement,
+        int          offset,
+        bool         use_green_lagrange_nl) override;
+    void compute_internal_force_nonlinear(
+        Field&       node_forces,
+        const Field& ip_stress) override;
+    void compute_compliance(
+        Field& displacement,
+        Field& result) override;
+    void compute_compliance_angle_derivative(
+        Field& displacement,
+        Field& result) override;
+    void compute_heat_flux(
+        Field& heat_flux,
+        const Field& temperature) override;
 
     template<class ElementType>
     static bool test_implementation(bool print = false);

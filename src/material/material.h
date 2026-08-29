@@ -58,38 +58,29 @@ struct Material : public Namable {
         m_elastic = ElasticityPtr(new T(std::forward<Args>(args)...));
     }
 
-    /// Indicates whether the thermal capacity has been set.
-    bool has_thermal_capacity() const { return m_thermal_capacity >= Precision(0); }
+    bool has_thermal_specific_heat() const { return m_thermal_specific_heat >= Precision(0); }
+    bool has_thermal_conductivity() const { return m_thermal_conductivity >= Precision(0); }
 
-    /// Assigns the thermal capacity value.
-    void set_thermal_capacity(Precision value) { m_thermal_capacity = value; }
+    Precision get_thermal_specific_heat() const { return m_thermal_specific_heat; }
+    Precision get_thermal_conductivity() const { return m_thermal_conductivity; }
 
-    /// Retrieves the thermal capacity.
-    Precision get_thermal_capacity() const { return m_thermal_capacity; }
+    void set_thermal_specific_heat(Precision value) { m_thermal_specific_heat = value; }
+    void set_thermal_conductivity(Precision value) { m_thermal_conductivity = value; }
 
-    /// Indicates whether the thermal expansion coefficient has been set.
     bool has_thermal_expansion() const { return m_thermal_expansion >= Precision(0); }
-
-    /// Assigns the thermal expansion coefficient.
     void set_thermal_expansion(Precision value) { m_thermal_expansion = value; }
-
-    /// Retrieves the thermal expansion coefficient.
     Precision get_thermal_expansion() const { return m_thermal_expansion; }
 
-    /// Indicates whether the density has been set.
     bool has_density() const { return m_density >= Precision(0); }
-
-    /// Assigns the density value.
     void set_density(Precision value);
-
-    /// Retrieves the density.
     Precision get_density() const { return m_density; }
 
 private:
     ElasticityPtr m_elastic = nullptr; ///< Elasticity model associated with the material.
-    Precision m_thermal_capacity = Precision(-1); ///< Thermal capacity value.
-    Precision m_thermal_expansion = Precision(-1); ///< Thermal expansion coefficient.
-    Precision m_density = Precision(-1); ///< Density value.
+    Precision m_thermal_specific_heat   = Precision(-1); ///< Thermal capacity value.
+    Precision m_thermal_conductivity    = Precision(-1); ///< Thermal conductivity value.
+    Precision m_thermal_expansion       = Precision(-1); ///< Thermal expansion coefficient.
+    Precision m_density                 = Precision(-1); ///< Density value.
 };
 } // namespace material
 } // namespace fem

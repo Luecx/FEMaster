@@ -14,6 +14,7 @@
 #pragma once
 
 #include "../../cos/rectangular_system.h"
+#include "../../section/section_solid.h"
 
 namespace fem::model {
 
@@ -350,6 +351,71 @@ void SolidElement<N>::compute_internal_force_nonlinear(Field& node_forces,
             for (Index d = 0; d < D; ++d) {
                 node_forces(node_id, d) += local_force(D * a + d);
             }
+        }
+    }
+}
+
+/**
+ * Recovers the global conductive heat flux at every solid integration point.
+ *
+ * The scalar nodal temperature field is differentiated with respect to global
+ * reference coordinates. For the currently supported isotropic conductivity,
+ * Fourier's law is
+ *
+ *     q = -k grad_X(T)
+ *       = -k (dN/dX)^T T_e.
+ *
+ * Results are written to the element's globally enumerated `ELEMENT_IP` rows
+ * using the same quadrature rule that defines `num_ip()`. The output components
+ * are the global x-, y- and z-components of heat flux.
+ *
+ * @param heat_flux Global integration-point field receiving three heat-flux
+ *                  components per row.
+ * @param temperature Scalar global nodal temperature field.
+ */
+template<Index N>
+void SolidElement<N>::compute_heat_flux(Field& heat_flux, const Field& temperature) {
+    // Validate the input and output field layouts before gathering element data.
+    logging::error(temperature.domain == FieldDomain::NODE,
+        "SolidElement: temperature field must use the NODE domain");
+    logging::error(temperature.components == 1,
+        "SolidElement: temperature field must have exactly one component");
+    logging::error(heat_flux.domain == FieldDomain::ELEMENT_IP,
+        "SolidElement: heat-flux field must use the ELEMENT_IP domain");
+    logging::error(heat_flux.components >= D,
+        "SolidElement: heat-flux field requires at least three components");
+
+    const auto& scheme = this->integration_scheme_stiffness();
+    logging::error(this->ip_index(scheme.count()) <= heat_flux.rows,
+        "SolidElement: heat-flux field is too small for element ", this->elem_id);
+
+    // Gather the reference geometry, nodal temperatures and isotropic thermal
+    // conductivity once for all integration points.
+    const StaticMatrix<N, D> reference_coords  = this->node_coords_reference();
+    const StaticVector<N>    local_temperature = this->template nodal_data<1>(temperature);
+    auto*                    section           = this->get_section();
+
+    logging::error(section->material_->has_thermal_conductivity(),
+        "Material has no thermal conductivity at element ", this->elem_id);
+    const Precision conductivity = section->material_->get_thermal_conductivity();
+
+    // Apply Fourier's law at every globally enumerated thermal output point.
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto point = scheme.get_point(ip);
+
+        Precision det0 = Precision(0);
+        const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
+            reference_coords,
+            point.r,
+            point.s,
+            point.t,
+            det0
+        );
+        const Vec3 flux = -conductivity * dN_dX.transpose() * local_temperature;
+        const Index row = this->ip_index(ip);
+
+        for (Dim component = 0; component < D; ++component) {
+            heat_flux(row, component) = flux(component);
         }
     }
 }
