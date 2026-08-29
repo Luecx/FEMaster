@@ -29,6 +29,7 @@
 #pragma once
 
 #include "../bc/amplitude.h"
+#include "../bc/support_interface.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
 #include "../cos/coordinate_system.h"
@@ -154,7 +155,7 @@ struct Model {
     // helper; callers append their concrete type directly to ModelData.
     void add_load     (bc::Load::Ptr load);
     void add_amplitude(bc::Amplitude::Ptr amplitude);
-    void add_support  (bc::Support support);
+    void add_support  (bc::SupportInterface::Ptr support);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal
@@ -173,21 +174,26 @@ struct Model {
     void initialize_material_state(Field& state) const;
 
     // Global system construction. These operations enumerate active DOFs,
-    // collect prescribed loads and constraints, and assemble structural tangent,
-    // geometric, mass and internal-force contributions in global coordinates.
-    // Optional stiffness-scaling fields act per element.
+    // collect prescribed loads and constraints, and assemble structural or
+    // thermal operators in global coordinates. The thermal mapping uses only
+    // local component zero for its scalar temperature unknown. Optional
+    // structural stiffness-scaling fields act per element.
     SystemDofIds build_unconstrained_index_matrix();
+    SystemDofIds build_thermal_index_matrix();
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
     constraint::ConstraintGroups collect_constraints(
         SystemDofIds& system_dof_ids,
         const std::vector<std::string>& supp_sets = {});
+    constraint::ConstraintGroups collect_temperature_constraints(
+        const std::vector<std::string>& supp_sets = {});
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(
         std::vector<std::string> load_sets = {});
     SparseMatrix build_stiffness_matrix(
         SystemDofIds& indices,
         const Field* stiffness_scalar = nullptr);
+    SparseMatrix build_conductivity_matrix(SystemDofIds& indices);
     SparseMatrix build_tangent_stiffness_matrix(
         SystemDofIds& indices,
         NodeData& nodal_forces,
@@ -206,7 +212,7 @@ struct Model {
     // Result recovery from compiled structural elements. Returned fields use the
     // domain appropriate to each quantity, including integration-point stress,
     // element-nodal stress/strain, shell resultants and element-level compliance,
-    // volume, section-force and shear-flow measures.
+    // volume, section-force, shear-flow and thermal heat-flux measures.
     Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
@@ -216,6 +222,7 @@ struct Model {
     Field compute_volumes();
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
+    Field compute_heat_flux(const Field& temperature);
 
     // Human-readable diagnostics. The overview reports semantic topology,
     // compiled assembly data and associated definitions through the hierarchical

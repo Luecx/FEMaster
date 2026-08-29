@@ -3,9 +3,10 @@
  * @brief Registers constraint-transformation selection for structural analyses.
  *
  * `CONSTRAINTMETHOD` selects null-space projection, Lagrange multipliers or
- * elimination for the active supported load case. The command translates the
- * deck token into `ConstraintTransformer::Method` and applies it only to
- * analyses that expose a compatible constraint backend.
+ * elimination for the active supported structural or steady-state thermal load
+ * case. The command translates the deck token into
+ * `ConstraintTransformer::Method` and applies it only to analyses that expose a
+ * compatible constraint backend.
  *
  * Solver/backend compatibility remains documented by the command grammar and
  * is enforced by the corresponding load-case implementation during execution.
@@ -26,6 +27,7 @@
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
@@ -78,6 +80,10 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
                 return;
             }
             if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+                lc->constraint_method = method;
+                return;
+            }
+            if (auto* lc = dynamic_cast<loadcase::SteadyStateThermal*>(base)) {
                 lc->constraint_method = method;
                 return;
             }

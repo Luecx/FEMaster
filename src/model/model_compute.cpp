@@ -8,9 +8,10 @@
  * element-nodal quantities are recovered into global nodal fields through the
  * weighting operation provided by `ModelData`.
  *
- * Nodal stress recovery, shell-face recovery, beam section forces and shear
- * flow may evaluate elements with OpenMP. Eigen and MKL internal threading are
- * temporarily restricted during those loops to avoid nested oversubscription.
+ * Nodal stress recovery, shell-face recovery, shell resultants, beam section
+ * forces, shear flow and conductive heat flux may evaluate elements with
+ * OpenMP. Eigen and MKL internal threading are temporarily restricted during
+ * those loops to avoid nested oversubscription.
  *
  * @see Model
  * @see ModelData
@@ -22,6 +23,7 @@
 
 #include "../core/config.h"
 #include "element/element_structural.h"
+#include "element/element_thermal.h"
 #include "model.h"
 #include "shell/s8.h"
 
@@ -248,38 +250,76 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
 /**
  * Recovers nodal shell force and moment resultants.
  *
- * Supporting elements accumulate their eight-component resultant convention and
- * one participation count at every connected global node. The model divides the
- * accumulated values by those counts to obtain an arithmetic nodal average;
- * nodes without shell contributions retain zero rows.
+ * Supporting elements write their eight-component resultant convention into
+ * disjoint compiled `ELEMENT_NODAL` ranges. Element evaluation may therefore
+ * run in parallel. A scalar element weight marks participating shells before
+ * the common element-nodal projection forms the arithmetic nodal average.
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @return Averaged eight-component nodal shell-resultant field.
  */
 Field Model::compute_shell_resultants(Field& displacement) {
-    // Allocate nodal accumulators for resultants and contribution counts
-    const Index node_count = _data->field_rows(FieldDomain::NODE);
-    Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
-    Field count{"SHELL_RESULTANTS_COUNT", FieldDomain::NODE, node_count, 1};
-    resultants.set_zero();
-    count.set_zero();
+    // Validate and access the compiled element-nodal enumeration
+    logging::error(_data->element_nodal_offsets != nullptr,
+        "element nodal offset field has not been initialized");
 
-    // Accumulate formulation-specific shell resultants from structural elements
-    for (auto el : _data->elements) {
+    const auto& nodal_offsets = *_data->element_nodal_offsets;
+    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
+    const Index element_count       = static_cast<Index>(_data->elements.size());
+
+    // Allocate disjoint element-nodal output and one participation weight per element
+    Field element_resultants{
+        "ELEMENT_NODAL_SHELL_RESULTANTS",
+        FieldDomain::ELEMENT_NODAL,
+        total_element_nodes,
+        8
+    };
+    Field element_weights{
+        "SHELL_RESULTANT_ELEMENT_WEIGHTS",
+        FieldDomain::ELEMENT,
+        element_count,
+        1
+    };
+    element_resultants.set_zero();
+    element_weights.set_zero();
+
+    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    // Recover shell resultants into each element's disjoint nodal row range
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
         if (!el) continue;
         if (auto sel = el->as<StructuralElement>()) {
-            sel->compute_shell_section_forces(resultants, count, displacement);
-        }
-    }
-
-    // Convert accumulated contributions into arithmetic nodal averages
-    for (Index i = 0; i < node_count; ++i) {
-        if (count(i, 0) != Precision(0)) {
-            for (Index j = 0; j < resultants.components; ++j) {
-                resultants(i, j) /= count(i, 0);
+            const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
+            const bool participates = sel->compute_shell_section_forces(
+                element_resultants,
+                displacement,
+                static_cast<int>(offset)
+            );
+            if (participates) {
+                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
             }
         }
     }
+
+    // Restore the configured linear-algebra thread counts after element recovery
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
+
+    // Average participating element values onto global nodes
+    Field resultants = _data->element_nodal_to_nodal(
+        element_resultants,
+        element_weights,
+        "SHELL_RESULTANTS"
+    );
 
     // Validate the averaged result field before returning it
     resultants.check_finite("Shell resultants");
@@ -461,6 +501,65 @@ Field Model::compute_shear_flow(Field& displacement) {
 #endif
     Eigen::setNbThreads(global_config.max_threads);
     return shear_flow;
+}
+
+/**
+ * Recovers conductive heat flux at every thermal element integration point.
+ *
+ * Thermal elements differentiate the converged scalar nodal temperature in the
+ * global reference configuration and apply their material conductivity through
+ * Fourier's law. Compiled integration-point offsets give every element a
+ * disjoint output range, so element recovery can run in parallel without locks
+ * or atomic accumulation. Non-thermal integration-point rows remain zero.
+ *
+ * @param temperature Converged scalar `NODE`-domain temperature field.
+ * @return Three-component global `ELEMENT_IP` heat-flux field.
+ */
+Field Model::compute_heat_flux(const Field& temperature) {
+    // Validate the thermal primary field and compiled integration-point layout
+    logging::error(temperature.domain == FieldDomain::NODE,
+        "Model: heat-flux recovery requires a NODE temperature field");
+    logging::error(temperature.components == 1,
+        "Model: heat-flux recovery requires exactly one temperature component");
+    logging::error(temperature.rows == _data->field_rows(FieldDomain::NODE),
+        "Model: temperature field has the wrong node count");
+    logging::error(_data->element_ip_offsets != nullptr,
+        "Model: element IP offsets have not been initialized");
+
+    const Index total_ips     = _data->field_rows(FieldDomain::ELEMENT_IP);
+    const Index element_count = static_cast<Index>(_data->elements.size());
+
+    // Allocate disjoint global heat-flux rows for every compiled element IP
+    Field heat_flux{"HEAT_FLUX", FieldDomain::ELEMENT_IP, total_ips, 3};
+    heat_flux.set_zero();
+
+    // Prevent nested linear-algebra threading inside parallel element recovery
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    // Evaluate Fourier heat flux in each thermal element's private IP range
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        if (element == nullptr) continue;
+
+        if (auto thermal = element->as<ThermalElement>()) {
+            thermal->compute_heat_flux(heat_flux, temperature);
+        }
+    }
+
+    // Restore configured linear-algebra threading after element recovery
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
+
+    // Reject invalid gradients or material coefficients before result output
+    heat_flux.check_finite("Heat flux");
+    return heat_flux;
 }
 
 }

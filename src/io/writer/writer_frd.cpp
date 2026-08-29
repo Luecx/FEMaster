@@ -3,7 +3,7 @@
  * @brief Implements the ASCII CalculiX/CGX FRD result writer.
  *
  * The writer emits compiled FEMaster nodes, supported structural elements and
- * NODE-domain result fields in CalculiX FRD syntax.
+ * NODE-domain structural or thermal result fields in CalculiX FRD syntax.
  *
  * FEMaster solver topology uses dense node identifiers. When model data is
  * written, the semantic reverse mapping retained by `ModelData` is evaluated
@@ -328,6 +328,12 @@ const FRDField& frd_field(const std::string& field_name) {
     }
 
     static const std::vector<FRDField> definitions{
+        {
+            {"TEMPERATURE", "NDTEMP"}, "NDTEMP",
+            {
+                FRDComponent::scalar("T", 1)
+            }
+        },
         {
             {"DISPLACEMENT", "DISP", "MODESHAPE", "BUCKLINGMODE"}, "DISP",
             {

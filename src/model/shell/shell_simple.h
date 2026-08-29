@@ -891,8 +891,8 @@ struct DefaultShellElement : public ShellElement<N> {
     }
 
     bool compute_shell_section_forces(Field& resultants,
-                                      Field& contribution_count,
-                                      const Field& displacement) override {
+                                      const Field& displacement,
+                                      int offset) override {
         // Construct the fixed element-local shell basis used by this legacy formulation
         Mat3 axes        = get_xyz_axes();
         Mat3 shell_basis = axes.transpose();
@@ -939,8 +939,6 @@ struct DefaultShellElement : public ShellElement<N> {
         const auto&        scheme    = this->integration_scheme();
 
         for (Index i = 0; i < N; ++i) {
-            ID node_id = this->nodes()[i];
-
             Precision r = coords(i, 0);
             Precision s = coords(i, 1);
 
@@ -1000,12 +998,11 @@ struct DefaultShellElement : public ShellElement<N> {
 
             const Vec8 values = topo_scale * output_resultants.values();
 
-            const Index node_idx = static_cast<Index>(node_id);
+            const Index row = static_cast<Index>(offset) + i;
 
             for (Index component = 0; component < 8; ++component) {
-                resultants(node_idx, component) += values(component);
+                resultants(row, component) = values(component);
             }
-            contribution_count(node_idx, 0) += Precision(1);
         }
         return true;
     }

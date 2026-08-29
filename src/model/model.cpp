@@ -351,16 +351,19 @@ void Model::add_amplitude(bc::Amplitude::Ptr amplitude) {
  *
  * Supports resolve compiled assembly regions when constraint equations are
  * collected. Registration therefore requires a compiled model and an active
- * collector. The support value is moved into that collector.
+ * collector. Mechanical and thermal support implementations share the same
+ * polymorphic ownership path.
  *
- * @param support Support definition to register.
+ * @param support Prescribed boundary condition to register.
  */
-void Model::add_support(bc::Support support) {
+void Model::add_support(bc::SupportInterface::Ptr support) {
     // Validate the compiled model state and collector target
     logging::error(_data != nullptr && _data->compiled,
         "Model: supports require a compiled model");
     logging::error(_data->supp_cols.has_any() && _data->supp_cols.get() != nullptr,
         "Model: no support collector is active");
+    logging::error(support != nullptr,
+        "Model: cannot add a null support");
 
     // Transfer the support into the selected collector
     _data->supp_cols.get()->add(std::move(support));

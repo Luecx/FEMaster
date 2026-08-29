@@ -4,10 +4,9 @@
  *
  * The routines operate on the dense assembly created by `Model::compile()`.
  * They bind sections to compiled elements, construct shared shell reference
- * normals, enumerate active generalized DOFs, assemble loads and constraint
- * equations, and combine regular elements, post-compile point elements, contact
- * and generic feature contributions into global sparse operators and nodal
- * internal-force fields.
+ * normals, enumerate structural or scalar thermal DOFs, assemble loads and
+ * constraint equations, and combine element contributions into global sparse
+ * structural or conductivity operators and nodal internal-force fields.
  *
  * FEMaster `POINTMASS` commands create auxiliary `PointElement` objects after
  * compilation because they target compiled NSETs. Those point elements are kept
@@ -15,8 +14,8 @@
  * DOF, stiffness and mass operators as regular structural elements.
  *
  * Element-local matrix evaluation remains the responsibility of each structural
- * formulation. `mattools::assemble_matrix()` owns local-to-global DOF mapping,
- * sparse triplet accumulation and parallel reduction.
+ * or thermal formulation. `mattools::assemble_matrix()` owns local-to-global
+ * DOF mapping, sparse triplet accumulation and parallel reduction.
  *
  * @see Model
  * @see Model::compile
@@ -26,9 +25,11 @@
  * @date 25.08.2026
  */
 
+#include "../bc/thermal_temp.h"
 #include "../mattools/assemble.h"
 #include "../mattools/numerate_dofs.h"
 #include "element/element_structural.h"
+#include "element/element_thermal.h"
 #include "model.h"
 #include "solid/element_solid.h"
 
@@ -290,6 +291,39 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
 }
 
 /**
+ * Enumerates the scalar nodal temperature unknowns required by thermal elements.
+ *
+ * FEMaster's common system mapping retains six columns for compatibility with
+ * sparse assembly and constraint transformation. The thermal system activates
+ * only local component zero at nodes connected to a `ThermalElement`; every
+ * other component and node remains inactive. Temperature equations using local
+ * degree of freedom zero therefore map into one compact contiguous system.
+ *
+ * @return Node-by-six mapping with active temperature indices only in column zero.
+ */
+SystemDofIds Model::build_thermal_index_matrix() {
+    // Validate the compiled nodal domain before constructing the thermal mask
+    logging::error(_data->positions != nullptr,
+        "Model: POSITION field is not initialized");
+
+    SystemDofs mask{_data->positions->rows, 6};
+    mask.fill(false);
+
+    // Activate one scalar temperature unknown at every thermal element node
+    for (const auto& element : _data->elements) {
+        if (element == nullptr || element->as<ThermalElement>() == nullptr) continue;
+
+        for (ID local_node = 0; local_node < element->n_nodes(); ++local_node) {
+            const ID node_id = element->nodes()[local_node];
+            mask(node_id, 0) = true;
+        }
+    }
+
+    // Convert the scalar mask into contiguous global thermal identifiers
+    return mattools::numerate_dofs(mask);
+}
+
+/**
  * Assembles selected load collectors into one global nodal load field.
  *
  * Each named collector evaluates its loads at `time`, including any attached
@@ -368,8 +402,10 @@ Model::build_load_basis(std::vector<std::string> load_sets) {
  *
  * When no support collector names are supplied, the aggregate support collection
  * is used when available; otherwise only the named collectors participate.
- * Connector, coupling, tie and rigid-body-mode objects generate their equations
- * in model order. Manually stored equations are copied into the fallback group.
+ * Heterogeneous collectors contribute only their structural `bc::Support`
+ * entries to this mechanical system. Connector, coupling, tie and rigid-body-
+ * mode objects generate their equations in model order. Manually stored
+ * equations are copied into the fallback group.
  *
  * @param system_dof_ids Active global DOF identifiers used by constraint builders.
  * @param supp_sets Optional names of support collectors to include.
@@ -384,7 +420,7 @@ constraint::ConstraintGroups Model::collect_constraints(
     Index support_idx = 0;
     if (supp_sets.empty() && _data->supp_cols.has_all()) {
         if (auto all = _data->supp_cols.all()) {
-            auto eqs = all->get_equations(*_data);
+            auto eqs = all->get_equations<bc::Support>(*_data);
             for (auto& eq : eqs) {
                 eq.source       = constraint::EquationSourceKind::Support;
                 eq.source_index = support_idx;
@@ -396,7 +432,7 @@ constraint::ConstraintGroups Model::collect_constraints(
 
     for (const auto& key : supp_sets) {
         if (auto data = _data->supp_cols.get(key)) {
-            auto eqs = data->get_equations(*_data);
+            auto eqs = data->get_equations<bc::Support>(*_data);
             for (auto& eq : eqs) {
                 eq.source       = constraint::EquationSourceKind::Support;
                 eq.source_index = support_idx;
@@ -465,6 +501,56 @@ constraint::ConstraintGroups Model::collect_constraints(
 }
 
 /**
+ * Collects prescribed temperatures from the selected common support collectors.
+ *
+ * Support collectors may contain both mechanical `bc::Support` objects and
+ * thermal `bc::Temperature` objects. This path selects only temperatures,
+ * preserves collector and entry order and annotates every generated equation as
+ * a support constraint. Structural connectors, couplings, ties, rigid-body
+ * modes and manual mechanical equations deliberately do not participate.
+ *
+ * When no collector names are supplied, the aggregate support collection is
+ * used if one exists. Every explicitly named collector must already be defined.
+ *
+ * @param supp_sets Names of common support collectors used by the thermal load case.
+ * @return Constraint groups containing prescribed-temperature equations only.
+ */
+constraint::ConstraintGroups Model::collect_temperature_constraints(
+    const std::vector<std::string>& supp_sets
+) {
+    constraint::ConstraintGroups groups{};
+
+    // Append one collector while retaining its source index for diagnostics
+    Index support_idx = 0;
+    auto append_collector = [&](const bc::SupportCollector::Ptr& collector) {
+        logging::error(collector != nullptr,
+            "Model: thermal support collector is not initialized");
+
+        auto equations = collector->get_equations<bc::Temperature>(*_data);
+        for (auto& equation : equations) {
+            equation.source       = constraint::EquationSourceKind::Support;
+            equation.source_index = support_idx;
+            groups.supports.push_back(std::move(equation));
+        }
+        ++support_idx;
+    };
+
+    // Use the aggregate collector only without an explicit selection
+    if (supp_sets.empty() && _data->supp_cols.has_all()) {
+        append_collector(_data->supp_cols.all());
+    }
+
+    // Resolve every explicitly selected common support collector
+    for (const std::string& key : supp_sets) {
+        logging::error(_data->supp_cols.has(key),
+            "Model: thermal support collector ", key, " is not defined");
+        append_collector(_data->supp_cols.get(key));
+    }
+
+    return groups;
+}
+
+/**
  * Assembles the linear global structural stiffness matrix.
  *
  * Regular compiled elements and post-compile native point elements both use the
@@ -519,6 +605,34 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
     }
 
     return matrix;
+}
+
+/**
+ * Assembles the global steady-state thermal conductivity matrix.
+ *
+ * Every `ThermalElement` supplies one scalar nodal conductivity matrix evaluated
+ * in the reference configuration. The common sparse assembly maps its local
+ * node ordering through column zero of the thermal index matrix. Non-thermal
+ * elements return an empty local matrix and do not contribute.
+ *
+ * The common assembler selects its serial or OpenMP implementation from the
+ * configured worker count and owns the parallel reduction of element entries.
+ *
+ * @param indices Thermal system mapping with active identifiers in column zero.
+ * @return Symmetric global conductivity matrix over all active temperatures.
+ */
+SparseMatrix Model::build_conductivity_matrix(SystemDofIds& indices) {
+    // Evaluate thermal element matrices through the common sparse assembly path
+    auto conductivity = [](const ElementPtr& element, Precision* storage) {
+        if (auto thermal = element->as<ThermalElement>()) {
+            return thermal->conductivity(storage);
+        }
+
+        MapMatrix matrix{storage, 0, 0};
+        return matrix;
+    };
+
+    return mattools::assemble_matrix(_data->elements, indices, conductivity);
 }
 
 /**

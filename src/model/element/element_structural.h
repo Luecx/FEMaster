@@ -100,11 +100,11 @@ struct StructuralElement : ElementInterface {
         return false;
     }
     virtual bool compute_shell_section_forces(Field& section_forces,
-                                              Field& contribution_count,
-                                              const Field& displacement) {
+                                              const Field& displacement,
+                                              int offset) {
         (void) section_forces;
-        (void) contribution_count;
         (void) displacement;
+        (void) offset;
         return false;
     }
 };

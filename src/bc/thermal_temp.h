@@ -12,6 +12,7 @@
  * thermal DOF mapping rather than the structural six-DOF mapping.
  *
  * @see Temperature
+ * @see SupportInterface
  * @see constraint::Equation
  * @see model::ThermalElement
  *
@@ -21,10 +22,8 @@
 
 #pragma once
 
-#include "bc.h"
+#include "support_interface.h"
 
-#include "../constraints/types/equation.h"
-#include "../core/printable.h"
 #include "../core/types_num.h"
 #include "../data/region.h"
 
@@ -51,7 +50,7 @@ namespace fem::bc {
  * represents the thermal unknown; the resulting equations are not structural
  * displacement constraints.
  */
-struct Temperature : BoundaryCondition, Printable {
+struct Temperature : SupportInterface {
     // Shared ownership type for prescribed-temperature definitions
     using Ptr = std::shared_ptr<Temperature>;
 
@@ -80,7 +79,7 @@ struct Temperature : BoundaryCondition, Printable {
 
     // Resolve the target to unique compiled nodes and append scalar thermal
     // Dirichlet equations with `temperature_` as their right-hand side.
-    void apply(model::ModelData& model_data, constraint::Equations& equations);
+    void apply(model::ModelData& model_data, constraint::Equations& equations) override;
 
     // Return the target region and prescribed scalar temperature.
     std::string str() const override;

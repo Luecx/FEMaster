@@ -52,6 +52,7 @@ void Material::info() const {
     logging::info(true, "Material: ", name);
     logging::info(true, "   Elasticity          : ", (has_elasticity() ? "YES" : "NO"));
     logging::info(true, "   Thermal Capacity    : ", (has_thermal_specific_heat() ? std::to_string(m_thermal_specific_heat) : "NO"));
+    logging::info(true, "   Thermal Conductivity: ", (has_thermal_conductivity() ? std::to_string(m_thermal_conductivity) : "NO"));
     logging::info(true, "   Thermal Expansion   : ", (has_thermal_expansion() ? std::to_string(m_thermal_expansion) : "NO"));
     logging::info(true, "   Density             : ", (has_density() ? std::to_string(m_density) : "NO"));
 }

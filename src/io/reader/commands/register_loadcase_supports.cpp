@@ -4,8 +4,8 @@
  *
  * The `SUPPORTS` child command appends non-empty collector names to every
  * supported structural analysis, including static, buckling, eigenfrequency,
- * transient, harmonic and nonlinear formulations. Input order is retained so
- * downstream constraint construction remains deterministic.
+ * transient, harmonic, nonlinear and steady-state thermal formulations. Input
+ * order is retained so downstream constraint construction remains deterministic.
  *
  * Resolution of support, tie and coupling collectors and construction of the
  * resulting constraint equations remain responsibilities of the load case and
@@ -32,6 +32,7 @@
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
@@ -83,6 +84,10 @@ void register_loadcase_supports(fem::io::dsl::Registry& registry, Parser& parser
                         return;
                     }
                     if (auto* lc = dynamic_cast<loadcase::Transient*>(base)) {
+                        append_tokens(names, lc->supps);
+                        return;
+                    }
+                    if (auto* lc = dynamic_cast<loadcase::SteadyStateThermal*>(base)) {
                         append_tokens(names, lc->supps);
                         return;
                     }

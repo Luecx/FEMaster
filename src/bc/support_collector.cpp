@@ -1,6 +1,11 @@
 /**
  * @file support_collector.cpp
- * @brief Implements collective support equation generation.
+ * @brief Implements construction of heterogeneous support collectors.
+ *
+ * The collector stores mechanical and thermal supports through their common
+ * interface. Type-selected equation generation remains in the header because
+ * the requesting load case supplies the concrete support type as a template
+ * argument.
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -11,14 +16,6 @@
 namespace fem::bc {
 
 SupportCollector::SupportCollector(const std::string& name)
-    : model::Collection<Support>(name, true, false) {}
-
-constraint::Equations SupportCollector::get_equations(model::ModelData& model_data) {
-    constraint::Equations equations{};
-    for (Support& support : this->_data) {
-        support.apply(model_data, equations);
-    }
-    return equations;
-}
+    : model::Collection<SupportInterface::Ptr>(name) {}
 
 } // namespace fem::bc

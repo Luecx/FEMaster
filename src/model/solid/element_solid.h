@@ -3,8 +3,8 @@
  * @brief Declares the common three-dimensional solid element formulation.
  *
  * `SolidElement` provides reference/current geometry, material evaluation,
- * strain-displacement operators and the common Total-Lagrangian nonlinear
- * assembly used by the concrete C3D solid topologies.
+ * strain-displacement operators, Total-Lagrangian nonlinear assembly and scalar
+ * heat-transfer operations used by the concrete C3D solid topologies.
  *
  * Every constitutive integration point is associated with one globally
  * enumerated material-point row. The element addresses that row directly in
@@ -36,13 +36,15 @@ namespace fem::model {
  *
  * Concrete solid elements provide topology-specific interpolation and
  * quadrature. The base implements geometry transformations, constitutive
- * evaluation and common linear/nonlinear assembly. In nonlinear tangent
- * assembly each material point is evaluated exactly once so an in-place
+ * evaluation and common linear/nonlinear assembly. The orthogonal thermal
+ * capability supplies conductivity, capacity and Fourier heat-flux evaluation
+ * using the same reference geometry and material assignment. In nonlinear
+ * tangent assembly each material point is evaluated exactly once so an in-place
  * constitutive history state cannot advance twice within one residual/tangent
  * evaluation.
  */
 template<Index N>
-struct SolidElement : StructuralElement, ThermalElement{
+struct SolidElement : StructuralElement, ThermalElement {
     static constexpr Dim D        = 3;
     static constexpr Dim n_strain = 6;
 

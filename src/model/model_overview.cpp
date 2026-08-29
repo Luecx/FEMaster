@@ -255,7 +255,7 @@ void Model::print_overview() const {
         logging::info(true, name, " (", collector->size(), ")");
         logging::up();
         for (const auto& support : collector->entries()) {
-            logging::info(true, support.str());
+            logging::info(support != nullptr, support ? support->str() : "");
         }
         logging::down();
     }

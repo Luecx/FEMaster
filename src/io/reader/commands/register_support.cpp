@@ -74,7 +74,11 @@ void register_support(fem::io::dsl::Registry& registry, model::Model& model) {
                     for (Index i = 0; i < 6; ++i) {
                         constraint(i) = values[static_cast<std::size_t>(i)];
                     }
-                    model.add_support(bc::Support{std::move(region), constraint, std::move(orientation_ptr)});
+                    model.add_support(std::make_shared<bc::Support>(
+                        std::move(region),
+                        constraint,
+                        std::move(orientation_ptr)
+                    ));
                 })
             )
         );

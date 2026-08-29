@@ -452,22 +452,23 @@ void FRTShell<N>::compute_stress_state(Field&       stress_state,
 }
 
 /**
- * Averages generalized shell resultants from the element nodes into nodal
- * result fields.
+ * Recovers generalized shell resultants at the element nodes.
  *
  * Each natural nodal output coordinate reuses the closest in-plane integration-
  * point state block. The section evaluates resultants in its configured output
- * basis before they are accumulated for subsequent component-wise averaging.
+ * basis before they are written to the element's disjoint output rows. The
+ * model subsequently projects participating element-nodal values to global
+ * nodes.
  *
- * @param resultants Global nodal generalized-resultant accumulator.
- * @param contribution_count Global nodal contribution counter.
+ * @param resultants Global element-nodal generalized-resultant field.
  * @param displacement Global nodal displacement field.
- * @return Always `true` after shell resultants were accumulated.
+ * @param offset First element-nodal output row belonging to this element.
+ * @return Always `true` after shell resultants were written.
  */
 template<Index N>
 bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
-                                               Field&       contribution_count,
-                                               const Field& displacement) {
+                                               const Field& displacement,
+                                               int          offset) {
     logging::error(resultants.components >= num_strains,
                    "FRTShell: shell section forces require eight components "
                    "[N11,N22,N12,M11,M22,M12,Q13,Q23]");
@@ -532,13 +533,11 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
         );
         const Vec8 values = scale * output_resultants.values();
 
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
+        const Index row = static_cast<Index>(offset) + node;
 
         for (Index component = 0; component < num_strains; ++component) {
-            resultants(node_id, component) += values(component);
+            resultants(row, component) = values(component);
         }
-
-        contribution_count(node_id, 0) += Precision(1);
     }
 
     return true;

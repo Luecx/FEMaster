@@ -638,8 +638,8 @@ struct FRTShell : ShellElement<N> {
     ) override;
     bool compute_shell_section_forces(
         Field&       section_forces,
-        Field&       contribution_count,
-        const Field& displacement
+        const Field& displacement,
+        int          offset
     ) override;
 
 };

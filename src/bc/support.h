@@ -11,6 +11,7 @@
  * `support.cpp`.
  *
  * @see Support
+ * @see SupportInterface
  * @see constraint::Equation
  * @see support.cpp
  * @author Finn Eggers
@@ -19,9 +20,9 @@
 
 #pragma once
 
-#include "../constraints/types/equation.h"
+#include "support_interface.h"
+
 #include "../core/core.h"
-#include "../core/printable.h"
 #include "../cos/coordinate_system.h"
 #include "../data/region.h"
 
@@ -43,7 +44,7 @@ namespace bc {
  * coordinate system, the selected local axis is expanded into its three global
  * directional coefficients before the equation is appended.
  */
-struct Support : public fem::Printable {
+struct Support : SupportInterface {
     // Pointer aliases keep the three supported region variants concise in the
     // public constructors and internal state.
     using NodeRegionPtr    = model::NodeRegion::Ptr;
@@ -74,7 +75,7 @@ struct Support : public fem::Printable {
     // Traverse the active target region and append all resulting constraint
     // equations to `equations`. Repeated nodes are processed as encountered by
     // the region topology.
-    void apply(model::ModelData& model_data, constraint::Equations& equations);
+    void apply(model::ModelData& model_data, constraint::Equations& equations) override;
 
     // Return a compact representation of the active target, prescribed degrees
     // of freedom and optional coordinate system.

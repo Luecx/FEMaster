@@ -101,7 +101,11 @@ void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
 
                         auto region = std::make_shared<model::NodeRegion>("INTERNAL");
                         region->add(node_id);
-                        model.add_support(bc::Support{std::move(region), values, std::move(orientation)});
+                        model.add_support(std::make_shared<bc::Support>(
+                            std::move(region),
+                            values,
+                            std::move(orientation)
+                        ));
                     };
 
                     if (model._data->node_sets.has(target)) {
