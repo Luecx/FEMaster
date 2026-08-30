@@ -29,6 +29,8 @@
 #pragma once
 
 #include "../bc/amplitude.h"
+#include "../bc/dirichlet/dirichlet.h"
+#include "../bc/neumann/neumann.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
 #include "../cos/coordinate_system.h"
@@ -152,9 +154,9 @@ struct Model {
     // compilation. Amplitudes are shared named definitions and remain independent
     // of the topology transition. Constraints deliberately have no registration
     // helper; callers append their concrete type directly to ModelData.
-    void add_load     (bc::Load::Ptr load);
+    void add_load     (bc::Neumann::Ptr load);
     void add_amplitude(bc::Amplitude::Ptr amplitude);
-    void add_support  (bc::Support support);
+    void add_support  (bc::Dirichlet::Ptr support);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal

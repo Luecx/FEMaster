@@ -18,7 +18,7 @@
 #include "register_functions.h"
 #include "../../dsl/registry.h"
 
-#include "../../../bc/load_t.h"
+#include "../../../bc/neumann/load_t.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 #include "../../dsl/keyword.h"

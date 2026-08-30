@@ -22,7 +22,7 @@
  * @see Instance
  *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 30.08.2026
  */
 
 #include "model.h"
@@ -305,16 +305,16 @@ void Model::add_surfaces_to_assembly_set(const std::string& set, const std::stri
 }
 
 /**
- * Transfers one load into the currently active load collector.
+ * Transfers one Neumann condition into the currently active load collector.
  *
- * Loads reference compiled assembly regions, so registration is permitted only
- * after the semantic topology has been flattened. Ownership of the polymorphic
- * load is moved into the active collector.
+ * Natural boundary conditions reference compiled assembly regions, so
+ * registration is permitted only after the semantic topology has been flattened.
+ * Ownership of the polymorphic condition is moved into the active collector.
  *
- * @param load Load definition to register.
+ * @param load Neumann condition to register.
  */
-void Model::add_load(bc::Load::Ptr load) {
-    // Validate the compiled model state, load ownership and collector target
+void Model::add_load(bc::Neumann::Ptr load) {
+    // Validate the compiled model state, condition ownership and collector target
     logging::error(_data != nullptr && _data->compiled,
         "Model: loads require a compiled model");
     logging::error(load != nullptr,
@@ -322,7 +322,7 @@ void Model::add_load(bc::Load::Ptr load) {
     logging::error(_data->load_cols.has_any() && _data->load_cols.get() != nullptr,
         "Model: no load collector is active");
 
-    // Transfer the validated load into the selected collector
+    // Transfer the validated condition into the selected collector
     _data->load_cols.get()->add(std::move(load));
 }
 
@@ -347,22 +347,25 @@ void Model::add_amplitude(bc::Amplitude::Ptr amplitude) {
 }
 
 /**
- * Transfers one support into the currently active support collector.
+ * Transfers one Dirichlet condition into the currently active support collector.
  *
- * Supports resolve compiled assembly regions when constraint equations are
+ * Essential conditions resolve compiled assembly regions when equations are
  * collected. Registration therefore requires a compiled model and an active
- * collector. The support value is moved into that collector.
+ * collector. Structural supports and prescribed temperatures share this
+ * polymorphic ownership path.
  *
- * @param support Support definition to register.
+ * @param support Dirichlet condition to register.
  */
-void Model::add_support(bc::Support support) {
-    // Validate the compiled model state and collector target
+void Model::add_support(bc::Dirichlet::Ptr support) {
+    // Validate the compiled model state, condition ownership and collector target
     logging::error(_data != nullptr && _data->compiled,
         "Model: supports require a compiled model");
+    logging::error(support != nullptr,
+        "Model: cannot add a null support");
     logging::error(_data->supp_cols.has_any() && _data->supp_cols.get() != nullptr,
         "Model: no support collector is active");
 
-    // Transfer the support into the selected collector
+    // Transfer the condition into the selected collector
     _data->supp_cols.get()->add(std::move(support));
 }
 

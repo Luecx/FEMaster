@@ -22,7 +22,7 @@
 #include <string>
 
 #include "../parser_abq.h"
-#include "../../../bc/support.h"
+#include "../../../bc/dirichlet/support.h"
 #include "../../../loadcase/loadcase.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -101,7 +101,8 @@ void register_boundary(fem::io::dsl::Registry& registry, ParserAbq& parser) {
 
                         auto region = std::make_shared<model::NodeRegion>("INTERNAL");
                         region->add(node_id);
-                        model.add_support(bc::Support{std::move(region), values, std::move(orientation)});
+                        model.add_support(std::make_shared<bc::Support>(
+                            std::move(region), values, std::move(orientation)));
                     };
 
                     if (model._data->node_sets.has(target)) {
