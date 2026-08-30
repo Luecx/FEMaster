@@ -1,32 +1,30 @@
 /**
- * @file thermal_temp.h
- * @brief Declares prescribed-temperature boundary conditions.
+ * @file temperature.h
+ * @brief Declares prescribed-temperature Dirichlet conditions.
  *
  * A `Temperature` assigns one scalar temperature to a node region or to all
  * nodes connected to an element or surface region. Region expansion and
  * construction of scalar thermal constraint equations are implemented in
- * `thermal_temp.cpp`.
+ * `temperature.cpp`.
  *
  * The generated equations use local degree of freedom zero as the scalar
- * temperature unknown. They belong to a thermal system and require a dedicated
- * thermal DOF mapping rather than the structural six-DOF mapping.
+ * temperature unknown and therefore belong to the thermal system mapping.
  *
  * @see Temperature
+ * @see Dirichlet
  * @see constraint::Equation
  * @see model::ThermalElement
  *
  * @author Finn Eggers
- * @date 29.08.2026
+ * @date 30.08.2026
  */
 
 #pragma once
 
-#include "bc.h"
+#include "dirichlet.h"
 
-#include "../constraints/types/equation.h"
-#include "../core/printable.h"
-#include "../core/types_num.h"
-#include "../data/region.h"
+#include "../../core/types_num.h"
+#include "../../data/region.h"
 
 #include <memory>
 #include <string>
@@ -48,41 +46,32 @@ namespace fem::bc {
  *
  * `temperature_` is the absolute prescribed temperature and becomes the right-
  * hand side of every generated scalar equation. Local degree of freedom zero
- * represents the thermal unknown; the resulting equations are not structural
- * displacement constraints.
+ * represents the thermal unknown.
  */
-struct Temperature : BoundaryCondition, Printable {
-    // Shared ownership type for prescribed-temperature definitions
+struct Temperature : Dirichlet {
     using Ptr = std::shared_ptr<Temperature>;
 
-    // Optional target regions. Construction initializes exactly one pointer.
+    // Exactly one target region is active for a temperature condition.
     model::NodeRegion::Ptr    node_region_    = nullptr;
     model::SurfaceRegion::Ptr surface_region_ = nullptr;
     model::ElementRegion::Ptr element_region_ = nullptr;
 
-    // Absolute temperature prescribed on every resolved node
+    // Absolute temperature prescribed on every resolved node.
     Precision temperature_ = Precision(0);
 
-    // Construction from direct or topology-expanded target regions
+    // Construction from direct or topology-expanded target regions.
     Temperature(model::NodeRegion::Ptr node_region, Precision temperature)
-        : node_region_(std::move(node_region)),
-          temperature_(temperature) {}
-
+        : node_region_(std::move(node_region)), temperature_(temperature) {}
     Temperature(model::SurfaceRegion::Ptr surface_region, Precision temperature)
-        : surface_region_(std::move(surface_region)),
-          temperature_(temperature) {}
-
+        : surface_region_(std::move(surface_region)), temperature_(temperature) {}
     Temperature(model::ElementRegion::Ptr element_region, Precision temperature)
-        : element_region_(std::move(element_region)),
-          temperature_(temperature) {}
-
+        : element_region_(std::move(element_region)), temperature_(temperature) {}
     ~Temperature() override = default;
 
-    // Resolve the target to unique compiled nodes and append scalar thermal
-    // Dirichlet equations with `temperature_` as their right-hand side.
-    void apply(model::ModelData& model_data, constraint::Equations& equations);
+    // Resolve the target and append scalar thermal Dirichlet equations.
+    void apply(model::ModelData& model_data, constraint::Equations& equations) override;
 
-    // Return the target region and prescribed scalar temperature.
+    // Return the target region and prescribed absolute temperature.
     std::string str() const override;
 };
 
