@@ -7,6 +7,7 @@
 
 #include "../load.h"
 
+#include "../../core/logging.h"
 #include "../../core/types_eig.h"
 #include "../../core/types_num.h"
 #include "../../data/field.h"
@@ -32,6 +33,19 @@ struct Robin : Load {
     using Ptr = std::shared_ptr<Robin>;
 
     virtual ~Robin() = default;
+
+    // Prevent accidental use through structural RHS-only load paths.
+    void apply(model::ModelData& model_data,
+               model::Field&     rhs,
+               Precision         time,
+               bool              ignore_amplitude = false) final {
+        (void) model_data;
+        (void) rhs;
+        (void) time;
+        (void) ignore_amplitude;
+        logging::error(false,
+            "Robin boundary conditions require LHS assembly context");
+    }
 
     virtual void apply(model::ModelData&  model_data,
                        model::Field&      rhs,
