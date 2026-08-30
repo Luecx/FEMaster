@@ -40,9 +40,10 @@ namespace fem::bc {
  * @brief Common abstraction for prescribed natural boundary conditions.
  *
  * A Neumann condition converts its physical definition into contributions to a
- * nodal model field. Structural conditions assemble generalized forces into a
- * six-component field, whereas thermal conditions assemble scalar heat flow
- * into component zero of a one-component temperature-system field.
+ * nodal model field. Structural conditions assemble generalized forces into the
+ * usual mechanical components. Thermal conditions reuse the existing
+ * three-component surface integration and store scalar heat-flow contributions
+ * exclusively in component zero.
  *
  * The optional coordinate system defines vector-valued conditions in a local
  * basis and the optional amplitude scales the nominal condition at analysis
@@ -51,22 +52,16 @@ namespace fem::bc {
 struct Neumann : BoundaryCondition, Printable {
     using Ptr = std::shared_ptr<Neumann>;
 
-    // Optional coordinate system for vector-valued natural conditions.
     cos::CoordinateSystem::Ptr orientation_ = nullptr;
-
-    // Optional scalar time history applied to the nominal condition.
     Amplitude::Ptr amplitude_ = nullptr;
 
     virtual ~Neumann() = default;
 
-    // Assemble the condition into the supplied nodal field. `ignore_amplitude`
-    // requests the unscaled spatial basis used by transient/harmonic procedures.
     virtual void apply(model::ModelData& model_data,
                        model::Field&     bc,
                        Precision         time,
                        bool              ignore_amplitude = false) = 0;
 
-    // Return the concrete condition in a compact diagnostic representation.
     std::string str() const override = 0;
 };
 
