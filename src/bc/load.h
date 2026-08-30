@@ -9,20 +9,25 @@
 #include "bc.h"
 
 #include "../core/printable.h"
+#include "../core/types_num.h"
 #include "../cos/coordinate_system.h"
+#include "../data/field.h"
 
 #include <memory>
 #include <string>
 
+namespace fem::model {
+struct ModelData;
+}
+
 namespace fem::bc {
 
 /**
- * @brief Common state shared by Neumann and Robin boundary conditions.
+ * @brief Common state and RHS dispatch shared by load-side conditions.
  *
- * `Load` intentionally has no assembly method. Neumann conditions contribute
- * only to the right-hand side, whereas Robin conditions additionally emit
- * symbolic linear equation rows. Their distinct interfaces live in the
- * corresponding derived base classes.
+ * Neumann conditions implement the RHS dispatch directly. Robin conditions
+ * deliberately reject that generic path and must be evaluated through their
+ * equation-producing overload.
  */
 struct Load : BoundaryCondition, Printable {
     using Ptr = std::shared_ptr<Load>;
@@ -31,6 +36,12 @@ struct Load : BoundaryCondition, Printable {
     Amplitude::Ptr amplitude_ = nullptr;
 
     virtual ~Load() = default;
+
+    virtual void apply(model::ModelData& model_data,
+                       model::Field&     rhs,
+                       Precision         time,
+                       bool              ignore_amplitude = false) = 0;
+
     std::string str() const override = 0;
 };
 
