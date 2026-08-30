@@ -2,17 +2,8 @@
  * @file register_loadcase_loads.cpp
  * @brief Registers load-collector selection for active load cases.
  *
- * The `LOADS` child command reads one or more load-collector names and appends
- * every non-empty token to the active analysis. It supports the static,
- * buckling, transient, harmonic and nonlinear load cases that assemble external
- * forces from named model collectors.
- *
- * Collector existence and formulation-specific load assembly remain load-case
- * responsibilities. This registration layer validates the active analysis type
- * and preserves the order in which collector names appear in the deck.
- *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 30.08.2026
  */
 
 #include "register_functions.h"
@@ -30,11 +21,13 @@
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
 void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
-    const auto append_tokens = [](const std::array<std::string, 16>& tokens, std::vector<std::string>& out) {
+    const auto append_tokens = [](const std::array<std::string, 16>& tokens,
+                                  std::vector<std::string>& out) {
         for (const auto& token : tokens) {
             if (!token.empty()) out.push_back(token);
         }
@@ -56,6 +49,10 @@ void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
                     logging::error(base != nullptr,
                         "LOADS must appear inside *LOADCASE");
 
+                    if (auto* lc = dynamic_cast<loadcase::SteadyStateThermal*>(base)) {
+                        append_tokens(names, lc->loads);
+                        return;
+                    }
                     if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
                         append_tokens(names, lc->loads);
                         return;
