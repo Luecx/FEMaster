@@ -1,10 +1,15 @@
 /**
  * @file reduce_mat_to_vec.h
- * @brief Converts between nodal fields and active system vectors.
+ * @brief Declares conversion between nodal fields and active system vectors.
  *
  * The helpers operate on arbitrary node-by-component `SystemDofIds` mappings.
  * Negative entries denote inactive components; non-negative entries address the
- * corresponding coefficient of the compact algebraic system vector.
+ * corresponding coefficient of the compact algebraic system vector. The same
+ * interface therefore supports six-component structural mappings and scalar
+ * node-by-one thermal mappings without assuming a fixed field width.
+ *
+ * Detailed validation and mapping semantics are documented at the definitions in
+ * `reduce_mat_to_vec.cpp`.
  *
  * @author Created by Finn Eggers (c)
  * all rights reserved
@@ -18,25 +23,16 @@
 
 namespace fem { namespace mattools {
 
-/**
- * @brief Reduces a nodal field into the active algebraic system vector.
- *
- * @param dof_ids Node-by-component global system identifiers.
- * @param field Nodal field containing the corresponding physical components.
- * @return Compact vector addressed by the non-negative entries of `dof_ids`.
- */
+// Convert a NODE field into compact active-system ordering. Every non-negative
+// entry in `dof_ids` identifies the exact destination coefficient; inactive
+// entries are skipped rather than assumed to occur in any particular pattern.
 DynamicVector reduce_mat_to_vec(
     const SystemDofIds& dof_ids,
     const model::Field& field
 );
 
-/**
- * @brief Expands an active algebraic system vector into nodal field storage.
- *
- * @param dof_ids Node-by-component global system identifiers.
- * @param reduced_vector Compact vector containing active system coefficients.
- * @return NODE-domain field with the same component count as `dof_ids`.
- */
+// Expand a compact active-system vector back into NODE storage with the exact row
+// and component dimensions of `dof_ids`. Inactive components remain zero.
 model::Field expand_vec_to_mat(
     const SystemDofIds& dof_ids,
     const DynamicVector& reduced_vector
