@@ -6,9 +6,13 @@
  * and interpolation. This implementation validates the shared nodal temperature
  * field and forwards it with the stress-free reference temperature.
  *
+ * The generated equivalent force modifies only the structural right-hand side.
+ * The optional system DOF map and LHS triplet list of the common load interface
+ * are therefore intentionally unused.
+ *
  * @see load_t.h
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #include "load_t.h"
@@ -25,15 +29,23 @@ namespace fem::bc {
  * Forwards the prescribed nodal temperature field to structural elements.
  *
  * @param model_data Model topology and structural elements.
- * @param bc Generalized nodal field receiving thermal force.
- * @param time Unused analysis time retained by the Neumann interface.
- * @param ignore_amplitude Unused common-interface flag.
+ * @param rhs Structural nodal RHS receiving equivalent thermal force.
+ * @param time Unused analysis time retained by the common load interface.
+ * @param ignore_amplitude Unused common-interface amplitude flag.
+ * @param system_dof_ids Unused optional system DOF map.
+ * @param lhs Unused optional system-matrix triplet list.
  */
-void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
+void TLoad::apply(model::ModelData&       model_data,
+                  model::Field&           rhs,
+                  Precision               time,
+                  bool                    ignore_amplitude,
+                  const SystemDofIds*      system_dof_ids,
+                  TripletList*             lhs) {
     (void) time;
     (void) ignore_amplitude;
+    (void) system_dof_ids;
+    (void) lhs;
 
-    // Validate the scalar nodal temperature field before element gathering.
     logging::error(temp_field_ != nullptr,
         "Temperature field not set on TLOAD");
     logging::error(temp_field_->domain == model::FieldDomain::NODE,
@@ -44,7 +56,7 @@ void TLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
     // Let each structural element assemble its formulation-specific thermal force.
     for (auto& element : model_data.elements) {
         if (auto structural = element->as<model::StructuralElement>()) {
-            structural->apply_tload(bc, *temp_field_, ref_temp_);
+            structural->apply_tload(rhs, *temp_field_, ref_temp_);
         }
     }
 }

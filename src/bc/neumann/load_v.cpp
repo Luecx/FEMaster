@@ -7,9 +7,13 @@
  * formulation owns the integration measure, shape functions and material
  * density scaling.
  *
+ * `VLoad` contributes only to the structural right-hand side. The optional
+ * system DOF map and LHS triplet list are accepted solely through the common
+ * load-side interface and are intentionally ignored.
+ *
  * @see load_v.h
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #include "load_v.h"
@@ -51,18 +55,26 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
  * Assembles distributed body force over the selected structural elements.
  *
  * @param model_data Global fields and element data required for assembly.
- * @param bc Generalized nodal field receiving the contribution.
+ * @param rhs Structural nodal RHS receiving the consistent body force.
  * @param time Analysis time used for amplitude evaluation.
  * @param ignore_amplitude Whether amplitude scaling is disabled.
+ * @param system_dof_ids Unused optional system DOF map.
+ * @param lhs Unused optional system-matrix triplet list.
  */
-void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
-    // Validate the model geometry and selected element region.
+void VLoad::apply(model::ModelData&       model_data,
+                  model::Field&           rhs,
+                  Precision               time,
+                  bool                    ignore_amplitude,
+                  const SystemDofIds*      system_dof_ids,
+                  TripletList*             lhs) {
+    (void) system_dof_ids;
+    (void) lhs;
+
     logging::error(model_data.positions != nullptr,
         "positions field not set in model data");
     logging::error(region_ != nullptr,
         "VLoad: target element region not set");
 
-    // Sanitize sparse input and apply the common amplitude once.
     auto [local_values, has_values] = sanitize_vector(values_);
     if (!has_values) {
         return;
@@ -85,7 +97,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         if (!orientation_) {
             const Vec3 value = local_values;
             structural->integrate_vector_field(
-                bc,
+                rhs,
                 true,
                 [value](const Vec3&) -> Vec3 { return value; }
             );
@@ -95,7 +107,7 @@ void VLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         // Transform the local vector independently at each integration point.
         auto* orientation = orientation_.get();
         structural->integrate_vector_field(
-            bc,
+            rhs,
             true,
             [orientation, local_values](const Vec3& x) -> Vec3 {
                 const Vec3 local_point = orientation->to_local(x);

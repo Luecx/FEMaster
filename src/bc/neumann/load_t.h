@@ -6,11 +6,15 @@
  * scalar nodal temperature field and delegates thermal-strain evaluation to
  * every structural element together with the stress-free reference temperature.
  *
+ * The resulting equivalent thermal force is a pure structural right-hand-side
+ * contribution. The optional system DOF map and LHS triplet list exposed by the
+ * common load interface are therefore unused by this condition.
+ *
  * @see TLoad
  * @see Neumann
  * @see load_t.cpp
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #pragma once
@@ -34,7 +38,23 @@ struct TLoad : Neumann {
     TLoad() = default;
     ~TLoad() override = default;
 
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
+    /**
+     * @brief Converts the prescribed temperature field into equivalent nodal RHS.
+     *
+     * @param model_data Compiled structural element topology and section data.
+     * @param rhs Structural nodal right-hand-side field receiving thermal force.
+     * @param time Unused analysis time retained by the common interface.
+     * @param ignore_amplitude Unused; `TLoad` currently has no amplitude scaling.
+     * @param system_dof_ids Unused; structural thermal expansion does not modify LHS.
+     * @param lhs Unused; structural thermal expansion does not modify LHS.
+     */
+    void apply(model::ModelData&       model_data,
+               model::Field&           rhs,
+               Precision               time,
+               bool                    ignore_amplitude = false,
+               const SystemDofIds*      system_dof_ids = nullptr,
+               TripletList*             lhs = nullptr) override;
+
     std::string str() const override;
 };
 

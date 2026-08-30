@@ -7,11 +7,14 @@
  * elements integrate the negative acceleration with distributed density and
  * optional point-mass handling adds concentrated inertia contributions.
  *
+ * Inertia loading modifies only the structural right-hand side. The optional
+ * system DOF map and LHS triplet list in the common load interface are unused.
+ *
  * @see InertialLoad
  * @see Neumann
  * @see load_inertial.cpp
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #pragma once
@@ -43,7 +46,23 @@ struct InertialLoad : Neumann {
     InertialLoad() = default;
     ~InertialLoad() override = default;
 
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
+    /**
+     * @brief Integrates rigid-body inertia into equivalent nodal RHS loads.
+     *
+     * @param model_data Compiled structural topology, positions and point masses.
+     * @param rhs Structural nodal right-hand-side field.
+     * @param time Unused analysis time retained by the common interface.
+     * @param ignore_amplitude Unused; inertia is defined directly by kinematics.
+     * @param system_dof_ids Unused; inertia loading does not modify LHS.
+     * @param lhs Unused; inertia loading does not modify LHS.
+     */
+    void apply(model::ModelData&       model_data,
+               model::Field&           rhs,
+               Precision               time,
+               bool                    ignore_amplitude = false,
+               const SystemDofIds*      system_dof_ids = nullptr,
+               TripletList*             lhs = nullptr) override;
+
     std::string str() const override;
 };
 

@@ -7,9 +7,13 @@
  * nodal distribution to each selected surface. Local traction vectors are
  * rotated into the global basis independently at every integration point.
  *
+ * Distributed traction is a pure right-hand-side contribution. The optional
+ * DOF map and LHS triplet list from the common load interface are accepted only
+ * to keep all load-side conditions on one uniform `apply()` contract.
+ *
  * @see load_d.h
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #include "load_d.h"
@@ -50,19 +54,27 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
  * Integrates distributed traction over the selected surfaces.
  *
  * @param model_data Global fields required for surface integration.
- * @param bc Generalized nodal field receiving the contribution.
+ * @param rhs Structural nodal RHS receiving the consistent surface force.
  * @param time Analysis time used for amplitude evaluation.
  * @param ignore_amplitude Whether amplitude scaling is disabled.
+ * @param system_dof_ids Unused optional system DOF map.
+ * @param lhs Unused optional system-matrix triplet list.
  */
-void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
-    // Validate surface geometry and the target region.
+void DLoad::apply(model::ModelData&       model_data,
+                  model::Field&           rhs,
+                  Precision               time,
+                  bool                    ignore_amplitude,
+                  const SystemDofIds*      system_dof_ids,
+                  TripletList*             lhs) {
+    (void) system_dof_ids;
+    (void) lhs;
+
     logging::error(model_data.positions != nullptr,
         "positions field not set in model data");
     logging::error(region_ != nullptr,
         "DLoad: target surface region not set");
     const auto& node_positions = *model_data.positions;
 
-    // Sanitize sparse input and apply the common amplitude once.
     auto [local_values, has_values] = sanitize_vector(values_);
     if (!has_values) {
         return;
@@ -80,7 +92,7 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         if (!orientation_) {
             surface->integrate_vector_field(
                 node_positions,
-                bc,
+                rhs,
                 [&](const Vec3&) -> Vec3 { return local_values; }
             );
             continue;
@@ -89,7 +101,7 @@ void DLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         // Evaluate position-dependent local axes at every surface quadrature point.
         surface->integrate_vector_field(
             node_positions,
-            bc,
+            rhs,
             [&](const Vec3& position) -> Vec3 {
                 const Vec3 local_point = orientation_->to_local(position);
                 const auto axes        = orientation_->get_axes(local_point);

@@ -7,11 +7,15 @@
  * `NaN`, an optional coordinate system can define a local component basis, and
  * an optional amplitude scales the complete generalized load at analysis time.
  *
+ * `CLoad` is a pure right-hand-side condition. The common `Neumann::apply()`
+ * interface also exposes optional system-matrix assembly objects for conditions
+ * such as convection; `CLoad` deliberately ignores those objects.
+ *
  * @see CLoad
  * @see Neumann
  * @see load_c.cpp
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #pragma once
@@ -23,7 +27,7 @@
 namespace fem::bc {
 
 /**
- * @brief Applies concentrated generalized Neumann loads to a set of nodes.
+ * @brief Applies concentrated generalized loads to a set of nodes.
  *
  * The first three entries of `values_` represent translational forces and the
  * final three represent moments. `NaN` marks an omitted component. When an
@@ -42,8 +46,23 @@ struct CLoad : Neumann {
     CLoad() = default;
     ~CLoad() override = default;
 
-    // Assemble the concentrated generalized load into the nodal field.
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
+    /**
+     * @brief Adds the concentrated force and moment to the nodal RHS field.
+     *
+     * @param model_data Compiled model data used for nodal positions and local
+     *                   coordinate-system evaluation.
+     * @param rhs Six-component structural nodal right-hand-side field.
+     * @param time Analysis time used for amplitude evaluation.
+     * @param ignore_amplitude If true, omit amplitude scaling.
+     * @param system_dof_ids Unused; concentrated loads do not modify the LHS.
+     * @param lhs Unused; concentrated loads do not modify the LHS.
+     */
+    void apply(model::ModelData&       model_data,
+               model::Field&           rhs,
+               Precision               time,
+               bool                    ignore_amplitude = false,
+               const SystemDofIds*      system_dof_ids = nullptr,
+               TripletList*             lhs = nullptr) override;
 
     std::string str() const override;
 };

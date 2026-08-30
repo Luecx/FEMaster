@@ -3,12 +3,15 @@
  * @brief Implements pressure integration along geometric surface normals.
  *
  * Each selected surface converts the scalar pressure into a vector traction at
- * its quadrature points, using its current geometric normal, and distributes
- * the integrated contribution consistently to its nodes.
+ * its quadrature points, using its geometric normal, and distributes the
+ * integrated contribution consistently to its nodes.
+ *
+ * Pressure contributes only to the structural right-hand side. The optional DOF
+ * map and LHS triplet list of the common load interface are intentionally unused.
  *
  * @see load_p.h
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #include "load_p.h"
@@ -24,19 +27,27 @@ namespace fem::bc {
  * Integrates scalar pressure over the selected surfaces.
  *
  * @param model_data Global nodal positions required for surface geometry.
- * @param bc Generalized nodal field receiving the contribution.
+ * @param rhs Structural nodal RHS receiving the consistent pressure force.
  * @param time Analysis time used for amplitude evaluation.
  * @param ignore_amplitude Whether amplitude scaling is disabled.
+ * @param system_dof_ids Unused optional system DOF map.
+ * @param lhs Unused optional system-matrix triplet list.
  */
-void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
-    // Validate geometry and the target region before surface integration.
+void PLoad::apply(model::ModelData&       model_data,
+                  model::Field&           rhs,
+                  Precision               time,
+                  bool                    ignore_amplitude,
+                  const SystemDofIds*      system_dof_ids,
+                  TripletList*             lhs) {
+    (void) system_dof_ids;
+    (void) lhs;
+
     logging::error(model_data.positions != nullptr,
         "positions field not set in model data");
     logging::error(region_ != nullptr,
         "PLoad: target surface region not set");
     const auto& node_positions = *model_data.positions;
 
-    // Scale the nominal pressure once for the complete region.
     const Precision scale           = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
     const Precision scaled_pressure = pressure_ * scale;
 
@@ -49,7 +60,7 @@ void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         // Surface quadrature supplies the physical normal and consistent nodal weighting.
         surface->integrate_vector_field(
             node_positions,
-            bc,
+            rhs,
             [&](const Vec3& position) -> Vec3 {
                 const Vec2 local = surface->global_to_local(position, node_positions);
                 return -scaled_pressure * surface->normal(node_positions, local);

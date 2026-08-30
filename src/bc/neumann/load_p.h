@@ -3,15 +3,18 @@
  * @brief Declares scalar pressure loading on surface regions.
  *
  * `PLoad` applies a uniform scalar pressure normal to every selected surface.
- * The surface geometry supplies the position-dependent normal and performs the
+ * Surface geometry supplies the position-dependent normal and performs the
  * consistent integration into nodal forces. An optional amplitude scales the
  * pressure magnitude at the current analysis time.
+ *
+ * Pressure is a pure right-hand-side contribution. The optional system DOF map
+ * and LHS triplet list carried by the common load interface are unused.
  *
  * @see PLoad
  * @see Neumann
  * @see load_p.cpp
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #pragma once
@@ -23,12 +26,12 @@
 namespace fem::bc {
 
 /**
- * @brief Integrates a uniform pressure as a structural Neumann condition.
+ * @brief Integrates a uniform pressure as a structural load-side condition.
  *
  * The stored pressure is multiplied by the optional amplitude and applied in
  * the negative direction of the surface normal returned at each integration
- * point. Consequently, the vector direction follows the geometric orientation
- * of each individual surface while the scalar magnitude remains uniform.
+ * point. Consequently, the vector direction follows each surface's geometric
+ * orientation while the scalar magnitude remains uniform.
  */
 struct PLoad : Neumann {
     using Ptr = std::shared_ptr<PLoad>;
@@ -42,7 +45,23 @@ struct PLoad : Neumann {
     PLoad() = default;
     ~PLoad() override = default;
 
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
+    /**
+     * @brief Integrates pressure and adds the consistent nodal force to RHS.
+     *
+     * @param model_data Compiled surface geometry and nodal positions.
+     * @param rhs Structural nodal right-hand-side field.
+     * @param time Analysis time used for amplitude evaluation.
+     * @param ignore_amplitude If true, omit amplitude scaling.
+     * @param system_dof_ids Unused; pressure does not modify LHS.
+     * @param lhs Unused; pressure does not modify LHS.
+     */
+    void apply(model::ModelData&       model_data,
+               model::Field&           rhs,
+               Precision               time,
+               bool                    ignore_amplitude = false,
+               const SystemDofIds*      system_dof_ids = nullptr,
+               TripletList*             lhs = nullptr) override;
+
     std::string str() const override;
 };
 

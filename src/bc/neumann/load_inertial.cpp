@@ -6,11 +6,14 @@
  * vector-field integrator. Point elements are treated explicitly so their
  * concentrated translational mass and diagonal rotary inertia both contribute.
  *
+ * Inertia loading changes only the structural right-hand side. The optional
+ * system DOF map and LHS triplet list from the common load interface are unused.
+ *
  * @see load_inertial.h
  * @see model::PointElement
  * @see PointMassSection
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 30.08.2026
  */
 
 #include "load_inertial.h"
@@ -33,7 +36,7 @@ namespace {
  *
  * @param point Point element carrying a PointMassSection.
  * @param positions Global nodal position field.
- * @param bc Generalized nodal field receiving the result.
+ * @param rhs Generalized nodal RHS receiving the result.
  * @param center Reference point of the rigid-body motion.
  * @param center_acc Translational acceleration at the reference point.
  * @param omega Angular velocity.
@@ -41,7 +44,7 @@ namespace {
  */
 void apply_point_element_inertial_contribution(const model::PointElement& point,
                                                const model::Field&        positions,
-                                               model::Field&              bc,
+                                               model::Field&              rhs,
                                                const Vec3&                center,
                                                const Vec3&                center_acc,
                                                const Vec3&                omega,
@@ -64,19 +67,19 @@ void apply_point_element_inertial_contribution(const model::PointElement& point,
     const Vec3  a_rot = alpha.cross(r) + omega.cross(omega.cross(r));
     const Vec3  dF    = -section->mass_ * (center_acc + a_rot);
 
-    bc(node, 0) += dF(0);
-    bc(node, 1) += dF(1);
-    bc(node, 2) += dF(2);
+    rhs(node, 0) += dF(0);
+    rhs(node, 1) += dF(1);
+    rhs(node, 2) += dF(2);
 
     // Add Euler and gyroscopic moments when rotational columns are available.
-    if (bc.components >= 6) {
+    if (rhs.components >= 6) {
         const Vec3 Jalpha = section->rotary_inertia_.cwiseProduct(alpha);
         const Vec3 Jomega = section->rotary_inertia_.cwiseProduct(omega);
         const Vec3 dM     = -(Jalpha + omega.cross(Jomega));
 
-        bc(node, 3) += dM(0);
-        bc(node, 4) += dM(1);
-        bc(node, 5) += dM(2);
+        rhs(node, 3) += dM(0);
+        rhs(node, 4) += dM(1);
+        rhs(node, 5) += dM(2);
     }
 }
 
@@ -86,15 +89,23 @@ void apply_point_element_inertial_contribution(const model::PointElement& point,
  * Assembles equivalent inertia loads for distributed and concentrated mass.
  *
  * @param model_data Model topology, fields and point-element storage.
- * @param bc Generalized nodal field receiving the contribution.
- * @param time Unused analysis time retained by the Neumann interface.
- * @param ignore_amplitude Unused common-interface flag.
+ * @param rhs Structural nodal RHS receiving equivalent inertia forces.
+ * @param time Unused analysis time retained by the common load interface.
+ * @param ignore_amplitude Unused common-interface amplitude flag.
+ * @param system_dof_ids Unused optional system DOF map.
+ * @param lhs Unused optional system-matrix triplet list.
  */
-void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
+void InertialLoad::apply(model::ModelData&       model_data,
+                         model::Field&           rhs,
+                         Precision               time,
+                         bool                    ignore_amplitude,
+                         const SystemDofIds*      system_dof_ids,
+                         TripletList*             lhs) {
     (void) time;
     (void) ignore_amplitude;
+    (void) system_dof_ids;
+    (void) lhs;
 
-    // Validate the selected elements and global position field.
     logging::error(region_ != nullptr,
         "InertialLoad: region not set");
     logging::error(model_data.positions != nullptr,
@@ -110,7 +121,7 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
 
         if (auto* point = element->as<model::PointElement>()) {
             apply_point_element_inertial_contribution(
-                *point, positions, bc, center_, center_acc_, omega_, alpha_);
+                *point, positions, rhs, center_, center_acc_, omega_, alpha_);
             continue;
         }
 
@@ -123,7 +134,7 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
             const Vec3 a_rot = al.cross(r) + w.cross(w.cross(r));
             return -(a0 + a_rot);
         };
-        structural->integrate_vector_field(bc, true, acceleration);
+        structural->integrate_vector_field(rhs, true, acceleration);
     }
 
     // Auxiliary point elements lie outside regular ELSET topology and are
@@ -135,7 +146,7 @@ void InertialLoad::apply(model::ModelData& model_data, model::Field& bc, Precisi
             logging::error(point != nullptr,
                 "InertialLoad: auxiliary point-element storage contains a non-point element");
             apply_point_element_inertial_contribution(
-                *point, positions, bc, center_, center_acc_, omega_, alpha_);
+                *point, positions, rhs, center_, center_acc_, omega_, alpha_);
         }
     }
 }

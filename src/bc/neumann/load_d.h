@@ -6,11 +6,15 @@
  * surface performs shape-function integration and scatters the consistent nodal
  * force. The vector may use a local coordinate system and an amplitude.
  *
+ * The condition contributes only to the structural right-hand side. The
+ * optional system DOF map and LHS triplet list from the common load interface
+ * are accepted for uniformity and intentionally ignored.
+ *
  * @see DLoad
  * @see Neumann
  * @see load_d.cpp
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #pragma once
@@ -36,7 +40,23 @@ struct DLoad : Neumann {
     DLoad() = default;
     ~DLoad() override = default;
 
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
+    /**
+     * @brief Integrates the traction and adds its consistent nodal forces to RHS.
+     *
+     * @param model_data Compiled surface geometry and nodal positions.
+     * @param rhs Structural nodal right-hand-side field.
+     * @param time Analysis time used for amplitude evaluation.
+     * @param ignore_amplitude If true, omit amplitude scaling.
+     * @param system_dof_ids Unused; distributed traction does not modify LHS.
+     * @param lhs Unused; distributed traction does not modify LHS.
+     */
+    void apply(model::ModelData&       model_data,
+               model::Field&           rhs,
+               Precision               time,
+               bool                    ignore_amplitude = false,
+               const SystemDofIds*      system_dof_ids = nullptr,
+               TripletList*             lhs = nullptr) override;
+
     std::string str() const override;
 };
 

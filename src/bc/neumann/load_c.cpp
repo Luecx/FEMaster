@@ -5,11 +5,15 @@
  * The implementation converts optional `NaN` component markers into zero,
  * evaluates temporal amplitude scaling, optionally rotates local force and
  * moment triplets at each node, and accumulates the resulting six generalized
- * components in the supplied boundary-condition field.
+ * components in the supplied right-hand-side field.
+ *
+ * `CLoad` never modifies the system operator. The optional DOF map and LHS
+ * triplet list supplied by the common `Neumann::apply()` contract are therefore
+ * intentionally ignored.
  *
  * @see load_c.h
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #include "load_c.h"
@@ -57,11 +61,21 @@ std::pair<Vec3, bool> sanitize_vector(Vec3 vec) {
  * vectors from its local basis into global coordinates before assembly.
  *
  * @param model_data Model fields and topology required by the condition.
- * @param bc Generalized nodal field receiving the contribution.
+ * @param rhs Six-component structural nodal RHS receiving the contribution.
  * @param time Analysis time used for amplitude evaluation.
  * @param ignore_amplitude Whether amplitude scaling is disabled.
+ * @param system_dof_ids Unused optional system DOF map.
+ * @param lhs Unused optional system-matrix triplet list.
  */
-void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
+void CLoad::apply(model::ModelData&       model_data,
+                  model::Field&           rhs,
+                  Precision               time,
+                  bool                    ignore_amplitude,
+                  const SystemDofIds*      system_dof_ids,
+                  TripletList*             lhs) {
+    (void) system_dof_ids;
+    (void) lhs;
+
     // Validate the nodal target and position field used by optional orientations.
     logging::error(model_data.positions != nullptr,
         "positions field not set in model data");
@@ -82,15 +96,14 @@ void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         moment_local *= scale;
 
         if (!orientation_) {
-            // Global components can be accumulated directly.
             if (force_active) {
                 for (Dim i = 0; i < 3; ++i) {
-                    bc(node_id, i) += force_local[i];
+                    rhs(node_id, i) += force_local[i];
                 }
             }
             if (moment_active) {
                 for (Dim i = 0; i < 3; ++i) {
-                    bc(node_id, i + 3) += moment_local[i];
+                    rhs(node_id, i + 3) += moment_local[i];
                 }
             }
             continue;
@@ -103,13 +116,13 @@ void CLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time
         if (force_active) {
             const Vec3 global_force = axes * force_local;
             for (Dim i = 0; i < 3; ++i) {
-                bc(node_id, i) += global_force[i];
+                rhs(node_id, i) += global_force[i];
             }
         }
         if (moment_active) {
             const Vec3 global_moment = axes * moment_local;
             for (Dim i = 0; i < 3; ++i) {
-                bc(node_id, i + 3) += global_moment[i];
+                rhs(node_id, i + 3) += global_moment[i];
             }
         }
     }
