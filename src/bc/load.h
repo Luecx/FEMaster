@@ -1,6 +1,6 @@
 /**
  * @file load.h
- * @brief Declares the common ownership base for load-side boundary conditions.
+ * @brief Declares common state for load-side boundary conditions.
  */
 
 #pragma once
@@ -10,25 +10,19 @@
 
 #include "../core/printable.h"
 #include "../core/types_cls.h"
-#include "../core/types_num.h"
 #include "../cos/coordinate_system.h"
-#include "../data/field.h"
 
 #include <memory>
 #include <string>
 
-namespace fem::model {
-struct ModelData;
-}
-
 namespace fem::bc {
 
 /**
- * @brief Common state and RHS dispatch shared by load-side conditions.
+ * @brief Common ownership and modifier state for load-side conditions.
  *
- * Neumann conditions implement the RHS dispatch directly. Robin conditions
- * deliberately reject that generic path and must be evaluated through their
- * LHS-producing overload.
+ * The base deliberately defines no assembly operation. Neumann and Robin
+ * conditions have different algebraic contracts and expose their own `apply()`
+ * interfaces in the corresponding derived base classes.
  */
 struct Load : BoundaryCondition, Printable {
     using Ptr = std::shared_ptr<Load>;
@@ -37,12 +31,6 @@ struct Load : BoundaryCondition, Printable {
     Amplitude::Ptr amplitude_ = nullptr;
 
     virtual ~Load() = default;
-
-    virtual void apply(model::ModelData& model_data,
-                       model::Field&     rhs,
-                       Precision         time,
-                       bool              ignore_amplitude = false) = 0;
-
     std::string str() const override = 0;
 };
 
