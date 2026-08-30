@@ -1,7 +1,6 @@
 /**
-* @file numerate_dofs.h
- * @brief numerate_dofs.h declares a function for numerating system DOF IDs
- * from a SystemDofs matrix in FEM simulations.
+ * @file numerate_dofs.h
+ * @brief Declares contiguous numbering of active system DOFs.
  *
  * @author Created by Finn Eggers (c) <finn.eggers@rwth-aachen.de>
  * all rights reserved
@@ -15,15 +14,16 @@
 namespace fem { namespace mattools {
 
 /**
- * @brief Generates SystemDofIds from a SystemDofs matrix by numerating
- * the degrees of freedom.
+ * @brief Converts an arbitrary node-by-component activation mask into global
+ * system identifiers with matching dimensions.
  *
- * This function takes a `SystemDofs` matrix (boolean values indicating DOFs)
- * and generates a `SystemDofIds` matrix with enumerated DOF IDs for each node.
- * DOF IDs start from 0 and are incremented for each DOF across the nodes.
+ * Active entries are numbered contiguously from zero; inactive entries receive
+ * -1. The component count is retained instead of assuming structural six-DOF
+ * storage.
  *
- * @param systemDofs The SystemDofs matrix to be converted.
- * @return SystemDofIds The matrix of numerated DOF IDs.
+ * @param system_dofs Boolean matrix indicating active nodal components.
+ * @return Matrix of global system identifiers with the same dimensions.
  */
-SystemDofIds numerate_dofs(const SystemDofs& systemDofs);
+SystemDofIds numerate_dofs(const SystemDofs& system_dofs);
+
 } } // namespace fem::mattools

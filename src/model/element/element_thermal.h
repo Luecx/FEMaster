@@ -30,8 +30,9 @@ namespace fem::model {
  * A thermal element associates one scalar temperature unknown with every
  * connectivity node. `conductivity()` and `capacity()` return element matrices
  * in that nodal order using caller-owned storage. `compute_heat_flux()`
- * differentiates a converged nodal temperature field and writes the resulting
- * global Cartesian flux into the element's compiled integration-point rows.
+ * differentiates a converged nodal temperature field at the element's natural
+ * node coordinates and writes the resulting global Cartesian flux into the
+ * compiled element-nodal rows.
  */
 struct ThermalElement {
     // Polymorphic destruction through the thermal capability interface
@@ -42,7 +43,7 @@ struct ThermalElement {
     virtual MapMatrix conductivity(Precision* buffer) = 0;
     virtual MapMatrix capacity    (Precision* buffer) = 0;
 
-    // Recover global conductive heat flux in the compiled element-IP range
+    // Recover global conductive heat flux in the compiled element-nodal range
     virtual void compute_heat_flux(Field& heat_flux, const Field& temperature) = 0;
 };
 

@@ -14,6 +14,7 @@
  *
  * @see SteadyStateThermal
  * @see model::Model::build_conductivity_matrix
+ * @see model::Model::build_thermal_load_matrix
  * @see model::Model::compute_heat_flux
  *
  * @author Finn Eggers
@@ -22,10 +23,9 @@
 
 #include "steady_state_thermal.h"
 
-#include "../bc/neumann/convection.h"
-#include "../bc/neumann/heat_flux.h"
 #include "../core/logging.h"
 #include "../core/timer.h"
+#include "../mattools/reduce_mat_to_vec.h"
 #include "../model/model.h"
 
 #include <cmath>
@@ -42,16 +42,17 @@ using constraint::ConstraintTransformer;
  *
  * 1. Assign sections and enumerate one scalar temperature DOF per active node.
  * 2. Collect prescribed temperatures from the selected support collectors.
- * 3. Assemble element conductivity and thermal surface conditions.
+ * 3. Assemble element conductivity and model-level thermal boundary conditions.
  * 4. Transform and solve the affine constrained linear system.
- * 5. Recover nodal temperature and integration-point conductive heat flux.
+ * 5. Recover nodal temperature and nodal conductive heat flux.
  * 6. Write one static thermal result frame.
  *
  * Thermal load collectors must contain only `HeatFlux` and `Convection`
- * conditions. This explicit selection prevents mechanical loads from being
- * interpreted as scalar heat input. Prescribed temperatures may be absent when
- * convection already anchors the absolute temperature level; otherwise the
- * solver reports the singular unanchored conductivity system.
+ * conditions. The model-level thermal load builder validates this selection and
+ * assembles both scalar nodal heat input and Robin boundary-matrix triplets.
+ * Prescribed temperatures may be absent when convection already anchors the
+ * absolute temperature level; otherwise the solver reports the singular
+ * unanchored conductivity system.
  */
 void SteadyStateThermal::run() {
     // Print the analysis header and validate parser-assigned dependencies.
@@ -77,6 +78,8 @@ void SteadyStateThermal::run() {
     );
     logging::error(thermal_dof_ids.rows() > 0,
         "STEADYSTATETHERMAL: compiled model contains no nodes");
+    logging::error(thermal_dof_ids.cols() == 1,
+        "STEADYSTATETHERMAL: thermal DOF index matrix must have one column");
     logging::error(thermal_dof_ids.maxCoeff() >= 0,
         "STEADYSTATETHERMAL: model contains no thermally active element nodes");
 
@@ -101,57 +104,28 @@ void SteadyStateThermal::run() {
                 && conductivity.cols() == system_size,
         "STEADYSTATETHERMAL: conductivity matrix dimensions do not match thermal DOFs");
 
-    // Assemble scalar nodal heat input and convection boundary-matrix triplets.
-    model::Field nodal_heat_source{
-        "THERMAL_LOAD",
-        model::FieldDomain::NODE,
-        model->_data->field_rows(model::FieldDomain::NODE),
-        1
-    };
-    nodal_heat_source.set_zero();
-
+    // Assemble thermal natural boundary conditions through the model. Pure heat
+    // flux contributes to the nodal RHS; convection additionally emits LHS terms.
     TripletList boundary_terms{};
-    Timer::measure(
+    auto nodal_heat_source = Timer::measure(
         [&]() {
-            for (const std::string& name : loads) {
-                logging::error(model->_data->load_cols.has(name),
-                    "STEADYSTATETHERMAL: load collector ", name, " does not exist");
-
-                const auto collector = model->_data->load_cols.get(name);
-                logging::error(collector != nullptr,
-                    "STEADYSTATETHERMAL: load collector ", name, " is not initialized");
-
-                for (const auto& load : collector->entries()) {
-                    if (!load) continue;
-
-                    const bool thermal = std::dynamic_pointer_cast<bc::HeatFlux>(load) != nullptr
-                                      || std::dynamic_pointer_cast<bc::Convection>(load) != nullptr;
-                    logging::error(thermal,
-                        "STEADYSTATETHERMAL: load collector ", name,
-                        " contains non-thermal condition ", load->str());
-
-                    load->apply(
-                        *model->_data,
-                        nodal_heat_source,
-                        Precision(0),
-                        false,
-                        &thermal_dof_ids,
-                        &boundary_terms
-                    );
-                }
-            }
+            return model->build_thermal_load_matrix(
+                loads,
+                thermal_dof_ids,
+                boundary_terms
+            );
         },
         "assembling thermal boundary conditions"
     );
 
-    // Convert nodal scalar storage to the compact active thermal vector.
-    DynamicVector heat_source = DynamicVector::Zero(system_size);
-    for (Index node = 0; node < nodal_heat_source.rows; ++node) {
-        const int thermal_dof = thermal_dof_ids(node, 0);
-        if (thermal_dof >= 0) {
-            heat_source(thermal_dof) += nodal_heat_source(node, 0);
-        }
-    }
+    // Reduce scalar nodal storage through the same generic field-to-system path
+    // used by structural analyses.
+    auto heat_source = Timer::measure(
+        [&]() { return mattools::reduce_mat_to_vec(thermal_dof_ids, nodal_heat_source); },
+        "reducing thermal load field -> active RHS vector"
+    );
+    logging::error(heat_source.size() == system_size,
+        "STEADYSTATETHERMAL: thermal RHS dimensions do not match active DOFs");
 
     // Add the convection matrix to element conductivity after duplicate surface
     // contributions have been accumulated by sparse triplet construction.
@@ -235,30 +209,31 @@ void SteadyStateThermal::run() {
     logging::error(active_temperature.allFinite(),
         "STEADYSTATETHERMAL: recovered temperature contains NaN or Inf");
 
-    // Expand active temperatures into an explicit scalar nodal result field.
-    model::Field temperature{
-        "TEMPERATURE",
-        model::FieldDomain::NODE,
-        model->_data->field_rows(model::FieldDomain::NODE),
-        1
-    };
-    temperature.set_zero();
-
-    for (Index node = 0; node < temperature.rows; ++node) {
-        const int thermal_dof = thermal_dof_ids(node, 0);
-        if (thermal_dof >= 0) {
-            temperature(node, 0) = active_temperature(thermal_dof);
-        }
-    }
-
-    // Apply Fourier's law to the converged temperature field in each thermal element.
-    auto heat_flux = Timer::measure(
-        [&]() { return model->compute_heat_flux(temperature); },
-        "computing conductive heat flux"
+    // Expand the active scalar solution through the generic system-to-field path.
+    auto temperature = Timer::measure(
+        [&]() {
+            auto field = mattools::expand_vec_to_mat(thermal_dof_ids, active_temperature);
+            field.name = "TEMPERATURE";
+            return field;
+        },
+        "expanding thermal solution -> nodal field"
     );
 
-    // Write temperature to native and FRD output. Integration-point heat flux is
-    // retained by the native result format and ignored by the nodal-only FRD writer.
+    // Evaluate Fourier's law at element nodes and average thermal contributions
+    // onto the unique global nodes used by result writers.
+    auto heat_flux = Timer::measure(
+        [&]() {
+            auto element_heat_flux = model->compute_heat_flux(temperature);
+            auto mapping_weights   = model->build_field_mapping_weights(false, true);
+            return model->_data->element_nodal_to_nodal(
+                element_heat_flux,
+                mapping_weights,
+                "HEAT_FLUX"
+            );
+        },
+        "computing nodal conductive heat flux"
+    );
+
     Timer::measure(
         [&]() {
             writer->add_loadcase(id, io::writer::WriterStepType::Static);

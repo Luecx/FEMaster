@@ -180,6 +180,7 @@ struct Model {
     // fields apply only to structural elements.
     SystemDofIds build_unconstrained_index_matrix();
     SystemDofIds build_thermal_index_matrix();
+    Field build_field_mapping_weights(bool structural = true, bool thermal = true) const;
     Field build_structural_load_matrix(
         const std::vector<std::string>& load_sets = {},
         Precision time = 0);

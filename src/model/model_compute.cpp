@@ -10,8 +10,8 @@
  * weighting operation provided by `ModelData`.
  *
  * Nodal stress recovery, shell-face recovery, beam section forces, shear flow
- * and integration-point heat flux may evaluate elements with OpenMP. Eigen and
- * MKL internal threading are temporarily restricted during those loops to avoid
+ * and element-nodal heat flux may evaluate elements with OpenMP. Eigen and MKL
+ * internal threading are temporarily restricted during those loops to avoid
  * nested oversubscription.
  *
  * @see Model
@@ -114,13 +114,12 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate disjoint element-nodal recovery fields and participation weights
-    Field element_stress {"ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_strain {"ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_weights{"STRESS_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
+    // Allocate disjoint recovery fields and initialize structural mapping weights
+    Field element_stress{"ELEMENT_NODAL_STRESS", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_strain{"ELEMENT_NODAL_STRAIN", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_weights = build_field_mapping_weights(true, false);
     element_stress.set_zero();
     element_strain.set_zero();
-    element_weights.set_zero();
 
     // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
     Eigen::setNbThreads(1);
@@ -137,7 +136,10 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
 
         if (auto sel = el->as<StructuralElement>()) {
             RowMatrix rst = sel->stress_strain_nodal_rst();
-            if (rst.rows() == 0) continue;
+            if (rst.rows() == 0) {
+                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(0);
+                continue;
+            }
 
             logging::error(rst.rows() == sel->n_nodes(),
                 "Element ", sel->elem_id, " returned ", rst.rows(),
@@ -151,7 +153,6 @@ std::tuple<Field, Field> Model::compute_stress_nodal(Field& displacement, bool u
                 static_cast<int>(offset),
                 use_green_lagrange_nl
             );
-            element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }
 
@@ -192,13 +193,12 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
     const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
     const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate separate element-nodal fields for both faces and their weights
-    Field element_top    {"ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_bot    {"ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
-    Field element_weights{"STRESS_TOP_BOT_ELEMENT_WEIGHTS", FieldDomain::ELEMENT, element_count, 1};
+    // Allocate separate face fields and initialize structural mapping weights
+    Field element_top{"ELEMENT_NODAL_STRESS_TOP", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_bot{"ELEMENT_NODAL_STRESS_BOT", FieldDomain::ELEMENT_NODAL, total_element_nodes, 6};
+    Field element_weights = build_field_mapping_weights(true, false);
     element_top.set_zero();
     element_bot.set_zero();
-    element_weights.set_zero();
 
     // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
     Eigen::setNbThreads(1);
@@ -215,7 +215,10 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
 
         if (auto sel = el->as<StructuralElement>()) {
             RowMatrix base_rst = sel->stress_strain_nodal_rst();
-            if (base_rst.rows() == 0) continue;
+            if (base_rst.rows() == 0) {
+                element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(0);
+                continue;
+            }
 
             RowMatrix rst_bot = base_rst;
             RowMatrix rst_top = base_rst;
@@ -231,7 +234,6 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
             const Index offset = static_cast<Index>(nodal_offsets(static_cast<Index>(sel->elem_id), 0));
             sel->compute_stress_strain(nullptr, &element_bot, displacement, rst_bot, static_cast<int>(offset), use_green_lagrange_nl);
             sel->compute_stress_strain(nullptr, &element_top, displacement, rst_top, static_cast<int>(offset), use_green_lagrange_nl);
-            element_weights(static_cast<Index>(sel->elem_id), 0) = Precision(1);
         }
     }
 
@@ -468,36 +470,35 @@ Field Model::compute_shear_flow(Field& displacement) {
 }
 
 /**
- * Recovers global conductive heat flux at every thermal integration point.
+ * Recovers global conductive heat flux at every thermal element node.
  *
  * Thermal elements differentiate the converged scalar nodal temperature in the
- * global reference configuration and apply Fourier's law:
+ * global reference configuration and apply Fourier's law at their natural nodal
+ * coordinates:
  *
  *     q = -k grad_X(T).
  *
- * Compiled integration-point offsets give every element a disjoint output range,
- * so recovery can run in parallel without synchronized writes. Rows belonging
- * to elements without thermal capability remain zero.
+ * Compiled element-nodal offsets give every element a disjoint output range, so
+ * recovery can run in parallel without synchronized writes. Rows belonging to
+ * elements without thermal capability remain zero.
  *
  * @param temperature Converged one-component NODE temperature field.
- * @return Three-component global ELEMENT_IP heat-flux field.
+ * @return Three-component global ELEMENT_NODAL heat-flux field.
  */
 Field Model::compute_heat_flux(const Field& temperature) {
-    // Validate the primary field and compiled integration-point enumeration.
     logging::error(temperature.domain == FieldDomain::NODE,
         "Model: heat-flux recovery requires a NODE temperature field");
     logging::error(temperature.components == 1,
         "Model: heat-flux recovery requires exactly one temperature component");
     logging::error(temperature.rows == _data->field_rows(FieldDomain::NODE),
         "Model: temperature field has the wrong node count");
-    logging::error(_data->element_ip_offsets != nullptr,
-        "Model: element IP offsets have not been initialized");
+    logging::error(_data->element_nodal_offsets != nullptr,
+        "Model: element nodal offsets have not been initialized");
 
-    const Index total_ips     = _data->field_rows(FieldDomain::ELEMENT_IP);
-    const Index element_count = static_cast<Index>(_data->elements.size());
+    const Index total_element_nodes = _data->field_rows(FieldDomain::ELEMENT_NODAL);
+    const Index element_count       = static_cast<Index>(_data->elements.size());
 
-    // Allocate one disjoint output range for every compiled element.
-    Field heat_flux{"HEAT_FLUX", FieldDomain::ELEMENT_IP, total_ips, 3};
+    Field heat_flux{"HEAT_FLUX", FieldDomain::ELEMENT_NODAL, total_element_nodes, 3};
     heat_flux.set_zero();
 
     // Avoid nested Eigen and MKL threading inside the element-parallel loop.

@@ -1,61 +1,76 @@
 /**
  * @file reduce_mat_to_vec.cpp
- * @brief Implements functions to reduce a SystemDofIds matrix and a node field into
- * a DynamicVector and to expand it back.
+ * @brief Implements conversion between nodal fields and active system vectors.
  *
- * The reduction ignores inactive DOFs marked by -1 in the SystemDofIds, while
- * the expansion fills the node field based on the active DOFs and the given reduced
- * DynamicVector.
+ * Inactive entries are identified by negative system indices. Active entries are
+ * addressed by their stored global system identifier, so the conversion works
+ * for arbitrary node-by-component mappings such as structural node-by-six and
+ * scalar thermal node-by-one systems.
  *
  * @date Created on 28.08.2024
  */
 
 #include "reduce_mat_to_vec.h"
-#include <iostream>  // Optional: For debug output
-#include "../core/core.h"
+
+#include "../core/logging.h"
 
 namespace fem { namespace mattools {
 
-DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const model::Field& bc_matrix) {
-    std::vector<Precision> active_dofs;
+DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const model::Field& field) {
+    logging::error(field.domain == model::FieldDomain::NODE,
+        "reduce_mat_to_vec: input field must use NODE domain");
+    logging::error(field.rows == static_cast<Index>(dof_ids.rows()),
+        "reduce_mat_to_vec: field row count does not match system DOF map");
+    logging::error(field.components >= static_cast<Index>(dof_ids.cols()),
+        "reduce_mat_to_vec: field has fewer components than system DOF map");
 
-    // Iterate through all rows and columns of the SystemDofIds matrix
-    for (int i = 0; i < dof_ids.rows(); ++i) {
-        for (int j = 0; j < dof_ids.cols(); ++j) {
-            // Check if the DOF is active (i.e., not -1)
-            if (dof_ids(i, j) != -1) {
-                active_dofs.push_back(bc_matrix(i, j));
+    const int system_size = dof_ids.size() == 0 ? 0 : dof_ids.maxCoeff() + 1;
+    DynamicVector reduced = DynamicVector::Zero(system_size);
+
+    for (Eigen::Index row = 0; row < dof_ids.rows(); ++row) {
+        for (Eigen::Index col = 0; col < dof_ids.cols(); ++col) {
+            const int system_id = dof_ids(row, col);
+            if (system_id >= 0) {
+                reduced(system_id) = field(
+                    static_cast<Index>(row),
+                    static_cast<Index>(col)
+                );
             }
         }
     }
 
-    // Copy active DOFs into a DynamicVector (Eigen::VectorXd)
-    DynamicVector reduced_vector(active_dofs.size());
-    for (Index i = 0; i < active_dofs.size(); ++i) {
-        reduced_vector(i) = active_dofs[i];
-    }
-
-    return reduced_vector;
+    return reduced;
 }
 
-model::Field expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector& reduced_vector) {
-    model::Field expanded_matrix{"EXPANDED_VECTOR", model::FieldDomain::NODE,
-                                 static_cast<Index>(dof_ids.rows()),
-                                 static_cast<Index>(dof_ids.cols())};
-    expanded_matrix.set_zero();
-    int reduced_index = 0;
+model::Field expand_vec_to_mat(
+    const SystemDofIds& dof_ids,
+    const DynamicVector& reduced_vector
+) {
+    const int required_size = dof_ids.size() == 0 ? 0 : dof_ids.maxCoeff() + 1;
+    logging::error(reduced_vector.size() >= required_size,
+        "expand_vec_to_mat: reduced vector is smaller than the active system DOF range");
 
-    // Iterate through all rows and columns of the SystemDofIds matrix
-    for (int i = 0; i < dof_ids.rows(); ++i) {
-        for (int j = 0; j < dof_ids.cols(); ++j) {
-            // If the DOF is active (not -1), assign the value from the reduced vector
-            if (dof_ids(i, j) != -1) {
-                expanded_matrix(i, j) = reduced_vector(reduced_index);
-                ++reduced_index;
+    model::Field expanded{
+        "EXPANDED_VECTOR",
+        model::FieldDomain::NODE,
+        static_cast<Index>(dof_ids.rows()),
+        static_cast<Index>(dof_ids.cols())
+    };
+    expanded.set_zero();
+
+    for (Eigen::Index row = 0; row < dof_ids.rows(); ++row) {
+        for (Eigen::Index col = 0; col < dof_ids.cols(); ++col) {
+            const int system_id = dof_ids(row, col);
+            if (system_id >= 0) {
+                expanded(
+                    static_cast<Index>(row),
+                    static_cast<Index>(col)
+                ) = reduced_vector(system_id);
             }
         }
     }
 
-    return expanded_matrix;
+    return expanded;
 }
+
 } } // namespace fem::mattools

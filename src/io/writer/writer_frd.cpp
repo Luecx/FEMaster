@@ -329,6 +329,15 @@ const FRDField& frd_field(const std::string& field_name) {
             }
         },
         {
+            {"HEATFLUX", "HFL", "FLUX"}, "FLUX",
+            {
+                FRDComponent::vector("HFL1", 1),
+                FRDComponent::vector("HFL2", 2),
+                FRDComponent::vector("HFL3", 3),
+                FRDComponent::vcnorm("ALL")
+            }
+        },
+        {
             {"DISPLACEMENT", "DISP", "MODESHAPE", "BUCKLINGMODE"}, "DISP",
             {
                 FRDComponent::vector("D1" , 1),

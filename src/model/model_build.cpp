@@ -193,7 +193,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
                 added = true;
                 break;
             }
-
+        
             // Start a separate cluster when the normal crosses a geometric crease
             if (!added) {
                 cluster_sums.push_back(normal);
@@ -294,22 +294,19 @@ SystemDofIds Model::build_unconstrained_index_matrix() {
 /**
  * Enumerates the scalar nodal temperature unknowns required by thermal elements.
  *
- * The common system mapping retains six columns so it remains compatible with
- * sparse assembly and constraint transformation. A thermal system activates
- * only component zero at nodes connected to a `ThermalElement`; every other
- * component and every node without thermal connectivity remains inactive.
+ * Thermal systems carry exactly one algebraic component per node. Nodes connected
+ * to a `ThermalElement` activate that scalar component; nodes without thermal
+ * connectivity remain inactive and receive an index of -1.
  *
- * @return Node-by-six mapping with contiguous temperature indices in column zero.
+ * @return Node-by-one mapping with contiguous temperature system identifiers.
  */
 SystemDofIds Model::build_thermal_index_matrix() {
-    // Validate the compiled nodal domain before constructing the thermal mask.
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 
-    SystemDofs mask{_data->positions->rows, 6};
+    SystemDofs mask{_data->positions->rows, 1};
     mask.fill(false);
 
-    // Activate one scalar temperature unknown at every thermal element node.
     for (const auto& element : _data->elements) {
         if (element == nullptr || element->as<ThermalElement>() == nullptr) continue;
 
@@ -323,7 +320,7 @@ SystemDofIds Model::build_thermal_index_matrix() {
 }
 
 /**
- * Assembles selected load collectors into one global nodal load field.
+ * Assembles selected structural load collectors into one global nodal load field.
  *
  * Each named collector evaluates its loads at `time`, including any attached
  * amplitude and coordinate-system transformation, into a six-component nodal
@@ -334,11 +331,14 @@ SystemDofIds Model::build_thermal_index_matrix() {
  * @param time Evaluation time supplied to load amplitudes.
  * @return Six-component global nodal load field.
  */
-Field Model::build_load_matrix(std::vector<std::string> load_sets, Precision time) {
+Field Model::build_structural_load_matrix(
+    const std::vector<std::string>& load_sets,
+    Precision                       time
+) {
     Field load_matrix{"LOAD_MATRIX", FieldDomain::NODE, _data->field_rows(FieldDomain::NODE), 6};
     load_matrix.set_zero();
 
-    for (auto& key : load_sets) {
+    for (const auto& key : load_sets) {
         auto data = _data->load_cols.get(key);
         data->apply(*_data, load_matrix, time);
     }
