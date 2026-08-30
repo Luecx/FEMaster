@@ -24,12 +24,6 @@
 
 namespace fem::model {
 
-/** @brief Nodal thermal RHS and symbolic Robin equation contributions. */
-struct ThermalLoadData {
-    Field              rhs;
-    bc::RobinEquations equations;
-};
-
 struct Model {
     static constexpr const char* DEFAULT_PART_NAME     = "__DEFAULT_PART__";
     static constexpr const char* DEFAULT_INSTANCE_NAME = "__DEFAULT_INSTANCE__";
@@ -95,9 +89,11 @@ struct Model {
     Field build_structural_load_matrix(
         const std::vector<std::string>& load_sets = {},
         Precision time = 0);
-    ThermalLoadData build_thermal_loads(
+    Field build_thermal_load_matrix(
         const std::vector<std::string>& load_sets,
-        Precision time = 0);
+        const SystemDofIds&             system_dof_ids,
+        TripletList&                    lhs,
+        Precision                       time = 0);
 
     constraint::ConstraintGroups collect_constraints(
         SystemDofIds& system_dof_ids,
@@ -112,9 +108,6 @@ struct Model {
         SystemDofIds& indices,
         const Field* stiffness_scalar = nullptr);
     SparseMatrix build_conductivity_matrix(SystemDofIds& indices);
-    SparseMatrix build_thermal_matrix(
-        SystemDofIds& indices,
-        const bc::RobinEquations& equations);
     SparseMatrix build_tangent_stiffness_matrix(
         SystemDofIds& indices,
         NodeData& nodal_forces,
