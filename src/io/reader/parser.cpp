@@ -2,25 +2,8 @@
  * @file parser.cpp
  * @brief Implements one-shot parsing and explicit FEMaster deck processing.
  *
- * The input file is parsed exactly once into `dsl::Deck`. Semantic model
- * construction then follows a visible dependency order: global definitions,
- * Part-local topology, Instances, `Model::compile()`, assembly materialization,
- * compiled model features and finally load cases. Scope-sensitive commands are
- * selected from their stored parent nodes instead of being replayed in parser
- * stages.
- *
- * The registered command callbacks remain the semantic implementation.
- * `ParsedCommand::enter()`, `execute()` and `leave()` control when those existing
- * callbacks run; syntax validation, variant selection and data aggregation have
- * already completed in `dsl::DeckParser`.
- *
- * @see Parser
- * @see io::dsl::Deck
- * @see io::dsl::DeckParser
- * @see model::Model::compile
- *
  * @author Finn Eggers
- * @date 26.08.2026
+ * @date 30.08.2026
  */
 
 #include "parser.h"
@@ -39,78 +22,44 @@
 
 namespace fem::io::reader {
 
-/**
- * Constructs an idle parser and prepares the native FEMaster documentation grammar.
- */
 Parser::Parser()
-    : model_(std::make_shared<model::Model>()),
-      writer_("") {
+    : model_(std::make_shared<model::Model>()), writer_("") {
     configure_documentation_registry();
 }
 
 Parser::~Parser() = default;
 
-/**
- * Parses one complete input deck and executes its semantic commands afterwards.
- *
- * Every run owns one registry for the entire parse/process lifetime. This is
- * required because parsed command and segment pointers refer directly to that
- * registry. The file itself is consumed only once; all later dependency ordering
- * operates on the in-memory deck representation.
- *
- * @param input_path Input deck parsed exactly once.
- * @param output_path Optional base path for result files.
- * @param writer_formats Result formats enabled for analysis output.
- */
 void Parser::run(const std::string& input_path,
                  const std::string& output_path,
                  const io::writer::WriterFileFormats& writer_formats) {
-    // Reset all mutable state so each run represents an independent deck.
     model_ = std::make_shared<model::Model>();
     active_loadcase_.reset();
     next_loadcase_id_ = 1;
 
-    // Register the complete grammar once and parse the complete source once.
     io::dsl::Registry registry;
     register_commands(registry);
 
     io::dsl::File       file(input_path);
     io::dsl::DeckParser deck_parser(registry);
     const io::dsl::Deck deck = deck_parser.parse(file);
-
-    // Semantic dependencies are now explicit and independent of source order.
     process_deck(deck, input_path, output_path, writer_formats);
 }
 
-/**
- * Executes the parsed native FEMaster deck in explicit model-dependency order.
- *
- * The function deliberately spells out the semantic order from top to bottom.
- * Loops only iterate repeated input scopes such as MATERIAL, PART, ASSEMBLY,
- * COUPLING and LOADCASE; command ordering inside each scope remains visible at
- * the call site. `Model::compile()` forms the one-way boundary between sparse
- * Part/Instance topology and dense assembly materialization.
- */
-void Parser::process_deck(const io::dsl::Deck&                  deck,
-                          const std::string&                    input_path,
-                          const std::string&                    output_path,
+void Parser::process_deck(const io::dsl::Deck&                 deck,
+                          const std::string&                   input_path,
+                          const std::string&                   output_path,
                           const io::writer::WriterFileFormats& writer_formats) {
     const auto& root = deck.root();
 
-    // ---------------------------------------------------------------------
-    // Global definitions required by sections and later load definitions
-    // ---------------------------------------------------------------------
     root.execute_children("HEADING");
 
     for (const auto* material : root.children("MATERIAL")) {
         material->enter();
-
         material->execute_children("ELASTIC");
         material->execute_children("HYPERELASTIC");
         material->execute_children("DENSITY");
         material->execute_children("CONDUCTIVITY");
         material->execute_children("THERMALEXPANSION");
-
         material->leave();
     }
 
@@ -118,77 +67,52 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("ORIENTATION");
     root.execute_children("AMPLITUDE");
 
-    // ---------------------------------------------------------------------
-    // Default-Part topology before Model::compile()
-    // ---------------------------------------------------------------------
+    // Default Part.
     root.execute_children("NODE");
     root.execute_children("ELEMENT");
-
     root.execute_children("NSET");
     root.execute_children("ELSET");
     root.execute_children("SURFACE");
     root.execute_children("SFSET");
-
     root.execute_children("SOLIDSECTION");
     root.execute_children("BEAMSECTION");
     root.execute_children("TRUSSSECTION");
     root.execute_children("SHELLSECTION");
-
     root.execute_children("MASS");
     root.execute_children("ROTARYINERTIA");
     root.execute_children("SPRING");
 
-    // ---------------------------------------------------------------------
-    // Explicit Part topology before Model::compile()
-    // ---------------------------------------------------------------------
+    // Explicit Parts.
     for (const auto* part : root.children("PART")) {
         part->enter();
-
         part->execute_children("NODE");
         part->execute_children("ELEMENT");
-
         part->execute_children("NSET");
         part->execute_children("ELSET");
         part->execute_children("SURFACE");
         part->execute_children("SFSET");
-
         part->execute_children("SOLIDSECTION");
         part->execute_children("BEAMSECTION");
         part->execute_children("TRUSSSECTION");
         part->execute_children("SHELLSECTION");
-
         part->execute_children("MASS");
         part->execute_children("ROTARYINERTIA");
         part->execute_children("SPRING");
-
         part->leave();
     }
 
-    // ---------------------------------------------------------------------
-    // Assembly orphan topology before Model::compile()
-    // ---------------------------------------------------------------------
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("NODE");
         assembly->execute_children("ELEMENT");
     }
 
-    // ---------------------------------------------------------------------
-    // Instances depend on completed Parts and orphan assembly topology
-    // ---------------------------------------------------------------------
     root.execute_children("INSTANCE");
-
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("INSTANCE");
     }
 
-    // ---------------------------------------------------------------------
-    // Transition from sparse topology to dense assembly data
-    // ---------------------------------------------------------------------
     model_->compile();
 
-    // ---------------------------------------------------------------------
-    // Assembly regions, properties and dense fields
-    // ---------------------------------------------------------------------
     root.execute_children("FIELD");
     root.execute_children("NORMAL");
 
@@ -197,32 +121,24 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("ELSET");
         assembly->execute_children("SURFACE");
         assembly->execute_children("SFSET");
-
         assembly->execute_children("MASS");
         assembly->execute_children("ROTARYINERTIA");
         assembly->execute_children("SPRING");
-
         assembly->execute_children("FIELD");
         assembly->execute_children("NORMAL");
     }
 
-    // Complete reference normals before constraints or analyses consume shells.
     model_->build_shell_element_normals();
-
-    // ---------------------------------------------------------------------
-    // Compiled model features
-    // ---------------------------------------------------------------------
     root.execute_children("POINTMASS");
 
-    // ---------------------------------------------------------------------
-    // Root-level collectors and constraints
-    // ---------------------------------------------------------------------
+    // Root-level Dirichlet and Neumann conditions.
     root.execute_children("SUPPORT");
     root.execute_children("TEMPERATURE");
-
     root.execute_children("CLOAD");
     root.execute_children("DLOAD");
     root.execute_children("PLOAD");
+    root.execute_children("HEATFLUX");
+    root.execute_children("CONVECTION");
     root.execute_children("TLOAD");
     root.execute_children("VLOAD");
     root.execute_children("INERTIALLOAD");
@@ -233,20 +149,18 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("CONTACT");
     root.execute_children("EQUATION");
 
-    // ---------------------------------------------------------------------
-    // Assembly-level collectors and constraints
-    // ---------------------------------------------------------------------
+    // Assembly-level Dirichlet and Neumann conditions.
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("SUPPORT");
         assembly->execute_children("TEMPERATURE");
-
         assembly->execute_children("CLOAD");
         assembly->execute_children("DLOAD");
         assembly->execute_children("PLOAD");
+        assembly->execute_children("HEATFLUX");
+        assembly->execute_children("CONVECTION");
         assembly->execute_children("TLOAD");
         assembly->execute_children("VLOAD");
         assembly->execute_children("INERTIALLOAD");
-
         assembly->execute_children("RBM");
         assembly->execute_children("CONNECTOR");
         assembly->execute_children("TIE");
@@ -254,51 +168,35 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("EQUATION");
     }
 
-    // ---------------------------------------------------------------------
-    // Couplings
-    // ---------------------------------------------------------------------
     for (const auto* coupling : root.children("COUPLING")) {
         coupling->enter();
-
         coupling->execute_children("KINEMATIC");
         coupling->execute_children("DISTRIBUTING");
-
         coupling->leave();
     }
 
     for (const auto* assembly : root.children("ASSEMBLY")) {
         for (const auto* coupling : assembly->children("COUPLING")) {
             coupling->enter();
-
             coupling->execute_children("KINEMATIC");
             coupling->execute_children("DISTRIBUTING");
-
             coupling->leave();
         }
     }
 
     root.execute_children("OVERVIEW");
 
-    // ---------------------------------------------------------------------
-    // Result writers and load-case execution
-    // ---------------------------------------------------------------------
     initialize_writers(input_path, output_path, writer_formats);
-
     for (const auto* loadcase : root.children("LOADCASE")) {
         loadcase->enter();
         loadcase->execute_children();
         loadcase->leave();
     }
-
     close_writers();
 }
 
-/**
- * Initializes enabled result writers from the requested output path and publishes
- * the completely materialized model before any load case starts writing frames.
- */
-void Parser::initialize_writers(const std::string&                    input_path,
-                                const std::string&                    output_path,
+void Parser::initialize_writers(const std::string&                   input_path,
+                                const std::string&                   output_path,
                                 const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
     for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
@@ -313,16 +211,10 @@ void Parser::initialize_writers(const std::string&                    input_path
     writer_.write_model_data(*model_->_data);
 }
 
-/**
- * Flushes and closes every enabled result writer after semantic analysis processing.
- */
 void Parser::close_writers() {
     writer_.close();
 }
 
-/**
- * Prints one requested view of the registered FEMaster command grammar.
- */
 void Parser::document(const DocOptions& opts) const {
     using A = DocOptions::Action;
     using F = DocOptions::Format;
@@ -343,29 +235,20 @@ void Parser::document(const DocOptions& opts) const {
     }
 }
 
-/**
- * Returns the mutable model currently constructed or analyzed by the parser.
- */
 model::Model& Parser::model() {
-    logging::error(model_ != nullptr,
-        "Parser: model is not initialized");
+    logging::error(model_ != nullptr, "Parser: model is not initialized");
     return *model_;
 }
 
-/**
- * Returns the model currently constructed or analyzed by the parser.
- */
 const model::Model& Parser::model() const {
-    logging::error(model_ != nullptr,
-        "Parser: model is not initialized");
+    logging::error(model_ != nullptr, "Parser: model is not initialized");
     return *model_;
 }
 
-const io::dsl::Registry& Parser::registry() const { return documentation_registry_; }
+const io::dsl::Registry& Parser::registry() const {
+    return documentation_registry_;
+}
 
-/**
- * Activates a load case and supplies its parser-owned analysis context.
- */
 void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     logging::error(active_loadcase_ == nullptr,
         "Parser: nested load cases are not supported");
@@ -380,9 +263,6 @@ void Parser::begin_loadcase(loadcase::LoadCase::Ptr loadcase) {
     active_loadcase_ = std::move(loadcase);
 }
 
-/**
- * Completes and executes the active load case.
- */
 void Parser::end_loadcase() {
     logging::error(active_loadcase_ != nullptr,
         "Parser: cannot end a load case when none is active");
@@ -391,35 +271,21 @@ void Parser::end_loadcase() {
     loadcase->run();
 }
 
-/**
- * Returns the load case currently configured by consecutive parser commands.
- */
 loadcase::LoadCase* Parser::active_loadcase() {
     return active_loadcase_.get();
 }
 
-/**
- * Rebuilds the persistent registry used for command-language documentation.
- */
 void Parser::configure_documentation_registry() {
     documentation_registry_ = io::dsl::Registry{};
     register_commands(documentation_registry_);
 }
 
-/**
- * Registers the complete native FEMaster command grammar exactly once per run.
- *
- * Registration describes syntax and semantic callbacks only. No parser stage or
- * command activation mode is attached to the grammar; execution timing belongs
- * exclusively to `process_deck()`.
- */
 void Parser::register_commands(io::dsl::Registry& registry) {
     logging::error(model_ != nullptr,
         "Parser: model must exist before registering commands");
 
     auto& mdl = *model_;
 
-    // Semantic Part/Instance topology and scope-aware assembly commands
     commands::register_part        (registry, mdl);
     commands::register_end_part    (registry, mdl);
     commands::register_assembly    (registry);
@@ -433,7 +299,6 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_surface     (registry, mdl);
     commands::register_sfset       (registry, mdl);
 
-    // Root model and native load-case terminator scopes
     registry.command("MODEL", [](io::dsl::Command& command) {
         command.allow_if(io::dsl::Condition::parent_is("ROOT"));
         command.keyword(io::dsl::KeywordSpec::make().key("NAME").optional());
@@ -445,7 +310,6 @@ void Parser::register_commands(io::dsl::Registry& registry) {
         command.variant(io::dsl::Variant::make());
     });
 
-    // Field, material, profile and section definitions
     commands::register_heading(registry);
     commands::register_field(registry, mdl);
     commands::register_normal(registry, mdl);
@@ -465,10 +329,11 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_rotary_inertia(registry, mdl);
     commands::register_spring(registry, mdl);
 
-    // Loads, constraints, features and model diagnostics
     commands::register_cload(registry, mdl);
     commands::register_dload(registry, mdl);
     commands::register_pload(registry, mdl);
+    commands::register_heat_flux(registry, mdl);
+    commands::register_convection(registry, mdl);
     commands::register_tload(registry, mdl);
     commands::register_vload(registry, mdl);
     commands::register_inertialload(registry, mdl);
@@ -484,7 +349,6 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_overview(registry, mdl);
     commands::register_equation(registry, mdl);
 
-    // Load-case creation, solver settings and result requests
     commands::register_loadcase_begin(registry, *this);
     commands::register_loadcase_supports(registry, *this);
     commands::register_loadcase_loads(registry, *this);
