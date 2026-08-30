@@ -219,18 +219,17 @@ bool Surface4::in_bounds(const Vec2& local) const {
 }
 
 /**
- * @brief Returns the full-surface quadrature rule used for the bilinear quadrilateral.
+ * @brief Returns the quadrature rule used for the bilinear quadrilateral.
  *
- * The quadratic rule is the 2 x 2 Gauss scheme. It integrates products of two
- * bilinear shape functions and therefore supports consistent convection
- * matrices in addition to surface area, field integration and nodal loads.
+ * The static quadrature object is constructed only once and reused for all
+ * element evaluations.
  *
- * @return Quadratic-order quadrature rule on the isoparametric square domain.
+ * @return Linear-order quadrature rule on the isoparametric square domain.
  */
 const math::quadrature::Quadrature& Surface4::integration_scheme() const {
     static const math::quadrature::Quadrature scheme{
         math::quadrature::DOMAIN_ISO_QUAD,
-        math::quadrature::ORDER_QUADRATIC
+        math::quadrature::ORDER_LINEAR
     };
 
     return scheme;

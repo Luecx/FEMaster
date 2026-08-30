@@ -233,16 +233,16 @@ bool Surface6::in_bounds(const Vec2& local) const {
 /**
  * @brief Returns the quadrature rule used for the quadratic triangle.
  *
- * The six-point quartic rule integrates products of the quadratic surface shape
- * functions. The same rule is used for surface area, field integration,
- * consistent nodal loads and convection boundary matrices.
+ * The quadratic rule accounts for the higher interpolation order of the
+ * six-node surface. The static object is constructed only once and reused for
+ * all evaluations.
  *
- * @return Quartic-order quadrature rule on the isoparametric triangle.
+ * @return Quadratic-order quadrature rule on the isoparametric triangle.
  */
 const math::quadrature::Quadrature& Surface6::integration_scheme() const {
     static const math::quadrature::Quadrature scheme{
         math::quadrature::DOMAIN_ISO_TRI,
-        math::quadrature::ORDER_QUARTIC
+        math::quadrature::ORDER_QUADRATIC
     };
 
     return scheme;
