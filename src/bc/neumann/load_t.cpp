@@ -1,18 +1,6 @@
 /**
  * @file load_t.cpp
- * @brief Implements delegation of nodal temperature loading to structural elements.
- *
- * Thermal-force generation depends on each element's kinematics, material law
- * and interpolation. This implementation validates the shared nodal temperature
- * field and forwards it with the stress-free reference temperature.
- *
- * The generated equivalent force modifies only the structural right-hand side.
- * The optional system DOF map and LHS triplet list of the common load interface
- * are therefore intentionally unused.
- *
- * @see load_t.h
- * @author Finn Eggers
- * @date 30.08.2026
+ * @brief Implements structural thermal-expansion loading.
  */
 
 #include "load_t.h"
@@ -25,26 +13,12 @@
 
 namespace fem::bc {
 
-/**
- * Forwards the prescribed nodal temperature field to structural elements.
- *
- * @param model_data Model topology and structural elements.
- * @param rhs Structural nodal RHS receiving equivalent thermal force.
- * @param time Unused analysis time retained by the common load interface.
- * @param ignore_amplitude Unused common-interface amplitude flag.
- * @param system_dof_ids Unused optional system DOF map.
- * @param lhs Unused optional system-matrix triplet list.
- */
-void TLoad::apply(model::ModelData&       model_data,
-                  model::Field&           rhs,
-                  Precision               time,
-                  bool                    ignore_amplitude,
-                  const SystemDofIds*      system_dof_ids,
-                  TripletList*             lhs) {
+void TLoad::apply(model::ModelData& model_data,
+                  model::Field&     rhs,
+                  Precision         time,
+                  bool              ignore_amplitude) {
     (void) time;
     (void) ignore_amplitude;
-    (void) system_dof_ids;
-    (void) lhs;
 
     logging::error(temp_field_ != nullptr,
         "Temperature field not set on TLOAD");
@@ -52,20 +26,17 @@ void TLoad::apply(model::ModelData&       model_data,
         "Temperature field ", temp_field_->name, " must be a node field");
     logging::error(temp_field_->components == 1,
         "Temperature field ", temp_field_->name, " must have 1 component");
+    logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components >= 6,
+        "TLoad: target field must be a NODE field with at least six components");
 
-    // Let each structural element assemble its formulation-specific thermal force.
     for (auto& element : model_data.elements) {
+        if (!element) continue;
         if (auto structural = element->as<model::StructuralElement>()) {
             structural->apply_tload(rhs, *temp_field_, ref_temp_);
         }
     }
 }
 
-/**
- * Builds the diagnostic representation of the structural thermal load.
- *
- * @return Human-readable load description.
- */
 std::string TLoad::str() const {
     std::ostringstream os;
     os << "TLOAD: field="
