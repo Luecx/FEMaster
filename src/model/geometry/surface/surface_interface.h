@@ -11,6 +11,7 @@
 #include "../../../math/quadrature.h"
 #include "surface_polygon.h"
 
+#include <functional>
 #include <memory>
 
 namespace fem::model {
@@ -62,8 +63,6 @@ struct SurfaceInterface {
     virtual void integrate_vector_field(const Field& node_coords, Field& target, const VecField& field) const = 0;
     virtual Mat3 integrate_tensor_field(const Field& node_coords, const TenField& field) const = 0;
 
-    // Integrate field(x) * N * N^T with a quadrature rule dedicated to products
-    // of shape functions. Ordinary surface loads keep the regular surface rule.
     virtual DynamicMatrix integrate_scalar_shape_matrix(
         const Field& node_coords,
         const ScalarField& field) const = 0;
