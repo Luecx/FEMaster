@@ -92,3 +92,4 @@ struct Surface : public SurfaceInterface {
 #include "surface_geometry.inl"
 #include "surface_projection.inl"
 #include "surface_integrate.inl"
+#include "surface_shape_matrix.inl"
