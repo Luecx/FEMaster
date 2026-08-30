@@ -5,8 +5,8 @@
  * Convection is assembled as one load-side operation even though it contributes
  * to both sides of the linear thermal system. The ambient-temperature part is
  * integrated into component zero of the nodal RHS using the existing surface
- * vector integrator. The temperature-dependent film term is integrated into the
- * sparse LHS through the same `apply()` call.
+ * vector integrator. The temperature-dependent film term is integrated over the
+ * complete selected surface using that surface's ordinary integration rule.
  *
  * @see convection.h
  * @author Finn Eggers
@@ -16,7 +16,6 @@
 #include "convection.h"
 
 #include "../../core/logging.h"
-#include "../../math/quadrature.h"
 #include "../../model/model_data.h"
 
 #include <cmath>
@@ -35,8 +34,12 @@ namespace fem::bc {
  * Both use the same amplitude-scaled film coefficient and reference geometry.
  *
  * The RHS is represented by FEMaster's existing three-component nodal load field
- * and only component zero is used for thermal power. The LHS is assembled using
- * scalar thermal DOF identifiers from column zero of `system_dof_ids`.
+ * and only component zero is used for thermal power. Each entry of the symmetric
+ * boundary matrix is evaluated with `SurfaceInterface::integrate_scalar_field()`,
+ * which integrates over the complete surface using the surface formulation's
+ * ordinary quadrature rule. `integrate_triangular()` is intentionally not used:
+ * that routine exists for polygon-restricted partial-surface integration, while a
+ * convection condition applies to every complete surface contained in `region_`.
  *
  * @param model_data Compiled surface topology and reference nodal positions.
  * @param rhs Three-component nodal thermal RHS. Only component zero is modified.
@@ -77,20 +80,15 @@ void Convection::apply(model::ModelData&       model_data,
     if (h == Precision(0))
         return;
 
-    // The existing surface-vector integration is reused for the scalar thermal
+    const auto& positions = *model_data.positions_reference;
+
+    // Reuse the existing surface-vector integration for the scalar thermal
     // source by storing h*T_inf exclusively in component zero.
     const Vec3 rhs_value{
         h * ambient_temperature_,
         Precision(0),
         Precision(0)
     };
-
-    // Triangular subdivision handles both triangular and quadrilateral surface
-    // polygons through one common surface-integration path.
-    const math::quadrature::Quadrature scheme(
-        math::quadrature::DOMAIN_ISO_TRI,
-        math::quadrature::ORDER_CUBIC
-    );
 
     for (ID surface_id : *region_) {
         logging::error(surface_id >= 0
@@ -101,47 +99,48 @@ void Convection::apply(model::ModelData&       model_data,
         logging::error(surface != nullptr,
             "CONVECTION: surface ", surface_id, " is not initialized");
 
-        // Assemble the ambient-temperature source contribution f_h.
+        // Assemble f_h over the complete surface with its ordinary quadrature.
         surface->integrate_vector_field(
-            *model_data.positions_reference,
+            positions,
             rhs,
             [rhs_value](const Vec3&) -> Vec3 { return rhs_value; }
         );
 
-        // Assemble the temperature-dependent boundary matrix K_h.
-        const auto polygon = surface->local_domain_polygon();
-        surface->integrate_triangular(
-            *model_data.positions_reference,
-            polygon,
-            scheme,
-            [&](const Vec2& local, const Vec3&, Precision weight) {
-                const DynamicVector shape = surface->shape_function(local);
-                logging::error(shape.size() == static_cast<Eigen::Index>(surface->n_nodes),
-                    "CONVECTION: surface shape-function size does not match connectivity");
+        // Assemble only the upper triangle of K_h and mirror off-diagonal terms.
+        // The scalar surface integrator owns the full-surface quadrature and
+        // physical Jacobian; the natural point is recovered only to evaluate N.
+        for (Index i = 0; i < surface->n_nodes; ++i) {
+            const ID  node_i = surface->nodes()[i];
+            const int dof_i  = (*system_dof_ids)(static_cast<Index>(node_i), 0);
+            if (dof_i < 0)
+                continue;
 
-                for (Index i = 0; i < surface->n_nodes; ++i) {
-                    const ID node_i = surface->nodes()[i];
-                    const int dof_i = (*system_dof_ids)(static_cast<Index>(node_i), 0);
-                    if (dof_i < 0)
-                        continue;
+            for (Index j = i; j < surface->n_nodes; ++j) {
+                const ID  node_j = surface->nodes()[j];
+                const int dof_j  = (*system_dof_ids)(static_cast<Index>(node_j), 0);
+                if (dof_j < 0)
+                    continue;
 
-                    for (Index j = 0; j < surface->n_nodes; ++j) {
-                        const ID node_j = surface->nodes()[j];
-                        const int dof_j = (*system_dof_ids)(static_cast<Index>(node_j), 0);
-                        if (dof_j < 0)
-                            continue;
+                const Precision value = surface->integrate_scalar_field(
+                    positions,
+                    [&](const Vec3& position) -> Precision {
+                        const Vec2 local = surface->global_to_local(position, positions);
+                        const DynamicVector shape = surface->shape_function(local);
 
-                        lhs->emplace_back(
-                            dof_i,
-                            dof_j,
-                            h * shape(static_cast<Eigen::Index>(i))
-                              * shape(static_cast<Eigen::Index>(j))
-                              * weight
-                        );
+                        logging::error(shape.size() == static_cast<Eigen::Index>(surface->n_nodes),
+                            "CONVECTION: surface shape-function size does not match connectivity");
+
+                        return h
+                             * shape(static_cast<Eigen::Index>(i))
+                             * shape(static_cast<Eigen::Index>(j));
                     }
-                }
+                );
+
+                lhs->emplace_back(dof_i, dof_j, value);
+                if (i != j)
+                    lhs->emplace_back(dof_j, dof_i, value);
             }
-        );
+        }
     }
 }
 
