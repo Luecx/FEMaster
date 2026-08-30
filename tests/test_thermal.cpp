@@ -1,11 +1,22 @@
 #include "../src/bc/robin/convection.h"
 #include "../src/mattools/numerate_dofs.h"
 #include "../src/model/geometry/surface/surface4.h"
-#include "../src/model/model.h"
+#include "../src/model/model_data.h"
 
 #include <gtest/gtest.h>
 
 using namespace fem;
+
+namespace {
+
+void set_rectangle_positions(model::Field& positions) {
+    positions(0, 0) = 0.0; positions(0, 1) = 0.0; positions(0, 2) = 0.0;
+    positions(1, 0) = 2.0; positions(1, 1) = 0.0; positions(1, 2) = 0.0;
+    positions(2, 0) = 2.0; positions(2, 1) = 1.0; positions(2, 2) = 0.0;
+    positions(3, 0) = 0.0; positions(3, 1) = 1.0; positions(3, 2) = 0.0;
+}
+
+} // namespace
 
 TEST(ThermalDofs, PreservesArbitraryColumnCount) {
     SystemDofs thermal(4, 1);
@@ -36,10 +47,7 @@ TEST(ThermalDofs, PreservesArbitraryColumnCount) {
 TEST(ThermalSurfaceIntegration, ShapeMatrixUsesDedicatedQuadrature) {
     model::Surface4 surface({0, 1, 2, 3});
     model::Field positions("POSITIONS", model::FieldDomain::NODE, 4, 3);
-    positions << 0.0, 0.0, 0.0,
-                 2.0, 0.0, 0.0,
-                 2.0, 1.0, 0.0,
-                 0.0, 1.0, 0.0;
+    set_rectangle_positions(positions);
 
     const auto matrix = surface.integrate_scalar_shape_matrix(
         positions,
@@ -60,14 +68,12 @@ TEST(ThermalSurfaceIntegration, ShapeMatrixUsesDedicatedQuadrature) {
     EXPECT_NEAR(matrix.sum(), 2.0, 1e-12);
 }
 
-TEST(ConvectionRobin, ProducesRhsAndSymbolicRows) {
+TEST(ConvectionRobin, ProducesRhsAndDirectMatrixTerms) {
     model::ModelData data;
     data.positions_reference = std::make_shared<model::Field>(
         "POSITION_REFERENCE", model::FieldDomain::NODE, 4, 3);
-    (*data.positions_reference) << 0.0, 0.0, 0.0,
-                                  2.0, 0.0, 0.0,
-                                  2.0, 1.0, 0.0,
-                                  0.0, 1.0, 0.0;
+    set_rectangle_positions(*data.positions_reference);
+
     data.surfaces.push_back(std::make_shared<model::Surface4>(
         std::array<ID, 4>{0, 1, 2, 3}));
 
@@ -81,40 +87,30 @@ TEST(ConvectionRobin, ProducesRhsAndSymbolicRows) {
 
     model::Field rhs("THERMAL_LOAD", model::FieldDomain::NODE, 4, 1);
     rhs.set_zero();
-    bc::RobinEquations equations;
 
-    convection.apply(data, rhs, equations, 0.0);
+    SystemDofIds dofs(4, 1);
+    dofs << 0, 1, 2, 3;
 
-    ASSERT_EQ(equations.size(), 4u);
+    TripletList terms;
+    convection.apply(data, rhs, dofs, terms, 0.0);
+
     for (Index node = 0; node < 4; ++node) {
         EXPECT_NEAR(rhs(node, 0), 10.0, 1e-12);
-        EXPECT_EQ(equations[static_cast<std::size_t>(node)].row_node_id, node);
-        EXPECT_EQ(equations[static_cast<std::size_t>(node)].row_dof, 0);
-
-        Precision row_sum = 0;
-        for (const auto& entry : equations[static_cast<std::size_t>(node)].entries) {
-            row_sum += entry.coeff;
-        }
-        EXPECT_NEAR(row_sum, 1.0, 1e-12);
     }
-}
 
-TEST(ThermalModel, AssemblesRobinRowsCentrally) {
-    model::Model model;
+    SparseMatrix matrix(4, 4);
+    matrix.setFromTriplets(terms.begin(), terms.end());
 
-    SystemDofIds ids(2, 1);
-    ids << 0, 1;
+    const Precision factor = Precision(4) / Precision(36);
+    Eigen::Matrix<Precision, 4, 4> expected;
+    expected << 4, 2, 1, 2,
+                2, 4, 2, 1,
+                1, 2, 4, 2,
+                2, 1, 2, 4;
+    expected *= factor;
 
-    bc::RobinEquations equations{
-        {0, 0, {{0, 0, 2.0}, {1, 0, -1.0}}},
-        {1, 0, {{0, 0, -1.0}, {1, 0, 3.0}}}
-    };
-
-    const SparseMatrix matrix = model.build_thermal_matrix(ids, equations);
-    ASSERT_EQ(matrix.rows(), 2);
-    ASSERT_EQ(matrix.cols(), 2);
-    EXPECT_NEAR(matrix.coeff(0, 0),  2.0, 1e-12);
-    EXPECT_NEAR(matrix.coeff(0, 1), -1.0, 1e-12);
-    EXPECT_NEAR(matrix.coeff(1, 0), -1.0, 1e-12);
-    EXPECT_NEAR(matrix.coeff(1, 1),  3.0, 1e-12);
+    ASSERT_EQ(matrix.rows(), 4);
+    ASSERT_EQ(matrix.cols(), 4);
+    EXPECT_NEAR((DynamicMatrix(matrix) - expected).norm(), 0.0, 1e-12);
+    EXPECT_NEAR(matrix.sum(), 4.0, 1e-12);
 }
