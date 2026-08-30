@@ -7,7 +7,7 @@
 
 #include "../bc/amplitude.h"
 #include "../bc/dirichlet/dirichlet.h"
-#include "../bc/load.h"
+#include "../bc/neumann/neumann.h"
 #include "../bc/robin/robin.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
@@ -26,8 +26,8 @@ namespace fem::model {
 
 /** @brief Nodal thermal RHS and symbolic Robin equation contributions. */
 struct ThermalLoadData {
-    Field               rhs;
-    bc::RobinEquations  equations;
+    Field              rhs;
+    bc::RobinEquations equations;
 };
 
 struct Model {
@@ -75,7 +75,8 @@ struct Model {
     void add_profile(Profile::Ptr profile);
     void add_section(Section::Ptr section);
 
-    void add_load     (bc::Load::Ptr load);
+    void add_load     (bc::Neumann::Ptr load);
+    void add_load     (bc::Robin::Ptr load);
     void add_amplitude(bc::Amplitude::Ptr amplitude);
     void add_support  (bc::Dirichlet::Ptr support);
 
