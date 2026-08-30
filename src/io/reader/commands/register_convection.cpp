@@ -1,34 +1,6 @@
 /**
  * @file register_convection.cpp
  * @brief Registers linear thermal convection boundary conditions.
- *
- * `CONVECTION` describes heat exchange between a compiled surface and an
- * ambient medium according to
- *
- *     q = h (T_inf - T).
- *
- * The condition is mathematically Robin-type but is stored in FEMaster's common
- * load-side `Neumann` hierarchy. During thermal system assembly its single
- * `apply()` call contributes both the ambient source term to the right-hand side
- * and the film matrix to the left-hand side.
- *
- * Native syntax:
- *
- * @code
- * *CONVECTION, LOAD_COLLECTOR=THERMAL_LOADS
- * SURFACE_OUTER, 12.5, 293.15
- * @endcode
- *
- * Data columns are target surface, film coefficient `h`, and prescribed ambient
- * temperature `T_inf`. An optional amplitude scales the complete convection
- * condition at analysis time.
- *
- * @see bc::Convection
- * @see bc::Neumann
- * @see bc::LoadCollector
- *
- * @author Finn Eggers
- * @date 30.08.2026
  */
 
 #include "register_functions.h"
@@ -39,7 +11,7 @@
 #include <string>
 #include <utility>
 
-#include "../../../bc/neumann/convection.h"
+#include "../../../bc/robin/convection.h"
 #include "../../../core/logging.h"
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
@@ -47,25 +19,10 @@
 
 namespace fem::io::reader::commands {
 
-/**
- * @brief Registers linear surface convection in the native DSL.
- *
- * Entering the command activates one common load collector and stores the
- * optional amplitude name. Every row resolves the target as either a compiled
- * surface set or a single compiled surface. The parsed film coefficient and
- * ambient temperature are copied directly to the resulting `bc::Convection`.
- *
- * A zero film coefficient is accepted and produces a no-op contribution; a
- * negative or non-finite coefficient is rejected because it does not represent
- * the supported passive convection law.
- *
- * @param registry DSL registry receiving the `CONVECTION` command.
- * @param model Compiled model providing surfaces, amplitudes and load storage.
- */
 void register_convection(fem::io::dsl::Registry& registry, model::Model& model) {
     registry.command("CONVECTION", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is({"ROOT", "ASSEMBLY"}));
-        command.doc("Apply q = h (T_inf - T) convection to compiled surfaces.");
+        command.doc("Apply q = h (T_inf - T) Robin convection to compiled surfaces.");
 
         auto amplitude = std::make_shared<std::string>();
         command.keyword(
