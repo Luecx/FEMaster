@@ -1,6 +1,6 @@
 /**
  * @file convection.cpp
- * @brief Implements linear thermal convection without direct matrix access.
+ * @brief Implements linear thermal convection as a Robin boundary condition.
  */
 
 #include "convection.h"
@@ -13,17 +13,22 @@
 
 namespace fem::bc {
 
-void Convection::apply(model::ModelData& model_data,
-                       model::Field&     rhs,
-                       RobinEquations&   equations,
-                       Precision         time,
-                       bool              ignore_amplitude) {
+void Convection::apply(model::ModelData&  model_data,
+                       model::Field&      rhs,
+                       const SystemDofIds& system_dof_ids,
+                       TripletList&        lhs,
+                       Precision           time,
+                       bool                ignore_amplitude) {
     logging::error(region_ != nullptr,
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
         "CONVECTION: reference positions are not initialized");
     logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components == 1,
         "CONVECTION: target field must be a NODE field with exactly one component");
+    logging::error(system_dof_ids.rows() == static_cast<Eigen::Index>(model_data.positions_reference->rows),
+        "CONVECTION: thermal DOF map does not match the nodal domain");
+    logging::error(system_dof_ids.cols() == 1,
+        "CONVECTION: thermal DOF map must contain exactly one component");
     logging::error(std::isfinite(film_coefficient_) && film_coefficient_ >= Precision(0),
         "CONVECTION: film coefficient must be finite and non-negative");
     logging::error(std::isfinite(ambient_temperature_),
@@ -69,26 +74,27 @@ void Convection::apply(model::ModelData& model_data,
                     && local.cols() == static_cast<Eigen::Index>(surface->n_nodes),
             "CONVECTION: local Robin matrix does not match surface connectivity");
         logging::error(local.allFinite(),
-            "CONVECTION: local Robin coefficients contain NaN or Inf");
+            "CONVECTION: local Robin matrix contains NaN or Inf");
 
         for (Index i = 0; i < surface->n_nodes; ++i) {
-            RobinEquation equation{};
-            equation.row_node_id = surface->nodes()[i];
-            equation.row_dof     = 0;
-            equation.entries.reserve(static_cast<std::size_t>(surface->n_nodes));
+            const ID node_i = surface->nodes()[i];
+            const int row = system_dof_ids(static_cast<Eigen::Index>(node_i), 0);
+            logging::error(row >= 0,
+                "CONVECTION: surface references thermally inactive node ", node_i);
 
             for (Index j = 0; j < surface->n_nodes; ++j) {
-                const Precision coeff = local(
+                const ID node_j = surface->nodes()[j];
+                const int col = system_dof_ids(static_cast<Eigen::Index>(node_j), 0);
+                logging::error(col >= 0,
+                    "CONVECTION: surface references thermally inactive node ", node_j);
+
+                const Precision value = local(
                     static_cast<Eigen::Index>(i),
                     static_cast<Eigen::Index>(j)
                 );
-                if (coeff == Precision(0)) continue;
-
-                equation.entries.push_back({surface->nodes()[j], 0, coeff});
-            }
-
-            if (!equation.entries.empty()) {
-                equations.push_back(std::move(equation));
+                if (value != Precision(0)) {
+                    lhs.emplace_back(row, col, value);
+                }
             }
         }
     }
