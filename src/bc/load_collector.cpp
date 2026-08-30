@@ -1,9 +1,9 @@
 /**
  * @file load_collector.cpp
- * @brief Implements collective application of load objects.
+ * @brief Implements collective application of Neumann conditions.
  *
  * @author Finn Eggers
- * @date 19.08.2026
+ * @date 30.08.2026
  */
 
 #include "load_collector.h"
@@ -13,7 +13,7 @@
 namespace fem::bc {
 
 LoadCollector::LoadCollector(const std::string& name)
-    : model::Collection<Load::Ptr>(name) {}
+    : model::Collection<Neumann::Ptr>(name) {}
 
 void LoadCollector::apply(model::ModelData& model_data, model::Field& bc, Precision time) {
     for (const auto& load : this->_data) {

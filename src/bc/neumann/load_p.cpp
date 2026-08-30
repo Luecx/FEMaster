@@ -1,0 +1,79 @@
+/**
+ * @file load_p.cpp
+ * @brief Implements pressure integration along geometric surface normals.
+ *
+ * Each selected surface converts the scalar pressure into a vector traction at
+ * its quadrature points, using its current geometric normal, and distributes
+ * the integrated contribution consistently to its nodes.
+ *
+ * @see load_p.h
+ * @author Finn Eggers
+ * @date 06.03.2025
+ */
+
+#include "load_p.h"
+
+#include "../../core/logging.h"
+#include "../../model/model_data.h"
+
+#include <sstream>
+
+namespace fem::bc {
+
+/**
+ * Integrates scalar pressure over the selected surfaces.
+ *
+ * @param model_data Global nodal positions required for surface geometry.
+ * @param bc Generalized nodal field receiving the contribution.
+ * @param time Analysis time used for amplitude evaluation.
+ * @param ignore_amplitude Whether amplitude scaling is disabled.
+ */
+void PLoad::apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude) {
+    // Validate geometry and the target region before surface integration.
+    logging::error(model_data.positions != nullptr,
+        "positions field not set in model data");
+    logging::error(region_ != nullptr,
+        "PLoad: target surface region not set");
+    const auto& node_positions = *model_data.positions;
+
+    // Scale the nominal pressure once for the complete region.
+    const Precision scale           = amplitude_ && !ignore_amplitude ? amplitude_->evaluate(time) : Precision(1);
+    const Precision scaled_pressure = pressure_ * scale;
+
+    for (const ID surf_id : *region_) {
+        auto surface = model_data.surfaces[surf_id];
+        if (!surface) {
+            continue;
+        }
+
+        // Surface quadrature supplies the physical normal and consistent nodal weighting.
+        surface->integrate_vector_field(
+            node_positions,
+            bc,
+            [&](const Vec3& position) -> Vec3 {
+                const Vec2 local = surface->global_to_local(position, node_positions);
+                return -scaled_pressure * surface->normal(node_positions, local);
+            }
+        );
+    }
+}
+
+/**
+ * Builds the diagnostic representation of the pressure load.
+ *
+ * @return Human-readable load description.
+ */
+std::string PLoad::str() const {
+    std::ostringstream os;
+    os << "PLOAD: target=SFSET "
+       << (region_ ? region_->name : std::string("?"))
+       << " (" << (region_ ? static_cast<int>(region_->size()) : 0) << ")"
+       << ", p=" << pressure_;
+
+    if (amplitude_)
+        os << ", amplitude=" << amplitude_->name;
+
+    return os.str();
+}
+
+} // namespace fem::bc
