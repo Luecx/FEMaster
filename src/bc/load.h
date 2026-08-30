@@ -9,6 +9,7 @@
 #include "bc.h"
 
 #include "../core/printable.h"
+#include "../core/types_cls.h"
 #include "../core/types_num.h"
 #include "../cos/coordinate_system.h"
 #include "../data/field.h"
@@ -27,7 +28,7 @@ namespace fem::bc {
  *
  * Neumann conditions implement the RHS dispatch directly. Robin conditions
  * deliberately reject that generic path and must be evaluated through their
- * equation-producing overload.
+ * LHS-producing overload.
  */
 struct Load : BoundaryCondition, Printable {
     using Ptr = std::shared_ptr<Load>;
