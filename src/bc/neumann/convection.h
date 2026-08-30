@@ -26,14 +26,16 @@ namespace fem::bc {
  * @brief Applies a linear convection law to a surface region.
  *
  * The boundary law is
- * \f$q = h(T_\infty - T)\f$.
+ *
+ *     q = h (T_inf - T).
+ *
  * After finite-element discretization and rearrangement, convection contributes
  *
- * \f$\mathbf{K}_h = \int_\Gamma h\,\mathbf{N}^T\mathbf{N}\,\mathrm{d}\Gamma\f$
+ *     K_h = integral_Gamma h N^T N dGamma
  *
  * to the left-hand side and
  *
- * \f$\mathbf{f}_h = \int_\Gamma hT_\infty\,\mathbf{N}^T\,\mathrm{d}\Gamma\f$
+ *     f_h = integral_Gamma h T_inf N^T dGamma
  *
  * to the right-hand side. Both contributions are assembled by the single common
  * `apply()` method. Consequently `system_dof_ids` and `lhs` are mandatory when
@@ -54,23 +56,8 @@ struct Convection : Neumann {
     Convection() = default;
     ~Convection() override = default;
 
-    /**
-     * @brief Assembles both convection RHS and boundary-matrix contributions.
-     *
-     * The RHS contribution is integrated through the existing three-component
-     * surface-vector integration path and stored only in component zero. The LHS
-     * contribution is assembled directly into sparse triplets using the supplied
-     * thermal DOF map.
-     *
-     * @param model_data Compiled surface topology and reference geometry.
-     * @param rhs Three-component nodal thermal load field. Only component zero
-     *            receives the ambient-temperature source term.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param ignore_amplitude If true, omit amplitude scaling.
-     * @param system_dof_ids Thermal node-to-system DOF map. Must be non-null.
-     * @param lhs Sparse triplet list receiving the convection boundary matrix.
-     *            Must be non-null.
-     */
+    // Assemble the scalar ambient-temperature source and the matching boundary
+    // matrix using the supplied thermal system mapping.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

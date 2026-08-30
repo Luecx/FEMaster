@@ -119,7 +119,7 @@ void Transient::run() {
                            &active_dof_idx_mat,
                            CT_ptr = CT.get(),
                            &K](double time) -> DynamicVector {
-        auto load_matrix = model->build_load_matrix(this->loads, time);
+        auto load_matrix = model->build_structural_load_matrix(this->loads, time);
         auto f_active = mattools::reduce_mat_to_vec(active_dof_idx_mat, load_matrix);
         return CT_ptr->assemble_system_rhs(K, f_active);
     };

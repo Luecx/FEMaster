@@ -3,9 +3,9 @@
  * @brief Declares prescribed surface heat-flux boundary conditions.
  *
  * `HeatFlux` is a classical thermal Neumann condition. It prescribes heat flux
- * per unit boundary area and contributes only to the thermal right-hand side.
- * The existing three-component surface-vector integration path is reused; the
- * scalar thermal contribution is stored exclusively in component zero.
+ * per unit boundary area and contributes only to a one-component thermal
+ * right-hand side. Surface interpolation distributes the scalar boundary input
+ * consistently to the connected temperature DOFs.
  *
  * @see HeatFlux
  * @see Neumann
@@ -25,8 +25,10 @@ namespace fem::bc {
  * @brief Applies a uniform prescribed heat flux to a surface region.
  *
  * Positive `heat_flux_` denotes heat entering the model. For a constant flux
- * \f$q\f$, the consistent nodal source contribution is
- * \f$\mathbf{f}_q = \int_{\Gamma_q} \mathbf{N}^T q\,\mathrm{d}\Gamma\f$.
+ * q, the consistent nodal source contribution is
+ *
+ *     f_q = integral_Gamma_q N^T q dGamma.
+ *
  * No temperature-dependent term is introduced, so the global left-hand-side
  * operator is not modified.
  */
@@ -42,17 +44,8 @@ struct HeatFlux : Neumann {
     HeatFlux() = default;
     ~HeatFlux() override = default;
 
-    /**
-     * @brief Integrates prescribed heat flux into component zero of thermal RHS.
-     *
-     * @param model_data Compiled surface topology and reference geometry.
-     * @param rhs Three-component nodal thermal load field. Only component zero
-     *            is modified; components one and two remain untouched.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param ignore_amplitude If true, omit amplitude scaling.
-     * @param system_dof_ids Unused; prescribed heat flux does not modify LHS.
-     * @param lhs Unused; prescribed heat flux does not modify LHS.
-     */
+    // Integrate the prescribed flux consistently into a scalar nodal thermal
+    // right-hand side. Heat flux does not modify the system matrix.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

@@ -34,6 +34,8 @@
 #include "../../../model/model.h"
 #include "../../dsl/condition.h"
 
+#include <cmath>
+
 namespace fem::io::reader::commands {
 
 /**
@@ -61,8 +63,8 @@ void register_conductivity(fem::io::dsl::Registry& registry, model::Model& model
                     auto material = model._data->materials.get();
                     logging::error(material != nullptr,
                         "CONDUCTIVITY requires an active material context");
-                    logging::error(conductivity > Precision(0),
-                        "CONDUCTIVITY must be positive");
+                    logging::error(std::isfinite(conductivity) && conductivity > Precision(0),
+                        "CONDUCTIVITY must be finite and positive");
                     material->set_thermal_conductivity(conductivity);
                 })
             )

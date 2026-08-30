@@ -3,9 +3,9 @@
  * @brief Registers load-collector selection for active load cases.
  *
  * The `LOADS` child command reads one or more load-collector names and appends
- * every non-empty token to the active analysis. It supports the static,
- * buckling, transient, harmonic and nonlinear load cases that assemble external
- * forces from named model collectors.
+ * every non-empty token to the active analysis. It supports the structural
+ * load cases that assemble external forces as well as steady-state thermal
+ * analysis, which selects prescribed heat flux and convection conditions.
  *
  * Collector existence and formulation-specific load assembly remain load-case
  * responsibilities. This registration layer validates the active analysis type
@@ -30,6 +30,7 @@
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
@@ -56,6 +57,10 @@ void register_loadcase_loads(fem::io::dsl::Registry& registry, Parser& parser) {
                     logging::error(base != nullptr,
                         "LOADS must appear inside *LOADCASE");
 
+                    if (auto* lc = dynamic_cast<loadcase::SteadyStateThermal*>(base)) {
+                        append_tokens(names, lc->loads);
+                        return;
+                    }
                     if (auto* lc = dynamic_cast<loadcase::LinearBuckling*>(base)) {
                         append_tokens(names, lc->loads);
                         return;

@@ -2,20 +2,14 @@
  * @file writer_frd.cpp
  * @brief Implements the ASCII CalculiX/CGX FRD result writer.
  *
- * The writer emits compiled FEMaster nodes, supported structural elements and
- * NODE-domain result fields in CalculiX FRD syntax.
+ * The writer emits compiled FEMaster nodes, supported finite elements and
+ * NODE-domain structural or thermal result fields in CalculiX FRD syntax.
  *
  * FEMaster solver topology uses dense node identifiers. When model data is
  * written, the semantic reverse mapping retained by `ModelData` is evaluated
  * once to construct the external FRD identifier
  *
- * \f[
- *     n_\mathrm{FRD}
- *     =
- *     10^8\,i_\mathrm{instance}
- *     +
- *     n_\mathrm{local}.
- * \f]
+ *     n_FRD = 10^8 i_instance + n_local.
  *
  * The resulting dense-to-FRD mapping is cached locally in `FrdWriter`. Node
  * coordinates, element connectivity and every subsequent nodal result block
@@ -328,6 +322,12 @@ const FRDField& frd_field(const std::string& field_name) {
     }
 
     static const std::vector<FRDField> definitions{
+        {
+            {"TEMPERATURE", "NDTEMP"}, "NDTEMP",
+            {
+                FRDComponent::scalar("T", 1)
+            }
+        },
         {
             {"DISPLACEMENT", "DISP", "MODESHAPE", "BUCKLINGMODE"}, "DISP",
             {

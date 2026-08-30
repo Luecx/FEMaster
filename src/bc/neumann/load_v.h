@@ -27,6 +27,12 @@ namespace fem::bc {
 
 /**
  * @brief Integrates density-scaled body forces over selected elements.
+ *
+ * `values_` defines acceleration-like force per unit mass. Each compatible
+ * structural element multiplies the spatial field by its density and integrates
+ * it over the physical element volume. The resulting force is distributed
+ * consistently to the element nodes and accumulated in the translational RHS
+ * components.
  */
 struct VLoad : Neumann {
     using Ptr = std::shared_ptr<VLoad>;
@@ -40,16 +46,8 @@ struct VLoad : Neumann {
     VLoad() = default;
     ~VLoad() override = default;
 
-    /**
-     * @brief Integrates the density-scaled body-force field into nodal RHS.
-     *
-     * @param model_data Compiled element topology, materials and positions.
-     * @param rhs Structural nodal right-hand-side field.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param ignore_amplitude If true, omit amplitude scaling.
-     * @param system_dof_ids Unused; body force does not modify LHS.
-     * @param lhs Unused; body force does not modify LHS.
-     */
+    // Integrate the density-scaled body force into the six-component structural
+    // RHS. The optional LHS assembly objects are unused.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

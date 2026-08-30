@@ -25,6 +25,13 @@ namespace fem::bc {
 
 /**
  * @brief Applies element-specific thermal expansion loads to the model.
+ *
+ * The condition owns no spatial target region because the supplied nodal
+ * temperature field already covers the compiled model. Every structural
+ * element extracts its local temperatures, evaluates thermal strain relative
+ * to `ref_temp_` and scatters the corresponding equivalent nodal force into the
+ * structural RHS. This is a mechanical thermal-expansion load, not a heat-flow
+ * boundary condition.
  */
 struct TLoad : Neumann {
     using Ptr = std::shared_ptr<TLoad>;
@@ -38,16 +45,8 @@ struct TLoad : Neumann {
     TLoad() = default;
     ~TLoad() override = default;
 
-    /**
-     * @brief Converts the prescribed temperature field into equivalent nodal RHS.
-     *
-     * @param model_data Compiled structural element topology and section data.
-     * @param rhs Structural nodal right-hand-side field receiving thermal force.
-     * @param time Unused analysis time retained by the common interface.
-     * @param ignore_amplitude Unused; `TLoad` currently has no amplitude scaling.
-     * @param system_dof_ids Unused; structural thermal expansion does not modify LHS.
-     * @param lhs Unused; structural thermal expansion does not modify LHS.
-     */
+    // Convert the prescribed temperature field into the six-component
+    // structural RHS. Time, amplitude and the optional LHS objects are unused.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

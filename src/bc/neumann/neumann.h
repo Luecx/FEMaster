@@ -55,9 +55,10 @@ namespace fem::bc {
  * simple loads to remain simple.
  *
  * Structural load fields conventionally use six components per node. Thermal
- * loads reuse the existing vector integration infrastructure and store their
- * scalar heat-flow contribution in component zero of a three-component nodal
- * field; components one and two remain zero.
+ * load fields use exactly one scalar component per node. Every concrete
+ * condition validates the field layout required by its analysis type so a
+ * thermal load cannot accidentally be assembled into a structural system, or
+ * vice versa.
  */
 struct Neumann : BoundaryCondition, Printable {
     using Ptr = std::shared_ptr<Neumann>;
@@ -70,29 +71,8 @@ struct Neumann : BoundaryCondition, Printable {
 
     virtual ~Neumann() = default;
 
-    /**
-     * @brief Assembles this condition into the global load-side system.
-     *
-     * `rhs` is the mandatory nodal right-hand-side field. Pure Neumann loads
-     * modify only this field. Conditions that also contribute to the global
-     * operator receive `system_dof_ids` and `lhs` from the calling analysis and
-     * append sparse matrix entries to `lhs`. Such conditions must validate that
-     * both optional pointers are non-null before using them.
-     *
-     * The optional objects are pointers rather than references so existing
-     * structural assembly paths do not need to manufacture an unused matrix or
-     * DOF map for loads that cannot modify the left-hand side.
-     *
-     * @param model_data Compiled model topology, geometry and material data.
-     * @param rhs Nodal right-hand-side field receiving load contributions.
-     * @param time Analysis time used to evaluate an attached amplitude.
-     * @param ignore_amplitude If true, assemble the nominal spatial load without
-     *                         multiplying by the attached amplitude.
-     * @param system_dof_ids Optional node-by-component global system DOF map.
-     *                       Required only by conditions that assemble `lhs`.
-     * @param lhs Optional sparse triplet list receiving left-hand-side entries.
-     *            Required only by conditions that modify the system operator.
-     */
+    // Assemble the condition into the nodal RHS. Robin-type conditions also
+    // require the optional system DOF map and append operator terms to `lhs`.
     virtual void apply(model::ModelData&       model_data,
                        model::Field&           rhs,
                        Precision               time,

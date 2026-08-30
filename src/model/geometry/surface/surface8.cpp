@@ -262,16 +262,16 @@ bool Surface8::in_bounds(const Vec2& local) const {
 /**
  * @brief Returns the quadrature rule used for the quadratic quadrilateral.
  *
- * The quadratic rule accounts for the higher interpolation order of the
- * eight-node surface. The static object is constructed only once and reused
- * for all evaluations.
+ * The quartic rule is the 3 x 3 Gauss scheme. It integrates products of the
+ * quadratic surface shape functions and provides the common rule for surface
+ * area, field integration, consistent nodal loads and convection matrices.
  *
- * @return Quadratic-order quadrature rule on the isoparametric square domain.
+ * @return Quartic-order quadrature rule on the isoparametric square domain.
  */
 const math::quadrature::Quadrature& Surface8::integration_scheme() const {
     static const math::quadrature::Quadrature scheme{
         math::quadrature::DOMAIN_ISO_QUAD,
-        math::quadrature::ORDER_QUADRATIC
+        math::quadrature::ORDER_QUARTIC
     };
 
     return scheme;

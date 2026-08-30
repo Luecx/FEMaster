@@ -46,17 +46,8 @@ struct CLoad : Neumann {
     CLoad() = default;
     ~CLoad() override = default;
 
-    /**
-     * @brief Adds the concentrated force and moment to the nodal RHS field.
-     *
-     * @param model_data Compiled model data used for nodal positions and local
-     *                   coordinate-system evaluation.
-     * @param rhs Six-component structural nodal right-hand-side field.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param ignore_amplitude If true, omit amplitude scaling.
-     * @param system_dof_ids Unused; concentrated loads do not modify the LHS.
-     * @param lhs Unused; concentrated loads do not modify the LHS.
-     */
+    // Add the concentrated generalized load to the six-component structural
+    // RHS. The optional LHS assembly objects are unused.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

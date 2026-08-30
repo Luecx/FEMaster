@@ -27,6 +27,15 @@ namespace fem::bc {
 
 /**
  * @brief Represents a translational and rotational rigid-body inertia field.
+ *
+ * At a material position with offset r from `center_`, the prescribed rigid-body
+ * acceleration consists of
+ *
+ *     a = center_acc + alpha cross r + omega cross (omega cross r).
+ *
+ * Structural elements integrate the opposing density-scaled acceleration into
+ * consistent nodal forces. Optional point masses receive the same kinematic
+ * field when `consider_point_masses_` is enabled.
  */
 struct InertialLoad : Neumann {
     using Ptr = std::shared_ptr<InertialLoad>;
@@ -46,16 +55,8 @@ struct InertialLoad : Neumann {
     InertialLoad() = default;
     ~InertialLoad() override = default;
 
-    /**
-     * @brief Integrates rigid-body inertia into equivalent nodal RHS loads.
-     *
-     * @param model_data Compiled structural topology, positions and point masses.
-     * @param rhs Structural nodal right-hand-side field.
-     * @param time Unused analysis time retained by the common interface.
-     * @param ignore_amplitude Unused; inertia is defined directly by kinematics.
-     * @param system_dof_ids Unused; inertia loading does not modify LHS.
-     * @param lhs Unused; inertia loading does not modify LHS.
-     */
+    // Integrate the rigid-body inertia into the six-component structural RHS.
+    // Time, amplitude and the optional LHS assembly objects are unused.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

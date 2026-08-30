@@ -28,6 +28,7 @@
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
@@ -75,6 +76,7 @@ void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) 
             if (configure(dynamic_cast<loadcase::NonlinearStatic*>(base))) return;
             if (configure(dynamic_cast<loadcase::LinearHarmonic*>(base))) return;
             if (configure(dynamic_cast<loadcase::Transient*>(base))) return;
+            if (configure(dynamic_cast<loadcase::SteadyStateThermal*>(base))) return;
 
             logging::error(false,
                 "SOLVER not supported for loadcase type ", base->type_name());

@@ -3,18 +3,21 @@
  * @brief Implements model-wide finite-element result recovery.
  *
  * The routines allocate result fields in their physical storage domains and
- * delegate element-specific evaluation to compiled structural elements.
+ * delegate element-specific evaluation to compiled structural or thermal
+ * capabilities.
  * Integration-point results use the offsets established during compilation;
  * element-nodal quantities are recovered into global nodal fields through the
  * weighting operation provided by `ModelData`.
  *
- * Nodal stress recovery, shell-face recovery, beam section forces and shear
- * flow may evaluate elements with OpenMP. Eigen and MKL internal threading are
- * temporarily restricted during those loops to avoid nested oversubscription.
+ * Nodal stress recovery, shell-face recovery, beam section forces, shear flow
+ * and integration-point heat flux may evaluate elements with OpenMP. Eigen and
+ * MKL internal threading are temporarily restricted during those loops to avoid
+ * nested oversubscription.
  *
  * @see Model
  * @see ModelData
  * @see StructuralElement
+ * @see ThermalElement
  *
  * @author Finn Eggers
  * @date 19.08.2026
@@ -22,6 +25,7 @@
 
 #include "../core/config.h"
 #include "element/element_structural.h"
+#include "element/element_thermal.h"
 #include "model.h"
 #include "shell/s8.h"
 
@@ -461,6 +465,66 @@ Field Model::compute_shear_flow(Field& displacement) {
 #endif
     Eigen::setNbThreads(global_config.max_threads);
     return shear_flow;
+}
+
+/**
+ * Recovers global conductive heat flux at every thermal integration point.
+ *
+ * Thermal elements differentiate the converged scalar nodal temperature in the
+ * global reference configuration and apply Fourier's law:
+ *
+ *     q = -k grad_X(T).
+ *
+ * Compiled integration-point offsets give every element a disjoint output range,
+ * so recovery can run in parallel without synchronized writes. Rows belonging
+ * to elements without thermal capability remain zero.
+ *
+ * @param temperature Converged one-component NODE temperature field.
+ * @return Three-component global ELEMENT_IP heat-flux field.
+ */
+Field Model::compute_heat_flux(const Field& temperature) {
+    // Validate the primary field and compiled integration-point enumeration.
+    logging::error(temperature.domain == FieldDomain::NODE,
+        "Model: heat-flux recovery requires a NODE temperature field");
+    logging::error(temperature.components == 1,
+        "Model: heat-flux recovery requires exactly one temperature component");
+    logging::error(temperature.rows == _data->field_rows(FieldDomain::NODE),
+        "Model: temperature field has the wrong node count");
+    logging::error(_data->element_ip_offsets != nullptr,
+        "Model: element IP offsets have not been initialized");
+
+    const Index total_ips     = _data->field_rows(FieldDomain::ELEMENT_IP);
+    const Index element_count = static_cast<Index>(_data->elements.size());
+
+    // Allocate one disjoint output range for every compiled element.
+    Field heat_flux{"HEAT_FLUX", FieldDomain::ELEMENT_IP, total_ips, 3};
+    heat_flux.set_zero();
+
+    // Avoid nested Eigen and MKL threading inside the element-parallel loop.
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        const auto& element = _data->elements[static_cast<std::size_t>(elem_idx)];
+        if (element == nullptr) continue;
+
+        if (auto thermal = element->as<ThermalElement>()) {
+            thermal->compute_heat_flux(heat_flux, temperature);
+        }
+    }
+
+    // Restore configured linear-algebra threading after element recovery.
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
+
+    heat_flux.check_finite("Heat flux");
+    return heat_flux;
 }
 
 }

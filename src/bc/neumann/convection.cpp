@@ -4,9 +4,9 @@
  *
  * Convection is assembled as one load-side operation even though it contributes
  * to both sides of the linear thermal system. The ambient-temperature part is
- * integrated into component zero of the nodal RHS using the existing surface
- * vector integrator. The temperature-dependent film term is integrated over the
- * complete selected surface using that surface's ordinary integration rule.
+ * integrated into a scalar nodal RHS. The temperature-dependent film term is
+ * integrated over the complete selected surface using the surface rule selected
+ * for products of shape functions.
  *
  * @see convection.h
  * @author Finn Eggers
@@ -26,23 +26,29 @@ namespace fem::bc {
 /**
  * Assembles the complete linear convection boundary contribution.
  *
- * Starting from \f$q = h(T_\infty - T)\f$, finite-element discretization gives
- * the ambient source term
- * \f$\mathbf{f}_h = \int_\Gamma hT_\infty\mathbf{N}^T\,\mathrm{d}\Gamma\f$
+ * Starting from
+ *
+ *     q = h (T_inf - T),
+ *
+ * finite-element discretization gives the ambient source term
+ *
+ *     f_h = integral_Gamma h T_inf N^T dGamma
+ *
  * and the boundary conductivity term
- * \f$\mathbf{K}_h = \int_\Gamma h\mathbf{N}^T\mathbf{N}\,\mathrm{d}\Gamma\f$.
+ *
+ *     K_h = integral_Gamma h N^T N dGamma.
+ *
  * Both use the same amplitude-scaled film coefficient and reference geometry.
  *
- * The RHS is represented by FEMaster's existing three-component nodal load field
- * and only component zero is used for thermal power. Each entry of the symmetric
- * boundary matrix is evaluated with `SurfaceInterface::integrate_scalar_field()`,
- * which integrates over the complete surface using the surface formulation's
- * ordinary quadrature rule. `integrate_triangular()` is intentionally not used:
- * that routine exists for polygon-restricted partial-surface integration, while a
- * convection condition applies to every complete surface contained in `region_`.
+ * The RHS is a one-component nodal field representing thermal power. Each entry
+ * of the symmetric boundary matrix is evaluated with
+ * `SurfaceInterface::integrate_scalar_field()`, which integrates over the
+ * complete surface using the formulation's full-surface quadrature rule.
+ * `integrate_triangular()` is intentionally not used because that routine is for
+ * polygon-restricted partial-surface integration.
  *
  * @param model_data Compiled surface topology and reference nodal positions.
- * @param rhs Three-component nodal thermal RHS. Only component zero is modified.
+ * @param rhs One-component nodal thermal right-hand side.
  * @param time Analysis time used for amplitude evaluation.
  * @param ignore_amplitude Whether amplitude scaling is disabled.
  * @param system_dof_ids Thermal node-to-system DOF map. Must be non-null.
@@ -59,14 +65,16 @@ void Convection::apply(model::ModelData&       model_data,
         "CONVECTION: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
         "CONVECTION: reference positions are not initialized");
-    logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components >= 3,
-        "CONVECTION: target field must be a NODE field with at least three components");
+    logging::error(rhs.domain == model::FieldDomain::NODE && rhs.components == 1,
+        "CONVECTION: target field must be a NODE field with exactly one component");
     logging::error(system_dof_ids != nullptr,
         "CONVECTION: system DOF map is required for LHS assembly");
     logging::error(lhs != nullptr,
         "CONVECTION: LHS triplet list is required for boundary-matrix assembly");
-    logging::error(system_dof_ids->rows() == model_data.positions_reference->rows,
+    logging::error(system_dof_ids->rows() == static_cast<Eigen::Index>(model_data.positions_reference->rows),
         "CONVECTION: thermal DOF map does not match the nodal domain");
+    logging::error(system_dof_ids->cols() >= 1,
+        "CONVECTION: thermal DOF map must contain scalar component zero");
     logging::error(std::isfinite(film_coefficient_) && film_coefficient_ >= Precision(0),
         "CONVECTION: film coefficient must be finite and non-negative");
     logging::error(std::isfinite(ambient_temperature_),
@@ -82,13 +90,7 @@ void Convection::apply(model::ModelData&       model_data,
 
     const auto& positions = *model_data.positions_reference;
 
-    // Reuse the existing surface-vector integration for the scalar thermal
-    // source by storing h*T_inf exclusively in component zero.
-    const Vec3 rhs_value{
-        h * ambient_temperature_,
-        Precision(0),
-        Precision(0)
-    };
+    const Precision rhs_value = h * ambient_temperature_;
 
     for (ID surface_id : *region_) {
         logging::error(surface_id >= 0
@@ -100,10 +102,10 @@ void Convection::apply(model::ModelData&       model_data,
             "CONVECTION: surface ", surface_id, " is not initialized");
 
         // Assemble f_h over the complete surface with its ordinary quadrature.
-        surface->integrate_vector_field(
+        surface->integrate_scalar_field(
             positions,
             rhs,
-            [rhs_value](const Vec3&) -> Vec3 { return rhs_value; }
+            [rhs_value](const Vec3&) -> Precision { return rhs_value; }
         );
 
         // Assemble only the upper triangle of K_h and mirror off-diagonal terms.

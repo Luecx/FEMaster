@@ -200,17 +200,19 @@ bool Surface3::in_bounds(const Vec2& local) const {
 }
 
 /**
- * @brief Returns the quadrature rule used for the linear triangle.
+ * @brief Returns the full-surface quadrature rule used for the linear triangle.
  *
- * A linear rule is sufficient for the interpolation order of the element.
- * The static object is constructed only once and reused for all evaluations.
+ * The three-point quadratic rule integrates products of two linear shape
+ * functions. This is required by boundary matrices such as the consistent
+ * convection contribution, while also providing the common rule for surface
+ * area, field integration and consistent nodal surface loads.
  *
  * @return Quadrature rule on the isoparametric triangular domain.
  */
 const fem::math::quadrature::Quadrature& Surface3::integration_scheme() const {
     static const fem::math::quadrature::Quadrature scheme{
         fem::math::quadrature::DOMAIN_ISO_TRI,
-        fem::math::quadrature::ORDER_LINEAR
+        fem::math::quadrature::ORDER_QUADRATIC
     };
 
     return scheme;

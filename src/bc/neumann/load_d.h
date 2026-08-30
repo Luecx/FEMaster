@@ -27,6 +27,11 @@ namespace fem::bc {
 
 /**
  * @brief Integrates a prescribed traction vector over selected surfaces.
+ *
+ * `values_` represents force per unit physical area. For each surface, the
+ * condition evaluates the possibly position-dependent coordinate-system basis,
+ * applies amplitude scaling and uses the surface shape functions to construct a
+ * consistent generalized nodal load. Rotational RHS components remain zero.
  */
 struct DLoad : Neumann {
     using Ptr = std::shared_ptr<DLoad>;
@@ -40,16 +45,8 @@ struct DLoad : Neumann {
     DLoad() = default;
     ~DLoad() override = default;
 
-    /**
-     * @brief Integrates the traction and adds its consistent nodal forces to RHS.
-     *
-     * @param model_data Compiled surface geometry and nodal positions.
-     * @param rhs Structural nodal right-hand-side field.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param ignore_amplitude If true, omit amplitude scaling.
-     * @param system_dof_ids Unused; distributed traction does not modify LHS.
-     * @param lhs Unused; distributed traction does not modify LHS.
-     */
+    // Integrate the traction into the six-component structural RHS. The
+    // optional LHS assembly objects are unused.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

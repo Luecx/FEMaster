@@ -5,7 +5,7 @@
  * `CONVECTION` describes heat exchange between a compiled surface and an
  * ambient medium according to
  *
- * \f$q = h\,(T_\infty - T)\f$.
+ *     q = h (T_inf - T).
  *
  * The condition is mathematically Robin-type but is stored in FEMaster's common
  * load-side `Neumann` hierarchy. During thermal system assembly its single

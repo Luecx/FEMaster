@@ -28,6 +28,12 @@ namespace fem::bc {
 
 /**
  * @brief Owns load-side boundary conditions under one shared collector name.
+ *
+ * Entries retain input order and are also propagated to the aggregate load
+ * collector maintained by `model::Sets`. `apply()` forwards one common model,
+ * time and algebraic assembly context to every condition. This allows pure
+ * Neumann loads to contribute only to the nodal RHS while Robin conditions can
+ * append matrix terms without a separate collector abstraction.
  */
 struct LoadCollector : model::Collection<Neumann::Ptr> {
     using Ptr = std::shared_ptr<LoadCollector>;
@@ -36,20 +42,8 @@ struct LoadCollector : model::Collection<Neumann::Ptr> {
     explicit LoadCollector(const std::string& name);
     ~LoadCollector() = default;
 
-    /**
-     * @brief Applies all conditions in insertion order.
-     *
-     * Existing structural callers may omit `system_dof_ids` and `lhs`; all
-     * purely mechanical loads operate on the RHS only. Thermal analyses that may
-     * contain convection pass both pointers so matrix and RHS contributions are
-     * assembled through the same condition interface.
-     *
-     * @param model_data Compiled model data shared by all contained conditions.
-     * @param rhs Nodal right-hand-side field receiving contributions.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param system_dof_ids Optional global system DOF map.
-     * @param lhs Optional sparse triplet list receiving LHS contributions.
-     */
+    // Apply all conditions in insertion order. Structural callers may omit the
+    // optional system objects; thermal convection requires both for its LHS.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,

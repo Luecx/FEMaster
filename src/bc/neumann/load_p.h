@@ -45,16 +45,8 @@ struct PLoad : Neumann {
     PLoad() = default;
     ~PLoad() override = default;
 
-    /**
-     * @brief Integrates pressure and adds the consistent nodal force to RHS.
-     *
-     * @param model_data Compiled surface geometry and nodal positions.
-     * @param rhs Structural nodal right-hand-side field.
-     * @param time Analysis time used for amplitude evaluation.
-     * @param ignore_amplitude If true, omit amplitude scaling.
-     * @param system_dof_ids Unused; pressure does not modify LHS.
-     * @param lhs Unused; pressure does not modify LHS.
-     */
+    // Integrate pressure into the six-component structural RHS. The optional
+    // LHS assembly objects are unused.
     void apply(model::ModelData&       model_data,
                model::Field&           rhs,
                Precision               time,
