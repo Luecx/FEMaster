@@ -1,6 +1,6 @@
 /**
  * @file robin.h
- * @brief Declares Robin boundary conditions and their symbolic equation rows.
+ * @brief Declares boundary conditions contributing to both RHS and LHS.
  */
 
 #pragma once
@@ -8,11 +8,11 @@
 #include "../load.h"
 
 #include "../../core/logging.h"
+#include "../../core/types_eig.h"
 #include "../../core/types_num.h"
 #include "../../data/field.h"
 
 #include <memory>
-#include <vector>
 
 namespace fem::model {
 struct ModelData;
@@ -20,22 +20,14 @@ struct ModelData;
 
 namespace fem::bc {
 
-struct RobinEquationEntry {
-    ID        node_id{};
-    Dim       dof{};
-    Precision coeff{};
-};
-
-struct RobinEquation {
-    ID                              row_node_id{};
-    Dim                             row_dof{};
-    std::vector<RobinEquationEntry> entries{};
-};
-
-using RobinEquations = std::vector<RobinEquation>;
-
 /**
- * @brief Boundary condition producing a RHS contribution and symbolic rows.
+ * @brief Boundary condition contributing to both the load vector and operator.
+ *
+ * Robin conditions assemble their prescribed source contribution into the nodal
+ * right-hand side and append their temperature- or displacement-dependent
+ * operator contribution directly to a sparse triplet list. The concrete
+ * condition owns the local boundary integration, while the supplied system DOF
+ * map provides the local-to-global algebraic mapping.
  */
 struct Robin : Load {
     using Ptr = std::shared_ptr<Robin>;
@@ -52,14 +44,16 @@ struct Robin : Load {
         (void) time;
         (void) ignore_amplitude;
         logging::error(false,
-            "Robin boundary conditions require symbolic equation assembly");
+            "Robin boundary conditions require LHS assembly context");
     }
 
-    virtual void apply(model::ModelData& model_data,
-                       model::Field&     rhs,
-                       RobinEquations&   equations,
-                       Precision         time,
-                       bool              ignore_amplitude = false) = 0;
+    // Assemble both the nodal RHS contribution and sparse operator terms.
+    virtual void apply(model::ModelData&  model_data,
+                       model::Field&      rhs,
+                       const SystemDofIds& system_dof_ids,
+                       TripletList&        lhs,
+                       Precision           time,
+                       bool                ignore_amplitude = false) = 0;
 };
 
 } // namespace fem::bc
