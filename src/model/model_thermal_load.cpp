@@ -1,6 +1,6 @@
 /**
  * @file model_thermal_load.cpp
- * @brief Implements thermal boundary-condition and Robin-equation assembly.
+ * @brief Implements thermal boundary-load assembly.
  */
 
 #include "model.h"
@@ -11,16 +11,28 @@
 
 #include <memory>
 #include <string>
-#include <utility>
 
 namespace fem::model {
 
-ThermalLoadData Model::build_thermal_loads(
+/**
+ * @brief Assembles selected thermal boundary conditions.
+ *
+ * Thermal Neumann conditions contribute only to the scalar nodal RHS. Robin
+ * conditions contribute to the same RHS and append sparse operator triplets
+ * directly through the supplied thermal system DOF mapping.
+ */
+Field Model::build_thermal_load_matrix(
     const std::vector<std::string>& load_sets,
+    const SystemDofIds&             system_dof_ids,
+    TripletList&                    lhs,
     Precision                       time
 ) {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
+    logging::error(system_dof_ids.rows() == static_cast<Eigen::Index>(_data->positions->rows),
+        "Model: thermal DOF map does not match the nodal domain");
+    logging::error(system_dof_ids.cols() == 1,
+        "Model: thermal DOF map must contain exactly one component per node");
 
     Field rhs{
         "THERMAL_LOAD",
@@ -29,8 +41,6 @@ ThermalLoadData Model::build_thermal_loads(
         1
     };
     rhs.set_zero();
-
-    bc::RobinEquations equations{};
 
     for (const std::string& name : load_sets) {
         logging::error(_data->load_cols.has(name),
@@ -49,7 +59,7 @@ ThermalLoadData Model::build_thermal_loads(
             }
 
             if (auto robin = std::dynamic_pointer_cast<bc::Robin>(load)) {
-                robin->apply(*_data, rhs, equations, time, false);
+                robin->apply(*_data, rhs, system_dof_ids, lhs, time, false);
                 continue;
             }
 
@@ -59,59 +69,7 @@ ThermalLoadData Model::build_thermal_loads(
         }
     }
 
-    return {std::move(rhs), std::move(equations)};
-}
-
-/**
- * Builds the complete linear thermal operator from element conductivity and
- * additive symbolic Robin equation rows.
- */
-SparseMatrix Model::build_thermal_matrix(
-    SystemDofIds&              indices,
-    const bc::RobinEquations&  equations
-) {
-    logging::error(indices.cols() == 1,
-        "Model: thermal system mapping must have exactly one component");
-
-    SparseMatrix matrix = build_conductivity_matrix(indices);
-    TripletList robin_terms{};
-
-    for (const auto& equation : equations) {
-        logging::error(equation.row_node_id >= 0
-                    && static_cast<Eigen::Index>(equation.row_node_id) < indices.rows(),
-            "Model: Robin equation row references an invalid node");
-        logging::error(static_cast<Eigen::Index>(equation.row_dof) < indices.cols(),
-            "Model: Robin equation row references an invalid DOF");
-
-        const int row = indices(equation.row_node_id, equation.row_dof);
-        logging::error(row >= 0,
-            "Model: Robin equation targets a thermally inactive node ",
-            equation.row_node_id);
-
-        for (const auto& entry : equation.entries) {
-            logging::error(entry.node_id >= 0
-                        && static_cast<Eigen::Index>(entry.node_id) < indices.rows(),
-                "Model: Robin equation references an invalid node");
-            logging::error(static_cast<Eigen::Index>(entry.dof) < indices.cols(),
-                "Model: Robin equation references an invalid DOF");
-
-            const int col = indices(entry.node_id, entry.dof);
-            logging::error(col >= 0,
-                "Model: Robin equation references thermally inactive node ",
-                entry.node_id);
-
-            robin_terms.emplace_back(row, col, entry.coeff);
-        }
-    }
-
-    if (!robin_terms.empty()) {
-        SparseMatrix robin(matrix.rows(), matrix.cols());
-        robin.setFromTriplets(robin_terms.begin(), robin_terms.end());
-        matrix += robin;
-        matrix.makeCompressed();
-    }
-
-    return matrix;
+    return rhs;
 }
 
 } // namespace fem::model
