@@ -1,15 +1,6 @@
 /**
  * @file heat_flux.cpp
- * @brief Implements prescribed surface heat-flux boundary conditions.
- *
- * Prescribed heat flux is a pure thermal right-hand-side contribution. The
- * scalar surface integration path multiplies the flux by the surface shape
- * functions and physical area measure before scattering it into the
- * one-component nodal thermal field.
- *
- * @see heat_flux.h
- * @author Finn Eggers
- * @date 30.08.2026
+ * @brief Implements prescribed thermal surface heat flux.
  */
 
 #include "heat_flux.h"
@@ -22,34 +13,10 @@
 
 namespace fem::bc {
 
-/**
- * Integrates the prescribed heat flux over the selected boundary surfaces.
- *
- * For constant heat flux q, each surface contributes the consistent nodal source
- * vector
- *
- *     f_q = integral_Gamma_q N^T q dGamma.
- *
- * Positive values are defined as heat entering the model. The optional LHS
- * assembly objects are unused because prescribed heat flux is independent of
- * temperature.
- *
- * @param model_data Compiled surface topology and reference nodal positions.
- * @param rhs One-component nodal thermal right-hand side.
- * @param time Analysis time used for amplitude evaluation.
- * @param ignore_amplitude Whether amplitude scaling is disabled.
- * @param system_dof_ids Unused optional system DOF map.
- * @param lhs Unused optional system-matrix triplet list.
- */
-void HeatFlux::apply(model::ModelData&       model_data,
-                     model::Field&           rhs,
-                     Precision               time,
-                     bool                    ignore_amplitude,
-                     const SystemDofIds*      system_dof_ids,
-                     TripletList*             lhs) {
-    (void) system_dof_ids;
-    (void) lhs;
-
+void HeatFlux::apply(model::ModelData& model_data,
+                     model::Field&     rhs,
+                     Precision         time,
+                     bool              ignore_amplitude) {
     logging::error(region_ != nullptr,
         "HEATFLUX: target surface region is not set");
     logging::error(model_data.positions_reference != nullptr,
@@ -73,8 +40,6 @@ void HeatFlux::apply(model::ModelData&       model_data,
         logging::error(surface != nullptr,
             "HEATFLUX: surface ", surface_id, " is not initialized");
 
-        // Distribute the prescribed scalar flux with the surface interpolation
-        // and complete physical area measure.
         surface->integrate_scalar_field(
             *model_data.positions_reference,
             rhs,
@@ -83,21 +48,13 @@ void HeatFlux::apply(model::ModelData&       model_data,
     }
 }
 
-/**
- * Builds the diagnostic representation of the prescribed heat flux.
- *
- * @return Human-readable load description.
- */
 std::string HeatFlux::str() const {
     std::ostringstream os;
     os << "HEATFLUX: target=SFSET "
        << (region_ ? region_->name : std::string("?"))
        << " (" << (region_ ? static_cast<int>(region_->size()) : 0) << ")"
        << ", value=" << heat_flux_;
-
-    if (amplitude_)
-        os << ", amplitude=" << amplitude_->name;
-
+    if (amplitude_) os << ", amplitude=" << amplitude_->name;
     return os.str();
 }
 
