@@ -53,29 +53,41 @@ void SteadyStateThermal::run() {
     report_constraint_groups(groups);
     auto equations = groups.flatten();
 
-    // Boundary conditions remain in nodal form here. Neumann conditions produce
-    // only RHS values; Robin conditions additionally produce symbolic nodal rows.
-    auto thermal_loads = Timer::measure(
-        [&]() { return model->build_thermal_loads(loads); },
+    auto conductivity = Timer::measure(
+        [&]() { return model->build_conductivity_matrix(thermal_dof_ids); },
+        "constructing thermal conductivity matrix K_T"
+    );
+    logging::error(conductivity.rows() == system_size
+                && conductivity.cols() == system_size,
+        "STEADYSTATETHERMAL: conductivity matrix dimensions do not match active DOFs");
+
+    // Neumann conditions contribute to the scalar nodal RHS. Robin conditions
+    // additionally append their boundary-operator terms directly as triplets.
+    TripletList boundary_terms{};
+    auto nodal_heat_source = Timer::measure(
+        [&]() {
+            return model->build_thermal_load_matrix(
+                loads,
+                thermal_dof_ids,
+                boundary_terms
+            );
+        },
         "assembling thermal boundary conditions"
     );
 
     auto heat_source = Timer::measure(
-        [&]() { return mattools::reduce_mat_to_vec(thermal_dof_ids, thermal_loads.rhs); },
+        [&]() { return mattools::reduce_mat_to_vec(thermal_dof_ids, nodal_heat_source); },
         "reducing thermal load field -> active RHS vector"
     );
     logging::error(heat_source.size() == system_size,
         "STEADYSTATETHERMAL: thermal RHS dimensions do not match active DOFs");
 
-    // Model owns the algebraic mapping of symbolic Robin rows. The load case
-    // never handles sparse Robin triplets directly.
-    auto conductivity = Timer::measure(
-        [&]() { return model->build_thermal_matrix(thermal_dof_ids, thermal_loads.equations); },
-        "constructing thermal system matrix"
-    );
-    logging::error(conductivity.rows() == system_size
-                && conductivity.cols() == system_size,
-        "STEADYSTATETHERMAL: thermal matrix dimensions do not match active DOFs");
+    if (!boundary_terms.empty()) {
+        SparseMatrix boundary_matrix(system_size, system_size);
+        boundary_matrix.setFromTriplets(boundary_terms.begin(), boundary_terms.end());
+        conductivity += boundary_matrix;
+        conductivity.makeCompressed();
+    }
 
     if (constraint_method == ConstraintTransformer::Method::Lagrange && method == solver::INDIRECT) {
         logging::error(false,
