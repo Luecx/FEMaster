@@ -20,7 +20,10 @@ jobs:
           ref: FEG/isotropic-j2-plasticity
 
       - name: Apply refactor
-        run: python3 tools/complete_source_target_refactor.py
+        shell: bash
+        run: |
+          sed -i 's#/**\\n \* Assembles Total-Lagrangian axial internal force#void T3::compute_internal_force_nonlinear#' tools/complete_source_target_refactor.py
+          python3 tools/complete_source_target_refactor.py
 
       - name: Fetch header dependencies
         shell: bash
