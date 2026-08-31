@@ -7,10 +7,11 @@
  * equivalent plastic strain. The total right Cauchy-Green tensor follows from
  * Green-Lagrange strain as C = I + 2 E.
  *
- * Constitutive state is never modified in place. `evaluate()` reads an already
- * established history state and returns the corresponding frozen-history stress
- * and tangent. `integrate()` advances an immutable source state into a distinct
- * target state and is the only operation that performs plastic return mapping.
+ * Constitutive state is never modified in place by the public interface.
+ * `evaluate()` reads an already established history state and returns a
+ * frozen-history response. `integrate()` advances an immutable source state into
+ * a distinct target state and is the only public operation that performs plastic
+ * return mapping.
  *
  * @see Elasticity
  * @see IsotropicElasticity
@@ -134,6 +135,43 @@ struct IsotropicJ2Elasticity : Elasticity {
                    Mat5&                                  tangent) const override;
 
 private:
+    /**
+     * Legacy in-place kernels used only as implementation details of integrate().
+     *
+     * These declarations keep the existing return-mapping implementation intact
+     * while the project-facing API is migrated to explicit source/target state.
+     * No element, section, solver or output path may call these overloads.
+     */
+    void evaluate(const AxialStrainLinearized& strain,
+                  Precision*                   state,
+                  AxialStressCauchy&           stress,
+                  Precision&                   tangent) const;
+
+    void evaluate(const AxialStrainGreenLagrange& strain,
+                  Precision*                      state,
+                  AxialStressPK2&                 stress,
+                  Precision&                      tangent) const;
+
+    void evaluate(const VolumeStrainLinearized& strain,
+                  Precision*                    state,
+                  VolumeStressCauchy&           stress,
+                  Mat6&                         tangent) const;
+
+    void evaluate(const VolumeStrainGreenLagrange& strain,
+                  Precision*                       state,
+                  VolumeStressPK2&                 stress,
+                  Mat6&                            tangent) const;
+
+    void evaluate(const ShellMaterialStrainLinearized& strain,
+                  Precision*                           state,
+                  ShellMaterialStressCauchy&            stress,
+                  Mat5&                                 tangent) const;
+
+    void evaluate(const ShellMaterialStrainGreenLagrange& strain,
+                  Precision*                              state,
+                  ShellMaterialStressPK2&                 stress,
+                  Mat5&                                   tangent) const;
+
     std::vector<YieldPoint> yield_points_;
 };
 
