@@ -447,11 +447,13 @@ Update3D update_finite_strain(const Mat3& green_lagrange,
         logging::error(elastic_trial.q > Precision(0),
                        "J2: positive yield residual with zero trial Mandel stress");
 
-        const Mat3 N_trial = (Precision(1.5) / elastic_trial.q) * dev(elastic_trial.M);
-        const Precision gamma0 = f_trial
-            / (Precision(3) * shear + hardening_slope_at(yield_curve, alpha_old));
-        x.template head<5>() = five_from_deviatoric_tensor(gamma0 * N_trial);
-        x(5) = gamma0;
+        // Start the local Newton solve at the elastic trial state. A small-strain
+        // estimate for dgamma can substantially over-correct a finite-strain trial
+        // state, especially when one increment crosses a tabulated hardening kink.
+        // The zero plastic increment is admissible, keeps the initial Mandel
+        // direction physical and lets the coupled Newton system determine A and
+        // dgamma consistently from the finite constitutive equations themselves.
+        x.setZero();
 
         bool local_converged = false;
         for (Index iteration = 0; iteration < 30; ++iteration) {
