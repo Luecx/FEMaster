@@ -5,8 +5,8 @@
  * The truss evaluates axial material response at one globally enumerated
  * material point. Linearized output uses Cauchy stress; the nonlinear element
  * uses Green-Lagrange strain and PK2 stress in a Total-Lagrangian formulation.
- * The nonlinear residual and tangent share one constitutive update so the
- * in-place material history is advanced only once per solver evaluation.
+ * The nonlinear residual and tangent share one constitutive update from the old
+ * material state into the separate new state.
  *
  * @see T3
  *
@@ -201,9 +201,11 @@ MapMatrix T3::stiffness(Precision* buffer) {
     logging::error(elasticity->supports_axial_green_lagrange(),
         "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
-    // Evaluate the single constitutive material point in place
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
-    elasticity->evaluate(axial_strain, state, axial_stress, material_tangent);
+    // Evaluate the single constitutive material point from committed history
+    const Index      state_row = this->mp_index(0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+    elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, material_tangent);
 
     const Vec3 n = direction_current();
     const Mat3 k = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
@@ -251,7 +253,7 @@ MapMatrix T3::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_s
  * `A0 C lambda^2 / L0`. The PK2 stress from the same material call produces the
  * geometric contribution `A0 S / L0` and the internal force
  * `A0 lambda S n`. This avoids the generic structural path, which would evaluate
- * an in-place material history separately for stress and material tangent.
+ * material history separately for stress and material tangent.
  *
  * @param buffer Caller-provided six-by-six tangent storage.
  * @param ip_stress_state Global integration-point field receiving axial PK2 stress.
@@ -288,8 +290,10 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     logging::error(elasticity->supports_axial_green_lagrange(),
         "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
-    elasticity->evaluate(strain, state, stress, material_tangent);
+    const Index      state_row = this->mp_index(0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+    elasticity->evaluate(strain, old_state, new_state, stress, material_tangent);
 
     // Preserve PK2 stress for state-based residual and geometric-stiffness paths
     ip_stress_state(this->ip_index(0), 0) = stress.value();
@@ -442,9 +446,12 @@ void T3::compute_stress_strain(Field*           strain,
     logging::error(rst.cols() >= 1,
         "T3: stress/strain coordinates require at least 1 column");
 
-    Precision  strain_value = Precision(0);
-    Precision  stress_value = Precision(0);
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
+    Precision strain_value = Precision(0);
+    Precision stress_value = Precision(0);
+
+    const Index      state_row = this->mp_index(0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
     // Evaluate finite-strain PK2 stress and convert it to physical Cauchy stress
     if (use_green_lagrange_nl) {
@@ -457,7 +464,7 @@ void T3::compute_stress_strain(Field*           strain,
         auto elasticity = get_elasticity();
         logging::error(elasticity->supports_axial_green_lagrange(),
             "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
-        elasticity->evaluate(axial_strain, state, axial_stress, tangent);
+        elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
 
         const AxialStressCauchy cauchy(lambda * axial_stress.value());
         strain_value = axial_strain.value();
@@ -480,7 +487,7 @@ void T3::compute_stress_strain(Field*           strain,
         auto elasticity = get_elasticity();
         logging::error(elasticity->supports_axial_linearized(),
             "T3: material does not support linearized axial evaluation for element ", this->elem_id);
-        elasticity->evaluate(axial_strain, state, axial_stress, tangent);
+        elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
 
         strain_value = axial_strain.value();
         stress_value = axial_stress.value();
@@ -511,8 +518,8 @@ void T3::compute_stress_strain(Field*           strain,
  *
  * Nonlinear Total-Lagrangian recovery stores PK2 stress at the single truss
  * integration point. Linearized recovery delegates to the ordinary Cauchy-
- * stress output path. The active material state row may be updated in place by
- * either constitutive evaluation.
+ * stress output path. Either constitutive evaluation reads the old state row and
+ * writes its result to the separate new row.
  *
  * @param stress_state Global integration-point stress field to update.
  * @param displacement Global nodal displacement field.
@@ -534,8 +541,10 @@ void T3::compute_stress_state(Field&       stress_state,
         logging::error(elasticity->supports_axial_green_lagrange(),
             "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
-        elasticity->evaluate(axial_strain, state, axial_stress, tangent);
+        const Index      state_row = this->mp_index(0);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+        elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
 
         const RowMatrix rst = stress_strain_ip_rst();
         for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
@@ -638,8 +647,10 @@ bool T3::compute_beam_section_forces(Field&       section_forces,
     logging::error(elasticity->supports_axial_linearized(),
         "T3: material does not support linearized axial evaluation for element ", this->elem_id);
 
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0), 0);
-    elasticity->evaluate(axial_strain, state, axial_stress, tangent);
+    const Index      state_row = this->mp_index(0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+    elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
 
     const Precision axial_force = get_section()->area_ * axial_stress.value();
 

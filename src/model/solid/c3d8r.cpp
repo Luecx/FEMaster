@@ -14,7 +14,6 @@
 #include "c3d8r.h"
 
 #include <cmath>
-#include <vector>
 
 namespace fem::model {
 
@@ -130,30 +129,18 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
  * physical material-point history.
  *
  * The hourglass modulus is an auxiliary stabilization quantity rather than a
- * constitutive update of the current continuum state. The complete active state
- * row is therefore saved, the zero-strain tangent is evaluated through the same
- * material API, and the row is restored immediately afterwards.
+ * constitutive update of the current continuum state. The zero-strain tangent
+ * therefore reads the immutable old row and writes only the separate new row.
  *
  * @return Mean material shear diagonal `(C44 + C55 + C66) / 3`.
  */
 Precision C3D8R::hourglass_material_scale() {
-    // Preserve the complete physical center-point history around the auxiliary
-    // zero-strain tangent evaluation
-    const Index state_row = this->mp_index(0);
-    Field&      state_field = *this->_model_data->material_state;
+    const Index      state_row = this->mp_index(0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
-    std::vector<Precision> saved_state(static_cast<std::size_t>(state_field.components));
-    for (Index component = 0; component < state_field.components; ++component) {
-        saved_state[static_cast<std::size_t>(component)] = state_field(state_row, component);
-    }
-
-    Precision* state = &state_field(state_row, 0);
     const Mat6 material_tangent = material_tangent_reference(
-        Precision(0), Precision(0), Precision(0), state);
-
-    for (Index component = 0; component < state_field.components; ++component) {
-        state_field(state_row, component) = saved_state[static_cast<std::size_t>(component)];
-    }
+        Precision(0), Precision(0), Precision(0), old_state, new_state);
 
     const Precision shear_scale =
         (material_tangent(3, 3) + material_tangent(4, 4) + material_tangent(5, 5)) / Precision(3);

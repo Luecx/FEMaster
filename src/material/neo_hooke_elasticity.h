@@ -62,7 +62,8 @@ struct NeoHookeElasticity : Elasticity {
     // Infinitesimal axial response using the Young's modulus implied by the
     // Neo-Hookean parameters. Stress is Cauchy stress and state is unchanged.
     void evaluate(const AxialStrainLinearized& strain,
-                  Precision*                   state,
+                  const Precision*             old_state,
+                  Precision*                   new_state,
                   AxialStressCauchy&           stress,
                   Precision&                   tangent) const override;
 
@@ -70,28 +71,32 @@ struct NeoHookeElasticity : Elasticity {
     // A local solve enforces zero lateral PK2 stress and the returned dS/dE is
     // condensed consistently from the converged three-dimensional tangent.
     void evaluate(const AxialStrainGreenLagrange& strain,
-                  Precision*                      state,
+                  const Precision*                old_state,
+                  Precision*                      new_state,
                   AxialStressPK2&                 stress,
                   Precision&                      tangent) const override;
 
     // Infinitesimal three-dimensional response using the linearization of the
     // finite-strain potential at C = I. Output is Cauchy stress in material axes.
     void evaluate(const VolumeStrainLinearized& strain,
-                  Precision*                    state,
+                  const Precision*              old_state,
+                  Precision*                    new_state,
                   VolumeStressCauchy&           stress,
                   Mat6&                         tangent) const override;
 
     // Full finite-strain response. Green-Lagrange strain is mapped to C = I+2E;
     // output is PK2 stress and the consistent material tangent dS/dE.
     void evaluate(const VolumeStrainGreenLagrange& strain,
-                  Precision*                       state,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override;
 
     // Infinitesimal shell response from the linearized plane-stress and
     // transverse-shear tangent implied by the three-dimensional parameters.
     void evaluate(const ShellMaterialStrainLinearized& strain,
-                  Precision*                           state,
+                  const Precision*                     old_state,
+                  Precision*                           new_state,
                   ShellMaterialStressCauchy&            stress,
                   Mat5&                                 tangent) const override;
 
@@ -99,7 +104,8 @@ struct NeoHookeElasticity : Elasticity {
     // the five-component PK2 stress and tangent are condensed at convergence.
     // The solve is local and state-neutral.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                  Precision*                              state,
+                  const Precision*                        old_state,
+                  Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
                   Mat5&                                   tangent) const override;
 

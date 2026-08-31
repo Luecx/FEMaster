@@ -5,7 +5,7 @@
  * The truss supports linearized axial output and a Total-Lagrangian nonlinear
  * formulation based on Green-Lagrange strain and PK2 stress. Its single
  * constitutive material point is addressed directly through the model material
- * state field.
+ * input/output state fields.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -33,8 +33,7 @@ namespace model {
  *
  * The nonlinear tangent evaluates axial PK2 stress and its material tangent in
  * one constitutive call. The same stress drives geometric stiffness and internal
- * force, preventing an in-place history state from advancing twice within one
- * solver evaluation.
+ * force, while history is read from the old row and written to the new row.
  */
 struct T3 : StructuralElement {
     static constexpr Index N = 2;

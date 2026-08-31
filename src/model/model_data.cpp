@@ -138,11 +138,16 @@ void ModelData::initialize_element_enumeration() {
     (*element_ip_offsets)(element_count)    = static_cast<Precision>(ip_offset);
     (*element_mp_offsets)(element_count)    = static_cast<Precision>(mp_offset);
 
-    // Provide a zeroed default state row for every enumerated material point
+    // Provide separate zeroed input and output state rows for every enumerated
+    // material point. Constitutive evaluations may never overwrite their input.
     if (mp_offset > 0) {
-        material_state = std::make_shared<Field>(
-            "MATERIAL_STATE", FieldDomain::ELEMENT_MP, mp_offset, 1);
-        material_state->set_zero();
+        material_state_old = std::make_shared<Field>(
+            "MATERIAL_STATE_OLD", FieldDomain::ELEMENT_MP, mp_offset, 1);
+        material_state_new = std::make_shared<Field>(
+            "MATERIAL_STATE_NEW", FieldDomain::ELEMENT_MP, mp_offset, 1);
+
+        material_state_old->set_zero();
+        material_state_new->set_zero();
     }
 }
 

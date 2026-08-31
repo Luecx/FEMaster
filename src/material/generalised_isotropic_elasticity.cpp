@@ -139,15 +139,18 @@ Mat6 GeneralisedIsotropicElasticity::volume_tangent() const {
  * not enter this one-dimensional response.
  *
  * @param strain Infinitesimal axial strain.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Axial Cauchy stress.
  * @param tangent Constant derivative equal to Young's modulus.
  */
 void GeneralisedIsotropicElasticity::evaluate(const AxialStrainLinearized& strain,
-                                              Precision*                   state,
+                                              const Precision*             old_state,
+                                              Precision*                   new_state,
                                               AxialStressCauchy&           stress,
                                               Precision&                   tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent        = youngs;
     stress.value() = tangent * strain.value();
 }
@@ -156,15 +159,18 @@ void GeneralisedIsotropicElasticity::evaluate(const AxialStrainLinearized& strai
  * Evaluates axial PK2 stress from Green-Lagrange strain.
  *
  * @param strain Axial Green-Lagrange strain.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Axial second Piola-Kirchhoff stress.
  * @param tangent Constant material derivative equal to Young's modulus.
  */
 void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
-                                              Precision*                      state,
+                                              const Precision*                old_state,
+                                              Precision*                      new_state,
                                               AxialStressPK2&                 stress,
                                               Precision&                      tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent        = youngs;
     stress.value() = tangent * strain.value();
 }
@@ -173,15 +179,18 @@ void GeneralisedIsotropicElasticity::evaluate(const AxialStrainGreenLagrange& st
  * Evaluates linearized three-dimensional Cauchy stress in material coordinates.
  *
  * @param strain Infinitesimal engineering strain vector.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Cauchy stress in engineering-Voigt ordering.
  * @param tangent Constant generalized isotropic tangent.
  */
 void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                              Precision*                    state,
+                                              const Precision*              old_state,
+                                              Precision*                    new_state,
                                               VolumeStressCauchy&           stress,
                                               Mat6&                         tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
@@ -190,15 +199,18 @@ void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainLinearized& stra
  * Evaluates three-dimensional PK2 stress from Green-Lagrange strain.
  *
  * @param strain Green-Lagrange engineering strain vector.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Second Piola-Kirchhoff stress in material coordinates.
  * @param tangent Constant material derivative `dS/dE`.
  */
 void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                                              Precision*                       state,
+                                              const Precision*                 old_state,
+                                              Precision*                       new_state,
                                               VolumeStressPK2&                 stress,
                                               Mat6&                            tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
@@ -207,15 +219,18 @@ void GeneralisedIsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& s
  * Evaluates linearized shell Cauchy stress with independent shear response.
  *
  * @param strain Five-component shell material strain.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Shell Cauchy stress in material ordering.
  * @param tangent Constant reduced shell tangent.
  */
 void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                              Precision*                           state,
+                                              const Precision*                     old_state,
+                                              Precision*                           new_state,
                                               ShellMaterialStressCauchy&            stress,
                                               Mat5&                                 tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent         = shell_material_tangent();
     stress.values() = tangent * strain.values();
 }
@@ -224,15 +239,18 @@ void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainLinearize
  * Evaluates shell PK2 stress from five-component Green-Lagrange strain.
  *
  * @param strain Shell Green-Lagrange material strain.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Shell second Piola-Kirchhoff stress.
  * @param tangent Constant reduced material derivative.
  */
 void GeneralisedIsotropicElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                                              Precision*                              state,
+                                              const Precision*                        old_state,
+                                              Precision*                              new_state,
                                               ShellMaterialStressPK2&                 stress,
                                               Mat5&                                   tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent         = shell_material_tangent();
     stress.values() = tangent * strain.values();
 }

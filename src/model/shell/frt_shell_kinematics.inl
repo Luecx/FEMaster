@@ -649,7 +649,7 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
             constexpr Index gamma_12 =
                 static_cast<Index>(Component::GammaXY);
 
-            const Index state_stride = this->_model_data->material_state->components;
+            const Index state_stride = this->_model_data->material_state_old->components;
 
             for (Index ip = 0; ip < static_cast<Index>(reference_data_->ip_points.size()); ++ip) {
                 ReferencePoint& point = reference_data_->ip_points[static_cast<std::size_t>(ip)];
@@ -657,14 +657,18 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 ShellStressResultants  zero_resultants;
                 Mat8                   H0;
                 Mat3                   basis = point.basis;
-                Precision*             material_state =
-                    &(*this->_model_data->material_state)(this->mp_index(ip, 0), 0);
+                const Index      state_row = this->mp_index(ip, 0);
+                const Precision* old_material_state =
+                    &(*this->_model_data->material_state_old)(state_row, 0);
+                Precision* new_material_state =
+                    &(*this->_model_data->material_state_new)(state_row, 0);
 
                 shell_section()->evaluate(
                     reference_position(point.r, point.s),
                     basis,
                     zero_strain,
-                    material_state,
+                    old_material_state,
+                    new_material_state,
                     state_stride,
                     false,
                     zero_resultants,

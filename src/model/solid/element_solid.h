@@ -7,9 +7,9 @@
  * assembly used by the concrete C3D solid topologies.
  *
  * Every constitutive integration point is associated with one globally
- * enumerated material-point row. The element addresses that row directly in
- * `ModelData::material_state` and passes its first component to the section and
- * material model without additional state access abstractions.
+ * enumerated material-point row. The element addresses corresponding rows in
+ * `ModelData::material_state_old` and `material_state_new` and passes their
+ * first components to the section and material model.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -37,9 +37,8 @@ namespace fem::model {
  * Concrete solid elements provide topology-specific interpolation and
  * quadrature. The base implements geometry transformations, constitutive
  * evaluation and common linear/nonlinear assembly. In nonlinear tangent
- * assembly each material point is evaluated exactly once so an in-place
- * constitutive history state cannot advance twice within one residual/tangent
- * evaluation.
+ * assembly each material point is evaluated exactly once. Constitutive history
+ * is read from the old row and written to the separate new row.
  */
 template<Index N>
 struct SolidElement : StructuralElement, ThermalElement{
@@ -91,19 +90,19 @@ public:
     Vec3      material_position_reference(Precision r, Precision s, Precision t);
 
     // Evaluate the zero-Green-Lagrange material tangent at one natural point.
-    // state is the caller-selected material-point row and may be touched by a
-    // history-dependent material, so auxiliary callers must preserve it when
-    // the query is intended to be state-neutral.
-    Mat6 material_tangent_reference(Precision r, Precision s, Precision t, Precision* state);
+    // The caller selects immutable input and mutable output state rows.
+    Mat6 material_tangent_reference(Precision r, Precision s, Precision t,
+                                    const Precision* old_state, Precision* new_state);
 
     // Evaluate linearized Cauchy stress and tangent in global coordinates. The
-    // active state row is forwarded directly through SolidSection, after which
-    // optional element stiffness scaling is applied to stress and tangent.
+    // selected old/new state rows are forwarded directly through SolidSection,
+    // after which optional element stiffness scaling is applied.
     void evaluate_material(Precision                     r,
                            Precision                     s,
                            Precision                     t,
                            const VolumeStrainLinearized& global_strain,
-                           Precision*                    state,
+                           const Precision*              old_state,
+                           Precision*                    new_state,
                            VolumeStressCauchy&           global_stress,
                            Mat6&                         global_tangent);
 
@@ -113,7 +112,8 @@ public:
                            Precision                        s,
                            Precision                        t,
                            const VolumeStrainGreenLagrange& global_strain,
-                           Precision*                       state,
+                           const Precision*                 old_state,
+                           Precision*                       new_state,
                            VolumeStressPK2&                 global_stress,
                            Mat6&                            global_tangent);
 
@@ -165,9 +165,9 @@ public:
     );
 
     // Element matrices and nonlinear tangent assembly. stiffness_tangent()
-    // performs exactly one in-place constitutive update per quadrature point and
-    // reuses the resulting PK2 stress for material tangent, geometric tangent,
-    // stored integration-point state and matching internal force.
+    // performs exactly one constitutive update per quadrature point and reuses
+    // the resulting PK2 stress for material tangent, geometric tangent, stored
+    // integration-point state and matching internal force.
     MapMatrix mass             (Precision* buffer) override;
     MapMatrix conductivity     (Precision* buffer) override;
     MapMatrix capacity         (Precision* buffer) override;

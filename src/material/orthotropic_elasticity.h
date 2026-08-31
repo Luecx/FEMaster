@@ -79,28 +79,32 @@ struct OrthotropicElasticity : Elasticity {
     // Linearized three-dimensional orthotropic response in material axes.
     // tangent maps engineering strain to Cauchy stress and state is unchanged.
     void evaluate(const VolumeStrainLinearized& strain,
-                  Precision*                    state,
+                  const Precision*              old_state,
+                  Precision*                    new_state,
                   VolumeStressCauchy&           stress,
                   Mat6&                         tangent) const override;
 
     // Total-Lagrangian orthotropic response using the same constant material
     // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.
     void evaluate(const VolumeStrainGreenLagrange& strain,
-                  Precision*                       state,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override;
 
     // Linearized shell response in the material basis. In-plane terms use the
     // orthotropic plane-stress reduction; 13 and 23 shear use G13 and G23.
     void evaluate(const ShellMaterialStrainLinearized& strain,
-                  Precision*                           state,
+                  const Precision*                     old_state,
+                  Precision*                           new_state,
                   ShellMaterialStressCauchy&            stress,
                   Mat5&                                 tangent) const override;
 
     // Finite-strain shell response returning PK2 components work-conjugate to
     // the five supplied Green-Lagrange strain components. State remains unchanged.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                  Precision*                              state,
+                  const Precision*                        old_state,
+                  Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
                   Mat5&                                   tangent) const override;
 

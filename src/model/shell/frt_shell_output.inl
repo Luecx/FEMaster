@@ -130,15 +130,18 @@ typename FRTShell<N>::Vec8 FRTShell<N>::generalized_resultant_at(
         }
     }
 
-    // Address the first through-thickness material state at the selected shell IP
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+    // Address the first through-thickness state rows at the selected shell IP
+    const Index      state_row = this->mp_index(state_ip, 0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
         strain,
-        state,
-        this->_model_data->material_state->components,
+        old_state,
+        new_state,
+        this->_model_data->material_state_old->components,
         true,
         resultants,
         tangent
@@ -298,15 +301,18 @@ void FRTShell<N>::physical_stress_strain_at(
         }
     }
 
-    // Pass the first row of the selected through-thickness material-state block
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+    // Pass the first input/output rows of the selected material-state block
+    const Index      state_row = this->mp_index(state_ip, 0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
     const VolumeStressCauchy cauchy_stress = this->get_section()->evaluate_output_stress(
         reference_position(r, s),
         reference_basis,
         ShellGeneralizedStrain(generalized_strain),
-        state,
-        this->_model_data->material_state->components,
+        old_state,
+        new_state,
+        this->_model_data->material_state_old->components,
         z,
         nonlinear,
         deformation_gradient
@@ -518,16 +524,20 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             }
         }
 
-        // Pass the selected state block through the common output-resultant path
-        Precision* material_state =
-            &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+        // Pass the selected input/output blocks through the common output path
+        const Index      state_row = this->mp_index(state_ip, 0);
+        const Precision* old_material_state =
+            &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision* new_material_state =
+            &(*this->_model_data->material_state_new)(state_row, 0);
 
         const ShellStressResultants output_resultants = section->evaluate_output_resultants(
             reference_position(r, s),
             reference_basis_global(r, s),
             strain,
-            material_state,
-            this->_model_data->material_state->components,
+            old_material_state,
+            new_material_state,
+            this->_model_data->material_state_old->components,
             true
         );
         const Vec8 values = scale * output_resultants.values();

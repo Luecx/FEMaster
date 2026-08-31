@@ -44,15 +44,16 @@ struct IntegratedShellSection : ShellSection {
 
     // Reconstruct epsilon(z) = epsilon_0 + z kappa at five physical material
     // points and integrate stress into membrane forces, moments and corrected
-    // transverse shear forces. material_state identifies the first MP row and
-    // material_state_stride advances through its four following rows. Each row
-    // is passed directly to the selected linearized or Green-Lagrange material
-    // evaluation, and the consistent tangent is integrated by the same rule.
+    // transverse shear forces. The state pointers identify the first old/new MP
+    // rows and material_state_stride advances through their four following rows.
+    // Each pair is passed to the selected material evaluation, and the
+    // consistent tangent is integrated by the same rule.
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
@@ -68,7 +69,8 @@ struct IntegratedShellSection : ShellSection {
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         Precision                     z,
         bool                          use_green_lagrange,

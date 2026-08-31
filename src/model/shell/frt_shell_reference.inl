@@ -485,15 +485,18 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
         }
     }
 
-    // Pass the first through-thickness row and common row stride to the section
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+    // Pass the first through-thickness input/output rows and common row stride
+    const Index      state_row = this->mp_index(state_ip, 0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
         zero_strain,
-        state,
-        this->_model_data->material_state->components,
+        old_state,
+        new_state,
+        this->_model_data->material_state_old->components,
         false,
         zero_resultants,
         H

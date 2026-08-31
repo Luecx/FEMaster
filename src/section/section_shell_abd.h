@@ -55,14 +55,15 @@ struct ABDShellSection : ShellSection {
     // Apply the constant ABD and transverse-shear operators. Generalized strain
     // is rotated into the prescribed section basis and resultants/tangent are
     // returned in the geometric shell basis. The formulation has no history:
-    // material_state and material_state_stride are accepted for interface
+    // the state rows and material_state_stride are accepted for interface
     // uniformity but never read or modified, and the strain-measure selector
     // does not alter the linear generalized law.
     void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
@@ -78,7 +79,8 @@ struct ABDShellSection : ShellSection {
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         Precision                     z,
         bool                          use_green_lagrange,

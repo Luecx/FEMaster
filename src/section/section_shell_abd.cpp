@@ -98,13 +98,14 @@ ABDShellSection::ABDShellSection(
  * element assembly.
  *
  * The formulation is linear elastic and contains no material-point history.
- * Consequently, `material_state`, its stride and the kinematic strain-measure
+ * Consequently, the state rows, their stride and the kinematic strain-measure
  * selector do not change the prescribed response.
  *
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
  * @param strain_shell Generalized strain in the geometric shell basis.
- * @param material_state Unused state row retained by the common section interface.
+ * @param old_material_state Unused input state row.
+ * @param new_material_state Unused output state row.
  * @param material_state_stride Unused state-row stride.
  * @param use_green_lagrange Unused strain-measure selector for this linear law.
  * @param resultants_shell Generalized resultants in the geometric shell basis.
@@ -114,14 +115,16 @@ void ABDShellSection::evaluate(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
-    Precision*                    material_state,
+    const Precision*              old_material_state,
+    Precision*                    new_material_state,
     Index                         material_state_stride,
     bool                          use_green_lagrange,
     ShellStressResultants&        resultants_shell,
     Mat8&                         tangent_shell
 ) const {
     // A prescribed linear generalized stiffness has no constitutive history.
-    (void) material_state;
+    (void) old_material_state;
+    (void) new_material_state;
     (void) material_state_stride;
     (void) use_green_lagrange;
 
@@ -206,7 +209,8 @@ void ABDShellSection::evaluate(
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
  * @param strain_shell Generalized strain in the geometric shell basis.
- * @param material_state Unused state row retained by the common section interface.
+ * @param old_material_state Unused input state row.
+ * @param new_material_state Unused output state row.
  * @param material_state_stride Unused state-row stride.
  * @param z Physical thickness coordinate measured from the midsurface.
  * @param use_green_lagrange Select PK2-to-Cauchy push-forward for nonlinear output.
@@ -217,14 +221,16 @@ VolumeStressCauchy ABDShellSection::evaluate_output_stress(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
-    Precision*                    material_state,
+    const Precision*              old_material_state,
+    Precision*                    new_material_state,
     Index                         material_state_stride,
     Precision                     z,
     bool                          use_green_lagrange,
     const Mat3&                   deformation_gradient
 ) const {
     // The prescribed ABD reconstruction does not contain constitutive history.
-    (void) material_state;
+    (void) old_material_state;
+    (void) new_material_state;
     (void) material_state_stride;
 
     const Precision h = thickness_;

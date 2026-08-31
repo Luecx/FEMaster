@@ -30,8 +30,8 @@ namespace fem::model {
  *
  * Load and stiffness quadrature may differ. Each auxiliary load point therefore
  * reuses the state row of the nearest constitutive stiffness point in natural
- * coordinates. The material tangent call follows the ordinary in-place state
- * contract; no additional state storage is owned by this routine.
+ * coordinates. The material tangent call reads the old state and writes the
+ * separate new state; no additional storage is owned by this routine.
  *
  * @param node_loads Global nodal thermal-load field to increment.
  * @param node_temp Scalar nodal temperature field.
@@ -98,10 +98,12 @@ SolidElement<N>::apply_tload(Field& node_loads, const Field& node_temp, Precisio
             }
         }
 
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip), 0);
+        const Index      state_row = this->mp_index(state_ip);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         // Convert free thermal strain to stress using the selected state-row tangent
-        auto mat_matrix = material_tangent_reference(r, s, t, state);
+        auto mat_matrix = material_tangent_reference(r, s, t, old_state, new_state);
         auto stress = mat_matrix * strain;
 
         // Map thermal stress to its element nodal-force contribution
