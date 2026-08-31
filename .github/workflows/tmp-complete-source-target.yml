@@ -24,47 +24,66 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('tools/complete_source_target_refactor.py')
-          s = p.read_text()
-          changes = [
-              (
-                  'block(text, "void T3::compute_stress_state", "/**\\n * Assembles Total-Lagrangian axial internal force")',
-                  'block(text, "void T3::compute_stress_state", "void T3::compute_internal_force_nonlinear")'
-              ),
-              (
-                  'text = replace_once(text, "        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", "shell evaluate const source")',
-                  'text = text.replace("        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", 1)'
-              ),
-              (
-                  'text = replace_once(text, "        Precision*                    material_state,", "        const Precision*              material_state,", "ABD evaluate const state")',
-                  'text = text.replace("        Precision*                    material_state,", "        const Precision*              material_state,", 1)'
-              ),
-              (
-                  'text = replace_once(text, "    Precision*                    material_state,", "    const Precision*              material_state,", "ABD evaluate definition const")',
-                  'text = text.replace("    Precision*                    material_state,", "    const Precision*              material_state,", 1)'
-              ),
-              (
-                  'text = replace_once(text, "        Precision*                    material_state,", "        const Precision*              material_state,", "integrated shell evaluate const")',
-                  'text = text.replace("        Precision*                    material_state,", "        const Precision*              material_state,", 1)'
-              ),
-              (
-                  'text = replace_once(\n    text,\n    "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",',
-                  'text = text.replace(\n    "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",'
-              ),
-              (
-                  'out = replace_count(out, "        material_->elasticity()->evaluate(", "        elasticity->evaluate(", 2, "integrated output dispatch")',
-                  'out = replace_count(out, "        material_->elasticity()->evaluate(", "        elasticity->evaluate(", 1, "integrated output dispatch")'
-              ),
-          ]
-          for old, new in changes:
-              assert old in s, old
-              s = s.replace(old, new, 1)
-          needle = '    "    const Precision* state = material_state_source(state_ip);",\n    "FRT output resultant source state"\n)'
-          repl = '    "    const Precision* state = material_state_source(state_ip);",\n    1\n)'
-          assert needle in s
-          s = s.replace(needle, repl, 1)
-          p.write_text(s)
+
+          path = Path('tools/complete_source_target_refactor.py')
+          text = path.read_text()
+
+          def change(old, new):
+              global text
+              assert old in text, old
+              text = text.replace(old, new, 1)
+
+          change(
+              'block(text, "void T3::compute_stress_state", "/**\\n * Assembles Total-Lagrangian axial internal force")',
+              'block(text, "void T3::compute_stress_state", "void T3::compute_internal_force_nonlinear")'
+          )
+
+          change(
+              'text = replace_once(text, "        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", "shell evaluate const source")',
+              'text = text.replace("        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", 1)'
+          )
+          change(
+              'text = replace_once(text, "        Precision*                    material_state,", "        const Precision*              material_state,", "ABD evaluate const state")',
+              'text = text.replace("        Precision*                    material_state,", "        const Precision*              material_state,", 1)'
+          )
+          change(
+              'text = replace_once(text, "    Precision*                    material_state,", "    const Precision*              material_state,", "ABD evaluate definition const")',
+              'text = text.replace("    Precision*                    material_state,", "    const Precision*              material_state,", 1)'
+          )
+          change(
+              'text = replace_once(text, "        Precision*                    material_state,", "        const Precision*              material_state,", "integrated shell evaluate const")',
+              'text = text.replace("        Precision*                    material_state,", "        const Precision*              material_state,", 1)'
+          )
+          change(
+              'out = replace_count(out, "        material_->elasticity()->evaluate(", "        elasticity->evaluate(", 2, "integrated output dispatch")',
+              'out = replace_count(out, "        material_->elasticity()->evaluate(", "        elasticity->evaluate(", 1, "integrated output dispatch")'
+          )
+
+          old = '''text = replace_once(
+              text,
+              "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",
+              "    const Precision* state = material_state_source(state_ip);",
+              "FRT output resultant source state"
+          )'''
+          new = '''text = text.replace(
+              "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",
+              "    const Precision* state = material_state_source(state_ip);",
+              1
+          )'''
+          change(old, new)
+
+          change(
+              'text = replace_once(text, "        this->_model_data->material_state->components,", "        material_state_stride(),", "FRT output resultant stride")',
+              'text = text.replace("        this->_model_data->material_state->components,", "        material_state_stride(),", 1)'
+          )
+          change(
+              'text = replace_once(text, "        this->_model_data->material_state->components,", "        material_state_stride(),", "FRT physical output stride")',
+              'text = text.replace("        this->_model_data->material_state->components,", "        material_state_stride(),", 1)'
+          )
+
+          path.write_text(text)
           PY
+
           python3 tools/complete_source_target_refactor.py
 
       - name: Fetch header dependencies
@@ -74,8 +93,10 @@ jobs:
           git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
           cp -r deps/eigen/Eigen deps/include/Eigen
           cp -r deps/eigen/unsupported deps/include/unsupported
+
           git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
           cp -r deps/spectra/include/Spectra deps/include/Spectra
+
           git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
           cp -r deps/argparse/include/argparse deps/include/argparse
 
