@@ -1,0 +1,53 @@
+name: Complete source-target refactor
+
+on:
+  push:
+    branches:
+      - FEG/isotropic-j2-plasticity
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: FEG/isotropic-j2-plasticity
+
+      - name: Apply refactor
+        run: python3 tools/complete_source_target_refactor.py
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Configure
+        run: |
+          cmake -S . -B build-source-target \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build
+        run: cmake --build build-source-target --parallel 2
+
+      - name: Commit validated refactor
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src tests
+          git commit -m "Complete source-target material state integration"
+          git push origin HEAD:FEG/isotropic-j2-plasticity
