@@ -26,10 +26,20 @@ jobs:
           from pathlib import Path
           p = Path('tools/complete_source_target_refactor.py')
           s = p.read_text()
-          old = 'block(text, "void T3::compute_stress_state", "/**\\n * Assembles Total-Lagrangian axial internal force")'
-          new = 'block(text, "void T3::compute_stress_state", "void T3::compute_internal_force_nonlinear")'
-          assert old in s
-          p.write_text(s.replace(old, new, 1))
+          changes = [
+              (
+                  'block(text, "void T3::compute_stress_state", "/**\\n * Assembles Total-Lagrangian axial internal force")',
+                  'block(text, "void T3::compute_stress_state", "void T3::compute_internal_force_nonlinear")'
+              ),
+              (
+                  'text = replace_once(text, "        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", "shell evaluate const source")',
+                  'text = text.replace("        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", 1)'
+              ),
+          ]
+          for old, new in changes:
+              assert old in s, old
+              s = s.replace(old, new, 1)
+          p.write_text(s)
           PY
           python3 tools/complete_source_target_refactor.py
 
