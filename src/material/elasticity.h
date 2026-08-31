@@ -3,15 +3,14 @@
  * @brief Declares the common interface for elastic constitutive models.
  *
  * `Elasticity` separates element and section kinematics from constitutive
- * evaluation. Callers select the overload matching their strain measure and
- * dimensional reduction; implementations return the work-conjugate stress and
- * consistent tangent in the same material basis.
+ * evaluation and history integration. Read-only `evaluate()` calls inspect one
+ * already established material state without changing it. `integrate()` calls
+ * advance a constitutive state from an immutable source row into a separate
+ * caller-owned target row.
  *
- * Every evaluation receives the mutable state row of the current material
- * point. Stateless elastic laws leave that row unchanged, while history-
- * dependent implementations may update it in place. Ownership, reset and
- * commitment of these rows belong to the nonlinear state manager rather than
- * to the constitutive model.
+ * This source/target split is intentional: Newton iterations, line-search
+ * trials, result recovery and rejected increments must never modify the last
+ * accepted constitutive history implicitly.
  *
  * @see material::Material
  * @see loadcase::tools::NonlinearStateManager
@@ -47,32 +46,29 @@ struct ShellMaterialStressPK2;
 namespace material {
 
 /**
- * @brief Polymorphic interface for axial, solid, beam and shell elasticity.
+ * @brief Polymorphic interface for axial, solid, beam and shell constitutive laws.
  *
- * The interface exposes separate overloads for linearized and finite-strain
- * evaluations so their stress measures remain explicit. Linearized axial,
- * volume and shell calls return Cauchy stress. Their finite-strain counterparts
- * accept Green-Lagrange strain and return second Piola-Kirchhoff stress. Beam
- * evaluation operates directly on generalized strains and resultants.
+ * `evaluate()` is strictly read-only with respect to material history. It is the
+ * correct operation for result recovery, diagnostics and stateless response.
+ * `integrate()` performs an actual constitutive update
  *
- * Capability queries allow sections and elements to reject unsupported
- * kinematics before evaluation. The base implementations report no supported
- * formulation and raise a model error if an unsupported overload is called.
+ *     (strain_{n+1}, state_n) -> (stress_{n+1}, tangent_{n+1}, state_{n+1})
  *
- * Material-point state is passed as mutable, non-owning storage. `state_size()`
- * defines the required leading components, and `initialize_state()` establishes
- * their reference history. A size of zero denotes a stateless model; callers
- * may still pass a valid dummy row to keep addressing uniform.
+ * and therefore receives separate source and target state rows. Stateful models
+ * must override the corresponding `integrate()` overloads. The base integration
+ * implementations are valid only for stateless models and simply dispatch to
+ * `evaluate()`.
+ *
+ * A state size of zero denotes a stateless law. Such laws accept null source and
+ * target pointers. Stateful laws require valid non-aliasing source and target
+ * rows whenever `integrate()` is used.
  */
 struct Elasticity {
-    // Shared ownership used by material definitions
     using Ptr = std::shared_ptr<Elasticity>;
 
     virtual ~Elasticity() = default;
 
-    // Capability queries used by elements and sections before dispatch. Each
-    // flag refers to one exact strain/stress-measure pair; support for a
-    // linearized formulation does not imply support for its finite-strain form.
+    // Capability queries used by elements and sections before dispatch.
     virtual bool supports_axial_linearized() const;
     virtual bool supports_axial_green_lagrange() const;
 
@@ -84,69 +80,95 @@ struct Elasticity {
     virtual bool supports_shell_integration_linearized() const;
     virtual bool supports_shell_integration_green_lagrange() const;
 
-    // Material-point history contract. state_size() is the number of leading
-    // scalar values consumed in every globally enumerated state row.
-    // initialize_state() writes their constitutive reference values in place.
+    // Material-point history layout and initialization.
     virtual Index state_size() const;
     virtual void  initialize_state(Precision* state) const;
 
-    // Infinitesimal axial response in the material direction. The caller owns
-    // state and passes the row of the current material point. stress is Cauchy
-    // stress and tangent is d(sigma)/d(epsilon).
+    // -------------------------------------------------------------------------
+    // Read-only constitutive evaluation
+    // -------------------------------------------------------------------------
+
     virtual void evaluate(const AxialStrainLinearized& strain,
-                          Precision*                   state,
+                          const Precision*             state,
                           AxialStressCauchy&           stress,
                           Precision&                   tangent) const;
 
-    // Finite-strain axial response in the reference material direction. stress
-    // is second Piola-Kirchhoff stress work-conjugate to Green-Lagrange strain;
-    // tangent is the consistent derivative dS/dE.
     virtual void evaluate(const AxialStrainGreenLagrange& strain,
-                          Precision*                      state,
+                          const Precision*                  state,
                           AxialStressPK2&                 stress,
-                          Precision&                      tangent) const;
+                          Precision&                     tangent) const;
 
-    // Infinitesimal three-dimensional response in the material basis. Voigt
-    // ordering follows VolumeStrain/VolumeStress, and tangent maps engineering
-    // strain components to Cauchy-stress components.
     virtual void evaluate(const VolumeStrainLinearized& strain,
-                          Precision*                    state,
+                          const Precision*              state,
                           VolumeStressCauchy&           stress,
                           Mat6&                         tangent) const;
 
-    // Total-Lagrangian three-dimensional response in the reference material
-    // basis. Green-Lagrange strain, PK2 stress and dS/dE remain work-conjugate;
-    // the owning section handles transformations to and from global coordinates.
     virtual void evaluate(const VolumeStrainGreenLagrange& strain,
-                          Precision*                       state,
+                          const Precision*                   state,
                           VolumeStressPK2&                 stress,
-                          Mat6&                            tangent) const;
+                          Mat6&                           tangent) const;
 
-    // Generalized beam response. The section-defined six-component strain and
-    // resultant ordering is preserved, and tangent is their consistent local
-    // derivative. The state row has the same non-owning in-place semantics.
     virtual void evaluate(const BeamGeneralizedStrain& strain,
-                          Precision*                   state,
+                          const Precision*             state,
                           BeamStressResultants&        resultants,
                           Mat6&                        tangent) const;
 
-    // Infinitesimal shell material response at one physical thickness point.
-    // The five strain components exclude thickness-normal strain; stress is
-    // Cauchy stress under the material's plane-stress reduction.
     virtual void evaluate(const ShellMaterialStrainLinearized& strain,
-                          Precision*                           state,
+                          const Precision*                     state,
                           ShellMaterialStressCauchy&            stress,
-                          Mat5&                                 tangent) const;
+                          Mat5&                               tangent) const;
 
-    // Finite-strain shell material response at one physical thickness point.
-    // The five-component Green-Lagrange input returns work-conjugate PK2 stress
-    // and the consistently reduced tangent under the model's S33 = 0 convention.
     virtual void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                          Precision*                              state,
+                          const Precision*                          state,
                           ShellMaterialStressPK2&                 stress,
-                          Mat5&                                   tangent) const;
+                          Mat5&                                  tangent) const;
 
-    // Runtime access to concrete constitutive implementations
+    // -------------------------------------------------------------------------
+    // History integration from immutable source into separate target state
+    // -------------------------------------------------------------------------
+
+    virtual void integrate(const AxialStrainLinearized& strain,
+                           const Precision*             state,
+                           Precision*                   target_state,
+                           AxialStressCauchy&           stress,
+                           Precision&                   tangent) const;
+
+    virtual void integrate(const AxialStrainGreenLagrange& strain,
+                           const Precision*                  state,
+                           Precision*                      target_state,
+                           AxialStressPK2&                 stress,
+                           Precision&                     tangent) const;
+
+    virtual void integrate(const VolumeStrainLinearized& strain,
+                           const Precision*              state,
+                           Precision*                    target_state,
+                           VolumeStressCauchy&           stress,
+                           Mat6&                         tangent) const;
+
+    virtual void integrate(const VolumeStrainGreenLagrange& strain,
+                           const Precision*                   state,
+                           Precision*                       target_state,
+                           VolumeStressPK2&                 stress,
+                           Mat6&                           tangent) const;
+
+    virtual void integrate(const BeamGeneralizedStrain& strain,
+                           const Precision*             state,
+                           Precision*                   target_state,
+                           BeamStressResultants&        resultants,
+                           Mat6&                        tangent) const;
+
+    virtual void integrate(const ShellMaterialStrainLinearized& strain,
+                           const Precision*                     state,
+                           Precision*                           target_state,
+                           ShellMaterialStressCauchy&            stress,
+                           Mat5&                               tangent) const;
+
+    virtual void integrate(const ShellMaterialStrainGreenLagrange& strain,
+                           const Precision*                          state,
+                           Precision*                              target_state,
+                           ShellMaterialStressPK2&                 stress,
+                           Mat5&                                  tangent) const;
+
     template<typename T>
     T* as() {
         return dynamic_cast<T*>(this);
