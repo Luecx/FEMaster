@@ -65,6 +65,7 @@ void register_nset             (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_orientation      (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_overview         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_part             (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_plastic          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_pload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_point_mass       (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_profile          (fem::io::dsl::Registry& registry, fem::model::Model& model);
