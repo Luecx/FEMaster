@@ -51,12 +51,14 @@ jobs:
                   'text = replace_once(\n    text,\n    "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",',
                   'text = text.replace(\n    "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",'
               ),
+              (
+                  'out = replace_count(out, "        material_->elasticity()->evaluate(", "        elasticity->evaluate(", 2, "integrated output dispatch")',
+                  'out = replace_count(out, "        material_->elasticity()->evaluate(", "        elasticity->evaluate(", 1, "integrated output dispatch")'
+              ),
           ]
           for old, new in changes:
               assert old in s, old
               s = s.replace(old, new, 1)
-          # The FRT output source-row replacement above was changed from the
-          # counted helper to a direct first replacement; add its count argument.
           needle = '    "    const Precision* state = material_state_source(state_ip);",\n    "FRT output resultant source state"\n)'
           repl = '    "    const Precision* state = material_state_source(state_ip);",\n    1\n)'
           assert needle in s
