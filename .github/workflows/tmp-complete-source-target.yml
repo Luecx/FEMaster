@@ -35,10 +35,32 @@ jobs:
                   'text = replace_once(text, "        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", "shell evaluate const source")',
                   'text = text.replace("        Precision*                    material_state,\\n        Index                         material_state_stride,", "        const Precision*              material_state,\\n        Index                         material_state_stride,", 1)'
               ),
+              (
+                  'text = replace_once(text, "        Precision*                    material_state,", "        const Precision*              material_state,", "ABD evaluate const state")',
+                  'text = text.replace("        Precision*                    material_state,", "        const Precision*              material_state,", 1)'
+              ),
+              (
+                  'text = replace_once(text, "    Precision*                    material_state,", "    const Precision*              material_state,", "ABD evaluate definition const")',
+                  'text = text.replace("    Precision*                    material_state,", "    const Precision*              material_state,", 1)'
+              ),
+              (
+                  'text = replace_once(text, "        Precision*                    material_state,", "        const Precision*              material_state,", "integrated shell evaluate const")',
+                  'text = text.replace("        Precision*                    material_state,", "        const Precision*              material_state,", 1)'
+              ),
+              (
+                  'text = replace_once(\n    text,\n    "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",',
+                  'text = text.replace(\n    "    Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);",'
+              ),
           ]
           for old, new in changes:
               assert old in s, old
               s = s.replace(old, new, 1)
+          # The FRT output source-row replacement above was changed from the
+          # counted helper to a direct first replacement; add its count argument.
+          needle = '    "    const Precision* state = material_state_source(state_ip);",\n    "FRT output resultant source state"\n)'
+          repl = '    "    const Precision* state = material_state_source(state_ip);",\n    1\n)'
+          assert needle in s
+          s = s.replace(needle, repl, 1)
           p.write_text(s)
           PY
           python3 tools/complete_source_target_refactor.py
