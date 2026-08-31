@@ -22,7 +22,15 @@ jobs:
       - name: Apply refactor
         shell: bash
         run: |
-          sed -i 's#/**\\n \* Assembles Total-Lagrangian axial internal force#void T3::compute_internal_force_nonlinear#' tools/complete_source_target_refactor.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tools/complete_source_target_refactor.py')
+          s = p.read_text()
+          old = 'block(text, "void T3::compute_stress_state", "/**\\n * Assembles Total-Lagrangian axial internal force")'
+          new = 'block(text, "void T3::compute_stress_state", "void T3::compute_internal_force_nonlinear")'
+          assert old in s
+          p.write_text(s.replace(old, new, 1))
+          PY
           python3 tools/complete_source_target_refactor.py
 
       - name: Fetch header dependencies
