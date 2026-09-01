@@ -23,10 +23,23 @@ namespace fem {
 namespace model {
 namespace {
 
+/**
+ * Returns the geometric midpoint of the truss in the current configuration.
+ *
+ * The midpoint is used as the single sampling location for distributed scalar,
+ * vector and tensor fields integrated over the current truss volume.
+ */
 Vec3 midpoint(T3& elem) {
     return (elem.node_position_current(0) + elem.node_position_current(1)) * Precision(0.5);
 }
 
+/**
+ * Returns the multiplicative density factor for field integration.
+ *
+ * Unscaled integration uses unity. Density-scaled integration requires a
+ * material density and returns that value so the calling integration routine can
+ * convert volume-based quantities to mass-based quantities.
+ */
 Precision density_scale(T3& elem, bool scale_by_density) {
     if (!scale_by_density) {
         return Precision(1);
@@ -40,39 +53,82 @@ Precision density_scale(T3& elem, bool scale_by_density) {
 
 } // namespace
 
+/**
+ * Constructs a two-node truss from its element id and global node ids.
+ *
+ * Section, material, model data and material-point storage are bound later by
+ * the compiled model infrastructure.
+ */
 T3::T3(ID elem_id, std::array<ID, N> node_ids_in)
     : StructuralElement(elem_id),
       node_ids(node_ids_in) {}
 
+/**
+ * Returns the active structural degrees of freedom of the truss.
+ *
+ * A T3 contributes the three translational DOFs at each node and no rotational
+ * degrees of freedom.
+ */
 ElDofs T3::dofs() const {
     return ElDofs{true, true, true, false, false, false};
 }
 
+/**
+ * Returns the spatial dimension of the T3 formulation.
+ */
 Dim T3::dimensions() const {
     return 3;
 }
 
+/**
+ * Returns the number of nodes carried by the two-node truss.
+ */
 Dim T3::n_nodes() const {
     return N;
 }
 
+/**
+ * Returns the number of constitutive integration points.
+ *
+ * The constant-strain truss has one axial material point for the complete
+ * element.
+ */
 Dim T3::num_ip() const {
     return 1;
 }
 
+/**
+ * Returns a pointer to the contiguous element connectivity array.
+ */
 const ID* T3::nodes() const {
     return node_ids.data();
 }
 
+/**
+ * Returns truss surface topology.
+ *
+ * A one-dimensional T3 has no structural surface representation, therefore all
+ * surface ids resolve to null.
+ */
 SurfacePtr T3::surface(ID surface_id) {
     (void) surface_id;
     return nullptr;
 }
 
+/**
+ * Returns the Abaqus-style element type name used by model IO and diagnostics.
+ */
 std::string T3::type_name() const {
     return "T3";
 }
 
+/**
+ * Resolves and validates the truss section assigned to the element.
+ *
+ * The compiled element must own a section and that section must be a
+ * `TrussSection`, because the T3 formulation requires its reference area and
+ * material assignment.
+ */
 TrussSection* T3::get_section() {
     logging::error(this->_section != nullptr,
         "T3: missing section for element ", this->elem_id);
@@ -83,6 +139,9 @@ TrussSection* T3::get_section() {
     return section;
 }
 
+/**
+ * Resolves the material referenced by the assigned truss section.
+ */
 material::MaterialPtr T3::get_material() {
     TrussSection* section = get_section();
     logging::error(section->material_ != nullptr,
@@ -90,6 +149,13 @@ material::MaterialPtr T3::get_material() {
     return section->material_;
 }
 
+/**
+ * Resolves the elastic constitutive law required by the truss formulation.
+ *
+ * Axial stiffness, prestress, nonlinear equilibrium and result recovery all use
+ * the common elasticity interface with the strain/stress pair appropriate to the
+ * respective operation.
+ */
 material::Elasticity* T3::get_elasticity() {
     auto mat = get_material();
     logging::error(mat->has_elasticity(),
@@ -97,6 +163,12 @@ material::Elasticity* T3::get_elasticity() {
     return mat->elasticity().get();
 }
 
+/**
+ * Returns one nodal position from the undeformed reference configuration.
+ *
+ * The local node index is translated through the element connectivity into the
+ * model-wide reference-position field.
+ */
 Vec3 T3::node_position_reference(Index local_node) const {
     logging::error(local_node < N,
         "T3: local node index out of range in element ", this->elem_id);
@@ -108,6 +180,12 @@ Vec3 T3::node_position_reference(Index local_node) const {
     return this->_model_data->positions_reference->row_vec3(static_cast<Index>(node_ids[local_node]));
 }
 
+/**
+ * Returns one nodal position from the current configuration.
+ *
+ * Nonlinear truss kinematics use this field for current length, stretch and the
+ * current axial force direction.
+ */
 Vec3 T3::node_position_current(Index local_node) const {
     logging::error(local_node < N,
         "T3: local node index out of range in element ", this->elem_id);
@@ -119,14 +197,26 @@ Vec3 T3::node_position_current(Index local_node) const {
     return this->_model_data->positions->row_vec3(static_cast<Index>(node_ids[local_node]));
 }
 
+/**
+ * Returns the undeformed truss length measured between reference node positions.
+ */
 Precision T3::length_reference() const {
     return (node_position_reference(1) - node_position_reference(0)).norm();
 }
 
+/**
+ * Returns the current truss length measured between current node positions.
+ */
 Precision T3::length_current() const {
     return (node_position_current(1) - node_position_current(0)).norm();
 }
 
+/**
+ * Returns the axial stretch `lambda = l/L0` of the current configuration.
+ *
+ * Both reference and current lengths must remain strictly positive for a valid
+ * one-dimensional finite-strain mapping.
+ */
 Precision T3::stretch() const {
     const Precision L0 = length_reference();
     const Precision l  = length_current();
@@ -139,6 +229,11 @@ Precision T3::stretch() const {
     return l / L0;
 }
 
+/**
+ * Returns the unit vector along the undeformed truss axis.
+ *
+ * Linear stiffness and linearized strain projection use this reference direction.
+ */
 Vec3 T3::direction_reference() const {
     const Precision L0 = length_reference();
     logging::error(L0 > Precision(0),
@@ -147,6 +242,12 @@ Vec3 T3::direction_reference() const {
     return (node_position_reference(1) - node_position_reference(0)) / L0;
 }
 
+/**
+ * Returns the unit vector along the current truss axis.
+ *
+ * Nonlinear internal force and tangent assembly use this direction after the
+ * finite-deformation configuration has been updated.
+ */
 Vec3 T3::direction_current() const {
     const Precision l = length_current();
     logging::error(l > Precision(0),
@@ -155,14 +256,27 @@ Vec3 T3::direction_current() const {
     return (node_position_current(1) - node_position_current(0)) / l;
 }
 
+/**
+ * Returns the current line-element length through the generic geometry API.
+ */
 Precision T3::length() {
     return length_current();
 }
 
+/**
+ * Returns the current line-element direction through the generic geometry API.
+ */
 Vec3 T3::direction() {
     return direction_current();
 }
 
+/**
+ * Returns the current geometric volume `A0*l` of the truss.
+ *
+ * The truss section stores the reference area while the line measure follows the
+ * current geometry, matching the convention used by distributed-field
+ * integration in this element.
+ */
 Precision T3::volume() {
     return get_section()->area_ * length_current();
 }
@@ -385,6 +499,13 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     return mapped;
 }
 
+/**
+ * Assembles the lumped translational mass matrix of the truss.
+ *
+ * For material density `rho`, the reference mass `rho*A0*L0` is split equally
+ * between both nodes and assigned isotropically to their three translational
+ * directions. Materials without density produce a zero mass matrix.
+ */
 MapMatrix T3::mass(Precision* buffer) {
     StaticMatrix<N * 3, N * 3> M = StaticMatrix<N * 3, N * 3>::Zero();
 
@@ -405,6 +526,12 @@ MapMatrix T3::mass(Precision* buffer) {
     return result;
 }
 
+/**
+ * Returns the natural-coordinate locations used for element-nodal recovery.
+ *
+ * The two truss nodes lie at `r=-1` and `r=+1`; the unused natural coordinates
+ * remain zero for compatibility with the generic three-column recovery API.
+ */
 RowMatrix T3::stress_strain_nodal_rst() {
     RowMatrix rst(N, 3);
     rst.setZero();
@@ -413,12 +540,24 @@ RowMatrix T3::stress_strain_nodal_rst() {
     return rst;
 }
 
+/**
+ * Returns the natural coordinate of the single truss integration point.
+ *
+ * The constant axial material point is located at the element center `r=0`.
+ */
 RowMatrix T3::stress_strain_ip_rst() {
     RowMatrix rst(1, 3);
     rst.setZero();
     return rst;
 }
 
+/**
+ * Integrates a scalar field over the current truss volume using midpoint
+ * evaluation.
+ *
+ * The current measure is `A*l`; optional density scaling multiplies the integrand
+ * by the material density before integration.
+ */
 Precision T3::integrate_scalar_field(bool scale_by_density, const ScalarField& field) {
     const Precision L = length_current();
     const Precision A = get_section()->area_;
@@ -430,6 +569,13 @@ Precision T3::integrate_scalar_field(bool scale_by_density, const ScalarField& f
     return field(midpoint(*this)) * density_scale(*this, scale_by_density) * A * L;
 }
 
+/**
+ * Integrates a vector field over the current truss volume using midpoint
+ * evaluation.
+ *
+ * The result is the integrated vector quantity over `A*l`, optionally scaled by
+ * material density.
+ */
 Vec3 T3::integrate_vector_field(bool scale_by_density, const VecField& field) {
     const Precision L = length_current();
     const Precision A = get_section()->area_;
@@ -441,6 +587,14 @@ Vec3 T3::integrate_vector_field(bool scale_by_density, const VecField& field) {
     return field(midpoint(*this)) * density_scale(*this, scale_by_density) * A * L;
 }
 
+/**
+ * Integrates a distributed vector field and scatters it as equivalent nodal
+ * loads.
+ *
+ * Midpoint integration gives the total force over the current measure `A*l`.
+ * The constant two-node truss shape functions distribute one half of that force
+ * to each node.
+ */
 void T3::integrate_vector_field(Field& node_loads, bool scale_by_density, const VecField& field) {
     const Precision L = length_current();
     const Precision A = get_section()->area_;
@@ -459,6 +613,13 @@ void T3::integrate_vector_field(Field& node_loads, bool scale_by_density, const 
     }
 }
 
+/**
+ * Integrates a second-order tensor field over the current truss volume using
+ * midpoint evaluation.
+ *
+ * Optional density scaling follows the same convention as the scalar and vector
+ * integration routines.
+ */
 Mat3 T3::integrate_tensor_field(bool scale_by_density, const TenField& field) {
     const Precision L = length_current();
     const Precision A = get_section()->area_;
@@ -470,6 +631,12 @@ Mat3 T3::integrate_tensor_field(bool scale_by_density, const TenField& field) {
     return field(midpoint(*this)) * density_scale(*this, scale_by_density) * A * L;
 }
 
+/**
+ * Applies equivalent nodal loading from a prescribed temperature field.
+ *
+ * Thermal expansion is currently not implemented for T3, so this operation is a
+ * deliberate no-op while satisfying the common structural-element interface.
+ */
 void T3::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) {
     (void) node_loads;
     (void) node_temp;
@@ -569,6 +736,13 @@ void T3::compute_stress_strain(Field*           strain,
     }
 }
 
+/**
+ * Computes the element compliance contribution `u^T K u`.
+ *
+ * The linear reference stiffness is assembled locally and multiplied by the
+ * element displacement vector gathered from the global nodal field. The scalar
+ * contribution is written to the result row associated with the element id.
+ */
 void T3::compute_compliance(Field& displacement, Field& result) {
     Precision buffer[N * 3 * N * 3] {};
     MapMatrix K = stiffness(buffer);
