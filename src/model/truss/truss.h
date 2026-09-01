@@ -31,9 +31,16 @@ namespace model {
 /**
  * @brief Three-dimensional two-node truss with one axial material point.
  *
- * The nonlinear tangent evaluates axial PK2 stress and its material tangent in
- * one constitutive call. The same stress drives geometric stiffness and internal
- * force, while history is read from the old row and written to the new row.
+ * The nonlinear formulation evaluates Green-Lagrange axial strain and PK2
+ * stress in the Total-Lagrangian setting. The same constitutive response drives
+ * the internal force, material tangent and geometric tangent so all nonlinear
+ * contributions correspond to one physical trial state.
+ *
+ * Material history is stored in the model-wide committed and trial material
+ * state fields. Nonlinear equilibrium evaluation reads the committed state and
+ * writes the trial state. Linear stiffness and geometric-stiffness evaluations
+ * use local constitutive scratch storage and therefore do not advance persistent
+ * material history.
  */
 struct T3 : StructuralElement {
     static constexpr Index N = 2;
@@ -74,14 +81,14 @@ struct T3 : StructuralElement {
     Precision length();
     Vec3      direction();
 
-    // Element matrices and nonlinear tangent. The complete tangent evaluates the
-    // single material-point state exactly once and reuses its PK2 stress for the
-    // geometric block, stored IP stress and matching internal force.
+    // Mechanical element operators. The geometric stiffness obtains its PK2
+    // stress locally from the supplied displacement state. The nonlinear tangent
+    // always assembles the matching internal force and skips tangent assembly
+    // when the caller supplies a null matrix buffer.
     Precision volume() override;
     MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
-    MapMatrix stiffness_tangent(Precision* buffer,
-                                Field&       ip_stress_state,
+    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) override;
+    MapMatrix stiffness_tangent(Precision*   buffer,
                                 NodeData&    nodal_forces,
                                 const Field& displacement) override;
     MapMatrix mass(Precision* buffer) override;
@@ -104,21 +111,15 @@ struct T3 : StructuralElement {
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
     // Recover strain and physical stress at requested output positions. The
-    // nonlinear path stores PK2 stress for Total-Lagrangian assembly but pushes
-    // it forward to axial Cauchy stress for user output. All constitutive calls
-    // use the element's single globally enumerated material-state row.
+    // nonlinear output path evaluates PK2 stress and pushes it forward to axial
+    // Cauchy stress for user output. Solver-internal stress quantities remain
+    // local to the corresponding mechanical operator.
     void compute_stress_strain(Field*           strain,
                                Field*           stress,
                                const Field&     displacement,
                                const RowMatrix& rst,
                                int              offset,
                                bool             use_green_lagrange_nl) override;
-    void compute_stress_state(Field&       stress_state,
-                              const Field& displacement,
-                              int          offset,
-                              bool         use_green_lagrange_nl) override;
-    void compute_internal_force_nonlinear(Field&       node_forces,
-                                          const Field& ip_stress) override;
     void compute_compliance(Field& displacement, Field& result) override;
     bool compute_beam_section_forces(Field&       section_forces,
                                      const Field& displacement,
