@@ -27,6 +27,8 @@
 
 #include "../../core/logging.h"
 
+#include <vector>
+
 namespace fem::model {
 
 /**
@@ -529,32 +531,79 @@ MapMatrix FRTShell<N>::stiffness(Precision* buffer) {
 }
 
 /**
- * Evaluates the physical geometric stiffness from a supplied displacement state.
+ * Evaluates the physical geometric stiffness from a linearized prestress state.
  *
- * Generalized strains and resultants are evaluated locally from the supplied
- * nodal trial configuration. The constitutive call reads committed history but
- * receives no writable trial-state pointer because prestress assembly is a
- * state-neutral operator. The resulting local shell resultants are immediately
- * contracted with the compatible strain Hessians and are not stored globally.
+ * Linear buckling supplies the displacement obtained from the linear preload
+ * solve. Prestress must therefore use the same reference B matrices and the
+ * linearized shell constitutive measure rather than finite-rotation shell
+ * strains. At every integration point the element evaluates
+ *
+ *     epsilon_0 = B_0 u,
+ *     n_0       = n(epsilon_0, state_committed),
+ *
+ * with `use_green_lagrange = false`. The resulting generalized resultants are
+ * contracted with the strain Hessians evaluated at the reference state. The
+ * complete path is state-neutral and keeps resultants local to this element.
  *
  * @param buffer Caller-provided dense element matrix storage.
- * @param displacement Global nodal displacement field defining the prestress.
- * @return Mapped physical geometric tangent matrix.
+ * @param displacement Global nodal displacement field from the linear preload solve.
+ * @return Mapped physical geometric stiffness matrix.
  */
 template<Index N>
 MapMatrix FRTShell<N>::stiffness_geom(
     Precision*   buffer,
     const Field& displacement
 ) {
-    const CurrentState state = current_state_from_displacement(displacement);
-    const EvaluationData data = init_evaluation(
+    const CurrentState state = reference_state();
+    EvaluationData data = init_evaluation(
         state,
         true,
+        true,
+        true,
         false,
-        true,
-        true,
         false
     );
+
+    const Vec6N q = element_displacement_vector(displacement);
+    const auto& points = reference_data().ip_points;
+    const Index state_stride = this->_model_data->material_state_old->components;
+    const Precision scale = topology_stiffness_scale();
+    ShellSection* section = shell_section();
+
+    // Keep the prestress resultants local and reuse the allocation across calls
+    // on the same worker thread. They are attached to EvaluationData only for
+    // the subsequent geometric contraction.
+    thread_local std::vector<Vec8> linear_resultants;
+    linear_resultants.resize(points.size());
+
+    for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
+        const std::size_t id = static_cast<std::size_t>(ip);
+        const ReferencePoint& point = points[id];
+        const ShellGeneralizedStrain strain(data.ip_B[id] * q);
+        ShellStressResultants resultants;
+        Mat8 tangent;
+
+        const Index      state_row = this->mp_index(ip, 0);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Mat3 basis = point.basis;
+
+        section->evaluate(
+            reference_position(point.r, point.s),
+            basis,
+            strain,
+            old_state,
+            nullptr,
+            state_stride,
+            false,
+            resultants,
+            tangent
+        );
+
+        linear_resultants[id] = scale * resultants.values();
+    }
+
+    data.ip_resultants      = Span<Vec8>(linear_resultants);
+    data.with_resultants    = true;
 
     Mat6N Kgeo;
     assemble_geometric_stiffness(data, Kgeo);
