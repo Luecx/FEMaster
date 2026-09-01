@@ -6,7 +6,7 @@
  * linearized and Total-Lagrangian strain-displacement operators, transform
  * constitutive response through `SolidSection` and integrate element matrices.
  *
- * Constitutive calls receive the globally enumerated material-point state row
+ * Constitutive calls receive globally enumerated old/new material-point rows
  * selected by their caller. The element applies optional topology stiffness
  * scaling only after the section has returned stress and tangent.
  *
@@ -108,7 +108,7 @@ Vec3 SolidElement<N>::material_position_reference(Precision r, Precision s, Prec
  * Evaluates linearized solid constitutive response at one natural point.
  *
  * The physical reference position, optional additional material rotation and
- * caller-selected state row are forwarded to `SolidSection`. Returned global
+ * caller-selected state rows are forwarded to `SolidSection`. Returned global
  * Cauchy stress and tangent are then multiplied by the optional scalar topology
  * stiffness field associated with this element.
  *
@@ -116,7 +116,8 @@ Vec3 SolidElement<N>::material_position_reference(Precision r, Precision s, Prec
  * @param s Second natural coordinate.
  * @param t Third natural coordinate.
  * @param global_strain Linearized strain in global coordinates.
- * @param state Active material-point history row.
+ * @param old_state Immutable material-point input state row.
+ * @param new_state Material-point output state row.
  * @param global_stress Cauchy stress returned in global coordinates.
  * @param global_tangent Consistent global material tangent.
  */
@@ -125,14 +126,16 @@ void SolidElement<N>::evaluate_material(Precision                     r,
                                         Precision                     s,
                                         Precision                     t,
                                         const VolumeStrainLinearized& global_strain,
-                                        Precision*                    state,
+                                        const Precision*              old_state,
+                                        Precision*                    new_state,
                                         VolumeStressCauchy&           global_stress,
                                         Mat6&                         global_tangent) {
     get_section()->evaluate(
         material_position_reference(r, s, t),
         additional_material_rotation(),
         global_strain,
-        state,
+        old_state,
+        new_state,
         global_stress,
         global_tangent
     );
@@ -145,7 +148,7 @@ void SolidElement<N>::evaluate_material(Precision                     r,
 /**
  * Evaluates Total-Lagrangian solid constitutive response at one natural point.
  *
- * The selected state row is passed directly to the section and constitutive law.
+ * The selected old/new rows are passed directly to the section and constitutive law.
  * Green-Lagrange strain, returned PK2 stress and `dS/dE` are all expressed in
  * global reference coordinates. Optional topology scaling is applied to both
  * output quantities after constitutive evaluation.
@@ -154,7 +157,8 @@ void SolidElement<N>::evaluate_material(Precision                     r,
  * @param s Second natural coordinate.
  * @param t Third natural coordinate.
  * @param global_strain Green-Lagrange strain in global reference coordinates.
- * @param state Active material-point history row.
+ * @param old_state Immutable material-point input state row.
+ * @param new_state Material-point output state row.
  * @param global_stress PK2 stress returned in global reference coordinates.
  * @param global_tangent Consistent global material tangent `dS/dE`.
  */
@@ -163,14 +167,16 @@ void SolidElement<N>::evaluate_material(Precision                        r,
                                         Precision                        s,
                                         Precision                        t,
                                         const VolumeStrainGreenLagrange& global_strain,
-                                        Precision*                       state,
+                                        const Precision*                 old_state,
+                                        Precision*                       new_state,
                                         VolumeStressPK2&                 global_stress,
                                         Mat6&                            global_tangent) {
     get_section()->evaluate(
         material_position_reference(r, s, t),
         additional_material_rotation(),
         global_strain,
-        state,
+        old_state,
+        new_state,
         global_stress,
         global_tangent
     );
@@ -262,23 +268,24 @@ auto SolidElement<N>::green_lagrange_strain_displacement(const StaticMatrix<N, D
  * Evaluates the zero-strain Total-Lagrangian material tangent at one natural
  * coordinate.
  *
- * The provided state row follows the ordinary in-place constitutive contract.
- * Callers performing an auxiliary tangent query, such as hourglass scaling,
- * must save and restore it when the query must not advance physical history.
+ * The provided old state row remains unchanged. Any history generated by the
+ * auxiliary tangent query is written to the supplied new state row.
  *
  * @param r First natural coordinate.
  * @param s Second natural coordinate.
  * @param t Third natural coordinate.
- * @param state Active material-point state row.
+ * @param old_state Immutable material-point input state row.
+ * @param new_state Material-point output state row.
  * @return Global material tangent at zero Green-Lagrange strain.
  */
 template<Index N>
-auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t, Precision* state)
+auto SolidElement<N>::material_tangent_reference(Precision r, Precision s, Precision t,
+                                                 const Precision* old_state, Precision* new_state)
     -> StaticMatrix<n_strain, n_strain> {
     VolumeStrainGreenLagrange zero_strain;
     VolumeStressPK2           zero_stress;
     Mat6                      tangent;
-    evaluate_material(r, s, t, zero_strain, state, zero_stress, tangent);
+    evaluate_material(r, s, t, zero_strain, old_state, new_state, zero_stress, tangent);
     return tangent;
 }
 
@@ -499,8 +506,10 @@ SolidElement<N>::stiffness(Precision* buffer) {
             VolumeStressPK2 stress;
             Mat6            C;
 
-            Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip++), 0);
-            evaluate_material(r, s, t, strain, state, stress, C);
+            const Index      state_row = this->mp_index(ip++);
+            const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+            Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+            evaluate_material(r, s, t, strain, old_state, new_state, stress, C);
 
             StaticMatrix<D * N, D * N> res = B.transpose() * (C * B) * det0;
             return StaticMatrix<D * N, D * N>(res);

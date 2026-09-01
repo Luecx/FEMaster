@@ -27,9 +27,8 @@ namespace fem::material {
  * an in-plane plane-stress block and two transverse shear components. All
  * tangents are expressed in the material basis supplied by the owning section.
  *
- * The model has no history variables. The state pointer accepted through the
- * common elasticity interface is deliberately left unchanged by every
- * evaluation.
+ * The model has no history variables. The state pointers accepted through the
+ * common elasticity interface are deliberately unused by every evaluation.
  */
 struct IsotropicElasticity : Elasticity {
     // Independent elastic constants and derived shear modulus
@@ -54,42 +53,48 @@ struct IsotropicElasticity : Elasticity {
     // Linearized axial Hooke response: sigma = E epsilon and d sigma/d epsilon = E.
     // The supplied state row is valid but unchanged because this law is stateless.
     void evaluate(const AxialStrainLinearized& strain,
-                  Precision*                   state,
+                  const Precision*             old_state,
+                  Precision*                   new_state,
                   AxialStressCauchy&           stress,
                   Precision&                   tangent) const override;
 
     // Total-Lagrangian axial Hooke response: S = E E_GL. PK2 stress and
     // Green-Lagrange strain are work-conjugate in the reference material axis.
     void evaluate(const AxialStrainGreenLagrange& strain,
-                  Precision*                      state,
+                  const Precision*                old_state,
+                  Precision*                      new_state,
                   AxialStressPK2&                 stress,
                   Precision&                      tangent) const override;
 
     // Linearized three-dimensional response in material coordinates. The
     // constant isotropic six-by-six tangent maps engineering strain to Cauchy stress.
     void evaluate(const VolumeStrainLinearized& strain,
-                  Precision*                    state,
+                  const Precision*              old_state,
+                  Precision*                    new_state,
                   VolumeStressCauchy&           stress,
                   Mat6&                         tangent) const override;
 
     // Finite-strain material response using the same constant Hooke operator.
     // Input is Green-Lagrange strain and output is second Piola-Kirchhoff stress.
     void evaluate(const VolumeStrainGreenLagrange& strain,
-                  Precision*                       state,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override;
 
     // Linearized five-component shell response with an in-plane plane-stress
     // block and transverse shear moduli. Output stress is Cauchy stress.
     void evaluate(const ShellMaterialStrainLinearized& strain,
-                  Precision*                           state,
+                  const Precision*                     old_state,
+                  Precision*                           new_state,
                   ShellMaterialStressCauchy&            stress,
                   Mat5&                                 tangent) const override;
 
     // Green-Lagrange five-component shell response with PK2 output. The same
     // constant reduced tangent is used and the material state remains unchanged.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                  Precision*                              state,
+                  const Precision*                        old_state,
+                  Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
                   Mat5&                                   tangent) const override;
 

@@ -71,15 +71,17 @@ struct ShellSection : Section {
 
     // Evaluate generalized membrane forces, bending moments, transverse shear
     // forces and their consistent eight-by-eight tangent. Input strain and both
-    // outputs use the supplied geometric shell basis. material_state addresses
-    // the first through-thickness material point at the current shell IP;
-    // material_state_stride is the scalar distance to each following row.
+    // outputs use the supplied geometric shell basis. old_material_state and
+    // new_material_state address the first through-thickness input/output rows
+    // at the current shell IP; material_state_stride is the scalar distance to
+    // each following row.
     // Concrete sections perform all material-basis transformations internally.
     virtual void evaluate(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         bool                          use_green_lagrange,
         ShellStressResultants&        resultants_shell,
@@ -87,15 +89,16 @@ struct ShellSection : Section {
     ) const = 0;
 
     // Recover generalized resultants for output. The concrete section is first
-    // evaluated with the same state pointer, stride and strain-measure contract
+    // evaluated with the same state rows, stride and strain-measure contract
     // as evaluate(). The base then rotates physical membrane, moment and shear
     // components from the geometric shell basis into stress_resultant_basis().
-    // Any in-place constitutive state update occurs during the concrete call.
+    // Constitutive history updates are written only to the new state rows.
     [[nodiscard]] ShellStressResultants evaluate_output_resultants(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         bool                          use_green_lagrange
     ) const;
@@ -104,13 +107,14 @@ struct ShellSection : Section {
     // the midsurface. Linearized sections return Cauchy stress directly;
     // finite-strain sections use deformation_gradient to push their PK2 material
     // response forward. Components are global without an orientation and
-    // section-local with one. material_state identifies the first state row at
-    // the parent shell IP and the concrete formulation chooses the relevant MP.
+    // section-local with one. Both state pointers identify the first row at the
+    // parent shell IP and the concrete formulation chooses the relevant MP.
     [[nodiscard]] virtual VolumeStressCauchy evaluate_output_stress(
         const Vec3&                   position_reference,
         const Mat3&                   shell_basis_global,
         const ShellGeneralizedStrain& strain_shell,
-        Precision*                    material_state,
+        const Precision*              old_material_state,
+        Precision*                    new_material_state,
         Index                         material_state_stride,
         Precision                     z,
         bool                          use_green_lagrange,

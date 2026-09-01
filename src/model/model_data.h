@@ -133,11 +133,15 @@ struct ModelData {
     Field::Ptr positions_reference         = nullptr;
     Field::Ptr element_stiffness_scale     = nullptr;
     Field::Ptr material_orientation        = nullptr;
-    Field::Ptr material_state              = nullptr;
     Field::Ptr shell_element_nodal_normals = nullptr;
     Field::Ptr element_nodal_offsets       = nullptr;
     Field::Ptr element_ip_offsets          = nullptr;
     Field::Ptr element_mp_offsets          = nullptr;
+
+    // Constitutive history read by the current evaluation and the separate
+    // output history produced by that evaluation.
+    Field::Ptr material_state_old = nullptr;
+    Field::Ptr material_state_new = nullptr;
 
     // Global assembly regions materialized from the compiled instances. Every
     // collection owns an aggregate *ALL region that receives all dense entities.

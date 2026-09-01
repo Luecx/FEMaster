@@ -76,7 +76,8 @@ ShellSection::ShellSection(
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis expressed in global coordinates.
  * @param strain_shell Generalized strain in the geometric shell basis.
- * @param material_state First material-point state row at this shell point.
+ * @param old_material_state First material-point input state row at this shell point.
+ * @param new_material_state First material-point output state row at this shell point.
  * @param material_state_stride Scalar distance between consecutive state rows.
  * @param use_green_lagrange Select finite-strain constitutive evaluation.
  * @return Generalized resultants in the configured output basis.
@@ -85,7 +86,8 @@ ShellStressResultants ShellSection::evaluate_output_resultants(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
-    Precision*                    material_state,
+    const Precision*              old_material_state,
+    Precision*                    new_material_state,
     Index                         material_state_stride,
     bool                          use_green_lagrange
 ) const {
@@ -99,7 +101,8 @@ ShellStressResultants ShellSection::evaluate_output_resultants(
         position_reference,
         shell_basis_global,
         strain_shell,
-        material_state,
+        old_material_state,
+        new_material_state,
         material_state_stride,
         use_green_lagrange,
         resultants_shell,

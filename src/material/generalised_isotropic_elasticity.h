@@ -28,8 +28,8 @@ namespace fem::material {
  * in three-dimensional and shell tangents. Responses are evaluated in the
  * material basis supplied by the owning section.
  *
- * The constitutive law contains no history variables and never modifies the
- * material-point state pointer passed through `Elasticity`.
+ * The constitutive law contains no history variables and never uses the
+ * material-point state pointers passed through `Elasticity`.
  */
 struct GeneralisedIsotropicElasticity : Elasticity {
     // Independent elastic parameters
@@ -55,42 +55,48 @@ struct GeneralisedIsotropicElasticity : Elasticity {
     // Linearized axial response sigma = E epsilon. Independent shear stiffness
     // does not enter this one-dimensional reduction; state remains unchanged.
     void evaluate(const AxialStrainLinearized& strain,
-                  Precision*                   state,
+                  const Precision*             old_state,
+                  Precision*                   new_state,
                   AxialStressCauchy&           stress,
                   Precision&                   tangent) const override;
 
     // Total-Lagrangian axial response S = E E_GL with constant tangent E.
     // The returned PK2 stress is work-conjugate to Green-Lagrange strain.
     void evaluate(const AxialStrainGreenLagrange& strain,
-                  Precision*                      state,
+                  const Precision*                old_state,
+                  Precision*                      new_state,
                   AxialStressPK2&                 stress,
                   Precision&                      tangent) const override;
 
     // Linearized three-dimensional response. Normal entries follow isotropic
     // E/nu coupling, while all engineering shear diagonals use the supplied G.
     void evaluate(const VolumeStrainLinearized& strain,
-                  Precision*                    state,
+                  const Precision*              old_state,
+                  Precision*                    new_state,
                   VolumeStressCauchy&           stress,
                   Mat6&                         tangent) const override;
 
     // Finite-strain response with the identical constant material operator,
     // interpreted as the mapping from Green-Lagrange strain to PK2 stress.
     void evaluate(const VolumeStrainGreenLagrange& strain,
-                  Precision*                       state,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override;
 
     // Linearized shell plane-stress response. The in-plane normal block uses
     // E and nu; in-plane and transverse engineering shear terms use G.
     void evaluate(const ShellMaterialStrainLinearized& strain,
-                  Precision*                           state,
+                  const Precision*                     old_state,
+                  Precision*                           new_state,
                   ShellMaterialStressCauchy&            stress,
                   Mat5&                                 tangent) const override;
 
     // Finite-strain shell response returning PK2 components and their constant
     // derivative with respect to five-component Green-Lagrange shell strain.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                  Precision*                              state,
+                  const Precision*                        old_state,
+                  Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
                   Mat5&                                   tangent) const override;
 

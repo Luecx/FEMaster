@@ -7,11 +7,11 @@
  * dimensional reduction; implementations return the work-conjugate stress and
  * consistent tangent in the same material basis.
  *
- * Every evaluation receives the mutable state row of the current material
- * point. Stateless elastic laws leave that row unchanged, while history-
- * dependent implementations may update it in place. Ownership, reset and
- * commitment of these rows belong to the nonlinear state manager rather than
- * to the constitutive model.
+ * Every evaluation receives separate input and output state rows for the current
+ * material point. The input row is always valid and remains unchanged, while a
+ * history-dependent implementation writes its updated history to the output
+ * row. Ownership and commitment of these rows belong to the nonlinear state
+ * manager rather than to the constitutive model.
  *
  * @see material::Material
  * @see loadcase::tools::NonlinearStateManager
@@ -59,10 +59,11 @@ namespace material {
  * kinematics before evaluation. The base implementations report no supported
  * formulation and raise a model error if an unsupported overload is called.
  *
- * Material-point state is passed as mutable, non-owning storage. `state_size()`
- * defines the required leading components, and `initialize_state()` establishes
- * their reference history. A size of zero denotes a stateless model; callers
- * may still pass a valid dummy row to keep addressing uniform.
+ * Material-point state is passed as non-owning input/output storage.
+ * `state_size()` defines the required leading components, and
+ * `initialize_state()` establishes their reference history. A size of zero
+ * denotes a stateless model; callers still pass valid dummy rows to keep
+ * addressing uniform.
  */
 struct Elasticity {
     // Shared ownership used by material definitions
@@ -90,11 +91,16 @@ struct Elasticity {
     virtual Index state_size() const;
     virtual void  initialize_state(Precision* state) const;
 
+    // Every constitutive evaluation receives valid, separate state rows.
+    // Implementations read old_state without modifying it and write all updated
+    // history components to new_state.
+
     // Infinitesimal axial response in the material direction. The caller owns
-    // state and passes the row of the current material point. stress is Cauchy
-    // stress and tangent is d(sigma)/d(epsilon).
+    // the immutable old_state and mutable new_state rows of the current material
+    // point. stress is Cauchy stress and tangent is d(sigma)/d(epsilon).
     virtual void evaluate(const AxialStrainLinearized& strain,
-                          Precision*                   state,
+                          const Precision*             old_state,
+                          Precision*                   new_state,
                           AxialStressCauchy&           stress,
                           Precision&                   tangent) const;
 
@@ -102,7 +108,8 @@ struct Elasticity {
     // is second Piola-Kirchhoff stress work-conjugate to Green-Lagrange strain;
     // tangent is the consistent derivative dS/dE.
     virtual void evaluate(const AxialStrainGreenLagrange& strain,
-                          Precision*                      state,
+                          const Precision*                old_state,
+                          Precision*                      new_state,
                           AxialStressPK2&                 stress,
                           Precision&                      tangent) const;
 
@@ -110,7 +117,8 @@ struct Elasticity {
     // ordering follows VolumeStrain/VolumeStress, and tangent maps engineering
     // strain components to Cauchy-stress components.
     virtual void evaluate(const VolumeStrainLinearized& strain,
-                          Precision*                    state,
+                          const Precision*              old_state,
+                          Precision*                    new_state,
                           VolumeStressCauchy&           stress,
                           Mat6&                         tangent) const;
 
@@ -118,15 +126,17 @@ struct Elasticity {
     // basis. Green-Lagrange strain, PK2 stress and dS/dE remain work-conjugate;
     // the owning section handles transformations to and from global coordinates.
     virtual void evaluate(const VolumeStrainGreenLagrange& strain,
-                          Precision*                       state,
+                          const Precision*                 old_state,
+                          Precision*                       new_state,
                           VolumeStressPK2&                 stress,
                           Mat6&                            tangent) const;
 
     // Generalized beam response. The section-defined six-component strain and
     // resultant ordering is preserved, and tangent is their consistent local
-    // derivative. The state row has the same non-owning in-place semantics.
+    // derivative. State follows the same separate input/output convention.
     virtual void evaluate(const BeamGeneralizedStrain& strain,
-                          Precision*                   state,
+                          const Precision*             old_state,
+                          Precision*                   new_state,
                           BeamStressResultants&        resultants,
                           Mat6&                        tangent) const;
 
@@ -134,7 +144,8 @@ struct Elasticity {
     // The five strain components exclude thickness-normal strain; stress is
     // Cauchy stress under the material's plane-stress reduction.
     virtual void evaluate(const ShellMaterialStrainLinearized& strain,
-                          Precision*                           state,
+                          const Precision*                     old_state,
+                          Precision*                           new_state,
                           ShellMaterialStressCauchy&            stress,
                           Mat5&                                 tangent) const;
 
@@ -142,7 +153,8 @@ struct Elasticity {
     // The five-component Green-Lagrange input returns work-conjugate PK2 stress
     // and the consistently reduced tangent under the model's S33 = 0 convention.
     virtual void evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                          Precision*                              state,
+                          const Precision*                        old_state,
+                          Precision*                              new_state,
                           ShellMaterialStressPK2&                 stress,
                           Mat5&                                   tangent) const;
 

@@ -2,10 +2,11 @@
  * @file nonlinear_state_manager.h
  * @brief Defines nonlinear material and contact state management.
  *
- * The nonlinear state manager owns material-point history buffers and coordinates
- * the transactional augmented-Lagrange state maintained by surface-to-surface
- * contact. Contact geometry is always reconstructed from current nodal positions
- * and is never frozen or stored between evaluations.
+ * The nonlinear state manager coordinates the committed and trial material-point
+ * history buffers stored by `ModelData` and the transactional augmented-Lagrange
+ * state maintained by surface-to-surface contact. Contact geometry is always
+ * reconstructed from current nodal positions and is never stored between
+ * evaluations.
  *
  * Material history is committed per accepted physical increment. Contact
  * multiplier trials follow the nested predictor, line-search and augmentation
@@ -14,7 +15,8 @@
  * managed by the contact definition itself.
  *
  * @see constraint::Contact
- * @see model::ModelData::material_state
+ * @see model::ModelData::material_state_old
+ * @see model::ModelData::material_state_new
  * @see tools::LoadControl
  * @see tools::ArcLengthControl
  *
@@ -35,12 +37,12 @@ namespace loadcase {
 namespace tools {
 
 /**
- * @brief Owns nonlinear material history and coordinates contact trial state.
+ * @brief Coordinates nonlinear material history and contact trial state.
  *
- * Material evaluations overwrite an active trial field in place and therefore
- * restart from committed history for every independent residual or tangent
- * evaluation. Accepted increments promote the trial constitutive state to the
- * committed field.
+ * Material evaluations read the committed field and write a separate trial
+ * field. Independent residual and tangent evaluations therefore cannot advance
+ * their own input history. Accepted increments promote the trial constitutive
+ * state to the committed field.
  *
  * Surface contact retains its own nested augmented-Lagrange state. This manager
  * only synchronizes contact begin/commit/rollback operations with the path
@@ -50,7 +52,7 @@ namespace tools {
 class NonlinearStateManager {
 public:
     explicit NonlinearStateManager(model::Model& model);
-    ~NonlinearStateManager();
+    ~NonlinearStateManager() = default;
 
     NonlinearStateManager(const NonlinearStateManager&)            = delete;
     NonlinearStateManager& operator=(const NonlinearStateManager&) = delete;
@@ -68,16 +70,14 @@ public:
     bool update_contact_active_set();
 
 private:
-    // Publish the trial material field as the active ModelData state
-    void bind_material_state();
+    // Restore semantic field names after committed/trial pointer swaps
+    void name_material_states();
 
     // Model whose nonlinear state is coordinated
     model::Model& model_;
 
-    // Caller-visible material state and manager-owned committed/trial buffers
-    model::Field::Ptr previous_material_state_  = nullptr;
-    model::Field::Ptr committed_material_state_ = nullptr;
-    model::Field::Ptr trial_material_state_     = nullptr;
+    // Uniform constitutive history width; zero denotes stateless materials
+    Index material_state_size_ = 0;
 };
 
 } // namespace tools

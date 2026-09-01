@@ -5,7 +5,7 @@
  * QSPT derives its effective in-plane shear stiffness from the assigned shell
  * section and uses the resulting scalar flexibility for its shear-flow element
  * formulation. Section evaluation receives the globally enumerated material-
- * point state directly from `ModelData::material_state`.
+ * point state directly from the old/new `ModelData` state fields.
  *
  * @see QSPT
  *
@@ -157,14 +157,17 @@ Precision QSPT::effective_shear_modulus() {
     ShellStressResultants  zero_resultants;
     Mat8                   tangent;
 
-    // Evaluate the zero-strain section tangent on the element material-state row
-    Precision* state = &(*this->_model_data->material_state)(this->mp_index(0, 0), 0);
+    // Evaluate the zero-strain section tangent on the element state rows
+    const Index      state_row = this->mp_index(0, 0);
+    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
     this->get_section()->evaluate(
         center,
         shell_basis,
         zero_strain,
-        state,
-        this->_model_data->material_state->components,
+        old_state,
+        new_state,
+        this->_model_data->material_state_old->components,
         false,
         zero_resultants,
         tangent

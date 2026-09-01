@@ -75,7 +75,7 @@ struct TestElement final : model::ElementInterface {
     }
 };
 
-TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
+TEST(NonlinearStateManager, SeparatesResetsAndCommitsMaterialState) {
     model::Model model;
     model._data = std::make_shared<model::ModelData>();
     model._data->elements.resize(1);
@@ -92,42 +92,60 @@ TEST(NonlinearStateManager, ResetsCommitsAndRestoresMaterialStateBinding) {
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
 
-    auto previous_state = std::make_shared<model::Field>(
-        "PREVIOUS_STATE", model::FieldDomain::ELEMENT_MP, 4, 1);
-    model._data->material_state = previous_state;
+    auto enumerated_state_old = model._data->material_state_old;
+    auto enumerated_state_new = model._data->material_state_new;
+
+    model::Field::Ptr committed_state;
+    model::Field::Ptr trial_state;
 
     {
         loadcase::tools::NonlinearStateManager state(model);
 
-        ASSERT_NE(model._data->material_state, nullptr);
-        EXPECT_EQ(model._data->material_state->domain, model::FieldDomain::ELEMENT_MP);
-        EXPECT_EQ(model._data->material_state->rows, 4);
-        EXPECT_EQ(model._data->material_state->components, 3);
+        ASSERT_NE(model._data->material_state_old, nullptr);
+        ASSERT_NE(model._data->material_state_new, nullptr);
+        EXPECT_NE(model._data->material_state_old, model._data->material_state_new);
+        EXPECT_EQ(model._data->material_state_old, enumerated_state_old);
+        EXPECT_EQ(model._data->material_state_new, enumerated_state_new);
+        EXPECT_EQ(model._data->material_state_old->domain, model::FieldDomain::ELEMENT_MP);
+        EXPECT_EQ(model._data->material_state_old->rows, 4);
+        EXPECT_EQ(model._data->material_state_old->components, 3);
 
         for (Index row = 0; row < 4; ++row) {
-            EXPECT_EQ((*model._data->material_state)(row, 0), Precision(1));
-            EXPECT_EQ((*model._data->material_state)(row, 1), Precision(2));
-            EXPECT_EQ((*model._data->material_state)(row, 2), Precision(3));
+            EXPECT_EQ((*model._data->material_state_old)(row, 0), Precision(1));
+            EXPECT_EQ((*model._data->material_state_old)(row, 1), Precision(2));
+            EXPECT_EQ((*model._data->material_state_old)(row, 2), Precision(3));
+            EXPECT_EQ((*model._data->material_state_new)(row, 0), Precision(1));
+            EXPECT_EQ((*model._data->material_state_new)(row, 1), Precision(2));
+            EXPECT_EQ((*model._data->material_state_new)(row, 2), Precision(3));
         }
 
         const Index row = element->mp_index(1, 0);
-        Precision* material_state = &(*model._data->material_state)(row, 0);
-        EXPECT_EQ(material_state[1], Precision(2));
+        const Precision* old_state = &(*model._data->material_state_old)(row, 0);
+        Precision*       new_state = &(*model._data->material_state_new)(row, 0);
+        EXPECT_EQ(old_state[1], Precision(2));
+        EXPECT_EQ(new_state[1], Precision(2));
 
-        material_state[1] = Precision(99);
+        new_state[1] = Precision(99);
+        EXPECT_EQ(old_state[1], Precision(2));
         state.reset_material_state();
-        EXPECT_EQ((*model._data->material_state)(row, 1), Precision(2));
+        EXPECT_EQ((*model._data->material_state_new)(row, 1), Precision(2));
 
-        (*model._data->material_state)(row, 1) = Precision(7);
+        (*model._data->material_state_new)(row, 1) = Precision(7);
         state.commit_material_state();
-        EXPECT_EQ((*model._data->material_state)(row, 1), Precision(7));
+        EXPECT_EQ((*model._data->material_state_old)(row, 1), Precision(7));
+        EXPECT_EQ((*model._data->material_state_new)(row, 1), Precision(7));
 
-        (*model._data->material_state)(row, 1) = Precision(42);
+        (*model._data->material_state_new)(row, 1) = Precision(42);
         state.reset_material_state();
-        EXPECT_EQ((*model._data->material_state)(row, 1), Precision(7));
+        EXPECT_EQ((*model._data->material_state_old)(row, 1), Precision(7));
+        EXPECT_EQ((*model._data->material_state_new)(row, 1), Precision(7));
+
+        committed_state = model._data->material_state_old;
+        trial_state     = model._data->material_state_new;
     }
 
-    EXPECT_EQ(model._data->material_state, previous_state);
+    EXPECT_EQ(model._data->material_state_old, committed_state);
+    EXPECT_EQ(model._data->material_state_new, trial_state);
 }
 
 TEST(NonlinearStateManager, KeepsEnumeratedStateForStatelessMaterials) {
@@ -146,15 +164,19 @@ TEST(NonlinearStateManager, KeepsEnumeratedStateForStatelessMaterials) {
     model._data->elements[0] = element;
     model._data->initialize_element_enumeration();
 
-    auto enumerated_state = model._data->material_state;
-    ASSERT_NE(enumerated_state, nullptr);
+    auto enumerated_state_old = model._data->material_state_old;
+    auto enumerated_state_new = model._data->material_state_new;
+    ASSERT_NE(enumerated_state_old, nullptr);
+    ASSERT_NE(enumerated_state_new, nullptr);
 
     {
         loadcase::tools::NonlinearStateManager state(model);
-        EXPECT_EQ(model._data->material_state, enumerated_state);
+        EXPECT_EQ(model._data->material_state_old, enumerated_state_old);
+        EXPECT_EQ(model._data->material_state_new, enumerated_state_new);
     }
 
-    EXPECT_EQ(model._data->material_state, enumerated_state);
+    EXPECT_EQ(model._data->material_state_old, enumerated_state_old);
+    EXPECT_EQ(model._data->material_state_new, enumerated_state_new);
 }
 
 } // namespace

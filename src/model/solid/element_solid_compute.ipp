@@ -2,10 +2,9 @@
  * @file element_solid_compute.ipp
  * @brief Implements solid stress recovery and nonlinear force/tangent assembly.
  *
- * Constitutive evaluations use the globally enumerated material-point state
+ * Constitutive evaluations use separate globally enumerated old/new state rows
  * associated with each solid integration point. The nonlinear tangent path
- * evaluates stress and material tangent together so an in-place history state
- * is advanced exactly once per material point and solver evaluation.
+ * evaluates stress and material tangent together in one material call.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -85,7 +84,9 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
             }
         }
 
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip), 0);
+        const Index      state_row = this->mp_index(state_ip);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         // Linearized recovery evaluates Cauchy stress directly from the
         // infinitesimal reference-configuration strain field
@@ -102,7 +103,7 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
             const VolumeStrainLinearized global_strain(global_strain_voigt);
             VolumeStressCauchy           global_stress;
             Mat6                         global_tangent;
-            evaluate_material(r, s, t, global_strain, state, global_stress, global_tangent);
+            evaluate_material(r, s, t, global_strain, old_state, new_state, global_stress, global_tangent);
 
             for (Dim j = 0; j < n_strain; ++j) {
                 if (strain) (*strain)(row, j) = global_strain.voigt()(j);
@@ -119,7 +120,7 @@ void SolidElement<N>::compute_stress_strain(Field* strain,
 
         VolumeStressPK2 second_pk;
         Mat6            tangent;
-        evaluate_material(r, s, t, green_lagrange, state, second_pk, tangent);
+        evaluate_material(r, s, t, green_lagrange, old_state, new_state, second_pk, tangent);
 
         const VolumeStressCauchy cauchy = second_pk.to_cauchy(F);
 
@@ -166,8 +167,10 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
         const Precision r   = rst(n, 0);
         const Precision s   = rst(n, 1);
         const Precision t   = rst(n, 2);
-        const Index     row = static_cast<Index>(offset + n);
-        Precision*      state = &(*this->_model_data->material_state)(this->mp_index(static_cast<Index>(n)), 0);
+        const Index      row       = static_cast<Index>(offset + n);
+        const Index      state_row = this->mp_index(static_cast<Index>(n));
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         // Store linearized Cauchy stress directly when small-strain recovery is requested
         if (!use_green_lagrange_nl) {
@@ -183,7 +186,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
             const VolumeStrainLinearized strain(strain_voigt);
             VolumeStressCauchy           cauchy;
             Mat6                         tangent;
-            evaluate_material(r, s, t, strain, state, cauchy, tangent);
+            evaluate_material(r, s, t, strain, old_state, new_state, cauchy, tangent);
 
             for (Dim component = 0; component < n_strain; ++component) {
                 stress_state(row, component) = cauchy.voigt()(component);
@@ -198,7 +201,7 @@ void SolidElement<N>::compute_stress_state(Field& stress_state,
 
         VolumeStressPK2 second_pk;
         Mat6            tangent;
-        evaluate_material(r, s, t, green_lagrange, state, second_pk, tangent);
+        evaluate_material(r, s, t, green_lagrange, old_state, new_state, second_pk, tangent);
 
         // Total-Lagrange internal forces and geometric stiffness require PK2.
         for (Dim component = 0; component < n_strain; ++component) {
@@ -260,11 +263,14 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
         const VolumeStrainGreenLagrange strain =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip), 0);
+        const Index      state_row = this->mp_index(ip);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         VolumeStressPK2 stress;
         Mat6            material_tangent;
-        evaluate_material(point.r, point.s, point.t, strain, state, stress, material_tangent);
+        evaluate_material(point.r, point.s, point.t, strain,
+                          old_state, new_state, stress, material_tangent);
 
         // Store the freshly evaluated PK2 stress in the common integration-point field.
         const Index stress_row = this->ip_index(ip);
@@ -490,13 +496,16 @@ void SolidElement<N>::compute_compliance_angle_derivative(Field& displacement, F
         // using the material state row of this integration point
         const Vec3 position_reference =
             this->interpolate<D>(reference_coords, point.r, point.s, point.t);
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(n), 0);
+        const Index      state_row = this->mp_index(n);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         const auto tangent_derivatives = get_section()->tangent_rotation_derivatives(
             position_reference,
             additional_rotation,
             additional_rotation_derivatives,
-            state
+            old_state,
+            new_state
         );
 
         // Accumulate epsilon^T C'_tan epsilon with the physical volume measure

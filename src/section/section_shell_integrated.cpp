@@ -85,8 +85,8 @@ IntegratedShellSection::IntegratedShellSection(
  * Integrates one shell integration point through the five physical material
  * points of the section.
  *
- * `material_state` points to the first material-point row belonging to the shell
- * integration point. Consecutive rows are separated by
+ * The state pointers address the first old/new material-point rows belonging to
+ * the shell integration point. Consecutive rows are separated by
  * `material_state_stride` scalar components and are passed directly to the
  * constitutive model without additional state ownership in the section.
  *
@@ -100,7 +100,8 @@ IntegratedShellSection::IntegratedShellSection(
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
  * @param strain_shell Generalized strain in the geometric shell basis.
- * @param material_state First of the five through-thickness state rows.
+ * @param old_material_state First of the five through-thickness input state rows.
+ * @param new_material_state First of the five through-thickness output state rows.
  * @param material_state_stride Scalar distance between consecutive state rows.
  * @param use_green_lagrange Select PK2 or linearized Cauchy material evaluation.
  * @param resultants_shell Integrated resultants in the geometric shell basis.
@@ -110,7 +111,8 @@ void IntegratedShellSection::evaluate(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
-    Precision*                    material_state,
+    const Precision*              old_material_state,
+    Precision*                    new_material_state,
     Index                         material_state_stride,
     bool                          use_green_lagrange,
     ShellStressResultants&        resultants_shell,
@@ -213,7 +215,8 @@ void IntegratedShellSection::evaluate(
 
         ShellMaterialStress material_stress;
         Mat5                material_tangent;
-        Precision*          state = material_state + mp * material_state_stride;
+        const Precision* old_state = old_material_state + mp * material_state_stride;
+        Precision*       new_state = new_material_state + mp * material_state_stride;
 
         // Evaluate either PK2 stress conjugate to Green-Lagrange strain or
         // Cauchy stress for the linearized shell response.
@@ -223,7 +226,8 @@ void IntegratedShellSection::evaluate(
 
             material_->elasticity()->evaluate(
                 material_strain_gl,
-                state,
+                old_state,
+                new_state,
                 material_stress_pk2,
                 material_tangent
             );
@@ -235,7 +239,8 @@ void IntegratedShellSection::evaluate(
 
             material_->elasticity()->evaluate(
                 material_strain_linearized,
-                state,
+                old_state,
+                new_state,
                 material_stress_cauchy,
                 material_tangent
             );
@@ -329,7 +334,8 @@ void IntegratedShellSection::evaluate(
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
  * @param strain_shell Generalized strain in the geometric shell basis.
- * @param material_state First of the five through-thickness state rows.
+ * @param old_material_state First of the five through-thickness input state rows.
+ * @param new_material_state First of the five through-thickness output state rows.
  * @param material_state_stride Scalar distance between consecutive state rows.
  * @param z Physical thickness coordinate measured from the midsurface.
  * @param use_green_lagrange Select PK2-to-Cauchy finite-strain recovery.
@@ -340,7 +346,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     const Vec3&                   position_reference,
     const Mat3&                   shell_basis_global,
     const ShellGeneralizedStrain& strain_shell,
-    Precision*                    material_state,
+    const Precision*              old_material_state,
+    Precision*                    new_material_state,
     Index                         material_state_stride,
     Precision                     z,
     bool                          use_green_lagrange,
@@ -420,7 +427,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         }
     }
 
-    Precision* state = material_state + state_mp * material_state_stride;
+    const Precision* old_state = old_material_state + state_mp * material_state_stride;
+    Precision*       new_state = new_material_state + state_mp * material_state_stride;
 
     // Convert five plane-stress shell components into a symmetric 3D tensor in
     // the recovery basis.
@@ -449,7 +457,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
 
         material_->elasticity()->evaluate(
             material_strain_linearized,
-            state,
+            old_state,
+            new_state,
             material_stress_cauchy,
             material_tangent
         );
@@ -465,7 +474,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
 
     material_->elasticity()->evaluate(
         material_strain_gl,
-        state,
+        old_state,
+        new_state,
         material_stress_pk2,
         material_tangent
     );

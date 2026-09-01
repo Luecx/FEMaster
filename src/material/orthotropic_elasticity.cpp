@@ -144,15 +144,18 @@ Mat6 OrthotropicElasticity::volume_tangent() const {
  * Evaluates linearized orthotropic Cauchy stress in material coordinates.
  *
  * @param strain Infinitesimal engineering strain vector.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Cauchy stress in engineering-Voigt ordering.
  * @param tangent Constant orthotropic volume tangent.
  */
 void OrthotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                     Precision*                    state,
+                                     const Precision*              old_state,
+                                     Precision*                    new_state,
                                      VolumeStressCauchy&           stress,
                                      Mat6&                         tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
@@ -161,15 +164,18 @@ void OrthotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
  * Evaluates orthotropic PK2 stress from Green-Lagrange strain.
  *
  * @param strain Green-Lagrange engineering strain vector.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Second Piola-Kirchhoff stress in material coordinates.
  * @param tangent Constant material derivative `dS/dE`.
  */
 void OrthotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                                     Precision*                       state,
+                                     const Precision*                 old_state,
+                                     Precision*                       new_state,
                                      VolumeStressPK2&                 stress,
                                      Mat6&                            tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent        = volume_tangent();
     stress.voigt() = tangent * strain.voigt();
 }
@@ -178,15 +184,18 @@ void OrthotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
  * Evaluates linearized orthotropic shell Cauchy stress under plane stress.
  *
  * @param strain Five-component shell material strain.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Shell Cauchy stress in material ordering.
  * @param tangent Constant reduced orthotropic shell tangent.
  */
 void OrthotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                     Precision*                           state,
+                                     const Precision*                     old_state,
+                                     Precision*                           new_state,
                                      ShellMaterialStressCauchy&            stress,
                                      Mat5&                                 tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent         = shell_material_tangent();
     stress.values() = tangent * strain.values();
 }
@@ -195,15 +204,18 @@ void OrthotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain
  * Evaluates orthotropic shell PK2 stress from Green-Lagrange strain.
  *
  * @param strain Five-component Green-Lagrange material strain.
- * @param state Unused material-point state row.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Shell second Piola-Kirchhoff stress.
  * @param tangent Constant reduced material derivative.
  */
 void OrthotropicElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                                     Precision*                              state,
+                                     const Precision*                        old_state,
+                                     Precision*                              new_state,
                                      ShellMaterialStressPK2&                 stress,
                                      Mat5&                                   tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
     tangent         = shell_material_tangent();
     stress.values() = tangent * strain.values();
 }

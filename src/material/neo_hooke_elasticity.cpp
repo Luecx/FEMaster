@@ -9,7 +9,7 @@
  * the full material tangent.
  *
  * All constitutive calls are state-neutral because the Neo-Hookean law contains
- * no history variables; the state pointer is accepted only through the common
+ * no history variables; the state pointers are accepted only through the common
  * `Elasticity` interface.
  *
  * @see NeoHookeElasticity
@@ -132,10 +132,12 @@ Mat5 NeoHookeElasticity::linear_shell_tangent() const {
 }
 
 void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
-                                  Precision*                   state,
+                                  const Precision*             old_state,
+                                  Precision*                   new_state,
                                   AxialStressCauchy&           stress,
                                   Precision&                   tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
 
     const Precision youngs = Precision(9) * bulk * mu / (Precision(3) * bulk + mu);
     tangent        = youngs;
@@ -154,20 +156,23 @@ void NeoHookeElasticity::evaluate(const AxialStrainLinearized& strain,
  *
  * The logarithmic lateral variable keeps the transverse stretch positive. A
  * non-positive axial metric or a failed local plane-stress solve is reported as
- * a material error. The Neo-Hookean model is stateless, so `state` is not
- * modified.
+ * a material error. The Neo-Hookean model is stateless, so neither state row is
+ * used.
  *
  * @param strain Axial Green-Lagrange strain in the material direction.
- * @param state Unused material-point state row retained by the common interface.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Axial second Piola-Kirchhoff stress.
  * @param tangent Consistent derivative of axial PK2 stress with respect to the
  *                axial Green-Lagrange strain.
  */
 void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
-                                  Precision*                      state,
+                                  const Precision*                old_state,
+                                  Precision*                      new_state,
                                   AxialStressPK2&                 stress,
                                   Precision&                      tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
 
     const Precision c       = Precision(1) + Precision(2) * strain.value();
     const Precision poisson = (Precision(3) * bulk - Precision(2) * mu)
@@ -232,10 +237,12 @@ void NeoHookeElasticity::evaluate(const AxialStrainGreenLagrange& strain,
 }
 
 void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
-                                  Precision*                    state,
+                                  const Precision*              old_state,
+                                  Precision*                    new_state,
                                   VolumeStressCauchy&           stress,
                                   Mat6&                         tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
 
     tangent        = linear_tangent();
     stress.voigt() = tangent * strain.voigt();
@@ -250,15 +257,18 @@ void NeoHookeElasticity::evaluate(const VolumeStrainLinearized& strain,
  * reduction or stress transformation is applied here.
  *
  * @param strain Green-Lagrange strain in the material basis.
- * @param state Unused material-point state row retained by the common interface.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Second Piola-Kirchhoff stress in the material basis.
  * @param tangent Consistent derivative `dS/dE`.
  */
 void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                                  Precision*                       state,
+                                  const Precision*                 old_state,
+                                  Precision*                       new_state,
                                   VolumeStressPK2&                 stress,
                                   Mat6&                            tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
 
     const Mat3 C = Mat3::Identity() + Precision(2) * strain.tensor();
     Mat3       full_stress;
@@ -268,10 +278,12 @@ void NeoHookeElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 }
 
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
-                                  Precision*                           state,
+                                  const Precision*                     old_state,
+                                  Precision*                           new_state,
                                   ShellMaterialStressCauchy&            stress,
                                   Mat5&                                 tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
 
     tangent         = linear_shell_tangent();
     stress.values() = tangent * strain.values();
@@ -289,18 +301,21 @@ void NeoHookeElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
  * After convergence, the shell PK2 components are extracted in the ordering
  * `[S11,S22,S12,S13,S23]`. The corresponding five-by-five tangent is the Schur
  * complement of the eliminated thickness component and is therefore consistent
- * with the local plane-stress solve. The state row remains unchanged.
+ * with the local plane-stress solve. Both state rows remain unused.
  *
  * @param strain Green-Lagrange shell material strain.
- * @param state Unused material-point state row retained by the common interface.
+ * @param old_state Unused input material-point state row.
+ * @param new_state Unused output material-point state row.
  * @param stress Plane-stress shell PK2 components.
  * @param tangent Condensed consistent shell material tangent.
  */
 void NeoHookeElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
-                                  Precision*                              state,
+                                  const Precision*                        old_state,
+                                  Precision*                              new_state,
                                   ShellMaterialStressPK2&                 stress,
                                   Mat5&                                   tangent) const {
-    (void) state;
+    (void) old_state;
+    (void) new_state;
 
     Mat3 C = Mat3::Identity();
     C(0, 0) = Precision(1) + Precision(2) * strain.values()(0);

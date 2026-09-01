@@ -67,9 +67,9 @@ void FRTShell<N>::load_ip_resultants(
  * matrices and therefore can consume a material tangent.
  *
  * Each in-plane integration point owns a contiguous block of section material
- * points in `ModelData::material_state`. The first row and the global field
- * component count are passed as pointer and stride so integrated sections can
- * update their through-thickness histories directly in place.
+ * points in the old/new `ModelData` state fields. The first rows and global
+ * component count are passed as pointers and stride so integrated sections can
+ * write their through-thickness histories without changing their input.
  *
  * @param data Active thread-local evaluation view.
  */
@@ -83,7 +83,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
     ShellSection*   section = shell_section();
     const Precision scale   = topology_stiffness_scale();
     const auto&     points  = reference_data().ip_points;
-    const Index     state_stride = this->_model_data->material_state->components;
+    const Index     state_stride = this->_model_data->material_state_old->components;
 
     // Evaluate one generalized section response for every shell integration point
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
@@ -95,9 +95,11 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         ShellStressResultants  resultants;
         Mat8                   tangent;
 
-        // Address the first through-thickness state row of this in-plane point;
-        // the section advances further rows using state_stride
-        Precision*             state = &(*this->_model_data->material_state)(this->mp_index(ip, 0), 0);
+        // Address the first through-thickness input/output rows of this in-plane
+        // point; the section advances further rows using state_stride
+        const Index      state_row = this->mp_index(ip, 0);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         // Supply the same pointwise global basis used by the strain transformation
         Mat3 basis = point.basis;
@@ -106,7 +108,8 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
             reference_position(point.r, point.s),
             basis,
             strain,
-            state,
+            old_state,
+            new_state,
             state_stride,
             true,
             resultants,

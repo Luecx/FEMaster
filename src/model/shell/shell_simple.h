@@ -456,14 +456,17 @@ struct DefaultShellElement : public ShellElement<N> {
                 ShellStressResultants  zero_resultants;
                 Mat8                   tangent;
 
-                // Address the first through-thickness state row at this ABD point
-                Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip_abd++, 0), 0);
+                // Address the first through-thickness state rows at this ABD point
+                const Index      state_row = this->mp_index(ip_abd++, 0);
+                const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+                Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
                 section->evaluate(
                     this->reference_point(r, s),
                     shell_basis,
                     zero_strain,
-                    state,
-                    this->_model_data->material_state->components,
+                    old_state,
+                    new_state,
+                    this->_model_data->material_state_old->components,
                     false,
                     zero_resultants,
                     tangent
@@ -496,14 +499,17 @@ struct DefaultShellElement : public ShellElement<N> {
                 ShellStressResultants  zero_resultants;
                 Mat8                   tangent;
 
-                // Address the first through-thickness state row at this shear point
-                Precision* state = &(*this->_model_data->material_state)(this->mp_index(ip_shear++, 0), 0);
+                // Address the first through-thickness state rows at this shear point
+                const Index      state_row = this->mp_index(ip_shear++, 0);
+                const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+                Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
                 section->evaluate(
                     this->reference_point(r, s),
                     shell_basis,
                     zero_strain,
-                    state,
-                    this->_model_data->material_state->components,
+                    old_state,
+                    new_state,
+                    this->_model_data->material_state_old->components,
                     false,
                     zero_resultants,
                     tangent
@@ -873,15 +879,18 @@ struct DefaultShellElement : public ShellElement<N> {
             }
         }
 
-        // Pass the first through-thickness state row and common field stride
-        Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+        // Pass the first through-thickness input/output rows and common stride
+        const Index      state_row = this->mp_index(state_ip, 0);
+        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
         VolumeStressCauchy stress = this->get_section()->evaluate_output_stress(
             reference_point(r, s),
             shell_basis,
             generalized_strain,
-            state,
-            this->_model_data->material_state->components,
+            old_state,
+            new_state,
+            this->_model_data->material_state_old->components,
             z,
             false
         );
@@ -986,15 +995,18 @@ struct DefaultShellElement : public ShellElement<N> {
                 }
             }
 
-            // Pass the selected through-thickness state block to the section
-            Precision* state = &(*this->_model_data->material_state)(this->mp_index(state_ip, 0), 0);
+            // Pass the selected through-thickness input/output blocks to the section
+            const Index      state_row = this->mp_index(state_ip, 0);
+            const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+            Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
             const ShellStressResultants output_resultants = this->get_section()->evaluate_output_resultants(
                 reference_point(r, s),
                 shell_basis,
                 generalized_strain,
-                state,
-                this->_model_data->material_state->components,
+                old_state,
+                new_state,
+                this->_model_data->material_state_old->components,
                 false
             );
 
@@ -1129,15 +1141,18 @@ struct DefaultShellElement : public ShellElement<N> {
 
             ShellGeneralizedStrain generalized_strain;
             generalized_strain.values().template segment<3>(membrane_start) = eps_element;
-            ShellStressResultants  generalized_resultants;
-            Mat8                   tangent;
-            Precision*             state = &(*this->_model_data->material_state)(this->mp_index(ip, 0), 0);
+            ShellStressResultants generalized_resultants;
+            Mat8                  tangent;
+            const Index      state_row = this->mp_index(ip, 0);
+            const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
+            Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
             this->get_section()->evaluate(
                 reference_point(r, s),
                 shell_basis,
                 generalized_strain,
-                state,
-                this->_model_data->material_state->components,
+                old_state,
+                new_state,
+                this->_model_data->material_state_old->components,
                 false,
                 generalized_resultants,
                 tangent
