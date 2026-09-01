@@ -168,57 +168,64 @@ Precision T3::volume() {
 }
 
 /**
- * Assembles the current Total-Lagrangian axial material stiffness.
+ * Assembles the linear axial stiffness in the reference configuration.
  *
- * The current stretch defines Green-Lagrange strain. The constitutive tangent is
- * evaluated from the committed material history and produces
+ * The linear truss operator is based on infinitesimal axial strain, Cauchy
+ * stress and the undeformed element axis. For an axial material tangent `C`,
+ * the three-dimensional nodal block is
  *
- *     K_mat = A0 C lambda^2/L0 (n tensor n)
+ *     k = A0 C/L0 (n0 tensor n0),
  *
- * in the current axial direction. No target material state is supplied because
- * stiffness evaluation is state-neutral and only stress and tangent are needed
- * during the operation.
+ * where `A0`, `L0` and `n0` are the reference area, length and unit direction.
+ * The usual two-node difference operator expands this block into the complete
+ * six-by-six element matrix.
+ *
+ * This function deliberately contains no finite-strain kinematics. Current
+ * stretch, current direction, Green-Lagrange strain and PK2 stress belong to
+ * `stiffness_tangent()`, which is the nonlinear equilibrium operator.
+ *
+ * The constitutive call is state-neutral: committed history may be inspected,
+ * but no target state is supplied and persistent trial history is not modified.
  *
  * @param buffer Caller-provided six-by-six element-matrix storage.
- * @return Mapped material stiffness in global translational DOF ordering.
+ * @return Mapped linear stiffness in global translational DOF ordering.
  */
 MapMatrix T3::stiffness(Precision* buffer) {
-    // The reference area and length define the material measure of the truss.
-    // The current stretch lambda = l/L0 converts the axial material tangent from
-    // Green-Lagrange strain space to the current translational element DOFs.
-    const Precision A0     = get_section()->area_;
-    const Precision L0     = length_reference();
-    const Precision lambda = stretch();
+    // Linear stiffness is defined entirely in the undeformed reference
+    // configuration. The area, length and direction therefore all refer to the
+    // reference truss geometry and do not depend on the current nodal positions.
+    const Precision A0 = get_section()->area_;
+    const Precision L0 = length_reference();
+    const Vec3      n0 = direction_reference();
 
     logging::error(L0 > Precision(0),
         "T3: zero reference length in stiffness for element ", this->elem_id);
 
-    // Green-Lagrange strain is the work-conjugate axial strain measure of the PK2
-    // stress returned by the finite-strain constitutive interface.
-    const AxialStrainGreenLagrange axial_strain = AxialStrainGreenLagrange::from_stretch(lambda);
-    AxialStressPK2 axial_stress;
-    Precision      material_tangent = Precision(0);
+    // Query the linearized axial constitutive tangent. Zero strain is sufficient
+    // because stiffness() represents the linear material operator itself rather
+    // than the tangent of a finite-deformation trial configuration.
+    const AxialStrainLinearized axial_strain(Precision(0));
+    AxialStressCauchy axial_stress;
+    Precision         material_tangent = Precision(0);
 
-    // The stiffness operator is state-neutral. It may inspect committed history
-    // required by the constitutive law, but deliberately supplies no target state
-    // and therefore cannot advance the persistent nonlinear trial history.
     auto elasticity = get_elasticity();
-    logging::error(elasticity->supports_axial_green_lagrange(),
-        "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
+    logging::error(elasticity->supports_axial_linearized(),
+        "T3: material does not support linearized axial evaluation for element ", this->elem_id);
 
+    // The linear operator may read committed material history, but it must not
+    // create or advance a trial state. A null target state makes this read-only
+    // constitutive intent explicit at the call site.
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
     elasticity->evaluate(axial_strain, old_state, nullptr, axial_stress, material_tangent);
 
-    // The one-dimensional constitutive tangent acts only along the current truss
-    // axis. The dyadic product n*n^T embeds this scalar axial response into the
-    // three translational directions of a node.
-    const Vec3 n = direction_current();
-    const Mat3 k = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
+    // Embed the scalar axial stiffness A0*C/L0 into the three translational DOFs
+    // using the dyadic product of the reference unit direction with itself.
+    const Mat3 k = (A0 * material_tangent / L0) * (n0 * n0.transpose());
 
-    // Expand the axial 3x3 block with the two-node difference operator. Equal
-    // diagonal blocks and opposite off-diagonal blocks enforce equal and opposite
-    // nodal forces for a relative axial displacement.
+    // Apply the two-node displacement difference operator. Equal diagonal blocks
+    // and opposite off-diagonal blocks produce equal and opposite nodal forces
+    // while retaining only deformation along the reference truss axis.
     StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
     K.block(0, 0, 3, 3) =  k;
     K.block(0, 3, 3, 3) = -k;
