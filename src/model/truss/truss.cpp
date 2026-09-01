@@ -370,9 +370,8 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
 
     // Assemble material and stress-dependent tangent blocks from exactly the
     // same constitutive result used for the internal force.
-    const Mat3 material_block =
-        (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
-    const Mat3 geometric_block = (A0 * stress.value() / L0) * Mat3::Identity();
+    const Mat3 material_block  = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
+    const Mat3 geometric_block = (A0 * stress.value()                     / L0) * Mat3::Identity();
     const Mat3 block = material_block + geometric_block;
 
     StaticMatrix<N * 3, N * 3> tangent = StaticMatrix<N * 3, N * 3>::Zero();
