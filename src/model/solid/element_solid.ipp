@@ -477,54 +477,45 @@ SolidElement<N>::capacity(Precision* buffer) {
 }
 
 /**
- * Integrates the linear small-strain solid stiffness in the reference
- * configuration.
+ * DEBUG A/B: restore the pre-refactor Total-Lagrangian solid stiffness path.
  *
- * The linear operator uses the undeformed geometry throughout. At every
- * stiffness quadrature point the reference derivatives build the infinitesimal
- * strain-displacement matrix `B`, while a zero linearized strain queries the
- * constitutive tangent from committed material history without creating a trial
- * state. The resulting contribution is
- *
- *     K = integral B^T C B dV0.
- *
- * Finite-deformation kinematics, PK2 stress and geometric stiffness are excluded
- * deliberately; they belong to `stiffness_tangent()` and `stiffness_geom()`.
- *
- * @param buffer Caller-provided dense element-matrix storage.
- * @return Mapped symmetric linear stiffness matrix.
+ * This intentionally mirrors the previous implementation so the
+ * shell_solid_tie regression can distinguish a change in solid stiffness from
+ * the structural API refactor around it. It is not intended as the final design.
  */
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness(Precision* buffer) {
-    // The complete linear operator is defined on the reference geometry. No
-    // current coordinates or deformation gradient are required here.
-    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-    const VolumeStrainLinearized zero_strain;
+    StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+    StaticMatrix<N, D> current_coords   = this->node_coords_current();
 
     Index ip = 0;
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
-        [this, &reference_coords, &zero_strain, &ip](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
+        [this, &reference_coords, &current_coords, &ip](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det0;
             const StaticMatrix<N, D> dN_dX =
                 this->shape_derivatives_reference(reference_coords, r, s, t, det0);
-            const StaticMatrix<n_strain, D * N> B = this->strain_displacement(dN_dX);
+            const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
+            const StaticMatrix<n_strain, D * N> B =
+                this->green_lagrange_strain_displacement(dN_dX, F);
+            const VolumeStrainGreenLagrange strain =
+                VolumeStrainGreenLagrange::from_deformation_gradient(F);
+            VolumeStressPK2 stress;
+            Mat6            C;
 
-            // Query only the linear constitutive tangent. The committed state may
-            // be inspected, but no persistent trial state is produced.
             const Index      state_row = this->mp_index(ip++);
             const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-            VolumeStressCauchy zero_stress;
-            Mat6               C;
-            evaluate_material(r, s, t, zero_strain, old_state, nullptr, zero_stress, C);
+            Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+            evaluate_material(r, s, t, strain, old_state, new_state, stress, C);
 
-            return StaticMatrix<D * N, D * N>(B.transpose() * C * B * det0);
+            StaticMatrix<D * N, D * N> res = B.transpose() * (C * B) * det0;
+            return StaticMatrix<D * N, D * N>(res);
         };
 
     StaticMatrix<D * N, D * N> stiffness = integration_scheme_stiffness().integrate(func);
 
-    // Remove only numerical asymmetry from the analytically symmetric operator.
+    // Remove only numerical asymmetry from the analytically symmetric tangent.
     stiffness = Precision(0.5) * (stiffness + stiffness.transpose());
 
     MapMatrix mapped{buffer, D * N, D * N};
