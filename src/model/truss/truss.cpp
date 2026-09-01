@@ -5,8 +5,8 @@
  * The truss evaluates axial material response at one globally enumerated
  * material point. Linearized output uses Cauchy stress; the nonlinear element
  * uses Green-Lagrange strain and PK2 stress in a Total-Lagrangian formulation.
- * The nonlinear residual and tangent share one constitutive update from the old
- * material state into the separate new state.
+ * Nonlinear internal force and tangent are assembled from one constitutive trial
+ * evaluation, while read-only operators use local material-state scratch storage.
  *
  * @see T3
  *
@@ -17,6 +17,7 @@
 #include "truss.h"
 
 #include <cmath>
+#include <vector>
 
 namespace fem {
 namespace model {
@@ -171,20 +172,20 @@ Precision T3::volume() {
 /**
  * Assembles the current Total-Lagrangian axial material stiffness.
  *
- * The current stretch defines Green-Lagrange strain. One constitutive call on
- * the truss material-point state returns PK2 stress and tangent; this interface
- * uses the tangent contribution
+ * The current stretch defines Green-Lagrange strain. The constitutive tangent is
+ * evaluated from the committed material history and produces
  *
  *     K_mat = A0 C lambda^2/L0 (n tensor n)
  *
- * in the current axial direction. Geometric stress stiffness is exposed
- * separately by `stiffness_geom()`.
+ * in the current axial direction. The constitutive output state is written into
+ * local scratch storage because stiffness evaluation must not alter the
+ * persistent trial material state.
  *
  * @param buffer Caller-provided six-by-six element-matrix storage.
  * @return Mapped material stiffness in global translational DOF ordering.
  */
 MapMatrix T3::stiffness(Precision* buffer) {
-    // Construct the finite axial strain from reference and current lengths
+    // Construct the finite axial strain from reference and current lengths.
     const Precision A0     = get_section()->area_;
     const Precision L0     = length_reference();
     const Precision lambda = stretch();
@@ -201,38 +202,21 @@ MapMatrix T3::stiffness(Precision* buffer) {
     logging::error(elasticity->supports_axial_green_lagrange(),
         "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
-    // Evaluate the single constitutive material point from committed history
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
-    elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, material_tangent);
+    // Read committed history and provide a local output copy to the material.
+    // The material may update its output state while evaluating the tangent, but
+    // this read-only element operator intentionally discards that update.
+    const Index      state_row        = this->mp_index(0);
+    const Index      state_components = this->_model_data->material_state_old->components;
+    const Precision* old_state        = &(*this->_model_data->material_state_old)(state_row, 0);
+    std::vector<Precision> scratch_state(old_state, old_state + state_components);
 
+    elasticity->evaluate(
+        axial_strain, old_state, scratch_state.data(), axial_stress, material_tangent);
+
+    // Expand the axial three-by-three material block with the two-node
+    // difference operator into global translational DOF ordering.
     const Vec3 n = direction_current();
     const Mat3 k = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
-
-    StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
-
-    // Expand the axial three-by-three block with the two-node difference operator
-    K.block(0, 0, 3, 3) =  k;
-    K.block(0, 3, 3, 3) = -k;
-    K.block(3, 0, 3, 3) = -k;
-    K.block(3, 3, 3, 3) =  k;
-
-    MapMatrix result(buffer, N * 3, N * 3);
-    result = K;
-    return result;
-}
-
-MapMatrix T3::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) {
-    logging::error(ip_stress.components >= 1,
-        "T3: geometric stiffness requires nonlinear IP stress component 0");
-
-    const Precision L0 = length_reference();
-    logging::error(L0 > Precision(0),
-        "T3: zero reference length in stiffness_geom for element ", this->elem_id);
-
-    const Precision second_piola = ip_stress(static_cast<Index>(ip_start_idx), 0);
-    const Mat3 k = (get_section()->area_ * second_piola / L0) * Mat3::Identity();
 
     StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
     K.block(0, 0, 3, 3) =  k;
@@ -246,34 +230,101 @@ MapMatrix T3::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_s
 }
 
 /**
- * Assembles the complete Total-Lagrangian truss tangent and internal force from
- * one axial constitutive update.
+ * Assembles the geometric stiffness associated with a supplied displacement
+ * state without modifying persistent material history.
  *
- * The material contribution follows the current axial direction and contains
- * `A0 C lambda^2 / L0`. The PK2 stress from the same material call produces the
- * geometric contribution `A0 S / L0` and the internal force
- * `A0 lambda S n`. This avoids the generic structural path, which would evaluate
- * material history separately for stress and material tangent.
+ * The displacement difference is projected onto the reference truss axis to
+ * obtain the infinitesimal axial strain used for prestress evaluation. The
+ * corresponding axial Cauchy stress supplies the stress-dependent block
  *
- * @param buffer Caller-provided six-by-six tangent storage.
- * @param ip_stress_state Global integration-point field receiving axial PK2 stress.
+ *     K_geo = A0 sigma/L0 I.
+ *
+ * Constitutive output is stored locally because geometric-stiffness evaluation
+ * is a read-only operator. This makes the displacement field the complete input
+ * required for prestress stiffness assembly.
+ *
+ * @param buffer Caller-provided six-by-six element-matrix storage.
+ * @param displacement Global nodal displacement field defining the prestress.
+ * @return Mapped geometric stiffness in global translational DOF ordering.
+ */
+MapMatrix T3::stiffness_geom(Precision* buffer, const Field& displacement) {
+    const Precision L0 = length_reference();
+    logging::error(L0 > Precision(0),
+        "T3: zero reference length in stiffness_geom for element ", this->elem_id);
+
+    // Evaluate the axial prestress directly from the supplied displacement field.
+    const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
+    const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
+
+    const AxialStrainLinearized axial_strain(
+        (u1 - u0).dot(direction_reference()) / L0);
+    AxialStressCauchy axial_stress;
+    Precision         material_tangent = Precision(0);
+
+    auto elasticity = get_elasticity();
+    logging::error(elasticity->supports_axial_linearized(),
+        "T3: material does not support linearized axial evaluation for element ", this->elem_id);
+
+    // Use a local constitutive output state so prestress evaluation cannot
+    // advance the model-wide trial history.
+    const Index      state_row        = this->mp_index(0);
+    const Index      state_components = this->_model_data->material_state_old->components;
+    const Precision* old_state        = &(*this->_model_data->material_state_old)(state_row, 0);
+    std::vector<Precision> scratch_state(old_state, old_state + state_components);
+
+    elasticity->evaluate(
+        axial_strain, old_state, scratch_state.data(), axial_stress, material_tangent);
+
+    // The geometric block acts isotropically on the translational difference
+    // because the Total-Lagrangian truss stress term multiplies the identity.
+    const Mat3 k = (get_section()->area_ * axial_stress.value() / L0) * Mat3::Identity();
+
+    StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
+    K.block(0, 0, 3, 3) =  k;
+    K.block(0, 3, 3, 3) = -k;
+    K.block(3, 0, 3, 3) = -k;
+    K.block(3, 3, 3, 3) =  k;
+
+    MapMatrix result(buffer, N * 3, N * 3);
+    result = K;
+    return result;
+}
+
+/**
+ * Evaluates nonlinear Total-Lagrangian equilibrium and optionally assembles the
+ * consistent truss tangent from one axial constitutive update.
+ *
+ * Green-Lagrange strain is computed from the current stretch. The material reads
+ * the committed state and writes the physical trial state. The resulting PK2
+ * stress produces the internal force
+ *
+ *     f_int = A0 lambda S n
+ *
+ * and, when tangent storage is requested, the material and geometric blocks
+ *
+ *     K_mat = A0 C lambda^2/L0 (n tensor n),
+ *     K_geo = A0 S/L0 I.
+ *
+ * Internal force is always assembled. A null matrix buffer therefore performs a
+ * complete residual/material-state evaluation without constructing the tangent,
+ * as required by residual-only nonlinear solver evaluations.
+ *
+ * @param buffer Optional six-by-six tangent storage; null requests force only.
  * @param nodal_forces Global nodal internal-force field to increment.
- * @param displacement Trial displacement field; current positions already carry
- *                     the configuration used by the truss kinematics.
- * @return Mapped complete material-plus-geometric tangent.
+ * @param displacement Trial displacement field; current positions carry the
+ *                     configuration used by the finite-strain truss kinematics.
+ * @return Mapped tangent matrix, or an empty map when `buffer == nullptr`.
  */
 MapMatrix T3::stiffness_tangent(Precision*   buffer,
-                                Field&       ip_stress_state,
                                 NodeData&    nodal_forces,
                                 const Field& displacement) {
     (void) displacement;
 
-    logging::error(ip_stress_state.components >= 1,
-        "T3: nonlinear stress state requires at least one component");
     logging::error(nodal_forces.components >= 3,
         "T3: nonlinear internal force requires at least three nodal components");
 
-    // Evaluate stretch, Green-Lagrange strain and one constitutive state update
+    // Evaluate stretch, Green-Lagrange strain and one physical constitutive
+    // update from committed history into the persistent trial state.
     const Precision A0     = get_section()->area_;
     const Precision L0     = length_reference();
     const Precision lambda = stretch();
@@ -295,11 +346,28 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
     elasticity->evaluate(strain, old_state, new_state, stress, material_tangent);
 
-    // Preserve PK2 stress for state-based residual and geometric-stiffness paths
-    ip_stress_state(this->ip_index(0), 0) = stress.value();
+    // Scatter the internal force immediately from the constitutive stress. No
+    // global integration-point stress field is required because stress is only
+    // an intermediate quantity of this element evaluation.
+    const Vec3 n     = direction_current();
+    const Vec3 force = A0 * lambda * stress.value() * n;
+    const Index node_0 = static_cast<Index>(node_ids[0]);
+    const Index node_1 = static_cast<Index>(node_ids[1]);
 
-    // Assemble material and stress-dependent blocks from the same constitutive result
-    const Vec3 n = direction_current();
+    for (Dim d = 0; d < 3; ++d) {
+        nodal_forces(node_0, d) -= force(d);
+        nodal_forces(node_1, d) += force(d);
+    }
+
+    // Residual-only evaluations stop after the physical material update and
+    // internal-force assembly. A zero-sized map preserves the common return type
+    // without requiring matrix storage from the caller.
+    if (buffer == nullptr) {
+        return MapMatrix(nullptr, 0, 0);
+    }
+
+    // Assemble material and stress-dependent tangent blocks from exactly the
+    // same constitutive result used for the internal force.
     const Mat3 material_block =
         (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
     const Mat3 geometric_block =
@@ -311,16 +379,6 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     tangent.block(0, 3, 3, 3) = -block;
     tangent.block(3, 0, 3, 3) = -block;
     tangent.block(3, 3, 3, 3) =  block;
-
-    // Scatter the matching Total-Lagrangian axial internal force
-    const Vec3 force = A0 * lambda * stress.value() * n;
-    const Index node_0 = static_cast<Index>(node_ids[0]);
-    const Index node_1 = static_cast<Index>(node_ids[1]);
-
-    for (Dim d = 0; d < 3; ++d) {
-        nodal_forces(node_0, d) -= force(d);
-        nodal_forces(node_1, d) += force(d);
-    }
 
     MapMatrix mapped(buffer, N * 3, N * 3);
     mapped = tangent;
@@ -428,6 +486,10 @@ void T3::apply_tload(Field& node_loads, const Field& node_temp, Precision ref_te
  * element has one constant axial state, so the same values are copied to every
  * requested natural output coordinate.
  *
+ * Constitutive output is written to local scratch state. Result recovery may
+ * inspect committed history but does not alter the persistent trial state used
+ * by nonlinear equilibrium iterations.
+ *
  * @param strain Optional output field receiving axial strain in component zero.
  * @param stress Optional output field receiving axial Cauchy stress in component zero.
  * @param displacement Global nodal displacement field for linearized recovery.
@@ -449,11 +511,14 @@ void T3::compute_stress_strain(Field*           strain,
     Precision strain_value = Precision(0);
     Precision stress_value = Precision(0);
 
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+    // Result recovery reads committed history and gives the constitutive law a
+    // local output state because recovery itself is not a physical trial update.
+    const Index      state_row        = this->mp_index(0);
+    const Index      state_components = this->_model_data->material_state_old->components;
+    const Precision* old_state        = &(*this->_model_data->material_state_old)(state_row, 0);
+    std::vector<Precision> scratch_state(old_state, old_state + state_components);
 
-    // Evaluate finite-strain PK2 stress and convert it to physical Cauchy stress
+    // Evaluate finite-strain PK2 stress and convert it to physical Cauchy stress.
     if (use_green_lagrange_nl) {
         const Precision lambda = stretch();
         const AxialStrainGreenLagrange axial_strain =
@@ -464,13 +529,14 @@ void T3::compute_stress_strain(Field*           strain,
         auto elasticity = get_elasticity();
         logging::error(elasticity->supports_axial_green_lagrange(),
             "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
-        elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
+        elasticity->evaluate(
+            axial_strain, old_state, scratch_state.data(), axial_stress, tangent);
 
         const AxialStressCauchy cauchy(lambda * axial_stress.value());
         strain_value = axial_strain.value();
         stress_value = cauchy.value();
     } else {
-        // Evaluate infinitesimal axial strain and Cauchy stress on the reference axis
+        // Evaluate infinitesimal axial strain and Cauchy stress on the reference axis.
         const Precision L0 = length_reference();
 
         logging::error(L0 > Precision(0),
@@ -487,13 +553,14 @@ void T3::compute_stress_strain(Field*           strain,
         auto elasticity = get_elasticity();
         logging::error(elasticity->supports_axial_linearized(),
             "T3: material does not support linearized axial evaluation for element ", this->elem_id);
-        elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
+        elasticity->evaluate(
+            axial_strain, old_state, scratch_state.data(), axial_stress, tangent);
 
         strain_value = axial_strain.value();
         stress_value = axial_stress.value();
     }
 
-    // Replicate the constant axial state to all requested truss output points
+    // Replicate the constant axial state to all requested truss output points.
     for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
         const Index row = static_cast<Index>(offset) + i;
 
@@ -510,92 +577,6 @@ void T3::compute_stress_strain(Field*           strain,
             }
             (*stress)(row, 0) = stress_value;
         }
-    }
-}
-
-/**
- * Stores the axial stress measure required by subsequent element assembly.
- *
- * Nonlinear Total-Lagrangian recovery stores PK2 stress at the single truss
- * integration point. Linearized recovery delegates to the ordinary Cauchy-
- * stress output path. Either constitutive evaluation reads the old state row and
- * writes its result to the separate new row.
- *
- * @param stress_state Global integration-point stress field to update.
- * @param displacement Global nodal displacement field.
- * @param offset First output row supplied by the caller.
- * @param use_green_lagrange_nl Select PK2 or linearized Cauchy storage.
- */
-void T3::compute_stress_state(Field&       stress_state,
-                              const Field& displacement,
-                              int          offset,
-                              bool         use_green_lagrange_nl) {
-    if (use_green_lagrange_nl) {
-        const Precision lambda = stretch();
-        const AxialStrainGreenLagrange axial_strain =
-            AxialStrainGreenLagrange::from_stretch(lambda);
-        AxialStressPK2 axial_stress;
-        Precision      tangent = Precision(0);
-
-        auto elasticity = get_elasticity();
-        logging::error(elasticity->supports_axial_green_lagrange(),
-            "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
-
-        const Index      state_row = this->mp_index(0);
-        const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
-        elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
-
-        const RowMatrix rst = stress_strain_ip_rst();
-        for (Index i = 0; i < static_cast<Index>(rst.rows()); ++i) {
-            const Index row = static_cast<Index>(offset) + i;
-            for (Index component = 0; component < stress_state.components; ++component) {
-                stress_state(row, component) = Precision(0);
-            }
-            stress_state(row, 0) = axial_stress.value();
-        }
-        return;
-    }
-
-    compute_stress_strain(
-        nullptr,
-        &stress_state,
-        displacement,
-        stress_strain_ip_rst(),
-        offset,
-        use_green_lagrange_nl
-    );
-}
-
-/**
- * Assembles Total-Lagrangian axial internal force from stored PK2 stress.
- *
- * The force magnitude is `A0 lambda S` and acts along the current truss axis
- * with equal and opposite nodal contributions. No material evaluation occurs,
- * so this recovery cannot advance material history.
- *
- * @param node_forces Global nodal internal-force field to increment.
- * @param ip_stress Stored single-point axial PK2 stress field.
- */
-void T3::compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) {
-    logging::error(node_forces.domain == FieldDomain::NODE,
-        "T3: nonlinear internal force output must use NODE domain");
-    logging::error(node_forces.components >= 3,
-        "T3: nonlinear internal force output requires at least 3 components");
-    logging::error(ip_stress.components >= 1,
-        "T3: nonlinear internal force requires IP stress component 0");
-
-    const Precision lambda        = stretch();
-    const Precision second_piola = ip_stress(ip_index(0), 0);
-    const Vec3      n             = direction_current();
-    const Vec3      force         = get_section()->area_ * lambda * second_piola * n;
-
-    const Index node_0 = static_cast<Index>(node_ids[0]);
-    const Index node_1 = static_cast<Index>(node_ids[1]);
-
-    for (Dim d = 0; d < 3; ++d) {
-        node_forces(node_0, d) -= force(d);
-        node_forces(node_1, d) += force(d);
     }
 }
 
@@ -619,9 +600,12 @@ void T3::compute_compliance(Field& displacement, Field& result) {
  *
  * Relative nodal displacement is projected onto the reference truss direction
  * to obtain infinitesimal axial strain. The material is evaluated on the
- * element's single state row, and Cauchy stress is multiplied by the reference
- * area. The constant axial force is copied into component zero at both element
- * nodes; all remaining section-force components are cleared.
+ * committed state, and Cauchy stress is multiplied by the reference area. The
+ * constant axial force is copied into component zero at both element nodes; all
+ * remaining section-force components are cleared.
+ *
+ * Constitutive output is kept in local scratch storage so result recovery does
+ * not change persistent trial history.
  *
  * @param section_forces Element-nodal section-force output field.
  * @param displacement Global nodal displacement field.
@@ -647,10 +631,15 @@ bool T3::compute_beam_section_forces(Field&       section_forces,
     logging::error(elasticity->supports_axial_linearized(),
         "T3: material does not support linearized axial evaluation for element ", this->elem_id);
 
-    const Index      state_row = this->mp_index(0);
-    const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
-    elasticity->evaluate(axial_strain, old_state, new_state, axial_stress, tangent);
+    // Section-force recovery is read-only with respect to persistent material
+    // history, so the constitutive output state remains local to this call.
+    const Index      state_row        = this->mp_index(0);
+    const Index      state_components = this->_model_data->material_state_old->components;
+    const Precision* old_state        = &(*this->_model_data->material_state_old)(state_row, 0);
+    std::vector<Precision> scratch_state(old_state, old_state + state_components);
+
+    elasticity->evaluate(
+        axial_strain, old_state, scratch_state.data(), axial_stress, tangent);
 
     const Precision axial_force = get_section()->area_ * axial_stress.value();
 
