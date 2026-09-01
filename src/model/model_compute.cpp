@@ -31,21 +31,23 @@
 namespace fem::model {
 
 /**
- * Recovers the complete structural stress state at all integration points.
+ * Recovers structural stress output at all element integration points.
  *
  * The compiled element-IP offset field maps every structural element to its
- * contiguous range in the returned `ELEMENT_IP` field. Each element evaluates
- * its formulation-specific stress state from the supplied displacement field
- * and the requested linear or Green-Lagrange nonlinear kinematics.
+ * contiguous range in the returned `ELEMENT_IP` field. Integration-point stress
+ * is ordinary result recovery: each element supplies its natural IP coordinates
+ * through `stress_strain_ip_rst()` and writes stress through the common
+ * `compute_stress_strain()` interface. The field is not used as solver scratch
+ * for geometric or nonlinear stiffness assembly.
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @param use_green_lagrange_nl Enables the nonlinear Green-Lagrange strain path
  *                              in supporting element formulations.
- * @return Integration-point stress-state field with the established
- *         eight-component FEMaster layout.
+ * @return Integration-point stress field with the established eight-component
+ *         FEMaster layout.
  */
 Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_nl) {
-    // Validate and access the compiled integration-point enumeration
+    // Validate and access the compiled integration-point enumeration.
     logging::error(_data->element_ip_offsets != nullptr,
         "element IP offset field has not been initialized");
 
@@ -53,11 +55,13 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
     const Index element_count = static_cast<Index>(_data->elements.size());
     const Index total_ips = _data->field_rows(FieldDomain::ELEMENT_IP);
 
-    // Allocate one zeroed row for every compiled element integration point
+    // Allocate one zeroed row for every compiled element integration point.
     Field ip_stress{"IP_STRESS", FieldDomain::ELEMENT_IP, total_ips, 8};
     ip_stress.set_zero();
 
-    // Delegate stress-state recovery to each compiled structural element
+    // Recover integration-point stress through the same public result path used
+    // at arbitrary natural coordinates. Elements without IP recovery coordinates
+    // simply leave their pre-zeroed rows untouched.
     for (auto el : _data->elements) {
         if (!el) continue;
         if (auto sel = el->as<StructuralElement>()) {
@@ -70,16 +74,25 @@ Field Model::compute_stress_state(Field& displacement, bool use_green_lagrange_n
                 "Invalid IP offset for element ", eid, ": ", ip_offset,
                 " / total=", total_ips);
 
-            sel->compute_stress_state(
-                ip_stress,
+            const RowMatrix rst = sel->stress_strain_ip_rst();
+            if (rst.rows() == 0) continue;
+
+            logging::error(rst.rows() == sel->num_ip(),
+                "Element ", eid, " returned ", rst.rows(),
+                " integration-point stress coordinates, expected ", sel->num_ip());
+
+            sel->compute_stress_strain(
+                nullptr,
+                &ip_stress,
                 displacement,
+                rst,
                 static_cast<int>(ip_offset),
                 use_green_lagrange_nl
             );
         }
     }
 
-    // Reject invalid constitutive or kinematic results before returning the field
+    // Reject invalid constitutive or kinematic results before returning the field.
     ip_stress.check_finite("Stress state");
     return ip_stress;
 }
