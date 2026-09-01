@@ -1,20 +1,26 @@
 /**
  * @file load.h
- * @brief Declares the polymorphic interface shared by all load types.
+ * @brief Declares the common ownership base for load-side boundary conditions.
  *
- * A `Load` converts a physical loading definition into contributions to a
- * model field. Concrete implementations target nodes, surfaces, elements or
- * all structural elements and may optionally interpret their components in a
- * spatial coordinate system or scale them through a time-dependent amplitude.
- * The individual load formulations are declared in their dedicated headers,
- * which are included at the end of this umbrella header for convenient access.
+ * A `Load` stores the modifiers shared by natural and mixed boundary conditions:
+ * an optional spatial coordinate system and an optional time-dependent amplitude.
+ * Concrete Neumann conditions convert physical loading definitions into
+ * right-hand-side contributions, while Robin conditions additionally modify the
+ * system operator through their dedicated assembly interface.
+ *
+ * The base class deliberately retains the generic RHS-only dispatch used by
+ * structural and thermal Neumann conditions. Robin conditions derive from the
+ * same ownership hierarchy so heterogeneous load collectors can store them, but
+ * explicitly reject the RHS-only path and require operator-assembly context.
  *
  * @see Load
+ * @see Neumann
+ * @see Robin
  * @see LoadCollector
  * @see amplitude.h
- * @see load_collector.h
+ *
  * @author Finn Eggers
- * @date 06.03.2025
+ * @date 30.08.2026
  */
 
 #pragma once
@@ -24,35 +30,40 @@
 
 #include "../core/printable.h"
 #include "../core/types_cls.h"
-#include "../core/types_eig.h"
+#include "../core/types_num.h"
 #include "../cos/coordinate_system.h"
 #include "../data/field.h"
-#include "../data/region.h"
 
+#include <memory>
 #include <string>
 
-namespace fem {
-namespace model {
+namespace fem::model {
 struct ModelData;
 }
-}
 
-namespace fem {
-namespace bc {
+namespace fem::bc {
 
 /**
- * @brief Defines the common assembly interface for physical load conditions.
+ * @brief Common state and RHS dispatch shared by load-side boundary conditions.
  *
- * Derived classes implement `apply()` to integrate or scatter their physical
- * load into the supplied boundary-condition field. The base class stores the
- * two optional modifiers common to several formulations: a coordinate system
- * for interpreting vector components and an amplitude for temporal scaling.
- * Each load also provides a compact printable representation for diagnostics
- * and model summaries.
+ * Derived classes represent physical conditions that are owned by named load
+ * collectors. `orientation_` defines the basis in which vector-valued load
+ * components are interpreted; a null pointer means the stored components are
+ * already expressed in the global model basis. `amplitude_` optionally scales
+ * the nominal condition as a function of analysis time.
+ *
+ * Neumann conditions implement `apply()` directly and assemble only into the
+ * supplied nodal right-hand-side field. Robin conditions remain in this common
+ * ownership hierarchy but override the generic path with an error because their
+ * temperature- or state-dependent contribution also requires access to the
+ * global operator assembly.
+ *
+ * Every concrete load provides a compact printable representation for model
+ * overviews and diagnostics.
  */
-struct Load : public BoundaryCondition, public fem::Printable {
-    // Shared ownership type used by `LoadCollector` to hold heterogeneous load
-    // implementations in one contiguous collection of pointers.
+struct Load : BoundaryCondition, Printable {
+    // Shared ownership type used by load collectors to store heterogeneous
+    // Neumann and Robin conditions through one common base interface.
     using Ptr = std::shared_ptr<Load>;
 
     // Optional coordinate system in which vector-valued load components are
@@ -64,28 +75,22 @@ struct Load : public BoundaryCondition, public fem::Printable {
     // unchanged; concrete implementations may also explicitly bypass scaling.
     Amplitude::Ptr amplitude_ = nullptr;
 
-    // Enable destruction through a `Load` pointer without requiring each
-    // collector to know the concrete load type.
+    // Enable destruction through a `Load` pointer without requiring the
+    // collector to know the concrete boundary-condition type.
     virtual ~Load() = default;
 
-    // Assemble this load into `bc` using geometry and topology from
-    // `model_data`. `time` is passed to the optional amplitude, while
-    // `ignore_amplitude` requests assembly of the unscaled nominal load.
-    virtual void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) = 0;
+    // Assemble an RHS-only boundary condition into `rhs` using model geometry
+    // and topology. `time` is supplied to the optional amplitude, while
+    // `ignore_amplitude` requests the unscaled nominal condition. Robin
+    // conditions reject this path and require their operator-aware overload.
+    virtual void apply(model::ModelData& model_data,
+                       model::Field&     rhs,
+                       Precision         time,
+                       bool              ignore_amplitude = false) = 0;
 
-    // Return a compact one-line description containing the concrete load type,
-    // target region and the parameters relevant for diagnostics.
+    // Return a compact one-line description containing the concrete condition,
+    // target region and parameters relevant for diagnostics.
     std::string str() const override = 0;
 };
-} // namespace bc
-} // namespace fem
 
-// Expose all concrete load declarations through the common load header. The
-// concrete headers include this file themselves, relying on `#pragma once` to
-// terminate the cyclic umbrella inclusion after the base interface is known.
-#include "load_c.h"
-#include "load_d.h"
-#include "load_p.h"
-#include "load_v.h"
-#include "load_t.h"
-#include "load_inertial.h"
+} // namespace fem::bc

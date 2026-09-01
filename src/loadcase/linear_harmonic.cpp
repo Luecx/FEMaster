@@ -201,7 +201,7 @@ void LinearHarmonic::run() {
             // Abaqus-style amplitudes use frequency as STEP TIME in a frequency
             // domain procedure. Rebuild only the load vector for each frequency;
             // K, M, C and the constraint transformation remain unchanged.
-            const model::Field global_load_mat = model->build_load_matrix(loads, frequency);
+            const model::Field global_load_mat = model->build_structural_load_matrix(loads, frequency);
             const DynamicVector f = mattools::reduce_mat_to_vec(active_dof_idx_mat, global_load_mat);
             const DynamicVector fr = transformer->assemble_system_rhs(K, f);
 

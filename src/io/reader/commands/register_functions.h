@@ -42,6 +42,8 @@ void register_beam_section     (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_cload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_connector        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_contact          (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_convection       (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_conductivity     (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_coupling         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_density          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_dload            (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -54,6 +56,7 @@ void register_end_part         (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_equation         (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_field            (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_heading          (fem::io::dsl::Registry& registry);
+void register_heat_flux        (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_hyperelastic     (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_inertialload     (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_instance         (fem::io::dsl::Registry& registry, fem::model::Model& model);
@@ -76,6 +79,7 @@ void register_solid_section    (fem::io::dsl::Registry& registry, fem::model::Mo
 void register_spring           (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_support          (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_surface          (fem::io::dsl::Registry& registry, fem::model::Model& model);
+void register_temperature      (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_thermal_expansion(fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_tie              (fem::io::dsl::Registry& registry, fem::model::Model& model);
 void register_tload            (fem::io::dsl::Registry& registry, fem::model::Model& model);

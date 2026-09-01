@@ -238,8 +238,7 @@ void Model::print_overview() const {
     logging::info(true, "Equations : ", model_data.equations.size());
     logging::down();
 
-    // Expand support collectors and their value entries in deterministic name
-    // order. Supports are stored by value and are therefore never null.
+    // Expand support collectors in deterministic name order.
     const auto support_collector_names = sorted_names(model_data.supp_cols);
 
     logging::info(true, "");
@@ -255,7 +254,9 @@ void Model::print_overview() const {
         logging::info(true, name, " (", collector->size(), ")");
         logging::up();
         for (const auto& support : collector->entries()) {
-            logging::info(true, support.str());
+            logging::error(support != nullptr,
+                "Model overview: support collector ", name, " contains null entry");
+            logging::info(true, support->str());
         }
         logging::down();
     }

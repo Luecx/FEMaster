@@ -14,6 +14,13 @@
  * by that transition and may be registered afterwards when their own
  * dependencies permit it.
  *
+ * Structural and thermal analyses share the compiled topology while retaining
+ * field-specific algebraic systems. Structural assembly uses generalized nodal
+ * degrees of freedom, whereas thermal assembly activates one scalar temperature
+ * unknown at every node connected to a thermal element. Neumann, Robin and
+ * Dirichlet boundary conditions are dispatched through their common model-side
+ * collector interfaces and selected by the requesting analysis.
+ *
  * Constraint objects are intentionally not constructed or dispatched by Model.
  * Parsers and direct C++ callers create the concrete constraint type themselves
  * and append it to the corresponding collection in `ModelData`. This keeps the
@@ -22,13 +29,18 @@
  * @see ModelData
  * @see Part
  * @see Instance
+ * @see ThermalElement
+ *
  * @author Finn Eggers
- * @date 25.08.2026
+ * @date 30.08.2026
  */
 
 #pragma once
 
 #include "../bc/amplitude.h"
+#include "../bc/dirichlet/dirichlet.h"
+#include "../bc/neumann/neumann.h"
+#include "../bc/robin/robin.h"
 #include "../constraints/constraint_groups.h"
 #include "../core/types_cls.h"
 #include "../cos/coordinate_system.h"
@@ -47,18 +59,26 @@ namespace fem::model {
 /**
  * @brief Behavioral interface around semantic and compiled FEM model data.
  *
- * Before `compile()`, topology construction operates on the active Part stored
+ * Before `compile()`, topology construction operates on the active `Part` stored
  * in `_data->parts`. The compile pass creates dense assembly nodes, elements,
- * surfaces and lines for every Instance and fills each instance-local-to-global
- * id map. Recompilation is intentionally unsupported because any later
+ * surfaces and lines for every `Instance` and fills each instance-local-to-global
+ * identifier map. Recompilation is intentionally unsupported because any later
  * assembly-level set, field, load or constraint may already reference those
  * dense identifiers.
  *
  * After compilation the same interface coordinates section assignment,
- * analysis-step element state, material history initialization, global operator
- * assembly and result recovery. Persistent data always remains owned by
- * `ModelData`; `Model` only implements the operations and invariants governing
- * that data.
+ * analysis-step element state, material history initialization, structural and
+ * thermal global operator assembly and result recovery. Persistent data always
+ * remains owned by `ModelData`; `Model` only implements the operations and
+ * invariants governing that data.
+ *
+ * Structural and thermal systems deliberately use separate index mappings.
+ * `build_unconstrained_index_matrix()` produces the generalized structural DOF
+ * map, while `build_thermal_index_matrix()` produces a node-by-one scalar map.
+ * Boundary-condition assembly follows the same distinction: structural loads
+ * produce a six-component nodal field; thermal Neumann and Robin conditions
+ * produce a scalar heat-flow field and, for Robin conditions, additional
+ * operator contributions.
  *
  * A model is intentionally non-copyable because copied semantic and compiled
  * identifiers could diverge. Move construction transfers the single shared data
@@ -103,8 +123,8 @@ struct Model {
     void compile();
 
     // Resolution of semantic local identifiers after compilation. The typed
-    // overloads address a specified Instance map. String overloads accept
-    // either `ID` or `INSTANCE.ID` and use the implicit identity Instance for
+    // overloads address a specified Instance map. String overloads accept either
+    // `ID` or `INSTANCE.ID` and use the implicit identity Instance for
     // unqualified references.
     ID compiled_node_id   (ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
     ID compiled_element_id(ID id, const std::string& instance = DEFAULT_INSTANCE_NAME) const;
@@ -119,12 +139,12 @@ struct Model {
     // operations use the active Part and retain sparse local identifiers;
     // assembly operations use compiled regions and map scalar `ID` or
     // `INSTANCE.ID` references into dense identifiers.
-    void add_nodes_to_part_set         (const std::string& set, const std::string& source);
-    void add_nodes_to_assembly_set     (const std::string& set, const std::string& source);
-    void add_elements_to_part_set      (const std::string& set, const std::string& source);
-    void add_elements_to_assembly_set  (const std::string& set, const std::string& source);
-    void add_surfaces_to_part_set      (const std::string& set, const std::string& source);
-    void add_surfaces_to_assembly_set  (const std::string& set, const std::string& source);
+    void add_nodes_to_part_set        (const std::string& set, const std::string& source);
+    void add_nodes_to_assembly_set    (const std::string& set, const std::string& source);
+    void add_elements_to_part_set     (const std::string& set, const std::string& source);
+    void add_elements_to_assembly_set (const std::string& set, const std::string& source);
+    void add_surfaces_to_part_set     (const std::string& set, const std::string& source);
+    void add_surfaces_to_assembly_set (const std::string& set, const std::string& source);
 
     // Part-local topology construction in the currently active semantic Part.
     // Nodes and element connectivity retain their input identifiers, while
@@ -147,19 +167,20 @@ struct Model {
     void add_profile(Profile::Ptr profile);
     void add_section(Section::Ptr section);
 
-    // Boundary-condition resources and collector entries. Loads and supports
-    // address compiled regions and therefore require an active collector after
-    // compilation. Amplitudes are shared named definitions and remain independent
-    // of the topology transition. Constraints deliberately have no registration
-    // helper; callers append their concrete type directly to ModelData.
-    void add_load     (bc::Load::Ptr load);
+    // Boundary-condition resources and collector entries. Neumann and Robin
+    // conditions are stored in load collectors, while prescribed primary
+    // variables use Dirichlet support collectors. All three address compiled
+    // regions and therefore require an active collector after compilation.
+    // Amplitudes remain independent shared definitions.
+    void add_load     (bc::Neumann::Ptr load);
+    void add_load     (bc::Robin::Ptr load);
     void add_amplitude(bc::Amplitude::Ptr amplitude);
-    void add_support  (bc::Support support);
+    void add_support  (bc::Dirichlet::Ptr support);
 
     // Compiled element preparation and analysis lifecycle. Section assignment
     // binds compiled elements to their section definitions, and shell-normal
-    // construction prepares element-nodal reference geometry. step_begin() and
-    // step_end() manage analysis-local element caches independently of the
+    // construction prepares element-nodal reference geometry. `step_begin()` and
+    // `step_end()` manage analysis-local element caches independently of the
     // persistent topology created by compile().
     void step_begin();
     void step_end();
@@ -172,22 +193,51 @@ struct Model {
     [[nodiscard]] Index maximum_material_state_size() const;
     void initialize_material_state(Field& state) const;
 
-    // Global system construction. These operations enumerate active DOFs,
-    // collect prescribed loads and constraints, and assemble structural tangent,
-    // geometric, mass and internal-force contributions in global coordinates.
-    // Optional stiffness-scaling fields act per element.
+    // Field-specific system indexing. Structural systems retain the generalized
+    // component layout used by mechanical elements. Thermal systems activate only
+    // scalar temperature component zero at nodes belonging to thermal elements.
     SystemDofIds build_unconstrained_index_matrix();
-    Field build_load_matrix(
-        std::vector<std::string> load_sets = {},
+    SystemDofIds build_thermal_index_matrix();
+
+    // Element participation weights used when element-nodal result quantities are
+    // projected back to global nodes. Structural and thermal capabilities can be
+    // selected independently to avoid averaging through unrelated elements.
+    Field build_field_mapping_weights(bool structural = true, bool thermal = true) const;
+
+    // External boundary-condition assembly. Structural loads accumulate into a
+    // six-component nodal field. Thermal loads use one scalar nodal component;
+    // Robin conditions additionally append their temperature-dependent operator
+    // contribution to `lhs` using the supplied thermal DOF mapping.
+    Field build_structural_load_matrix(
+        const std::vector<std::string>& load_sets = {},
         Precision time = 0);
+    Field build_thermal_load_matrix(
+        const std::vector<std::string>& load_sets,
+        const SystemDofIds&             system_dof_ids,
+        TripletList&                    lhs,
+        Precision                       time = 0);
+
+    // Constraint collection. The structural path combines support equations with
+    // the mechanical constraint subsystem. The thermal path deliberately selects
+    // prescribed-temperature Dirichlet entries only.
     constraint::ConstraintGroups collect_constraints(
         SystemDofIds& system_dof_ids,
         const std::vector<std::string>& supp_sets = {});
+    constraint::ConstraintGroups collect_temperature_constraints(
+        const std::vector<std::string>& supp_sets = {});
+
+    // Decompose selected structural loads by amplitude for analyses that need a
+    // reusable spatial load basis with separate scalar time histories.
     std::vector<std::pair<bc::Amplitude::Ptr, Field>> build_load_basis(
         std::vector<std::string> load_sets = {});
+
+    // Global operator construction. Element-local matrix evaluation remains with
+    // the corresponding structural or thermal element capability; Model performs
+    // common local-to-global assembly using the supplied active-system mapping.
     SparseMatrix build_stiffness_matrix(
         SystemDofIds& indices,
         const Field* stiffness_scalar = nullptr);
+    SparseMatrix build_conductivity_matrix(SystemDofIds& indices);
     SparseMatrix build_tangent_stiffness_matrix(
         SystemDofIds& indices,
         NodeData& nodal_forces,
@@ -203,10 +253,10 @@ struct Model {
         const Field& displacement);
     SparseMatrix build_lumped_mass_matrix(SystemDofIds& indices);
 
-    // Result recovery from compiled structural elements. Returned fields use the
+    // Result recovery from compiled finite elements. Returned fields use the
     // domain appropriate to each quantity, including integration-point stress,
     // element-nodal stress/strain, shell resultants and element-level compliance,
-    // volume, section-force and shear-flow measures.
+    // volume, section-force, shear-flow and conductive heat-flux measures.
     Field compute_stress_state(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_nodal(Field& displacement, bool use_green_lagrange_nl = false);
     std::tuple<Field, Field> compute_stress_top_bot(Field& displacement, bool use_green_lagrange_nl = false);
@@ -216,6 +266,7 @@ struct Model {
     Field compute_volumes();
     Field compute_section_forces(Field& displacement);
     Field compute_shear_flow(Field& displacement);
+    Field compute_heat_flux(const Field& temperature);
 
     // Human-readable diagnostics. The overview reports semantic topology,
     // compiled assembly data and associated definitions through the hierarchical

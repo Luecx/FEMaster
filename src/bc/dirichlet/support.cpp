@@ -9,23 +9,23 @@
  * combination of the three corresponding global components.
  *
  * @see support.h
- * @see ../constraints/types/equation.h
+ * @see ../../constraints/types/equation.h
+ *
  * @author Finn Eggers
  * @date 06.03.2025
  */
 
 #include "support.h"
 
-#include "../data/field.h"
-#include "../model/element/element.h"
-#include "../model/model_data.h"
+#include "../../data/field.h"
+#include "../../model/element/element.h"
+#include "../../model/model_data.h"
 
 #include <cmath>
 #include <sstream>
 #include <utility>
 
-namespace fem {
-namespace bc {
+namespace fem::bc {
 
 /**
  * Constructs a support targeting an explicit node region.
@@ -38,8 +38,8 @@ namespace bc {
  * @param coordinate_system Optional coordinate system for oriented constraints.
  */
 Support::Support(NodeRegionPtr node_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
-    : node_region_(std::move(node_region)),
-      values_(values),
+    : node_region_     (std::move(node_region)),
+      values_          (values),
       coordinate_system_(std::move(coordinate_system)) {}
 
 /**
@@ -53,8 +53,8 @@ Support::Support(NodeRegionPtr node_region, const Vec6& values, cos::CoordinateS
  * @param coordinate_system Optional coordinate system for oriented constraints.
  */
 Support::Support(ElementRegionPtr element_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
-    : element_region_(std::move(element_region)),
-      values_(values),
+    : element_region_  (std::move(element_region)),
+      values_          (values),
       coordinate_system_(std::move(coordinate_system)) {}
 
 /**
@@ -68,15 +68,18 @@ Support::Support(ElementRegionPtr element_region, const Vec6& values, cos::Coord
  * @param coordinate_system Optional coordinate system for oriented constraints.
  */
 Support::Support(SurfaceRegionPtr surface_region, const Vec6& values, cos::CoordinateSystem::Ptr coordinate_system)
-    : surface_region_(std::move(surface_region)),
-      values_(values),
+    : surface_region_  (std::move(surface_region)),
+      values_          (values),
       coordinate_system_(std::move(coordinate_system)) {}
 
 /**
  * Expands the support target and generates node-level constraint equations.
  *
  * Node regions are iterated directly; element and surface regions are reduced
- * to their connected nodes before every node is passed to apply_to_node.
+ * to their connected nodes before every node is passed to `apply_to_node()`.
+ * Repeated nodes are deliberately processed as encountered by the selected
+ * topology, matching the historical support behavior and leaving equation
+ * combination or redundancy handling to the constraint subsystem.
  *
  * @param model_data Model topology and nodal position data.
  * @param equations Equation collection receiving the constraints.
@@ -94,26 +97,29 @@ void Support::apply(model::ModelData& model_data, constraint::Equations& equatio
         // repeatedly because this function deliberately performs no deduplication.
         for (ID element_id : *element_region_) {
             // Ignore empty element slots instead of dereferencing a null model
-            // entry during incomplete model construction.
+            // entry during incomplete or sparse compiled storage.
             if (!model_data.elements[element_id]) {
                 continue;
             }
 
-            // Iterate the element's connectivity through its common interface
-            // and generate the active equations for each connected node.
+            // Iterate the element connectivity through its common interface and
+            // generate all active support equations for each connected node.
             auto& element = model_data.elements[element_id];
             for (ID node_id : *element) {
                 apply_to_node(model_data, equations, node_id);
             }
         }
     } else if (surface_region_) {
-        // A surface-region support expands through surface connectivity in the
-        // same manner as the element path.
+        // A surface-region support expands through compiled surface connectivity
+        // in the same manner as the element path.
         for (ID surface_id : *surface_region_) {
+            // Ignore empty compiled surface slots before connectivity traversal.
             if (!model_data.surfaces[surface_id]) {
                 continue;
             }
 
+            // Generate the support equations for every node attached to the
+            // selected surface. Shared surface nodes are not deduplicated here.
             auto surface = model_data.surfaces[surface_id];
             for (ID node_id : *surface) {
                 apply_to_node(model_data, equations, node_id);
@@ -125,9 +131,11 @@ void Support::apply(model::ModelData& model_data, constraint::Equations& equatio
 /**
  * Generates the active support equations for one node.
  *
- * Each finite prescribed component becomes a constraint equation. For oriented
- * supports, the coordinate-system basis at the node maps local components into
- * the corresponding global degrees of freedom.
+ * Each finite prescribed component becomes a constraint equation. For global
+ * supports this is a single unit-coefficient equation. For oriented supports,
+ * the coordinate-system basis at the physical node position maps one local
+ * translational or rotational component into the corresponding three global
+ * generalized degrees of freedom.
  *
  * @param model_data Nodal position field used for oriented axes.
  * @param equations Equation collection receiving the constraints.
@@ -136,47 +144,49 @@ void Support::apply(model::ModelData& model_data, constraint::Equations& equatio
 void Support::apply_to_node(model::ModelData& model_data, constraint::Equations& equations, ID node_id) {
     // Position is required to evaluate the axes of a potentially
     // position-dependent coordinate system.
-    logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    logging::error(model_data.positions != nullptr,
+        "positions field not set in model data");
 
     // The position field exposes six-component rows for generalized nodal data;
-    // only the first three translational entries form the geometric point.
+    // only the first three translational entries form the physical node position.
     const Vec6 position_vec = model_data.positions->row_vec6(static_cast<Index>(node_id));
     const Vec3 position     = position_vec.head<3>();
 
-    // Traverse translations first and rotations second using the common
-    // generalized ordering `[Ux, Uy, Uz, Rx, Ry, Rz]`.
+    // Traverse translations first and rotations second using the generalized
+    // ordering [Ux, Uy, Uz, Rx, Ry, Rz].
     for (int i = 0; i < 6; ++i) {
-        // `NaN` is the sentinel for a free degree of freedom and therefore does
-        // not generate any equation.
+        // NaN is the sentinel for a free degree of freedom and therefore does not
+        // generate any constraint equation.
         if (std::isnan(values_[i])) {
             continue;
         }
 
         if (coordinate_system_) {
-            // Convert the global node position into the coordinate system's
-            // local parameterization before evaluating its basis matrix.
+            // Convert the global node position into the coordinate system's local
+            // parameterization before evaluating its potentially varying basis.
             const Vec3 local_position = coordinate_system_->to_local(position);
             const auto transformation = coordinate_system_->get_axes(local_position);
 
-            // `i % 3` selects the requested local x, y or z axis. The same axes
-            // are used for both generalized blocks; `i / 3` selects translation
-            // or rotation in the global equation entries.
-            const Vec3 direction      = transformation.col(i % 3);
+            // `i % 3` selects the requested local x, y or z axis. The same basis
+            // is used for translations and rotations; `i / 3` selects the
+            // corresponding generalized global component block.
+            const Vec3 direction = transformation.col(i % 3);
 
-            // Express one local component as the dot product of the selected
-            // axis with the three corresponding global components. The equation
-            // constructor used here receives no explicit right-hand side, so the
-            // oriented branch creates the default homogeneous constraint; the
-            // finite value in `values_[i]` currently acts as the activation flag.
-            constraint::EquationEntry entry_x = {node_id, static_cast<Dim>((i / 3) * 3), direction[0]};
+            // Express one local prescribed component as the dot product of the
+            // selected local axis with the matching three global components. The
+            // prescribed support value becomes the equation right-hand side.
+            constraint::EquationEntry entry_x = {node_id, static_cast<Dim>((i / 3) * 3),     direction[0]};
             constraint::EquationEntry entry_y = {node_id, static_cast<Dim>((i / 3) * 3 + 1), direction[1]};
             constraint::EquationEntry entry_z = {node_id, static_cast<Dim>((i / 3) * 3 + 2), direction[2]};
-            equations.emplace_back(std::initializer_list<constraint::EquationEntry>{entry_x, entry_y, entry_z}, values_[i]);
+            equations.emplace_back(
+                std::initializer_list<constraint::EquationEntry>{entry_x, entry_y, entry_z},
+                values_[i]
+            );
         } else {
             // A global support constrains exactly one generalized DOF. Its
             // coefficient is one and the prescribed value becomes the equation
             // right-hand side.
-            constraint::EquationEntry entry = {node_id, static_cast<Dim>(i), 1.0};
+            constraint::EquationEntry entry = {node_id, static_cast<Dim>(i), Precision(1)};
             equations.emplace_back(std::initializer_list<constraint::EquationEntry>{entry}, values_[i]);
         }
     }
@@ -186,7 +196,8 @@ void Support::apply_to_node(model::ModelData& model_data, constraint::Equations&
  * Builds the diagnostic representation of the support definition.
  *
  * The result identifies the active node, element or surface region, reports its
- * cardinality and lists the six nominal prescribed values.
+ * cardinality, lists only prescribed generalized components and appends the
+ * coordinate-system name when the support is not expressed in the global basis.
  *
  * @return Human-readable support description.
  */
@@ -204,7 +215,7 @@ std::string Support::str() const {
     }();
 
     // Labels follow the storage order in `values_` and make the printed
-    // prescription independent of numeric DOF indices.
+    // prescription independent of numeric generalized DOF indices.
     static constexpr const char* labels[] = {
         "Ux", "Uy", "Uz", "Rx", "Ry", "Rz"
     };
@@ -235,5 +246,5 @@ std::string Support::str() const {
 
     return os.str();
 }
-} // namespace bc
-} // namespace fem
+
+} // namespace fem::bc

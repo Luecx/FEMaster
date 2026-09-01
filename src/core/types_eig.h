@@ -45,10 +45,12 @@ using SemiStaticMatrix = Eigen::Matrix<Precision, Eigen::Dynamic, Cols>;
 template<int Rows>
 using StaticVector     = Eigen::Matrix<Precision, Rows, 1>;
 
-using DynamicMatrix    = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
-using DynamicVector    = Eigen::Matrix<Precision, Eigen::Dynamic, 1>;
-using RowMatrix        = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using MapMatrix        = Eigen::Map<DynamicMatrix>;
+using DynamicMatrix        = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic>;
+using DynamicIndexMatrix   = Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using DynamicBooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using DynamicVector        = Eigen::Matrix<Precision, Eigen::Dynamic, 1>;
+using RowMatrix            = Eigen::Matrix<Precision, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using MapMatrix            = Eigen::Map<DynamicMatrix>;
 
 // ============================================================================
 // Sparse types
@@ -103,8 +105,8 @@ using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>;
 
 using Dofs         = Eigen::Matrix<bool, 1, 6>;
 using ElDofs       = Dofs;
-using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, 6, Eigen::RowMajor>;
-using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6, Eigen::RowMajor>;
+using SystemDofs   = DynamicBooleanMatrix;
+using SystemDofIds = DynamicIndexMatrix;
 
 // ============================================================================
 // Integration field types

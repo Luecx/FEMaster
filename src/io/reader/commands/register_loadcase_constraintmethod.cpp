@@ -1,6 +1,6 @@
 /**
  * @file register_loadcase_constraintmethod.cpp
- * @brief Registers constraint-transformation selection for structural analyses.
+ * @brief Registers constraint-transformation selection for supported analyses.
  *
  * `CONSTRAINTMETHOD` selects null-space projection, Lagrange multipliers or
  * elimination for the active supported load case. The command translates the
@@ -26,6 +26,7 @@
 #include "../../../loadcase/linear_harmonic.h"
 #include "../../../loadcase/linear_static.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
@@ -33,7 +34,7 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
     registry.command("CONSTRAINTMETHOD", [&](fem::io::dsl::Command& command) {
         command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
         command.doc(
-            "Select constraint backend for supported structural loadcases: NULLSPACE, LAGRANGE or ELIMINATION.\n"
+            "Select constraint backend for supported loadcases: NULLSPACE, LAGRANGE or ELIMINATION.\n"
             "LINEARHARMONIC currently accepts only NULLSPACE during execution.\n"
             "\n"
             "Constraint | Backend   | DIRECT       | INDIRECT\n"
@@ -78,6 +79,10 @@ void register_loadcase_constraintmethod(fem::io::dsl::Registry& registry, Parser
                 return;
             }
             if (auto* lc = dynamic_cast<loadcase::LinearHarmonic*>(base)) {
+                lc->constraint_method = method;
+                return;
+            }
+            if (auto* lc = dynamic_cast<loadcase::SteadyStateThermal*>(base)) {
                 lc->constraint_method = method;
                 return;
             }

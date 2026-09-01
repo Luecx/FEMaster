@@ -54,7 +54,7 @@ void LinearStaticTopo::run() {
     );
 
     auto global_load_mat = Timer::measure(
-        [&]() { return model->build_load_matrix(loads); },
+        [&]() { return model->build_structural_load_matrix(loads); },
         "constructing load matrix (node x 6)"
     );
 

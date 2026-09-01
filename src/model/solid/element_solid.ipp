@@ -1,10 +1,11 @@
 /**
  * @file element_solid.ipp
- * @brief Implements common solid geometry, interpolation and stiffness assembly.
+ * @brief Implements common solid geometry, interpolation and element matrices.
  *
  * The template routines collect reference/current nodal geometry, construct
  * linearized and Total-Lagrangian strain-displacement operators, transform
- * constitutive response through `SolidSection` and integrate element matrices.
+ * constitutive response through `SolidSection` and integrate structural and
+ * thermal element matrices.
  *
  * Constitutive calls receive globally enumerated old/new material-point rows
  * selected by their caller. The element applies optional topology stiffness
@@ -21,6 +22,8 @@
 
 #include "../../cos/rectangular_system.h"
 #include "../../section/section_solid.h"
+
+#include <cmath>
 
 namespace fem::model {
 template<Index N>
@@ -399,42 +402,88 @@ SolidElement<N>::nodal_data(const Field& full_data, Index offset, Index stride) 
     return res;
 }
 
+/**
+ * Integrates the isotropic thermal conductivity matrix in reference geometry.
+ *
+ * The scalar temperature interpolation gives the element conductivity matrix
+ *
+ *     K_e = integral_V (dN/dX) k (dN/dX)^T dV.
+ *
+ * `shape_derivatives_reference()` supplies both the global reference-coordinate
+ * derivatives and the reference Jacobian determinant. The ordinary element
+ * integration rule is used because reduced structural stiffness integration
+ * must not implicitly reduce the thermal operator.
+ *
+ * The returned `MapMatrix` references caller-owned storage and remains valid
+ * only as long as that storage remains alive.
+ *
+ * @param buffer Caller-owned storage for the N by N conductivity matrix.
+ * @return Matrix map containing the symmetric element conductivity.
+ */
 template<Index N>
-MapMatrix
-SolidElement<N>::conductivity(Precision* buffer) {
-    StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-
-    // store the section / material properties
-    auto* section = this->get_section();
+MapMatrix SolidElement<N>::conductivity(Precision* buffer) {
+    // Resolve the reference geometry and isotropic material conductivity once
+    // before evaluating the element quadrature points.
+    const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
+    auto*                    section          = this->get_section();
 
     logging::error(section->material_->has_thermal_conductivity(),
         "Material has no thermal conductivity at element ", elem_id);
 
-    auto cond = section->material_->get_thermal_conductivity();
+    const Precision conductivity_value = section->material_->get_thermal_conductivity();
+    logging::error(std::isfinite(conductivity_value) && conductivity_value > Precision(0),
+        "Thermal conductivity must be finite and positive at element ", elem_id);
 
-    // Evaluate one constitutive state row for every stiffness quadrature point
-    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
-        [this, &reference_coords, &cond](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
-            Precision det0;
-            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
-            return StaticMatrix<N, N>(dN_dX * cond * dN_dX.transpose() * det0);
-    };
-    StaticMatrix<N, N> conductivity = integration_scheme().integrate(func);
+    // Form the local conductivity contribution in global reference coordinates.
+    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> integrand =
+        [this, &reference_coords, conductivity_value](Precision r, Precision s, Precision t) {
+            Precision det_reference = Precision(0);
+            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
+                reference_coords,
+                r,
+                s,
+                t,
+                det_reference
+            );
 
-    // Remove only numerical asymmetry from the analytically symmetric material tangent
-    conductivity = 0.5 * (conductivity + conductivity.transpose()); // Symmetrize
+            return StaticMatrix<N, N>(
+                dN_dX * conductivity_value * dN_dX.transpose() * det_reference
+            );
+        };
 
+    StaticMatrix<N, N> local_conductivity = integration_scheme().integrate(integrand);
+
+    // Remove round-off asymmetry from the analytically symmetric matrix.
+    local_conductivity = Precision(0.5) * (local_conductivity + local_conductivity.transpose());
+
+    // Copy the completed local matrix into the assembly-owned storage.
     MapMatrix mapped{buffer, N, N};
-    mapped = conductivity;
+    mapped = local_conductivity;
     return mapped;
 }
 
+/**
+ * Integrates the consistent scalar thermal capacity matrix.
+ *
+ * For density rho and specific heat c_p, the element capacity is
+ *
+ *     C_e = integral_V rho c_p N N^T dV.
+ *
+ * The formulation uses the reference volume measure. Shape derivatives are
+ * evaluated only to obtain the reference Jacobian determinant associated with
+ * the existing geometry routine.
+ *
+ * The returned `MapMatrix` references caller-owned storage and remains valid
+ * only as long as that storage remains alive.
+ *
+ * @param buffer Caller-owned storage for the N by N capacity matrix.
+ * @return Matrix map containing the symmetric consistent capacity matrix.
+ */
 template<Index N>
-MapMatrix
-SolidElement<N>::capacity(Precision* buffer) {
+MapMatrix SolidElement<N>::capacity(Precision* buffer) {
+    // Resolve geometry and thermal inertia properties before integration.
     const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-
-    auto* section = this->get_section();
+    auto*                    section          = this->get_section();
 
     logging::error(section->material_->has_density(),
         "Material has no density at element ", elem_id);
@@ -443,31 +492,38 @@ SolidElement<N>::capacity(Precision* buffer) {
 
     const Precision rho = section->material_->get_density();
     const Precision cp  = section->material_->get_thermal_specific_heat();
+    logging::error(std::isfinite(rho) && rho >= Precision(0),
+        "Material density must be finite and non-negative at element ", elem_id);
+    logging::error(std::isfinite(cp) && cp >= Precision(0),
+        "Thermal specific heat must be finite and non-negative at element ", elem_id);
 
-    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
+    // Form the consistent scalar capacity contribution at each quadrature point.
+    std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> integrand =
         [this, &reference_coords, rho, cp](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
-            Precision det0;
-
-            const StaticMatrix<N, 1> Nf =
-                this->shape_function(r, s, t);
-
-            const StaticMatrix<N, D> dN_dX =
-                this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+            Precision det_reference = Precision(0);
+            const StaticMatrix<N, 1> shape = this->shape_function(r, s, t);
+            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(
+                reference_coords,
+                r,
+                s,
+                t,
+                det_reference
+            );
 
             (void) dN_dX;
-
-            return StaticMatrix<N, N>(Nf * Nf.transpose() * (rho * cp * det0));
+            return StaticMatrix<N, N>(shape * shape.transpose() * (rho * cp * det_reference));
     };
 
-    StaticMatrix<N, N> capacity =
-        integration_scheme().integrate(func);
+    StaticMatrix<N, N> local_capacity = integration_scheme().integrate(integrand);
 
-    capacity = StaticMatrix<N, N>(
-        0.5 * (capacity + capacity.transpose())
+    // Remove round-off asymmetry from the analytically symmetric matrix.
+    local_capacity = StaticMatrix<N, N>(
+        Precision(0.5) * (local_capacity + local_capacity.transpose())
     );
 
+    // Copy the completed local matrix into the assembly-owned storage.
     MapMatrix mapped{buffer, N, N};
-    mapped = capacity;
+    mapped = local_capacity;
     return mapped;
 }
 

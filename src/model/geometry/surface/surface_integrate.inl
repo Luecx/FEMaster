@@ -80,6 +80,64 @@ Precision Surface<N>::integrate_scalar_field(
 }
 
 /**
+ * Integrates a scalar field and assembles its consistent nodal contribution.
+ *
+ * At every surface quadrature point, the supplied scalar value is multiplied by
+ * the surface shape functions and the physical area measure. The resulting
+ * contribution is accumulated in component zero of the target field:
+ *
+ *     f_i += N_i(r,s) field(x(r,s)) J_s(r,s) w.
+ *
+ * This overload is intended for scalar boundary quantities such as prescribed
+ * heat flux and the ambient source term of convection. It keeps the thermal
+ * right-hand side scalar instead of routing it through a three-component vector
+ * field.
+ *
+ * @param node_coords Global nodal coordinate field defining the surface geometry.
+ * @param target One-component NODE field receiving the consistent nodal values.
+ * @param field Scalar field evaluated at the physical quadrature positions.
+ */
+template<Index N>
+void Surface<N>::integrate_scalar_field(
+    const Field&       node_coords,
+          Field&       target,
+    const ScalarField& field
+) const {
+    // Validate the scalar nodal target before any quadrature contribution is
+    // scattered through the surface connectivity.
+    logging::error(target.domain == FieldDomain::NODE,
+        "Surface: scalar integration target must use NODE domain");
+    logging::error(target.components == 1,
+        "Surface: scalar integration target must have exactly one component");
+    logging::error(target.rows == node_coords.rows,
+        "Surface: scalar integration target and coordinate field must have matching rows");
+
+    // Gather the physical surface geometry once for all quadrature points.
+    const auto coordinates = node_coords_global(node_coords);
+    const auto& scheme      = integration_scheme();
+
+    // Apply the complete physical surface measure and distribute the scalar
+    // value consistently with the interpolation of the surface topology.
+    for (Index local_ip = 0; local_ip < scheme.count(); ++local_ip) {
+        const auto point = scheme.get_point(local_ip);
+
+        const Precision r = point.r;
+        const Precision s = point.s;
+        const Precision w = point.w;
+
+        const StaticMatrix<N, 1> shape = shape_function(r, s);
+        const auto jac                   = jacobian(coordinates, r, s);
+        const auto position              = interpolate(coordinates, r, s);
+        const Precision weighted_area    = jac.col(0).cross(jac.col(1)).norm() * w;
+        const Precision value            = field(position);
+
+        for (Index local_id = 0; local_id < N; ++local_id) {
+            target(nodeIds[local_id], 0) += shape[local_id] * value * weighted_area;
+        }
+    }
+}
+
+/**
  * Integrates a vector field over the complete physical surface.
  *
  * The vector field is evaluated at the interpolated global position of each

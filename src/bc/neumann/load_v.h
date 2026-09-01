@@ -9,21 +9,24 @@
  * nodal forces. Optional orientation and amplitude objects modify the nominal
  * vector without changing the element-specific integration logic.
  *
+ * As a structural Neumann condition, the resulting equivalent nodal forces are
+ * accumulated only in the structural right-hand side.
+ *
  * @see VLoad
- * @see Load
+ * @see StructuralNeumann
+ * @see model::StructuralElement
  * @see load_v.cpp
+ *
  * @author Finn Eggers
  * @date 06.03.2025
  */
 
 #pragma once
 
-#include "load.h"
+#include "neumann.h"
+#include "../../data/region.h"
 
-#include "../data/region.h"
-
-namespace fem {
-namespace bc {
+namespace fem::bc {
 
 /**
  * @brief Applies a density-scaled body-force vector to structural elements.
@@ -33,7 +36,7 @@ namespace bc {
  * the nominal local vector is rotated at each integration point so coordinate
  * systems with position-dependent axes are supported.
  */
-struct VLoad : public Load {
+struct VLoad : StructuralNeumann {
     // Shared ownership type for concrete volumetric-load references.
     using Ptr = std::shared_ptr<VLoad>;
 
@@ -44,20 +47,17 @@ struct VLoad : public Load {
     // Element region whose structural elements receive the distributed load.
     SPtr<model::ElementRegion> region_ = nullptr;
 
-    // Construct an empty body load for subsequent collector assignment.
-    VLoad() = default;
-
-    // Enable polymorphic destruction through `Load`.
-    ~VLoad() override = default;
-
     // Build the global vector field, optionally rotate it at each integration
     // point and delegate density-weighted consistent integration to each valid
     // structural element in `region_`.
-    void apply(model::ModelData& model_data, model::Field& bc, Precision time, bool ignore_amplitude = false) override;
+    void apply(model::ModelData& model_data,
+               model::Field&     rhs,
+               Precision         time,
+               bool              ignore_amplitude = false) override;
 
     // Return the target element set, nominal components and any orientation or
     // amplitude in a compact diagnostic representation.
     std::string str() const override;
 };
-} // namespace bc
-} // namespace fem
+
+} // namespace fem::bc

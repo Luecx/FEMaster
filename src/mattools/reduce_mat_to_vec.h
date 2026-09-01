@@ -1,14 +1,15 @@
 /**
  * @file reduce_mat_to_vec.h
- * @brief Provides functions to reduce a SystemDofIds matrix and a node field into
- * a DynamicVector and to expand it back. Reduction ignores inactive DOFs, and
- * expansion fills the DynamicVector based on SystemDofIds.
+ * @brief Declares conversion between nodal fields and active system vectors.
  *
- * The `reduce_vec` function generates a reduced DynamicVector by extracting values
- * from the node field using the active DOFs indicated by the SystemDofIds matrix.
+ * The helpers operate on arbitrary node-by-component `SystemDofIds` mappings.
+ * Negative entries denote inactive components; non-negative entries address the
+ * corresponding coefficient of the compact algebraic system vector. The same
+ * interface therefore supports six-component structural mappings and scalar
+ * node-by-one thermal mappings without assuming a fixed field width.
  *
- * The `expand_vec` function takes a DynamicVector and expands it to a node field
- * based on the active DOF indices in SystemDofIds.
+ * Detailed validation and mapping semantics are documented at the definitions in
+ * `reduce_mat_to_vec.cpp`.
  *
  * @author Created by Finn Eggers (c)
  * all rights reserved
@@ -19,33 +20,22 @@
 
 #include "../core/types_eig.h"
 #include "../data/field.h"
-#include <Eigen/Dense>
 
 namespace fem { namespace mattools {
 
-/**
- * @brief Reduces a node field into a DynamicVector by selecting active DOFs based
- * on the given SystemDofIds matrix.
- *
- * Inactive DOFs in SystemDofIds are marked by -1 and are ignored. The active
- * DOFs are collected into the output DynamicVector.
- *
- * @param dof_ids An Nx6 matrix that stores DOF indices, with -1 indicating inactive DOFs.
- * @param bc_matrix A node field that stores boundary condition values for each DOF.
- * @return DynamicVector The reduced vector containing only the active DOFs.
- */
-DynamicVector reduce_mat_to_vec(const SystemDofIds& dof_ids, const model::Field& bc_matrix);
+// Convert a NODE field into compact active-system ordering. Every non-negative
+// entry in `dof_ids` identifies the exact destination coefficient; inactive
+// entries are skipped rather than assumed to occur in any particular pattern.
+DynamicVector reduce_mat_to_vec(
+    const SystemDofIds& dof_ids,
+    const model::Field& field
+);
 
-/**
- * @brief Expands a reduced DynamicVector back into a node field based on the
- * SystemDofIds matrix.
- *
- * Inactive DOFs (marked by -1) are skipped, while active DOFs are filled with
- * values from the DynamicVector.
- *
- * @param dof_ids An Nx6 matrix that stores DOF indices, with -1 indicating inactive DOFs.
- * @param reduced_vector The DynamicVector containing values for the active DOFs.
- * @return Field The expanded node field containing the boundary conditions.
- */
-model::Field expand_vec_to_mat(const SystemDofIds& dof_ids, const DynamicVector& reduced_vector);
+// Expand a compact active-system vector back into NODE storage with the exact row
+// and component dimensions of `dof_ids`. Inactive components remain zero.
+model::Field expand_vec_to_mat(
+    const SystemDofIds& dof_ids,
+    const DynamicVector& reduced_vector
+);
+
 } } // namespace fem::mattools

@@ -108,6 +108,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         material->execute_children("ELASTIC");
         material->execute_children("HYPERELASTIC");
         material->execute_children("DENSITY");
+        material->execute_children("CONDUCTIVITY");
         material->execute_children("THERMALEXPANSION");
 
         material->leave();
@@ -217,6 +218,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // Root-level collectors and constraints
     // ---------------------------------------------------------------------
     root.execute_children("SUPPORT");
+    root.execute_children("TEMPERATURE");
 
     root.execute_children("CLOAD");
     root.execute_children("DLOAD");
@@ -224,6 +226,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     root.execute_children("TLOAD");
     root.execute_children("VLOAD");
     root.execute_children("INERTIALLOAD");
+    root.execute_children("HEATFLUX");
+    root.execute_children("CONVECTION");
 
     root.execute_children("RBM");
     root.execute_children("CONNECTOR");
@@ -236,6 +240,7 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
     // ---------------------------------------------------------------------
     for (const auto* assembly : root.children("ASSEMBLY")) {
         assembly->execute_children("SUPPORT");
+        assembly->execute_children("TEMPERATURE");
 
         assembly->execute_children("CLOAD");
         assembly->execute_children("DLOAD");
@@ -243,6 +248,8 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("TLOAD");
         assembly->execute_children("VLOAD");
         assembly->execute_children("INERTIALLOAD");
+        assembly->execute_children("HEATFLUX");
+        assembly->execute_children("CONVECTION");
 
         assembly->execute_children("RBM");
         assembly->execute_children("CONNECTOR");
@@ -450,6 +457,7 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_elastic(registry, mdl);
     commands::register_hyperelastic(registry, mdl);
     commands::register_density(registry, mdl);
+    commands::register_conductivity(registry, mdl);
     commands::register_thermal_expansion(registry, mdl);
     commands::register_orientation(registry, mdl);
     commands::register_profile(registry, mdl);
@@ -468,8 +476,11 @@ void Parser::register_commands(io::dsl::Registry& registry) {
     commands::register_tload(registry, mdl);
     commands::register_vload(registry, mdl);
     commands::register_inertialload(registry, mdl);
+    commands::register_heat_flux(registry, mdl);
+    commands::register_convection(registry, mdl);
     commands::register_rbm(registry, mdl);
     commands::register_support(registry, mdl);
+    commands::register_temperature(registry, mdl);
     commands::register_amplitude(registry, mdl);
     commands::register_connector(registry, mdl);
     commands::register_coupling(registry, mdl);

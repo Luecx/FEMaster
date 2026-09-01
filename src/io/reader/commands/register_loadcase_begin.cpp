@@ -36,6 +36,7 @@
 #include "../../../loadcase/linear_static_topo.h"
 #include "../../../loadcase/linear_transient.h"
 #include "../../../loadcase/nonlinear_static.h"
+#include "../../../loadcase/steady_state_thermal.h"
 
 namespace fem::io::reader::commands {
 
@@ -48,7 +49,7 @@ void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
             fem::io::dsl::KeywordSpec::make()
                 .key("TYPE").required().allowed({
                     "LINEARSTATIC", "LINEARBUCKLING", "LINEARSTATICTOPO", "EIGENFREQ", "LINEARTRANSIENT",
-                    "LINEARHARMONIC", "NONLINEARSTATIC"})
+                    "LINEARHARMONIC", "NONLINEARSTATIC", "STEADYSTATETHERMAL"})
                 .key("NAME").optional()
         );
 
@@ -71,6 +72,8 @@ void register_loadcase_begin(fem::io::dsl::Registry& registry, Parser& parser) {
                 parser.begin_loadcase(std::make_unique<loadcase::Transient>());
             } else if (type == "LINEARHARMONIC") {
                 parser.begin_loadcase(std::make_unique<loadcase::LinearHarmonic>());
+            } else if (type == "STEADYSTATETHERMAL") {
+                parser.begin_loadcase(std::make_unique<loadcase::SteadyStateThermal>());
             } else {
                 logging::error(false,
                     "Unsupported loadcase type: ", type);
