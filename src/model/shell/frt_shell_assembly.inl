@@ -13,6 +13,10 @@
  * in-plane-spin potential and contributes matching force, material-like and
  * geometric tangent terms.
  *
+ * Generalized resultants and constitutive tangents remain local to the active
+ * element evaluation. Only the physical nonlinear tangent path may write trial
+ * material history; linear stiffness and prestress stiffness are state-neutral.
+ *
  * @see FRTShell
  *
  * @author Finn Eggers
@@ -26,66 +30,32 @@
 namespace fem::model {
 
 /**
- * Loads previously stored generalized shell resultants at the integration
- * points.
- *
- * The field components follow the ordering
- * `[N11,N22,N12,M11,M22,M12,Q13,Q23]`.
- *
- * @param data Active thread-local evaluation view.
- * @param ip_stress Source integration-point resultant field.
- * @param ip_start_idx First source row belonging to this element.
- */
-template<Index N>
-void FRTShell<N>::load_ip_resultants(
-    EvaluationData& data,
-    const Field&    ip_stress,
-    int             ip_start_idx
-) const {
-    logging::error(ip_stress.components >= num_strains,
-                   "FRTShell: shell resultant field requires eight components "
-                   "[N11,N22,N12,M11,M22,M12,Q13,Q23]");
-
-    // Copy the element resultants into the active reusable integration buffer
-    for (Index ip = 0; ip < static_cast<Index>(data.ip_resultants.size()); ++ip) {
-        const Index row = static_cast<Index>(ip_start_idx) + ip;
-
-        for (Index component = 0; component < num_strains; ++component) {
-            data.ip_resultants[static_cast<std::size_t>(ip)](component) =
-                ip_stress(row, component);
-        }
-    }
-}
-
-/**
- * Evaluates the nonlinear shell section at every integration point.
+ * Evaluates shell-section resultants at every integration point.
  *
  * Generalized strains are supplied in the pointwise orthonormal reference
  * basis. The shell section receives the physical reference position and the
  * identical global basis used by the kinematic strain transformation. The
- * current consistent tangent is stored only when the caller requested B
+ * current consistent tangent is retained only when the caller requested B
  * matrices and therefore can consume a material tangent.
  *
  * Each in-plane integration point owns a contiguous block of section material
- * points in the old/new `ModelData` state fields. The first rows and global
- * component count are passed as pointers and stride so integrated sections can
- * write their through-thickness histories without changing their input.
+ * points. Every call reads the committed state. A writable trial-state pointer
+ * is supplied only when `data.write_material_state` marks the physical nonlinear
+ * equilibrium evaluation; state-neutral operators pass `nullptr` instead.
  *
  * @param data Active thread-local evaluation view.
  */
 template<Index N>
 void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
-    // Generalized section response requires the compatible strain prepared by
-    // the kinematic evaluation
     logging::error(data.with_strain,
                    "FRTShell: material resultants require strain evaluation");
 
-    ShellSection*   section = shell_section();
-    const Precision scale   = topology_stiffness_scale();
-    const auto&     points  = reference_data().ip_points;
+    ShellSection*   section      = shell_section();
+    const Precision scale        = topology_stiffness_scale();
+    const auto&     points       = reference_data().ip_points;
     const Index     state_stride = this->_model_data->material_state_old->components;
 
-    // Evaluate one generalized section response for every shell integration point
+    // Evaluate one generalized section response for every shell integration point.
     for (Index ip = 0; ip < static_cast<Index>(points.size()); ++ip) {
         const std::size_t id = static_cast<std::size_t>(ip);
         const ReferencePoint& point = points[id];
@@ -95,13 +65,15 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
         ShellStressResultants  resultants;
         Mat8                   tangent;
 
-        // Address the first through-thickness input/output rows of this in-plane
-        // point; the section advances further rows using state_stride
+        // Always read the committed through-thickness history. Only the physical
+        // nonlinear tangent is allowed to write the corresponding trial rows.
         const Index      state_row = this->mp_index(ip, 0);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-        Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
+        Precision* new_state = data.write_material_state
+            ? &(*this->_model_data->material_state_new)(state_row, 0)
+            : nullptr;
 
-        // Supply the same pointwise global basis used by the strain transformation
+        // Supply the same pointwise global basis used by the strain transformation.
         Mat3 basis = point.basis;
 
         section->evaluate(
@@ -118,7 +90,7 @@ void FRTShell<N>::compute_material_resultants(EvaluationData& data) const {
 
         data.ip_resultants[id] = scale * resultants.values();
 
-        // Retain the constitutive tangent only for caller paths that assemble B^T H B
+        // Retain the constitutive tangent only for paths that assemble B^T H B.
         if (!data.ip_tangent.empty()) {
             data.ip_tangent[id] = scale * tangent;
         }
@@ -468,8 +440,7 @@ void FRTShell<N>::assemble_drill_stabilization(
         }
 
         // Add the positive semidefinite B_d^T B_d contribution
-        stiffness_matrix->noalias() +=
-            weighted_stiffness * B_d * B_d.transpose();
+        stiffness_matrix->noalias() += weighted_stiffness * B_d * B_d.transpose();
 
         // The second kinematic derivative is required only for the complete
         // nonlinear tangent. Linear shell stiffness at the reference state has
@@ -496,14 +467,10 @@ void FRTShell<N>::assemble_drill_stabilization(
                                      * (point.shape_ab.col(1)(x_node) * da1
                                       - point.shape_ab.col(0)(x_node) * da2);
 
-                    stiffness_matrix->template block<3, 1>(
-                        x_base,
-                        rot_base + a
-                    ) += geometric_scale * mixed;
-                    stiffness_matrix->template block<1, 3>(
-                        rot_base + a,
-                        x_base
-                    ) += geometric_scale * mixed.transpose();
+                    stiffness_matrix->template block<3, 1>(x_base, rot_base + a)
+                        += geometric_scale * mixed;
+                    stiffness_matrix->template block<1, 3>(rot_base + a, x_base)
+                        += geometric_scale * mixed.transpose();
                 }
             }
 
@@ -526,32 +493,34 @@ void FRTShell<N>::assemble_drill_stabilization(
 }
 
 /**
- * Returns the material stiffness in the active element configuration.
+ * Assembles the linear/reference shell stiffness.
  *
- * The physical constitutive tangent is assembled from the current shell-section
- * response. The objective drilling tangent is added from the same kinematic
- * potential used by the nonlinear residual. Physical stress-dependent shell
- * geometric terms are intentionally omitted by this interface.
+ * The undeformed shell state supplies the reference B matrices. Section
+ * tangents are queried at zero generalized strain without a writable material
+ * target state, and the reference drilling tangent is added from the same
+ * objective stabilization potential. No current resultants or geometric
+ * stiffness enter this operator.
  *
  * @param buffer Caller-provided dense element matrix storage.
- * @return Mapped material and drilling tangent matrix.
+ * @return Mapped linear shell stiffness.
  */
 template<Index N>
 MapMatrix FRTShell<N>::stiffness(Precision* buffer) {
-    const CurrentState state = current_state();
+    const CurrentState state = reference_state();
     const EvaluationData data = init_evaluation(
         state,
         true,
         true,
-        true,
-        true
+        false,
+        false,
+        false
     );
 
     Mat6N Kmat;
     assemble_material_stiffness(data, Kmat);
     assemble_drill_stabilization(data, &Kmat, nullptr);
 
-    // Remove only numerical asymmetry from the analytically symmetric tangent
+    // Remove only numerical asymmetry from the analytically symmetric tangent.
     Kmat = Precision(0.5) * (Kmat + Kmat.transpose());
 
     MapMatrix mapped(buffer, num_dofs, num_dofs);
@@ -560,32 +529,31 @@ MapMatrix FRTShell<N>::stiffness(Precision* buffer) {
 }
 
 /**
- * Returns the physical geometric stiffness generated by supplied shell
- * resultants.
+ * Evaluates the physical geometric stiffness from a supplied displacement state.
  *
- * Drilling stabilization is not part of the physical stored resultant field
- * and is therefore intentionally excluded from this interface.
+ * Generalized strains and resultants are evaluated locally from the supplied
+ * nodal trial configuration. The constitutive call reads committed history but
+ * receives no writable trial-state pointer because prestress assembly is a
+ * state-neutral operator. The resulting local shell resultants are immediately
+ * contracted with the compatible strain Hessians and are not stored globally.
  *
  * @param buffer Caller-provided dense element matrix storage.
- * @param ip_stress Stored generalized shell resultants.
- * @param ip_start_idx First resultant row belonging to this element.
+ * @param displacement Global nodal displacement field defining the prestress.
  * @return Mapped physical geometric tangent matrix.
  */
 template<Index N>
 MapMatrix FRTShell<N>::stiffness_geom(
     Precision*   buffer,
-    const Field& ip_stress,
-    int          ip_start_idx
+    const Field& displacement
 ) {
-    const CurrentState state = current_state();
+    const CurrentState state = current_state_from_displacement(displacement);
     const EvaluationData data = init_evaluation(
         state,
-        false,
+        true,
         false,
         true,
         true,
-        &ip_stress,
-        ip_start_idx
+        false
     );
 
     Mat6N Kgeo;
@@ -597,118 +565,74 @@ MapMatrix FRTShell<N>::stiffness_geom(
 }
 
 /**
- * Assembles the complete consistent nonlinear tangent and matching internal
- * force.
+ * Assembles nonlinear shell internal force and optionally the consistent tangent.
  *
- * The supplied displacement field defines the trial configuration. The shell
- * section is updated from the current generalized strains, the physical
- * material and geometric tangents are assembled, and the objective drilling
- * force and tangent are added from the same quadratic potential. The freshly
- * evaluated generalized resultants are copied into `ip_stress_state` before the
- * element force is scattered.
+ * The supplied displacement field defines the physical trial configuration.
+ * Every integration point evaluates its generalized strain and section response
+ * once from committed material history into the persistent trial state. The
+ * resulting local resultants are used immediately for the internal force and,
+ * when matrix storage is requested, for the material and geometric tangent.
  *
- * @param buffer Caller-provided dense tangent storage.
- * @param ip_stress_state Global integration-point resultant state to update.
- * @param nodal_forces Global nodal internal force field to increment.
+ * A null matrix buffer performs a residual-only evaluation. It still updates
+ * the physical material trial state and assembles the complete internal force,
+ * including objective drilling stabilization, but skips all tangent-only work.
+ *
+ * @param buffer Optional dense tangent storage; null requests force only.
+ * @param nodal_forces Global nodal internal-force field to increment.
  * @param displacement Trial nodal displacement field.
- * @return Mapped complete consistent element tangent.
+ * @return Mapped complete tangent, or an empty map for residual-only evaluation.
  */
 template<Index N>
 MapMatrix FRTShell<N>::stiffness_tangent(
     Precision*   buffer,
-    Field&       ip_stress_state,
     NodeData&    nodal_forces,
     const Field& displacement
 ) {
-    logging::error(ip_stress_state.components >= num_strains,
-                   "FRTShell: nonlinear stress state requires eight components");
+    logging::error(nodal_forces.components >= dofs_per_node,
+                   "FRTShell: nonlinear internal force requires six nodal components");
 
+    const bool with_tangent = buffer != nullptr;
     const CurrentState state = current_state_from_displacement(displacement);
     const EvaluationData data = init_evaluation(
         state,
         true,
         true,
+        with_tangent,
         true,
         true
     );
 
-    Mat6N Kmat;
-    Mat6N Kgeo;
     Vec6N internal_force;
-
-    assemble_material_stiffness(data, Kmat);
-    assemble_geometric_stiffness(data, Kgeo);
     assemble_internal_force(data, internal_force);
 
-    Mat6N tangent = Kmat + Kgeo;
-    assemble_drill_stabilization(data, &tangent, &internal_force);
-
-    // Store the current generalized resultants for subsequent solver paths
-    for (Index ip = 0; ip < static_cast<Index>(data.ip_resultants.size()); ++ip) {
-        const Index row = this->ip_index(ip);
-
-        for (Index component = 0; component < num_strains; ++component) {
-            ip_stress_state(row, component) =
-                data.ip_resultants[static_cast<std::size_t>(ip)](component);
-        }
+    Mat6N tangent;
+    if (with_tangent) {
+        Mat6N Kmat;
+        Mat6N Kgeo;
+        assemble_material_stiffness(data, Kmat);
+        assemble_geometric_stiffness(data, Kgeo);
+        tangent = Kmat + Kgeo;
+        assemble_drill_stabilization(data, &tangent, &internal_force);
+        tangent = Precision(0.5) * (tangent + tangent.transpose());
+    } else {
+        assemble_drill_stabilization(data, nullptr, &internal_force);
     }
 
-    // Scatter the complete element internal force into the global nodal field
+    // Scatter the complete element internal force into the global nodal field.
     for (Index node = 0; node < num_nodes; ++node) {
         const Index node_id = static_cast<Index>(this->node_ids[node]);
-
         for (Index dof = 0; dof < dofs_per_node; ++dof) {
             nodal_forces(node_id, dof) += internal_force(dofs_per_node * node + dof);
         }
     }
 
-    tangent = Precision(0.5) * (tangent + tangent.transpose());
+    if (!with_tangent) {
+        return MapMatrix(nullptr, 0, 0);
+    }
 
     MapMatrix mapped(buffer, num_dofs, num_dofs);
     mapped = tangent;
     return mapped;
-}
-
-/**
- * Recovers and scatters the nonlinear internal force from a stored generalized
- * resultant field.
- *
- * The physical shell contribution integrates `B^T n`. The objective drilling
- * force is recomputed from the current nodal configuration because it is not a
- * physical shell resultant and is intentionally not stored in the integration-
- * point stress field.
- *
- * @param node_forces Global nodal internal force field to increment.
- * @param ip_stress Stored generalized shell resultant field.
- */
-template<Index N>
-void FRTShell<N>::compute_internal_force_nonlinear(
-    Field&       node_forces,
-    const Field& ip_stress
-) {
-    const CurrentState state = current_state();
-    const EvaluationData data = init_evaluation(
-        state,
-        true,
-        true,
-        false,
-        true,
-        &ip_stress,
-        static_cast<int>(this->ip_index(0))
-    );
-
-    Vec6N internal_force;
-    assemble_internal_force(data, internal_force);
-    assemble_drill_stabilization(data, nullptr, &internal_force);
-
-    // Scatter the complete element force in nodal six-component ordering
-    for (Index node = 0; node < num_nodes; ++node) {
-        const Index node_id = static_cast<Index>(this->node_ids[node]);
-
-        for (Index dof = 0; dof < dofs_per_node; ++dof) {
-            node_forces(node_id, dof) += internal_force(dofs_per_node * node + dof);
-        }
-    }
 }
 
 } // namespace fem::model
