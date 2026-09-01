@@ -38,7 +38,9 @@ namespace fem::model {
  * The element has no geometric integration measure and no constitutive state.
  * Its section directly defines diagonal mass/inertia and ground-stiffness
  * coefficients. Missing sections are permitted and leave the topology entirely
- * inactive.
+ * inactive. Nonlinear equilibrium remains identical to the linear spring law,
+ * so `stiffness_tangent()` evaluates the internal force directly and optionally
+ * returns the same constant tangent as `stiffness()`.
  */
 struct PointElement : StructuralElement {
     static constexpr Index N = 1;
@@ -97,19 +99,31 @@ struct PointElement : StructuralElement {
         return result;
     }
 
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override {
-        (void) ip_stress;
-        (void) ip_start_idx;
+    MapMatrix stiffness_geom(Precision* buffer, const Field& displacement) override {
+        (void) displacement;
         MapMatrix result(buffer, 6, 6);
         result.setZero();
         return result;
     }
 
-    MapMatrix stiffness_tangent(Precision* buffer,
-                                Field& ip_stress_state,
-                                NodeData& nodal_forces,
-                                const Field& displacement) override {
-        internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
+    MapMatrix stiffness_tangent(
+        Precision*   buffer,
+        NodeData&    nodal_forces,
+        const Field& displacement
+    ) override {
+        if (_section) {
+            const auto* section = _section->as<PointMassSection>();
+            logging::error(section != nullptr,
+                "PointElement: section is not a PointMassSection for element ", elem_id);
+
+            const Index node = static_cast<Index>(node_ids[0]);
+            for (Index dof = 0; dof < 3; ++dof) {
+                nodal_forces(node, dof) += section->spring_constants_(dof) * displacement(node, dof);
+                nodal_forces(node, dof + 3) += section->rotary_spring_constants_(dof) * displacement(node, dof + 3);
+            }
+        }
+
+        if (!buffer) return MapMatrix(nullptr, 0, 0);
         return stiffness(buffer);
     }
 
@@ -129,23 +143,6 @@ struct PointElement : StructuralElement {
         result(4, 4) = section->rotary_inertia_(1);
         result(5, 5) = section->rotary_inertia_(2);
         return result;
-    }
-
-    void internal_force_nonlinear(Field& ip_stress_state,
-                                  NodeData& nodal_forces,
-                                  const Field& displacement) override {
-        (void) ip_stress_state;
-        if (!_section) return;
-
-        const auto* section = _section->as<PointMassSection>();
-        logging::error(section != nullptr,
-            "PointElement: section is not a PointMassSection for element ", elem_id);
-
-        const Index node = static_cast<Index>(node_ids[0]);
-        for (Index dof = 0; dof < 3; ++dof) {
-            nodal_forces(node, dof)     += section->spring_constants_(dof) * displacement(node, dof);
-            nodal_forces(node, dof + 3) += section->rotary_spring_constants_(dof) * displacement(node, dof + 3);
-        }
     }
 
     Precision integrate_scalar_field(bool scale_by_density, const ScalarField& field) override {
@@ -191,33 +188,20 @@ struct PointElement : StructuralElement {
         (void) ref_temp;
     }
 
-    void compute_stress_strain(Field* strain,
-                               Field* stress,
-                               const Field& displacement,
-                               const RowMatrix& rst,
-                               int offset,
-                               bool use_green_lagrange_nl) override {
+    void compute_stress_strain(
+        Field*           strain,
+        Field*           stress,
+        const Field&     displacement,
+        const RowMatrix& rst,
+        int              offset,
+        bool             use_green_lagrange_nl
+    ) override {
         (void) strain;
         (void) stress;
         (void) displacement;
         (void) rst;
         (void) offset;
         (void) use_green_lagrange_nl;
-    }
-
-    void compute_stress_state(Field& stress_state,
-                              const Field& displacement,
-                              int offset,
-                              bool use_green_lagrange_nl) override {
-        (void) stress_state;
-        (void) displacement;
-        (void) offset;
-        (void) use_green_lagrange_nl;
-    }
-
-    void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override {
-        (void) node_forces;
-        (void) ip_stress;
     }
 };
 
