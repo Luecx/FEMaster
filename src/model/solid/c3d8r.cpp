@@ -130,17 +130,16 @@ C3D8R::GradientMatrix C3D8R::mean_reference_gradient(Precision& reference_volume
  *
  * The hourglass modulus is an auxiliary stabilization quantity rather than a
  * constitutive update of the current continuum state. The zero-strain tangent
- * therefore reads the immutable old row and writes only the separate new row.
+ * therefore reads the immutable committed row and supplies no target state.
  *
  * @return Mean material shear diagonal `(C44 + C55 + C66) / 3`.
  */
 Precision C3D8R::hourglass_material_scale() {
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
     const Mat6 material_tangent = material_tangent_reference(
-        Precision(0), Precision(0), Precision(0), old_state, new_state);
+        Precision(0), Precision(0), Precision(0), old_state, nullptr);
 
     const Precision shear_scale =
         (material_tangent(3, 3) + material_tangent(4, 4) + material_tangent(5, 5)) / Precision(3);
@@ -211,20 +210,22 @@ C3D8R::Matrix24 C3D8R::hourglass_stiffness() {
 }
 
 /**
- * Collects current element translations relative to the reference geometry.
+ * Collects the supplied element translations in node-major XYZ ordering.
  *
+ * The nonlinear structural API passes the trial displacement explicitly, so the
+ * hourglass residual uses the same supplied state as the continuum evaluation
+ * rather than reconstructing displacement from persistent current positions.
+ *
+ * @param displacement Global nodal trial displacement field.
  * @return Twenty-four-component displacement vector in node-major XYZ ordering.
  */
-C3D8R::Vector24 C3D8R::local_displacement() {
-    const GradientMatrix reference_coords = node_coords_reference();
-    const GradientMatrix current_coords   = node_coords_current();
-    const GradientMatrix displacement     = current_coords - reference_coords;
-
+C3D8R::Vector24 C3D8R::local_displacement(const Field& displacement) {
+    const GradientMatrix local = this->nodal_data<D>(displacement);
     Vector24 result = Vector24::Zero();
 
     for (Index node = 0; node < N; ++node) {
         for (Dim dof = 0; dof < D; ++dof) {
-            result(D * node + dof) = displacement(node, dof);
+            result(D * node + dof) = local(node, dof);
         }
     }
 
@@ -254,20 +255,17 @@ void C3D8R::assemble_local_force(Field& node_forces, const Vector24& local_force
 }
 
 /**
- * Assembles the one-point material stiffness with reference hourglass
+ * Assembles the one-point linear stiffness with reference hourglass
  * stabilization.
  *
- * The inherited solid stiffness uses this element's virtual one-point
- * quadrature and advances the center-point state once. The auxiliary hourglass
- * tangent evaluates its material scale state-neutrally, then adds the constant
- * stabilization matrix.
+ * The inherited solid stiffness uses this element's virtual one-point rule and
+ * remains entirely state-neutral. The auxiliary hourglass tangent is likewise
+ * evaluated from committed material history without writing trial state.
  *
  * @param buffer Caller-provided dense 24-by-24 storage.
  * @return Mapped symmetric continuum-plus-hourglass stiffness.
  */
 MapMatrix C3D8R::stiffness(Precision* buffer) {
-    // The inherited continuum stiffness uses this element's virtual one-point
-    // integration rule. Add the state-neutral hourglass tangent afterwards.
     MapMatrix mapped{buffer, ndof, ndof};
 
     C3D8::stiffness(buffer);
@@ -278,53 +276,38 @@ MapMatrix C3D8R::stiffness(Precision* buffer) {
 }
 
 /**
- * Assembles the one-point continuum tangent and matching hourglass contribution.
+ * Assembles the one-point continuum residual/tangent and matching hourglass
+ * contribution from the same supplied trial displacement.
  *
  * The common solid tangent performs the physical center-point constitutive
- * update exactly once. The auxiliary hourglass tangent is evaluated
- * state-neutrally and its matching linear force is added to the continuum
- * internal force.
+ * update exactly once. The auxiliary hourglass stiffness is state-neutral and
+ * its matching linear force `f_hg = K_hg u_e` is always added to the internal
+ * force. For residual-only evaluations (`buffer == nullptr`) no hourglass or
+ * continuum matrix is assembled into caller storage.
  *
- * @param buffer Caller-provided dense 24-by-24 tangent storage.
- * @param ip_stress_state Global center-point PK2 stress field to update.
+ * @param buffer Optional dense 24-by-24 tangent storage; null requests residual only.
  * @param nodal_forces Global nodal internal-force field to increment.
- * @param displacement Trial displacement defining the current configuration.
- * @return Mapped consistent continuum-plus-hourglass tangent.
+ * @param displacement Trial displacement defining both continuum and hourglass response.
+ * @return Mapped continuum-plus-hourglass tangent, or an empty map for residual only.
  */
 MapMatrix C3D8R::stiffness_tangent(Precision*   buffer,
-                                   Field&       ip_stress_state,
                                    NodeData&    nodal_forces,
                                    const Field& displacement) {
     const Matrix24 hourglass = hourglass_stiffness();
 
-    MapMatrix mapped = SolidElement<N>::stiffness_tangent(
-        buffer, ip_stress_state, nodal_forces, displacement);
+    MapMatrix mapped = SolidElement<N>::stiffness_tangent(buffer, nodal_forces, displacement);
+
+    // The hourglass force is part of the residual for both full Newton and
+    // residual-only evaluations and must use the same trial displacement.
+    assemble_local_force(nodal_forces, hourglass * local_displacement(displacement));
+
+    if (buffer == nullptr) {
+        return mapped;
+    }
 
     mapped += hourglass;
     mapped  = Precision(0.5) * (mapped + mapped.transpose());
-
-    assemble_local_force(nodal_forces, hourglass * local_displacement());
     return mapped;
-}
-
-/**
- * Recovers nonlinear internal force from stored continuum stress and the
- * current hourglass displacement.
- *
- * The inherited Total-Lagrangian residual uses stored center-point PK2 stress.
- * The stabilization contribution is the exact derivative-compatible force
- * `f_hg = K_hg u_e` from the constant reference hourglass tangent.
- *
- * @param node_forces Global nodal internal-force field to increment.
- * @param ip_stress Stored center-point second Piola-Kirchhoff stress field.
- */
-void C3D8R::compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) {
-    // Continuum residual from the one-point Total-Lagrange formulation.
-    C3D8::compute_internal_force_nonlinear(node_forces, ip_stress);
-
-    // Matching constant reference hourglass force f_hg = K_hg u_e.
-    const Matrix24 hourglass = hourglass_stiffness();
-    assemble_local_force(node_forces, hourglass * local_displacement());
 }
 
 } // namespace fem::model

@@ -3,13 +3,13 @@
  * @brief Declares the common three-dimensional solid element formulation.
  *
  * `SolidElement` provides reference/current geometry, material evaluation,
- * strain-displacement operators and the common Total-Lagrangian nonlinear
- * assembly used by the concrete C3D solid topologies.
+ * strain-displacement operators and the common linear, prestressed and
+ * Total-Lagrangian nonlinear assembly used by the concrete C3D solid topologies.
  *
  * Every constitutive integration point is associated with one globally
- * enumerated material-point row. The element addresses corresponding rows in
- * `ModelData::material_state_old` and `material_state_new` and passes their
- * first components to the section and material model.
+ * enumerated material-point row. State-neutral operators read the committed row
+ * without producing a persistent target state. The physical nonlinear tangent
+ * evaluation reads committed history and writes the corresponding trial row.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -36,9 +36,17 @@ namespace fem::model {
  *
  * Concrete solid elements provide topology-specific interpolation and
  * quadrature. The base implements geometry transformations, constitutive
- * evaluation and common linear/nonlinear assembly. In nonlinear tangent
- * assembly each material point is evaluated exactly once. Constitutive history
- * is read from the old row and written to the separate new row.
+ * evaluation and the common structural operators. `stiffness()` is the linear
+ * small-strain operator in the reference configuration. `stiffness_geom()`
+ * derives prestress directly from the supplied displacement field without
+ * modifying persistent material history. `stiffness_tangent()` performs the
+ * physical Total-Lagrangian trial evaluation, assembling internal force in all
+ * cases and the complete tangent only when matrix storage is requested.
+ *
+ * Stress is kept local to the element evaluation. No global integration-point
+ * stress scratch field is required for geometric stiffness or nonlinear force
+ * assembly. Persistent constitutive history consists only of committed and trial
+ * material-state rows.
  */
 template<Index N>
 struct SolidElement : StructuralElement, ThermalElement{
@@ -90,13 +98,13 @@ public:
     Vec3      material_position_reference(Precision r, Precision s, Precision t);
 
     // Evaluate the zero-Green-Lagrange material tangent at one natural point.
-    // The caller selects immutable input and mutable output state rows.
+    // A null new_state requests a state-neutral auxiliary constitutive query.
     Mat6 material_tangent_reference(Precision r, Precision s, Precision t,
                                     const Precision* old_state, Precision* new_state);
 
     // Evaluate linearized Cauchy stress and tangent in global coordinates. The
-    // selected old/new state rows are forwarded directly through SolidSection,
-    // after which optional element stiffness scaling is applied.
+    // selected old/new state pointers are forwarded directly through
+    // SolidSection, after which optional element stiffness scaling is applied.
     void evaluate_material(Precision                     r,
                            Precision                     s,
                            Precision                     t,
@@ -107,7 +115,7 @@ public:
                            Mat6&                         global_tangent);
 
     // Evaluate Total-Lagrangian PK2 stress and dS/dE in global reference
-    // coordinates with the same direct state-row and topology-scaling contract.
+    // coordinates with the same direct state-pointer and topology-scaling contract.
     void evaluate_material(Precision                        r,
                            Precision                        s,
                            Precision                        t,
@@ -164,19 +172,25 @@ public:
         bool                      check_det = true
     );
 
-    // Element matrices and nonlinear tangent assembly. stiffness_tangent()
-    // performs exactly one constitutive update per quadrature point and reuses
-    // the resulting PK2 stress for material tangent, geometric tangent, stored
-    // integration-point state and matching internal force.
-    MapMatrix mass             (Precision* buffer) override;
-    MapMatrix conductivity     (Precision* buffer) override;
-    MapMatrix capacity         (Precision* buffer) override;
-    MapMatrix stiffness        (Precision* buffer) override;
-    MapMatrix stiffness_geom   (Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
-    MapMatrix stiffness_tangent(Precision* buffer,
-                                Field&       ip_stress_state,
-                                NodeData&    nodal_forces,
-                                const Field& displacement) override;
+    // Mechanical operators. Linear and prestress operators are state-neutral.
+    // The nonlinear tangent performs one physical constitutive trial update per
+    // stiffness quadrature point and reuses the local PK2 stress for residual and
+    // geometric stiffness assembly.
+    MapMatrix stiffness(Precision* buffer) override;
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement
+    ) override;
+    MapMatrix stiffness_tangent(
+        Precision*   buffer,
+        NodeData&    nodal_forces,
+        const Field& displacement
+    ) override;
+    MapMatrix mass(Precision* buffer) override;
+
+    // Thermal operators
+    MapMatrix conductivity(Precision* buffer) override;
+    MapMatrix capacity(Precision* buffer) override;
 
     Precision volume() override;
 
@@ -197,10 +211,9 @@ public:
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
-    // Stress and strain recovery uses the nearest constitutive integration-point
-    // state for arbitrary output coordinates. Nonlinear stored stress remains
-    // PK2 for Total-Lagrangian force and geometric-stiffness recovery; user
-    // stress output is pushed forward to Cauchy stress.
+    // Stress/strain recovery is state-neutral. Requested output coordinates may
+    // reuse committed history from the nearest constitutive integration point;
+    // nonlinear PK2 stress is pushed forward to Cauchy stress for user output.
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
@@ -208,14 +221,6 @@ public:
         const RowMatrix& rst,
         int              offset,
         bool             use_green_lagrange_nl) override;
-    void compute_stress_state(
-        Field&       stress_state,
-        const Field& displacement,
-        int          offset,
-        bool         use_green_lagrange_nl) override;
-    void compute_internal_force_nonlinear(
-        Field&       node_forces,
-        const Field& ip_stress) override;
     void compute_compliance(
         Field& displacement,
         Field& result) override;

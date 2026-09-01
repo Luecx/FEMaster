@@ -35,7 +35,8 @@
  * shell topology and worker thread. Element objects therefore carry only their
  * persistent reference geometry, while repeated element evaluations avoid
  * dynamic allocation after the workspace has reached its maximum required
- * capacity.
+ * capacity. Generalized resultants remain local to the active element
+ * evaluation and are never exchanged with the global solver as scratch fields.
  *
  * @see FRTShellS3
  * @see FRTShellS4
@@ -80,6 +81,11 @@ namespace fem::model {
  * operators. The common class applies the same assumed-strain interpolation to
  * values and B rows and uses the transposed operator for direct geometric-
  * tangent assembly.
+ *
+ * Constitutive history follows the structural-element ownership contract:
+ * state-neutral stiffness, geometric-stiffness and recovery paths read the
+ * committed material state and pass no writable target state. Only
+ * `stiffness_tangent()` performs the physical committed-to-trial update.
  *
  * @tparam N Number of shell midsurface nodes.
  */
@@ -364,6 +370,11 @@ struct FRTShell : ShellElement<N> {
         // Whether generalized shell resultants were requested.
         bool with_resultants = false;
 
+        // Whether the constitutive evaluation is the physical nonlinear trial
+        // update allowed to write material_state_new. All read-only operators
+        // leave this false and pass nullptr as the section target state.
+        bool write_material_state = false;
+
         // Compact current nodal configuration used by all kinematic routines.
         CurrentState state;
 
@@ -488,18 +499,17 @@ struct FRTShell : ShellElement<N> {
     // init_evaluation() is the central setup step for one element call. It
     // resizes the thread-local buffers, exposes active spans through
     // EvaluationData, evaluates requested SO(3) derivatives, prepares tying and
-    // integration-point strains, and either imports stored resultants or asks
-    // the shell section for fresh nonlinear resultants and tangents.
+    // integration-point strains, and evaluates local generalized shell
+    // resultants/tangents when requested. `write_material_state` is true only for
+    // the physical nonlinear tangent/internal-force evaluation.
     EvaluationData init_evaluation(
         const CurrentState& state,
         bool                with_strain,
         bool                with_B,
         bool                with_G,
         bool                with_resultants,
-        const Field*        ip_stress    = nullptr,
-        int                 ip_start_idx = 0
+        bool                write_material_state = false
     ) const;
-    void load_ip_resultants(EvaluationData& data, const Field& ip_stress, int ip_start_idx) const;
     void compute_material_resultants(EvaluationData& data) const;
 
     // Section and material stiffness helpers.
@@ -571,16 +581,20 @@ struct FRTShell : ShellElement<N> {
     ) const;
 
     // Structural stiffness interface.
-    // These are the ElementStructural callbacks used by the solvers. stiffness()
-    // returns the linear/material shell tangent, stiffness_geom() rebuilds the
-    // stress-dependent tangent from stored integration-point resultants, and
-    // stiffness_tangent() performs the full nonlinear update including material,
-    // geometric and drilling terms plus nodal internal-force scattering.
+    // stiffness() is the state-neutral linear/reference shell operator.
+    // stiffness_geom() evaluates current local resultants from the supplied
+    // displacement state and immediately contracts them into the geometric
+    // tangent without exposing an integration-point scratch field.
+    // stiffness_tangent() performs the physical nonlinear constitutive update,
+    // always assembles internal force and assembles the tangent only when a
+    // matrix buffer is supplied.
     MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement
+    ) override;
     MapMatrix stiffness_tangent(
         Precision*   buffer,
-        Field&       ip_stress_state,
         NodeData&    nodal_forces,
         const Field& displacement
     ) override;
@@ -608,12 +622,9 @@ struct FRTShell : ShellElement<N> {
     Mat3      integrate_tensor_field(bool            scale_by_density,
                                      const TenField& field) override;
 
-    // Result, force and compatibility callbacks from the structural interface.
-    // This group contains post-processing and solver helper functions that have
-    // to match the behavior of the other element families. Shell-specific
-    // stress states and section forces are recovered where possible; generic
-    // beam-style shear flow and beam section force callbacks report that they
-    // are not available for shell elements.
+    // Result and compatibility callbacks from the structural interface.
+    // Recovery remains independent of local resultants used during matrix
+    // assembly and does not modify persistent trial material history.
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
@@ -621,16 +632,6 @@ struct FRTShell : ShellElement<N> {
         const RowMatrix& rst,
         int              offset,
         bool             use_green_lagrange_nl
-    ) override;
-    void compute_stress_state(
-        Field&       stress_state,
-        const Field& displacement,
-        int          offset,
-        bool         use_green_lagrange_nl
-    ) override;
-    void compute_internal_force_nonlinear(
-        Field&       node_forces,
-        const Field& ip_stress
     ) override;
     void compute_compliance(
         Field& displacement,

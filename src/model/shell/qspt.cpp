@@ -4,8 +4,8 @@
  *
  * QSPT derives its effective in-plane shear stiffness from the assigned shell
  * section and uses the resulting scalar flexibility for its shear-flow element
- * formulation. Section evaluation receives the globally enumerated material-
- * point state directly from the old/new `ModelData` state fields.
+ * formulation. Auxiliary section-tangent queries are state-neutral and do not
+ * advance persistent material trial history.
  *
  * @see QSPT
  *
@@ -56,7 +56,11 @@ Precision QSPT::volume() {
 
 QSPT::GeometryData QSPT::geometry_data() {
     GeometryData data;
-    data.coords = this->node_coords_global();
+
+    // QSPT is an explicitly linear shear-panel formulation. Its kinematic
+    // coefficients and stiffness therefore belong to the undeformed geometry
+    // and must not change when nonlinear-static updates ModelData::positions.
+    data.coords = this->node_coords_reference();
 
     data.midpoints[0] = Precision(0.5) * (row_as_vec3(data.coords, 0) + row_as_vec3(data.coords, 1));
     data.midpoints[1] = Precision(0.5) * (row_as_vec3(data.coords, 1) + row_as_vec3(data.coords, 2));
@@ -132,10 +136,9 @@ Precision QSPT::effective_density() {
  * tangent entry is divided by physical thickness to recover the material-level
  * engineering shear modulus.
  *
- * QSPT has one enumerated integration point. Its first material-state row and
- * the global state stride are passed through the common section interface so
- * stateful section formulations receive valid storage even for this auxiliary
- * stiffness query.
+ * The auxiliary query reads the committed material state but supplies no target
+ * state. Building QSPT stiffness therefore cannot overwrite a physical trial
+ * history produced by a nonlinear constitutive evaluation elsewhere.
  *
  * @return Non-zero effective in-plane engineering shear modulus.
  */
@@ -157,16 +160,14 @@ Precision QSPT::effective_shear_modulus() {
     ShellStressResultants  zero_resultants;
     Mat8                   tangent;
 
-    // Evaluate the zero-strain section tangent on the element state rows
     const Index      state_row = this->mp_index(0, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
     this->get_section()->evaluate(
         center,
         shell_basis,
         zero_strain,
         old_state,
-        new_state,
+        nullptr,
         this->_model_data->material_state_old->components,
         false,
         zero_resultants,
@@ -244,17 +245,60 @@ QSPT::MassMatrix QSPT::mass_impl() {
     return M;
 }
 
+/**
+ * Maps the linear shear-panel stiffness into caller-owned storage.
+ */
 MapMatrix QSPT::stiffness(Precision* buffer) {
     MapMatrix mapped(buffer, 12, 12);
     mapped = stiffness_impl();
     return mapped;
 }
 
-MapMatrix QSPT::stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) {
-    (void) ip_stress;
-    (void) ip_start_idx;
+/**
+ * Returns the QSPT geometric stiffness.
+ *
+ * QSPT has no separate stress-stiffness contribution, so the operator is zero
+ * for every supplied displacement state.
+ */
+MapMatrix QSPT::stiffness_geom(Precision* buffer, const Field& displacement) {
+    (void) displacement;
     MapMatrix mapped(buffer, 12, 12);
     mapped.setZero();
+    return mapped;
+}
+
+/**
+ * Evaluates QSPT through the common nonlinear structural callback.
+ *
+ * QSPT itself is linear. Its exact residual is therefore `f_int = K u` and its
+ * exact tangent is the same constant matrix `K`. Internal force is always
+ * scattered; matrix assembly is skipped for residual-only calls.
+ */
+MapMatrix QSPT::stiffness_tangent(
+    Precision*   buffer,
+    NodeData&    nodal_forces,
+    const Field& displacement
+) {
+    logging::error(nodal_forces.components >= 3,
+        "QSPT: internal force requires at least three nodal components");
+
+    const StiffnessMatrix K = stiffness_impl();
+    const StaticVector<12> u = displacement_vector(displacement);
+    const StaticVector<12> force = K * u;
+
+    for (Index node = 0; node < 4; ++node) {
+        const Index node_id = static_cast<Index>(node_ids[node]);
+        for (Dim dof = 0; dof < 3; ++dof) {
+            nodal_forces(node_id, dof) += force(3 * node + dof);
+        }
+    }
+
+    if (buffer == nullptr) {
+        return MapMatrix(nullptr, 0, 0);
+    }
+
+    MapMatrix mapped(buffer, 12, 12);
+    mapped = K;
     return mapped;
 }
 
@@ -262,13 +306,6 @@ MapMatrix QSPT::mass(Precision* buffer) {
     MapMatrix mapped(buffer, 12, 12);
     mapped = mass_impl();
     return mapped;
-}
-
-void QSPT::compute_internal_force_nonlinear(Field& node_forces,
-                                            const Field& ip_stress) {
-    (void) node_forces;
-    (void) ip_stress;
-    logging::error(false, "QSPT: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
 }
 
 StaticVector<12> QSPT::displacement_vector(const Field& displacement) {

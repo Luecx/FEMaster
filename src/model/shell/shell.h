@@ -1,6 +1,18 @@
-//
-// Created by f_eggers on 11.12.2024.
-//
+/**
+ * @file shell.h
+ * @brief Declares the common base for structural shell elements.
+ *
+ * `ShellElement<N>` provides shell-section access, nodal geometry gathering,
+ * fixed six-DOF structural metadata and common result/integration helpers.
+ * Concrete shell formulations own their linear stiffness, displacement-based
+ * geometric stiffness and nonlinear tangent/internal-force evaluation.
+ *
+ * Temporary shell stress resultants used while assembling an operator are
+ * formulation-local quantities. They are not exchanged with the global solver
+ * through integration-point scratch fields.
+ *
+ * @author Finn Eggers
+ */
 
 #ifndef SHELL_H
 #define SHELL_H
@@ -12,11 +24,24 @@
 #include <memory>
 
 namespace fem::model {
+
+/**
+ * @brief Common structural shell base with fixed midsurface connectivity.
+ *
+ * The base provides section/material access and generic shell geometry. Derived
+ * formulations implement the mechanical operators required by
+ * `StructuralElement`: linear stiffness, geometric stiffness evaluated from a
+ * supplied nodal displacement state, and the physical nonlinear tangent path
+ * that also assembles matching internal force.
+ *
+ * @tparam N Number of shell midsurface nodes.
+ */
 template<Index N>
 struct ShellElement : StructuralElement {
     std::array<ID, N> node_ids;
 
-    ShellElement(ID p_elem_id, std::array<ID, N> p_node_ids) : StructuralElement(p_elem_id), node_ids {p_node_ids} {}
+    ShellElement(ID p_elem_id, std::array<ID, N> p_node_ids)
+        : StructuralElement(p_elem_id), node_ids {p_node_ids} {}
     ~ShellElement() override = default;
 
     ShellSection* get_section() {
@@ -64,17 +89,26 @@ struct ShellElement : StructuralElement {
         return density_available ? material->get_density() : Precision(0);
     }
 
-    // left out for childs
+    // Formulation-specific mechanical operators. Geometric stiffness derives
+    // its stress resultants internally from the supplied displacement state.
     SurfacePtr surface(ID surface_id) override = 0;
     Precision  volume() override = 0;
     MapMatrix  stiffness(Precision* buffer) override = 0;
-    MapMatrix  stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override = 0;
+    MapMatrix  stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement
+    ) override = 0;
+    MapMatrix  stiffness_tangent(
+        Precision*   buffer,
+        NodeData&    nodal_forces,
+        const Field& displacement
+    ) override = 0;
     MapMatrix  mass(Precision* buffer) override = 0;
-    bool       is_shell() const override {return true;}
+    bool       is_shell() const override { return true; }
 
     virtual const fem::math::quadrature::Quadrature& integration_scheme() const = 0;
 
-    //
+    // Gather current and reference shell midsurface coordinates.
     StaticMatrix<N, 3> node_coords_global() {
         logging::error(this->_model_data != nullptr, "no model data assigned to element ", this->elem_id);
         logging::error(this->_model_data->positions != nullptr, "positions field not set in model data");
@@ -102,45 +136,38 @@ struct ShellElement : StructuralElement {
         return res;
     }
 
-    Dim        num_ip() const override {
+    Dim num_ip() const override {
         return integration_scheme().count();
     }
-    Index      num_mp_per_ip() const override {
+    Index num_mp_per_ip() const override {
         return get_section()->num_mp_per_ip();
     }
 
-    ElDofs     dofs() const override {
+    ElDofs dofs() const override {
         return ElDofs{true, true, true, true, true, true};
     }
-    Dim        dimensions() const override {
+    Dim dimensions() const override {
         return 3;
     }
-    Dim        n_nodes() const override {
+    Dim n_nodes() const override {
         return N;
     }
-    const ID*  nodes() const override {
+    const ID* nodes() const override {
         return node_ids.data();
     }
-
-    void compute_internal_force_nonlinear(Field& node_forces,
-                                          const Field& ip_stress) override {
-        (void) node_forces;
-        (void) ip_stress;
-        logging::error(false, "ShellElement: compute_internal_force_nonlinear is not implemented yet for element ", this->elem_id);
-    };
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override {
         (void) node_loads;
         (void) node_temp;
         (void) ref_temp;
-    };
+    }
 
-    void compute_stress_strain(Field* strain,
-                               Field* stress,
-                               const Field& displacement,
+    void compute_stress_strain(Field*           strain,
+                               Field*           stress,
+                               const Field&     displacement,
                                const RowMatrix& rst,
-                               int offset,
-                               bool use_green_lagrange_nl) override {
+                               int              offset,
+                               bool             use_green_lagrange_nl) override {
         (void) strain;
         (void) stress;
         (void) displacement;
@@ -148,17 +175,6 @@ struct ShellElement : StructuralElement {
         (void) offset;
         (void) use_green_lagrange_nl;
         logging::error(false, "ShellElement: compute_stress_strain is not implemented yet for element ", this->elem_id);
-    }
-
-    void compute_stress_state(Field& stress_state,
-                              const Field& displacement,
-                              int offset,
-                              bool use_green_lagrange_nl) override {
-        RowMatrix rst = stress_strain_ip_rst();
-        if (rst.rows() == 0) {
-            return;
-        }
-        compute_stress_strain(nullptr, &stress_state, displacement, rst, offset, use_green_lagrange_nl);
     }
 
     /**
@@ -206,8 +222,8 @@ struct ShellElement : StructuralElement {
         result(this->elem_id, 0) = Ce;
     }
 
-    protected:
+protected:
 };
 }
 
-#endif //SHELL_H
+#endif // SHELL_H

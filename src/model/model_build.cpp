@@ -16,7 +16,9 @@
  *
  * Element-local matrix evaluation remains the responsibility of each structural
  * formulation. `mattools::assemble_matrix()` owns local-to-global DOF mapping,
- * sparse triplet accumulation and parallel reduction.
+ * sparse triplet accumulation and parallel reduction. Stress and stress
+ * resultants needed for geometric or nonlinear operators remain element-local;
+ * model assembly exchanges only displacement, matrices and nodal forces.
  *
  * @see Model
  * @see Model::compile
@@ -524,10 +526,13 @@ SparseMatrix Model::build_stiffness_matrix(SystemDofIds& indices, const Field* s
 /**
  * Assembles the nonlinear tangent and matching nodal internal-force vector.
  *
- * Dense structural elements evaluate their consistent tangent in the current
- * displacement configuration. Native POINTMASS elements have linear ground
- * stiffness, so their tangent is assembled directly and their matching internal
- * force is added from the same PointElement implementation.
+ * Every structural element performs one physical trial evaluation through
+ * `stiffness_tangent()`. The same constitutive response supplies its internal
+ * force and, when matrix storage is present, its consistent tangent. No global
+ * integration-point stress scratch field is allocated during assembly.
+ *
+ * Native POINTMASS elements use the same path: their linear spring law produces
+ * the matching nodal force and constant tangent directly.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
  * @param nodal_forces Six-component nodal field receiving internal and contact
@@ -549,11 +554,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     logging::error(nodal_forces.components >= 6,
         "tangent internal force output requires at least 6 components");
 
-    Field ip_stress_state{
-        "IP_STRESS_STATE", FieldDomain::ELEMENT_IP,
-        _data->field_rows(FieldDomain::ELEMENT_IP), 8};
-    ip_stress_state.set_zero();
-
     auto lambda = [&](const ElementPtr& element,
                       Precision*        local_matrix_storage,
                       NodeData&         local_nodal_forces) -> MapMatrix {
@@ -565,7 +565,6 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
 
         MapMatrix tangent = structural->stiffness_tangent(
             local_matrix_storage,
-            ip_stress_state,
             local_nodal_forces,
             displacement
         );
@@ -589,21 +588,21 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
     );
 
     if (!_data->point_elements.empty()) {
-        auto point_lambda = [](const ElementPtr& element, Precision* storage) {
+        auto point_lambda = [&](const ElementPtr& element,
+                                Precision*        storage,
+                                NodeData&         local_nodal_forces) -> MapMatrix {
             if (auto structural = element->as<StructuralElement>()) {
-                return structural->stiffness(storage);
+                return structural->stiffness_tangent(storage, local_nodal_forces, displacement);
             }
             MapMatrix matrix{storage, 0, 0};
             return matrix;
         };
-        global_matrix += mattools::assemble_matrix(_data->point_elements, indices, point_lambda);
-
-        for (const auto& element : _data->point_elements) {
-            if (!element) continue;
-            auto* structural = element->as<StructuralElement>();
-            if (!structural) continue;
-            structural->internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
-        }
+        global_matrix += mattools::assemble_matrix(
+            _data->point_elements,
+            indices,
+            point_lambda,
+            &nodal_forces
+        );
     }
 
     TripletList contact_triplets;
@@ -634,9 +633,10 @@ SparseMatrix Model::build_tangent_stiffness_matrix(
 /**
  * Evaluates nonlinear internal and contact forces without retaining a tangent.
  *
- * Both regular structural elements and auxiliary point elements contribute their
- * current internal forces. Contact then evaluates the same residual path as
- * tangent assembly while discarding its tangent triplets.
+ * Structural elements use the same physical `stiffness_tangent()` path as full
+ * Newton assembly, but receive a null matrix buffer. They therefore update trial
+ * material state and assemble their matching internal force without constructing
+ * tangent-only terms. Contact follows with tangent triplets discarded.
  *
  * @param indices Active global DOF identifiers required by contact assembly.
  * @param nodal_forces Six-component nodal field overwritten with the resulting
@@ -655,24 +655,20 @@ void Model::build_internal_force_nonlinear(
     logging::error(nodal_forces.components >= 6,
         "nonlinear internal force output requires at least 6 components");
 
-    Field ip_stress_state{
-        "IP_STRESS_STATE", FieldDomain::ELEMENT_IP,
-        _data->field_rows(FieldDomain::ELEMENT_IP), 8};
-    ip_stress_state.set_zero();
     nodal_forces.set_zero();
 
     for (const auto& element : _data->elements) {
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
+        structural->stiffness_tangent(nullptr, nodal_forces, displacement);
     }
 
     for (const auto& element : _data->point_elements) {
         if (!element) continue;
         auto* structural = element->as<StructuralElement>();
         if (!structural) continue;
-        structural->internal_force_nonlinear(ip_stress_state, nodal_forces, displacement);
+        structural->stiffness_tangent(nullptr, nodal_forces, displacement);
     }
 
     TripletList discarded_contact_triplets;
@@ -684,33 +680,27 @@ void Model::build_internal_force_nonlinear(
 }
 
 /**
- * Assembles the global geometric stiffness matrix from integration-point stress.
+ * Assembles the global geometric stiffness from a supplied prestress displacement.
  *
- * Only dense compiled elements participate. Auxiliary point elements have no
- * integration points and therefore no geometric stiffness.
+ * Each dense structural element evaluates the stress or stress resultants needed
+ * by its geometric operator locally from `displacement` and committed material
+ * history. No global integration-point stress field is created or consumed.
+ * Auxiliary point elements are excluded because they carry no stress-dependent
+ * geometric stiffness.
  *
  * @param indices Active global DOF identifiers used for sparse assembly.
- * @param ip_stress Integration-point stress field driving geometric stiffness.
+ * @param displacement Global nodal displacement field defining the prestress.
  * @param stiffness_scalar Optional one-component element stiffness scale.
  * @return Assembled sparse geometric stiffness matrix.
  */
 SparseMatrix Model::build_geom_stiffness_matrix(
     SystemDofIds& indices,
-    const Field&  ip_stress,
+    const Field&  displacement,
     const Field*  stiffness_scalar
 ) {
-    logging::error(_data->element_ip_offsets != nullptr,
-        "element IP offset field has not been initialized");
-
-    const Field& ip_enum = *_data->element_ip_offsets;
-
     auto lambda = [&](const ElementPtr& element, Precision* storage) -> MapMatrix {
         if (auto structural = element->as<StructuralElement>()) {
-            const ID element_id = structural->elem_id;
-            const ID ip_start = static_cast<ID>(ip_enum(static_cast<Index>(element_id), 0));
-
-            MapMatrix geometric_stiffness =
-                structural->stiffness_geom(storage, ip_stress, ip_start);
+            MapMatrix geometric_stiffness = structural->stiffness_geom(storage, displacement);
 
             if (stiffness_scalar) {
                 logging::error(stiffness_scalar->domain == FieldDomain::ELEMENT,
@@ -718,7 +708,7 @@ SparseMatrix Model::build_geom_stiffness_matrix(
                 logging::error(stiffness_scalar->components == 1,
                     "stiffness scale field must have 1 component");
                 geometric_stiffness *=
-                    (*stiffness_scalar)(static_cast<Index>(element_id), 0);
+                    (*stiffness_scalar)(static_cast<Index>(structural->elem_id), 0);
             }
 
             return geometric_stiffness;

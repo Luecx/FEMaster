@@ -519,6 +519,11 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
  */
 Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
     logging::error(model_data.positions != nullptr, "positions field not set in model data");
+    if (adjust) {
+        logging::error(model_data.positions_reference != nullptr,
+                       "reference positions field not set in model data");
+    }
+
     auto&     node_coords = *model_data.positions;
     auto&     surfaces    = model_data.surfaces;
     auto&     lines       = model_data.lines;
@@ -635,7 +640,7 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         }
 
         // ---------------------------------------------------------------------
-        // Map back to global and optionally snap (adjust slave nodes)
+        // Map back to global and optionally snap the initial slave geometry
         // ---------------------------------------------------------------------
         Vec3 mapped_pos = Vec3::Zero();
         if (master_surfaces) {
@@ -647,9 +652,14 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
         }
 
         if (adjust) {
-            node_coords(node_idx, 0) = mapped_pos(0);
-            node_coords(node_idx, 1) = mapped_pos(1);
-            node_coords(node_idx, 2) = mapped_pos(2);
+            // TIE, ADJUST changes the model's initial geometry. Keep the active
+            // and reference position fields synchronized so the snap is not
+            // interpreted later as a physical deformation of the slave side.
+            auto& reference_coords = *model_data.positions_reference;
+            for (Dim d = 0; d < 3; ++d) {
+                node_coords(node_idx, d)      = mapped_pos(d);
+                reference_coords(node_idx, d) = mapped_pos(d);
+            }
         }
 
         // ---------------------------------------------------------------------

@@ -14,6 +14,14 @@
 
 namespace fem::model {
 
+/**
+ * @brief Four-node membrane shear-panel element.
+ *
+ * QSPT is a linear shear-panel formulation. Its nonlinear structural callback
+ * therefore evaluates the same linear internal force `K u` and returns the
+ * constant tangent `K`; no geometric stiffness or persistent material trial
+ * state is generated.
+ */
 struct QSPT : ShellElement<4> {
     using NodeCoords      = StaticMatrix<4, 3>;
     using ShapeFunction   = StaticVector<4>;
@@ -42,15 +50,20 @@ struct QSPT : ShellElement<4> {
     SurfacePtr surface(ID surface_id) override;
     Precision  volume() override;
     MapMatrix  stiffness(Precision* buffer) override;
-    MapMatrix  stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
+    MapMatrix  stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement
+    ) override;
+    MapMatrix  stiffness_tangent(
+        Precision*   buffer,
+        NodeData&    nodal_forces,
+        const Field& displacement
+    ) override;
     MapMatrix  mass(Precision* buffer) override;
     const math::quadrature::Quadrature& integration_scheme() const override;
 
     Dim    num_ip() const override { return 1; }
     ElDofs dofs() const override { return ElDofs{true, true, true, false, false, false}; }
-
-    void compute_internal_force_nonlinear(Field& node_forces,
-                                          const Field& ip_stress) override;
 
     bool compute_shear_flow(Field& shear_flow,
                             const Field& displacement,

@@ -9,6 +9,10 @@
  * adapts element-specific stiffness and mass matrices to the generic
  * `StructuralElement` interface.
  *
+ * Prestress-dependent beam stiffness is evaluated directly from the supplied
+ * nodal displacement field. Integration-point stress scratch fields are not
+ * part of the beam/solver interface.
+ *
  * The template definitions are implemented in `beam.inl`, which is included at
  * the end of this header so that every specialization remains available at the
  * point of instantiation.
@@ -41,13 +45,19 @@ namespace model {
  * `BeamElement<N>` derives from `StructuralElement` and implements the geometry,
  * section access, coordinate transformations and generic result interfaces
  * shared by concrete beam formulations. Derived element types provide their
- * formulation-specific elastic stiffness, geometric stiffness and mass
- * matrices through the three formulation-specific implementation hooks exposed here.
+ * formulation-specific elastic stiffness, displacement-based geometric
+ * stiffness and mass matrices through the implementation hooks exposed here.
  *
  * Each beam node carries three translational and three rotational degrees of
  * freedom. Local element matrices are expressed either in the original section
  * frame or in the principal bending frame and are transformed to the global
  * coordinate system before assembly.
+ *
+ * The currently available beam formulations are linear structural elements with
+ * an additional prestress operator for linear buckling. They do not provide a
+ * finite-rotation nonlinear equilibrium formulation; `stiffness_tangent()`
+ * therefore reports that nonlinear beam equilibrium is not implemented instead
+ * of manufacturing a tangent inconsistent with the internal force.
  *
  * @tparam N Number of nodes in the beam element.
  */
@@ -105,11 +115,11 @@ struct BeamElement : StructuralElement {
     static void rotate_yz_to_principal(Precision phi, Precision& y, Precision& z);
 
     // Formulation-specific local-to-global element operators implemented by
-    // concrete beam types. All matrices contain six degrees of freedom per
-    // node and are returned in the global element ordering expected by the
-    // structural assembly interface.
+    // concrete beam types. The geometric operator receives the supplied global
+    // nodal displacement field and derives the prestress internally; no global
+    // integration-point stress field is exchanged with the solver.
     virtual StaticMatrix<N * 6, N * 6> stiffness_impl() = 0;
-    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(const Field& ip_stress, int offset) = 0;
+    virtual StaticMatrix<N * 6, N * 6> stiffness_geom_impl(const Field& displacement) = 0;
     virtual StaticMatrix<N * 6, N * 6> mass_impl() = 0;
 
     // Block-diagonal degree-of-freedom transformations from global coordinates
@@ -118,23 +128,21 @@ struct BeamElement : StructuralElement {
     StaticMatrix<N * 6, N * 6> transformation();
     StaticMatrix<N * 6, N * 6> transformation_base();
 
-    // Generic matrix assembly adapters. The returned maps reference the caller-
-    // supplied storage and are populated from the formulation-specific matrix
-    // implementations above.
+    // Structural matrix adapters. stiffness() returns the ordinary linear beam
+    // operator. stiffness_geom() derives prestress from the supplied nodal
+    // displacement state. Nonlinear tangent evaluation remains unsupported by
+    // the current beam formulations and fails explicitly when requested.
     MapMatrix stiffness(Precision* buffer) override;
-    MapMatrix stiffness_geom(Precision* buffer, const Field& ip_stress, int ip_start_idx) override;
-    MapMatrix mass(Precision* buffer) override;
-
-    // Nonlinear internal-force and stress-state interfaces. The base class does
-    // not provide a nonlinear force formulation; stress-state evaluation uses
-    // the integration points and recovery implementation of the concrete beam.
-    void compute_internal_force_nonlinear(Field& node_forces, const Field& ip_stress) override;
-    void compute_stress_state(
-        Field&          stress_state,
-        const Field&    displacement,
-        int             offset,
-        bool            use_green_lagrange_nl
+    MapMatrix stiffness_geom(
+        Precision*   buffer,
+        const Field& displacement
     ) override;
+    MapMatrix stiffness_tangent(
+        Precision*   buffer,
+        NodeData&    nodal_forces,
+        const Field& displacement
+    ) override;
+    MapMatrix mass(Precision* buffer) override;
 
     // Optional structural-element operations that currently have no generic
     // beam implementation. Thermal loading deliberately preserves the neutral
@@ -162,18 +170,22 @@ struct BeamElement : StructuralElement {
     // the beam volume. Density scaling is optional; the nodal vector overload
     // distributes the integrated resultant equally across all beam nodes.
     Precision integrate_scalar_field(
-        bool scale_by_density,
-        const ScalarField& field) override;
+        bool               scale_by_density,
+        const ScalarField& field
+    ) override;
     Vec3 integrate_vector_field(
-        bool scale_by_density,
-        const VecField& field) override;
+        bool            scale_by_density,
+        const VecField& field
+    ) override;
     void integrate_vector_field(
-        Field& node_loads,
-        bool scale_by_density,
-        const VecField& field) override;
+        Field&          node_loads,
+        bool            scale_by_density,
+        const VecField& field
+    ) override;
     Mat3 integrate_tensor_field(
-        bool scale_by_density,
-        const TenField& field) override;
+        bool            scale_by_density,
+        const TenField& field
+    ) override;
 };
 
 } // namespace model

@@ -70,7 +70,7 @@ jobs:
           lfs: true
 
       - name: Install benchmark dependencies
-        run: pip install rich
+        run: pip install rich pyyaml
 
       - name: Run benchmarks
         run: |

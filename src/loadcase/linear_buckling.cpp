@@ -19,7 +19,8 @@
  *   (5) Build ConstraintTransformer -> T, u_p (affine map).
  *   (6) Pre-buckling static solve in reduced space:
  *         A = T^T K T,  b = T^T (f - K u_p),  solve A q = b,  u = u_p + T q.
- *   (7) From u, compute IP stresses; assemble geometric stiffness K_g (n x n).
+ *   (7) Expand u to the nodal displacement field and assemble geometric
+ *       stiffness directly from that prestress state.
  *   (8) Reduce geometric operator:  B = T^T K_g T  (A is already available).
  *   (9) Solve generalized EVP:  A * phi = lambda * (-B) * phi  for k modes
  *       (optionally with a shift).
@@ -29,6 +30,10 @@
  * -------
  * - The eigval problem is homogeneous; any inhomogeneous constraints have been
  *   reflected in the pre-buckling preload via u_p.
+ * - Geometric stiffness receives the nodal preload displacement directly. Each
+ *   element evaluates the stress or stress resultants required by its own
+ *   formulation locally; no global integration-point stress scratch field is
+ *   constructed by the buckling load case.
  * - We estimate a shift sigma from the preload displacement using a Rayleigh
  *   quotient in reduced space (optional but often helpful for convergence).
  * - If you use direct solvers for A and the EVP, building explicit A/B is fine.
@@ -269,20 +274,17 @@ void LinearBuckling::run() {
 
     CT->post_check_static(K, f, q_pre);
 
-    // (8) Integration-point stresses from preload -> K_g assembly
-    //     Most model APIs expect node-wise displacements (node x 6) for IP recovery.
+    // (8) Expand the preload displacement once. Geometric stiffness is then
+    // evaluated element-locally from this state, so the buckling solver never
+    // constructs an intermediate global integration-point stress field.
     auto U_mat = Timer::measure(
         [&]() { return mattools::expand_vec_to_mat(active_dof_idx_mat, u_pre); },
-        "expanding u to node x DOF for IP stress"
-    );
-    auto ip_stress = Timer::measure(
-        [&]() { return model->compute_stress_state(U_mat, false); },
-        "computing stress state for Kg"
+        "expanding preload displacement to node x DOF"
     );
 
     auto Kg = Timer::measure(
-        [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, ip_stress); },
-        "assembling geometric stiffness K_g"
+        [&]() { return model->build_geom_stiffness_matrix(active_dof_idx_mat, U_mat); },
+        "assembling geometric stiffness K_g from preload displacement"
     );
 
     // (9) Reduced buckling operator B = T^T K_g T
