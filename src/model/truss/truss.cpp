@@ -105,8 +105,7 @@ Vec3 T3::node_position_reference(Index local_node) const {
     logging::error(this->_model_data->positions_reference != nullptr,
         "T3: reference positions field not set in model data");
 
-    return this->_model_data->positions_reference->row_vec3(
-        static_cast<Index>(node_ids[local_node]));
+    return this->_model_data->positions_reference->row_vec3(static_cast<Index>(node_ids[local_node]));
 }
 
 Vec3 T3::node_position_current(Index local_node) const {
@@ -117,8 +116,7 @@ Vec3 T3::node_position_current(Index local_node) const {
     logging::error(this->_model_data->positions != nullptr,
         "T3: current positions field not set in model data");
 
-    return this->_model_data->positions->row_vec3(
-        static_cast<Index>(node_ids[local_node]));
+    return this->_model_data->positions->row_vec3(static_cast<Index>(node_ids[local_node]));
 }
 
 Precision T3::length_reference() const {
@@ -185,7 +183,9 @@ Precision T3::volume() {
  * @return Mapped material stiffness in global translational DOF ordering.
  */
 MapMatrix T3::stiffness(Precision* buffer) {
-    // Construct the finite axial strain from reference and current lengths.
+    // The reference area and length define the material measure of the truss.
+    // The current stretch lambda = l/L0 converts the axial material tangent from
+    // Green-Lagrange strain space to the current translational element DOFs.
     const Precision A0     = get_section()->area_;
     const Precision L0     = length_reference();
     const Precision lambda = stretch();
@@ -193,31 +193,40 @@ MapMatrix T3::stiffness(Precision* buffer) {
     logging::error(L0 > Precision(0),
         "T3: zero reference length in stiffness for element ", this->elem_id);
 
-    const AxialStrainGreenLagrange axial_strain =
-        AxialStrainGreenLagrange::from_stretch(lambda);
+    // Green-Lagrange strain is the work-conjugate axial strain measure of the PK2
+    // stress returned by the finite-strain constitutive interface.
+    const AxialStrainGreenLagrange axial_strain = AxialStrainGreenLagrange::from_stretch(lambda);
     AxialStressPK2 axial_stress;
     Precision      material_tangent = Precision(0);
 
+    // The stiffness operator is state-neutral. It may inspect committed history
+    // required by the constitutive law, but deliberately supplies no target state
+    // and therefore cannot advance the persistent nonlinear trial history.
     auto elasticity = get_elasticity();
     logging::error(elasticity->supports_axial_green_lagrange(),
         "T3: material does not support Green-Lagrange axial evaluation for element ", this->elem_id);
 
-    // Read committed history without storing a constitutive state update.
     const Index      state_row = this->mp_index(0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
     elasticity->evaluate(axial_strain, old_state, nullptr, axial_stress, material_tangent);
 
-    // Expand the axial three-by-three material block with the two-node
-    // difference operator into global translational DOF ordering.
+    // The one-dimensional constitutive tangent acts only along the current truss
+    // axis. The dyadic product n*n^T embeds this scalar axial response into the
+    // three translational directions of a node.
     const Vec3 n = direction_current();
     const Mat3 k = (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
 
+    // Expand the axial 3x3 block with the two-node difference operator. Equal
+    // diagonal blocks and opposite off-diagonal blocks enforce equal and opposite
+    // nodal forces for a relative axial displacement.
     StaticMatrix<N * 3, N * 3> K = StaticMatrix<N * 3, N * 3>::Zero();
     K.block(0, 0, 3, 3) =  k;
     K.block(0, 3, 3, 3) = -k;
     K.block(3, 0, 3, 3) = -k;
     K.block(3, 3, 3, 3) =  k;
 
+    // Copy the fixed-size local matrix into caller-owned storage and expose it
+    // through the common dynamically mapped element-matrix interface.
     MapMatrix result(buffer, N * 3, N * 3);
     result = K;
     return result;
@@ -250,8 +259,7 @@ MapMatrix T3::stiffness_geom(Precision* buffer, const Field& displacement) {
     const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
     const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
-    const AxialStrainLinearized axial_strain(
-        (u1 - u0).dot(direction_reference()) / L0);
+    const AxialStrainLinearized axial_strain((u1 - u0).dot(direction_reference()) / L0);
     AxialStressCauchy axial_stress;
     Precision         material_tangent = Precision(0);
 
@@ -321,8 +329,7 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     logging::error(L0 > Precision(0),
         "T3: zero reference length in nonlinear tangent for element ", this->elem_id);
 
-    const AxialStrainGreenLagrange strain =
-        AxialStrainGreenLagrange::from_stretch(lambda);
+    const AxialStrainGreenLagrange strain = AxialStrainGreenLagrange::from_stretch(lambda);
     AxialStressPK2 stress;
     Precision      material_tangent = Precision(0);
 
@@ -358,8 +365,7 @@ MapMatrix T3::stiffness_tangent(Precision*   buffer,
     // same constitutive result used for the internal force.
     const Mat3 material_block =
         (A0 * material_tangent * lambda * lambda / L0) * (n * n.transpose());
-    const Mat3 geometric_block =
-        (A0 * stress.value() / L0) * Mat3::Identity();
+    const Mat3 geometric_block = (A0 * stress.value() / L0) * Mat3::Identity();
     const Mat3 block = material_block + geometric_block;
 
     StaticMatrix<N * 3, N * 3> tangent = StaticMatrix<N * 3, N * 3>::Zero();
@@ -503,8 +509,7 @@ void T3::compute_stress_strain(Field*           strain,
     // Evaluate finite-strain PK2 stress and convert it to physical Cauchy stress.
     if (use_green_lagrange_nl) {
         const Precision lambda = stretch();
-        const AxialStrainGreenLagrange axial_strain =
-            AxialStrainGreenLagrange::from_stretch(lambda);
+        const AxialStrainGreenLagrange axial_strain = AxialStrainGreenLagrange::from_stretch(lambda);
         AxialStressPK2 axial_stress;
         Precision      tangent = Precision(0);
 
@@ -525,8 +530,7 @@ void T3::compute_stress_strain(Field*           strain,
         const Vec3 u0 = displacement.row_vec3(static_cast<Index>(node_ids[0]));
         const Vec3 u1 = displacement.row_vec3(static_cast<Index>(node_ids[1]));
 
-        const AxialStrainLinearized axial_strain(
-            (u1 - u0).dot(direction_reference()) / L0);
+        const AxialStrainLinearized axial_strain((u1 - u0).dot(direction_reference()) / L0);
         AxialStressCauchy axial_stress;
         Precision         tangent = Precision(0);
 
@@ -598,8 +602,7 @@ bool T3::compute_beam_section_forces(Field&       section_forces,
     logging::error(L0 > Precision(0),
         "T3: zero reference length in compute_beam_section_forces for element ", this->elem_id);
 
-    const AxialStrainLinearized axial_strain(
-        (u1 - u0).dot(direction_reference()) / L0);
+    const AxialStrainLinearized axial_strain((u1 - u0).dot(direction_reference()) / L0);
     AxialStressCauchy axial_stress;
     Precision         tangent = Precision(0);
 
