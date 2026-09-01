@@ -26,13 +26,13 @@ VolumeStrainGreenLagrange VolumeStrainGreenLagrange::transformed(const cos::Basi
     return VolumeStrainGreenLagrange(transformed);
 }
 
-// Form E = 0.5 * (F^T F - I) in the reference configuration
+// DEBUG A/B: force the constitutive Green-Lagrange strain to zero while the
+// element still builds B_GL from the actual deformation gradient.
 VolumeStrainGreenLagrange VolumeStrainGreenLagrange::from_deformation_gradient(
     const Mat3& deformation_gradient
 ) {
-    const Mat3 strain_tensor = Precision(0.5)
-        * (deformation_gradient.transpose() * deformation_gradient - Mat3::Identity());
-    return VolumeStrainGreenLagrange(strain_tensor);
+    (void)deformation_gradient;
+    return VolumeStrainGreenLagrange{};
 }
 
 } // namespace fem
