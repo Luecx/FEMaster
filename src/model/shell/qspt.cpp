@@ -56,7 +56,11 @@ Precision QSPT::volume() {
 
 QSPT::GeometryData QSPT::geometry_data() {
     GeometryData data;
-    data.coords = this->node_coords_global();
+
+    // QSPT is an explicitly linear shear-panel formulation. Its kinematic
+    // coefficients and stiffness therefore belong to the undeformed geometry
+    // and must not change when nonlinear-static updates ModelData::positions.
+    data.coords = this->node_coords_reference();
 
     data.midpoints[0] = Precision(0.5) * (row_as_vec3(data.coords, 0) + row_as_vec3(data.coords, 1));
     data.midpoints[1] = Precision(0.5) * (row_as_vec3(data.coords, 1) + row_as_vec3(data.coords, 2));
