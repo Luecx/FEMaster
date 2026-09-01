@@ -60,14 +60,15 @@ namespace model {
  * `stiffness_tangent()` always evaluates the internal force for the supplied
  * trial configuration. A non-null matrix buffer additionally requests material
  * and geometric tangent assembly; a null buffer performs an internal-force-only
- * evaluation. Both variants read committed material history and may write the
- * persistent trial material state.
+ * evaluation. Both variants read committed material history and write the
+ * corresponding persistent trial material state.
  *
  * Linear stiffness, geometric-stiffness evaluation for prestress analyses and
  * result-recovery routines are state-neutral with respect to persistent trial
- * history. When they require a constitutive response, they use temporary local
- * state storage. Stress values needed only while assembling an element matrix or
- * force vector likewise remain local to the corresponding operation.
+ * history. They read committed history when required by the constitutive model
+ * but pass no target state, so no material-state update is stored. Stress values
+ * and constitutive tangents needed only during an element operation remain local
+ * to that operation.
  *
  * Reference and current geometry are accessed through the model data bound to
  * the element. The reference axis is used by linearized strain recovery, while
