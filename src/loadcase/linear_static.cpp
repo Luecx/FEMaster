@@ -39,6 +39,11 @@ void LinearStatic::run() {
     model->assign_sections();
     model->step_begin();
 
+    // DEBUG A/B: force the current nodal positions back to the reference geometry
+    // before the linear stiffness matrix is assembled. The old solid GL path then
+    // evaluates exactly at F = I if POSITION was carrying any prior/current state.
+    *model->_data->positions = *model->_data->positions_reference;
+
     auto active_dof_idx_mat = Timer::measure(
         [&]() { return model->build_unconstrained_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
