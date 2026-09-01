@@ -9,10 +9,10 @@
  * strain and constitutive integration remain responsibilities of the derived
  * element classes.
  *
- * The nonlinear interface is intentionally expressed in terms of nodal
- * displacement and nodal internal force. Stress and stress-resultant quantities
- * required during an element evaluation are temporary formulation data and do
- * not form part of the solver-facing interface.
+ * The nonlinear interface is expressed in terms of nodal displacement and nodal
+ * internal force. Stress and stress-resultant quantities required during an
+ * element evaluation are temporary formulation data and do not form part of the
+ * solver-facing interface.
  *
  * @see src/model/beam/beam.h
  *
@@ -77,15 +77,15 @@ struct StructuralElement : ElementInterface {
     // Physical nonlinear equilibrium evaluation. The internal force is always
     // accumulated into nodal_forces. If buffer is non-null, the same material
     // evaluation also assembles and returns the consistent tangent matrix. If
-    // buffer is null, the element skips tangent assembly and returns an empty
-    // mapped matrix while still evaluating the complete internal force and trial
-    // material state for the supplied displacement.
-    virtual MapMatrix stiffness_tangent(Precision* buffer,
-                                        NodeData&  nodal_forces,
+    // buffer is null, tangent assembly is skipped while the complete internal
+    // force and trial material state are evaluated for the supplied displacement.
+    // The returned map is empty for an internal-force-only evaluation.
+    virtual MapMatrix stiffness_tangent(Precision*   buffer,
+                                        NodeData&    nodal_forces,
                                         const Field& displacement) = 0;
 
     // Inertial operator and formulation classification
-    virtual MapMatrix mass() = 0;
+    virtual MapMatrix mass(Precision* buffer) = 0;
     virtual bool      is_shell() const { return false; }
     virtual bool      is_solid() const { return false; }
 
@@ -106,12 +106,12 @@ struct StructuralElement : ElementInterface {
     // Optionally scale by material density (per element).
     virtual Precision integrate_scalar_field(bool               scale_by_density,
                                              const ScalarField& field) = 0;
-    virtual Vec3      integrate_vector_field(bool             scale_by_density,
+    virtual Vec3      integrate_vector_field(bool            scale_by_density,
                                              const VecField& field) = 0;
     virtual void      integrate_vector_field(Field&          node_loads,
                                              bool            scale_by_density,
                                              const VecField& field) = 0;
-    virtual Mat3      integrate_tensor_field(bool             scale_by_density,
+    virtual Mat3      integrate_tensor_field(bool            scale_by_density,
                                              const TenField& field) = 0;
 
     virtual void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) = 0;
