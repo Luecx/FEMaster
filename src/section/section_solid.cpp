@@ -158,7 +158,9 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
     VolumeStressPK2 stress_material;
     Mat6            tangent_material;
 
-    elasticity->evaluate(strain_material, old_state, new_state, stress_material, tangent_material);
+    // DEBUG A/B: keep the old GL/PK2 stiffness path, but suppress trial-state writes.
+    (void)new_state;
+    elasticity->evaluate(strain_material, old_state, nullptr, stress_material, tangent_material);
 
     // Transform PK2 stress and tangent back into the global reference basis:
     // C_global = T_stress C_material T_strain
@@ -334,7 +336,7 @@ std::string SolidSection::str() const {
 
     os << "SolidSection: material=" << (material_    ? material_   ->name : std::string("-"))
        << ", orientation="          << (orientation_ ? orientation_->name : std::string("-"))
-       << ", region="               << (region_      ? region_     ->name : std::string("-"))
+       << ", region="               << (region_      ? region_->name : std::string("-"))
        << " ("                      << (region_      ? static_cast<int>(region_->size()) : 0) << ")";
 
     return os.str();
