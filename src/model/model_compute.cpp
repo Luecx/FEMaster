@@ -23,7 +23,6 @@
 #include "../core/config.h"
 #include "element/element_structural.h"
 #include "model.h"
-#include "shell/s8.h"
 
 #ifdef _OPENMP
     #include <omp.h>

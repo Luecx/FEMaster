@@ -462,7 +462,9 @@ void FRTShell<N>::compute_stress_state(Field&       stress_state,
  * result fields.
  *
  * Each natural nodal output coordinate reuses the closest in-plane integration-
- * point state block. The section evaluates resultants in its configured output
+ * point state block. This recovery is used by the linear-static load case and
+ * therefore evaluates linearized generalized strains in the reference shell
+ * configuration. The section evaluates resultants in its configured output
  * basis before they are accumulated for subsequent component-wise averaging.
  *
  * @param resultants Global nodal generalized-resultant accumulator.
@@ -479,11 +481,11 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
                    "[N11,N22,N12,M11,M22,M12,Q13,Q23]");
 
     const RowMatrix rst = this->stress_strain_nodal_rst();
-    const CurrentState state = current_state_from_displacement(displacement);
+    const CurrentState state = reference_state();
     const EvaluationData data = init_evaluation(
         state,
         true,
-        false,
+        true,
         false,
         false
     );
@@ -502,7 +504,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             q,
             r,
             s,
-            true
+            false
         );
         const ShellGeneralizedStrain strain(strain_values);
 
@@ -538,7 +540,7 @@ bool FRTShell<N>::compute_shell_section_forces(Field&       resultants,
             old_material_state,
             new_material_state,
             this->_model_data->material_state_old->components,
-            true
+            false
         );
         const Vec8 values = scale * output_resultants.values();
 

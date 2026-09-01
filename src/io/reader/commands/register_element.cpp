@@ -34,12 +34,6 @@
 #include "../../../model/shell/frt_shell_s6.h"
 #include "../../../model/shell/frt_shell_s8.h"
 #include "../../../model/shell/qspt.h"
-#include "../../../model/shell/s3.h"
-#include "../../../model/shell/s4.h"
-#include "../../../model/shell/s4_mitc.h"
-#include "../../../model/shell/s6.h"
-#include "../../../model/shell/s8.h"
-#include "../../../model/shell/s8_mitc.h"
 #include "../../../model/solid/c3d10.h"
 #include "../../../model/solid/c3d15.h"
 #include "../../../model/solid/c3d20.h"
@@ -131,17 +125,17 @@ void register_element(dsl::Registry& registry, model::Model& model) {
         FEM_ADD_ELEMENT_VARIANT("T3", T3, 2);
         FEM_ADD_ELEMENT_VARIANT("T3D2", T3, 2);
 
-        FEM_ADD_ELEMENT_VARIANT("S3", S3, 3);
-        FEM_ADD_ELEMENT_VARIANT("S4", S4, 4);
-        FEM_ADD_ELEMENT_VARIANT("S6", S6, 6);
-        FEM_ADD_ELEMENT_VARIANT("S8", S8, 8);
+        FEM_ADD_ELEMENT_VARIANT("S3", FRTShellS3, 3);
+        FEM_ADD_ELEMENT_VARIANT("S4", FRTShellS4, 4);
+        FEM_ADD_ELEMENT_VARIANT("S6", FRTShellS6, 6);
+        FEM_ADD_ELEMENT_VARIANT("S8", FRTShellS8, 8);
         FEM_ADD_ELEMENT_VARIANT("QSPT", QSPT, 4);
-        FEM_ADD_ELEMENT_VARIANT("MITC4", MITC4, 4);
+        FEM_ADD_ELEMENT_VARIANT("MITC4", FRTShellS4, 4);
         FEM_ADD_ELEMENT_VARIANT("MITC3FRT", FRTShellS3, 3);
         FEM_ADD_ELEMENT_VARIANT("MITC4FRT", FRTShellS4, 4);
         FEM_ADD_ELEMENT_VARIANT("MITC6FRT", FRTShellS6, 6);
         FEM_ADD_ELEMENT_VARIANT("MITC8FRT", FRTShellS8, 8);
-        FEM_ADD_ELEMENT_VARIANT("MITC8", MITC8, 8);
+        FEM_ADD_ELEMENT_VARIANT("MITC8", FRTShellS8, 8);
 
         // All supported one-node concentrated formulations share PointElement.
         FEM_ADD_ELEMENT_VARIANT("MASS", PointElement, 1);
