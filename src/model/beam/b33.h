@@ -14,6 +14,18 @@
 namespace fem {
 namespace model {
 
+/**
+ * @brief Two-node three-dimensional Euler-Bernoulli beam element.
+ *
+ * The element provides the linear elastic beam stiffness, consistent mass and
+ * the classical initial-stress geometric stiffness used by linear buckling.
+ * Prestress is derived directly from the supplied nodal displacement field;
+ * no integration-point force/stress scratch field is required.
+ *
+ * A fully consistent finite-rotation nonlinear beam residual is not implemented
+ * by B33, so nonlinear tangent evaluation remains intentionally unsupported in
+ * the common `BeamElement` base.
+ */
 struct B33 : BeamElement<2> {
     B33(ID elem_id, std::array<ID, 2> node_ids_in)
         : BeamElement(elem_id, node_ids_in) {}
@@ -187,17 +199,43 @@ struct B33 : BeamElement<2> {
         }
     }
 
-    StaticMatrix<12, 12> stiffness_geom_impl(const Field& ip_stress, int offset) override {
-        StaticMatrix<12, 12> T = transformation();
+    /**
+     * Builds the classical beam-column geometric stiffness from the supplied
+     * displacement state.
+     *
+     * The axial prestress is recovered locally as
+     *
+     *     N = EA (u2_x - u1_x) / L
+     *
+     * in the beam principal frame. The resulting initial-stress matrix is then
+     * rotated back to global element coordinates. No global integration-point
+     * stress/resultant field is required.
+     *
+     * @param displacement Global nodal displacement field defining prestress.
+     * @return Global twelve-by-twelve geometric stiffness matrix.
+     */
+    StaticMatrix<12, 12> stiffness_geom_impl(const Field& displacement) override {
+        const StaticMatrix<12, 12> T = transformation();
         const Precision L = length();
-        Precision N = ip_stress(static_cast<Index>(offset), 0);
 
-        if (std::abs(N) <= std::numeric_limits<Precision>::epsilon()) {
+        StaticVector<12> u_global;
+        for (Index node = 0; node < 2; ++node) {
+            const Vec6 u = displacement.row_vec6(static_cast<Index>(node_ids[node]));
+            for (Index dof = 0; dof < 6; ++dof) {
+                u_global(6 * node + dof) = u(dof);
+            }
+        }
+
+        const StaticVector<12> u_local = T * u_global;
+        const Precision N_axial = get_elasticity()->youngs * get_profile()->area_
+                                * (u_local(6) - u_local(0)) / L;
+
+        if (std::abs(N_axial) <= std::numeric_limits<Precision>::epsilon()) {
             return StaticMatrix<12, 12>::Zero();
         }
 
         const Precision L2 = L * L;
-        const Precision f = N / (30.0 * L);
+        const Precision f  = N_axial / (Precision(30) * L);
 
         Eigen::Matrix<Precision, 4, 4> Kg41;
         Eigen::Matrix<Precision, 4, 4> Kg42;
