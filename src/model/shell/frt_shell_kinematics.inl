@@ -29,7 +29,6 @@ namespace fem::model {
 
 namespace {
 
-
 /**
  * Transforms one three-component engineering tensor block and its optional B
  * rows by a constant pointwise reference transformation.
@@ -478,21 +477,15 @@ void FRTShell<N>::transform_strain_to_local(
  * Prepares all pointwise quantities required for one shell evaluation.
  *
  * The caller controls which quantities are needed through the `with_*` flags.
- * Dependencies between these quantities are resolved at the beginning:
+ * A B matrix requires the generalized strain kinematics and constitutive
+ * resultants require strains from the same trial state. Temporary integration-
+ * point and tying-point data stay in one topology-specific `thread_local`
+ * workspace and never leave the element evaluation.
  *
- *     with_B          -> with_strain
- *     with_resultants -> with_strain, unless resultants are imported
- *
- * Temporary integration-point and tying-point data are stored in one
- * topology-specific `thread_local` workspace. The workspace belongs to the
- * executing thread, not to the element. Its vectors retain their allocated
- * capacity between calls, so repeated evaluations normally require no further
- * dynamic allocations.
- *
- * The returned `EvaluationData` object does not own this temporary storage. Its
- * spans point directly into the currently active parts of the thread-local
- * workspace and remain valid only until that workspace is reused by a later
- * evaluation on the same thread.
+ * `write_material_state` controls the only persistent side effect of this
+ * preparation path. It is false for linear stiffness, geometric stiffness and
+ * result recovery. The physical nonlinear tangent sets it true so every shell
+ * section evaluates from committed history into the persistent trial state.
  *
  * Depending on the requested quantities, the function performs the following
  * steps:
@@ -501,19 +494,18 @@ void FRTShell<N>::transform_strain_to_local(
  *  2. Expose the active buffers through `EvaluationData`.
  *  3. Evaluate nodal SO(3) rotation derivatives when B or geometric terms are
  *     required.
- *  4. Initialize and scale the drilling stiffness.
- *  5. Evaluate the section tangent for linearized calls.
+ *  4. Initialize and scale the state-neutral drilling stiffness.
+ *  5. Evaluate the zero-strain section tangent for linear calls.
  *  6. Evaluate compatible strains and B matrices at tying points.
  *  7. Reconstruct MITC strains and B matrices at integration points.
- *  8. Import or evaluate generalized stress resultants.
+ *  8. Evaluate generalized stress resultants locally when requested.
  *
  * @param state Current or trial nodal shell state.
  * @param with_strain Request generalized strain values.
  * @param with_B Request first generalized strain derivatives.
  * @param with_G Request second rotation derivatives for the geometric tangent.
  * @param with_resultants Request generalized shell stress resultants.
- * @param ip_stress Optional previously evaluated integration-point resultants.
- * @param ip_start_idx First row of `ip_stress` belonging to this element.
+ * @param write_material_state Allow the constitutive call to write trial state.
  * @return Non-owning view of all quantities prepared in the active workspace.
  */
 template<Index N>
@@ -523,18 +515,11 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     bool                with_B,
     bool                with_G,
     bool                with_resultants,
-    const Field*        ip_stress,
-    int                 ip_start_idx
+    bool                write_material_state
 ) const {
-    // A B matrix is the first derivative of the generalized strain and
-    // therefore cannot be evaluated without evaluating the strain kinematics.
-    if (with_B) {
-        with_strain = true;
-    }
-
-    // Constitutive resultants must be evaluated from the current strains unless
-    // an already evaluated integration-point resultant field is supplied.
-    if (with_resultants && ip_stress == nullptr) {
+    // First derivatives and resultants both depend on the generalized strain at
+    // the same current/trial configuration.
+    if (with_B || with_resultants) {
         with_strain = true;
     }
 
@@ -544,69 +529,46 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
     const std::size_t num_tying = ref.tying_points.size();
 
     // One workspace exists for each executing thread and shell topology.
-    //
-    // The workspace is reused by all elements of the same topology processed
-    // by that thread. Its vectors retain their capacity after resize(), so the
-    // first sufficiently large evaluation establishes the temporary storage
-    // required by later calls.
+    // The vectors retain capacity between calls, so after the first sufficiently
+    // large evaluation the temporary path normally performs no allocations.
     thread_local EvaluationWorkspace workspace;
 
-    // Resize only the buffers needed by the current evaluation.
-    //
-    // A size of zero marks a buffer as inactive while preserving its allocated
-    // capacity for later calls.
-    workspace.tying_strain_nat  .resize(with_strain     ? num_tying : 0);
-    workspace.tying_B_nat       .resize(with_B          ? num_tying : 0);
-    workspace.ip_strain         .resize(with_strain     ? num_ip : 0);
-    workspace.ip_B              .resize(with_B          ? num_ip : 0);
-    workspace.ip_resultants     .resize(with_resultants ? num_ip : 0);
+    workspace.tying_strain_nat.resize(with_strain ? num_tying : 0);
+    workspace.tying_B_nat.resize(with_B ? num_tying : 0);
+    workspace.ip_strain.resize(with_strain ? num_ip : 0);
+    workspace.ip_B.resize(with_B ? num_ip : 0);
+    workspace.ip_resultants.resize(with_resultants ? num_ip : 0);
 
-    // The constitutive tangent is needed together with B. When resultants are
-    // imported, no local material update is performed and no current tangent is
-    // produced by compute_material_resultants().
-    workspace.ip_tangent        .resize(with_B && ip_stress == nullptr ? num_ip : 0);
+    // A B-based material tangent always needs one section tangent per
+    // integration point. Nonlinear calls fill it together with resultants;
+    // linear calls fill it from the state-neutral zero-strain helper below.
+    workspace.ip_tangent.resize(with_B ? num_ip : 0);
     workspace.ip_drill_stiffness.resize(with_B ? num_ip : 0);
 
-    // Geometric tying weights depend on second kinematic derivatives and are
-    // required only while assembling the geometric tangent.
+    // Geometric tying weights are needed only while contracting second
+    // kinematic derivatives with the current generalized resultants.
     workspace.geometric_tying_weights.resize(with_G ? num_tying : 0);
 
     EvaluationData data;
+    data.with_strain          = with_strain;
+    data.with_B               = with_B;
+    data.with_G               = with_G;
+    data.with_resultants      = with_resultants;
+    data.write_material_state = write_material_state;
+    data.state                = state;
 
-    data.with_strain     = with_strain;
-    data.with_B          = with_B;
-    data.with_G          = with_G;
-    data.with_resultants = with_resultants;
-    data.state           = state;
-
-    // Expose the active portions of the thread-local buffers.
-    //
-    // EvaluationData owns none of these arrays. The spans merely provide
-    // convenient indexed access to the storage held by `workspace`.
     data.tying_strain_nat        = Span<Vec8>(workspace.tying_strain_nat);
     data.tying_B_nat             = Span<Mat8x6N>(workspace.tying_B_nat);
-
     data.ip_strain               = Span<Vec8>(workspace.ip_strain);
     data.ip_B                    = Span<Mat8x6N>(workspace.ip_B);
     data.ip_resultants           = Span<Vec8>(workspace.ip_resultants);
     data.ip_tangent              = Span<Mat8>(workspace.ip_tangent);
-
     data.ip_drill_stiffness      = Span<Precision>(workspace.ip_drill_stiffness);
     data.geometric_tying_weights = Span<Vec8>(workspace.geometric_tying_weights);
 
     // Evaluate nodal SO(3) derivatives once and reuse them at every tying and
-    // integration point.
-    //
-    // with_B requires first derivatives
-    //
-    //     dR_i / d theta_i,a,
-    //
-    // while with_G additionally requires second derivatives
-    //
-    //     d²R_i / d theta_i,a d theta_i,b.
-    //
-    // The values are stored node-wise in the workspace because all pointwise
-    // strain evaluations use the same nodal rotations.
+    // integration point. First derivatives are enough for B; the geometric
+    // tangent additionally requires exact second rotation derivatives.
     if (with_B || with_G) {
         for (Index node = 0; node < num_nodes; ++node) {
             const Vec3 theta = state.theta.row(node).transpose();
@@ -626,28 +588,16 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 );
             }
         }
-
-        // Store a non-owning pointer to the complete nodal rotation cache.
         data.rotations = &workspace.rotations;
     }
 
     // Initialize the configuration-independent drilling modulus once for every
-    // element.
-    //
-    // The underlying modulus is derived from the zero-strain in-plane shear
-    // tangent
-    //
-    //     A66 = H0(gamma_12, gamma_12).
-    //
-    // Only the positive magnitude is retained. Keeping this base value
-    // independent of the current deformation ensures that drilling force and
-    // drilling tangent derive from the same fixed quadratic potential.
+    // element. This is an auxiliary zero-strain tangent query and must never
+    // overwrite the physical trial material state.
     if (with_B) {
         std::call_once(ref.drill_stiffness_once, [&]() {
             using Component = ShellGeneralizedStrain::Component;
-
-            constexpr Index gamma_12 =
-                static_cast<Index>(Component::GammaXY);
+            constexpr Index gamma_12 = static_cast<Index>(Component::GammaXY);
 
             const Index state_stride = this->_model_data->material_state_old->components;
 
@@ -657,70 +607,49 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
                 ShellStressResultants  zero_resultants;
                 Mat8                   H0;
                 Mat3                   basis = point.basis;
+
                 const Index      state_row = this->mp_index(ip, 0);
                 const Precision* old_material_state =
                     &(*this->_model_data->material_state_old)(state_row, 0);
-                Precision* new_material_state =
-                    &(*this->_model_data->material_state_new)(state_row, 0);
 
                 shell_section()->evaluate(
                     reference_position(point.r, point.s),
                     basis,
                     zero_strain,
                     old_material_state,
-                    new_material_state,
+                    nullptr,
                     state_stride,
                     false,
                     zero_resultants,
                     H0
                 );
 
-                point.drill_stiffness_base =
-                    drill_scale * std::abs(H0(gamma_12, gamma_12));
+                point.drill_stiffness_base = drill_scale * std::abs(H0(gamma_12, gamma_12));
             }
         });
 
-        // Apply the current element-topology scale to the cached base modulus.
-        //
-        // The base modulus is stored in the reference data, whereas the scaled
-        // pointwise values belong to the current evaluation workspace.
-        const Precision stiffness_scale =
-            std::abs(topology_stiffness_scale());
-
+        const Precision stiffness_scale = std::abs(topology_stiffness_scale());
         for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
             const std::size_t id = static_cast<std::size_t>(ip);
-
-            data.ip_drill_stiffness[id] =
-                stiffness_scale * ref.ip_points[id].drill_stiffness_base;
+            data.ip_drill_stiffness[id] = stiffness_scale * ref.ip_points[id].drill_stiffness_base;
         }
     }
 
-    // Linearized evaluations require the zero-strain shell-section tangent at
-    // every integration point.
-    //
-    // Nonlinear evaluations with resultants obtain their current constitutive
-    // tangent later from compute_material_resultants(). Therefore this explicit
-    // tangent evaluation is needed only when B is requested without resultants.
+    // Linear/reference evaluations request B without physical resultants. Fill
+    // their constitutive tangent from a zero-strain, state-neutral section call.
     if (with_B && !with_resultants) {
         for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
-            const std::size_t    id    = static_cast<std::size_t>(ip);
+            const std::size_t     id    = static_cast<std::size_t>(ip);
             const ReferencePoint& point = ref.ip_points[id];
-
             data.ip_tangent[id] = resultant_stiffness(point.r, point.s);
         }
     }
 
     if (with_strain) {
-        // First evaluate the compatible natural strains at all tying points.
-        //
-        // MITC interpolation at the integration points depends on these tying
-        // values, so this loop must be completed before the integration-point
-        // loop begins.
-        for (Index tying = 0;
-             tying < static_cast<Index>(num_tying);
-             ++tying) {
+        // MITC interpolation at the integration points depends on compatible
+        // values at all tying points, so finish the tying loop first.
+        for (Index tying = 0; tying < static_cast<Index>(num_tying); ++tying) {
             const std::size_t id = static_cast<std::size_t>(tying);
-
             compute_natural_strain(
                 data,
                 ref.tying_points[id],
@@ -729,14 +658,8 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
             );
         }
 
-        // Evaluate the complete strain field at every integration point:
-        //
-        //  1. Compute the compatible strain and its optional B matrix in
-        //     natural coordinates.
-        //  2. Replace the MITC-controlled components by values reconstructed
-        //     from the tying points.
-        //  3. Transform all generalized strain components and B rows from the
-        //     natural coordinates into the local material basis.
+        // Reconstruct the complete MITC generalized strain/B field at every
+        // physical integration point and transform it into the local shell basis.
         for (Index ip = 0; ip < static_cast<Index>(num_ip); ++ip) {
             const std::size_t     id    = static_cast<std::size_t>(ip);
             const ReferencePoint& point = ref.ip_points[id];
@@ -750,16 +673,11 @@ typename FRTShell<N>::EvaluationData FRTShell<N>::init_evaluation(
         }
     }
 
+    // Generalized resultants are always evaluated locally from the supplied
+    // nodal state. The section call itself decides whether trial history may be
+    // written from data.write_material_state.
     if (with_resultants) {
-        if (ip_stress) {
-            // Reuse generalized resultants supplied by the caller. No local
-            // constitutive section update is performed in this path.
-            load_ip_resultants(data, *ip_stress, ip_start_idx);
-        } else {
-            // Evaluate generalized stress resultants and the current
-            // constitutive tangent from the integration-point strains.
-            compute_material_resultants(data);
-        }
+        compute_material_resultants(data);
     }
 
     return data;
