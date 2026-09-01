@@ -204,18 +204,15 @@ auto SolidElement<N>::strain_displacement(const StaticMatrix<N, D>& shape_der_gl
         Dim r2   = r1 + 1;
         Dim r3   = r1 + 2;
 
-        B(0, r1) = shape_der_global(j, 0);    // dx/dr
-        B(1, r2) = shape_der_global(j, 1);    // dy/ds
-        B(2, r3) = shape_der_global(j, 2);    // dz/dt
-
-        B(3, r2) = shape_der_global(j, 2);    // dy/dt
-        B(3, r3) = shape_der_global(j, 1);    // dz/ds
-
-        B(4, r1) = shape_der_global(j, 2);    // dz/dr
-        B(4, r3) = shape_der_global(j, 0);    // dx/dt
-
-        B(5, r1) = shape_der_global(j, 1);    // dx/ds
-        B(5, r2) = shape_der_global(j, 0);    // dy/dt
+        B(0, r1) = shape_der_global(j, 0);
+        B(1, r2) = shape_der_global(j, 1);
+        B(2, r3) = shape_der_global(j, 2);
+        B(3, r2) = shape_der_global(j, 2);
+        B(3, r3) = shape_der_global(j, 1);
+        B(4, r1) = shape_der_global(j, 2);
+        B(4, r3) = shape_der_global(j, 0);
+        B(5, r1) = shape_der_global(j, 1);
+        B(5, r2) = shape_der_global(j, 0);
     }
 
     return B;
@@ -258,7 +255,6 @@ auto SolidElement<N>::green_lagrange_strain_displacement(const StaticMatrix<N, D
             B(0, col) = F(p, 0) * dN_dX(a, 0);
             B(1, col) = F(p, 1) * dN_dX(a, 1);
             B(2, col) = F(p, 2) * dN_dX(a, 2);
-
             B(3, col) = F(p, 1) * dN_dX(a, 2) + F(p, 2) * dN_dX(a, 1);
             B(4, col) = F(p, 2) * dN_dX(a, 0) + F(p, 0) * dN_dX(a, 2);
             B(5, col) = F(p, 0) * dN_dX(a, 1) + F(p, 1) * dN_dX(a, 0);
@@ -305,9 +301,6 @@ StaticVector<K> SolidElement<N>::interpolate(StaticMatrix<N, K> data, Precision 
     return res;
 }
 
-//-----------------------------------------------------------------------------
-// strain_displacements
-//-----------------------------------------------------------------------------
 template<Index N>
 auto SolidElement<N>::strain_displacements(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t, Precision& det, bool check_det)
     -> StaticMatrix<n_strain, D * N> {
@@ -328,9 +321,6 @@ auto SolidElement<N>::strain_displacements(const StaticMatrix<N, D>& node_coords
     return strain_displacement(global_shape_der);
 }
 
-//-----------------------------------------------------------------------------
-// jacobian
-//-----------------------------------------------------------------------------
 template<Index N>
 auto SolidElement<N>::jacobian(const StaticMatrix<N, D>& node_coords, Precision r, Precision s, Precision t)
     -> StaticMatrix<D, D> {
@@ -381,9 +371,6 @@ Mat3 SolidElement<N>::deformation_gradient(const StaticMatrix<N, D>& reference_c
     return F;
 }
 
-//-----------------------------------------------------------------------------
-// nodal_data
-//-----------------------------------------------------------------------------
 template<Index N>
 template<Dim K>
 StaticMatrix<N, K>
@@ -408,16 +395,11 @@ template<Index N>
 MapMatrix
 SolidElement<N>::conductivity(Precision* buffer) {
     StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-
-    // store the section / material properties
     auto* section = this->get_section();
-
     logging::error(section->material_->has_thermal_conductivity(),
         "Material has no thermal conductivity at element ", elem_id);
-
     auto cond = section->material_->get_thermal_conductivity();
 
-    // Evaluate one constitutive state row for every stiffness quadrature point
     std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
         [this, &reference_coords, &cond](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
             Precision det0;
@@ -425,9 +407,7 @@ SolidElement<N>::conductivity(Precision* buffer) {
             return StaticMatrix<N, N>(dN_dX * cond * dN_dX.transpose() * det0);
     };
     StaticMatrix<N, N> conductivity = integration_scheme().integrate(func);
-
-    // Remove only numerical asymmetry from the analytically symmetric material tangent
-    conductivity = 0.5 * (conductivity + conductivity.transpose()); // Symmetrize
+    conductivity = 0.5 * (conductivity + conductivity.transpose());
 
     MapMatrix mapped{buffer, N, N};
     mapped = conductivity;
@@ -438,7 +418,6 @@ template<Index N>
 MapMatrix
 SolidElement<N>::capacity(Precision* buffer) {
     const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
-
     auto* section = this->get_section();
 
     logging::error(section->material_->has_density(),
@@ -452,24 +431,14 @@ SolidElement<N>::capacity(Precision* buffer) {
     std::function<StaticMatrix<N, N>(Precision, Precision, Precision)> func =
         [this, &reference_coords, rho, cp](Precision r, Precision s, Precision t) -> StaticMatrix<N, N> {
             Precision det0;
-
-            const StaticMatrix<N, 1> Nf =
-                this->shape_function(r, s, t);
-
-            const StaticMatrix<N, D> dN_dX =
-                this->shape_derivatives_reference(reference_coords, r, s, t, det0);
-
+            const StaticMatrix<N, 1> Nf = this->shape_function(r, s, t);
+            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
             (void) dN_dX;
-
             return StaticMatrix<N, N>(Nf * Nf.transpose() * (rho * cp * det0));
     };
 
-    StaticMatrix<N, N> capacity =
-        integration_scheme().integrate(func);
-
-    capacity = StaticMatrix<N, N>(
-        0.5 * (capacity + capacity.transpose())
-    );
+    StaticMatrix<N, N> capacity = integration_scheme().integrate(func);
+    capacity = StaticMatrix<N, N>(0.5 * (capacity + capacity.transpose()));
 
     MapMatrix mapped{buffer, N, N};
     mapped = capacity;
@@ -477,54 +446,29 @@ SolidElement<N>::capacity(Precision* buffer) {
 }
 
 /**
- * Integrates the linear small-strain solid stiffness in the reference
- * configuration.
- *
- * The linear operator uses the undeformed geometry throughout. At every
- * stiffness quadrature point the reference derivatives build the infinitesimal
- * strain-displacement matrix `B`, while a zero linearized strain queries the
- * constitutive tangent from committed material history without creating a trial
- * state. The resulting contribution is
- *
- *     K = integral B^T C B dV0.
- *
- * Finite-deformation kinematics, PK2 stress and geometric stiffness are excluded
- * deliberately; they belong to `stiffness_tangent()` and `stiffness_geom()`.
- *
- * @param buffer Caller-provided dense element-matrix storage.
- * @return Mapped symmetric linear stiffness matrix.
+ * Integrates the linear small-strain solid stiffness in the reference configuration.
  */
 template<Index N>
 MapMatrix
 SolidElement<N>::stiffness(Precision* buffer) {
-    // The complete linear operator is defined on the reference geometry. No
-    // current coordinates or deformation gradient are required here.
     const StaticMatrix<N, D> reference_coords = this->node_coords_reference();
     const VolumeStrainLinearized zero_strain;
-
     Index ip = 0;
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, &reference_coords, &zero_strain, &ip](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
             Precision det0;
-            const StaticMatrix<N, D> dN_dX =
-                this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+            const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
             const StaticMatrix<n_strain, D * N> B = this->strain_displacement(dN_dX);
-
-            // Query only the linear constitutive tangent. The committed state may
-            // be inspected, but no persistent trial state is produced.
             const Index      state_row = this->mp_index(ip++);
             const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
             VolumeStressCauchy zero_stress;
             Mat6               C;
             evaluate_material(r, s, t, zero_strain, old_state, nullptr, zero_stress, C);
-
             return StaticMatrix<D * N, D * N>(B.transpose() * C * B * det0);
         };
 
     StaticMatrix<D * N, D * N> stiffness = integration_scheme_stiffness().integrate(func);
-
-    // Remove only numerical asymmetry from the analytically symmetric operator.
     stiffness = Precision(0.5) * (stiffness + stiffness.transpose());
 
     MapMatrix mapped{buffer, D * N, D * N};
@@ -534,24 +478,6 @@ SolidElement<N>::stiffness(Precision* buffer) {
 
 /**
  * Integrates geometric stiffness for a supplied linearized prestress state.
- *
- * Prestress is reconstructed locally from the supplied nodal displacement field
- * rather than read from a global integration-point stress scratch field. At each
- * quadrature point
- *
- *     eps = B u_e,
- *     sigma = sigma(eps, state_committed),
- *
- * and the Cauchy stress contributes
- *
- *     K_geo,ab = integral grad(N_a)^T sigma grad(N_b) I_3 dV0.
- *
- * The constitutive evaluation is state-neutral and therefore cannot overwrite
- * the physical nonlinear trial material state.
- *
- * @param buffer Caller-provided dense element-matrix storage.
- * @param displacement Global nodal displacement field defining the prestress.
- * @return Mapped symmetric geometric stiffness matrix.
  */
 template<Index N>
 MapMatrix
@@ -559,8 +485,7 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
     const StaticMatrix<N, D> reference_coords  = this->node_coords_reference();
     const StaticMatrix<N, D> local_displacement = this->nodal_data<D>(displacement);
     const StaticMatrix<D, N> local_disp_mat(local_displacement.transpose());
-    const auto local_displacement_vec =
-        Eigen::Map<const StaticVector<D * N>>(local_disp_mat.data(), D * N);
+    const auto local_displacement_vec = Eigen::Map<const StaticVector<D * N>>(local_disp_mat.data(), D * N);
 
     Index ip = 0;
 
@@ -569,13 +494,15 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
         (Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N>
     {
         Precision det0;
-        const StaticMatrix<N, D> dN_dX =
-            this->shape_derivatives_reference(reference_coords, r, s, t, det0);
+        const StaticMatrix<N, D> dN_dX = this->shape_derivatives_reference(reference_coords, r, s, t, det0);
         const StaticMatrix<n_strain, D * N> B = this->strain_displacement(dN_dX);
 
-        // Reconstruct the small-strain prestress directly from the supplied
-        // displacement state. This auxiliary evaluation must remain state-neutral.
-        const VolumeStrainLinearized strain(B * local_displacement_vec);
+        // Material strain is explicitly materialized as Vec6. Passing the lazy
+        // Eigen product directly is ambiguous because VolumeStrainLinearized
+        // provides both tensor and Voigt-vector constructors.
+        const Vec6 strain_values = B * local_displacement_vec;
+        const VolumeStrainLinearized strain(strain_values);
+
         const Index      state_row = this->mp_index(ip++);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
         VolumeStressCauchy stress;
@@ -585,15 +512,11 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
         const Mat3 sigma = stress.tensor();
         StaticMatrix<D * N, D * N> geometric = StaticMatrix<D * N, D * N>::Zero();
 
-        // Each scalar grad(N_a)^T sigma grad(N_b) coefficient multiplies the
-        // translational identity block for the corresponding node pair.
         for (Index a = 0; a < N; ++a) {
             const Vec3 dNa = dN_dX.row(a).transpose();
-
             for (Index b = 0; b < N; ++b) {
                 const Vec3 dNb = dN_dX.row(b).transpose();
                 const Precision stress_coefficient = dNa.dot(sigma * dNb) * det0;
-
                 for (Dim d = 0; d < D; ++d) {
                     geometric(D * a + d, D * b + d) += stress_coefficient;
                 }
@@ -611,9 +534,6 @@ SolidElement<N>::stiffness_geom(Precision* buffer, const Field& displacement) {
     return mapped;
 }
 
-//-----------------------------------------------------------------------------
-// mass
-//-----------------------------------------------------------------------------
 template<Index N>
 MapMatrix
 SolidElement<N>::mass(Precision* buffer) {
@@ -621,19 +541,15 @@ SolidElement<N>::mass(Precision* buffer) {
     logging::error(material()->has_density(), "material has no density assigned at element ", elem_id);
 
     Precision density = material()->get_density();
-
     StaticMatrix<N, D> node_coords = this->node_coords_current();
 
     std::function<StaticMatrix<D * N, D * N>(Precision, Precision, Precision)> func =
         [this, node_coords, density](Precision r, Precision s, Precision t) -> StaticMatrix<D * N, D * N> {
-            Precision det;
             StaticMatrix<D, D> jac = this->jacobian(node_coords, r, s, t);
             StaticMatrix<N, N> shape_func_mass = this->shape_function(r, s, t) * this->shape_function(r, s, t).transpose();
-            det = jac.determinant();
+            const Precision det = jac.determinant();
 
-            // Expand the mass matrix from N x N to D * N x D * N
             StaticMatrix<D * N, D * N> mass_local = StaticMatrix<D * N, D * N>::Zero();
-
             for (Index i = 0; i < N; i++) {
                 for (Index j = 0; j < N; j++) {
                     for (Dim d = 0; d < D; d++) {
@@ -641,32 +557,23 @@ SolidElement<N>::mass(Precision* buffer) {
                     }
                 }
             }
-
             return mass_local * det * density;
     };
 
     StaticMatrix<D * N, D * N> mass = integration_scheme().integrate(func);
-
     MapMatrix mapped{buffer, D * N, D * N};
     mapped = mass;
     return mapped;
 }
 
-//-----------------------------------------------------------------------------
-// volume
-//-----------------------------------------------------------------------------
 template<Index N>
 Precision
 SolidElement<N>::volume() {
     StaticMatrix<N, D> node_coords_glob = this->node_coords_current();
-
     std::function<Precision(Precision, Precision, Precision)> func =
         [this, node_coords_glob](Precision r, Precision s, Precision t) -> Precision {
-            Precision det = jacobian(node_coords_glob, r, s, t).determinant();
-            return det;
+            return jacobian(node_coords_glob, r, s, t).determinant();
         };
-
-    Precision volume = integration_scheme().integrate(func);
-    return volume;
+    return integration_scheme().integrate(func);
 }
 }  // namespace fem::model
