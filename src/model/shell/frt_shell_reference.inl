@@ -70,8 +70,7 @@ void FRTShell<N>::step_begin() {
         reference_data_->ip_points.push_back(
             make_reference_point(point.r, point.s, point.w)
         );
-        reference_data_->area +=
-            point.w * reference_data_->ip_points.back().detJ;
+        reference_data_->area += point.w * reference_data_->ip_points.back().detJ;
     }
 
     // Cache the topology-specific MITC tying-point geometry with zero
@@ -84,8 +83,6 @@ void FRTShell<N>::step_begin() {
             make_reference_point(local(0), local(1), Precision(0))
         );
     }
-
-
 }
 
 /**
@@ -198,7 +195,7 @@ typename FRTShell<N>::MatN3 FRTShell<N>::init_reference_directors(const MatN3& X
             // normal
             director = X_rs.col(0).cross(X_rs.col(1));
             logging::error(director.allFinite() && director.norm() > Precision(1e-14),
-                "FRTShell: singular reference geometry at node ",node,
+                "FRTShell: singular reference geometry at node ", node,
                 " of element ", this->elem_id
             );
         }
@@ -244,10 +241,10 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
 
     // create a reference point object at some coordinate r,s with weight w coming from integration
     ReferencePoint point;
-    point.r         = r;
-    point.s         = s;
-    point.w         = w;
-    point.shape     = shape_function(r, s);
+    point.r        = r;
+    point.s        = s;
+    point.w        = w;
+    point.shape    = shape_function(r, s);
     point.shape_rs = shape_derivative(r, s);
 
     // Reference midsurface tangents obtained from
@@ -257,11 +254,12 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
     point.X_rs.noalias() = ref.X.transpose() * point.shape_rs;
 
     // normal used below
-    const Vec3 normal    = point.X_rs.col(0).cross(point.X_rs.col(1));
-    point.detJ           = normal.norm();
+    const Vec3 normal = point.X_rs.col(0).cross(point.X_rs.col(1));
+    point.detJ        = normal.norm();
 
     logging::error(point.detJ > Precision(1e-14) && std::isfinite(point.detJ),
-        "FRTShell: singular reference surface Jacobian in element ",this->elem_id, " at (", r, ", ", s, ")");
+        "FRTShell: singular reference surface Jacobian in element ", this->elem_id,
+        " at (", r, ", ", s, ")");
 
     // Construct the pointwise right-handed orthonormal reference basis:
     //
@@ -292,7 +290,8 @@ typename FRTShell<N>::ReferencePoint FRTShell<N>::make_reference_point(
     logging::error(std::abs(detJ - point.detJ) <= Precision(1e-10) * point.detJ,
         "FRTShell: inconsistent reference Jacobian");
     logging::error(std::abs(detJ) > Precision(1e-14),
-        "FRTShell: singular local reference mapping in element ", this->elem_id, " at (", r, ", ", s,")");
+        "FRTShell: singular local reference mapping in element ", this->elem_id,
+        " at (", r, ", ", s, ")");
 
     // storing the inverse for mapping (r,s) -> (a,b) space
     point.invJ = point.J.inverse();
@@ -362,7 +361,7 @@ Vec3 FRTShell<N>::reference_position(Precision r, Precision s) const {
 template<Index N>
 Mat3 FRTShell<N>::reference_basis_global(Precision r, Precision s) const {
     // see if we find a cached reference point. if its evaluated at a tying point or ip, this should work
-    const ReferencePoint* cached   = cached_reference_point(r, s);
+    const ReferencePoint* cached = cached_reference_point(r, s);
 
     // if we found one, return that basis
     if (cached)
@@ -446,12 +445,14 @@ Precision FRTShell<N>::topology_stiffness_scale() const {
 }
 
 /**
- * Evaluates the zero-strain generalized shell-section tangent.
+ * Evaluates the zero-strain generalized shell-section tangent without advancing
+ * persistent material history.
  *
  * The physical reference position and pointwise material basis are supplied to
  * the section, and the current topology stiffness scale is applied to the
- * returned tangent. Arbitrary reference coordinates use the material-state rows
- * of the closest shell integration point.
+ * returned tangent. Arbitrary reference coordinates use the committed material
+ * state of the closest shell integration point. No target state is supplied,
+ * because this helper serves linear/reference stiffness and recovery queries.
  *
  * @param r First natural coordinate.
  * @param s Second natural coordinate.
@@ -485,17 +486,15 @@ typename FRTShell<N>::Mat8 FRTShell<N>::resultant_stiffness(
         }
     }
 
-    // Pass the first through-thickness input/output rows and common row stride
     const Index      state_row = this->mp_index(state_ip, 0);
     const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
-    Precision*       new_state = &(*this->_model_data->material_state_new)(state_row, 0);
 
     shell_section()->evaluate(
         reference_position(r, s),
         reference_basis_global(r, s),
         zero_strain,
         old_state,
-        new_state,
+        nullptr,
         this->_model_data->material_state_old->components,
         false,
         zero_resultants,
