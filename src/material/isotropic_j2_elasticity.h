@@ -12,9 +12,12 @@
  * return map are deliberately not persisted between global increments.
  *
  * Every public constitutive evaluation follows FEMaster's committed/trial state
- * contract. `old_state` is read-only, `new_state` receives the converged candidate
- * history when non-null, and the same physical update is evaluated when
- * `new_state == nullptr` without modifying persistent history.
+ * contract. `old_state` is read-only and `new_state` receives the converged
+ * candidate history when non-null. A null tangent requests the same physical
+ * constitutive update without material-tangent output. The full-volume J2 path
+ * can therefore skip its expensive algorithmic tangent during residual-only
+ * assembly; axial and shell reductions still require local derivatives to solve
+ * their traction-free constitutive constraints.
  *
  * @see Elasticity
  * @see loadcase::tools::NonlinearStateManager
@@ -36,157 +39,117 @@ namespace fem::material {
  *
  * Yield points are supplied as `(yield stress, equivalent plastic strain)` pairs.
  * The first point defines initial yield at zero plastic strain. Intermediate
- * values are linearly interpolated. Beyond the final point the final yield stress
- * is continued, i.e. the material is perfectly plastic after the tabulated range.
+ * values are linearly interpolated. Beyond the final point the final yield
+ * stress is continued, so the material becomes perfectly plastic after the
+ * tabulated range.
  *
  * The small-strain model uses the classical associative radial return. The
- * finite-strain model uses a multiplicative split F = Fe Fp with an exponential
- * plastic update and an analytically consistent algorithmic tangent.
+ * finite-strain model uses the multiplicative split
+ *
+ *     F = Fe Fp
+ *
+ * together with the exponential plastic update
+ *
+ *     Fp_(n+1) = exp(A) Fp_n.
+ *
+ * Its algorithmic tangent is the consistent analytic derivative of the same
+ * discrete return map used for the stress update. Persistent state contains only
+ * `Cp` and accumulated equivalent plastic strain; local return-map unknowns are
+ * reconstructed for every candidate from the committed state.
  */
 struct IsotropicJ2Elasticity : Elasticity {
     using Elasticity::evaluate;
 
     /**
-     * @brief One point of the piecewise-linear isotropic hardening curve.
+     * @brief One point of the piecewise-linear isotropic hardening law.
+     *
+     * `equivalent_plastic_strain` is the accumulated scalar J2 history variable
+     * and `yield_stress` is the corresponding current radius of the yield
+     * surface. Points are stored in strictly increasing plastic-strain order.
      */
     struct YieldPoint {
         Precision yield_stress;
         Precision equivalent_plastic_strain;
     };
 
+    // Independent elastic parameters
     Precision youngs;
     Precision poisson;
 
-    /**
-     * @brief Constructs isotropic J2 plasticity from Young's modulus and Poisson ratio.
-     * @param youngs_in Young's modulus E.
-     * @param poisson_in Poisson ratio nu.
-     */
+    // Construction and elastic constants
     IsotropicJ2Elasticity(Precision youngs_in, Precision poisson_in);
 
-    /**
-     * @brief Returns the elastic shear modulus G = E / (2 (1 + nu)).
-     */
     [[nodiscard]] Precision shear_modulus() const;
-
-    /**
-     * @brief Returns the elastic bulk modulus K = E / (3 (1 - 2 nu)).
-     */
     [[nodiscard]] Precision bulk_modulus() const;
 
-    /**
-     * @brief Appends one point to the isotropic hardening curve.
-     * @param yield_stress Current uniaxial yield stress.
-     * @param equivalent_plastic_strain Accumulated equivalent plastic strain.
-     */
+    // Piecewise-linear isotropic hardening definition. The first point must be
+    // located at zero equivalent plastic strain; subsequent points must increase
+    // monotonically in both plastic strain and yield stress.
     void add_yield_point(Precision yield_stress, Precision equivalent_plastic_strain);
-
-    /**
-     * @brief Returns the complete tabulated isotropic hardening curve.
-     */
     [[nodiscard]] const std::vector<YieldPoint>& get_yield_points() const;
 
-    /** @brief Reports support for infinitesimal axial strain with Cauchy stress. */
+    // Supported strain/stress-measure pairs
     bool supports_axial_linearized() const override;
-
-    /** @brief Reports support for Green-Lagrange axial strain with PK2 stress. */
     bool supports_axial_green_lagrange() const override;
-
-    /** @brief Reports support for infinitesimal three-dimensional strain. */
     bool supports_volume_linearized() const override;
-
-    /** @brief Reports support for Green-Lagrange three-dimensional strain. */
     bool supports_volume_green_lagrange() const override;
-
-    /** @brief Reports support for infinitesimal integrated-shell material response. */
     bool supports_shell_integration_linearized() const override;
-
-    /** @brief Reports support for finite-strain integrated-shell material response. */
     bool supports_shell_integration_green_lagrange() const override;
 
-    /**
-     * @brief Returns the number of persistent constitutive state scalars.
-     *
-     * The seven values are the six independent components of Cp and eqp.
-     */
+    // Persistent material-point history. Seven scalars store the six independent
+    // components of Cp = Fp^T Fp followed by accumulated equivalent plastic strain.
     Index state_size() const override;
+    void  initialize_state(Precision* state) const override;
 
-    /**
-     * @brief Initializes the constitutive state to Fp = I and eqp = 0.
-     * @param state Writable state row containing at least state_size() entries.
-     */
-    void initialize_state(Precision* state) const override;
-
-    /**
-     * @brief Evaluates the infinitesimal uniaxial J2 response.
-     */
+    // Axial reductions enforce zero transverse stress through the corresponding
+    // three-dimensional constitutive law. The external scalar tangent is optional,
+    // although the finite/local reduction may require derivatives internally.
     void evaluate(const AxialStrainLinearized& strain,
                   const Precision*             old_state,
                   Precision*                   new_state,
                   AxialStressCauchy&           stress,
-                  Precision&                   tangent) const override;
+                  Precision*                   tangent = nullptr) const override;
 
-    /**
-     * @brief Evaluates the finite-strain uniaxial J2 response.
-     */
     void evaluate(const AxialStrainGreenLagrange& strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
-                  Precision&                      tangent) const override;
+                  Precision*                      tangent = nullptr) const override;
 
-    /**
-     * @brief Evaluates the infinitesimal three-dimensional J2 response.
-     */
+    // Three-dimensional material response. A null tangent preserves the complete
+    // stress/state update while omitting construction of the algorithmic matrix.
     void evaluate(const VolumeStrainLinearized& strain,
                   const Precision*              old_state,
                   Precision*                    new_state,
                   VolumeStressCauchy&           stress,
-                  Mat6&                         tangent) const override;
+                  Mat6*                         tangent = nullptr) const override;
 
-    /**
-     * @brief Evaluates the finite-strain three-dimensional J2 response.
-     */
     void evaluate(const VolumeStrainGreenLagrange& strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
-                  Mat6&                            tangent) const override;
+                  Mat6*                            tangent = nullptr) const override;
 
-    /**
-     * @brief Evaluates the finite-strain three-dimensional response with optional tangent.
-     *
-     * A null tangent requests the identical return map and trial state but skips
-     * construction of the algorithmic material tangent. This is used by residual-
-     * only global line-search evaluations.
-     */
-    void evaluate(const VolumeStrainGreenLagrange& strain,
-                  const Precision*                 old_state,
-                  Precision*                       new_state,
-                  VolumeStressPK2&                 stress,
-                  Mat6*                            tangent) const override;
-
-    /**
-     * @brief Evaluates the infinitesimal integrated-shell J2 response under S33 = 0.
-     */
+    // Integrated-shell material response under the local plane-stress condition
+    // S33 = 0. Tangent output is optional; the thickness solve itself still uses
+    // the three-dimensional consistent derivative for its Newton update.
     void evaluate(const ShellMaterialStrainLinearized& strain,
                   const Precision*                     old_state,
                   Precision*                           new_state,
-                  ShellMaterialStressCauchy&           stress,
-                  Mat5&                                tangent) const override;
+                  ShellMaterialStressCauchy&            stress,
+                  Mat5*                                tangent = nullptr) const override;
 
-    /**
-     * @brief Evaluates the finite-strain integrated-shell J2 response under S33 = 0.
-     */
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
-                  Mat5&                                   tangent) const override;
+                  Mat5*                                   tangent = nullptr) const override;
 
 private:
+    // Persistent state layout size
     static constexpr Index state_count = 7;
 
+    // Piecewise-linear isotropic hardening table
     std::vector<YieldPoint> yield_points_;
 };
 
