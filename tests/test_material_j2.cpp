@@ -3,10 +3,13 @@
 #include "../src/io/dsl/registry.h"
 #include "../src/io/reader/commands/register_functions.h"
 #include "../src/material/isotropic_j2_elasticity.h"
+#include "../src/material/strain/volume_strain_linearized.h"
+#include "../src/material/stress/volume_stress_cauchy.h"
 #include "../src/model/model.h"
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +35,47 @@ TEST(Material_J2, DerivedModuliAndYieldPoints) {
     EXPECT_EQ(points[1].equivalent_plastic_strain, Precision(0.02));
     EXPECT_EQ(points[2].yield_stress, Precision(380));
     EXPECT_EQ(points[2].equivalent_plastic_strain, Precision(0.10));
+}
+
+TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
+    material::IsotropicJ2Elasticity j2(Precision(210000), Precision(0.3));
+    j2.add_yield_point(Precision(280), Precision(0));
+    j2.add_yield_point(Precision(350), Precision(0.10));
+
+    std::array<Precision, 7> committed{};
+    j2.initialize_state(committed.data());
+    const auto committed_before = committed;
+
+    // A sufficiently large deviatoric strain drives the material into plasticity.
+    Vec6 strain_values = Vec6::Zero();
+    strain_values(0) = Precision(0.01);
+    const VolumeStrainLinearized strain(strain_values);
+
+    std::array<Precision, 7> trial_a{};
+    std::array<Precision, 7> trial_b{};
+    VolumeStressCauchy stress_a;
+    VolumeStressCauchy stress_b;
+    VolumeStressCauchy stress_readonly;
+    Mat6 tangent_a;
+    Mat6 tangent_b;
+    Mat6 tangent_readonly;
+
+    j2.evaluate(strain, committed.data(), trial_a.data(), stress_a, tangent_a);
+    j2.evaluate(strain, committed.data(), trial_b.data(), stress_b, tangent_b);
+    j2.evaluate(strain, committed.data(), nullptr, stress_readonly, tangent_readonly);
+
+    // Constitutive calls must never modify committed history and repeated trial
+    // evaluations from the same committed state must be deterministic.
+    for (std::size_t i = 0; i < committed.size(); ++i) {
+        EXPECT_EQ(committed[i], committed_before[i]);
+        EXPECT_NEAR(trial_a[i], trial_b[i], Precision(1e-12));
+    }
+
+    EXPECT_GT(trial_a[6], Precision(0));
+    EXPECT_TRUE(stress_a.voigt().isApprox(stress_b.voigt(), Precision(1e-10)));
+    EXPECT_TRUE(stress_a.voigt().isApprox(stress_readonly.voigt(), Precision(1e-10)));
+    EXPECT_TRUE(tangent_a.isApprox(tangent_b, Precision(1e-10)));
+    EXPECT_TRUE(tangent_a.isApprox(tangent_readonly, Precision(1e-10)));
 }
 
 TEST(Material_J2, PlasticCommandReplacesIsotropicElasticity) {
