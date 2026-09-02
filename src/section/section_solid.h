@@ -68,6 +68,17 @@ struct SolidSection : Section {
                   VolumeStressPK2&                 stress_global,
                   Mat6&                            tangent_global) const;
 
+    // Optional-tangent finite-strain variant used by nonlinear residual-only
+    // assembly. A null tangent keeps the identical PK2 stress/state update but
+    // allows expensive constitutive tangent work to be omitted.
+    void evaluate(const Vec3&                      position_reference,
+                  const Mat3&                      additional_rotation,
+                  const VolumeStrainGreenLagrange& strain_global,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
+                  VolumeStressPK2&                 stress_global,
+                  Mat6*                            tangent_global) const;
+
     // Differentiate the globally transformed linear material tangent with
     // respect to three supplied additional-rotation directions. The material
     // tangent is evaluated at zero strain using the selected old/new state rows
