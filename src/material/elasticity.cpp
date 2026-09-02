@@ -72,52 +72,45 @@ void Elasticity::evaluate(const AxialStrainLinearized& strain,
                           const Precision*             old_state,
                           Precision*                   new_state,
                           AxialStressCauchy&           stress,
-                          Precision&                   tangent) const {
+                          Precision*                   tangent) const {
     (void) strain;
     (void) old_state;
     (void) new_state;
     (void) stress;
     (void) tangent;
-    logging::error(false, "Elasticity model does not support linearized axial evaluation");
+
+    logging::error(false,
+        "Elasticity model does not support linearized axial evaluation");
 }
 
 void Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
                           const Precision*                old_state,
                           Precision*                      new_state,
                           AxialStressPK2&                 stress,
-                          Precision&                      tangent) const {
+                          Precision*                      tangent) const {
     (void) strain;
     (void) old_state;
     (void) new_state;
     (void) stress;
     (void) tangent;
-    logging::error(false, "Elasticity model does not support Green-Lagrange axial evaluation");
+
+    logging::error(false,
+        "Elasticity model does not support Green-Lagrange axial evaluation");
 }
 
 void Elasticity::evaluate(const VolumeStrainLinearized& strain,
                           const Precision*              old_state,
                           Precision*                    new_state,
                           VolumeStressCauchy&           stress,
-                          Mat6&                         tangent) const {
+                          Mat6*                         tangent) const {
     (void) strain;
     (void) old_state;
     (void) new_state;
     (void) stress;
     (void) tangent;
-    logging::error(false, "Elasticity model does not support linearized volume evaluation");
-}
 
-void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
-                          const Precision*                 old_state,
-                          Precision*                       new_state,
-                          VolumeStressPK2&                 stress,
-                          Mat6&                            tangent) const {
-    (void) strain;
-    (void) old_state;
-    (void) new_state;
-    (void) stress;
-    (void) tangent;
-    logging::error(false, "Elasticity model does not support Green-Lagrange volume evaluation");
+    logging::error(false,
+        "Elasticity model does not support linearized volume evaluation");
 }
 
 void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
@@ -125,47 +118,59 @@ void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
                           Precision*                       new_state,
                           VolumeStressPK2&                 stress,
                           Mat6*                            tangent) const {
-    Mat6 scratch;
-    evaluate(strain, old_state, new_state, stress, tangent != nullptr ? *tangent : scratch);
+    (void) strain;
+    (void) old_state;
+    (void) new_state;
+    (void) stress;
+    (void) tangent;
+
+    logging::error(false,
+        "Elasticity model does not support Green-Lagrange volume evaluation");
 }
 
 void Elasticity::evaluate(const BeamGeneralizedStrain& strain,
                           const Precision*             old_state,
                           Precision*                   new_state,
                           BeamStressResultants&        resultants,
-                          Mat6&                        tangent) const {
+                          Mat6*                        tangent) const {
     (void) strain;
     (void) old_state;
     (void) new_state;
     (void) resultants;
     (void) tangent;
-    logging::error(false, "Elasticity model does not support beam-resultant evaluation");
+
+    logging::error(false,
+        "Elasticity model does not support beam-resultant evaluation");
 }
 
 void Elasticity::evaluate(const ShellMaterialStrainLinearized& strain,
                           const Precision*                     old_state,
                           Precision*                           new_state,
                           ShellMaterialStressCauchy&            stress,
-                          Mat5&                                 tangent) const {
+                          Mat5*                                tangent) const {
     (void) strain;
     (void) old_state;
     (void) new_state;
     (void) stress;
     (void) tangent;
-    logging::error(false, "Elasticity model does not support linearized shell integration");
+
+    logging::error(false,
+        "Elasticity model does not support linearized shell integration");
 }
 
 void Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
                           const Precision*                        old_state,
                           Precision*                              new_state,
                           ShellMaterialStressPK2&                 stress,
-                          Mat5&                                   tangent) const {
+                          Mat5*                                   tangent) const {
     (void) strain;
     (void) old_state;
     (void) new_state;
     (void) stress;
     (void) tangent;
-    logging::error(false, "Elasticity model does not support Green-Lagrange shell integration");
+
+    logging::error(false,
+        "Elasticity model does not support Green-Lagrange shell integration");
 }
 
 } // namespace fem::material
