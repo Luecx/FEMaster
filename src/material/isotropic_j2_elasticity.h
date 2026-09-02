@@ -28,6 +28,8 @@
 
 #include "elasticity.h"
 #include "../core/logging.h"
+#include "strain/axial_strain_green_lagrange.h"
+#include "stress/axial_stress_pk2.h"
 
 #include <algorithm>
 #include <array>
