@@ -27,12 +27,14 @@
  * backward-Euler flow and consistency equations. This is a genuine multiplicative
  * finite-strain J2 update, not an additive Green-Lagrange plasticity approximation.
  *
- * The finite-strain algorithmic tangent is obtained from the converged local
- * return-mapping equations by implicit differentiation. Numerical derivatives are
- * taken only for the local residual/stress partial derivatives at the converged
- * state; perturbed strains no longer run complete return mappings. This preserves
- * the discrete constitutive equations while avoiding the former nested
- * finite-difference/Newton cost.
+ * All constitutive Jacobians and algorithmic tangents in this implementation are
+ * differentiated analytically. The only spectral derivative required by the
+ * finite-strain model is the exact Fréchet derivative of exp(A), evaluated from
+ * the symmetric eigendecomposition of A through exponential divided differences.
+ * No strain or local-unknown finite differences enter the return mapping or the
+ * consistent tangent. At hardening-table knots the constitutive law itself is not
+ * differentiable; the active tabulated segment supplies the corresponding
+ * one-sided tangent.
  */
 
 #include "isotropic_j2_elasticity.h"
@@ -65,7 +67,7 @@ namespace fem::material {
 namespace {
 
 constexpr Index state_count = 7;
-using State = std::array<Precision, state_count>;
+using State      = std::array<Precision, state_count>;
 using YieldPoint = IsotropicJ2Elasticity::YieldPoint;
 using YieldCurve = std::vector<YieldPoint>;
 
@@ -164,17 +166,113 @@ Mat3 spd_log(const Mat3& A) {
     return spd_function(A, [](Precision x) { return std::log(x); }, "metric");
 }
 
-Mat3 sym_exp(const Mat3& A) {
+/**
+ * Validates symmetric positive definiteness without evaluating a matrix function.
+ * Finite-strain kinematics need this check for C and Ce, but do not need their
+ * logarithms; using eigenvalues only avoids the unnecessary spectral mapping.
+ */
+void require_spd(const Mat3& A, const char* name) {
+    Eigen::SelfAdjointEigenSolver<Mat3> solver(sym(A), Eigen::EigenvaluesOnly);
+    logging::error(solver.info() == Eigen::Success,
+                   "J2: eigendecomposition failed for ", name);
+
+    const Vec3 lambda = solver.eigenvalues();
+    const Precision scale = std::max(Precision(1), lambda.cwiseAbs().maxCoeff());
+    logging::error(lambda.minCoeff() > Precision(100) * std::numeric_limits<Precision>::epsilon() * scale,
+                   "J2: ", name, " is not symmetric positive definite");
+}
+
+/**
+ * Spectral representation of exp(A) for symmetric A.
+ *
+ * Keeping the eigenpairs beside exp(A) makes the exact Fréchet derivative cheap:
+ * every directional derivative reuses the same eigendecomposition and applies
+ * only the exponential divided-difference matrix in the principal basis.
+ */
+struct SymmetricExponential {
+    Mat3 value           = Mat3::Identity();
+    Mat3 eigenvectors    = Mat3::Identity();
+    Vec3 eigenvalues     = Vec3::Zero();
+    Vec3 exp_eigenvalues = Vec3::Ones();
+};
+
+SymmetricExponential symmetric_exponential(const Mat3& A) {
     Eigen::SelfAdjointEigenSolver<Mat3> solver(sym(A));
     logging::error(solver.info() == Eigen::Success,
                    "J2: eigendecomposition failed during symmetric exponential");
 
-    Vec3 mapped;
+    SymmetricExponential result;
+    result.eigenvalues  = solver.eigenvalues();
+    result.eigenvectors = solver.eigenvectors();
+
     for (Index i = 0; i < 3; ++i) {
-        mapped(i) = std::exp(solver.eigenvalues()(i));
+        result.exp_eigenvalues(i) = std::exp(result.eigenvalues(i));
     }
 
-    return sym(solver.eigenvectors() * mapped.asDiagonal() * solver.eigenvectors().transpose());
+    result.value = sym(
+        result.eigenvectors
+        * result.exp_eigenvalues.asDiagonal()
+        * result.eigenvectors.transpose()
+    );
+    return result;
+}
+
+Mat3 sym_exp(const Mat3& A) {
+    return symmetric_exponential(A).value;
+}
+
+/**
+ * Exact Fréchet derivative D exp(A)[H] for symmetric A and H.
+ *
+ * In the eigenbasis of A the derivative is the Hadamard product
+ *
+ *     Q^T Dexp(A)[H] Q = L_exp(lambda) .* (Q^T H Q),
+ *
+ * where the diagonal divided differences are exp(lambda_i) and the off-diagonal
+ * entries are (exp(lambda_i)-exp(lambda_j))/(lambda_i-lambda_j). `expm1`
+ * evaluates the quotient stably for clustered eigenvalues; the repeated-root
+ * limit is exp(lambda).
+ */
+Mat3 sym_exp_directional(const SymmetricExponential& exponential,
+                         const Mat3&                 direction) {
+    const Mat3 local_direction =
+        exponential.eigenvectors.transpose() * sym(direction) * exponential.eigenvectors;
+
+    Mat3 local_derivative = Mat3::Zero();
+    for (Index i = 0; i < 3; ++i) {
+        for (Index j = 0; j < 3; ++j) {
+            Precision factor = Precision(0);
+
+            if (i == j) {
+                factor = exponential.exp_eigenvalues(i);
+            } else {
+                const Precision lambda_i = exponential.eigenvalues(i);
+                const Precision lambda_j = exponential.eigenvalues(j);
+                const Precision delta    = lambda_i - lambda_j;
+                const Precision scale = std::max({
+                    Precision(1), std::abs(lambda_i), std::abs(lambda_j)
+                });
+
+                if (std::abs(delta)
+                    <= Precision(64) * std::numeric_limits<Precision>::epsilon() * scale) {
+                    // Repeated eigenvalue: use the exact divided-difference limit.
+                    factor = Precision(0.5)
+                           * (exponential.exp_eigenvalues(i)
+                              + exponential.exp_eigenvalues(j));
+                } else {
+                    factor = exponential.exp_eigenvalues(j) * std::expm1(delta) / delta;
+                }
+            }
+
+            local_derivative(i, j) = factor * local_direction(i, j);
+        }
+    }
+
+    return sym(
+        exponential.eigenvectors
+        * local_derivative
+        * exponential.eigenvectors.transpose()
+    );
 }
 
 Mat3 normalize_cp(Mat3 Cp) {
@@ -187,10 +285,6 @@ Mat3 normalize_cp(Mat3 Cp) {
     // analytically; remove only accumulated round-off drift.
     Cp /= std::cbrt(determinant);
     return sym(Cp);
-}
-
-Precision derivative_step(Precision value) {
-    return Precision(1e-7) * std::max(Precision(1), std::abs(value));
 }
 
 Precision stress_tolerance(Precision youngs, Precision yield_stress) {
@@ -227,6 +321,13 @@ Precision yield_stress_at(const YieldCurve& yield_curve, Precision equivalent_pl
     return yield_curve.back().yield_stress;
 }
 
+/**
+ * Returns the active piecewise-linear hardening slope.
+ *
+ * At an interior table knot the derivative of the hardening curve is not unique.
+ * The interval to the right is selected, which defines the one-sided tangent used
+ * by the local Newton system and by the algorithmic material tangent.
+ */
 Precision hardening_slope_at(const YieldCurve& yield_curve, Precision equivalent_plastic_strain) {
     if (yield_curve.size() < 2
         || equivalent_plastic_strain >= yield_curve.back().equivalent_plastic_strain) {
@@ -292,60 +393,142 @@ bool admissible_green_lagrange(const Vec6& e) {
 }
 
 // -----------------------------------------------------------------------------
-// Three-dimensional constitutive kernels
+// Small-strain three-dimensional constitutive update and exact tangent
 // -----------------------------------------------------------------------------
 
-Update3D update_small_strain(const Mat3& strain,
-                             const State& committed,
-                             Precision shear,
-                             Precision bulk,
-                             const YieldCurve& yield_curve) {
-    Update3D result;
-    result.state = committed;
+/**
+ * Complete small-strain return-map data retained for exact linearization.
+ */
+struct SmallUpdate {
+    Update3D response;
+    Mat3     sigma_trial = Mat3::Zero();
+    Mat3     s_trial     = Mat3::Zero();
+    Mat3     N           = Mat3::Zero();
+    Precision q_trial    = Precision(0);
+    Precision alpha_old  = Precision(0);
+    Precision dgamma     = Precision(0);
+    bool      plastic    = false;
+};
+
+SmallUpdate integrate_small_strain(const Mat3& strain,
+                                   const State& committed,
+                                   Precision shear,
+                                   Precision bulk,
+                                   const YieldCurve& yield_curve) {
+    SmallUpdate result;
+    result.response.state = committed;
 
     const Mat3 Cp_old = cp_from_state(committed);
     const Mat3 ep_old = Precision(0.5) * spd_log(Cp_old);
-    const Precision alpha_old = committed[6];
+    result.alpha_old  = committed[6];
 
     const Mat3 ee_trial = sym(strain - ep_old);
-    const Mat3 sigma_trial = bulk * ee_trial.trace() * Mat3::Identity()
-                           + Precision(2) * shear * dev(ee_trial);
-    const Mat3 s_trial = dev(sigma_trial);
-    const Precision q_trial = std::sqrt(
-        std::max(Precision(0), Precision(1.5) * double_contract(s_trial, s_trial))
+    result.sigma_trial = bulk * ee_trial.trace() * Mat3::Identity()
+                       + Precision(2) * shear * dev(ee_trial);
+    result.s_trial = dev(result.sigma_trial);
+    result.q_trial = std::sqrt(
+        std::max(
+            Precision(0),
+            Precision(1.5) * double_contract(result.s_trial, result.s_trial)
+        )
     );
-    const Precision current_yield = yield_stress_at(yield_curve, alpha_old);
-    const Precision f_trial = q_trial - current_yield;
 
-    if (f_trial <= stress_tolerance(Precision(3) * bulk, initial_yield_stress(yield_curve))) {
-        result.stress = sigma_trial;
+    const Precision current_yield = yield_stress_at(yield_curve, result.alpha_old);
+    const Precision f_trial = result.q_trial - current_yield;
+    result.plastic = f_trial
+        > stress_tolerance(Precision(3) * bulk, initial_yield_stress(yield_curve));
+
+    if (!result.plastic) {
+        result.response.stress = result.sigma_trial;
         return result;
     }
 
-    logging::error(q_trial > Precision(0),
+    logging::error(result.q_trial > Precision(0),
                    "J2: positive yield residual with zero trial equivalent stress");
 
-    const Mat3 N = (Precision(1.5) / q_trial) * s_trial;
-    const Precision dgamma = solve_small_plastic_increment(
-        q_trial, alpha_old, shear, yield_curve
+    result.N = (Precision(1.5) / result.q_trial) * result.s_trial;
+    result.dgamma = solve_small_plastic_increment(
+        result.q_trial,
+        result.alpha_old,
+        shear,
+        yield_curve
     );
 
-    const Mat3 ep_new = sym(ep_old + dgamma * N);
+    const Mat3 ep_new = sym(ep_old + result.dgamma * result.N);
     const Mat3 Cp_new = normalize_cp(sym_exp(Precision(2) * ep_new));
 
-    result.stress = sym(sigma_trial - Precision(2) * shear * dgamma * N);
-    cp_to_state(result.state, Cp_new);
-    result.state[6] = alpha_old + dgamma;
+    result.response.stress = sym(
+        result.sigma_trial - Precision(2) * shear * result.dgamma * result.N
+    );
+    cp_to_state(result.response.state, Cp_new);
+    result.response.state[6] = result.alpha_old + result.dgamma;
     return result;
 }
 
+/**
+ * Exact small-strain algorithmic tangent of the radial-return update.
+ *
+ * For a plastic state the scalar consistency equation gives
+ *
+ *     dgamma = dq_trial / (3 G + H),
+ *
+ * while the normalized J2 flow direction N = 3/2 s/q is differentiated directly.
+ * The six engineering-Voigt columns are assembled from exact tensor directional
+ * derivatives; no perturbation of the constitutive update is performed.
+ */
+Mat6 tangent_small(const Vec6& strain,
+                   const SmallUpdate& base,
+                   Precision shear,
+                   Precision bulk,
+                   const YieldCurve& yield_curve) {
+    Mat6 C = Mat6::Zero();
+
+    const Precision hardening = base.plastic
+        ? hardening_slope_at(yield_curve, base.alpha_old + base.dgamma)
+        : Precision(0);
+
+    for (Index column = 0; column < 6; ++column) {
+        Vec6 direction = Vec6::Zero();
+        direction(column) = Precision(1);
+
+        const Mat3 dstrain = engineering_strain_tensor(direction);
+        const Mat3 dsigma_trial = bulk * dstrain.trace() * Mat3::Identity()
+                                + Precision(2) * shear * dev(dstrain);
+
+        Mat3 dsigma = dsigma_trial;
+
+        if (base.plastic) {
+            const Mat3 ds_trial = dev(dsigma_trial);
+            const Precision dq = double_contract(base.N, ds_trial);
+            const Precision dgamma = dq / (Precision(3) * shear + hardening);
+            const Mat3 dN = (Precision(1.5) / base.q_trial)
+                           * (ds_trial - (dq / base.q_trial) * base.s_trial);
+
+            dsigma -= Precision(2) * shear
+                    * (dgamma * base.N + base.dgamma * dN);
+        }
+
+        C.col(column) = stress_voigt(dsigma);
+    }
+
+    return Precision(0.5) * (C + C.transpose());
+}
+
+// -----------------------------------------------------------------------------
+// Finite-strain three-dimensional constitutive update
+// -----------------------------------------------------------------------------
+
 struct FiniteTrial {
+    Mat3 A      = Mat3::Zero();
+    SymmetricExponential exp_A;
     Mat3 Fp     = Mat3::Identity();
     Mat3 Fp_inv = Mat3::Identity();
     Mat3 Ce     = Mat3::Identity();
     Mat3 Ee     = Mat3::Zero();
     Mat3 Se     = Mat3::Zero();
     Mat3 M      = Mat3::Zero();
+    Mat3 m      = Mat3::Zero();
+    Mat3 N      = Mat3::Zero();
     Precision q = Precision(0);
 };
 
@@ -357,6 +540,16 @@ struct FiniteUpdate {
     Vec6        x         = Vec6::Zero();
     FiniteTrial trial;
     bool        plastic   = false;
+};
+
+struct FiniteDirectionalResponse {
+    Mat3 stress   = Mat3::Zero();
+    Vec6 residual = Vec6::Zero();
+};
+
+struct FiniteLocalLinearization {
+    Mat6 residual_x = Mat6::Zero();
+    Mat6 stress_x   = Mat6::Zero();
 };
 
 Mat3 deviatoric_tensor_from_five(const Vec5& v) {
@@ -374,6 +567,12 @@ Vec5 five_from_deviatoric_tensor(const Mat3& A) {
     return v;
 }
 
+Mat3 finite_a_direction(Index component) {
+    Vec5 direction = Vec5::Zero();
+    direction(component) = Precision(1);
+    return deviatoric_tensor_from_five(direction);
+}
+
 FiniteTrial finite_trial_from_increment(const Mat3& C,
                                         const Mat3& Fp_old,
                                         const Vec6& x,
@@ -381,14 +580,13 @@ FiniteTrial finite_trial_from_increment(const Mat3& C,
                                         Precision bulk) {
     FiniteTrial trial;
 
-    const Vec5 a = x.template head<5>();
-    const Mat3 A = deviatoric_tensor_from_five(a);
-    const Mat3 plastic_increment = sym_exp(A);
+    trial.A     = deviatoric_tensor_from_five(x.template head<5>());
+    trial.exp_A = symmetric_exponential(trial.A);
 
-    trial.Fp = plastic_increment * Fp_old;
+    trial.Fp     = trial.exp_A.value * Fp_old;
     trial.Fp_inv = trial.Fp.inverse();
-    trial.Ce = sym(trial.Fp_inv.transpose() * C * trial.Fp_inv);
-    (void) spd_log(trial.Ce);
+    trial.Ce     = sym(trial.Fp_inv.transpose() * C * trial.Fp_inv);
+    require_spd(trial.Ce, "elastic metric");
 
     trial.Ee = Precision(0.5) * (trial.Ce - Mat3::Identity());
     const Precision lame = bulk - Precision(2.0 / 3.0) * shear;
@@ -396,10 +594,15 @@ FiniteTrial finite_trial_from_increment(const Mat3& C,
              + Precision(2) * shear * trial.Ee;
 
     trial.M = sym(trial.Ce * trial.Se);
-    const Mat3 m = dev(trial.M);
+    trial.m = dev(trial.M);
     trial.q = std::sqrt(
-        std::max(Precision(0), Precision(1.5) * double_contract(m, m))
+        std::max(Precision(0), Precision(1.5) * double_contract(trial.m, trial.m))
     );
+
+    if (trial.q > Precision(0)) {
+        trial.N = (Precision(1.5) / trial.q) * trial.m;
+    }
+
     return trial;
 }
 
@@ -414,20 +617,19 @@ Vec6 finite_local_residual(const FiniteTrial& trial,
                            const YieldCurve& yield_curve) {
     const Precision dgamma = x(5);
 
-    Vec6 residual = Vec6::Zero();
-    const Mat3 A = deviatoric_tensor_from_five(x.template head<5>());
-
     logging::error(dgamma >= Precision(-1e-12),
                    "J2: negative equivalent plastic increment in local solve");
     logging::error(trial.q > Precision(0),
                    "J2: plastic local solve reached zero Mandel equivalent stress");
 
-    const Mat3 N = (Precision(1.5) / trial.q) * dev(trial.M);
-    residual.template head<5>() = five_from_deviatoric_tensor(A - dgamma * N);
+    Vec6 residual = Vec6::Zero();
+    residual.template head<5>() = five_from_deviatoric_tensor(
+        trial.A - dgamma * trial.N
+    );
 
     const Precision alpha = alpha_old + dgamma;
-    const Precision local_hardening = hardening_slope_at(yield_curve, alpha);
-    const Precision denom = Precision(3) * shear + local_hardening;
+    const Precision hardening = hardening_slope_at(yield_curve, alpha);
+    const Precision denom = Precision(3) * shear + hardening;
     residual(5) = (trial.q - yield_stress_at(yield_curve, alpha)) / denom;
     return residual;
 }
@@ -444,56 +646,141 @@ Vec6 finite_local_residual(const Mat3& C,
 }
 
 /**
- * Numerically differentiates the six local return-mapping equations with
- * respect to their six local unknowns at one fixed total strain.
+ * Exact directional derivative of finite-strain stress and, optionally, of the
+ * six local return-mapping equations.
  *
- * The sixth unknown is dgamma and does not enter Fp directly. Its derivative can
- * therefore reuse the already evaluated base trial instead of repeating a matrix
- * exponential and spectral metric evaluation. The remaining five flow-tensor
- * components use central differences.
+ * The supplied directions represent independent variations dC, dA and dgamma.
+ * The exponential-map contribution is differentiated by the exact Fréchet
+ * derivative Dexp(A)[dA]. All remaining quantities follow by the ordinary chain
+ * rule:
+ *
+ *     dFp^{-1} = -Fp^{-1} dFp Fp^{-1},
+ *     dCe      = sym(dFp^{-T} C Fp^{-1}
+ *                    + Fp^{-T} dC Fp^{-1}
+ *                    + Fp^{-T} C dFp^{-1}),
+ *     dq       = N : dM,
+ *     dN       = 3/(2q) [dev(dM) - (dq/q) dev(M)].
+ *
+ * This function is the common analytic building block for both the local Newton
+ * Jacobian and the global consistent material tangent.
  */
-Mat6 finite_local_jacobian_x(const Mat3& C,
-                             const Mat3& Fp_old,
-                             Precision alpha_old,
-                             const Vec6& x,
-                             const FiniteTrial& base_trial,
-                             const Vec6& base_residual,
-                             Precision shear,
-                             Precision bulk,
-                             const YieldCurve& yield_curve) {
-    Mat6 J = Mat6::Zero();
+FiniteDirectionalResponse finite_directional_response(
+    const FiniteTrial& trial,
+    const Mat3&        C,
+    const Mat3&        Fp_old,
+    Precision          alpha_old,
+    const Vec6&        x,
+    const Mat3&        dC,
+    const Mat3&        dA,
+    Precision          dgamma,
+    Precision          shear,
+    Precision          bulk,
+    const YieldCurve&  yield_curve,
+    bool               include_residual
+) {
+    const Mat3 dplastic_increment = sym_exp_directional(trial.exp_A, dA);
+    const Mat3 dFp = dplastic_increment * Fp_old;
+    const Mat3 dFp_inv = -trial.Fp_inv * dFp * trial.Fp_inv;
 
-    for (Index column = 0; column < 6; ++column) {
-        const Precision h = derivative_step(x(column));
-        Vec6 xp = x;
-        Vec6 xm = x;
-        xp(column) += h;
-        xm(column) -= h;
+    // Differentiate Ce from its defining expression. Keeping the original total
+    // metric C explicit avoids algebraic cancellation assumptions and keeps the
+    // derivative valid for simultaneous dC and dA variations.
+    const Mat3 dCe = sym(
+        dFp_inv.transpose() * C * trial.Fp_inv
+        + trial.Fp_inv.transpose() * dC * trial.Fp_inv
+        + trial.Fp_inv.transpose() * C * dFp_inv
+    );
 
-        if (column == 5) {
-            const Vec6 rp = finite_local_residual(
-                base_trial, alpha_old, xp, shear, yield_curve
-            );
+    const Mat3 dEe = Precision(0.5) * dCe;
+    const Precision lame = bulk - Precision(2.0 / 3.0) * shear;
+    const Mat3 dSe = lame * dEe.trace() * Mat3::Identity()
+                   + Precision(2) * shear * dEe;
 
-            if (xm(5) < Precision(0)) {
-                J.col(column) = (rp - base_residual) / h;
-            } else {
-                const Vec6 rm = finite_local_residual(
-                    base_trial, alpha_old, xm, shear, yield_curve
-                );
-                J.col(column) = (rp - rm) / (Precision(2) * h);
-            }
-            continue;
-        }
+    const Mat3 dM = sym(dCe * trial.Se + trial.Ce * dSe);
+    const Mat3 dm = dev(dM);
 
-        const FiniteTrial trial_p = finite_trial_from_increment(C, Fp_old, xp, shear, bulk);
-        const FiniteTrial trial_m = finite_trial_from_increment(C, Fp_old, xm, shear, bulk);
-        const Vec6 rp = finite_local_residual(trial_p, alpha_old, xp, shear, yield_curve);
-        const Vec6 rm = finite_local_residual(trial_m, alpha_old, xm, shear, yield_curve);
-        J.col(column) = (rp - rm) / (Precision(2) * h);
+    Precision dq = Precision(0);
+    Mat3 dN = Mat3::Zero();
+    if (trial.q > Precision(0)) {
+        dq = double_contract(trial.N, dm);
+        dN = (Precision(1.5) / trial.q)
+           * (dm - (dq / trial.q) * trial.m);
     }
 
-    return J;
+    FiniteDirectionalResponse result;
+    result.stress = sym(
+        dFp_inv * trial.Se * trial.Fp_inv.transpose()
+        + trial.Fp_inv * dSe * trial.Fp_inv.transpose()
+        + trial.Fp_inv * trial.Se * dFp_inv.transpose()
+    );
+
+    if (!include_residual) {
+        return result;
+    }
+
+    logging::error(trial.q > Precision(0),
+                   "J2: cannot differentiate plastic residual at zero Mandel stress");
+
+    result.residual.template head<5>() = five_from_deviatoric_tensor(
+        dA - dgamma * trial.N - x(5) * dN
+    );
+
+    const Precision alpha = alpha_old + x(5);
+    const Precision hardening = hardening_slope_at(yield_curve, alpha);
+    const Precision denom = Precision(3) * shear + hardening;
+
+    // H is constant inside each tabulated segment. At a knot the active right
+    // segment defines the one-sided derivative by hardening_slope_at().
+    result.residual(5) = (dq - hardening * dgamma) / denom;
+    return result;
+}
+
+/**
+ * Builds the exact local Jacobian dR/dx and, at the same time, dS/dx.
+ *
+ * The five tensor unknowns use the exact linear basis of the symmetric
+ * trace-free A parameterization. The sixth column is the direct derivative with
+ * respect to dgamma. No perturbed local solves or finite-difference probes are
+ * required.
+ */
+FiniteLocalLinearization finite_local_linearization_x(
+    const FiniteTrial& trial,
+    const Mat3&        C,
+    const Mat3&        Fp_old,
+    Precision          alpha_old,
+    const Vec6&        x,
+    Precision          shear,
+    Precision          bulk,
+    const YieldCurve&  yield_curve
+) {
+    FiniteLocalLinearization result;
+
+    for (Index column = 0; column < 6; ++column) {
+        const Mat3 dA = column < 5
+            ? finite_a_direction(column)
+            : Mat3::Zero();
+        const Precision dgamma = column == 5 ? Precision(1) : Precision(0);
+
+        const FiniteDirectionalResponse directional = finite_directional_response(
+            trial,
+            C,
+            Fp_old,
+            alpha_old,
+            x,
+            Mat3::Zero(),
+            dA,
+            dgamma,
+            shear,
+            bulk,
+            yield_curve,
+            true
+        );
+
+        result.residual_x.col(column) = directional.residual;
+        result.stress_x.col(column)   = stress_voigt(directional.stress);
+    }
+
+    return result;
 }
 
 FiniteUpdate integrate_finite_strain(const Mat3& green_lagrange,
@@ -505,10 +792,10 @@ FiniteUpdate integrate_finite_strain(const Mat3& green_lagrange,
     result.response.state = committed;
 
     result.C = sym(Mat3::Identity() + Precision(2) * green_lagrange);
-    (void) spd_log(result.C);
+    require_spd(result.C, "total metric");
 
     const Mat3 Cp_old = cp_from_state(committed);
-    result.Fp_old = spd_sqrt(Cp_old);
+    result.Fp_old    = spd_sqrt(Cp_old);
     result.alpha_old = committed[6];
     result.x.setZero();
 
@@ -527,9 +814,9 @@ FiniteUpdate integrate_finite_strain(const Mat3& green_lagrange,
         logging::error(result.trial.q > Precision(0),
                        "J2: positive yield residual with zero trial Mandel stress");
 
-        // Start the local Newton solve at the elastic trial state. A small-strain
-        // estimate for dgamma can substantially over-correct a finite-strain trial
-        // state, especially when one increment crosses a tabulated hardening kink.
+        // The elastic trial is the natural starting state. The local Newton
+        // Jacobian below is the exact derivative of the six coupled backward-
+        // Euler equations with respect to A and dgamma.
         result.x.setZero();
 
         bool local_converged = false;
@@ -547,19 +834,18 @@ FiniteUpdate integrate_finite_strain(const Mat3& green_lagrange,
                 break;
             }
 
-            const Mat6 J = finite_local_jacobian_x(
+            const FiniteLocalLinearization linearization = finite_local_linearization_x(
+                iterate_trial,
                 result.C,
                 result.Fp_old,
                 result.alpha_old,
                 result.x,
-                iterate_trial,
-                residual,
                 shear,
                 bulk,
                 yield_curve
             );
 
-            Eigen::FullPivLU<Mat6> lu(J);
+            Eigen::FullPivLU<Mat6> lu(linearization.residual_x);
             logging::error(lu.isInvertible(),
                            "J2: singular local finite-plasticity Jacobian");
             const Vec6 delta = lu.solve(-residual);
@@ -604,146 +890,59 @@ FiniteUpdate integrate_finite_strain(const Mat3& green_lagrange,
     return result;
 }
 
-Update3D update_finite_strain(const Mat3& green_lagrange,
-                              const State& committed,
-                              Precision shear,
-                              Precision bulk,
-                              const YieldCurve& yield_curve) {
-    return integrate_finite_strain(
-        green_lagrange, committed, shear, bulk, yield_curve
-    ).response;
-}
-
 // -----------------------------------------------------------------------------
-// Algorithmic tangents
+// Exact finite-strain algorithmic tangent
 // -----------------------------------------------------------------------------
-
-Mat6 tangent_small(const Vec6& strain,
-                   const State& committed,
-                   Precision shear,
-                   Precision bulk,
-                   const YieldCurve& yield_curve) {
-    Mat6 C = Mat6::Zero();
-
-    for (Index j = 0; j < 6; ++j) {
-        const Precision h = derivative_step(strain(j));
-        Vec6 plus = strain;
-        Vec6 minus = strain;
-        plus(j) += h;
-        minus(j) -= h;
-
-        const Vec6 sp = stress_voigt(update_small_strain(
-            engineering_strain_tensor(plus), committed,
-            shear, bulk, yield_curve
-        ).stress);
-        const Vec6 sm = stress_voigt(update_small_strain(
-            engineering_strain_tensor(minus), committed,
-            shear, bulk, yield_curve
-        ).stress);
-
-        C.col(j) = (sp - sm) / (Precision(2) * h);
-    }
-
-    return Precision(0.5) * (C + C.transpose());
-}
 
 /**
- * Builds the finite-strain algorithmic tangent from the converged return map.
+ * Builds the exact consistent tangent of the converged finite return map.
  *
- * Let R(x,E)=0 denote the six local backward-Euler equations and S(x,E) the
- * returned PK2 stress. Implicit differentiation gives
+ * For plastic states the local equations R(x,E)=0 give
  *
  *     dx/dE = -(dR/dx)^-1 dR/dE,
+ *
+ * and therefore
+ *
  *     dS/dE = dS/dE|x + dS/dx dx/dE.
  *
- * The partial derivatives are evaluated numerically at the already converged
- * local solution. Unlike the former brute-force tangent, perturbed total strains
- * never invoke complete local Newton solves. Elastic states simply differentiate
- * the stress with frozen plastic history.
+ * Every partial derivative on the right-hand side is obtained by the analytic
+ * tensor directional derivative above. In particular Dexp(A) is evaluated by its
+ * exact spectral Fréchet derivative. Elastic states require only dS/dE at frozen
+ * plastic history.
  */
 Mat6 tangent_finite(const Vec6& strain,
                     const FiniteUpdate& base,
                     Precision shear,
                     Precision bulk,
                     const YieldCurve& yield_curve) {
-    const Vec6 stress_0 = stress_voigt(base.response.stress);
-
-    Mat6 stress_E = Mat6::Zero();
+    Mat6 stress_E   = Mat6::Zero();
     Mat6 residual_E = Mat6::Zero();
-    const Vec6 residual_0 = base.plastic
-        ? finite_local_residual(base.trial, base.alpha_old, base.x, shear, yield_curve)
-        : Vec6::Zero();
 
-    // Partial derivatives with respect to total Green-Lagrange strain at fixed
-    // local return-mapping unknowns.
+    // C = I + 2E. Each engineering-Voigt strain basis therefore produces the
+    // exact tensor direction dC = 2 dE.
     for (Index column = 0; column < 6; ++column) {
-        const Precision h = derivative_step(strain(column));
-        Vec6 plus = strain;
-        Vec6 minus = strain;
-        plus(column) += h;
-        minus(column) -= h;
+        Vec6 direction = Vec6::Zero();
+        direction(column) = Precision(1);
+        const Mat3 dC = Precision(2) * engineering_strain_tensor(direction);
 
-        const bool plus_ok = admissible_green_lagrange(plus);
-        const bool minus_ok = admissible_green_lagrange(minus);
-        logging::error(plus_ok || minus_ok,
-                       "J2: no admissible Green-Lagrange perturbation for tangent component ", column);
+        const FiniteDirectionalResponse directional = finite_directional_response(
+            base.trial,
+            base.C,
+            base.Fp_old,
+            base.alpha_old,
+            base.x,
+            dC,
+            Mat3::Zero(),
+            Precision(0),
+            shear,
+            bulk,
+            yield_curve,
+            base.plastic
+        );
 
-        if (plus_ok && minus_ok) {
-            const Mat3 C_plus = sym(Mat3::Identity()
-                + Precision(2) * engineering_strain_tensor(plus));
-            const Mat3 C_minus = sym(Mat3::Identity()
-                + Precision(2) * engineering_strain_tensor(minus));
-            const FiniteTrial trial_plus = finite_trial_from_increment(
-                C_plus, base.Fp_old, base.x, shear, bulk
-            );
-            const FiniteTrial trial_minus = finite_trial_from_increment(
-                C_minus, base.Fp_old, base.x, shear, bulk
-            );
-
-            const Vec6 stress_plus = stress_voigt(finite_pk2_stress(trial_plus));
-            const Vec6 stress_minus = stress_voigt(finite_pk2_stress(trial_minus));
-            stress_E.col(column) = (stress_plus - stress_minus) / (Precision(2) * h);
-
-            if (base.plastic) {
-                const Vec6 residual_plus = finite_local_residual(
-                    trial_plus, base.alpha_old, base.x, shear, yield_curve
-                );
-                const Vec6 residual_minus = finite_local_residual(
-                    trial_minus, base.alpha_old, base.x, shear, yield_curve
-                );
-                residual_E.col(column) =
-                    (residual_plus - residual_minus) / (Precision(2) * h);
-            }
-        } else if (plus_ok) {
-            const Mat3 C_plus = sym(Mat3::Identity()
-                + Precision(2) * engineering_strain_tensor(plus));
-            const FiniteTrial trial_plus = finite_trial_from_increment(
-                C_plus, base.Fp_old, base.x, shear, bulk
-            );
-            const Vec6 stress_plus = stress_voigt(finite_pk2_stress(trial_plus));
-            stress_E.col(column) = (stress_plus - stress_0) / h;
-
-            if (base.plastic) {
-                const Vec6 residual_plus = finite_local_residual(
-                    trial_plus, base.alpha_old, base.x, shear, yield_curve
-                );
-                residual_E.col(column) = (residual_plus - residual_0) / h;
-            }
-        } else {
-            const Mat3 C_minus = sym(Mat3::Identity()
-                + Precision(2) * engineering_strain_tensor(minus));
-            const FiniteTrial trial_minus = finite_trial_from_increment(
-                C_minus, base.Fp_old, base.x, shear, bulk
-            );
-            const Vec6 stress_minus = stress_voigt(finite_pk2_stress(trial_minus));
-            stress_E.col(column) = (stress_0 - stress_minus) / h;
-
-            if (base.plastic) {
-                const Vec6 residual_minus = finite_local_residual(
-                    trial_minus, base.alpha_old, base.x, shear, yield_curve
-                );
-                residual_E.col(column) = (residual_0 - residual_minus) / h;
-            }
+        stress_E.col(column) = stress_voigt(directional.stress);
+        if (base.plastic) {
+            residual_E.col(column) = directional.residual;
         }
     }
 
@@ -751,77 +950,28 @@ Mat6 tangent_finite(const Vec6& strain,
         return Precision(0.5) * (stress_E + stress_E.transpose());
     }
 
-    // Partial derivatives with respect to the six local return-mapping unknowns.
-    // dgamma does not enter the stress directly, so its stress derivative is zero
-    // and its residual derivative can reuse the converged trial tensor state.
-    Mat6 residual_x = Mat6::Zero();
-    Mat6 stress_x = Mat6::Zero();
+    const FiniteLocalLinearization local = finite_local_linearization_x(
+        base.trial,
+        base.C,
+        base.Fp_old,
+        base.alpha_old,
+        base.x,
+        shear,
+        bulk,
+        yield_curve
+    );
 
-    for (Index column = 0; column < 6; ++column) {
-        const Precision h = derivative_step(base.x(column));
-        Vec6 xp = base.x;
-        Vec6 xm = base.x;
-        xp(column) += h;
-        xm(column) -= h;
-
-        if (column == 5) {
-            const Vec6 residual_plus = finite_local_residual(
-                base.trial, base.alpha_old, xp, shear, yield_curve
-            );
-            if (xm(5) < Precision(0)) {
-                residual_x.col(column) = (residual_plus - residual_0) / h;
-            } else {
-                const Vec6 residual_minus = finite_local_residual(
-                    base.trial, base.alpha_old, xm, shear, yield_curve
-                );
-                residual_x.col(column) =
-                    (residual_plus - residual_minus) / (Precision(2) * h);
-            }
-            stress_x.col(column).setZero();
-            continue;
-        }
-
-        const FiniteTrial trial_plus = finite_trial_from_increment(
-            base.C, base.Fp_old, xp, shear, bulk
-        );
-        const FiniteTrial trial_minus = finite_trial_from_increment(
-            base.C, base.Fp_old, xm, shear, bulk
-        );
-
-        const Vec6 residual_plus = finite_local_residual(
-            trial_plus, base.alpha_old, xp, shear, yield_curve
-        );
-        const Vec6 residual_minus = finite_local_residual(
-            trial_minus, base.alpha_old, xm, shear, yield_curve
-        );
-        residual_x.col(column) =
-            (residual_plus - residual_minus) / (Precision(2) * h);
-
-        const Vec6 stress_plus = stress_voigt(finite_pk2_stress(trial_plus));
-        const Vec6 stress_minus = stress_voigt(finite_pk2_stress(trial_minus));
-        stress_x.col(column) =
-            (stress_plus - stress_minus) / (Precision(2) * h);
-    }
-
-    Eigen::FullPivLU<Mat6> lu(residual_x);
+    Eigen::FullPivLU<Mat6> lu(local.residual_x);
     logging::error(lu.isInvertible(),
                    "J2: singular local Jacobian during finite tangent linearization");
 
     const Mat6 dx_dE = lu.solve(-residual_E);
-    const Mat6 C = stress_E + stress_x * dx_dE;
-    return Precision(0.5) * (C + C.transpose());
-}
+    const Mat6 C = stress_E + local.stress_x * dx_dE;
 
-Mat6 tangent_finite(const Vec6& strain,
-                    const State& committed,
-                    Precision shear,
-                    Precision bulk,
-                    const YieldCurve& yield_curve) {
-    const FiniteUpdate base = integrate_finite_strain(
-        engineering_strain_tensor(strain), committed,
-        shear, bulk, yield_curve
-    );
-    return tangent_finite(strain, base, shear, bulk, yield_curve);
+    // Associative J2 plasticity with isotropic elasticity has a symmetric
+    // algorithmic tangent. Remove only round-off asymmetry accumulated in the
+    // spectral and dense local algebra.
+    return Precision(0.5) * (C + C.transpose());
 }
 
 // -----------------------------------------------------------------------------
@@ -862,6 +1012,57 @@ Mat5 condense_shell_tangent(const Mat6& C) {
     return Caa - (Caz * Cza) / C(z, z);
 }
 
+Precision condense_axial_tangent(const Mat6& C) {
+    Eigen::Matrix<Precision, 1, 2> Cab;
+    Eigen::Matrix<Precision, 2, 1> Cba;
+    Eigen::Matrix<Precision, 2, 2> Cbb;
+
+    Cab << C(0, 1), C(0, 2);
+    Cba << C(1, 0), C(2, 0);
+    Cbb << C(1, 1), C(1, 2),
+           C(2, 1), C(2, 2);
+
+    Eigen::FullPivLU<Eigen::Matrix<Precision, 2, 2>> lu(Cbb);
+    logging::error(lu.isInvertible(),
+                   "J2: singular transverse block during axial tangent condensation");
+
+    return C(0, 0) - (Cab * lu.solve(Cba))(0, 0);
+}
+
+/**
+ * Evaluates one full three-dimensional constitutive candidate together with its
+ * exact algorithmic tangent from the same committed state.
+ */
+template<bool Finite>
+Update3D evaluate_volume_candidate(const Vec6& strain,
+                                   const State& committed,
+                                   Precision shear,
+                                   Precision bulk,
+                                   const YieldCurve& yield_curve,
+                                   Mat6& tangent) {
+    if constexpr (Finite) {
+        const FiniteUpdate update = integrate_finite_strain(
+            engineering_strain_tensor(strain), committed,
+            shear, bulk, yield_curve
+        );
+        tangent = tangent_finite(strain, update, shear, bulk, yield_curve);
+        return update.response;
+    } else {
+        const SmallUpdate update = integrate_small_strain(
+            engineering_strain_tensor(strain), committed,
+            shear, bulk, yield_curve
+        );
+        tangent = tangent_small(strain, update, shear, bulk, yield_curve);
+        return update.response;
+    }
+}
+
+/**
+ * Solves S33 = 0 with the exact three-dimensional consistent tangent.
+ *
+ * The Newton derivative is simply C3333 of the same constitutive candidate; no
+ * perturbation of e33 and no auxiliary return maps are required.
+ */
 template<bool Finite>
 Update3D solve_shell_plane_stress(const Vec5& shell_strain,
                                   const State& committed,
@@ -870,7 +1071,8 @@ Update3D solve_shell_plane_stress(const Vec5& shell_strain,
                                   Precision shear,
                                   Precision bulk,
                                   const YieldCurve& yield_curve,
-                                  Vec6& converged_strain) {
+                                  Vec6& converged_strain,
+                                  Mat6& converged_tangent) {
     Precision e33 = -poisson / (Precision(1) - poisson)
                   * (shell_strain(0) + shell_strain(1));
 
@@ -887,54 +1089,22 @@ Update3D solve_shell_plane_stress(const Vec5& shell_strain,
         if constexpr (Finite) {
             logging::error(admissible_green_lagrange(e),
                            "J2: shell plane-stress iterate left admissible Green-Lagrange domain");
-            current = update_finite_strain(engineering_strain_tensor(e), committed,
-                                           shear, bulk, yield_curve);
-        } else {
-            current = update_small_strain(engineering_strain_tensor(e), committed,
-                                          shear, bulk, yield_curve);
         }
+
+        Mat6 current_tangent;
+        current = evaluate_volume_candidate<Finite>(
+            e, committed, shear, bulk, yield_curve, current_tangent
+        );
 
         const Precision residual = current.stress(2, 2);
         if (std::abs(residual) <= tolerance) {
             converged = true;
-            converged_strain = e;
+            converged_strain  = e;
+            converged_tangent = current_tangent;
             break;
         }
 
-        const Precision h = derivative_step(e33);
-        Vec6 ep = shell_to_volume_strain(shell_strain, e33 + h);
-        Vec6 em = shell_to_volume_strain(shell_strain, e33 - h);
-
-        Precision derivative = Precision(0);
-        if constexpr (Finite) {
-            const bool plus_ok = admissible_green_lagrange(ep);
-            const bool minus_ok = admissible_green_lagrange(em);
-            logging::error(plus_ok || minus_ok,
-                           "J2: shell plane-stress derivative has no admissible perturbation");
-
-            if (plus_ok && minus_ok) {
-                const Precision rp = update_finite_strain(engineering_strain_tensor(ep), committed,
-                                                          shear, bulk, yield_curve).stress(2, 2);
-                const Precision rm = update_finite_strain(engineering_strain_tensor(em), committed,
-                                                          shear, bulk, yield_curve).stress(2, 2);
-                derivative = (rp - rm) / (Precision(2) * h);
-            } else if (plus_ok) {
-                const Precision rp = update_finite_strain(engineering_strain_tensor(ep), committed,
-                                                          shear, bulk, yield_curve).stress(2, 2);
-                derivative = (rp - residual) / h;
-            } else {
-                const Precision rm = update_finite_strain(engineering_strain_tensor(em), committed,
-                                                          shear, bulk, yield_curve).stress(2, 2);
-                derivative = (residual - rm) / h;
-            }
-        } else {
-            const Precision rp = update_small_strain(engineering_strain_tensor(ep), committed,
-                                                     shear, bulk, yield_curve).stress(2, 2);
-            const Precision rm = update_small_strain(engineering_strain_tensor(em), committed,
-                                                     shear, bulk, yield_curve).stress(2, 2);
-            derivative = (rp - rm) / (Precision(2) * h);
-        }
-
+        const Precision derivative = current_tangent(2, 2);
         logging::error(std::isfinite(derivative)
                        && std::abs(derivative) > Precision(100) * std::numeric_limits<Precision>::epsilon(),
                        "J2: singular shell plane-stress Newton derivative");
@@ -965,6 +1135,10 @@ Update3D solve_shell_plane_stress(const Vec5& shell_strain,
     return current;
 }
 
+/**
+ * Solves S22 = S33 = 0 with the exact transverse block of the consistent
+ * three-dimensional tangent.
+ */
 template<bool Finite>
 Update3D solve_axial_stress(const Precision axial_strain,
                             const State& committed,
@@ -973,7 +1147,8 @@ Update3D solve_axial_stress(const Precision axial_strain,
                             Precision shear,
                             Precision bulk,
                             const YieldCurve& yield_curve,
-                            Vec6& converged_strain) {
+                            Vec6& converged_strain,
+                            Mat6& converged_tangent) {
     Vec6 e = Vec6::Zero();
     e(0) = axial_strain;
     e(1) = -poisson * axial_strain;
@@ -992,54 +1167,26 @@ Update3D solve_axial_stress(const Precision axial_strain,
         if constexpr (Finite) {
             logging::error(admissible_green_lagrange(e),
                            "J2: axial constitutive iterate left admissible Green-Lagrange domain");
-            current = update_finite_strain(engineering_strain_tensor(e), committed,
-                                           shear, bulk, yield_curve);
-        } else {
-            current = update_small_strain(engineering_strain_tensor(e), committed,
-                                          shear, bulk, yield_curve);
         }
+
+        Mat6 current_tangent;
+        current = evaluate_volume_candidate<Finite>(
+            e, committed, shear, bulk, yield_curve, current_tangent
+        );
 
         Eigen::Matrix<Precision, 2, 1> residual;
         residual << current.stress(1, 1), current.stress(2, 2);
 
         if (residual.cwiseAbs().maxCoeff() <= tolerance) {
             converged = true;
-            converged_strain = e;
+            converged_strain  = e;
+            converged_tangent = current_tangent;
             break;
         }
 
         Eigen::Matrix<Precision, 2, 2> J;
-        for (Index column = 0; column < 2; ++column) {
-            const Index component = column + 1;
-            const Precision h = derivative_step(e(component));
-            Vec6 ep = e;
-            Vec6 em = e;
-            ep(component) += h;
-            em(component) -= h;
-
-            Eigen::Matrix<Precision, 2, 1> rp;
-            Eigen::Matrix<Precision, 2, 1> rm;
-
-            if constexpr (Finite) {
-                logging::error(admissible_green_lagrange(ep) && admissible_green_lagrange(em),
-                               "J2: axial transverse derivative left admissible domain");
-                const Update3D up = update_finite_strain(engineering_strain_tensor(ep), committed,
-                                                         shear, bulk, yield_curve);
-                const Update3D um = update_finite_strain(engineering_strain_tensor(em), committed,
-                                                         shear, bulk, yield_curve);
-                rp << up.stress(1, 1), up.stress(2, 2);
-                rm << um.stress(1, 1), um.stress(2, 2);
-            } else {
-                const Update3D up = update_small_strain(engineering_strain_tensor(ep), committed,
-                                                        shear, bulk, yield_curve);
-                const Update3D um = update_small_strain(engineering_strain_tensor(em), committed,
-                                                        shear, bulk, yield_curve);
-                rp << up.stress(1, 1), up.stress(2, 2);
-                rm << um.stress(1, 1), um.stress(2, 2);
-            }
-
-            J.col(column) = (rp - rm) / (Precision(2) * h);
-        }
+        J << current_tangent(1, 1), current_tangent(1, 2),
+             current_tangent(2, 1), current_tangent(2, 2);
 
         Eigen::FullPivLU<Eigen::Matrix<Precision, 2, 2>> lu(J);
         logging::error(lu.isInvertible(),
@@ -1071,23 +1218,6 @@ Update3D solve_axial_stress(const Precision axial_strain,
     logging::error(converged,
                    "J2: axial transverse-stress constitutive solve did not converge");
     return current;
-}
-
-Precision condense_axial_tangent(const Mat6& C) {
-    Eigen::Matrix<Precision, 1, 2> Cab;
-    Eigen::Matrix<Precision, 2, 1> Cba;
-    Eigen::Matrix<Precision, 2, 2> Cbb;
-
-    Cab << C(0, 1), C(0, 2);
-    Cba << C(1, 0), C(2, 0);
-    Cbb << C(1, 1), C(1, 2),
-           C(2, 1), C(2, 2);
-
-    Eigen::FullPivLU<Eigen::Matrix<Precision, 2, 2>> lu(Cbb);
-    logging::error(lu.isInvertible(),
-                   "J2: singular transverse block during axial tangent condensation");
-
-    return C(0, 0) - (Cab * lu.solve(Cba))(0, 0);
 }
 
 } // namespace
@@ -1172,15 +1302,13 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainLinearized& strain,
     const State committed = load_state(state);
     const Precision shear = shear_modulus();
     const Precision bulk  = bulk_modulus();
-    const Update3D update = update_small_strain(strain.tensor(), committed,
-                                                shear, bulk,
-                                                yield_points_);
+    const SmallUpdate update = integrate_small_strain(
+        strain.tensor(), committed, shear, bulk, yield_points_
+    );
 
-    stress = VolumeStressCauchy(update.stress);
-    tangent = tangent_small(strain.voigt(), committed,
-                            shear, bulk,
-                            yield_points_);
-    store_state(state, update.state);
+    stress  = VolumeStressCauchy(update.response.stress);
+    tangent = tangent_small(strain.voigt(), update, shear, bulk, yield_points_);
+    store_state(state, update.response.state);
 }
 
 void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
@@ -1205,22 +1333,26 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
 
 void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainLinearized& strain,
                                      Precision*                           state,
-                                     ShellMaterialStressCauchy&            stress,
-                                     Mat5&                                 tangent) const {
+                                     ShellMaterialStressCauchy&           stress,
+                                     Mat5&                                tangent) const {
     const State committed = load_state(state);
     const Precision shear = shear_modulus();
     const Precision bulk  = bulk_modulus();
+
     Vec6 volume_strain;
+    Mat6 C3;
     const Update3D update = solve_shell_plane_stress<false>(
-        strain.values(), committed,
-        youngs, poisson, shear, bulk,
+        strain.values(),
+        committed,
+        youngs,
+        poisson,
+        shear,
+        bulk,
         yield_points_,
-        volume_strain
+        volume_strain,
+        C3
     );
 
-    const Mat6 C3 = tangent_small(volume_strain, committed,
-                                  shear, bulk,
-                                  yield_points_);
     stress.values() = volume_to_shell_stress(stress_voigt(update.stress));
     tangent = condense_shell_tangent(C3);
     store_state(state, update.state);
@@ -1233,17 +1365,21 @@ void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainGreenLagrange& str
     const State committed = load_state(state);
     const Precision shear = shear_modulus();
     const Precision bulk  = bulk_modulus();
+
     Vec6 volume_strain;
+    Mat6 C3;
     const Update3D update = solve_shell_plane_stress<true>(
-        strain.values(), committed,
-        youngs, poisson, shear, bulk,
+        strain.values(),
+        committed,
+        youngs,
+        poisson,
+        shear,
+        bulk,
         yield_points_,
-        volume_strain
+        volume_strain,
+        C3
     );
 
-    const Mat6 C3 = tangent_finite(volume_strain, committed,
-                                   shear, bulk,
-                                   yield_points_);
     stress.values() = volume_to_shell_stress(stress_voigt(update.stress));
     tangent = condense_shell_tangent(C3);
     store_state(state, update.state);
@@ -1256,17 +1392,21 @@ void IsotropicJ2Elasticity::evaluate(const AxialStrainLinearized& strain,
     const State committed = load_state(state);
     const Precision shear = shear_modulus();
     const Precision bulk  = bulk_modulus();
+
     Vec6 volume_strain;
+    Mat6 C3;
     const Update3D update = solve_axial_stress<false>(
-        strain.value(), committed,
-        youngs, poisson, shear, bulk,
+        strain.value(),
+        committed,
+        youngs,
+        poisson,
+        shear,
+        bulk,
         yield_points_,
-        volume_strain
+        volume_strain,
+        C3
     );
 
-    const Mat6 C3 = tangent_small(volume_strain, committed,
-                                  shear, bulk,
-                                  yield_points_);
     stress.value() = update.stress(0, 0);
     tangent = condense_axial_tangent(C3);
     store_state(state, update.state);
@@ -1279,17 +1419,21 @@ void IsotropicJ2Elasticity::evaluate(const AxialStrainGreenLagrange& strain,
     const State committed = load_state(state);
     const Precision shear = shear_modulus();
     const Precision bulk  = bulk_modulus();
+
     Vec6 volume_strain;
+    Mat6 C3;
     const Update3D update = solve_axial_stress<true>(
-        strain.value(), committed,
-        youngs, poisson, shear, bulk,
+        strain.value(),
+        committed,
+        youngs,
+        poisson,
+        shear,
+        bulk,
         yield_points_,
-        volume_strain
+        volume_strain,
+        C3
     );
 
-    const Mat6 C3 = tangent_finite(volume_strain, committed,
-                                   shear, bulk,
-                                   yield_points_);
     stress.value() = update.stress(0, 0);
     tangent = condense_axial_tangent(C3);
     store_state(state, update.state);
