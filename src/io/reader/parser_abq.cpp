@@ -94,6 +94,7 @@ void ParserAbq::register_common_commands(io::dsl::Registry& registry) {
     commands::register_density(registry, model());
     commands::register_elastic(registry, model());
     commands::register_hyperelastic(registry, model());
+    commands::register_plastic(registry, model());
     commands::register_mass(registry, model());
     commands::register_rotary_inertia(registry, model());
     commands::register_spring(registry, model());
@@ -148,6 +149,7 @@ void ParserAbq::process_deck(const io::dsl::Deck&                  deck,
 
         material->execute_children("ELASTIC");
         material->execute_children("HYPERELASTIC");
+        material->execute_children("PLASTIC");
         material->execute_children("DENSITY");
         material->execute_children("EXPANSION");
 
