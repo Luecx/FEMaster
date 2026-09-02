@@ -4,9 +4,9 @@
  *
  * Constitutive evaluations use globally enumerated committed/trial material-state
  * rows associated with each solid integration point. Result recovery and other
- * auxiliary evaluations are state-neutral. The physical nonlinear tangent path
- * evaluates PK2 stress and material tangent together exactly once per material
- * point and immediately consumes both quantities locally.
+ * auxiliary evaluations are state-neutral. The physical nonlinear path always
+ * evaluates PK2 stress and trial history; the material tangent is requested only
+ * when the caller actually assembles a tangent matrix.
  *
  * @author Finn Eggers
  * @date 07.08.2026
@@ -18,6 +18,51 @@
 #include "../../section/section_solid.h"
 
 namespace fem::model {
+
+/**
+ * Evaluates Total-Lagrangian solid constitutive response with an optional tangent.
+ *
+ * This overload is the residual-aware counterpart of the normal reference
+ * overload defined in `element_solid.ipp`. The selected old/new state pointers
+ * are forwarded directly to the section. PK2 stress is always evaluated and
+ * scaled by the element topology factor. A null tangent is propagated through
+ * the section/material stack and therefore avoids constitutive tangent work for
+ * residual-only and nonlinear recovery evaluations.
+ *
+ * @param r First natural coordinate.
+ * @param s Second natural coordinate.
+ * @param t Third natural coordinate.
+ * @param global_strain Green-Lagrange strain in global reference coordinates.
+ * @param old_state Immutable material-point input state row.
+ * @param new_state Optional material-point output state row.
+ * @param global_stress PK2 stress returned in global reference coordinates.
+ * @param global_tangent Optional consistent global material tangent `dS/dE`.
+ */
+template<Index N>
+void SolidElement<N>::evaluate_material(Precision                        r,
+                                        Precision                        s,
+                                        Precision                        t,
+                                        const VolumeStrainGreenLagrange& global_strain,
+                                        const Precision*                 old_state,
+                                        Precision*                       new_state,
+                                        VolumeStressPK2&                 global_stress,
+                                        Mat6*                            global_tangent) {
+    get_section()->evaluate(
+        material_position_reference(r, s, t),
+        additional_material_rotation(),
+        global_strain,
+        old_state,
+        new_state,
+        global_stress,
+        global_tangent
+    );
+
+    const Precision scaling = element_stiffness_scale();
+    global_stress.voigt() *= scaling;
+    if (global_tangent != nullptr) {
+        *global_tangent *= scaling;
+    }
+}
 
 /**
  * Recovers solid strain and Cauchy stress at requested natural coordinates.
@@ -115,15 +160,14 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
             continue;
         }
 
-        // Nonlinear recovery evaluates PK2 stress in the reference configuration
-        // and pushes it forward for physical Cauchy-stress output.
+        // Nonlinear recovery needs only the state-neutral PK2 stress. The
+        // optional-tangent path deliberately avoids building dS/dE here.
         const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
         const VolumeStrainGreenLagrange green_lagrange =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
         VolumeStressPK2 second_pk;
-        Mat6            tangent;
-        evaluate_material(r, s, t, green_lagrange, old_state, nullptr, second_pk, tangent);
+        evaluate_material(r, s, t, green_lagrange, old_state, nullptr, second_pk, nullptr);
 
         const VolumeStressCauchy cauchy = second_pk.to_cauchy(F);
 
@@ -157,8 +201,8 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
  *     K_mat = integral B^T C_alg B dV0,
  *
  * and the Total-Lagrangian geometric tangent assembled from
- * `grad(N_a)^T S grad(N_b)`. When `buffer == nullptr`, tangent assembly is
- * skipped after the same physical material update and internal-force assembly.
+ * `grad(N_a)^T S grad(N_b)`. When `buffer == nullptr`, the constitutive tangent
+ * itself is not requested; the physical stress/state update remains identical.
  *
  * @param buffer Optional dense tangent storage; null requests residual only.
  * @param nodal_forces Global nodal internal-force field to increment.
@@ -200,8 +244,16 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
 
         VolumeStressPK2 stress;
         Mat6            material_tangent;
-        evaluate_material(point.r, point.s, point.t, strain,
-                          old_state, new_state, stress, material_tangent);
+        evaluate_material(
+            point.r,
+            point.s,
+            point.t,
+            strain,
+            old_state,
+            new_state,
+            stress,
+            buffer != nullptr ? &material_tangent : nullptr
+        );
 
         const Precision measure = point.w * det0;
 
@@ -215,8 +267,8 @@ MapMatrix SolidElement<N>::stiffness_tangent(Precision*   buffer,
             }
         }
 
-        // Residual-only evaluations still perform the complete physical material
-        // trial update above, but skip all matrix assembly work.
+        // Residual-only evaluations already performed the complete physical
+        // material update above but never requested a constitutive tangent.
         if (buffer == nullptr) {
             continue;
         }

@@ -120,6 +120,15 @@ void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
     logging::error(false, "Elasticity model does not support Green-Lagrange volume evaluation");
 }
 
+void Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
+                          const Precision*                 old_state,
+                          Precision*                       new_state,
+                          VolumeStressPK2&                 stress,
+                          Mat6*                            tangent) const {
+    Mat6 scratch;
+    evaluate(strain, old_state, new_state, stress, tangent != nullptr ? *tangent : scratch);
+}
+
 void Elasticity::evaluate(const BeamGeneralizedStrain& strain,
                           const Precision*             old_state,
                           Precision*                   new_state,
