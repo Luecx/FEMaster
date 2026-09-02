@@ -126,6 +126,11 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
                         dof_stream         >> dof;
                         coefficient_stream >> coefficient;
 
+                        // Consume trailing whitespace only while unread characters remain.
+                        // Calling std::ws after numeric extraction already reached EOF sets failbit.
+                        if (!dof_stream.eof())         dof_stream         >> std::ws;
+                        if (!coefficient_stream.eof()) coefficient_stream >> std::ws;
+
                         logging::error(!dof_stream.fail() && dof_stream.eof() && dof >= 1 && dof <= 6,
                             "EQUATION: DOF must be an integer in [1,6]");
                         logging::error(!coefficient_stream.fail() && coefficient_stream.eof() && std::isfinite(coefficient),
