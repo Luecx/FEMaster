@@ -164,8 +164,19 @@ SmallResponse integrate_small_strain(const VolumeStrain& strain,
     const Precision yield_old = yield_stress_at(yield_curve, result.alpha_old);
     const Precision f_trial   = result.q_trial - yield_old;
 
-    result.plastic = f_trial
-        > stress_tolerance(Precision(3) * bulk, initial_yield_stress(yield_curve));
+    // J2 yielding is purely deviatoric. The numerical tolerance must therefore
+    // use a deviatoric material scale and must not grow with the bulk modulus.
+    // In particular, K -> infinity for nu -> 0.5 while the physical yield surface
+    // remains unchanged. Scaling with 3 G and the active yield stress keeps the
+    // elastic/plastic decision independent of hydrostatic stiffness:
+    //
+    //     f_trial = q_trial - sigma_y
+    //     tol     = 1e-10 max(1, 3 G, sigma_y).
+    const Precision yield_tolerance = stress_tolerance(
+        Precision(3) * shear,
+        yield_old
+    );
+    result.plastic = f_trial > yield_tolerance;
 
     // -------------------------------------------------------------------------
     // Elastic step.
