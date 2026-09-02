@@ -4,14 +4,19 @@
  *
  * `Elasticity` separates element and section kinematics from constitutive
  * evaluation. Callers select the overload matching their strain measure and
- * dimensional reduction; implementations return the work-conjugate stress and
- * consistent tangent in the same material basis.
+ * dimensional reduction; implementations return the work-conjugate stress and,
+ * when requested, the consistent tangent in the same material basis.
  *
  * Every evaluation receives separate input and output state rows for the current
  * material point. The input row is always valid and remains unchanged, while a
  * history-dependent implementation writes its updated history to the output
  * row. Ownership and commitment of these rows belong to the nonlinear state
  * manager rather than to the constitutive model.
+ *
+ * Tangents are optional throughout the interface. A null tangent pointer means
+ * that the caller requests only stress and constitutive state. Implementations
+ * must therefore avoid constructing a tangent when the pointer is null unless
+ * an internal reduction algorithm itself requires a local derivative.
  *
  * @see material::Material
  * @see loadcase::tools::NonlinearStateManager
@@ -64,6 +69,12 @@ namespace material {
  * `initialize_state()` establishes their reference history. A size of zero
  * denotes a stateless model; callers still pass valid dummy rows to keep
  * addressing uniform.
+ *
+ * The tangent argument of every constitutive overload is a nullable pointer.
+ * Passing `nullptr` requests the same stress and state update without an output
+ * tangent. This is particularly important for nonlinear residual and line-search
+ * evaluations, where an expensive algorithmic tangent would otherwise be built
+ * and immediately discarded.
  */
 struct Elasticity {
     // Shared ownership used by material definitions
@@ -93,34 +104,34 @@ struct Elasticity {
 
     // Every constitutive evaluation receives valid, separate state rows.
     // Implementations read old_state without modifying it and write all updated
-    // history components to new_state.
+    // history components to new_state when the output row is non-null. Tangent
+    // output is optional for every kinematic formulation.
 
-    // Infinitesimal axial response in the material direction. The caller owns
-    // the immutable old_state and mutable new_state rows of the current material
-    // point. stress is Cauchy stress and tangent is d(sigma)/d(epsilon).
+    // Infinitesimal axial response in the material direction. Stress is Cauchy
+    // stress and the optional tangent is d(sigma)/d(epsilon).
     virtual void evaluate(const AxialStrainLinearized& strain,
                           const Precision*             old_state,
                           Precision*                   new_state,
                           AxialStressCauchy&           stress,
-                          Precision&                   tangent) const;
+                          Precision*                   tangent = nullptr) const;
 
-    // Finite-strain axial response in the reference material direction. stress
+    // Finite-strain axial response in the reference material direction. Stress
     // is second Piola-Kirchhoff stress work-conjugate to Green-Lagrange strain;
-    // tangent is the consistent derivative dS/dE.
+    // the optional tangent is the consistent derivative dS/dE.
     virtual void evaluate(const AxialStrainGreenLagrange& strain,
                           const Precision*                old_state,
                           Precision*                      new_state,
                           AxialStressPK2&                 stress,
-                          Precision&                      tangent) const;
+                          Precision*                      tangent = nullptr) const;
 
     // Infinitesimal three-dimensional response in the material basis. Voigt
-    // ordering follows VolumeStrain/VolumeStress, and tangent maps engineering
-    // strain components to Cauchy-stress components.
+    // ordering follows VolumeStrain/VolumeStress; the optional tangent maps
+    // engineering strain components to Cauchy-stress components.
     virtual void evaluate(const VolumeStrainLinearized& strain,
                           const Precision*              old_state,
                           Precision*                    new_state,
                           VolumeStressCauchy&           stress,
-                          Mat6&                         tangent) const;
+                          Mat6*                         tangent = nullptr) const;
 
     // Total-Lagrangian three-dimensional response in the reference material
     // basis. Green-Lagrange strain, PK2 stress and dS/dE remain work-conjugate;
@@ -129,16 +140,16 @@ struct Elasticity {
                           const Precision*                 old_state,
                           Precision*                       new_state,
                           VolumeStressPK2&                 stress,
-                          Mat6&                            tangent) const;
+                          Mat6*                            tangent = nullptr) const;
 
     // Generalized beam response. The section-defined six-component strain and
-    // resultant ordering is preserved, and tangent is their consistent local
-    // derivative. State follows the same separate input/output convention.
+    // resultant ordering is preserved. The optional tangent is their consistent
+    // local derivative.
     virtual void evaluate(const BeamGeneralizedStrain& strain,
                           const Precision*             old_state,
                           Precision*                   new_state,
                           BeamStressResultants&        resultants,
-                          Mat6&                        tangent) const;
+                          Mat6*                        tangent = nullptr) const;
 
     // Infinitesimal shell material response at one physical thickness point.
     // The five strain components exclude thickness-normal strain; stress is
@@ -147,16 +158,16 @@ struct Elasticity {
                           const Precision*                     old_state,
                           Precision*                           new_state,
                           ShellMaterialStressCauchy&            stress,
-                          Mat5&                                 tangent) const;
+                          Mat5*                                tangent = nullptr) const;
 
     // Finite-strain shell material response at one physical thickness point.
     // The five-component Green-Lagrange input returns work-conjugate PK2 stress
-    // and the consistently reduced tangent under the model's S33 = 0 convention.
+    // and, when requested, the consistently reduced tangent under S33 = 0.
     virtual void evaluate(const ShellMaterialStrainGreenLagrange& strain,
                           const Precision*                        old_state,
                           Precision*                              new_state,
                           ShellMaterialStressPK2&                 stress,
-                          Mat5&                                   tangent) const;
+                          Mat5*                                   tangent = nullptr) const;
 
     // Runtime access to concrete constitutive implementations
     template<typename T>

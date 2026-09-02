@@ -3,14 +3,16 @@
  * @brief Implements explicit through-thickness shell material integration.
  *
  * Generalized membrane strains, curvatures and transverse-shear strains are
- * reconstructed at five Simpson points. The material model returns stress and a
- * five-component consistent tangent at every point. These quantities are
- * integrated directly into generalized resultants and an eight-component
- * section tangent.
+ * reconstructed at five Simpson points. The material model returns stress and,
+ * for generalized section assembly, a five-component consistent tangent at every
+ * point. These quantities are integrated directly into generalized resultants
+ * and an eight-component section tangent.
  *
  * A null output-state pointer denotes a state-neutral constitutive query. The
  * integrated section propagates that null target through every through-thickness
- * material point without performing pointer arithmetic on it.
+ * material point without performing pointer arithmetic on it. Stress-recovery
+ * calls also pass a null tangent pointer because no material derivative is needed
+ * for output conversion.
  *
  * @see IntegratedShellSection
  *
@@ -33,10 +35,9 @@
 #include <utility>
 
 namespace fem {
-
 namespace {
 
-// Composite Simpson coordinates on the normalized thickness interval [-1,1].
+// Composite Simpson coordinates on the normalized thickness interval [-1,1]
 constexpr std::array<Precision, 5> simpson_points {
     Precision(-1),
     Precision(-0.5),
@@ -96,11 +97,16 @@ IntegratedShellSection::IntegratedShellSection(
  * point instead of creating or advancing through-thickness trial history.
  *
  * Generalized membrane strains and curvatures reconstruct the in-plane material
- * strain as `epsilon(z) = epsilon_0 + z kappa`; transverse shear is constant and
- * receives the Reissner-Mindlin factor `5/6`. Simpson integration returns
- * membrane forces, bending moments, transverse shear forces and the consistent
- * generalized tangent. Oriented responses are transformed back into the
- * geometric shell basis required by element assembly.
+ * strain through
+ *
+ *     epsilon(z) = epsilon_0 + z kappa,
+ *
+ * while transverse shear is constant through the thickness. Each material point
+ * returns stress and an explicitly requested five-component material tangent.
+ * Simpson integration then assembles membrane forces, bending moments,
+ * transverse shear forces and the consistent generalized tangent. Oriented
+ * quantities are transformed back into the geometric shell basis used by the
+ * element.
  *
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
@@ -158,6 +164,8 @@ void IntegratedShellSection::evaluate(
     constexpr ResultantComponent QX  = ResultantComponent::QX;
     constexpr ResultantComponent QY  = ResultantComponent::QY;
 
+    // Validate the material and exact shell strain measure before constructing
+    // any through-thickness constitutive state.
     logging::error(material_ && material_->has_elasticity(),
         "IntegratedShellSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_shell_integration_green_lagrange() || !use_green_lagrange,
@@ -165,6 +173,8 @@ void IntegratedShellSection::evaluate(
     logging::error(material_->elasticity()->supports_shell_integration_linearized() || use_green_lagrange,
         "IntegratedShellSection material does not support linearized shell evaluation");
 
+    // Determine the material section basis. Without a prescribed orientation the
+    // geometric shell basis itself is the material basis.
     const Mat3 section_basis_global = orientation_
         ? stress_basis(position_reference, shell_basis_global)
         : shell_basis_global;
@@ -173,9 +183,10 @@ void IntegratedShellSection::evaluate(
         shell_basis_global.template block<3, 2>(0, 0).transpose()
         * section_basis_global.template block<3, 2>(0, 0);
 
+    // Transform generalized shell strain into material-section coordinates once
+    // before integrating through the thickness.
     const Mat8 strain_shell_to_section =
         ShellGeneralizedStrain::transformation(section_axes_in_shell);
-
     const ShellGeneralizedStrain strain_section(
         strain_shell_to_section * strain_shell.values()
     );
@@ -188,11 +199,13 @@ void IntegratedShellSection::evaluate(
     resultants_section.values().setZero();
     tangent_section.setZero();
 
-    // Integrate all material points through the physical thickness.
+    // Integrate all five physical material points through the shell thickness.
     for (Index mp = 0; mp < 5; ++mp) {
         const Precision z = Precision(0.5) * thickness_ * simpson_points[mp];
         const Precision w = Precision(0.5) * thickness_ * simpson_weights[mp];
 
+        // Reconstruct the five local material strain components at the current
+        // thickness coordinate.
         ShellMaterialStrain material_strain;
         material_strain[MXX] = strain_section[EXX] + z * strain_section[KXX];
         material_strain[MYY] = strain_section[EYY] + z * strain_section[KYY];
@@ -200,13 +213,18 @@ void IntegratedShellSection::evaluate(
         material_strain[MXZ] = strain_section[GXZ];
         material_strain[MYZ] = strain_section[GYZ];
 
-        ShellMaterialStress material_stress;
-        Mat5                material_tangent;
+        // Resolve the material-point history rows without advancing a null output
+        // pointer during state-neutral evaluations.
         const Precision* old_state = old_material_state + mp * material_state_stride;
         Precision* new_state = new_material_state
             ? new_material_state + mp * material_state_stride
             : nullptr;
 
+        ShellMaterialStress material_stress;
+        Mat5                material_tangent;
+
+        // Generalized section stiffness requires the material derivative at every
+        // Simpson point, so both branches pass its address explicitly.
         if (use_green_lagrange) {
             const ShellMaterialStrainGreenLagrange material_strain_gl(material_strain.values());
             ShellMaterialStressPK2                 material_stress_pk2;
@@ -216,7 +234,7 @@ void IntegratedShellSection::evaluate(
                 old_state,
                 new_state,
                 material_stress_pk2,
-                material_tangent
+                &material_tangent
             );
 
             material_stress.values() = material_stress_pk2.values();
@@ -229,12 +247,14 @@ void IntegratedShellSection::evaluate(
                 old_state,
                 new_state,
                 material_stress_cauchy,
-                material_tangent
+                &material_tangent
             );
 
             material_stress.values() = material_stress_cauchy.values();
         }
 
+        // Integrate membrane forces and bending moments from the in-plane stress
+        // components. Bending resultants carry one additional factor z.
         resultants_section[NXX] += w * material_stress[SXX];
         resultants_section[NYY] += w * material_stress[SYY];
         resultants_section[NXY] += w * material_stress[SXY];
@@ -243,9 +263,13 @@ void IntegratedShellSection::evaluate(
         resultants_section[BYY] += w * z * material_stress[SYY];
         resultants_section[BXY] += w * z * material_stress[SXY];
 
+        // Apply the Reissner-Mindlin shear correction to transverse shear forces.
         resultants_section[QX] += w * shear_correction * material_stress[SXZ];
         resultants_section[QY] += w * shear_correction * material_stress[SYZ];
 
+        // Map generalized strain increments to local material strain increments:
+        //
+        //     d epsilon_material = B_z d epsilon_generalized.
         StaticMatrix<5, 8> strain_map = StaticMatrix<5, 8>::Zero();
         strain_map((Index)MXX, (Index)EXX) = Precision(1);
         strain_map((Index)MXX, (Index)KXX) = z;
@@ -256,6 +280,7 @@ void IntegratedShellSection::evaluate(
         strain_map((Index)MXZ, (Index)GXZ) = Precision(1);
         strain_map((Index)MYZ, (Index)GYZ) = Precision(1);
 
+        // Map material stress increments into generalized resultant increments.
         StaticMatrix<8, 5> resultant_map = StaticMatrix<8, 5>::Zero();
         resultant_map((Index)NXX, (Index)SXX) = Precision(1);
         resultant_map((Index)NYY, (Index)SYY) = Precision(1);
@@ -266,15 +291,21 @@ void IntegratedShellSection::evaluate(
         resultant_map((Index)QX,  (Index)SXZ) = shear_correction;
         resultant_map((Index)QY,  (Index)SYZ) = shear_correction;
 
+        // Integrate the complete consistent generalized tangent contribution:
+        //
+        //     dR/dE_gen += w A_z C_material B_z.
         tangent_section.noalias() += w * resultant_map * material_tangent * strain_map;
     }
 
+    // Without material orientation, section and shell bases are identical and no
+    // result transformation is necessary.
     if (!orientation_) {
         resultants_shell = resultants_section;
         tangent_shell    = tangent_section;
         return;
     }
 
+    // Transform integrated resultants and tangent back into geometric shell axes.
     const Mat2 shell_axes_in_section = section_axes_in_shell.transpose();
     const Mat8 resultants_section_to_shell =
         ShellStressResultants::transformation(shell_axes_in_section);
@@ -301,7 +332,8 @@ void IntegratedShellSection::evaluate(
  * generalized integration. Linearized constitutive output is already Cauchy
  * stress. Finite-strain output is evaluated as PK2 stress and pushed forward by
  * the supplied deformation gradient before conversion to the configured output
- * basis.
+ * basis. No tangent participates in either recovery path, so both constitutive
+ * calls explicitly pass `nullptr` for tangent output.
  *
  * @param position_reference Physical reference position of the shell point.
  * @param shell_basis_global Geometric shell basis in global coordinates.
@@ -350,6 +382,7 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     constexpr MaterialStressComponent SXZ = MaterialStressComponent::XZ;
     constexpr MaterialStressComponent SYZ = MaterialStressComponent::YZ;
 
+    // Validate the material formulation selected for stress recovery.
     logging::error(material_ && material_->has_elasticity(),
         "IntegratedShellSection requires a material with elasticity");
     logging::error(material_->elasticity()->supports_shell_integration_green_lagrange() || !use_green_lagrange,
@@ -357,6 +390,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     logging::error(material_->elasticity()->supports_shell_integration_linearized() || use_green_lagrange,
         "IntegratedShellSection material does not support linearized shell evaluation");
 
+    // Determine both recovery and configured output bases. Without an explicit
+    // orientation, material recovery is performed directly in shell coordinates.
     const Mat3 output_basis_global = stress_basis(position_reference, shell_basis_global);
     const Mat3 recovery_basis_global = orientation_
         ? output_basis_global
@@ -369,6 +404,7 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     const ShellGeneralizedStrain strain_material =
         strain_shell.transformed(recovery_axes_in_shell);
 
+    // Reconstruct material strain at the requested physical thickness coordinate.
     ShellMaterialStrain material_strain;
     material_strain[MXX] = strain_material[EXX] + z * strain_material[KXX];
     material_strain[MYY] = strain_material[EYY] + z * strain_material[KYY];
@@ -376,12 +412,16 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
     material_strain[MXZ] = strain_material[GXZ];
     material_strain[MYZ] = strain_material[GYZ];
 
+    // Select the nearest persistent Simpson material point because output
+    // coordinates need not coincide with constitutive thickness points.
     Index     state_mp       = 0;
-    Precision state_distance = std::abs(z - Precision(0.5) * thickness_ * simpson_points[0]);
+    Precision state_distance =
+        std::abs(z - Precision(0.5) * thickness_ * simpson_points[0]);
 
     for (Index mp = 1; mp < 5; ++mp) {
-        const Precision z_mp = Precision(0.5) * thickness_ * simpson_points[mp];
+        const Precision z_mp     = Precision(0.5) * thickness_ * simpson_points[mp];
         const Precision distance = std::abs(z - z_mp);
+
         if (distance < state_distance) {
             state_mp       = mp;
             state_distance = distance;
@@ -393,6 +433,8 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         ? new_material_state + state_mp * material_state_stride
         : nullptr;
 
+    // Embed the five shell material stress components into a symmetric 3D tensor
+    // for subsequent basis transformation and finite-strain push-forward.
     auto shell_stress_tensor = [=](const ShellMaterialStress& stress) {
         Mat3 tensor = Mat3::Zero();
 
@@ -408,9 +450,9 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         return tensor;
     };
 
-    Mat5 material_tangent;
-
     if (!use_green_lagrange) {
+        // Linearized recovery already returns physical Cauchy stress. No material
+        // tangent is required for result output.
         const ShellMaterialStrainLinearized material_strain_linearized(material_strain.values());
         ShellMaterialStressCauchy           material_stress_cauchy;
 
@@ -419,13 +461,15 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
             old_state,
             new_state,
             material_stress_cauchy,
-            material_tangent
+            nullptr
         );
 
         return VolumeStressCauchy(shell_stress_tensor(material_stress_cauchy))
             .transformed(recovery_basis_global, output_basis_global);
     }
 
+    // Finite-strain recovery obtains PK2 stress only and then pushes it forward
+    // with the supplied deformation gradient.
     const ShellMaterialStrainGreenLagrange material_strain_gl(material_strain.values());
     ShellMaterialStressPK2                 material_stress_pk2;
 
@@ -434,18 +478,25 @@ VolumeStressCauchy IntegratedShellSection::evaluate_output_stress(
         old_state,
         new_state,
         material_stress_pk2,
-        material_tangent
+        nullptr
     );
 
     const Precision J = deformation_gradient.determinant();
     logging::error(J > Precision(0) && std::isfinite(J),
         "IntegratedShellSection: invalid deformation gradient during stress recovery, J = ", J);
 
+    // Transform the recovered PK2 stress to global reference coordinates and
+    // apply the standard push-forward
+    //
+    //     sigma = F S F^T / J.
     const Mat3 second_pk_recovery = shell_stress_tensor(material_stress_pk2);
-    const Mat3 second_pk_global   = recovery_basis_global * second_pk_recovery * recovery_basis_global.transpose();
-    const Mat3 cauchy_global      = deformation_gradient * second_pk_global * deformation_gradient.transpose() / J;
+    const Mat3 second_pk_global =
+        recovery_basis_global * second_pk_recovery * recovery_basis_global.transpose();
+    const Mat3 cauchy_global =
+        deformation_gradient * second_pk_global * deformation_gradient.transpose() / J;
 
-    return VolumeStressCauchy(cauchy_global).transformed(Mat3::Identity(), output_basis_global);
+    return VolumeStressCauchy(cauchy_global)
+        .transformed(Mat3::Identity(), output_basis_global);
 }
 
 } // namespace fem

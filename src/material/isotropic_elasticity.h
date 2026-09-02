@@ -50,53 +50,53 @@ struct IsotropicElasticity : Elasticity {
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
 
-    // Linearized axial Hooke response: sigma = E epsilon and d sigma/d epsilon = E.
-    // The supplied state row is valid but unchanged because this law is stateless.
+    // Linearized axial Hooke response. The tangent pointer is optional because
+    // stress can be evaluated directly from sigma = E epsilon.
     void evaluate(const AxialStrainLinearized& strain,
                   const Precision*             old_state,
                   Precision*                   new_state,
                   AxialStressCauchy&           stress,
-                  Precision&                   tangent) const override;
+                  Precision*                   tangent = nullptr) const override;
 
-    // Total-Lagrangian axial Hooke response: S = E E_GL. PK2 stress and
-    // Green-Lagrange strain are work-conjugate in the reference material axis.
+    // Total-Lagrangian axial Hooke response S = E E_GL. The optional tangent is
+    // the constant derivative dS/dE = E.
     void evaluate(const AxialStrainGreenLagrange& strain,
                   const Precision*                old_state,
                   Precision*                      new_state,
                   AxialStressPK2&                 stress,
-                  Precision&                      tangent) const override;
+                  Precision*                      tangent = nullptr) const override;
 
     // Linearized three-dimensional response in material coordinates. The
-    // constant isotropic six-by-six tangent maps engineering strain to Cauchy stress.
+    // optional tangent maps engineering strain to Cauchy stress.
     void evaluate(const VolumeStrainLinearized& strain,
                   const Precision*              old_state,
                   Precision*                    new_state,
                   VolumeStressCauchy&           stress,
-                  Mat6&                         tangent) const override;
+                  Mat6*                         tangent = nullptr) const override;
 
-    // Finite-strain material response using the same constant Hooke operator.
-    // Input is Green-Lagrange strain and output is second Piola-Kirchhoff stress.
+    // Finite-strain response using the same constant Hooke operator. Input is
+    // Green-Lagrange strain and output is second Piola-Kirchhoff stress.
     void evaluate(const VolumeStrainGreenLagrange& strain,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
-                  Mat6&                            tangent) const override;
+                  Mat6*                            tangent = nullptr) const override;
 
     // Linearized five-component shell response with an in-plane plane-stress
-    // block and transverse shear moduli. Output stress is Cauchy stress.
+    // block and transverse shear moduli.
     void evaluate(const ShellMaterialStrainLinearized& strain,
                   const Precision*                     old_state,
                   Precision*                           new_state,
                   ShellMaterialStressCauchy&            stress,
-                  Mat5&                                 tangent) const override;
+                  Mat5*                                tangent = nullptr) const override;
 
-    // Green-Lagrange five-component shell response with PK2 output. The same
-    // constant reduced tangent is used and the material state remains unchanged.
+    // Green-Lagrange five-component shell response with PK2 output. The material
+    // state remains unchanged and the reduced tangent is optional.
     void evaluate(const ShellMaterialStrainGreenLagrange& strain,
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
-                  Mat5&                                   tangent) const override;
+                  Mat5*                                   tangent = nullptr) const override;
 
 private:
     // Build the in-plane plane-stress operator ordered as [11,22,12].

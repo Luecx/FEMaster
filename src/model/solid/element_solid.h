@@ -125,6 +125,19 @@ public:
                            VolumeStressPK2&                 global_stress,
                            Mat6&                            global_tangent);
 
+    // Optional-tangent finite-strain variant used by nonlinear residual-only
+    // assembly. Stress and trial history are always evaluated; a null tangent
+    // propagates through the section/material stack and skips constitutive
+    // tangent construction when supported by the material.
+    void evaluate_material(Precision                        r,
+                           Precision                        s,
+                           Precision                        t,
+                           const VolumeStrainGreenLagrange& global_strain,
+                           const Precision*                 old_state,
+                           Precision*                       new_state,
+                           VolumeStressPK2&                 global_stress,
+                           Mat6*                            global_tangent);
+
     // Interpolation and geometry transformations
     template<Dim K>
     StaticVector<K> interpolate(StaticMatrix<N, K> data,
