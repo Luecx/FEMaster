@@ -27,11 +27,12 @@
  * backward-Euler flow and consistency equations. This is a genuine multiplicative
  * finite-strain J2 update, not an additive Green-Lagrange plasticity approximation.
  *
- * The returned material tangents are numerical derivatives of the complete
- * converged discrete constitutive update from the same committed state. The
- * stress/history update itself is the fully implicit finite-strain model; a later
- * closed-form linearization can replace the numerical derivative without changing
- * the constitutive equations.
+ * The finite-strain algorithmic tangent is obtained from the converged local
+ * return-mapping equations by implicit differentiation. Numerical derivatives are
+ * taken only for the local residual/stress partial derivatives at the converged
+ * state; perturbed strains no longer run complete return mappings. This preserves
+ * the discrete constitutive equations while avoiding the former nested
+ * finite-difference/Newton cost.
  */
 
 #include "isotropic_j2_elasticity.h"
@@ -339,12 +340,23 @@ Update3D update_small_strain(const Mat3& strain,
 }
 
 struct FiniteTrial {
-    Mat3 Fp = Mat3::Identity();
-    Mat3 Ce = Mat3::Identity();
-    Mat3 Ee = Mat3::Zero();
-    Mat3 Se = Mat3::Zero();
-    Mat3 M  = Mat3::Zero();
+    Mat3 Fp     = Mat3::Identity();
+    Mat3 Fp_inv = Mat3::Identity();
+    Mat3 Ce     = Mat3::Identity();
+    Mat3 Ee     = Mat3::Zero();
+    Mat3 Se     = Mat3::Zero();
+    Mat3 M      = Mat3::Zero();
     Precision q = Precision(0);
+};
+
+struct FiniteUpdate {
+    Update3D    response;
+    Mat3        C         = Mat3::Identity();
+    Mat3        Fp_old    = Mat3::Identity();
+    Precision   alpha_old = Precision(0);
+    Vec6        x         = Vec6::Zero();
+    FiniteTrial trial;
+    bool        plastic   = false;
 };
 
 Mat3 deviatoric_tensor_from_five(const Vec5& v) {
@@ -374,8 +386,8 @@ FiniteTrial finite_trial_from_increment(const Mat3& C,
     const Mat3 plastic_increment = sym_exp(A);
 
     trial.Fp = plastic_increment * Fp_old;
-    const Mat3 Fp_inv = trial.Fp.inverse();
-    trial.Ce = sym(Fp_inv.transpose() * C * Fp_inv);
+    trial.Fp_inv = trial.Fp.inverse();
+    trial.Ce = sym(trial.Fp_inv.transpose() * C * trial.Fp_inv);
     (void) spd_log(trial.Ce);
 
     trial.Ee = Precision(0.5) * (trial.Ce - Mat3::Identity());
@@ -391,14 +403,15 @@ FiniteTrial finite_trial_from_increment(const Mat3& C,
     return trial;
 }
 
-Vec6 finite_local_residual(const Mat3& C,
-                           const Mat3& Fp_old,
+Mat3 finite_pk2_stress(const FiniteTrial& trial) {
+    return sym(trial.Fp_inv * trial.Se * trial.Fp_inv.transpose());
+}
+
+Vec6 finite_local_residual(const FiniteTrial& trial,
                            Precision alpha_old,
                            const Vec6& x,
                            Precision shear,
-                           Precision bulk,
                            const YieldCurve& yield_curve) {
-    const FiniteTrial trial = finite_trial_from_increment(C, Fp_old, x, shear, bulk);
     const Precision dgamma = x(5);
 
     Vec6 residual = Vec6::Zero();
@@ -419,80 +432,132 @@ Vec6 finite_local_residual(const Mat3& C,
     return residual;
 }
 
-Update3D update_finite_strain(const Mat3& green_lagrange,
-                              const State& committed,
-                              Precision shear,
-                              Precision bulk,
-                              const YieldCurve& yield_curve) {
-    Update3D result;
-    result.state = committed;
+Vec6 finite_local_residual(const Mat3& C,
+                           const Mat3& Fp_old,
+                           Precision alpha_old,
+                           const Vec6& x,
+                           Precision shear,
+                           Precision bulk,
+                           const YieldCurve& yield_curve) {
+    const FiniteTrial trial = finite_trial_from_increment(C, Fp_old, x, shear, bulk);
+    return finite_local_residual(trial, alpha_old, x, shear, yield_curve);
+}
 
-    const Mat3 C = sym(Mat3::Identity() + Precision(2) * green_lagrange);
-    (void) spd_log(C);
+/**
+ * Numerically differentiates the six local return-mapping equations with
+ * respect to their six local unknowns at one fixed total strain.
+ *
+ * The sixth unknown is dgamma and does not enter Fp directly. Its derivative can
+ * therefore reuse the already evaluated base trial instead of repeating a matrix
+ * exponential and spectral metric evaluation. The remaining five flow-tensor
+ * components use central differences.
+ */
+Mat6 finite_local_jacobian_x(const Mat3& C,
+                             const Mat3& Fp_old,
+                             Precision alpha_old,
+                             const Vec6& x,
+                             const FiniteTrial& base_trial,
+                             const Vec6& base_residual,
+                             Precision shear,
+                             Precision bulk,
+                             const YieldCurve& yield_curve) {
+    Mat6 J = Mat6::Zero();
+
+    for (Index column = 0; column < 6; ++column) {
+        const Precision h = derivative_step(x(column));
+        Vec6 xp = x;
+        Vec6 xm = x;
+        xp(column) += h;
+        xm(column) -= h;
+
+        if (column == 5) {
+            const Vec6 rp = finite_local_residual(
+                base_trial, alpha_old, xp, shear, yield_curve
+            );
+
+            if (xm(5) < Precision(0)) {
+                J.col(column) = (rp - base_residual) / h;
+            } else {
+                const Vec6 rm = finite_local_residual(
+                    base_trial, alpha_old, xm, shear, yield_curve
+                );
+                J.col(column) = (rp - rm) / (Precision(2) * h);
+            }
+            continue;
+        }
+
+        const FiniteTrial trial_p = finite_trial_from_increment(C, Fp_old, xp, shear, bulk);
+        const FiniteTrial trial_m = finite_trial_from_increment(C, Fp_old, xm, shear, bulk);
+        const Vec6 rp = finite_local_residual(trial_p, alpha_old, xp, shear, yield_curve);
+        const Vec6 rm = finite_local_residual(trial_m, alpha_old, xm, shear, yield_curve);
+        J.col(column) = (rp - rm) / (Precision(2) * h);
+    }
+
+    return J;
+}
+
+FiniteUpdate integrate_finite_strain(const Mat3& green_lagrange,
+                                     const State& committed,
+                                     Precision shear,
+                                     Precision bulk,
+                                     const YieldCurve& yield_curve) {
+    FiniteUpdate result;
+    result.response.state = committed;
+
+    result.C = sym(Mat3::Identity() + Precision(2) * green_lagrange);
+    (void) spd_log(result.C);
 
     const Mat3 Cp_old = cp_from_state(committed);
-    const Mat3 Fp_old = spd_sqrt(Cp_old);
-    const Precision alpha_old = committed[6];
+    result.Fp_old = spd_sqrt(Cp_old);
+    result.alpha_old = committed[6];
+    result.x.setZero();
 
-    Vec6 x = Vec6::Zero();
-    const FiniteTrial elastic_trial = finite_trial_from_increment(
-        C, Fp_old, x, shear, bulk
+    result.trial = finite_trial_from_increment(
+        result.C, result.Fp_old, result.x, shear, bulk
     );
-    const Precision current_yield = yield_stress_at(yield_curve, alpha_old);
-    const Precision f_trial = elastic_trial.q - current_yield;
 
-    FiniteTrial converged = elastic_trial;
+    const Precision current_yield = yield_stress_at(yield_curve, result.alpha_old);
+    const Precision f_trial = result.trial.q - current_yield;
+    result.plastic = f_trial > stress_tolerance(
+        Precision(3) * bulk,
+        initial_yield_stress(yield_curve)
+    );
 
-    if (f_trial > stress_tolerance(Precision(3) * bulk, initial_yield_stress(yield_curve))) {
-        logging::error(elastic_trial.q > Precision(0),
+    if (result.plastic) {
+        logging::error(result.trial.q > Precision(0),
                        "J2: positive yield residual with zero trial Mandel stress");
 
         // Start the local Newton solve at the elastic trial state. A small-strain
         // estimate for dgamma can substantially over-correct a finite-strain trial
         // state, especially when one increment crosses a tabulated hardening kink.
-        // The zero plastic increment is admissible, keeps the initial Mandel
-        // direction physical and lets the coupled Newton system determine A and
-        // dgamma consistently from the finite constitutive equations themselves.
-        x.setZero();
+        result.x.setZero();
 
         bool local_converged = false;
         for (Index iteration = 0; iteration < 30; ++iteration) {
+            const FiniteTrial iterate_trial = finite_trial_from_increment(
+                result.C, result.Fp_old, result.x, shear, bulk
+            );
             const Vec6 residual = finite_local_residual(
-                C, Fp_old, alpha_old, x,
-                shear, bulk, yield_curve
+                iterate_trial, result.alpha_old, result.x, shear, yield_curve
             );
 
             if (residual.cwiseAbs().maxCoeff() <= Precision(1e-10)) {
+                result.trial = iterate_trial;
                 local_converged = true;
                 break;
             }
 
-            Mat6 J = Mat6::Zero();
-            for (Index column = 0; column < 6; ++column) {
-                const Precision h = derivative_step(x(column));
-                Vec6 xp = x;
-                Vec6 xm = x;
-                xp(column) += h;
-                xm(column) -= h;
-
-                if (column == 5 && xm(5) < Precision(0)) {
-                    const Vec6 rp = finite_local_residual(
-                        C, Fp_old, alpha_old, xp,
-                        shear, bulk, yield_curve
-                    );
-                    J.col(column) = (rp - residual) / h;
-                } else {
-                    const Vec6 rp = finite_local_residual(
-                        C, Fp_old, alpha_old, xp,
-                        shear, bulk, yield_curve
-                    );
-                    const Vec6 rm = finite_local_residual(
-                        C, Fp_old, alpha_old, xm,
-                        shear, bulk, yield_curve
-                    );
-                    J.col(column) = (rp - rm) / (Precision(2) * h);
-                }
-            }
+            const Mat6 J = finite_local_jacobian_x(
+                result.C,
+                result.Fp_old,
+                result.alpha_old,
+                result.x,
+                iterate_trial,
+                residual,
+                shear,
+                bulk,
+                yield_curve
+            );
 
             Eigen::FullPivLU<Mat6> lu(J);
             logging::error(lu.isInvertible(),
@@ -503,14 +568,19 @@ Update3D update_finite_strain(const Mat3& green_lagrange,
             bool accepted = false;
             const Precision residual_norm = residual.norm();
             while (scale >= Precision(1e-8)) {
-                const Vec6 candidate = x + scale * delta;
+                const Vec6 candidate = result.x + scale * delta;
                 if (candidate(5) >= Precision(0)) {
                     const Vec6 candidate_residual = finite_local_residual(
-                        C, Fp_old, alpha_old, candidate,
-                        shear, bulk, yield_curve
+                        result.C,
+                        result.Fp_old,
+                        result.alpha_old,
+                        candidate,
+                        shear,
+                        bulk,
+                        yield_curve
                     );
                     if (candidate_residual.norm() < residual_norm) {
-                        x = candidate;
+                        result.x = candidate;
                         accepted = true;
                         break;
                     }
@@ -524,20 +594,28 @@ Update3D update_finite_strain(const Mat3& green_lagrange,
 
         logging::error(local_converged,
                        "J2: finite-plasticity local return mapping did not converge");
-        converged = finite_trial_from_increment(C, Fp_old, x, shear, bulk);
     }
 
-    const Mat3 Fp_new_inv = converged.Fp.inverse();
-    result.stress = sym(Fp_new_inv * converged.Se * Fp_new_inv.transpose());
+    result.response.stress = finite_pk2_stress(result.trial);
 
-    const Mat3 Cp_new = normalize_cp(converged.Fp.transpose() * converged.Fp);
-    cp_to_state(result.state, Cp_new);
-    result.state[6] = alpha_old + x(5);
+    const Mat3 Cp_new = normalize_cp(result.trial.Fp.transpose() * result.trial.Fp);
+    cp_to_state(result.response.state, Cp_new);
+    result.response.state[6] = result.alpha_old + result.x(5);
     return result;
 }
 
+Update3D update_finite_strain(const Mat3& green_lagrange,
+                              const State& committed,
+                              Precision shear,
+                              Precision bulk,
+                              const YieldCurve& yield_curve) {
+    return integrate_finite_strain(
+        green_lagrange, committed, shear, bulk, yield_curve
+    ).response;
+}
+
 // -----------------------------------------------------------------------------
-// Numerical algorithmic tangents of the complete discrete constitutive update
+// Algorithmic tangents
 // -----------------------------------------------------------------------------
 
 Mat6 tangent_small(const Vec6& strain,
@@ -569,56 +647,181 @@ Mat6 tangent_small(const Vec6& strain,
     return Precision(0.5) * (C + C.transpose());
 }
 
+/**
+ * Builds the finite-strain algorithmic tangent from the converged return map.
+ *
+ * Let R(x,E)=0 denote the six local backward-Euler equations and S(x,E) the
+ * returned PK2 stress. Implicit differentiation gives
+ *
+ *     dx/dE = -(dR/dx)^-1 dR/dE,
+ *     dS/dE = dS/dE|x + dS/dx dx/dE.
+ *
+ * The partial derivatives are evaluated numerically at the already converged
+ * local solution. Unlike the former brute-force tangent, perturbed total strains
+ * never invoke complete local Newton solves. Elastic states simply differentiate
+ * the stress with frozen plastic history.
+ */
+Mat6 tangent_finite(const Vec6& strain,
+                    const FiniteUpdate& base,
+                    Precision shear,
+                    Precision bulk,
+                    const YieldCurve& yield_curve) {
+    const Vec6 stress_0 = stress_voigt(base.response.stress);
+
+    Mat6 stress_E = Mat6::Zero();
+    Mat6 residual_E = Mat6::Zero();
+    const Vec6 residual_0 = base.plastic
+        ? finite_local_residual(base.trial, base.alpha_old, base.x, shear, yield_curve)
+        : Vec6::Zero();
+
+    // Partial derivatives with respect to total Green-Lagrange strain at fixed
+    // local return-mapping unknowns.
+    for (Index column = 0; column < 6; ++column) {
+        const Precision h = derivative_step(strain(column));
+        Vec6 plus = strain;
+        Vec6 minus = strain;
+        plus(column) += h;
+        minus(column) -= h;
+
+        const bool plus_ok = admissible_green_lagrange(plus);
+        const bool minus_ok = admissible_green_lagrange(minus);
+        logging::error(plus_ok || minus_ok,
+                       "J2: no admissible Green-Lagrange perturbation for tangent component ", column);
+
+        if (plus_ok && minus_ok) {
+            const Mat3 C_plus = sym(Mat3::Identity()
+                + Precision(2) * engineering_strain_tensor(plus));
+            const Mat3 C_minus = sym(Mat3::Identity()
+                + Precision(2) * engineering_strain_tensor(minus));
+            const FiniteTrial trial_plus = finite_trial_from_increment(
+                C_plus, base.Fp_old, base.x, shear, bulk
+            );
+            const FiniteTrial trial_minus = finite_trial_from_increment(
+                C_minus, base.Fp_old, base.x, shear, bulk
+            );
+
+            const Vec6 stress_plus = stress_voigt(finite_pk2_stress(trial_plus));
+            const Vec6 stress_minus = stress_voigt(finite_pk2_stress(trial_minus));
+            stress_E.col(column) = (stress_plus - stress_minus) / (Precision(2) * h);
+
+            if (base.plastic) {
+                const Vec6 residual_plus = finite_local_residual(
+                    trial_plus, base.alpha_old, base.x, shear, yield_curve
+                );
+                const Vec6 residual_minus = finite_local_residual(
+                    trial_minus, base.alpha_old, base.x, shear, yield_curve
+                );
+                residual_E.col(column) =
+                    (residual_plus - residual_minus) / (Precision(2) * h);
+            }
+        } else if (plus_ok) {
+            const Mat3 C_plus = sym(Mat3::Identity()
+                + Precision(2) * engineering_strain_tensor(plus));
+            const FiniteTrial trial_plus = finite_trial_from_increment(
+                C_plus, base.Fp_old, base.x, shear, bulk
+            );
+            const Vec6 stress_plus = stress_voigt(finite_pk2_stress(trial_plus));
+            stress_E.col(column) = (stress_plus - stress_0) / h;
+
+            if (base.plastic) {
+                const Vec6 residual_plus = finite_local_residual(
+                    trial_plus, base.alpha_old, base.x, shear, yield_curve
+                );
+                residual_E.col(column) = (residual_plus - residual_0) / h;
+            }
+        } else {
+            const Mat3 C_minus = sym(Mat3::Identity()
+                + Precision(2) * engineering_strain_tensor(minus));
+            const FiniteTrial trial_minus = finite_trial_from_increment(
+                C_minus, base.Fp_old, base.x, shear, bulk
+            );
+            const Vec6 stress_minus = stress_voigt(finite_pk2_stress(trial_minus));
+            stress_E.col(column) = (stress_0 - stress_minus) / h;
+
+            if (base.plastic) {
+                const Vec6 residual_minus = finite_local_residual(
+                    trial_minus, base.alpha_old, base.x, shear, yield_curve
+                );
+                residual_E.col(column) = (residual_0 - residual_minus) / h;
+            }
+        }
+    }
+
+    if (!base.plastic) {
+        return Precision(0.5) * (stress_E + stress_E.transpose());
+    }
+
+    // Partial derivatives with respect to the six local return-mapping unknowns.
+    // dgamma does not enter the stress directly, so its stress derivative is zero
+    // and its residual derivative can reuse the converged trial tensor state.
+    Mat6 residual_x = Mat6::Zero();
+    Mat6 stress_x = Mat6::Zero();
+
+    for (Index column = 0; column < 6; ++column) {
+        const Precision h = derivative_step(base.x(column));
+        Vec6 xp = base.x;
+        Vec6 xm = base.x;
+        xp(column) += h;
+        xm(column) -= h;
+
+        if (column == 5) {
+            const Vec6 residual_plus = finite_local_residual(
+                base.trial, base.alpha_old, xp, shear, yield_curve
+            );
+            if (xm(5) < Precision(0)) {
+                residual_x.col(column) = (residual_plus - residual_0) / h;
+            } else {
+                const Vec6 residual_minus = finite_local_residual(
+                    base.trial, base.alpha_old, xm, shear, yield_curve
+                );
+                residual_x.col(column) =
+                    (residual_plus - residual_minus) / (Precision(2) * h);
+            }
+            stress_x.col(column).setZero();
+            continue;
+        }
+
+        const FiniteTrial trial_plus = finite_trial_from_increment(
+            base.C, base.Fp_old, xp, shear, bulk
+        );
+        const FiniteTrial trial_minus = finite_trial_from_increment(
+            base.C, base.Fp_old, xm, shear, bulk
+        );
+
+        const Vec6 residual_plus = finite_local_residual(
+            trial_plus, base.alpha_old, xp, shear, yield_curve
+        );
+        const Vec6 residual_minus = finite_local_residual(
+            trial_minus, base.alpha_old, xm, shear, yield_curve
+        );
+        residual_x.col(column) =
+            (residual_plus - residual_minus) / (Precision(2) * h);
+
+        const Vec6 stress_plus = stress_voigt(finite_pk2_stress(trial_plus));
+        const Vec6 stress_minus = stress_voigt(finite_pk2_stress(trial_minus));
+        stress_x.col(column) =
+            (stress_plus - stress_minus) / (Precision(2) * h);
+    }
+
+    Eigen::FullPivLU<Mat6> lu(residual_x);
+    logging::error(lu.isInvertible(),
+                   "J2: singular local Jacobian during finite tangent linearization");
+
+    const Mat6 dx_dE = lu.solve(-residual_E);
+    const Mat6 C = stress_E + stress_x * dx_dE;
+    return Precision(0.5) * (C + C.transpose());
+}
+
 Mat6 tangent_finite(const Vec6& strain,
                     const State& committed,
                     Precision shear,
                     Precision bulk,
                     const YieldCurve& yield_curve) {
-    Mat6 C = Mat6::Zero();
-    const Vec6 s0 = stress_voigt(update_finite_strain(
+    const FiniteUpdate base = integrate_finite_strain(
         engineering_strain_tensor(strain), committed,
         shear, bulk, yield_curve
-    ).stress);
-
-    for (Index j = 0; j < 6; ++j) {
-        const Precision h = derivative_step(strain(j));
-        Vec6 plus = strain;
-        Vec6 minus = strain;
-        plus(j) += h;
-        minus(j) -= h;
-
-        const bool plus_ok = admissible_green_lagrange(plus);
-        const bool minus_ok = admissible_green_lagrange(minus);
-
-        logging::error(plus_ok || minus_ok,
-                       "J2: no admissible Green-Lagrange perturbation for tangent component ", j);
-
-        if (plus_ok && minus_ok) {
-            const Vec6 sp = stress_voigt(update_finite_strain(
-                engineering_strain_tensor(plus), committed,
-                shear, bulk, yield_curve
-            ).stress);
-            const Vec6 sm = stress_voigt(update_finite_strain(
-                engineering_strain_tensor(minus), committed,
-                shear, bulk, yield_curve
-            ).stress);
-            C.col(j) = (sp - sm) / (Precision(2) * h);
-        } else if (plus_ok) {
-            const Vec6 sp = stress_voigt(update_finite_strain(
-                engineering_strain_tensor(plus), committed,
-                shear, bulk, yield_curve
-            ).stress);
-            C.col(j) = (sp - s0) / h;
-        } else {
-            const Vec6 sm = stress_voigt(update_finite_strain(
-                engineering_strain_tensor(minus), committed,
-                shear, bulk, yield_curve
-            ).stress);
-            C.col(j) = (s0 - sm) / h;
-        }
-    }
-
-    return Precision(0.5) * (C + C.transpose());
+    );
+    return tangent_finite(strain, base, shear, bulk, yield_curve);
 }
 
 // -----------------------------------------------------------------------------
@@ -983,19 +1186,21 @@ void IsotropicJ2Elasticity::evaluate(const VolumeStrainLinearized& strain,
 void IsotropicJ2Elasticity::evaluate(const VolumeStrainGreenLagrange& strain,
                                      Precision*                       state,
                                      VolumeStressPK2&                 stress,
-                                     Mat6&                            tangent) const {
+                                     Mat6*                            tangent) const {
     const State committed = load_state(state);
     const Precision shear = shear_modulus();
     const Precision bulk  = bulk_modulus();
-    const Update3D update = update_finite_strain(strain.tensor(), committed,
-                                                 shear, bulk,
-                                                 yield_points_);
+    const FiniteUpdate update = integrate_finite_strain(
+        strain.tensor(), committed, shear, bulk, yield_points_
+    );
 
-    stress = VolumeStressPK2(update.stress);
-    tangent = tangent_finite(strain.voigt(), committed,
-                             shear, bulk,
-                             yield_points_);
-    store_state(state, update.state);
+    stress = VolumeStressPK2(update.response.stress);
+    if (tangent != nullptr) {
+        *tangent = tangent_finite(
+            strain.voigt(), update, shear, bulk, yield_points_
+        );
+    }
+    store_state(state, update.response.state);
 }
 
 void IsotropicJ2Elasticity::evaluate(const ShellMaterialStrainLinearized& strain,
