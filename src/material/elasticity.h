@@ -131,6 +131,17 @@ struct Elasticity {
                           VolumeStressPK2&                 stress,
                           Mat6&                            tangent) const;
 
+    // Optional-tangent variant used by nonlinear residual-only assembly. A null
+    // tangent requests the identical physical constitutive update and state
+    // transition but permits history-dependent materials to skip an expensive
+    // algorithmic tangent. The default implementation preserves compatibility by
+    // evaluating the normal tangent into temporary storage.
+    virtual void evaluate(const VolumeStrainGreenLagrange& strain,
+                          const Precision*                 old_state,
+                          Precision*                       new_state,
+                          VolumeStressPK2&                 stress,
+                          Mat6*                            tangent) const;
+
     // Generalized beam response. The section-defined six-component strain and
     // resultant ordering is preserved, and tangent is their consistent local
     // derivative. State follows the same separate input/output convention.
