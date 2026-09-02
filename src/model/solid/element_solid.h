@@ -89,7 +89,7 @@ public:
         return integration_scheme();
     }
 
-    // Resolve the assigned solid section and the optional element-level material
+    // Resolve the assigned solid section and optional element-level material
     // rotation/stiffness scale used by every constitutive evaluation.
     SolidSection* get_section();
 
@@ -102,9 +102,9 @@ public:
     Mat6 material_tangent_reference(Precision r, Precision s, Precision t,
                                     const Precision* old_state, Precision* new_state);
 
-    // Evaluate linearized Cauchy stress and tangent in global coordinates. The
-    // selected old/new state pointers are forwarded directly through
-    // SolidSection, after which optional element stiffness scaling is applied.
+    // Evaluate linearized Cauchy stress in global coordinates. The material
+    // tangent is optional and topology stiffness scaling is applied to every
+    // requested output.
     void evaluate_material(Precision                     r,
                            Precision                     s,
                            Precision                     t,
@@ -112,10 +112,11 @@ public:
                            const Precision*              old_state,
                            Precision*                    new_state,
                            VolumeStressCauchy&           global_stress,
-                           Mat6&                         global_tangent);
+                           Mat6*                         global_tangent = nullptr);
 
-    // Evaluate Total-Lagrangian PK2 stress and dS/dE in global reference
-    // coordinates with the same direct state-pointer and topology-scaling contract.
+    // Evaluate Total-Lagrangian PK2 stress in global reference coordinates. A
+    // null tangent propagates through section and material evaluation so
+    // residual-only assembly does not construct dS/dE.
     void evaluate_material(Precision                        r,
                            Precision                        s,
                            Precision                        t,
@@ -123,20 +124,7 @@ public:
                            const Precision*                 old_state,
                            Precision*                       new_state,
                            VolumeStressPK2&                 global_stress,
-                           Mat6&                            global_tangent);
-
-    // Optional-tangent finite-strain variant used by nonlinear residual-only
-    // assembly. Stress and trial history are always evaluated; a null tangent
-    // propagates through the section/material stack and skips constitutive
-    // tangent construction when supported by the material.
-    void evaluate_material(Precision                        r,
-                           Precision                        s,
-                           Precision                        t,
-                           const VolumeStrainGreenLagrange& global_strain,
-                           const Precision*                 old_state,
-                           Precision*                       new_state,
-                           VolumeStressPK2&                 global_stress,
-                           Mat6*                            global_tangent);
+                           Mat6*                            global_tangent = nullptr);
 
     // Interpolation and geometry transformations
     template<Dim K>
