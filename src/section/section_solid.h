@@ -4,9 +4,8 @@
  *
  * `SolidSection` transforms global solid strains into the optional material
  * coordinate system, evaluates the assigned elasticity model and transforms
- * stresses and optional consistent tangents back into the global basis. The
- * element owns material-point addressing and supplies separate input and output
- * state rows.
+ * stresses and consistent tangents back into the global basis. The element owns
+ * material-point addressing and supplies separate input and output state rows.
  *
  * @see SolidSection
  * @see src/section/section_solid.cpp
@@ -37,10 +36,6 @@ namespace fem {
  * by the element. Linearized response returns Cauchy stress, while finite-strain
  * response uses Green-Lagrange strain and PK2 stress in the reference material
  * basis before transformation back to global coordinates.
- *
- * Tangent output is optional. A null tangent pointer is forwarded to the material
- * model so stress-only nonlinear residual evaluations can avoid constitutive and
- * coordinate-transformation work that is required only for stiffness assembly.
  */
 struct SolidSection : Section {
     using Ptr = std::shared_ptr<SolidSection>;
@@ -49,30 +44,46 @@ struct SolidSection : Section {
     cos::CoordinateSystem::Ptr orientation_ = nullptr;
 
     // Evaluate infinitesimal solid response. Global engineering strain is
-    // transformed into the material basis and Cauchy stress is transformed back.
-    // The globally transformed tangent is produced only for a non-null pointer.
+    // transformed into the reference material basis composed from the optional
+    // section orientation and additional element rotation. The selected state
+    // row is passed directly to the material. Cauchy stress and the consistently
+    // transformed six-by-six tangent are returned in global coordinates.
     void evaluate(const Vec3&                   position_reference,
                   const Mat3&                   additional_rotation,
                   const VolumeStrainLinearized& strain_global,
                   const Precision*              old_state,
                   Precision*                    new_state,
                   VolumeStressCauchy&           stress_global,
-                  Mat6*                         tangent_global = nullptr) const;
+                  Mat6&                         tangent_global) const;
 
     // Evaluate Total-Lagrangian solid response with the same basis and state
-    // ownership convention. Green-Lagrange strain and PK2 stress remain in the
-    // reference configuration; tangent output is optional.
+    // ownership convention. Green-Lagrange strain is transformed into material
+    // coordinates; second Piola-Kirchhoff stress and dS/dE are transformed back
+    // into the global reference basis without changing their stress measure.
     void evaluate(const Vec3&                      position_reference,
                   const Mat3&                      additional_rotation,
                   const VolumeStrainGreenLagrange& strain_global,
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress_global,
-                  Mat6*                            tangent_global = nullptr) const;
+                  Mat6&                            tangent_global) const;
+
+    // Optional-tangent finite-strain variant used by nonlinear residual-only
+    // assembly. A null tangent keeps the identical PK2 stress/state update but
+    // allows expensive constitutive tangent work to be omitted.
+    void evaluate(const Vec3&                      position_reference,
+                  const Mat3&                      additional_rotation,
+                  const VolumeStrainGreenLagrange& strain_global,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
+                  VolumeStressPK2&                 stress_global,
+                  Mat6*                            tangent_global) const;
 
     // Differentiate the globally transformed linear material tangent with
-    // respect to three supplied additional-rotation directions. This operation
-    // explicitly requires the material tangent at zero strain.
+    // respect to three supplied additional-rotation directions. The material
+    // tangent is evaluated at zero strain using the selected old/new state rows
+    // and is assumed independent of the rotation parameters; only strain and
+    // stress transformation operators are differentiated.
     std::array<Mat6, 3> tangent_rotation_derivatives(
         const Vec3&                position_reference,
         const Mat3&                additional_rotation,
