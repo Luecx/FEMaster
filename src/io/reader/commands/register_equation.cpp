@@ -123,8 +123,8 @@ void register_equation(fem::io::dsl::Registry& registry, model::Model& model) {
 
                         std::istringstream dof_stream        (data[i + 1]);
                         std::istringstream coefficient_stream(data[i + 2]);
-                        dof_stream         >> dof         >> std::ws;
-                        coefficient_stream >> coefficient >> std::ws;
+                        dof_stream         >> dof;
+                        coefficient_stream >> coefficient;
 
                         logging::error(!dof_stream.fail() && dof_stream.eof() && dof >= 1 && dof <= 6,
                             "EQUATION: DOF must be an integer in [1,6]");
