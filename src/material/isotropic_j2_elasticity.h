@@ -27,9 +27,11 @@
 #pragma once
 
 #include "elasticity.h"
+#include "../core/logging.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace fem::material {
@@ -92,6 +94,7 @@ struct IsotropicJ2Elasticity : Elasticity {
                   AxialStressPK2&                 stress,
                   Precision&                      tangent) const override {
         evaluate_from_committed(strain, old_state, new_state, stress, tangent);
+        log_axial_finite_debug(strain, old_state, new_state, stress, tangent);
     }
 
     void evaluate(const VolumeStrainLinearized& strain,
@@ -151,6 +154,117 @@ private:
 
         if (new_state != nullptr) {
             std::copy_n(working.data(), state_count, new_state);
+        }
+    }
+
+    /**
+     * Emits focused diagnostics for the finite-strain axial J2 path.
+     *
+     * The nonlinear solver normally suppresses element/material logging during
+     * assembly. This debug branch temporarily re-enables logging only while the
+     * diagnostic block is emitted, restoring the previous logging state
+     * immediately afterwards. Besides the actual PK2 stress and algorithmic
+     * tangent, the routine independently finite-differences both dS/dE and the
+     * nominal axial response P=lambda*S from the same committed state. The latter
+     * is the exact scalar quantity entering the Total-Lagrangian truss residual,
+     * so its derivative must match S + lambda^2*dS/dE.
+     */
+    void log_axial_finite_debug(const AxialStrainGreenLagrange& strain,
+                                const Precision*                old_state,
+                                const Precision*                new_state,
+                                const AxialStressPK2&           stress,
+                                Precision                       tangent) const {
+        const Precision E = strain.value();
+        const Precision lambda_sq = Precision(1) + Precision(2) * E;
+        if (!(lambda_sq > Precision(0))) {
+            return;
+        }
+
+        const Precision lambda = std::sqrt(lambda_sq);
+        const Precision h_E = Precision(1e-7) * std::max(Precision(1), std::abs(E));
+        const Precision h_lambda = Precision(1e-7) * std::max(Precision(1), std::abs(lambda));
+
+        auto evaluate_stress_from_committed = [&](Precision E_probe) {
+            std::array<Precision, state_count> working{};
+            std::copy_n(old_state, state_count, working.data());
+
+            AxialStressPK2 probe_stress;
+            Precision      probe_tangent = Precision(0);
+            evaluate(
+                AxialStrainGreenLagrange(E_probe),
+                working.data(),
+                probe_stress,
+                probe_tangent
+            );
+            return probe_stress.value();
+        };
+
+        const Precision S_plus_E  = evaluate_stress_from_committed(E + h_E);
+        const Precision S_minus_E = evaluate_stress_from_committed(E - h_E);
+        const Precision tangent_fd = (S_plus_E - S_minus_E) / (Precision(2) * h_E);
+
+        const Precision lambda_plus  = lambda + h_lambda;
+        const Precision lambda_minus = lambda - h_lambda;
+        const Precision E_plus_lambda  = Precision(0.5) * (lambda_plus  * lambda_plus  - Precision(1));
+        const Precision E_minus_lambda = Precision(0.5) * (lambda_minus * lambda_minus - Precision(1));
+        const Precision S_plus_lambda  = evaluate_stress_from_committed(E_plus_lambda);
+        const Precision S_minus_lambda = evaluate_stress_from_committed(E_minus_lambda);
+
+        const Precision nominal_stress = lambda * stress.value();
+        const Precision nominal_tangent = stress.value() + lambda * lambda * tangent;
+        const Precision nominal_tangent_fd = (
+            lambda_plus * S_plus_lambda - lambda_minus * S_minus_lambda
+        ) / (Precision(2) * h_lambda);
+
+        const Precision tangent_scale = std::max(Precision(1), std::abs(tangent_fd));
+        const Precision nominal_scale = std::max(Precision(1), std::abs(nominal_tangent_fd));
+        const Precision tangent_rel_error = std::abs(tangent - tangent_fd) / tangent_scale;
+        const Precision nominal_rel_error = std::abs(nominal_tangent - nominal_tangent_fd) / nominal_scale;
+
+        const bool logging_was_enabled = logging::is_enabled();
+        if (!logging_was_enabled) {
+            logging::enable();
+        }
+
+        logging::info(true, "J2DBG ----------------------------------------------------------------");
+        logging::info(true, "J2DBG axial finite: E_GL=", E,
+                            ", stretch=", lambda,
+                            ", S_PK2=", stress.value(),
+                            ", P=lambda*S=", nominal_stress);
+        logging::info(true, "J2DBG tangent: C_alg=", tangent,
+                            ", dS/dE_FD=", tangent_fd,
+                            ", rel_err=", tangent_rel_error);
+        logging::info(true, "J2DBG truss scalar tangent: S+lambda^2*C=", nominal_tangent,
+                            ", d(lambda*S)/dlambda_FD=", nominal_tangent_fd,
+                            ", rel_err=", nominal_rel_error);
+        logging::info(true, "J2DBG committed state: Cp11=", old_state[0],
+                            ", Cp22=", old_state[1],
+                            ", Cp33=", old_state[2],
+                            ", Cp23=", old_state[3],
+                            ", Cp13=", old_state[4],
+                            ", Cp12=", old_state[5],
+                            ", eqp=", old_state[6]);
+
+        if (new_state != nullptr) {
+            logging::info(true, "J2DBG trial state:     Cp11=", new_state[0],
+                                ", Cp22=", new_state[1],
+                                ", Cp33=", new_state[2],
+                                ", Cp23=", new_state[3],
+                                ", Cp13=", new_state[4],
+                                ", Cp12=", new_state[5],
+                                ", eqp=", new_state[6]);
+            logging::info(true, "J2DBG state delta:     dCp11=", new_state[0] - old_state[0],
+                                ", dCp22=", new_state[1] - old_state[1],
+                                ", dCp33=", new_state[2] - old_state[2],
+                                ", deqp=", new_state[6] - old_state[6]);
+        } else {
+            logging::info(true, "J2DBG trial state: discarded (new_state=nullptr)");
+        }
+
+        logging::info(true, "J2DBG FD steps: h_E=", h_E, ", h_lambda=", h_lambda);
+
+        if (!logging_was_enabled) {
+            logging::disable();
         }
     }
 
