@@ -64,9 +64,9 @@ TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
     Mat6 tangent_b;
     Mat6 tangent_readonly;
 
-    j2.evaluate(strain, committed.data(), trial_a.data(), stress_a, tangent_a);
-    j2.evaluate(strain, committed.data(), trial_b.data(), stress_b, tangent_b);
-    j2.evaluate(strain, committed.data(), nullptr, stress_readonly, tangent_readonly);
+    j2.evaluate(strain, committed.data(), trial_a.data(), stress_a, &tangent_a);
+    j2.evaluate(strain, committed.data(), trial_b.data(), stress_b, &tangent_b);
+    j2.evaluate(strain, committed.data(), nullptr, stress_readonly, &tangent_readonly);
 
     // Constitutive calls must never modify committed history and repeated trial
     // evaluations from the same committed state must be deterministic.
@@ -80,6 +80,55 @@ TEST(Material_J2, EvaluationAlwaysStartsFromCommittedState) {
     EXPECT_TRUE(stress_a.voigt().isApprox(stress_readonly.voigt(), Precision(1e-10)));
     EXPECT_TRUE(tangent_a.isApprox(tangent_b, Precision(1e-10)));
     EXPECT_TRUE(tangent_a.isApprox(tangent_readonly, Precision(1e-10)));
+}
+
+TEST(Material_J2, NearIncompressibleYieldCheckUsesDeviatoricScale) {
+    // This Poisson ratio is intentionally extremely close to the incompressible
+    // limit. The bulk modulus is therefore enormous while the shear modulus and
+    // J2 yield surface remain perfectly regular. A yield tolerance scaled with K
+    // would incorrectly classify the trial state below as elastic.
+    material::IsotropicJ2Elasticity j2(
+        Precision(210000),
+        Precision(0.499999999)
+    );
+    j2.add_yield_point(Precision(250), Precision(0));
+    j2.add_yield_point(Precision(500), Precision(0.10));
+
+    // Use a trace-free normal strain so the trial response is purely deviatoric.
+    // For G ~= 70000 MPa and e = diag(a,-a,0), a = 0.005 produces a trial
+    // equivalent stress well above the 250 MPa yield stress, independently of K.
+    Vec6 strain_values = Vec6::Zero();
+    strain_values(0) = Precision(0.005);
+    strain_values(1) = Precision(-0.005);
+
+    std::vector<Precision> committed(static_cast<std::size_t>(j2.state_size()));
+    std::vector<Precision> trial_small(committed.size());
+    std::vector<Precision> trial_finite(committed.size());
+    j2.initialize_state(committed.data());
+
+    VolumeStressCauchy small_stress;
+    j2.evaluate(
+        VolumeStrainLinearized(strain_values),
+        committed.data(),
+        trial_small.data(),
+        small_stress,
+        nullptr
+    );
+
+    VolumeStressPK2 finite_stress;
+    j2.evaluate(
+        VolumeStrainGreenLagrange(strain_values),
+        committed.data(),
+        trial_finite.data(),
+        finite_stress,
+        nullptr
+    );
+
+    // Both formulations must enter plasticity. In the J2 state layout the final
+    // component is accumulated equivalent plastic strain, so a positive value is
+    // an unambiguous regression check for the yield decision.
+    EXPECT_GT(trial_small[6], Precision(0));
+    EXPECT_GT(trial_finite[6], Precision(0));
 }
 
 TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
@@ -106,7 +155,7 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
         initial.data(),
         committed.data(),
         preload_stress,
-        preload_tangent
+        &preload_tangent
     );
     ASSERT_GT(committed[6], Precision(0));
 
@@ -124,7 +173,7 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
         committed.data(),
         nullptr,
         stress,
-        tangent
+        &tangent
     );
 
     Mat6 tangent_fd = Mat6::Zero();
@@ -143,14 +192,14 @@ TEST(Material_J2, FiniteStrainTangentIsConsistentWithReturnMap) {
             committed.data(),
             nullptr,
             stress_plus,
-            static_cast<Mat6*>(nullptr)
+            nullptr
         );
         j2.evaluate(
             VolumeStrainGreenLagrange(minus),
             committed.data(),
             nullptr,
             stress_minus,
-            static_cast<Mat6*>(nullptr)
+            nullptr
         );
 
         tangent_fd.col(column) =
