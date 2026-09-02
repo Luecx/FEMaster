@@ -76,13 +76,13 @@ struct OrthotropicElasticity : Elasticity {
     bool supports_shell_integration_linearized() const override;
     bool supports_shell_integration_green_lagrange() const override;
 
-    // Linearized three-dimensional orthotropic response in material axes.
-    // tangent maps engineering strain to Cauchy stress and state is unchanged.
+    // Linearized three-dimensional orthotropic response in material axes. The
+    // optional tangent maps engineering strain to Cauchy stress.
     void evaluate(const VolumeStrainLinearized& strain,
                   const Precision*              old_state,
                   Precision*                    new_state,
                   VolumeStressCauchy&           stress,
-                  Mat6&                         tangent) const override;
+                  Mat6*                         tangent = nullptr) const override;
 
     // Total-Lagrangian orthotropic response using the same constant material
     // operator, interpreted as dS/dE for PK2 stress and Green-Lagrange strain.
@@ -90,7 +90,7 @@ struct OrthotropicElasticity : Elasticity {
                   const Precision*                 old_state,
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
-                  Mat6&                            tangent) const override;
+                  Mat6*                            tangent = nullptr) const override;
 
     // Linearized shell response in the material basis. In-plane terms use the
     // orthotropic plane-stress reduction; 13 and 23 shear use G13 and G23.
@@ -98,7 +98,7 @@ struct OrthotropicElasticity : Elasticity {
                   const Precision*                     old_state,
                   Precision*                           new_state,
                   ShellMaterialStressCauchy&            stress,
-                  Mat5&                                 tangent) const override;
+                  Mat5*                                tangent = nullptr) const override;
 
     // Finite-strain shell response returning PK2 components work-conjugate to
     // the five supplied Green-Lagrange strain components. State remains unchanged.
@@ -106,7 +106,7 @@ struct OrthotropicElasticity : Elasticity {
                   const Precision*                        old_state,
                   Precision*                              new_state,
                   ShellMaterialStressPK2&                 stress,
-                  Mat5&                                   tangent) const override;
+                  Mat5*                                   tangent = nullptr) const override;
 
 private:
     // Build the in-plane orthotropic plane-stress tangent ordered [11,22,12].
