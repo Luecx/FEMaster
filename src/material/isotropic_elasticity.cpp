@@ -45,9 +45,9 @@ IsotropicElasticity::IsotropicElasticity(Precision youngs_in, Precision poisson_
       poisson(poisson_in),
       shear  (youngs_in / (Precision(2) * (Precision(1) + poisson_in))) {
     logging::error(youngs > Precision(0),
-                   "ISOTROPIC: Young's modulus must be positive");
+        "ISOTROPIC: Young's modulus must be positive");
     logging::error(poisson > Precision(-1) && poisson < Precision(0.5),
-                   "ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
+        "ISOTROPIC: Poisson ratio must be in (-1, 0.5)");
 }
 
 bool IsotropicElasticity::supports_axial_linearized() const {
@@ -84,6 +84,7 @@ bool IsotropicElasticity::supports_shell_integration_green_lagrange() const {
  */
 Mat3 IsotropicElasticity::plane_stress_tangent() const {
     const Precision scalar = youngs / (Precision(1) - poisson * poisson);
+
     Mat3 tangent;
     tangent << scalar,           scalar * poisson, Precision(0),
                scalar * poisson, scalar,           Precision(0),
@@ -128,61 +129,94 @@ Mat6 IsotropicElasticity::volume_tangent() const {
 /**
  * Evaluates linearized axial Cauchy stress from infinitesimal strain.
  *
+ * The constitutive response is
+ *
+ *     sigma = E epsilon
+ *
+ * and the constant tangent `d sigma / d epsilon = E` is written only when the
+ * caller requests it.
+ *
  * @param strain Infinitesimal axial strain.
  * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
  * @param new_state Unused output state row.
  * @param stress Axial Cauchy stress.
- * @param tangent Constant derivative `d sigma/d epsilon = E`.
+ * @param tangent Optional constant derivative `d sigma/d epsilon`.
  */
 void IsotropicElasticity::evaluate(const AxialStrainLinearized& strain,
                                    const Precision*             old_state,
                                    Precision*                   new_state,
                                    AxialStressCauchy&           stress,
-                                   Precision&                   tangent) const {
+                                   Precision*                   tangent) const {
     (void) old_state;
     (void) new_state;
-    tangent        = youngs;
-    stress.value() = tangent * strain.value();
+
+    // Evaluate stress directly so a stress-only query does not need tangent storage.
+    stress.value() = youngs * strain.value();
+
+    // Expose the constant material derivative only when requested by the caller.
+    if (tangent != nullptr) {
+        *tangent = youngs;
+    }
 }
 
 /**
  * Evaluates axial PK2 stress work-conjugate to Green-Lagrange strain.
  *
+ * The same linear material law is interpreted in the reference configuration,
+ *
+ *     S = E E_GL
+ *     dS/dE_GL = E.
+ *
  * @param strain Axial Green-Lagrange strain.
  * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
  * @param new_state Unused output state row.
  * @param stress Axial second Piola-Kirchhoff stress.
- * @param tangent Constant material derivative `dS/dE = E`.
+ * @param tangent Optional material derivative `dS/dE`.
  */
 void IsotropicElasticity::evaluate(const AxialStrainGreenLagrange& strain,
                                    const Precision*                old_state,
                                    Precision*                      new_state,
                                    AxialStressPK2&                 stress,
-                                   Precision&                      tangent) const {
+                                   Precision*                      tangent) const {
     (void) old_state;
     (void) new_state;
-    tangent        = youngs;
-    stress.value() = tangent * strain.value();
+
+    // Evaluate PK2 stress directly from the supplied Green-Lagrange strain.
+    stress.value() = youngs * strain.value();
+
+    if (tangent != nullptr) {
+        *tangent = youngs;
+    }
 }
 
 /**
  * Evaluates linearized three-dimensional Cauchy stress in material coordinates.
  *
+ * The constant Hooke operator is required for the stress multiplication itself,
+ * so it is constructed once regardless of whether the caller also requests it as
+ * tangent output.
+ *
  * @param strain Infinitesimal engineering strain vector.
  * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
  * @param new_state Unused output state row.
  * @param stress Cauchy stress in engineering-Voigt ordering.
- * @param tangent Constant isotropic three-dimensional tangent.
+ * @param tangent Optional isotropic three-dimensional tangent.
  */
 void IsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
                                    const Precision*              old_state,
                                    Precision*                    new_state,
                                    VolumeStressCauchy&           stress,
-                                   Mat6&                         tangent) const {
+                                   Mat6*                         tangent) const {
     (void) old_state;
     (void) new_state;
-    tangent        = volume_tangent();
-    stress.voigt() = tangent * strain.voigt();
+
+    // Build the constitutive operator once and use it for the requested stress.
+    const Mat6 material_tangent = volume_tangent();
+    stress.voigt() = material_tangent * strain.voigt();
+
+    if (tangent != nullptr) {
+        *tangent = material_tangent;
+    }
 }
 
 /**
@@ -192,17 +226,23 @@ void IsotropicElasticity::evaluate(const VolumeStrainLinearized& strain,
  * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
  * @param new_state Unused output state row.
  * @param stress Second Piola-Kirchhoff stress in material coordinates.
- * @param tangent Constant material derivative `dS/dE`.
+ * @param tangent Optional material derivative `dS/dE`.
  */
 void IsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
                                    const Precision*                 old_state,
                                    Precision*                       new_state,
                                    VolumeStressPK2&                 stress,
-                                   Mat6&                            tangent) const {
+                                   Mat6*                            tangent) const {
     (void) old_state;
     (void) new_state;
-    tangent        = volume_tangent();
-    stress.voigt() = tangent * strain.voigt();
+
+    // The Saint-Venant-Kirchhoff response uses the same constant Hooke operator.
+    const Mat6 material_tangent = volume_tangent();
+    stress.voigt() = material_tangent * strain.voigt();
+
+    if (tangent != nullptr) {
+        *tangent = material_tangent;
+    }
 }
 
 /**
@@ -212,17 +252,23 @@ void IsotropicElasticity::evaluate(const VolumeStrainGreenLagrange& strain,
  * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
  * @param new_state Unused output state row.
  * @param stress Shell Cauchy stress in the same material ordering.
- * @param tangent Constant reduced shell tangent.
+ * @param tangent Optional reduced shell tangent.
  */
 void IsotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
                                    const Precision*                     old_state,
                                    Precision*                           new_state,
                                    ShellMaterialStressCauchy&            stress,
-                                   Mat5&                                 tangent) const {
+                                   Mat5*                                tangent) const {
     (void) old_state;
     (void) new_state;
-    tangent         = shell_material_tangent();
-    stress.values() = tangent * strain.values();
+
+    // The reduced material operator is also required to compute the stress.
+    const Mat5 material_tangent = shell_material_tangent();
+    stress.values() = material_tangent * strain.values();
+
+    if (tangent != nullptr) {
+        *tangent = material_tangent;
+    }
 }
 
 /**
@@ -232,17 +278,22 @@ void IsotropicElasticity::evaluate(const ShellMaterialStrainLinearized& strain,
  * @param old_state Unused input state row; isotropic Hooke elasticity is stateless.
  * @param new_state Unused output state row.
  * @param stress Shell second Piola-Kirchhoff stress.
- * @param tangent Constant reduced material derivative.
+ * @param tangent Optional reduced material derivative.
  */
 void IsotropicElasticity::evaluate(const ShellMaterialStrainGreenLagrange& strain,
                                    const Precision*                        old_state,
                                    Precision*                              new_state,
                                    ShellMaterialStressPK2&                 stress,
-                                   Mat5&                                   tangent) const {
+                                   Mat5*                                   tangent) const {
     (void) old_state;
     (void) new_state;
-    tangent         = shell_material_tangent();
-    stress.values() = tangent * strain.values();
+
+    const Mat5 material_tangent = shell_material_tangent();
+    stress.values() = material_tangent * strain.values();
+
+    if (tangent != nullptr) {
+        *tangent = material_tangent;
+    }
 }
 
 } // namespace fem::material
