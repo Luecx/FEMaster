@@ -96,10 +96,12 @@ void SolidSection::evaluate(const Vec3&                   position_reference,
     const Mat6 stress_transform =
         VolumeStress::get_transformation_matrix(material_basis, Mat3::Identity());
 
-    // Transform global linearized strain into local material coordinates.
-    const VolumeStrainLinearized strain_material(
-        strain_transform * strain_global.voigt()
-    );
+    // Materialize the Eigen expression as Vec6 before selecting the Voigt
+    // constructor. Both VolumeStrainLinearized(Mat3) and (Vec6) are explicit,
+    // so passing an unevaluated Eigen product leaves overload resolution
+    // ambiguous with current Eigen versions.
+    const Vec6 strain_material_values = strain_transform * strain_global.voigt();
+    const VolumeStrainLinearized strain_material(strain_material_values);
 
     // Evaluate Cauchy stress and explicitly request the material tangent needed
     // by this section overload.
@@ -117,9 +119,11 @@ void SolidSection::evaluate(const Vec3&                   position_reference,
     // Transform stress and the complete tangent back into global coordinates:
     //
     //     C_global = T_stress C_material T_strain.
-    stress_global = VolumeStressCauchy(
-        stress_transform * stress_material.voigt()
-    );
+    //
+    // Again materialize the transformed Voigt vector explicitly to avoid an
+    // ambiguous Mat3/Vec6 constructor selection from the Eigen product type.
+    const Vec6 stress_global_values = stress_transform * stress_material.voigt();
+    stress_global  = VolumeStressCauchy(stress_global_values);
     tangent_global = stress_transform * tangent_material * strain_transform;
 }
 
@@ -196,9 +200,10 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
     const Mat6 stress_transform =
         VolumeStress::get_transformation_matrix(material_basis, Mat3::Identity());
 
-    const VolumeStrainGreenLagrange strain_material(
-        strain_transform * strain_global.voigt()
-    );
+    // Materialize the transformed strain vector before constructing the typed
+    // Green-Lagrange wrapper. This selects the Vec6 constructor unambiguously.
+    const Vec6 strain_material_values = strain_transform * strain_global.voigt();
+    const VolumeStrainGreenLagrange strain_material(strain_material_values);
 
     // Forward tangent optionality into the material evaluation. The local tangent
     // object is touched only when global tangent output is requested.
@@ -214,9 +219,10 @@ void SolidSection::evaluate(const Vec3&                      position_reference,
     );
 
     // Transform the mandatory PK2 stress back to the global reference basis.
-    stress_global = VolumeStressPK2(
-        stress_transform * stress_material.voigt()
-    );
+    // The explicit Vec6 temporary avoids ambiguous conversion of an unevaluated
+    // Eigen product to either the tensor or Voigt stress constructor.
+    const Vec6 stress_global_values = stress_transform * stress_material.voigt();
+    stress_global = VolumeStressPK2(stress_global_values);
 
     if (tangent_global != nullptr) {
         *tangent_global = stress_transform * tangent_material * strain_transform;
