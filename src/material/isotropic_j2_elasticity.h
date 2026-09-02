@@ -98,7 +98,13 @@ struct IsotropicJ2Elasticity : Elasticity {
                   AxialStressPK2&                 stress,
                   Precision&                      tangent) const override {
         evaluate_from_committed(strain, old_state, new_state, stress, tangent);
+
+#ifdef FEMASTER_J2_VALIDATE_TANGENT
+        // Optional diagnostic only. The production constitutive path is fully
+        // analytic; this finite-difference probe remains available solely as an
+        // independent validation of the returned axial tangent.
         log_axial_finite_debug(strain, old_state, new_state, stress, tangent);
+#endif
     }
 
     void evaluate(const VolumeStrainLinearized& strain,
@@ -154,11 +160,11 @@ private:
     /**
      * @brief Runs one constitutive update from immutable committed history.
      *
-     * The legacy numerical kernels operate in-place on a seven-scalar working
-     * row. Keeping that mutation private gives the kernels their natural local
-     * representation while enforcing the solver-facing committed/trial contract.
-     * Every Newton or line-search candidate therefore starts from the same
-     * `old_state`; no previous trial state can feed the next material evaluation.
+     * The in-place kernels operate on a private seven-scalar working row. Keeping
+     * that mutation private gives the kernels their natural local representation
+     * while enforcing the solver-facing committed/trial contract. Every Newton
+     * or line-search candidate therefore starts from the same `old_state`; no
+     * previous trial state can feed the next material evaluation.
      */
     template<typename Strain, typename Stress, typename Tangent>
     void evaluate_from_committed(const Strain&    strain,
@@ -179,14 +185,13 @@ private:
     /**
      * Emits focused diagnostics for the finite-strain axial J2 path.
      *
-     * The nonlinear solver normally suppresses element/material logging during
-     * assembly. This debug branch temporarily re-enables logging only while the
-     * diagnostic block is emitted, restoring the previous logging state
-     * immediately afterwards. Besides the actual PK2 stress and algorithmic
-     * tangent, the routine independently finite-differences both dS/dE and the
-     * nominal axial response P=lambda*S from the same committed state. The latter
-     * is the exact scalar quantity entering the Total-Lagrangian truss residual,
-     * so its derivative must match S + lambda^2*dS/dE.
+     * This routine is intentionally not part of the production constitutive
+     * algorithm. Define `FEMASTER_J2_VALIDATE_TANGENT` to enable the independent
+     * finite-difference check while debugging. Besides the actual PK2 stress and
+     * analytic tangent, the routine finite-differences both dS/dE and the nominal
+     * axial response P=lambda*S from the same committed state. The latter is the
+     * exact scalar quantity entering the Total-Lagrangian truss residual, so its
+     * derivative must match S + lambda^2*dS/dE.
      */
     void log_axial_finite_debug(const AxialStrainGreenLagrange& strain,
                                 const Precision*                old_state,
