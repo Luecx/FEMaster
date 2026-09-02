@@ -52,6 +52,8 @@ namespace fem::material {
  * transverse/plane-stress reductions around the same three-dimensional update.
  */
 struct IsotropicJ2Elasticity : Elasticity {
+    using Elasticity::evaluate;
+
     struct YieldPoint {
         Precision yield_stress;
         Precision equivalent_plastic_strain;
@@ -112,7 +114,22 @@ struct IsotropicJ2Elasticity : Elasticity {
                   Precision*                       new_state,
                   VolumeStressPK2&                 stress,
                   Mat6&                            tangent) const override {
-        evaluate_from_committed(strain, old_state, new_state, stress, tangent);
+        evaluate(strain, old_state, new_state, stress, &tangent);
+    }
+
+    void evaluate(const VolumeStrainGreenLagrange& strain,
+                  const Precision*                 old_state,
+                  Precision*                       new_state,
+                  VolumeStressPK2&                 stress,
+                  Mat6*                            tangent) const override {
+        std::array<Precision, state_count> working{};
+        std::copy_n(old_state, state_count, working.data());
+
+        evaluate(strain, working.data(), stress, tangent);
+
+        if (new_state != nullptr) {
+            std::copy_n(working.data(), state_count, new_state);
+        }
     }
 
     void evaluate(const ShellMaterialStrainLinearized& strain,
@@ -291,7 +308,7 @@ private:
     void evaluate(const VolumeStrainGreenLagrange& strain,
                   Precision*                       state,
                   VolumeStressPK2&                 stress,
-                  Mat6&                            tangent) const;
+                  Mat6*                            tangent) const;
 
     void evaluate(const ShellMaterialStrainLinearized& strain,
                   Precision*                           state,
