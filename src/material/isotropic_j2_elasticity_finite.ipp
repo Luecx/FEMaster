@@ -597,7 +597,6 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
               state[5], state[1], state[3],
               state[4], state[3], state[2];
     Cp_old = Precision(0.5) * (Cp_old + Cp_old.transpose());
-
     result.alpha_old = state[eqp_index];
 
     // -------------------------------------------------------------------------
@@ -640,8 +639,18 @@ FiniteResponse integrate_finite_strain(const VolumeStrain& green_lagrange,
     const Precision yield_old = yield_stress_at(yield_curve, result.alpha_old);
     const Precision f_trial   = result.point.q - yield_old;
 
-    result.plastic = f_trial
-        > stress_tolerance(Precision(3) * bulk, initial_yield_stress(yield_curve));
+    // The J2 surface depends only on the deviatoric Mandel stress. Scaling this
+    // comparison with K would make the apparent elastic domain grow without bound
+    // as nu approaches 0.5, although hydrostatic stiffness does not enter J2
+    // yielding. Use the same deviatoric scale as the consistency equation:
+    //
+    //     f_trial = q_trial - sigma_y
+    //     tol     = 1e-10 max(1, 3 G, sigma_y).
+    const Precision yield_tolerance = stress_tolerance(
+        Precision(3) * shear,
+        yield_old
+    );
+    result.plastic = f_trial > yield_tolerance;
 
     // -------------------------------------------------------------------------
     // Plastic local Newton solve.
