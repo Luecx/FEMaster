@@ -66,6 +66,9 @@ private:
     Scalar         _sigma      = Scalar(0);
     mutable Scalar _sigma_fact = std::numeric_limits<Scalar>::quiet_NaN();
 
+    // Infinity norm of the currently factorized shifted matrix
+    mutable Scalar _matrix_norm = Scalar(0);
+
     // Cached factorization of A - sigma B
 #if defined(USE_MKL)
     mutable Eigen::PardisoLDLT<SparseMatrix> _ldl;
@@ -89,6 +92,10 @@ public:
 
     // Apply the inverse shifted operator to one Spectra vector
     void perform_op(const Scalar* x_in, Scalar* y_out) const;
+
+    // Estimate the relative distance of A - sigma B from singularity.
+    // Small values indicate a poorly conditioned shifted system.
+    Precision conditioning_ratio() const;
 
 private:
     // Refresh the cached factorization when it does not represent the active shift
