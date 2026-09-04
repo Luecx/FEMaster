@@ -7,18 +7,20 @@
 namespace fem::solver {
 
 /**
- * @brief Estimate a low generalized eigenvalue scale from quadratic geometry-based trial fields.
+ * @brief Estimate a low flexible eigenvalue scale from quadratic geometry-based trial fields.
  *
  * The estimator uses the six scalar monomials x², y², z², xy, xz and yz on
- * normalized nodal coordinates and applies each of them independently in the
- * three translational directions. The smallest positive Rayleigh quotient of
- * the resulting reduced trial vectors is returned.
+ * normalized nodal coordinates and applies each independently in the three
+ * translational directions. Admissible rigid-body translations and rotations
+ * are detected from the reduced stiffness matrix and removed from every trial
+ * vector in the B inner product before evaluating the Rayleigh quotient. The
+ * smallest positive quotient is returned.
  */
 Precision estimate_lambda_scale_from_geometry(
-    const SparseMatrix&             A,
-    const SparseMatrix&             B,
-    const model::Field&             positions,
-    const IndexMatrix&              active_dof_idx_mat,
+    const SparseMatrix&              A,
+    const SparseMatrix&              B,
+    const model::Field&              positions,
+    const IndexMatrix&               active_dof_idx_mat,
     const constraint::ConstraintMap& map
 );
 
