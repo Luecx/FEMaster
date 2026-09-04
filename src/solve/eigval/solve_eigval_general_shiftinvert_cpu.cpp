@@ -17,6 +17,7 @@
 #include "solve_eigval_cpu.h"
 #include "solve_eigval_shiftinvert_op_general.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace fem::solver::detail {
@@ -27,7 +28,6 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
     using OpB = Spectra::SparseSymMatProd<Precision>;
 
     constexpr Precision conditioning_tol = static_cast<Precision>(1e-10);
-    constexpr int shift_steps = 50;
 
     const int n        = static_cast<int>(A.rows());
     const int ncv_user = choose_ncv(n, k);
@@ -43,21 +43,33 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
     ShiftInvertOpGeneral op(A, B, shift);
     OpB opB(B);
 
-    // If the requested shift produces an almost singular shifted system, search
-    // logarithmically for the smallest sufficiently stable negative shift.
+    // If the requested shift is nearly singular, use the externally supplied
+    // characteristic eigenvalue scale to choose a small negative starting shift.
     Precision conditioning = op.conditioning_ratio();
     if (conditioning < conditioning_tol) {
         logging::info(
             "Eigval (gen): ShiftInvert, sigma=", shift,
             " is too close to singular, adjusting..."
         );
-        logging::down();
+        logging::up();
 
-        for (int i = 0; i < shift_steps; ++i) {
-            const Precision exponent = static_cast<Precision>(-12.0)
-                                     + static_cast<Precision>(24.0 * i) / static_cast<Precision>(shift_steps - 1);
+        const Precision lambda_scale = std::abs(opts.lambda_scale);
+        const bool has_scale = std::isfinite(lambda_scale) && lambda_scale > Precision(0);
 
-            shift = -std::pow(static_cast<Precision>(10), exponent);
+        Precision shift_magnitude = has_scale
+            ? std::max(lambda_scale * static_cast<Precision>(1e-4), static_cast<Precision>(1e-12))
+            : static_cast<Precision>(1e-12);
+
+        const Precision growth = has_scale
+            ? static_cast<Precision>(10)
+            : static_cast<Precision>(100);
+        const int max_attempts = has_scale ? 8 : 13;
+
+        if (has_scale)
+            logging::info(true, "Rayleigh eigenvalue scale: ", lambda_scale);
+
+        for (int i = 0; i < max_attempts; ++i) {
+            shift = -shift_magnitude;
             op.set_shift(shift);
 
             conditioning = op.conditioning_ratio();
@@ -69,9 +81,11 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
 
             if (conditioning >= conditioning_tol)
                 break;
+
+            shift_magnitude *= growth;
         }
 
-        logging::up();
+        logging::down();
     }
 
     Spectra::SymGEigsShiftSolver<
