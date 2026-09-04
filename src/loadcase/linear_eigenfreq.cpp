@@ -62,6 +62,7 @@
 #include "../constraints/types/equation.h"
 
 #include "../mattools/reduce_mat_to_vec.h"
+#include "../model/beam/beam.h"
 
 using fem::constraint::ConstraintTransformer;
 
@@ -93,6 +94,59 @@ struct ModalMode {
           freq(std::sqrt(std::max<Precision>(0, lam)) / (2 * pi)),
           q_mode(std::move(q)) {}
 };
+
+/**
+ * @brief Modal stiffness and mass split into beam and non-beam contributions.
+ */
+struct ModalEnergyBreakdown {
+    Precision stiffness_total{};
+    Precision stiffness_beam{};
+    Precision mass_total{};
+    Precision mass_beam{};
+};
+
+/**
+ * @brief Evaluate beam contributions to the Rayleigh quotient of one recovered mode.
+ *
+ * Total modal stiffness and mass are evaluated from the assembled global matrices.
+ * B33 contributions are evaluated directly from each beam element with the same
+ * recovered global mode. The remaining contribution is therefore obtained as
+ * total minus beam without rebuilding separate solid matrices.
+ */
+static ModalEnergyBreakdown compute_modal_energy_breakdown(
+    model::Model*          mdl,
+    const IndexMatrix&     active_dof_idx_mat,
+    const DynamicVector&   u_mode,
+    const SparseMatrix&    K,
+    const SparseMatrix&    M
+) {
+    ModalEnergyBreakdown out;
+    out.stiffness_total = u_mode.dot(K * u_mode);
+    out.mass_total      = u_mode.dot(M * u_mode);
+
+    for (const auto& element : mdl->_data->elements) {
+        if (!element) continue;
+
+        auto* beam = dynamic_cast<model::BeamElement<2>*>(element.get());
+        if (!beam) continue;
+
+        StaticVector<12> u_element = StaticVector<12>::Zero();
+        for (Index node = 0; node < 2; ++node) {
+            const ID node_id = beam->nodes()[node];
+            for (Index dof = 0; dof < 6; ++dof) {
+                const Index global_dof = active_dof_idx_mat(node_id, dof);
+                if (global_dof >= 0) u_element(6 * node + dof) = u_mode(global_dof);
+            }
+        }
+
+        const StaticMatrix<12, 12> Ke = beam->stiffness_impl();
+        const StaticMatrix<12, 12> Me = beam->mass_impl();
+        out.stiffness_beam += u_element.dot(Ke * u_element);
+        out.mass_beam      += u_element.dot(Me * u_element);
+    }
+
+    return out;
+}
 
 /**
  * @brief Build 6 "unit" direction vectors over active DOFs (length n).
@@ -317,22 +371,58 @@ void LinearEigenfrequency::run() {
     std::sort(modes.begin(), modes.end(),
               [](const ModalMode& a, const ModalMode& b) { return a.lambda < b.lambda; });
 
-    // (7) Expand mode shapes and compute simple participations
+    // (7) Expand mode shapes, compute simple participations and print modal energy split
     //     For homogeneous constraints, u_p = 0 and u_mode = T * q_mode.
     DynamicMatrix axes_full = build_active_axis_vectors(active_dof_idx_mat); // n x 6
-    for (auto& m : modes) {
+    for (size_t mode_idx = 0; mode_idx < modes.size(); ++mode_idx) {
+        auto& m = modes[mode_idx];
+
         // Full vector u
         DynamicVector u_mode = CT->recover_displacement(m.q_mode);
         CT->post_check_static(K, DynamicVector::Zero(K.rows()), m.q_mode,
                       /*tol_constraint_rel*/1e-10,
                       /*tol_reduced_rel   */std::numeric_limits<Precision>::infinity(),
                       /*tol_full_rel      */std::numeric_limits<Precision>::infinity());
+
         // Node x 6 layout for writer
         auto mode_field = mattools::expand_vec_to_mat(active_dof_idx_mat, u_mode);
         m.mode_mat = mode_field;
+
         // Participations p_i = e_i^T (M u) using axis columns as e_i
         DynamicVector Mu = M * u_mode;
         for (int i = 0; i < 6; ++i) m.participation(i) = axes_full.col(i).dot(Mu);
+
+        // Diagnostic split: total modal energies from global matrices, B33 part
+        // directly from beam elements, and everything else by subtraction.
+        const ModalEnergyBreakdown energy = compute_modal_energy_breakdown(
+            model, active_dof_idx_mat, u_mode, K, M);
+
+        const Precision stiffness_other = energy.stiffness_total - energy.stiffness_beam;
+        const Precision mass_other      = energy.mass_total - energy.mass_beam;
+        const Precision beam_k_percent  = energy.stiffness_total != Precision(0)
+            ? Precision(100) * energy.stiffness_beam / energy.stiffness_total
+            : Precision(0);
+        const Precision beam_m_percent  = energy.mass_total != Precision(0)
+            ? Precision(100) * energy.mass_beam / energy.mass_total
+            : Precision(0);
+        const Precision lambda_rayleigh = energy.mass_total != Precision(0)
+            ? energy.stiffness_total / energy.mass_total
+            : Precision(0);
+
+        logging::info(true, "Modal energy mode ", mode_idx + 1,
+                      " (f = ", std::fixed, std::setprecision(6), m.freq, " Hz)");
+        logging::up();
+        logging::info(true, "stiffness total    : ", std::scientific, std::setprecision(8), energy.stiffness_total);
+        logging::info(true, "stiffness beam     : ", std::scientific, std::setprecision(8), energy.stiffness_beam,
+                      "  (", std::fixed, std::setprecision(3), beam_k_percent, " %)");
+        logging::info(true, "stiffness non-beam : ", std::scientific, std::setprecision(8), stiffness_other);
+        logging::info(true, "mass total         : ", std::scientific, std::setprecision(8), energy.mass_total);
+        logging::info(true, "mass beam          : ", std::scientific, std::setprecision(8), energy.mass_beam,
+                      "  (", std::fixed, std::setprecision(3), beam_m_percent, " %)");
+        logging::info(true, "mass non-beam      : ", std::scientific, std::setprecision(8), mass_other);
+        logging::info(true, "lambda Rayleigh    : ", std::scientific, std::setprecision(8), lambda_rayleigh,
+                      "  eig = ", m.lambda);
+        logging::down();
     }
 
     // (8) Print + write
