@@ -27,7 +27,7 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
 {
     using OpB = Spectra::SparseSymMatProd<Precision>;
 
-    constexpr Precision conditioning_tol = static_cast<Precision>(1e-10);
+    constexpr Precision conditioning_tol = static_cast<Precision>(1e-11);
 
     const int n        = static_cast<int>(A.rows());
     const int ncv_user = choose_ncv(n, k);
@@ -60,9 +60,7 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
             ? std::max(lambda_scale * static_cast<Precision>(1e-4), static_cast<Precision>(1e-12))
             : static_cast<Precision>(1e-12);
 
-        const Precision growth = has_scale
-            ? static_cast<Precision>(10)
-            : static_cast<Precision>(100);
+        const Precision growth = static_cast<Precision>(100);
         const int max_attempts = has_scale ? 8 : 13;
 
         if (has_scale)
