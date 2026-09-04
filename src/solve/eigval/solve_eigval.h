@@ -62,10 +62,11 @@ enum class EigvalMode {
  * @brief Execution parameters for the eigval solvers.
  */
 struct EigvalOpts {
-    EigvalMode mode = EigvalMode::Regular; ///< Transform / operator
-    double    sigma = 0.0;               ///< Shift (used by ShiftInvert/Buckling/Cayley)
-    int       maxit = 3000;              ///< Max Arnoldi/Lanczos iterations
-    double    tol   = 1e-8;              ///< Relative residual tolerance
+    EigvalMode mode         = EigvalMode::Regular; ///< Transform / operator
+    double     sigma        = 0.0;                 ///< Shift (used by ShiftInvert/Buckling/Cayley)
+    Precision  lambda_scale = 0.0;                 ///< Optional characteristic eigenvalue scale for automatic shift adjustment
+    int        maxit        = 3000;                ///< Max Arnoldi/Lanczos iterations
+    double     tol          = 1e-8;                ///< Relative residual tolerance
 
     /// Sorting rule for returned eigenvalues.
     enum class Sort { LargestAlge, LargestMagn, SmallestAlge, SmallestMagn } sort = Sort::SmallestAlge;
