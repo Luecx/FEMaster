@@ -17,12 +17,49 @@
 #include "solve_eigval_cpu.h"
 #include "solve_eigval_shiftinvert_op_general.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+
 namespace fem::solver::detail {
+
+static Precision estimate_lambda_scale(
+    const SparseMatrix& A,
+    const SparseMatrix& B)
+{
+    std::array<Precision, 3> estimates{};
+    int count = 0;
+
+    for (int j = 0; j < 3; ++j) {
+        const DynamicVector q  = DynamicVector::Random(A.rows());
+        const DynamicVector Aq = A * q;
+        const DynamicVector Bq = B * q;
+
+        const Precision num = q.dot(Aq);
+        const Precision den = q.dot(Bq);
+
+        if (std::isfinite(num) &&
+            std::isfinite(den) &&
+            num > Precision(0) &&
+            den > Precision(0))
+        {
+            estimates[count++] = num / den;
+        }
+    }
+
+    if (count == 0)
+        return Precision(0);
+
+    std::sort(estimates.begin(), estimates.begin() + count);
+    return estimates[count / 2];
+}
 
 std::vector<EigvalPair>
 eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int k, const EigvalOpts& opts)
 {
     using OpB = Spectra::SparseSymMatProd<Precision>;
+
+    constexpr Precision conditioning_tol = static_cast<Precision>(1e-10);
 
     const int n        = static_cast<int>(A.rows());
     const int ncv_user = choose_ncv(n, k);
@@ -34,14 +71,51 @@ eigval_general_shiftinvert_cpu(const SparseMatrix& A, const SparseMatrix& B, int
 
     Timer t{}; t.start();
 
-    ShiftInvertOpGeneral op(A, B, static_cast<Precision>(opts.sigma));
+    Precision shift = static_cast<Precision>(opts.sigma);
+    ShiftInvertOpGeneral op(A, B, shift);
     OpB opB(B);
+
+    // If the requested shift produces an almost singular shifted system, move
+    // sigma to the negative side of the spectrum. The scale is estimated from
+    // generalized Rayleigh quotients and increased geometrically if necessary.
+    Precision conditioning = op.conditioning_ratio();
+    if (conditioning < conditioning_tol) {
+        logging::info(
+            "Eigval (gen): ShiftInvert, sigma=", shift,
+            " is too close to singular, adjusting..."
+        );
+
+        const Precision lambda_scale = std::abs(estimate_lambda_scale(A, B));
+        Precision shift_factor = static_cast<Precision>(1e-4);
+
+        logging::down();
+        logging::info("estimated eigenvalue scale = ", lambda_scale);
+
+        for (int i = 0; i < 8; ++i) {
+            shift = -lambda_scale * shift_factor;
+            op.set_shift(shift);
+
+            conditioning = op.conditioning_ratio();
+            logging::info(
+                true,
+                "shift: ", shift,
+                ", conditioning ratio: ", conditioning
+            );
+
+            if (conditioning >= conditioning_tol)
+                break;
+
+            shift_factor *= static_cast<Precision>(10);
+        }
+
+        logging::up();
+    }
 
     Spectra::SymGEigsShiftSolver<
         ShiftInvertOpGeneral,
         OpB,
         Spectra::GEigsMode::ShiftInvert
-    > eig(op, opB, k, ncv_user, static_cast<Precision>(opts.sigma));
+    > eig(op, opB, k, ncv_user, shift);
 
     eig.init();
     eig.compute(to_rule(opts.sort), opts.maxit, opts.tol);
