@@ -57,6 +57,7 @@
 
 #include "../core/logging.h"
 #include "../solve/eigval/solve_eigval.h"
+#include "../solve/eigval/solve_eigval_rayleigh.h"
 
 #include "../constraints/transformer/constraint_transformer.h"
 #include "../constraints/types/equation.h"
@@ -303,7 +304,14 @@ void LinearEigenfrequency::run() {
     solver::EigvalOpts eigopt;
     eigopt.mode  = solver::EigvalMode::ShiftInvert;
     eigopt.sigma = 0.0;
-    eigopt.sort  = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
+    eigopt.lambda_scale = solver::estimate_lambda_scale_from_geometry(
+        A,
+        Mr,
+        *model->_data->positions,
+        active_dof_idx_mat,
+        CT->reduced_map()
+    );
+    eigopt.sort = solver::EigvalOpts::Sort::LargestMagn; // largest in SI <-> smallest original
 
     const int k_req = std::max(1, std::min(num_eigenvalues, int(A.rows())));
     auto eig_pairs = Timer::measure(
