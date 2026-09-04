@@ -10,7 +10,9 @@
 #include "solve_eigval_shiftinvert_op_general.h"
 #include "../../core/logging.h"
 
+#include <cmath>
 #include <cstring>    // std::memcpy
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -61,6 +63,16 @@ void ShiftInvertOpGeneral::_factorize_if_needed() const
     }
     M.makeCompressed();
 
+    // Store an inexpensive matrix scale for the conditioning estimate. For a
+    // symmetric matrix the infinity norm equals the one norm.
+    DynamicVector row_sums = DynamicVector::Zero(M.rows());
+    for (int outer = 0; outer < M.outerSize(); ++outer) {
+        for (SparseMatrix::InnerIterator it(M, outer); it; ++it) {
+            row_sums[it.row()] += std::abs(it.value());
+        }
+    }
+    _matrix_norm = row_sums.size() > 0 ? row_sums.maxCoeff() : Scalar(0);
+
     // Factorize.
     _ldl.compute(M);
     if (_ldl.info() != Eigen::Success) {
@@ -83,7 +95,6 @@ void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const
         throw std::invalid_argument("ShiftInvertOpGeneral: A and B must have the same shape");
     }
 
-
     _factorize_if_needed();
 
     const int n = static_cast<int>(_A_ref.rows());
@@ -95,4 +106,60 @@ void ShiftInvertOpGeneral::perform_op(const Scalar* x_in, Scalar* y_out) const
 
     std::memcpy(y_out, y.data(), sizeof(Scalar) * static_cast<size_t>(n));
 }
+
+Precision ShiftInvertOpGeneral::conditioning_ratio() const
+{
+    // A failed factorization is treated as singular here. perform_op() retains
+    // the strict exception behavior for the actual Spectra solve.
+    try {
+        _factorize_if_needed();
+    } catch (...) {
+        return Precision(0);
+    }
+
+    if (!std::isfinite(_matrix_norm) ||
+        _matrix_norm <= std::numeric_limits<Precision>::epsilon())
+    {
+        return Precision(0);
+    }
+
+    const int n = rows();
+    if (n <= 0) return Precision(0);
+
+    // Deterministic dense start vector. Repeated solves apply the power method
+    // to (A - sigma B)^-1 and therefore approach the eigenvector associated
+    // with the smallest-magnitude eigenvalue of the shifted matrix.
+    DynamicVector q(n);
+    for (int i = 0; i < n; ++i)
+        q[i] = std::sin(static_cast<Precision>(i + 1));
+
+    const Precision q_norm = q.norm();
+    if (!std::isfinite(q_norm) ||
+        q_norm <= std::numeric_limits<Precision>::epsilon())
+    {
+        return Precision(0);
+    }
+    q /= q_norm;
+
+    Precision inverse_norm = Precision(0);
+    for (int i = 0; i < 3; ++i) {
+        DynamicVector y = _ldl.solve(q);
+
+        if (_ldl.info() != Eigen::Success || !y.allFinite())
+            return Precision(0);
+
+        inverse_norm = y.norm();
+        if (!std::isfinite(inverse_norm) ||
+            inverse_norm <= std::numeric_limits<Precision>::epsilon())
+        {
+            return Precision(0);
+        }
+
+        q = y / inverse_norm;
+    }
+
+    const Precision ratio = Precision(1) / (_matrix_norm * inverse_norm);
+    return std::isfinite(ratio) ? ratio : Precision(0);
+}
+
 } // namespace fem::solver
