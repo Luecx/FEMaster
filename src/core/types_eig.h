@@ -103,8 +103,8 @@ using BooleanMatrix = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic>;
 
 using Dofs         = Eigen::Matrix<bool, 1, 6>;
 using ElDofs       = Dofs;
-using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, 6, Eigen::RowMajor>;
-using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, 6, Eigen::RowMajor>;
+using SystemDofs   = Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+using SystemDofIds = Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
 // ============================================================================
 // Integration field types
