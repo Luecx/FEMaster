@@ -24,11 +24,11 @@ namespace fem { namespace mattools {
  * @return SystemDofIds The matrix of numerated DOF IDs.
  */
 SystemDofIds numerate_dofs(const SystemDofs& systemDofs) {
-    SystemDofIds dofIds(systemDofs.rows(), 6);
+    SystemDofIds dofIds(systemDofs.rows(), systemDofs.cols());
     int idCounter = 0;
 
     for (int i = 0; i < systemDofs.rows(); ++i) {
-        for (int j = 0; j < 6; ++j) {
+        for (int j = 0; j < systemDofs.cols(); ++j) {
             if (systemDofs(i, j)) {
                 dofIds(i, j) = idCounter++;
             } else {
