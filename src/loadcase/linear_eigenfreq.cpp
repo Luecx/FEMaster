@@ -229,7 +229,7 @@ void LinearEigenfrequency::run() {
 
     // (1) Unconstrained system DOF indices (node x 6 -> active dof id or -1)
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_unconstrained_index_matrix(); },
+        [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 

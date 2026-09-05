@@ -34,7 +34,7 @@ void Transient::run() {
 
     // (1) Unconstrained DOF index
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_unconstrained_index_matrix(); },
+        [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix"
     );
 

@@ -40,7 +40,7 @@ void LinearStatic::run() {
     model->step_begin();
 
     auto active_dof_idx_mat = Timer::measure(
-        [&]() { return model->build_unconstrained_index_matrix(); },
+        [&]() { return model->build_structural_dof_index_matrix(); },
         "generating active_dof_idx_mat index matrix");
 
     auto global_load_mat = Timer::measure(
