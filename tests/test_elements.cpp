@@ -35,7 +35,8 @@ fem::model::Model build_qspt_model(bool with_density) {
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
         part->elem_sets.get(SET_ELEM_ALL),
-        0.1
+        0.1,
+        nullptr
     ));
     model.compile();
 
@@ -114,7 +115,8 @@ TEST(Elements_FRTShellS4, ABDMaterialUsesMaterialDensityForMass) {
         model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         0.1,
         abd,
-        shear
+        shear,
+        nullptr
     ));
     model.compile();
 
@@ -201,7 +203,8 @@ TEST(Elements_FRTShellS4, TransverseShearResultantsUseVoigtYzThenXz) {
         model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         1.0,
         abd,
-        shear
+        shear,
+        nullptr
     ));
     model.compile();
 
