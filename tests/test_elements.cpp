@@ -34,7 +34,7 @@ fem::model::Model build_qspt_model(bool with_density) {
     const auto part = model._data->parts.get();
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
-        part->elem_sets.get(fem::SET_ELEM_ALL),
+        part->elem_sets.get(SET_ELEM_ALL),
         0.1
     ));
     model.compile();
@@ -111,7 +111,7 @@ TEST(Elements_FRTShellS4, ABDMaterialUsesMaterialDensityForMass) {
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
     model.add_section(std::make_shared<fem::ABDShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         0.1,
         abd,
         shear
@@ -130,11 +130,10 @@ TEST(Elements_FRTShellS4, ABDMaterialUsesMaterialDensityForMass) {
     EXPECT_TRUE(M.isApprox(M.transpose(), 1e-12));
 
     fem::Precision ux_mass = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j)
             ux_mass += M(6 * i, 6 * j);
-        }
-    }
+
     EXPECT_NEAR(ux_mass, 1.0, 1e-12);
 }
 
@@ -148,10 +147,7 @@ TEST(Elements_FRTShellS4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto orientation = std::make_shared<fem::cos::RectangularSystem>(
-        "ORI",
-        fem::Vec3(1.0, 0.0, 0.0),
-        fem::Vec3(0.0, 0.0, -1.0)
-    );
+        "ORI", fem::Vec3(1.0, 0.0, 0.0), fem::Vec3(0.0, 0.0, -1.0));
     model.add_coordinate_system(orientation);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
@@ -161,7 +157,7 @@ TEST(Elements_FRTShellS4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     fem::StaticMatrix<2, 2> shear = fem::StaticMatrix<2, 2>::Identity();
     model.add_section(std::make_shared<fem::ABDShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         1.0,
         abd,
         shear,
@@ -178,9 +174,8 @@ TEST(Elements_FRTShellS4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     for (int node = 0; node < 4; ++node) {
         EXPECT_NEAR(resultants(node, 0), 0.0, 1e-12);
         EXPECT_NEAR(resultants(node, 1), 1.0, 1e-12);
-        for (int col = 2; col < 8; ++col) {
+        for (int col = 2; col < 8; ++col)
             EXPECT_NEAR(resultants(node, col), 0.0, 1e-12);
-        }
     }
 }
 
@@ -203,7 +198,7 @@ TEST(Elements_FRTShellS4, TransverseShearResultantsUseVoigtYzThenXz) {
 
     model.add_section(std::make_shared<fem::ABDShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         1.0,
         abd,
         shear
@@ -236,7 +231,7 @@ TEST(Elements_Truss, UsesDedicatedTrussSectionArea) {
 
     model.add_section(std::make_shared<fem::TrussSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         2.0
     ));
     model.compile();
