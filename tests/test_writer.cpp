@@ -93,7 +93,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
 
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         0.1
     ));
     model.compile();
