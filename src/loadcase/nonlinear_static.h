@@ -167,7 +167,7 @@ struct NonlinearStatic : public LoadCase {
      * The exact norm and normalization are defined by the implementation in
      * the corresponding source file.
      */
-    Precision tolerance = Precision(1e-8);
+    Precision tolerance = Precision(1e-4);
 
     /**
      * @brief Weighting factor for the load-factor part of the arc-length constraint.
@@ -186,7 +186,7 @@ struct NonlinearStatic : public LoadCase {
      * configurations, but should be used carefully because it modifies the
      * tangent system.
      */
-    bool regularize_zero_stiffness_rows = true;
+    bool regularize_zero_stiffness_rows = false;
 
     /**
      * @brief Scaling factor for zero-stiffness row regularization.

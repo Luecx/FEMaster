@@ -42,7 +42,7 @@ namespace tools {
  * 1. Evaluate the residual vector and tangent matrix at the current state.
  * 2. Compute the caller-defined residual norm.
  * 3. Update failure-detection counters.
- * 4. Accept the current state when the residual tolerance is satisfied.
+ * 4. Accept the current state when both residual and correction criteria pass.
  * 5. Solve the linearized system for the Newton correction.
  * 6. Optionally perform a backtracking line search.
  * 7. Compute the norm of the accepted correction.
@@ -90,14 +90,15 @@ namespace tools {
  * @param residual_norm Callback computing the convergence norm of the residual.
  * @param correction_norm Callback computing the norm of an accepted correction.
  * @param on_iteration Optional reporting callback invoked after every completed
- *                     Newton iteration and for residual convergence detected
- *                     before a linear solve.
+ *                     Newton iteration and for convergence detected before a
+ *                     new linear solve.
  * @param evaluate_residual Optional residual-only callback used for
  *                          line-search trials. If it is absent, line search
  *                          falls back to the full residual-and-tangent
  *                          evaluation callback.
  *
- * @return `true` when the residual tolerance is satisfied, otherwise `false`.
+ * @return `true` when both convergence tolerances are satisfied, otherwise
+ *         `false`.
  */
 bool NewtonSolver::solve(
     DynamicVector&           x,
@@ -113,6 +114,8 @@ bool NewtonSolver::solve(
         "NewtonSolver requires maximum_iterations > 0");
     logging::error(residual_tolerance > Precision(0),
         "NewtonSolver requires residual_tolerance > 0");
+    logging::error(correction_tolerance > Precision(0),
+        "NewtonSolver requires correction_tolerance > 0");
     logging::error(stagnation_tolerance >= Precision(0),
         "NewtonSolver requires stagnation_tolerance >= 0");
     logging::error(convergence_check_start > 0,
@@ -183,14 +186,17 @@ bool NewtonSolver::solve(
 
         update_failure_counters_();
 
-        // Residual convergence is checked before solving another linearized
-        // system because the current state may already satisfy equilibrium
-        if (last_residual_norm_ <= residual_tolerance) {
-            last_correction_norm_ = Precision(0);
-            last_step_length_     = Precision(0);
+        // Equilibrium and correction convergence are checked before another
+        // linear solve. From the second iteration onward, the stored correction
+        // norm is the accepted correction that produced the current state.
+        const bool residual_converged =
+            last_residual_norm_ <= residual_tolerance;
+        const bool correction_converged =
+            iteration == 1 || last_correction_norm_ <= correction_tolerance;
 
-            // Report the converged residual evaluation. No correction or linear
-            // solve was required for this iteration.
+        if (residual_converged && correction_converged) {
+            last_step_length_ = Precision(0);
+
             if (on_iteration) {
                 on_iteration(
                     iteration,
@@ -448,8 +454,8 @@ bool NewtonSolver::solve(
         }
     }
 
-    // The residual tolerance was not reached within the configured iteration
-    // limit
+    // The convergence tolerances were not reached within the configured
+    // iteration limit
     failed_by_maximum_iterations_ = true;
 
     return false;
