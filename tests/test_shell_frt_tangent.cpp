@@ -54,7 +54,8 @@ fem::model::Model build_frt_s4_model() {
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
         model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
-        0.08
+        0.08,
+        nullptr
     ));
 
     model.compile();
