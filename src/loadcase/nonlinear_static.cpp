@@ -96,18 +96,17 @@ Precision calculate_relative_residual(
     const DynamicVector& reduced_residual,
     Precision            reference_force
 ) {
-    const Precision residual_force =
-        reduced_residual.lpNorm<Eigen::Infinity>();
-    const Precision epsilon =
-        std::numeric_limits<Precision>::epsilon();
+    const Precision residual_force = reduced_residual.size() > 0
+        ? reduced_residual.lpNorm<Eigen::Infinity>()
+        : Precision(0);
 
-    if (reference_force <= epsilon) {
-        return residual_force <= epsilon
-            ? Precision(0)
-            : std::numeric_limits<Precision>::infinity();
+    if (reference_force > Precision(0)) {
+        return residual_force / reference_force;
     }
 
-    return residual_force / reference_force;
+    return residual_force == Precision(0)
+        ? Precision(0)
+        : std::numeric_limits<Precision>::infinity();
 }
 
 } // namespace
