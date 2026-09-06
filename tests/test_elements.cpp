@@ -7,7 +7,7 @@
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
 #include "../src/model/shell/qspt.h"
-#include "../src/model/shell/s4.h"
+#include "../src/model/shell/frt_shell_s4.h"
 #include "../src/model/truss/truss.h"
 #include "../src/section/section_shell_abd.h"
 #include "../src/section/section_shell_integrated.h"
@@ -94,14 +94,14 @@ TEST(Elements_QSPT, MassMatrixIsZeroWithoutDensity) {
     EXPECT_NEAR(M.norm(), 0.0, 1e-12);
 }
 
-TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
+TEST(Elements_FRTShellS4, ABDMaterialUsesMaterialDensityForMass) {
     fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_density(10.0);
@@ -118,7 +118,7 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     ));
     model.compile();
 
-    auto* elem = model._data->elements[0]->as<fem::model::S4>();
+    auto* elem = model._data->elements[0]->as<fem::model::FRTShellS4>();
     ASSERT_NE(elem, nullptr);
 
     fem::Precision k_storage[24 * 24] {};
@@ -138,14 +138,14 @@ TEST(Elements_S4, ABDMaterialUsesMaterialDensityForMass) {
     EXPECT_NEAR(ux_mass, 1.0, 1e-12);
 }
 
-TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
+TEST(Elements_FRTShellS4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto orientation = std::make_shared<fem::cos::RectangularSystem>(
         "ORI",
@@ -184,14 +184,14 @@ TEST(Elements_S4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
     }
 }
 
-TEST(Elements_S4, TransverseShearResultantsUseVoigtYzThenXz) {
+TEST(Elements_FRTShellS4, TransverseShearResultantsUseVoigtYzThenXz) {
     fem::model::Model model;
 
     model.set_node(0, 0.0, 0.0, 0.0);
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
     model.add_material(material);
