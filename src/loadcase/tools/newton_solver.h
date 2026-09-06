@@ -233,8 +233,13 @@ private:
 
     // Reset all diagnostics and failure state before a new solve
     void reset_state_();
+
+    // Update residual history and failure-detection counters after each residual
+    // evaluation
     void update_residual_history_();
     void update_failure_counters_();
+
+    // Evaluate the configured early-failure criteria
     bool should_stop_early_();
 };
 
