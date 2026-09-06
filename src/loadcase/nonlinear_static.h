@@ -162,12 +162,13 @@ struct NonlinearStatic : public LoadCase {
     int max_iterations = 20;
 
     /**
-     * @brief Convergence tolerance for the nonlinear residual.
+     * @brief Relative equilibrium-force tolerance for nonlinear convergence.
      *
-     * The exact norm and normalization are defined by the implementation in
-     * the corresponding source file.
+     * The default 5e-3 follows the standard Abaqus/Standard force-residual
+     * tolerance. The exact force norm and reference-force normalization are
+     * defined by the implementation in the corresponding source file.
      */
-    Precision tolerance = Precision(1e-8);
+    Precision tolerance = Precision(5e-3);
 
     /**
      * @brief Weighting factor for the load-factor part of the arc-length constraint.
