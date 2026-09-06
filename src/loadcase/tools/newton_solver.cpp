@@ -187,14 +187,20 @@ bool NewtonSolver::solve(
         update_failure_counters_();
 
         // Equilibrium and correction convergence are checked before another
-        // linear solve. From the second iteration onward, the stored correction
-        // norm is the accepted correction that produced the current state.
+        // linear solve. The first evaluation has no preceding correction, so it
+        // may converge without the correction criterion only for a practically
+        // exact residual. This preserves the linear-response shortcut without
+        // accepting a merely force-converged nonlinear state.
         const bool residual_converged =
             last_residual_norm_ <= residual_tolerance;
+        const bool first_iteration_converged =
+            iteration == 1 &&
+            last_residual_norm_ <= std::min(residual_tolerance, Precision(1e-8));
         const bool correction_converged =
-            iteration == 1 || last_correction_norm_ <= correction_tolerance;
+            iteration > 1 && last_correction_norm_ <= correction_tolerance;
 
-        if (residual_converged && correction_converged) {
+        if (first_iteration_converged ||
+            (residual_converged && correction_converged)) {
             last_step_length_ = Precision(0);
 
             if (on_iteration) {
