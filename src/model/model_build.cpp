@@ -229,7 +229,7 @@ void Model::build_shell_element_normals(Precision equalize_angle_degrees) {
  *
  * @return Node-by-six matrix of global unconstrained system DOF identifiers.
  */
-SystemDofIds Model::build_unconstrained_index_matrix() {
+SystemDofIds Model::build_structural_dof_index_matrix() {
     logging::error(_data->positions != nullptr,
         "Model: POSITION field is not initialized");
 

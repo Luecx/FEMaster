@@ -176,7 +176,7 @@ struct Model {
     // collect prescribed loads and constraints, and assemble structural tangent,
     // geometric, mass and internal-force contributions in global coordinates.
     // Optional stiffness-scaling fields act per element.
-    SystemDofIds build_unconstrained_index_matrix();
+    SystemDofIds build_structural_dof_index_matrix();
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
