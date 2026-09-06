@@ -260,6 +260,10 @@ void NonlinearStatic::run() {
     Index     last_converged_increment = 0;
     Precision residual_reference_force = Precision(0);
 
+    const auto tangent_matrix_type = model->_data->contacts.empty()
+        ? solver::DirectSolverMatrixType::SPD
+        : solver::DirectSolverMatrixType::General;
+
     auto assemble_state = [&](const DynamicVector& q,
                               Precision            lambda,
                               DynamicVector&       residual,
@@ -392,7 +396,7 @@ void NonlinearStatic::run() {
                 method,
                 matrix,
                 rhs,
-                solver::DirectSolverMatrixType::General
+                tangent_matrix_type
             );
         } catch (...) {
             if (logging_was_enabled) logging::enable();
