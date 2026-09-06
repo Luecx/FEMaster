@@ -403,7 +403,22 @@ void NonlinearStatic::run() {
             throw;
         }
 
+        const DynamicVector solve_residual = tangent * solution - rhs;
+        const Precision rhs_norm = rhs.size() > 0
+            ? rhs.lpNorm<Eigen::Infinity>()
+            : Precision(0);
+        const Precision solve_residual_norm = solve_residual.size() > 0
+            ? solve_residual.lpNorm<Eigen::Infinity>()
+            : Precision(0);
+        const Precision relative_solve_residual = rhs_norm > Precision(0)
+            ? solve_residual_norm / rhs_norm
+            : solve_residual_norm;
+
         if (logging_was_enabled) logging::enable();
+        logging::info(true,
+            "  Linear solve rel_res: ",
+            std::scientific, std::setprecision(3),
+            relative_solve_residual);
         return solution;
     };
 
@@ -466,7 +481,22 @@ void NonlinearStatic::run() {
             throw;
         }
 
+        const DynamicMatrix solve_residual = tangent * solution - rhs;
+        const Precision rhs_norm = rhs.size() > 0
+            ? rhs.cwiseAbs().maxCoeff()
+            : Precision(0);
+        const Precision solve_residual_norm = solve_residual.size() > 0
+            ? solve_residual.cwiseAbs().maxCoeff()
+            : Precision(0);
+        const Precision relative_solve_residual = rhs_norm > Precision(0)
+            ? solve_residual_norm / rhs_norm
+            : solve_residual_norm;
+
         if (logging_was_enabled) logging::enable();
+        logging::info(true,
+            "  Linear solve rel_res: ",
+            std::scientific, std::setprecision(3),
+            relative_solve_residual);
         return solution;
     };
 
