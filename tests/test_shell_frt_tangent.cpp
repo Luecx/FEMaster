@@ -41,13 +41,10 @@ struct TangentCheckResult {
 fem::model::Model build_frt_s4_model() {
     fem::model::Model model;
 
-    // Deliberately warped and skewed reference geometry. This exercises the
-    // curved-reference Jacobian, local-basis transformation and MITC pull-back.
     model.set_node(0,  0.00, 0.00,  0.00);
     model.set_node(1,  2.00, 0.15,  0.10);
     model.set_node(2,  2.20, 1.35,  0.32);
     model.set_node(3, -0.10, 1.10, -0.06);
-
     model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
@@ -56,7 +53,7 @@ fem::model::Model build_frt_s4_model() {
 
     model.add_section(std::make_shared<fem::IntegratedShellSection>(
         material,
-        model._data->parts.get()->elem_sets.get(fem::SET_ELEM_ALL),
+        model._data->parts.get()->elem_sets.get(SET_ELEM_ALL),
         0.08
     ));
 
@@ -66,71 +63,48 @@ fem::model::Model build_frt_s4_model() {
 
 fem::model::Field displacement_from_vector(const Vec24& q) {
     fem::model::Field displacement{
-        "U",
-        fem::model::FieldDomain::NODE,
-        NumNodes,
-        DofsPerNode
+        "U", fem::model::FieldDomain::NODE, NumNodes, DofsPerNode
     };
     displacement.set_zero();
 
-    for (fem::Index node = 0; node < NumNodes; ++node) {
-        for (fem::Index dof = 0; dof < DofsPerNode; ++dof) {
+    for (fem::Index node = 0; node < NumNodes; ++node)
+        for (fem::Index dof = 0; dof < DofsPerNode; ++dof)
             displacement(node, dof) = q(DofsPerNode * node + dof);
-        }
-    }
 
     return displacement;
 }
 
 Vec24 gather_force(const fem::model::NodeData& nodal_forces) {
     Vec24 force = Vec24::Zero();
-
-    for (fem::Index node = 0; node < NumNodes; ++node) {
-        for (fem::Index dof = 0; dof < DofsPerNode; ++dof) {
+    for (fem::Index node = 0; node < NumNodes; ++node)
+        for (fem::Index dof = 0; dof < DofsPerNode; ++dof)
             force(DofsPerNode * node + dof) = nodal_forces(node, dof);
-        }
-    }
-
     return force;
 }
 
-Vec24 internal_force(
-    fem::model::FRTShellS4& element,
-    const Vec24&             q
-) {
+Vec24 internal_force(fem::model::FRTShellS4& element, const Vec24& q) {
     fem::model::NodeData nodal_forces{
-        "INTERNAL_FORCES",
-        fem::model::FieldDomain::NODE,
-        NumNodes,
-        DofsPerNode
+        "INTERNAL_FORCES", fem::model::FieldDomain::NODE, NumNodes, DofsPerNode
     };
     nodal_forces.set_zero();
 
+    std::array<fem::Precision, NumDofs * NumDofs> storage{};
     const fem::model::Field displacement = displacement_from_vector(q);
-    element.stiffness_tangent(nullptr, nodal_forces, displacement);
+    element.stiffness_tangent(storage.data(), nodal_forces, displacement);
 
     return gather_force(nodal_forces);
 }
 
-Mat24 analytic_tangent(
-    fem::model::FRTShellS4& element,
-    const Vec24&             q
-) {
+Mat24 analytic_tangent(fem::model::FRTShellS4& element, const Vec24& q) {
     fem::model::NodeData nodal_forces{
-        "INTERNAL_FORCES",
-        fem::model::FieldDomain::NODE,
-        NumNodes,
-        DofsPerNode
+        "INTERNAL_FORCES", fem::model::FieldDomain::NODE, NumNodes, DofsPerNode
     };
     nodal_forces.set_zero();
 
-    const fem::model::Field displacement = displacement_from_vector(q);
-
     std::array<fem::Precision, NumDofs * NumDofs> storage{};
+    const fem::model::Field displacement = displacement_from_vector(q);
     const fem::DynamicMatrix mapped = element.stiffness_tangent(
-        storage.data(),
-        nodal_forces,
-        displacement
+        storage.data(), nodal_forces, displacement
     );
 
     Mat24 tangent = mapped;
@@ -139,26 +113,18 @@ Mat24 analytic_tangent(
 
 Mat24 finite_difference_tangent_5point(
     fem::model::FRTShellS4& element,
-    const Vec24&             q,
-    fem::Precision           h
+    const Vec24& q,
+    fem::Precision h
 ) {
     Mat24 numerical = Mat24::Zero();
 
     for (fem::Index column = 0; column < NumDofs; ++column) {
-        // Keep the perturbation relative to the active generalized coordinate.
-        // For this unit-scale verification model, translations and rotations
-        // remain O(1), so the same dimensionless h sweep is meaningful.
-        const fem::Precision scale = std::max(
-            fem::Precision(1),
-            std::abs(q(column))
-        );
-        const fem::Precision step = h * scale;
+        const fem::Precision step = h * std::max(fem::Precision(1), std::abs(q(column)));
 
         Vec24 qm2 = q;
         Vec24 qm1 = q;
         Vec24 qp1 = q;
         Vec24 qp2 = q;
-
         qm2(column) -= fem::Precision(2) * step;
         qm1(column) -= step;
         qp1(column) += step;
@@ -169,8 +135,6 @@ Mat24 finite_difference_tangent_5point(
         const Vec24 fp1 = internal_force(element, qp1);
         const Vec24 fp2 = internal_force(element, qp2);
 
-        // Five-point central derivative:
-        // f'(x) = [-f(x+2h) + 8f(x+h) - 8f(x-h) + f(x-2h)] / (12h)
         numerical.col(column) =
             (-fp2 + fem::Precision(8) * fp1
                   - fem::Precision(8) * fm1 + fm2)
@@ -182,36 +146,26 @@ Mat24 finite_difference_tangent_5point(
 
 fem::Precision relative_matrix_error(const Mat24& a, const Mat24& b) {
     const fem::Precision denominator = std::max({
-        a.norm(),
-        b.norm(),
-        std::numeric_limits<fem::Precision>::min()
+        a.norm(), b.norm(), std::numeric_limits<fem::Precision>::min()
     });
     return (a - b).norm() / denominator;
 }
 
 fem::Precision relative_asymmetry(const Mat24& matrix) {
     const fem::Precision denominator = std::max(
-        matrix.norm(),
-        std::numeric_limits<fem::Precision>::min()
+        matrix.norm(), std::numeric_limits<fem::Precision>::min()
     );
     return (matrix - matrix.transpose()).norm() / denominator;
 }
 
 TangentCheckResult sweep_tangent(
     fem::model::FRTShellS4& element,
-    const Vec24&             q,
-    const std::string&       state_name
+    const Vec24& q,
+    const std::string& state_name
 ) {
     const Mat24 analytic = analytic_tangent(element, q);
-
     const std::array<fem::Precision, 7> step_sizes{
-        1e-2,
-        3e-3,
-        1e-3,
-        3e-4,
-        1e-4,
-        3e-5,
-        1e-5
+        1e-2, 3e-3, 1e-3, 3e-4, 1e-4, 3e-5, 1e-5
     };
 
     std::cout << "\nFRT tangent sweep: " << state_name << "\n";
@@ -233,8 +187,7 @@ TangentCheckResult sweep_tangent(
                   << std::setw(10) << h
                   << std::setw(15) << relative_error
                   << std::setw(17) << max_abs_error
-                  << std::setw(15) << fd_asymmetry
-                  << "\n";
+                  << std::setw(15) << fd_asymmetry << "\n";
 
         if (relative_error < best.relative_error) {
             best.h = h;
@@ -245,34 +198,26 @@ TangentCheckResult sweep_tangent(
         }
     }
 
-    std::cout << "\nbest h = " << std::scientific << std::setprecision(6) << best.h
+    std::cout << "best h = " << std::scientific << std::setprecision(6) << best.h
               << ", rel_error = " << best.relative_error
               << ", fd_asym = " << best.fd_asymmetry << "\n";
-
-    std::cout << "column-wise errors at best h\n";
     std::cout << " col node dof       rel_col_err       max_abs_err\n";
-    std::cout << "---------------------------------------------------\n";
 
     for (fem::Index column = 0; column < NumDofs; ++column) {
-        const auto analytic_column = analytic.col(column);
-        const auto numerical_column = best.numerical.col(column);
+        const auto a = analytic.col(column);
+        const auto n = best.numerical.col(column);
         const fem::Precision denominator = std::max({
-            analytic_column.norm(),
-            numerical_column.norm(),
-            std::numeric_limits<fem::Precision>::min()
+            a.norm(), n.norm(), std::numeric_limits<fem::Precision>::min()
         });
-        const fem::Precision relative_column_error =
-            (analytic_column - numerical_column).norm() / denominator;
-        const fem::Precision max_abs_column_error =
-            (analytic_column - numerical_column).cwiseAbs().maxCoeff();
+        const fem::Precision relative_column_error = (a - n).norm() / denominator;
+        const fem::Precision max_abs_column_error = (a - n).cwiseAbs().maxCoeff();
 
         std::cout << std::setw(4) << column
                   << std::setw(5) << column / DofsPerNode
                   << std::setw(4) << column % DofsPerNode
                   << std::scientific << std::setprecision(6)
                   << std::setw(18) << relative_column_error
-                  << std::setw(18) << max_abs_column_error
-                  << "\n";
+                  << std::setw(18) << max_abs_column_error << "\n";
     }
 
     return best;
@@ -310,23 +255,17 @@ Vec24 mixed_bending_state() {
 
 void expect_consistent_tangent(
     fem::model::FRTShellS4& element,
-    const Vec24&             q,
-    const std::string&       state_name
+    const Vec24& q,
+    const std::string& state_name
 ) {
     const TangentCheckResult result = sweep_tangent(element, q, state_name);
 
-    // A five-point stencil should comfortably resolve an exact double-precision
-    // element tangent to substantially better than 1e-5 on this unit-scale
-    // elastic problem. A failure by orders of magnitude indicates a missing or
-    // inconsistent tangent contribution rather than finite-difference noise.
     EXPECT_LT(result.relative_error, 1e-5)
         << "FRT shell tangent is inconsistent in state " << state_name
         << " (best h=" << result.h << ")";
 
     EXPECT_LT(result.fd_asymmetry, 1e-5)
-        << "Numerical d(f_int)/dq is materially asymmetric in state "
-        << state_name
-        << "; stiffness_tangent() currently symmetrizes the analytic matrix.";
+        << "Numerical d(f_int)/dq is materially asymmetric in state " << state_name;
 }
 
 } // namespace
@@ -335,7 +274,6 @@ TEST(FRTShellTangent, Full24x24ModerateState) {
     auto model = build_frt_s4_model();
     auto* element = model._data->elements[0]->as<fem::model::FRTShellS4>();
     ASSERT_NE(element, nullptr);
-
     expect_consistent_tangent(*element, moderate_state(), "moderate");
 }
 
@@ -343,7 +281,6 @@ TEST(FRTShellTangent, Full24x24LargeRotationState) {
     auto model = build_frt_s4_model();
     auto* element = model._data->elements[0]->as<fem::model::FRTShellS4>();
     ASSERT_NE(element, nullptr);
-
     expect_consistent_tangent(*element, large_rotation_state(), "large_rotation");
 }
 
@@ -351,6 +288,5 @@ TEST(FRTShellTangent, Full24x24MixedBendingState) {
     auto model = build_frt_s4_model();
     auto* element = model._data->elements[0]->as<fem::model::FRTShellS4>();
     ASSERT_NE(element, nullptr);
-
     expect_consistent_tangent(*element, mixed_bending_state(), "mixed_bending");
 }
