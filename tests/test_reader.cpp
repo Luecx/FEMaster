@@ -108,7 +108,7 @@ TEST(Materials_Orthotropic, TransverseShellShearUsesXzThenYz) {
     Mat5                          tangent;
     Precision old_state = Precision(0);
     Precision new_state = Precision(0);
-    ortho.evaluate(strain, &old_state, &new_state, stress, tangent);
+    ortho.evaluate(strain, &old_state, &new_state, stress, &tangent);
 
     const Mat2 shear = tangent.template block<2, 2>(3, 3);
 
