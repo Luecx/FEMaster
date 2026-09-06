@@ -39,6 +39,7 @@ fem::model::Model build_qspt_model(bool with_density) {
         nullptr
     ));
     model.compile();
+    model.step_begin();
 
     return model;
 }
@@ -119,6 +120,7 @@ TEST(Elements_FRTShellS4, ABDMaterialUsesMaterialDensityForMass) {
         nullptr
     ));
     model.compile();
+    model.step_begin();
 
     auto* elem = model._data->elements[0]->as<fem::model::FRTShellS4>();
     ASSERT_NE(elem, nullptr);
@@ -166,6 +168,7 @@ TEST(Elements_FRTShellS4, ShellResultantsUseThirdOrientationAxisAsMaterialOne) {
         orientation
     ));
     model.compile();
+    model.step_begin();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
     displacement.set_zero();
@@ -207,6 +210,7 @@ TEST(Elements_FRTShellS4, TransverseShearResultantsUseVoigtYzThenXz) {
         nullptr
     ));
     model.compile();
+    model.step_begin();
 
     fem::model::Field displacement{"U", fem::model::FieldDomain::NODE, 4, 6};
     displacement.set_zero();
