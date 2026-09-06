@@ -135,9 +135,9 @@ public:
         const DynamicVector& dx
     )>;
 
-    // Per-iteration reporting callback. A converged iteration has no associated
-    // linear solve and therefore reports a zero correction norm and zero solve
-    // time.
+    // Per-iteration reporting callback. When convergence is detected before a
+    // new linear solve, the correction norm is the correction that produced the
+    // current state; it is zero only when no previous correction exists.
     using IterationCallback = std::function<void(
         Index     iteration,
         Precision residual_norm,
@@ -155,6 +155,7 @@ public:
     // Newton iteration limits and convergence tolerances
     Index     maximum_iterations   = 30;
     Precision residual_tolerance   = Precision(1e-8);
+    Precision correction_tolerance = Precision(1e-2);
     Precision stagnation_tolerance = Precision(0);
 
     // Numerical validity and early-failure detection
