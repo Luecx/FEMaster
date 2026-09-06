@@ -6,7 +6,7 @@
 #include "../src/data/field.h"
 #include "../src/material/isotropic_elasticity.h"
 #include "../src/model/model.h"
-#include "../src/model/shell/s4.h"
+#include "../src/model/shell/frt_shell_s4.h"
 #include "../src/io/writer/writer_frd.h"
 #include "../src/io/writer/writer_res.h"
 #include "../src/section/section_shell_integrated.h"
@@ -58,7 +58,7 @@ TEST(Reader_Writer, WritesInferredTypeForIndexedMatrixField) {
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<model::S4>(0, 0, 1, 2, 3);
+    model.set_element<model::FRTShellS4>(0, 0, 1, 2, 3);
     model.compile();
 
     model::Field field("LOCAL_SECTION_FORCES", model::FieldDomain::ELEMENT_NODAL, 4, 3);
@@ -85,7 +85,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
     model.set_node(1, 1.0, 0.0, 0.0);
     model.set_node(2, 1.0, 1.0, 0.0);
     model.set_node(3, 0.0, 1.0, 0.0);
-    model.set_element<fem::model::S4>(0, 0, 1, 2, 3);
+    model.set_element<fem::model::FRTShellS4>(0, 0, 1, 2, 3);
 
     auto material = std::make_shared<fem::material::Material>("MAT");
     material->set_elasticity<fem::material::IsotropicElasticity>(1000.0, 0.3);
