@@ -177,6 +177,7 @@ struct Model {
     // geometric, mass and internal-force contributions in global coordinates.
     // Optional stiffness-scaling fields act per element.
     SystemDofIds build_structural_dof_index_matrix();
+    SystemDofIds build_thermal_dof_index_matrix();
     Field build_load_matrix(
         std::vector<std::string> load_sets = {},
         Precision time = 0);
