@@ -98,6 +98,7 @@ TEST(Reader_Writer, WritesEightShellResultantComponentsToFrd) {
         nullptr
     ));
     model.compile();
+    model.step_begin();
 
     fem::model::Field displacement("U", fem::model::FieldDomain::NODE, 4, 6);
     displacement.set_zero();
