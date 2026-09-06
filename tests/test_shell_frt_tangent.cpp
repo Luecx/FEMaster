@@ -59,6 +59,7 @@ fem::model::Model build_frt_s4_model() {
     ));
 
     model.compile();
+    model.step_begin();
     return model;
 }
 
