@@ -155,7 +155,7 @@ public:
     // Newton iteration limits and convergence tolerances
     Index     maximum_iterations   = 30;
     Precision residual_tolerance   = Precision(1e-8);
-    Precision correction_tolerance = Precision(1e-2);
+    Precision correction_tolerance = Precision(1e-4);
     Precision stagnation_tolerance = Precision(0);
 
     // Numerical validity and early-failure detection
