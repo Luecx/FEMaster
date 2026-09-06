@@ -59,8 +59,9 @@ void register_loadcase_nonlinear(fem::io::dsl::Registry& registry, Parser& parse
                 .key("MAXIMUM_CUTBACKS").optional("20")
                     .doc("Maximum consecutive cutbacks allowed for one increment.")
                 .key("MAXITER").optional("20")
-                .key("TOL").optional("1e-8")
-                .key("REGULARIZE_ZERO_ROWS").optional("ON")
+                .key("TOL").optional("5e-3")
+                    .doc("Relative equilibrium-force tolerance; default 5e-3.")
+                .key("REGULARIZE_ZERO_ROWS").optional("OFF")
                 .key("REGULARIZATION_ALPHA").optional("1e-4")
         );
 
