@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -93,33 +94,20 @@ model::Field subtract_field(
 
 Precision calculate_relative_residual(
     const DynamicVector& reduced_residual,
-    const DynamicVector& reduced_external
+    Precision            reference_force
 ) {
-    const DynamicVector reduced_internal =
-        reduced_external - reduced_residual;
+    const Precision residual_force =
+        reduced_residual.lpNorm<Eigen::Infinity>();
+    const Precision epsilon =
+        std::numeric_limits<Precision>::epsilon();
 
-    const Index reduced_dofs = std::max<Index>(
-        static_cast<Index>(reduced_residual.size()),
-        Index(1)
-    );
+    if (reference_force <= epsilon) {
+        return residual_force <= epsilon
+            ? Precision(0)
+            : std::numeric_limits<Precision>::infinity();
+    }
 
-    const Precision inv_sqrt_reduced_dofs =
-        Precision(1) / std::sqrt(static_cast<Precision>(reduced_dofs));
-
-    const Precision residual_rms =
-        reduced_residual.norm() * inv_sqrt_reduced_dofs;
-    const Precision external_rms =
-        reduced_external.norm() * inv_sqrt_reduced_dofs;
-    const Precision internal_rms =
-        reduced_internal.norm() * inv_sqrt_reduced_dofs;
-
-    const Precision denominator = std::max({
-        external_rms,
-        internal_rms,
-        Precision(1)
-    });
-
-    return residual_rms / denominator;
+    return residual_force / reference_force;
 }
 
 } // namespace
@@ -270,7 +258,8 @@ void NonlinearStatic::run() {
 
     writer->add_loadcase(id, io::writer::WriterStepType::Static);
 
-    Index last_converged_increment = 0;
+    Index     last_converged_increment = 0;
+    Precision residual_reference_force = Precision(0);
 
     auto assemble_state = [&](const DynamicVector& q,
                               Precision            lambda,
@@ -444,6 +433,9 @@ void NonlinearStatic::run() {
         const DynamicVector predictor_rhs =
             transformer->assemble_system_rhs(accepted_full_tangent, f_total);
 
+        residual_reference_force =
+            std::abs(target_lambda) * predictor_rhs.lpNorm<Eigen::Infinity>();
+
         const DynamicVector dq_dlambda =
             linear_solve(accepted_tangent, predictor_rhs);
 
@@ -477,8 +469,11 @@ void NonlinearStatic::run() {
 
     auto residual_norm = [&](const DynamicVector& residual,
                              Precision            lambda) {
-        const DynamicVector reduced_external = lambda * reduced_total_load;
-        return calculate_relative_residual(residual, reduced_external);
+        (void) lambda;
+        return calculate_relative_residual(
+            residual,
+            residual_reference_force
+        );
     };
 
     auto correction_norm = [&](const DynamicVector& q,
@@ -674,6 +669,9 @@ void NonlinearStatic::run() {
         arc_length_control.rollback_increment_trial = rollback_increment_trial;
 
         arc_length_control.update_active_set = update_active_set;
+
+        residual_reference_force =
+            reduced_total_load.lpNorm<Eigen::Infinity>();
 
         converged = arc_length_control.solve(
             q_total,
