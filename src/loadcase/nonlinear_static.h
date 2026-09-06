@@ -183,10 +183,10 @@ struct NonlinearStatic : public LoadCase {
      * @brief Enables artificial regularization of zero-stiffness rows.
      *
      * This can improve robustness for temporarily unconstrained or mechanism-like
-     * configurations, but should be used carefully because it modifies the
-     * tangent system.
+     * configurations, but modifies the tangent and is therefore disabled unless
+     * requested explicitly.
      */
-    bool regularize_zero_stiffness_rows = true;
+    bool regularize_zero_stiffness_rows = false;
 
     /**
      * @brief Scaling factor for zero-stiffness row regularization.
