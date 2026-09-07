@@ -25,5 +25,21 @@ struct C3D15 : public SolidElement<15>{
     StaticMatrix<15, 1> shape_function(Precision r, Precision s, Precision t) override;
     StaticMatrix<15, 3> shape_derivative(Precision r, Precision s, Precision t) override;
     StaticMatrix<15, 3> node_coords_local() override;
+
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1,
+             math::ExtrapolationBasis::FR,
+             math::ExtrapolationBasis::FS,
+             math::ExtrapolationBasis::FT,
+             math::ExtrapolationBasis::FRT,
+             math::ExtrapolationBasis::FST,
+             math::ExtrapolationBasis::FTT,
+             math::ExtrapolationBasis::FTTR,
+             math::ExtrapolationBasis::FTTS});
+        return matrix;
+    }
 };
 } }

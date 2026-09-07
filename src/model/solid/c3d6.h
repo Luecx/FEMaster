@@ -25,5 +25,14 @@ struct C3D6 : public SolidElement<6>{
     StaticMatrix<6, 3> node_coords_local() override;
 
     std::string type_name() const override { return "C3D6"; }
+
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1,
+             math::ExtrapolationBasis::FT});
+        return matrix;
+    }
 };
 } }

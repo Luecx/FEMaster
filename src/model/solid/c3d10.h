@@ -26,5 +26,16 @@ struct C3D10 : public SolidElement<10>{
 
     const math::quadrature::Quadrature& integration_scheme() const override;
     const math::quadrature::Quadrature& integration_scheme_stiffness() const override;
+
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1,
+             math::ExtrapolationBasis::FR,
+             math::ExtrapolationBasis::FS,
+             math::ExtrapolationBasis::FT});
+        return matrix;
+    }
 };
 } }

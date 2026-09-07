@@ -53,6 +53,21 @@ struct C3D8 : public SolidElement<8> {
     // Boundary topology and element integration rule
     SurfacePtr surface(ID surface_id) override;
     const math::quadrature::Quadrature& integration_scheme() const override;
+
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1,
+             math::ExtrapolationBasis::FR,
+             math::ExtrapolationBasis::FS,
+             math::ExtrapolationBasis::FT,
+             math::ExtrapolationBasis::FRS,
+             math::ExtrapolationBasis::FRT,
+             math::ExtrapolationBasis::FST,
+             math::ExtrapolationBasis::FRST});
+        return matrix;
+    }
 };
 
 } // namespace model
