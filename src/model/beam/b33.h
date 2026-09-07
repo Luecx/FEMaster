@@ -1,6 +1,21 @@
 /**
  * @file b33.h
  * @brief Defines the two-node three-dimensional Euler-Bernoulli beam element.
+ *
+ * B33 provides the established linear Euler-Bernoulli stiffness, consistent
+ * mass and classical beam-column prestress stiffness together with a finite-
+ * rotation nonlinear equilibrium path. The nonlinear formulation preserves the
+ * same twelve nodal degrees of freedom and the same principal-section and offset
+ * conventions as the linear element.
+ *
+ * The finite-rotation implementation is kept in b33_nonlinear.inl so the
+ * validated linear operators remain locally readable and unchanged.
+ *
+ * @see B33
+ * @see b33_nonlinear.inl
+ *
+ * @author Finn Eggers
+ * @date 07.09.2026
  */
 
 #pragma once
@@ -22,9 +37,12 @@ namespace model {
  * Prestress is derived directly from the supplied nodal displacement field;
  * no integration-point force/stress scratch field is required.
  *
- * A fully consistent finite-rotation nonlinear beam residual is not implemented
- * by B33, so nonlinear tangent evaluation remains intentionally unsupported in
- * the common `BeamElement` base.
+ * Nonlinear equilibrium uses an objective finite-rotation corotated
+ * Euler-Bernoulli formulation. Nodal rotations follow the same total global
+ * axis-angle convention as the finite-rotation shells. The nonlinear internal
+ * force and tangent are the first and second derivatives of one discrete strain
+ * energy, while the existing linear, mass and buckling operators remain
+ * independent and unchanged.
  */
 struct B33 : BeamElement<2> {
     B33(ID elem_id, std::array<ID, 2> node_ids_in)
@@ -35,6 +53,15 @@ struct B33 : BeamElement<2> {
     ElementPtr copy() const override { return std::make_shared<B33>(elem_id, node_ids); }
 
     std::string type_name() const override { return "B33"; }
+
+    // Finite-rotation nonlinear equilibrium. The detailed kinematics, objective
+    // basic deformation measures and consistent energy derivatives are kept in
+    // b33_nonlinear.inl beside this class definition.
+    MapMatrix stiffness_tangent(
+        Precision*   buffer,
+        NodeData&    nodal_forces,
+        const Field& displacement
+    ) override;
 
     StaticMatrix<12, 12> stiffness_impl() override {
         const StaticMatrix<12, 12> Trot = transformation();
@@ -275,3 +302,5 @@ struct B33 : BeamElement<2> {
 
 } // namespace model
 } // namespace fem
+
+#include "b33_nonlinear.inl"
