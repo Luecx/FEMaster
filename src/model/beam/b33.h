@@ -22,6 +22,7 @@
 
 #include "beam.h"
 #include "../../material/strain/beam_generalized_strain.h"
+#include "../../math/so3.h"
 #include "../geometry/line/line2a.h"
 
 #include <limits>
@@ -190,8 +191,6 @@ struct B33 : BeamElement<2> {
                                const RowMatrix& rst,
                                int offset,
                                bool use_green_lagrange_nl) override {
-        logging::error(!use_green_lagrange_nl,
-            "B33: nonlinear stress/strain evaluation is not implemented yet for element ", this->elem_id);
         logging::error(strain != nullptr || stress != nullptr,
             "B33: compute_stress_strain requires at least one output field");
 
@@ -199,17 +198,59 @@ struct B33 : BeamElement<2> {
         const Precision A = get_profile()->area_;
         const Precision L = length();
 
-        StaticMatrix<12, 1> u_global;
-        for (int i = 0; i < 2; ++i) {
-            Vec6 ug = displacement.row_vec6(static_cast<Index>(this->nodes()[i]));
-            for (int d = 0; d < 6; ++d) u_global(6 * i + d) = ug(d);
+        Vec6 generalized_values = Vec6::Zero();
+
+        if (use_green_lagrange_nl) {
+            // Nonlinear recovery uses the same exact mechanical shear-point line
+            // as the finite-rotation equilibrium energy. The only stress/strain
+            // component currently exposed by B33 recovery is axial, so no
+            // corotated bending frame is required here.
+            Profile* profile = get_profile();
+            const Precision principal_phi = principal_angle();
+
+            Precision ey   = profile->offset_y_;
+            Precision ez   = profile->offset_z_;
+            Precision refy = profile->reference_y_;
+            Precision refz = profile->reference_z_;
+
+            BeamElement<2>::rotate_yz_to_principal(principal_phi, ey, ez);
+            BeamElement<2>::rotate_yz_to_principal(principal_phi, refy, refz);
+
+            const Mat3 reference_basis = principal_rotation_matrix().transpose();
+            Vec3 offset_local;
+            offset_local << Precision(0), ey - refy, ez - refz;
+            const Vec3 offset_global = reference_basis * offset_local;
+
+            const Vec6 q1 = displacement.row_vec6(static_cast<Index>(this->nodes()[0]));
+            const Vec6 q2 = displacement.row_vec6(static_cast<Index>(this->nodes()[1]));
+
+            // The nodal translational DOFs locate the reference line. The exact
+            // rotated offset then locates the shear point used by the nonlinear
+            // B33 strain energy:
+            //
+            //     x_sp = X_ref + u + R(theta) * r_ref_sp.
+            const Vec3 x1 = this->node_position(0)
+                          + q1.head<3>()
+                          + math::so3::rotation_matrix(q1.tail<3>()) * offset_global;
+            const Vec3 x2 = this->node_position(1)
+                          + q2.head<3>()
+                          + math::so3::rotation_matrix(q2.tail<3>()) * offset_global;
+
+            generalized_values(0) = ((x2 - x1).norm() - L) / L;
+        } else {
+            // Linear recovery remains unchanged and uses the original principal
+            // beam transformation and infinitesimal axial extension.
+            StaticMatrix<12, 1> u_global;
+            for (int i = 0; i < 2; ++i) {
+                Vec6 ug = displacement.row_vec6(static_cast<Index>(this->nodes()[i]));
+                for (int d = 0; d < 6; ++d) u_global(6 * i + d) = ug(d);
+            }
+
+            StaticMatrix<12, 12> T = transformation();
+            StaticMatrix<12, 1> u_local = T * u_global;
+            generalized_values(0) = (u_local(6) - u_local(0)) / L;
         }
 
-        StaticMatrix<12, 12> T = transformation();
-        StaticMatrix<12, 1> u_local = T * u_global;
-
-        Vec6 generalized_values = Vec6::Zero();
-        generalized_values(0) = (u_local(6) - u_local(0)) / L;
         const BeamGeneralizedStrain generalized_strain(generalized_values);
         const Precision axial_force = E * A * generalized_strain.values()(0);
 
