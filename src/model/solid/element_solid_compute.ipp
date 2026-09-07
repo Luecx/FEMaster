@@ -65,24 +65,23 @@ void SolidElement<N>::evaluate_material(Precision                        r,
 }
 
 /**
- * Recovers solid strain and Cauchy stress at requested natural coordinates.
+ * Recovers solid strain and Cauchy stress from constitutive integration points.
+ *
+ * Material response is evaluated only at the stiffness quadrature points, where
+ * the corresponding committed material-state row is defined. Integration-point
+ * output is copied directly. Nodal output is obtained by applying the concrete
+ * element's constant reference-space extrapolation matrix to the IP values.
  *
  * Linearized recovery uses the reference-configuration small-strain B matrix.
- * Nonlinear recovery derives Green-Lagrange strain from the deformation
- * gradient, evaluates PK2 stress and pushes it forward to Cauchy stress for
- * output. Because requested coordinates may be nodal extrapolation points
- * rather than constitutive integration points, each location reuses the
- * committed state row of the nearest stiffness quadrature point in natural
- * coordinates.
- *
- * Recovery is strictly state-neutral: constitutive history may be read but no
- * target trial state is supplied. Degenerate output mappings are skipped in the
- * linearized path. At least one optional output field must be supplied.
+ * Nonlinear recovery evaluates Green-Lagrange strain at each material point,
+ * obtains PK2 stress from committed history and pushes it forward to Cauchy
+ * stress. Recovery is state-neutral and never creates nodal constitutive states.
  *
  * @param strain Optional output field for linearized or Green-Lagrange strain.
  * @param stress Optional output field for Cauchy stress.
  * @param displacement Global nodal displacement field.
- * @param rst Natural output coordinates, one point per row.
+ * @param rst Requested natural coordinates. Solids support their material
+ *            integration points and their element nodes.
  * @param offset First output row belonging to this element.
  * @param use_green_lagrange_nl Select nonlinear Total-Lagrangian recovery.
  */
@@ -98,50 +97,39 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
     logging::error(rst.cols() >= 3,
         "SolidElement: stress/strain evaluation coordinates require at least 3 columns");
 
+    const auto&     scheme      = this->integration_scheme_stiffness();
+    const RowMatrix ip_rst      = this->stress_strain_ip_rst();
+    const bool      output_at_ip =
+        rst.rows() == ip_rst.rows() && rst.leftCols(3).isApprox(ip_rst);
+    const bool output_at_nodes = rst.rows() == static_cast<Eigen::Index>(N);
+
+    logging::error(output_at_ip || output_at_nodes,
+        "SolidElement: stress/strain output must use integration points or element nodes");
+
     const auto reference_coords       = this->node_coords_reference();
     const auto local_displacement     = this->nodal_data<3>(displacement);
     const auto local_disp_mat         = StaticMatrix<3, N>(local_displacement.transpose());
-    const auto local_displacement_vec = Eigen::Map<const StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
-    const auto current_coords         = reference_coords + local_displacement;
-    const auto& state_scheme          = this->integration_scheme_stiffness();
+    const auto local_displacement_vec =
+        Eigen::Map<const StaticVector<3 * N>>(local_disp_mat.data(), 3 * N);
+    const auto current_coords = reference_coords + local_displacement;
 
-    for (Eigen::Index n = 0; n < rst.rows(); ++n) {
-        const Precision r   = rst(n, 0);
-        const Precision s   = rst(n, 1);
-        const Precision t   = rst(n, 2);
-        const Index     row = static_cast<Index>(offset + n);
+    RowMatrix ip_strain = RowMatrix::Zero(scheme.count(), n_strain);
+    RowMatrix ip_stress = RowMatrix::Zero(scheme.count(), n_strain);
 
-        // Output coordinates may be nodal rather than constitutive integration
-        // points. Reuse the committed history row of the nearest material point.
-        Index state_ip = 0;
-        auto  state_point = state_scheme.get_point(0);
-        Precision state_distance =
-            (r - state_point.r) * (r - state_point.r)
-            + (s - state_point.s) * (s - state_point.s)
-            + (t - state_point.t) * (t - state_point.t);
+    // Evaluate kinematics and material response only where constitutive state
+    // actually exists: at the element's stiffness integration points.
+    for (Index ip = 0; ip < scheme.count(); ++ip) {
+        const auto point = scheme.get_point(ip);
 
-        for (Index ip = 1; ip < state_scheme.count(); ++ip) {
-            state_point = state_scheme.get_point(ip);
-            const Precision distance =
-                (r - state_point.r) * (r - state_point.r)
-                + (s - state_point.s) * (s - state_point.s)
-                + (t - state_point.t) * (t - state_point.t);
-
-            if (distance < state_distance) {
-                state_ip       = ip;
-                state_distance = distance;
-            }
-        }
-
-        const Index      state_row = this->mp_index(state_ip);
+        const Index      state_row = this->mp_index(ip);
         const Precision* old_state = &(*this->_model_data->material_state_old)(state_row, 0);
 
-        // Linearized recovery evaluates Cauchy stress directly from the
-        // infinitesimal reference-configuration strain field.
+        // Linear recovery evaluates the small-strain field and Cauchy stress at
+        // the material point without producing a new constitutive state.
         if (!use_green_lagrange_nl) {
             Precision det;
-            const StaticMatrix<n_strain, D * N> B =
-                this->strain_displacements(reference_coords, r, s, t, det, false);
+            const StaticMatrix<n_strain, D * N> B = this->strain_displacements(
+                reference_coords, point.r, point.s, point.t, det, false);
 
             if (det <= Precision(0) || !std::isfinite(det)) {
                 continue;
@@ -151,29 +139,66 @@ void SolidElement<N>::compute_stress_strain(Field*           strain,
             const VolumeStrainLinearized global_strain(global_strain_voigt);
             VolumeStressCauchy           global_stress;
             Mat6                         global_tangent;
-            evaluate_material(r, s, t, global_strain, old_state, nullptr, global_stress, global_tangent);
+            evaluate_material(
+                point.r, point.s, point.t,
+                global_strain, old_state, nullptr,
+                global_stress, global_tangent);
 
-            for (Dim j = 0; j < n_strain; ++j) {
-                if (strain) (*strain)(row, j) = global_strain.voigt()(j);
-                if (stress) (*stress)(row, j) = global_stress.voigt()(j);
+            for (Dim component = 0; component < n_strain; ++component) {
+                ip_strain(ip, component) = global_strain.voigt()(component);
+                ip_stress(ip, component) = global_stress.voigt()(component);
             }
             continue;
         }
 
-        // Nonlinear recovery needs only the state-neutral PK2 stress. The
-        // optional-tangent path deliberately avoids building dS/dE here.
-        const Mat3 F = this->deformation_gradient(reference_coords, current_coords, r, s, t);
+        // Nonlinear recovery evaluates the same Green-Lagrange/PK2 pair used by
+        // the Total-Lagrangian formulation and pushes PK2 stress to Cauchy stress.
+        const Mat3 F = this->deformation_gradient(
+            reference_coords, current_coords, point.r, point.s, point.t);
         const VolumeStrainGreenLagrange green_lagrange =
             VolumeStrainGreenLagrange::from_deformation_gradient(F);
 
         VolumeStressPK2 second_pk;
-        evaluate_material(r, s, t, green_lagrange, old_state, nullptr, second_pk, nullptr);
+        evaluate_material(
+            point.r, point.s, point.t,
+            green_lagrange, old_state, nullptr,
+            second_pk, nullptr);
 
         const VolumeStressCauchy cauchy = second_pk.to_cauchy(F);
 
-        for (Dim j = 0; j < n_strain; ++j) {
-            if (strain) (*strain)(row, j) = green_lagrange.voigt()(j);
-            if (stress) (*stress)(row, j) = cauchy.voigt()(j);
+        for (Dim component = 0; component < n_strain; ++component) {
+            ip_strain(ip, component) = green_lagrange.voigt()(component);
+            ip_stress(ip, component) = cauchy.voigt()(component);
+        }
+    }
+
+    // Integration-point output is the constitutive result itself and must not be
+    // projected through a recovery basis.
+    if (output_at_ip) {
+        for (Eigen::Index n = 0; n < rst.rows(); ++n) {
+            const Index row = static_cast<Index>(offset + n);
+            for (Dim component = 0; component < n_strain; ++component) {
+                if (strain) (*strain)(row, component) = ip_strain(n, component);
+                if (stress) (*stress)(row, component) = ip_stress(n, component);
+            }
+        }
+        return;
+    }
+
+    // Nodal values are reconstructed from the integration-point samples in
+    // natural coordinates using the topology-specific constant operator.
+    const RowMatrix& E = this->extrapolation_matrix();
+    logging::error(E.rows() == rst.rows() && E.cols() == scheme.count(),
+        "SolidElement: invalid extrapolation matrix for element ", this->elem_id);
+
+    const RowMatrix nodal_strain = E * ip_strain;
+    const RowMatrix nodal_stress = E * ip_stress;
+
+    for (Eigen::Index n = 0; n < rst.rows(); ++n) {
+        const Index row = static_cast<Index>(offset + n);
+        for (Dim component = 0; component < n_strain; ++component) {
+            if (strain) (*strain)(row, component) = nodal_strain(n, component);
+            if (stress) (*stress)(row, component) = nodal_stress(n, component);
         }
     }
 }
