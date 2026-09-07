@@ -34,22 +34,29 @@ protected:
              math::ExtrapolationBasis::FR,
              math::ExtrapolationBasis::FS,
              math::ExtrapolationBasis::FT,
+             math::ExtrapolationBasis::FRR,
+             math::ExtrapolationBasis::FSS,
+             math::ExtrapolationBasis::FTT,
              math::ExtrapolationBasis::FRS,
              math::ExtrapolationBasis::FRT,
              math::ExtrapolationBasis::FST,
              math::ExtrapolationBasis::FRST,
-             math::ExtrapolationBasis::FRR,
-             math::ExtrapolationBasis::FSS,
-             math::ExtrapolationBasis::FTT,
              math::ExtrapolationBasis::FRRS,
              math::ExtrapolationBasis::FRRT,
              math::ExtrapolationBasis::FSSR,
              math::ExtrapolationBasis::FSST,
              math::ExtrapolationBasis::FTTR,
              math::ExtrapolationBasis::FTTS,
+             math::ExtrapolationBasis::FRRSS,
+             math::ExtrapolationBasis::FRRTT,
+             math::ExtrapolationBasis::FSSTT,
              math::ExtrapolationBasis::FRRST,
              math::ExtrapolationBasis::FRSST,
-             math::ExtrapolationBasis::FRSTT});
+             math::ExtrapolationBasis::FRSTT,
+             math::ExtrapolationBasis::FRRSST,
+             math::ExtrapolationBasis::FRRSTT,
+             math::ExtrapolationBasis::FRSSTT,
+             math::ExtrapolationBasis::FRRSSTT});
         return matrix;
     }
 };

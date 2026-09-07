@@ -48,13 +48,23 @@ enum class ExtrapolationBasis {
     FTTR,
     FTTS,
 
+    FRRSS,
+    FRRTT,
+    FSSTT,
+
     FRRST,
     FRSST,
     FRSTT,
+
+    FRRSST,
+    FRRSTT,
+    FRSSTT,
+
+    FRRSSTT,
 };
 
-RowMatrix extrapolate(const RowMatrix&                              source_points,
-                      const RowMatrix&                              target_points,
-                      std::initializer_list<ExtrapolationBasis>     basis);
+RowMatrix extrapolate(const RowMatrix&                          source_points,
+                      const RowMatrix&                          target_points,
+                      std::initializer_list<ExtrapolationBasis> basis);
 
 } // namespace fem::math

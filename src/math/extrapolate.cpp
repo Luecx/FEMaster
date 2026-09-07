@@ -55,31 +55,41 @@ RowMatrix extrapolate(const RowMatrix&                          source_points,
     // Evaluate one selected monomial at one natural-coordinate point.
     const auto evaluate = [](ExtrapolationBasis function, Precision r, Precision s, Precision t) {
         switch (function) {
-            case ExtrapolationBasis::F1:    return Precision(1);
+            case ExtrapolationBasis::F1:      return Precision(1);
 
-            case ExtrapolationBasis::FR:    return r;
-            case ExtrapolationBasis::FS:    return s;
-            case ExtrapolationBasis::FT:    return t;
+            case ExtrapolationBasis::FR:      return r;
+            case ExtrapolationBasis::FS:      return s;
+            case ExtrapolationBasis::FT:      return t;
 
-            case ExtrapolationBasis::FRR:   return r * r;
-            case ExtrapolationBasis::FSS:   return s * s;
-            case ExtrapolationBasis::FTT:   return t * t;
+            case ExtrapolationBasis::FRR:     return r * r;
+            case ExtrapolationBasis::FSS:     return s * s;
+            case ExtrapolationBasis::FTT:     return t * t;
 
-            case ExtrapolationBasis::FRS:   return r * s;
-            case ExtrapolationBasis::FRT:   return r * t;
-            case ExtrapolationBasis::FST:   return s * t;
-            case ExtrapolationBasis::FRST:  return r * s * t;
+            case ExtrapolationBasis::FRS:     return r * s;
+            case ExtrapolationBasis::FRT:     return r * t;
+            case ExtrapolationBasis::FST:     return s * t;
+            case ExtrapolationBasis::FRST:    return r * s * t;
 
-            case ExtrapolationBasis::FRRS:  return r * r * s;
-            case ExtrapolationBasis::FRRT:  return r * r * t;
-            case ExtrapolationBasis::FSSR:  return s * s * r;
-            case ExtrapolationBasis::FSST:  return s * s * t;
-            case ExtrapolationBasis::FTTR:  return t * t * r;
-            case ExtrapolationBasis::FTTS:  return t * t * s;
+            case ExtrapolationBasis::FRRS:    return r * r * s;
+            case ExtrapolationBasis::FRRT:    return r * r * t;
+            case ExtrapolationBasis::FSSR:    return s * s * r;
+            case ExtrapolationBasis::FSST:    return s * s * t;
+            case ExtrapolationBasis::FTTR:    return t * t * r;
+            case ExtrapolationBasis::FTTS:    return t * t * s;
 
-            case ExtrapolationBasis::FRRST: return r * r * s * t;
-            case ExtrapolationBasis::FRSST: return r * s * s * t;
-            case ExtrapolationBasis::FRSTT: return r * s * t * t;
+            case ExtrapolationBasis::FRRSS:   return r * r * s * s;
+            case ExtrapolationBasis::FRRTT:   return r * r * t * t;
+            case ExtrapolationBasis::FSSTT:   return s * s * t * t;
+
+            case ExtrapolationBasis::FRRST:   return r * r * s * t;
+            case ExtrapolationBasis::FRSST:   return r * s * s * t;
+            case ExtrapolationBasis::FRSTT:   return r * s * t * t;
+
+            case ExtrapolationBasis::FRRSST:  return r * r * s * s * t;
+            case ExtrapolationBasis::FRRSTT:  return r * r * s * t * t;
+            case ExtrapolationBasis::FRSSTT:  return r * s * s * t * t;
+
+            case ExtrapolationBasis::FRRSSTT: return r * r * s * s * t * t;
         }
 
         return Precision(0);
