@@ -1,0 +1,132 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: FEMaster branch, tag, or SHA to benchmark
+        required: true
+        default: master
+        type: string
+      reference:
+        description: Optional reference branch, tag, or SHA for performance comparison
+        required: false
+        default: ""
+        type: string
+      runs:
+        description: Runs per model and thread count
+        required: true
+        default: "3"
+        type: string
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate }}
+          path: candidate
+
+      - name: Checkout reference
+        if: ${{ inputs.reference != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.reference }}
+          path: reference
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Install Intel oneMKL
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gpg
+
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
+            gpg --dearmor | \
+            sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | \
+            sudo tee /etc/apt/sources.list.d/oneAPI.list
+
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-mkl-devel intel-oneapi-openmp
+
+      - name: Configure candidate
+        shell: bash
+        working-directory: candidate
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+
+          cmake --preset linux-mkl-omp \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build candidate
+        shell: bash
+        working-directory: candidate
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset linux-mkl-omp
+
+      - name: Configure reference
+        if: ${{ inputs.reference != '' }}
+        shell: bash
+        working-directory: reference
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+
+          cmake --preset linux-mkl-omp \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build reference
+        if: ${{ inputs.reference != '' }}
+        shell: bash
+        working-directory: reference
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset linux-mkl-omp
+
+      - name: Checkout benchmarks
+        uses: actions/checkout@v4
+        with:
+          repository: Luecx/FEMaster-Benchmarks
+          path: benchmarks
+          lfs: true
+
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r benchmarks/_scripts/requirements.txt
+
+      - name: Run benchmarks
+        shell: bash
+        env:
+          REFERENCE_REF: ${{ inputs.reference }}
+          RUNS: ${{ inputs.runs }}
+        run: |
+          if [[ -n "$REFERENCE_REF" ]]; then
+            python benchmarks/_scripts/benchmark_all.py \
+              candidate/build/linux-mkl-omp/bin/FEMaster \
+              --reference reference/build/linux-mkl-omp/bin/FEMaster \
+              --runs "$RUNS"
+          else
+            python benchmarks/_scripts/benchmark_all.py \
+              candidate/build/linux-mkl-omp/bin/FEMaster \
+              --runs "$RUNS"
+          fi

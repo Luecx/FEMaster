@@ -1,0 +1,135 @@
+name: Output Comparison
+
+on:
+  workflow_dispatch:
+    inputs:
+      reference:
+        description: Reference FEMaster branch, tag, or SHA
+        required: true
+        default: master
+        type: string
+      candidate:
+        description: Candidate FEMaster branch, tag, or SHA
+        required: true
+        default: master
+        type: string
+      ncpus:
+        description: Solver threads
+        required: true
+        default: "1"
+        type: string
+      gate:
+        description: Enforce W1 / Spearman / q99 comparison thresholds
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout reference
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.reference }}
+          path: reference
+
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate }}
+          path: candidate
+
+      - name: Fetch header dependencies
+        shell: bash
+        run: |
+          mkdir -p deps/include
+
+          git clone --depth 1 --branch 5.0.1 https://gitlab.com/libeigen/eigen.git deps/eigen
+          cp -r deps/eigen/Eigen deps/include/Eigen
+          cp -r deps/eigen/unsupported deps/include/unsupported
+
+          git clone --depth 1 --branch v1.0.1 https://github.com/yixuan/spectra.git deps/spectra
+          cp -r deps/spectra/include/Spectra deps/include/Spectra
+
+          git clone --depth 1 --branch v3.2 https://github.com/p-ranav/argparse.git deps/argparse
+          cp -r deps/argparse/include/argparse deps/include/argparse
+
+      - name: Install Intel oneMKL
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gpg
+
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | \
+            gpg --dearmor | \
+            sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | \
+            sudo tee /etc/apt/sources.list.d/oneAPI.list
+
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-mkl-devel intel-oneapi-openmp
+
+      - name: Configure reference
+        shell: bash
+        working-directory: reference
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+
+          cmake --preset linux-mkl-omp \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build reference
+        shell: bash
+        working-directory: reference
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset linux-mkl-omp
+
+      - name: Configure candidate
+        shell: bash
+        working-directory: candidate
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+
+          cmake --preset linux-mkl-omp \
+            -DFEMASTER_DEPS_INCLUDE_DIR="${{ github.workspace }}/deps/include"
+
+      - name: Build candidate
+        shell: bash
+        working-directory: candidate
+        run: |
+          source /opt/intel/oneapi/setvars.sh
+          cmake --build --preset linux-mkl-omp
+
+      - name: Checkout benchmarks
+        uses: actions/checkout@v4
+        with:
+          repository: Luecx/FEMaster-Benchmarks
+          path: benchmarks
+          lfs: true
+
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r benchmarks/_scripts/requirements.txt
+
+      - name: Compare outputs
+        shell: bash
+        env:
+          NCPUS: ${{ inputs.ncpus }}
+          USE_GATE: ${{ inputs.gate }}
+        run: |
+          ARGS=(
+            reference/build/linux-mkl-omp/bin/FEMaster
+            candidate/build/linux-mkl-omp/bin/FEMaster
+            --ncpus "$NCPUS"
+          )
+
+          if [[ "$USE_GATE" == "true" ]]; then
+            ARGS+=(--gate)
+          fi
+
+          python benchmarks/_scripts/compare_all.py "${ARGS[@]}"

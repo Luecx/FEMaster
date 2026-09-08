@@ -1,21 +1,29 @@
-name: Benchmarks
+name: Result Checks
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+    inputs:
+      ref:
+        description: FEMaster branch, tag, or SHA to check
+        required: true
+        default: master
+        type: string
+      ncpus:
+        description: Solver threads
+        required: true
+        default: "1"
+        type: string
 
 jobs:
-  benchmark:
+  check:
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout FEMaster
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          path: femaster
 
       - name: Fetch header dependencies
         shell: bash
@@ -50,6 +58,7 @@ jobs:
 
       - name: Configure FEMaster
         shell: bash
+        working-directory: femaster
         run: |
           source /opt/intel/oneapi/setvars.sh
 
@@ -58,6 +67,7 @@ jobs:
 
       - name: Build FEMaster
         shell: bash
+        working-directory: femaster
         run: |
           source /opt/intel/oneapi/setvars.sh
           cmake --build --preset linux-mkl-omp
@@ -70,10 +80,14 @@ jobs:
           lfs: true
 
       - name: Install benchmark dependencies
-        run: pip install rich pyyaml
-
-      - name: Run benchmarks
         run: |
-          python benchmarks/_scripts/run.py \
-            build/linux-mkl-omp/bin/FEMaster \
-            --runs 3
+          python -m pip install --upgrade pip
+          python -m pip install -r benchmarks/_scripts/requirements.txt
+
+      - name: Run result checks
+        env:
+          NCPUS: ${{ inputs.ncpus }}
+        run: |
+          python benchmarks/_scripts/check_all.py \
+            femaster/build/linux-mkl-omp/bin/FEMaster \
+            --ncpus "$NCPUS"
