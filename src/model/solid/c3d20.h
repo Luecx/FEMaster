@@ -25,5 +25,39 @@ struct C3D20 : public SolidElement<20>{
     StaticMatrix<20, 1> shape_function(Precision r, Precision s, Precision t) override;
     StaticMatrix<20, 3> shape_derivative(Precision r, Precision s, Precision t) override;
     StaticMatrix<20, 3> node_coords_local() override;
+
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1,
+             math::ExtrapolationBasis::FR,
+             math::ExtrapolationBasis::FS,
+             math::ExtrapolationBasis::FT,
+             math::ExtrapolationBasis::FRR,
+             math::ExtrapolationBasis::FSS,
+             math::ExtrapolationBasis::FTT,
+             math::ExtrapolationBasis::FRS,
+             math::ExtrapolationBasis::FRT,
+             math::ExtrapolationBasis::FST,
+             math::ExtrapolationBasis::FRST,
+             math::ExtrapolationBasis::FRRS,
+             math::ExtrapolationBasis::FRRT,
+             math::ExtrapolationBasis::FSSR,
+             math::ExtrapolationBasis::FSST,
+             math::ExtrapolationBasis::FTTR,
+             math::ExtrapolationBasis::FTTS,
+             math::ExtrapolationBasis::FRRSS,
+             math::ExtrapolationBasis::FRRTT,
+             math::ExtrapolationBasis::FSSTT,
+             math::ExtrapolationBasis::FRRST,
+             math::ExtrapolationBasis::FRSST,
+             math::ExtrapolationBasis::FRSTT,
+             math::ExtrapolationBasis::FRRSST,
+             math::ExtrapolationBasis::FRRSTT,
+             math::ExtrapolationBasis::FRSSTT,
+             math::ExtrapolationBasis::FRRSSTT});
+        return matrix;
+    }
 };
 } }

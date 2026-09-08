@@ -95,5 +95,13 @@ struct C3D4 : public SolidElement<4> {
     const math::quadrature::Quadrature& integration_scheme() const override;
 
     SurfacePtr surface(ID surface_id) override;
+
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1});
+        return matrix;
+    }
 };
 } } // namespace fem::model

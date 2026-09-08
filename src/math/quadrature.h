@@ -201,16 +201,6 @@ public:
         return res;
     }
 
-    /**
-     * @brief Extrapolates point-wise values back to nodal values (currently unimplemented).
-     */
-    template<int M, int N>
-    StaticVector<N> extrapolate(const StaticMatrix<M, N>& values) const {
-        (void) values;
-        runtime_assert(M == count(), "Number of values must match number of quadrature points");
-        return StaticVector<N>::Zero();
-    }
-
     /// Returns the `n`-th quadrature point.
     Point get_point(ID n) const;
 

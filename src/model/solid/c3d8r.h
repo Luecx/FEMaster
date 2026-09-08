@@ -63,6 +63,14 @@ public:
         const Field& displacement
     ) override;
 
+protected:
+    const RowMatrix& extrapolation_matrix() override {
+        static const RowMatrix matrix = math::extrapolate(
+            this->stress_strain_ip_rst(), this->node_coords_local(),
+            {math::ExtrapolationBasis::F1});
+        return matrix;
+    }
+
 private:
     // Hourglass modes, reference gradients and material scaling
     HourglassModes primitive_hourglass_modes();

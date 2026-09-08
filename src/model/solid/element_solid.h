@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include "../../math/extrapolate.h"
 #include "../../math/interpolate.h"
 #include "../../material/strain/volume_strain_green_lagrange.h"
 #include "../../material/strain/volume_strain_linearized.h"
@@ -57,6 +58,10 @@ struct SolidElement : StructuralElement, ThermalElement{
 
 protected:
     friend math::quadrature::Quadrature;
+
+    // Topology-specific reference-space recovery from constitutive integration
+    // points to element nodes. Concrete solids cache this constant matrix.
+    virtual const RowMatrix& extrapolation_matrix() = 0;
 
 public:
     SolidElement(ID elem_id, std::array<ID, N> node_ids)
@@ -224,9 +229,9 @@ public:
 
     void apply_tload(Field& node_loads, const Field& node_temp, Precision ref_temp) override;
 
-    // Stress/strain recovery is state-neutral. Requested output coordinates may
-    // reuse committed history from the nearest constitutive integration point;
-    // nonlinear PK2 stress is pushed forward to Cauchy stress for user output.
+    // Stress/strain recovery is state-neutral. Constitutive response is evaluated
+    // only at material integration points; nodal output is extrapolated from the
+    // corresponding integration-point values in natural coordinates.
     void compute_stress_strain(
         Field*           strain,
         Field*           stress,
