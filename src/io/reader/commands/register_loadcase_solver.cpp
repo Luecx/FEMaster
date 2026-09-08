@@ -33,7 +33,7 @@ namespace fem::io::reader::commands {
 
 void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) {
     registry.command("SOLVER", [&](fem::io::dsl::Command& command) {
-        command.allow_if(fem::io::dsl::Condition::parent_is("LOADCASE"));
+        command.allow_if(fem::io::dsl::Condition::parent_is({"LOADCASE", "STEP"}));
         command.doc(
             "Configure solver options for the active loadcase.\n"
             "\n"
@@ -57,7 +57,7 @@ void register_loadcase_solver(fem::io::dsl::Registry& registry, Parser& parser) 
         command.on_enter([&parser](const fem::io::dsl::Keys& keys) {
             auto* base = parser.active_loadcase();
             logging::error(base != nullptr,
-                "SOLVER must appear inside *LOADCASE");
+                "SOLVER requires an active loadcase and must follow the analysis procedure");
 
             const auto device = keys.raw("DEVICE");
             const auto method = keys.raw("METHOD");
