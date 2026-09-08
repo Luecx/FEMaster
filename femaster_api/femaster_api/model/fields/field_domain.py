@@ -11,3 +11,4 @@ class FieldDomain(Enum):
     ELEMENT = "ELEMENT"
     ELEMENT_NODAL = "ELEMENT_NODAL"
     ELEMENT_IP = "ELEMENT_IP"
+    ELEMENT_MP = "ELEMENT_MP"

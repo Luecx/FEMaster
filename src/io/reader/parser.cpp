@@ -303,7 +303,7 @@ void Parser::initialize_writers(const std::string&                    input_path
                                 const std::string&                    output_path,
                                 const io::writer::WriterFileFormats& writer_formats) {
     std::string writer_base = output_path.empty() ? input_path : output_path;
-    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".inp")}) {
+    for (const std::string& ext : {std::string(".res"), std::string(".frd"), std::string(".femr"), std::string(".inp")}) {
         if (writer_base.size() >= ext.size()
          && writer_base.compare(writer_base.size() - ext.size(), ext.size(), ext) == 0) {
             writer_base.resize(writer_base.size() - ext.size());

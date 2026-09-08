@@ -76,6 +76,16 @@ int main(int argc, char** argv) {
         .flag()
         .help("Disable CalculiX/CGX .frd result output.");
 
+    program.add_argument("--result-format")
+        .default_value(std::string{"text"})
+        .choices("text", "binary")
+        .help("Add native binary .femr output; text keeps the existing .res output only.");
+
+    program.add_argument("--result-compression")
+        .default_value(std::string{"none"})
+        .choices("none", "lz4", "zstd")
+        .help("Compression for independently loadable .femr field-data chunks.");
+
     // ---- Documentation mode flags (flat, no nested parser) ----
     program.add_argument("--document")
         .flag()
@@ -131,8 +141,16 @@ int main(int argc, char** argv) {
     std::string       output_file = program.get<std::string>("--output");
 
     fem::io::writer::WriterFileFormats writer_formats;
+    const std::string result_format = program.get<std::string>("--result-format");
     writer_formats.res = !program.get<bool>("--no-res");
     writer_formats.frd = !program.get<bool>("--no-frd");
+    writer_formats.femr = result_format == "binary";
+    writer_formats.result_compression = program.get<std::string>("--result-compression");
+
+    if (writer_formats.result_compression != "none" && !writer_formats.femr) {
+        std::cerr << "Error: --result-compression requires --result-format binary.\n";
+        return 1;
+    }
 
     fem::global_config.max_threads = ncpus;
 
@@ -241,6 +259,10 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "CPU(s)     : ", ncpus);
     fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
     fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
+    fem::logging::info(true, "Write .femr: ", writer_formats.femr ? "yes" : "no");
+    if (writer_formats.femr) {
+        fem::logging::info(true, "Compression: ", writer_formats.result_compression);
+    }
     fem::logging::info(true, "");
 
     // Dispatch only the input syntax; both readers share FEMaster model/solver behavior
