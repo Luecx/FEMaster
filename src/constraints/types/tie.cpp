@@ -515,13 +515,22 @@ Equations Tie::get_surface_surface_equations(SystemDofIds& system_nodal_dofs, mo
 }
 
 /**
+ * Applies the optional TIE, ADJUST projection during model initialization.
+ */
+void Tie::adjust_geometry(model::ModelData& model_data) {
+    if (!adjust) return;
+    get_equations(nullptr, model_data);
+}
+
+/**
  * @copydoc Tie::get_equations
  */
-Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
-    logging::error(model_data.positions != nullptr, "positions field not set in model data");
-    if (adjust) {
+Equations Tie::get_equations(SystemDofIds* system_nodal_dofs, model::ModelData& model_data) {
+    logging::error(model_data.positions != nullptr,
+        "positions field not set in model data");
+    if (adjust && system_nodal_dofs == nullptr) {
         logging::error(model_data.positions_reference != nullptr,
-                       "reference positions field not set in model data");
+            "reference positions field not set in model data");
     }
 
     auto&     node_coords = *model_data.positions;
@@ -651,7 +660,7 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
             mapped_pos = l_ptr->local_to_global(best_local(0), node_coords);
         }
 
-        if (adjust) {
+        if (adjust && system_nodal_dofs == nullptr) {
             // TIE, ADJUST changes the model's initial geometry. Keep the active
             // and reference position fields synchronized so the snap is not
             // interpreted later as a physical deformation of the slave side.
@@ -662,12 +671,14 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
             }
         }
 
+        if (system_nodal_dofs == nullptr) continue;
+
         // ---------------------------------------------------------------------
         // Determine active DOFs: slave must have DOF AND all master nodes must have DOF
         // ---------------------------------------------------------------------
         Dofs dofs_mask;
         for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
-            dofs_mask(0, dof_id) = (system_nodal_dofs(id, dof_id) >= 0);
+            dofs_mask(0, dof_id) = ((*system_nodal_dofs)(id, dof_id) >= 0);
         }
 
         DynamicVector nodal_contributions;
@@ -679,7 +690,7 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
             for (ID local_id = 0; local_id < static_cast<ID>(s_ptr->n_nodes); ++local_id) {
                 const ID master_node_id = s_ptr->nodes()[local_id];
                 for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
-                    dofs_mask(0, dof_id) = dofs_mask(0, dof_id) && (system_nodal_dofs(master_node_id, dof_id) >= 0);
+                    dofs_mask(0, dof_id) = dofs_mask(0, dof_id) && ((*system_nodal_dofs)(master_node_id, dof_id) >= 0);
                 }
             }
 
@@ -691,7 +702,7 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
             for (ID local_id = 0; local_id < static_cast<ID>(l_ptr->n_nodes); ++local_id) {
                 const ID master_node_id = l_ptr->nodes()[local_id];
                 for (Dim dof_id = 0; dof_id < 6; ++dof_id) {
-                    dofs_mask(0, dof_id) = dofs_mask(0, dof_id) && (system_nodal_dofs(master_node_id, dof_id) >= 0);
+                    dofs_mask(0, dof_id) = dofs_mask(0, dof_id) && ((*system_nodal_dofs)(master_node_id, dof_id) >= 0);
                 }
             }
 
@@ -743,6 +754,13 @@ Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& 
     }
 
     return equations;
+}
+
+/**
+ * @copydoc Tie::get_equations
+ */
+Equations Tie::get_equations(SystemDofIds& system_nodal_dofs, model::ModelData& model_data) {
+    return get_equations(&system_nodal_dofs, model_data);
 }
 }    // namespace constraint
 }    // namespace fem

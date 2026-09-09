@@ -206,7 +206,13 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
         assembly->execute_children("NORMAL");
     }
 
-    // Complete reference normals before constraints or analyses consume shells.
+    // Apply initial tie adjustments before geometry-derived reference fields are completed.
+    root.execute_children("TIE");
+    for (const auto* assembly : root.children("ASSEMBLY")) {
+        assembly->execute_children("TIE");
+    }
+
+    // Complete reference normals from the final initial geometry.
     model_->build_shell_element_normals();
 
     // ---------------------------------------------------------------------
@@ -228,7 +234,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
     root.execute_children("RBM");
     root.execute_children("CONNECTOR");
-    root.execute_children("TIE");
     root.execute_children("CONTACT");
     root.execute_children("EQUATION");
 
@@ -247,7 +252,6 @@ void Parser::process_deck(const io::dsl::Deck&                  deck,
 
         assembly->execute_children("RBM");
         assembly->execute_children("CONNECTOR");
-        assembly->execute_children("TIE");
         assembly->execute_children("CONTACT");
         assembly->execute_children("EQUATION");
     }

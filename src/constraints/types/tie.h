@@ -44,6 +44,7 @@ class Tie {
 
     Equations get_surface_surface_equations(SystemDofIds& system_nodal_dofs,
                                             model::ModelData& model_data);
+    Equations get_equations(SystemDofIds* system_nodal_dofs, model::ModelData& model_data);
 
 public:
     // -------------------------------------------------------------------------
@@ -82,6 +83,9 @@ public:
         model::SurfaceRegion::Ptr slave,
         Precision max_distance,
         bool do_adjust);
+
+    // Initial geometry adjustment before geometry-derived reference fields are built
+    void adjust_geometry(model::ModelData& model_data);
 
     /**
      * @brief Generates the constraint equations associated with the tie.
