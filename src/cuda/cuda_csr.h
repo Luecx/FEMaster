@@ -11,6 +11,8 @@
 namespace fem::cuda{
 struct CudaCSR{
     private:
+    using HostCSR = Eigen::SparseMatrix<Precision, Eigen::RowMajor>;
+
     // create csr arrays on the gpu
     std::shared_ptr<CudaArray<CudaPrecision>> m_val_ptr;
     std::shared_ptr<CudaArray<int          >> m_col_ind;
@@ -27,9 +29,11 @@ struct CudaCSR{
         , m_row_ptr(new CudaArray<int          >(matrix.rows() + 1))
         , m_nnz(matrix.nonZeros())
         , m_cols(matrix.cols()) {
-        m_val_ptr->upload(matrix.valuePtr());
-        m_col_ind->upload(matrix.innerIndexPtr());
-        m_row_ptr->upload(matrix.outerIndexPtr());
+        HostCSR csr = matrix;
+        csr.makeCompressed();
+        m_val_ptr->upload(csr.valuePtr());
+        m_col_ind->upload(csr.innerIndexPtr());
+        m_row_ptr->upload(csr.outerIndexPtr());
     }
 
     CudaCSR(SparseMatrix &matrix, CudaCSR &similar)
@@ -40,16 +44,21 @@ struct CudaCSR{
             , m_cols(similar.m_cols) {
         runtime_check(matrix.nonZeros() == m_nnz, "cannot construct matrix with same column indices and row pointers");
         runtime_check(matrix.cols() == m_cols, "cannot construct matrix with same column indices and row pointers");
-        m_val_ptr->upload(matrix.valuePtr());
+        HostCSR csr = matrix;
+        csr.makeCompressed();
+        m_val_ptr->upload(csr.valuePtr());
     }
 
     void download(SparseMatrix &matrix) {
         runtime_check(matrix.nonZeros() == m_nnz, "cannot construct matrix with same column indices and row pointers");
         runtime_check(matrix.cols() == m_cols, "cannot construct matrix with same column indices and row pointers");
 
-        m_val_ptr->download(matrix.valuePtr());
-        m_col_ind->download(matrix.innerIndexPtr());
-        m_row_ptr->download(matrix.outerIndexPtr());
+        HostCSR csr = matrix;
+        csr.makeCompressed();
+        m_val_ptr->download(csr.valuePtr());
+        m_col_ind->download(csr.innerIndexPtr());
+        m_row_ptr->download(csr.outerIndexPtr());
+        matrix = csr;
     }
 
     CudaArray<CudaPrecision>& val_ptr() {
