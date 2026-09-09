@@ -23,6 +23,14 @@ struct CudaVector : CudaArray<CudaPrecision> {
         return descr;
     }
 };
+
+void scalar_ratio(CudaPrecision* result,
+                  const CudaPrecision* numerator,
+                  const CudaPrecision* denominator);
+void scalar_ratio_pair(CudaPrecision* result,
+                       CudaPrecision* negative_result,
+                       const CudaPrecision* numerator,
+                       const CudaPrecision* denominator);
 }    // namespace cuda
 
 #endif
