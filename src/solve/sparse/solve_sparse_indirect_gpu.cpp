@@ -111,10 +111,24 @@ void factor_ic0(cuda::CudaCSR& mat) {
                                         mat.val_ptr(), mat.row_ptr(), mat.col_ind(),
                                         info, CUSPARSE_SOLVE_POLICY_USE_LEVEL, buffer));
 
+    int zero_pivot = -1;
+    cusparseStatus_t zero_pivot_status =
+        cusparseXcsric02_zeroPivot(cuda::manager.handle_cusparse, info, &zero_pivot);
+    logging::error(zero_pivot_status != CUSPARSE_STATUS_ZERO_PIVOT,
+                   "IC(0) analysis failed: structural zero pivot at row ", zero_pivot);
+    runtime_check_cuda(zero_pivot_status);
+
     runtime_check_cuda(CUSOLV_CSRIC(cuda::manager.handle_cusparse,
                                     mat.cols(), mat.nnz(), descr,
                                     mat.val_ptr(), mat.row_ptr(), mat.col_ind(),
                                     info, CUSPARSE_SOLVE_POLICY_USE_LEVEL, buffer));
+
+    zero_pivot = -1;
+    zero_pivot_status =
+        cusparseXcsric02_zeroPivot(cuda::manager.handle_cusparse, info, &zero_pivot);
+    logging::error(zero_pivot_status != CUSPARSE_STATUS_ZERO_PIVOT,
+                   "IC(0) factorization failed: numerical zero pivot at row ", zero_pivot);
+    runtime_check_cuda(zero_pivot_status);
 
     runtime_check_cuda(cusparseDestroyCsric02Info(info));
     runtime_check_cuda(cusparseDestroyMatDescr(descr));
@@ -287,6 +301,10 @@ SolveResult solve_variant(SparseMatrix& A,
         auto fill_mode = CUSPARSE_FILL_MODE_LOWER;
         runtime_check_cuda(cusparseSpMatSetAttribute(
             descr_L, CUSPARSE_SPMAT_FILL_MODE, &fill_mode, sizeof(fill_mode)));
+
+        auto diag_type = CUSPARSE_DIAG_TYPE_NON_UNIT;
+        runtime_check_cuda(cusparseSpMatSetAttribute(
+            descr_L, CUSPARSE_SPMAT_DIAG_TYPE, &diag_type, sizeof(diag_type)));
 
         runtime_check_cuda(cusparseSpSV_createDescr(&spsv_fwd));
         runtime_check_cuda(cusparseSpSV_createDescr(&spsv_bwd));
@@ -555,13 +573,13 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
         {"01 CG natural / ALG1",           Ordering::NATURAL, false, false, Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
         {"02 CG natural / ALG2",           Ordering::NATURAL, false, false, Precision{0}, CUSPARSE_SPMV_CSR_ALG2},
         {"03 diagonal-scaled CG",          Ordering::NATURAL, true,  false, Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"04 IC0 natural / ALG1",          Ordering::NATURAL, false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"05 IC0 natural / ALG2",          Ordering::NATURAL, false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG2},
-        {"06 IC0 natural / shift 1e-6",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-6), CUSPARSE_SPMV_CSR_ALG1},
-        {"07 IC0 natural / shift 1e-4",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
-        {"08 IC0 natural / shift 1e-2",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-2), CUSPARSE_SPMV_CSR_ALG1},
-        {"09 AMD + IC0",                   Ordering::AMD,     false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"10 AMD + IC0 / shift 1e-4",      Ordering::AMD,     false, true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
+        {"04 AMD + IC0",                   Ordering::AMD,     false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"05 AMD + IC0 / shift 1e-4",      Ordering::AMD,     false, true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
+        {"06 IC0 natural / ALG1",          Ordering::NATURAL, false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"07 IC0 natural / ALG2",          Ordering::NATURAL, false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG2},
+        {"08 IC0 natural / shift 1e-6",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-6), CUSPARSE_SPMV_CSR_ALG1},
+        {"09 IC0 natural / shift 1e-4",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
+        {"10 IC0 natural / shift 1e-2",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-2), CUSPARSE_SPMV_CSR_ALG1},
         {"11 COLAMD + IC0",                Ordering::COLAMD,  false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
         {"12 diagonal-scaled + IC0",       Ordering::NATURAL, true,  true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
     };
