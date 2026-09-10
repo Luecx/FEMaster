@@ -1,4 +1,5 @@
 #include "solve_sparse_indirect.h"
+#include "amg_preconditioner.h"
 
 #include "../../core/logging.h"
 #include "../../core/timer.h"
@@ -9,50 +10,10 @@
 #include "../../cuda/cuda_vec.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 
 namespace fem::solver::detail {
-
-#ifdef SUPPORT_GPU
-namespace {
-void solve_indirect_gpu_precon(cuda::CudaCSR& mat) {
-    cusparseMatDescr_t mat_descr;
-    csric02Info_t      info;
-    int                buffer_size;
-
-    size_t n   = mat.cols();
-    size_t nnz = mat.nnz();
-
-    runtime_check_cuda(cusparseCreateCsric02Info(&info));
-    runtime_check_cuda(cusparseCreateMatDescr (&mat_descr));
-    runtime_check_cuda(cusparseSetMatType     (mat_descr, CUSPARSE_MATRIX_TYPE_GENERAL));
-    runtime_check_cuda(cusparseSetMatIndexBase(mat_descr, CUSPARSE_INDEX_BASE_ZERO));
-
-    runtime_check_cuda(CUSOLV_CSRIC_BUF(cuda::manager.handle_cusparse, n, nnz, mat_descr, mat.val_ptr(),
-                                        mat.row_ptr(), mat.col_ind(), info, &buffer_size));
-
-    logging::info(cuda::manager.mem_free() > buffer_size,
-             std::setw(60), std::left, "Allocating buffer for incomplete cholesky solve",
-             std::setw(16), std::left, buffer_size,
-             std::setw(16), std::left, cuda::manager.mem_free());
-    logging::error(cuda::manager.mem_free() > buffer_size,
-              std::setw(60), std::left, "Allocating buffer for incomplete cholesky solve",
-              std::setw(16), std::left, buffer_size,
-              std::setw(16), std::left, cuda::manager.mem_free());
-    cuda::CudaArray<char> buffer {static_cast<size_t>(buffer_size)};
-
-    logging::info(buffer_size > 1e9, "IC  Buffer storage: ", buffer_size / 1024 / 1024 / 1024.0, "Gb");
-
-    runtime_check_cuda(CUSOLV_CSRIC_ANA(cuda::manager.handle_cusparse, n, nnz, mat_descr, mat.val_ptr(), mat.row_ptr(),
-                                        mat.col_ind(), info, CUSPARSE_SOLVE_POLICY_USE_LEVEL, buffer));
-    runtime_check_cuda(CUSOLV_CSRIC(cuda::manager.handle_cusparse, n, nnz, mat_descr, mat.val_ptr(), mat.row_ptr(),
-                                    mat.col_ind(), info, CUSPARSE_SOLVE_POLICY_USE_LEVEL, buffer));
-
-    runtime_check_cuda(cusparseDestroyCsric02Info(info));
-    runtime_check_cuda(cusparseDestroyMatDescr(mat_descr));
-}
-} // namespace
-#endif
 
 DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
                                  const DynamicMatrix& rhs) {
@@ -83,29 +44,32 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
              std::setw(59), std::left, "Moving sparse matrix to gpu",
              std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat),
              std::setw(16), std::left, cuda::manager.mem_free());
-    cuda::CudaCSR prec{mat};
-    logging::info(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat, true),
-             std::setw(60), std::left, "Moving preconditioned matrix to gpu",
-             std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat, true),
-             std::setw(16), std::left, cuda::manager.mem_free());
-    logging::error(cuda::manager.mem_free() > cuda::CudaCSR::estimate_mem(mat, true),
-             std::setw(60), std::left, "Moving preconditioned matrix to gpu",
-             std::setw(16), std::left, cuda::CudaCSR::estimate_mem(mat, true),
-             std::setw(16), std::left, cuda::manager.mem_free());
-    cuda::CudaCSR mata{mat, prec};
+    cuda::CudaCSR mata{mat};
 
-    solve_indirect_gpu_precon(prec);
+    Timer amg_timer {};
+    amg_timer.start();
+    CpuAmgPreconditioner preconditioner;
+    preconditioner.compute(mat);
+    amg_timer.stop();
 
-    SparseMatrix prec_cpu{mat};
-    prec.download(prec_cpu);
+    logging::info(true, "CPU AMG setup finished in ", amg_timer.elapsed(), " ms");
+    logging::info(true, "AMG levels: ", preconditioner.level_count());
+    logging::up();
+    for (std::size_t level = 0; level < preconditioner.level_count(); ++level) {
+        logging::info(true,
+                      "level ", level,
+                      ": N=", preconditioner.level_size(level),
+                      " nnz=", preconditioner.level_nnz(level));
+    }
+    logging::down();
 
-    logging::info(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 6,
+    logging::info(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 5,
              std::setw(60), std::left, "Allocating vectors used for solving",
-             std::setw(16), std::left, cuda::CudaVector::estimate_mem(N) * 6,
+             std::setw(16), std::left, cuda::CudaVector::estimate_mem(N) * 5,
              std::setw(16), std::left, cuda::manager.mem_free());
-    logging::error(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 6,
+    logging::error(cuda::manager.mem_free() > cuda::CudaVector::estimate_mem(N) * 5,
              std::setw(60), std::left, "Allocating vectors used for solving",
-             std::setw(16), std::left, cuda::CudaVector::estimate_mem(N) * 6,
+             std::setw(16), std::left, cuda::CudaVector::estimate_mem(N) * 5,
              std::setw(16), std::left, cuda::manager.mem_free());
 
     cuda::CudaVector vec_x {int(N)};
@@ -113,7 +77,9 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     cuda::CudaVector vec_z {int(N)};
     cuda::CudaVector vec_p {int(N)};
     cuda::CudaVector vec_ap{int(N)};
-    cuda::CudaVector vec_i {int(N)};
+
+    DynamicVector host_r(N);
+    DynamicVector host_z(N);
 
     CudaPrecision val_rz;
     CudaPrecision val_pap;
@@ -121,42 +87,22 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     CudaPrecision val_alpha2;
 
     cusparseSpMatDescr_t descr_A;
-    cusparseSpMatDescr_t descr_L;
     runtime_check_cuda(cusparseCreateCsr(&descr_A, N, N, nnz,
                                          mata.row_ptr(),
                                          mata.col_ind(),
                                          mata.val_ptr(),
                                          CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
                                          CUSPARSE_INDEX_BASE_ZERO, CUDA_P_TYPE));
-    runtime_check_cuda(cusparseCreateCsr(&descr_L, N, N, nnz,
-                                         prec.row_ptr(),
-                                         prec.col_ind(),
-                                         prec.val_ptr(),
-                                         CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
-                                         CUSPARSE_INDEX_BASE_ZERO, CUDA_P_TYPE));
-    auto fill_mode = CUSPARSE_FILL_MODE_LOWER;
-    runtime_check_cuda(cusparseSpMatSetAttribute(descr_L, CUSPARSE_SPMAT_FILL_MODE, &fill_mode, sizeof(fill_mode)));
 
-    cusparseSpSVDescr_t spsv_1_descr;
-    cusparseSpSVDescr_t spsv_2_descr;
-    cusparseSpSV_createDescr(&spsv_1_descr);
-    cusparseSpSV_createDescr(&spsv_2_descr);
+    size_t buffer_size_ap = 0;
+    CudaPrecision one     = 1;
+    CudaPrecision zero    = 0;
 
-    size_t buffer_size_ap     = 0;
-    size_t buffer_size_spsv_1 = 0;
-    size_t buffer_size_spsv_2 = 0;
-    CudaPrecision one         = 1;
-    CudaPrecision zero        = 0;
-
-    runtime_check_cuda(cusparseSpMV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &one, descr_A, vec_p, &zero, vec_ap, CUDA_P_TYPE,
-                                               CUSPARSE_SPMV_CSR_ALG1, &buffer_size_ap));
-    runtime_check_cuda(cusparseSpSV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                               &one, descr_L, vec_r, vec_i, CUDA_P_TYPE,
-                                               CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr, &buffer_size_spsv_1));
-    runtime_check_cuda(cusparseSpSV_bufferSize(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE,
-                                               &one, descr_L, vec_i, vec_z, CUDA_P_TYPE,
-                                               CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr, &buffer_size_spsv_2));
+    runtime_check_cuda(cusparseSpMV_bufferSize(cuda::manager.handle_cusparse,
+                                               CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                               &one, descr_A, vec_p, &zero, vec_ap,
+                                               CUDA_P_TYPE, CUSPARSE_SPMV_CSR_ALG1,
+                                               &buffer_size_ap));
 
     logging::info(cuda::manager.mem_free() > buffer_size_ap,
              std::setw(60), std::left, "Allocating buffer for matrix vector product",
@@ -167,32 +113,8 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
              std::setw(16), std::left, buffer_size_ap,
              std::setw(16), std::left, cuda::manager.mem_free());
     cuda::CudaArray<char> buffer_ap{buffer_size_ap};
-    logging::info(cuda::manager.mem_free() > buffer_size_spsv_1,
-             std::setw(60), std::left, "Allocating buffer 1 for triangular solve",
-             std::setw(16), std::left, buffer_size_spsv_1,
-             std::setw(16), std::left, cuda::manager.mem_free());
-    logging::error(cuda::manager.mem_free() > buffer_size_spsv_1,
-             std::setw(60), std::left, "Allocating buffer 1 for triangular solve",
-             std::setw(16), std::left, buffer_size_spsv_1,
-             std::setw(16), std::left, cuda::manager.mem_free());
-    cuda::CudaArray<char> buffer_spsv_1{buffer_size_spsv_1};
-    logging::info(cuda::manager.mem_free() > buffer_size_spsv_2,
-             std::setw(60), std::left, "Allocating buffer 2 for triangular solve",
-             std::setw(16), std::left, buffer_size_spsv_2,
-             std::setw(16), std::left, cuda::manager.mem_free());
-    logging::error(cuda::manager.mem_free() > buffer_size_spsv_2,
-             std::setw(60), std::left, "Allocating buffer 2 for triangular solve",
-             std::setw(16), std::left, buffer_size_spsv_2,
-             std::setw(16), std::left, cuda::manager.mem_free());
-    cuda::CudaArray<char> buffer_spsv_2{buffer_size_spsv_2};
-    logging::warning(cuda::manager.mem_free() > 1e9, "Free memory is dangerously low, crashes for no reasons may occur");
-
-    runtime_check_cuda(cusparseSpSV_analysis(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one,
-                                             descr_L, vec_r, vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
-                                             spsv_1_descr, buffer_spsv_1));
-    runtime_check_cuda(cusparseSpSV_analysis(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE, &one,
-                                             descr_L, vec_i, vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
-                                             spsv_2_descr, buffer_spsv_2));
+    logging::warning(cuda::manager.mem_free() > 1e9,
+                     "Free memory is dangerously low, crashes for no reasons may occur");
 
     logging::info(true, "Starting iterations");
     DynamicMatrix sol = DynamicMatrix::Zero(N, rhs.cols());
@@ -205,51 +127,70 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
         }
 
         vec_x.clear();
-        vec_r.upload(rhs.col(column).data());
-        runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE, &one,
-                                              descr_L, vec_r, vec_i, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
-                                              spsv_1_descr));
-        runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_TRANSPOSE, &one,
-                                              descr_L, vec_i, vec_z, CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT,
-                                              spsv_2_descr));
+        host_r = rhs.col(column);
+        vec_r.upload(host_r.data());
+        preconditioner.apply(host_r, host_z);
+        vec_z.upload(host_z.data());
         vec_p.copy(vec_z);
 
-        CudaPrecision r_norm = static_cast<CudaPrecision>(rhs.col(column).norm());
+        const CudaPrecision rhs_norm = static_cast<CudaPrecision>(rhs.col(column).norm());
+        CudaPrecision r_norm = rhs_norm;
         int k = 0;
         for (k = 1; k <= N; ++k) {
-            runtime_check_cuda(cusparseSpMV(cuda::manager.handle_cusparse, CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                            &one, descr_A, vec_p, &zero, vec_ap, CUDA_P_TYPE,
-                                            CUSPARSE_SPMV_CSR_ALG1, buffer_ap));
-            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_r, 1, vec_z, 1, &val_rz));
-            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_ap, 1, vec_p, 1, &val_pap));
+            runtime_check_cuda(cusparseSpMV(cuda::manager.handle_cusparse,
+                                            CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                            &one, descr_A, vec_p, &zero, vec_ap,
+                                            CUDA_P_TYPE, CUSPARSE_SPMV_CSR_ALG1,
+                                            buffer_ap));
+            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N,
+                                          vec_r, 1, vec_z, 1, &val_rz));
+            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N,
+                                          vec_ap, 1, vec_p, 1, &val_pap));
+
+            logging::error(std::isfinite(val_rz) && val_rz > 0,
+                           "AMG-PCG encountered non-positive r^T M^-1 r at iteration ", k,
+                           ": ", val_rz);
+            logging::error(std::isfinite(val_pap) && val_pap > 0,
+                           "AMG-PCG encountered non-positive p^T A p at iteration ", k,
+                           ": ", val_pap);
 
             val_alpha  = val_rz / val_pap;
             val_alpha2 = -val_alpha;
 
-            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N, &val_alpha, vec_p, 1, vec_x, 1));
-            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N, &val_alpha2, vec_ap, 1, vec_r, 1));
-            runtime_check_cuda(CUBLAS_NRM(cuda::manager.handle_cublas, N, vec_r, 1, &r_norm));
+            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N,
+                                           &val_alpha, vec_p, 1, vec_x, 1));
+            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N,
+                                           &val_alpha2, vec_ap, 1, vec_r, 1));
+            runtime_check_cuda(CUBLAS_NRM(cuda::manager.handle_cublas, N,
+                                          vec_r, 1, &r_norm));
 
-            if (k % 1000 == 0) {
-                logging::info(true, "RHS ", column, " iteration ", k, " r_norm: ", r_norm);
+            const CudaPrecision relative_residual = r_norm / rhs_norm;
+            if (k <= 10 || k % 100 == 0) {
+                logging::info(true,
+                              "RHS ", column,
+                              " iteration ", k,
+                              " relative residual: ", relative_residual);
             }
 
             if (r_norm < 1e-8) {
                 break;
             }
 
-            runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse,
-                                                   CUSPARSE_OPERATION_NON_TRANSPOSE, &one, descr_L, vec_r, vec_i,
-                                                   CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_1_descr));
-            runtime_check_cuda(cusparseSpSV_solve(cuda::manager.handle_cusparse,
-                                                   CUSPARSE_OPERATION_TRANSPOSE, &one, descr_L, vec_i, vec_z,
-                                                   CUDA_P_TYPE, CUSPARSE_SPSV_ALG_DEFAULT, spsv_2_descr));
+            vec_r.download(host_r.data());
+            preconditioner.apply(host_r, host_z);
+            vec_z.upload(host_z.data());
 
-            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N, vec_r, 1, vec_z, 1, &val_alpha2));
+            runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N,
+                                          vec_r, 1, vec_z, 1, &val_alpha2));
+            logging::error(std::isfinite(val_alpha2) && val_alpha2 > 0,
+                           "AMG-PCG encountered non-positive updated r^T M^-1 r at iteration ", k,
+                           ": ", val_alpha2);
             val_alpha = val_alpha2 / val_rz;
 
-            runtime_check_cuda(CUBLAS_SCAL(cuda::manager.handle_cublas, N, &val_alpha, vec_p, 1));
-            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N, &one, vec_z, 1, vec_p, 1));
+            runtime_check_cuda(CUBLAS_SCAL(cuda::manager.handle_cublas, N,
+                                           &val_alpha, vec_p, 1));
+            runtime_check_cuda(CUBLAS_AXPY(cuda::manager.handle_cublas, N,
+                                           &one, vec_z, 1, vec_p, 1));
         }
 
         vec_x.download(sol.col(column).data());
@@ -257,13 +198,10 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
         max_residual = std::max(max_residual, r_norm);
     }
 
-    runtime_check_cuda(cusparseSpSV_destroyDescr(spsv_1_descr));
-    runtime_check_cuda(cusparseSpSV_destroyDescr(spsv_2_descr));
     runtime_check_cuda(cusparseDestroySpMat(descr_A));
-    runtime_check_cuda(cusparseDestroySpMat(descr_L));
 
     t.stop();
-    logging::info(true, "Running PCG method finished");
+    logging::info(true, "Running AMG-PCG method finished");
     logging::info(true, "Elapsed time: ", t.elapsed(), " ms");
     logging::info(true, "max iterations: ", max_iterations);
     logging::info(true, "max residual  : ", max_residual);
