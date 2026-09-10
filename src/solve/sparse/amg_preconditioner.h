@@ -1,6 +1,6 @@
 /**
  * @file amg_preconditioner.h
- * @brief Declares the experimental CPU smoothed-aggregation AMG preconditioner.
+ * @brief Declares the experimental CPU aggregation AMG preconditioner.
  *
  * @author Finn Eggers
  */
@@ -17,11 +17,16 @@
 namespace fem::solver::detail {
 
 /**
- * @brief Experimental symmetric smoothed-aggregation AMG preconditioner.
+ * @brief Experimental symmetric aggregation AMG preconditioner.
  *
  * The hierarchy is constructed once for a fixed SPD matrix. Each application
  * performs one symmetric V-cycle. The implementation intentionally lives on
  * the CPU for now so the hierarchy can be validated independently of CUDA.
+ *
+ * The transfer operator is piecewise constant. It is stored as a fine-to-coarse
+ * aggregate map rather than as sparse P/P^T matrices. This keeps hierarchy
+ * construction and V-cycle transfers linear in the matrix/vector sizes and
+ * avoids the large temporary fill of generic sparse triple products.
  */
 class CpuAmgPreconditioner {
 public:
@@ -35,8 +40,8 @@ public:
 private:
     struct Level {
         SparseMatrix a;
-        SparseMatrix p;
-        SparseMatrix pt;
+        std::vector<int> aggregates;
+        Eigen::Index coarse_size = 0;
         DynamicVector inv_diag;
         Precision smoother_omega = 1;
     };
@@ -47,29 +52,32 @@ private:
         mutable DynamicVector coarse_error;
     };
 
-    static constexpr Eigen::Index coarse_size = 512;
+    static constexpr Eigen::Index coarse_direct_size = 512;
     static constexpr int max_levels = 16;
     static constexpr int pre_sweeps = 2;
     static constexpr int post_sweeps = 2;
 
     static DynamicVector inverse_diagonal(const SparseMatrix& matrix);
-    static Precision estimate_spectral_radius(const SparseMatrix& matrix,
-                                              const DynamicVector& inv_diag);
+    static Precision estimate_jacobi_radius_bound(const SparseMatrix& matrix,
+                                                   const DynamicVector& inv_diag);
     static std::vector<int> build_aggregates(const SparseMatrix& matrix,
                                              const DynamicVector& inv_diag,
                                              int& aggregate_count);
-    static SparseMatrix build_tentative_prolongator(const std::vector<int>& aggregates,
-                                                     int aggregate_count);
-    static SparseMatrix smooth_prolongator(const SparseMatrix& matrix,
-                                           const SparseMatrix& tentative,
-                                           const DynamicVector& inv_diag,
-                                           Precision spectral_radius);
+    static SparseMatrix build_coarse_matrix(const SparseMatrix& matrix,
+                                            const std::vector<int>& aggregates,
+                                            int aggregate_count);
 
     void prepare_level(Level& level);
     void smooth(const Level& level,
                 const DynamicVector& rhs,
                 DynamicVector& solution,
                 int sweeps) const;
+    void restrict_residual(const Level& level,
+                           const DynamicVector& fine,
+                           DynamicVector& coarse) const;
+    void prolongate_and_add(const Level& level,
+                            const DynamicVector& coarse,
+                            DynamicVector& fine) const;
     void vcycle(std::size_t level,
                 const DynamicVector& rhs,
                 DynamicVector& solution) const;
