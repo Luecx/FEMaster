@@ -4,7 +4,6 @@
 #include "../../core/timer.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -13,7 +12,6 @@ namespace fem::solver::detail {
 
 namespace {
 constexpr Precision diagonal_epsilon = 1e-30;
-constexpr int max_aggregate_size = 4;
 constexpr Precision spectral_safety = 1.25;
 
 Precision coupling_strength(Precision value,
@@ -27,7 +25,7 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
     logging::error(matrix.rows() == matrix.cols(), "AMG requires a square matrix");
     logging::error(matrix.rows() > 0, "AMG requires a non-empty matrix");
 
-    logging::info(true, "Building CPU aggregation AMG hierarchy");
+    logging::info(true, "Building CPU signed-pair aggregation AMG hierarchy");
     logging::up();
     logging::info(true, "fine level: N=", matrix.rows(), " nnz=", matrix.nonZeros());
 
@@ -63,14 +61,26 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
 
         timer.start();
         int aggregate_count = 0;
-        fine.aggregates = build_aggregates(fine.a, fine.inv_diag, aggregate_count);
+        fine.aggregates = build_aggregates(
+            fine.a,
+            fine.inv_diag,
+            fine.interpolation_weights,
+            aggregate_count);
         fine.coarse_size = aggregate_count;
         timer.stop();
 
+        Eigen::Index sign_flips = 0;
+        for (Eigen::Index i = 0; i < fine.interpolation_weights.size(); ++i) {
+            if (fine.interpolation_weights[i] < 0) {
+                ++sign_flips;
+            }
+        }
+
         logging::info(true,
                       "level ", level_index,
-                      " aggregation: ", timer.elapsed(), " ms",
-                      " -> N=", aggregate_count);
+                      " signed pair aggregation: ", timer.elapsed(), " ms",
+                      " -> N=", aggregate_count,
+                      " sign flips=", sign_flips);
 
         if (aggregate_count <= 0 || aggregate_count >= fine.a.rows()) {
             logging::warning(false, "AMG aggregation did not reduce the system; stopping hierarchy construction");
@@ -78,7 +88,11 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
         }
 
         timer.start();
-        SparseMatrix coarse = build_coarse_matrix(fine.a, fine.aggregates, aggregate_count);
+        SparseMatrix coarse = build_coarse_matrix(
+            fine.a,
+            fine.aggregates,
+            fine.interpolation_weights,
+            aggregate_count);
         fine.coarse_scaling = equilibrate(coarse);
         coarse.makeCompressed();
         timer.stop();
@@ -213,11 +227,14 @@ Precision CpuAmgPreconditioner::estimate_spectral_radius(
     return std::max(Precision(1), spectral_safety * rho);
 }
 
-std::vector<int> CpuAmgPreconditioner::build_aggregates(const SparseMatrix& matrix,
-                                                         const DynamicVector& inv_diag,
-                                                         int& aggregate_count) {
+std::vector<int> CpuAmgPreconditioner::build_aggregates(
+        const SparseMatrix& matrix,
+        const DynamicVector& inv_diag,
+        DynamicVector& interpolation_weights,
+        int& aggregate_count) {
     const int n = static_cast<int>(matrix.rows());
     std::vector<int> aggregates(static_cast<std::size_t>(n), -1);
+    interpolation_weights = DynamicVector::Ones(n);
     aggregate_count = 0;
 
     for (int i = 0; i < n; ++i) {
@@ -225,10 +242,9 @@ std::vector<int> CpuAmgPreconditioner::build_aggregates(const SparseMatrix& matr
             continue;
         }
 
-        std::array<int, max_aggregate_size - 1> neighbors {};
-        std::array<Precision, max_aggregate_size - 1> strengths {};
-        neighbors.fill(-1);
-        strengths.fill(-std::numeric_limits<Precision>::infinity());
+        int strongest_neighbor = -1;
+        Precision strongest_strength = -std::numeric_limits<Precision>::infinity();
+        Precision strongest_value = Precision(0);
 
         for (SparseMatrix::InnerIterator entry(matrix, i); entry; ++entry) {
             const int j = static_cast<int>(entry.row());
@@ -237,30 +253,22 @@ std::vector<int> CpuAmgPreconditioner::build_aggregates(const SparseMatrix& matr
             }
 
             const Precision strength = coupling_strength(entry.value(), inv_diag[i], inv_diag[j]);
-            if (!(strength > 0)) {
-                continue;
-            }
-
-            for (int slot = 0; slot < max_aggregate_size - 1; ++slot) {
-                if (strength <= strengths[static_cast<std::size_t>(slot)]) {
-                    continue;
-                }
-                for (int move = max_aggregate_size - 2; move > slot; --move) {
-                    strengths[static_cast<std::size_t>(move)] = strengths[static_cast<std::size_t>(move - 1)];
-                    neighbors[static_cast<std::size_t>(move)] = neighbors[static_cast<std::size_t>(move - 1)];
-                }
-                strengths[static_cast<std::size_t>(slot)] = strength;
-                neighbors[static_cast<std::size_t>(slot)] = j;
-                break;
+            if (strength > strongest_strength) {
+                strongest_strength = strength;
+                strongest_neighbor = j;
+                strongest_value = entry.value();
             }
         }
 
         const int aggregate = aggregate_count++;
         aggregates[static_cast<std::size_t>(i)] = aggregate;
-        for (const int neighbor : neighbors) {
-            if (neighbor >= 0 && aggregates[static_cast<std::size_t>(neighbor)] < 0) {
-                aggregates[static_cast<std::size_t>(neighbor)] = aggregate;
-            }
+        interpolation_weights[i] = Precision(1);
+
+        if (strongest_neighbor >= 0 && strongest_strength > Precision(0)) {
+            aggregates[static_cast<std::size_t>(strongest_neighbor)] = aggregate;
+            interpolation_weights[strongest_neighbor] = strongest_value > Precision(0)
+                ? Precision(-1)
+                : Precision(1);
         }
     }
 
@@ -270,6 +278,7 @@ std::vector<int> CpuAmgPreconditioner::build_aggregates(const SparseMatrix& matr
 SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
         const SparseMatrix& matrix,
         const std::vector<int>& aggregates,
+        const DynamicVector& interpolation_weights,
         int aggregate_count) {
     const int n = static_cast<int>(matrix.rows());
 
@@ -288,7 +297,7 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
 
     TripletList triplets;
     const Eigen::Index reserve_count = std::min<Eigen::Index>(
-        matrix.nonZeros(), static_cast<Eigen::Index>(aggregate_count) * 96);
+        matrix.nonZeros(), static_cast<Eigen::Index>(aggregate_count) * 128);
     triplets.reserve(static_cast<std::size_t>(reserve_count));
 
     for (int coarse_column = 0; coarse_column < aggregate_count; ++coarse_column) {
@@ -297,14 +306,20 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
         for (int fine_column = first[static_cast<std::size_t>(coarse_column)];
              fine_column >= 0;
              fine_column = next[static_cast<std::size_t>(fine_column)]) {
+            const Precision column_weight = interpolation_weights[fine_column];
+
             for (SparseMatrix::InnerIterator entry(matrix, fine_column); entry; ++entry) {
-                const int coarse_row = aggregates[static_cast<std::size_t>(entry.row())];
+                const int fine_row = static_cast<int>(entry.row());
+                const int coarse_row = aggregates[static_cast<std::size_t>(fine_row)];
+                const Precision weighted_value =
+                    interpolation_weights[fine_row] * entry.value() * column_weight;
+
                 if (marker[static_cast<std::size_t>(coarse_row)] != coarse_column) {
                     marker[static_cast<std::size_t>(coarse_row)] = coarse_column;
-                    values[static_cast<std::size_t>(coarse_row)] = entry.value();
+                    values[static_cast<std::size_t>(coarse_row)] = weighted_value;
                     touched.push_back(coarse_row);
                 } else {
-                    values[static_cast<std::size_t>(coarse_row)] += entry.value();
+                    values[static_cast<std::size_t>(coarse_row)] += weighted_value;
                 }
             }
         }
@@ -346,7 +361,7 @@ void CpuAmgPreconditioner::restrict_residual(const Level& level,
     coarse.setZero(level.coarse_size);
     for (Eigen::Index i = 0; i < fine.size(); ++i) {
         const int aggregate = level.aggregates[static_cast<std::size_t>(i)];
-        coarse[aggregate] += fine[i];
+        coarse[aggregate] += level.interpolation_weights[i] * fine[i];
     }
     coarse.array() *= level.coarse_scaling.array();
 }
@@ -356,7 +371,9 @@ void CpuAmgPreconditioner::prolongate_and_add(const Level& level,
                                               DynamicVector& fine) const {
     for (Eigen::Index i = 0; i < fine.size(); ++i) {
         const int aggregate = level.aggregates[static_cast<std::size_t>(i)];
-        fine[i] += level.coarse_scaling[aggregate] * coarse[aggregate];
+        fine[i] += level.interpolation_weights[i]
+                 * level.coarse_scaling[aggregate]
+                 * coarse[aggregate];
     }
 }
 
