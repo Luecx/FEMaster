@@ -14,6 +14,7 @@ namespace fem::solver::detail {
 namespace {
 constexpr Precision diagonal_epsilon = 1e-30;
 constexpr int max_aggregate_size = 4;
+constexpr Precision spectral_safety = 1.25;
 
 Precision coupling_strength(Precision value,
                             Precision inv_diag_i,
@@ -33,18 +34,8 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
     Timer timer {};
     timer.start();
 
-    const DynamicVector inv_diag_original = inverse_diagonal(matrix);
-    m_scaling.resize(matrix.rows());
-    for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
-        m_scaling[i] = std::sqrt(inv_diag_original[i]);
-    }
-
     SparseMatrix scaled = matrix;
-    for (Eigen::Index column = 0; column < scaled.outerSize(); ++column) {
-        for (SparseMatrix::InnerIterator entry(scaled, column); entry; ++entry) {
-            entry.valueRef() *= m_scaling[entry.row()] * m_scaling[entry.col()];
-        }
-    }
+    m_scaling = equilibrate(scaled);
     scaled.makeCompressed();
 
     timer.stop();
@@ -88,11 +79,13 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
 
         timer.start();
         SparseMatrix coarse = build_coarse_matrix(fine.a, fine.aggregates, aggregate_count);
+        fine.coarse_scaling = equilibrate(coarse);
+        coarse.makeCompressed();
         timer.stop();
 
         logging::info(true,
                       "level ", level_index,
-                      " Galerkin assembly: ", timer.elapsed(), " ms",
+                      " Galerkin assembly + equilibration: ", timer.elapsed(), " ms",
                       " -> nnz=", coarse.nonZeros());
 
         if (coarse.rows() >= fine.a.rows()) {
@@ -111,7 +104,8 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
     logging::info(true,
                   "coarsest level: N=", m_levels.back().a.rows(),
                   " nnz=", m_levels.back().a.nonZeros(),
-                  " smoother setup=", timer.elapsed(), " ms");
+                  " smoother setup=", timer.elapsed(), " ms",
+                  " omega=", m_levels.back().smoother_omega);
 
     m_workspace.resize(m_levels.size());
     for (std::size_t level = 0; level + 1 < m_levels.size(); ++level) {
@@ -164,22 +158,59 @@ DynamicVector CpuAmgPreconditioner::inverse_diagonal(const SparseMatrix& matrix)
     return inv_diag;
 }
 
-Precision CpuAmgPreconditioner::estimate_jacobi_radius_bound(
-        const SparseMatrix& matrix,
-        const DynamicVector& inv_diag) {
-    DynamicVector row_sum = DynamicVector::Zero(matrix.rows());
+DynamicVector CpuAmgPreconditioner::equilibrate(SparseMatrix& matrix) {
+    const DynamicVector inv_diag = inverse_diagonal(matrix);
+    DynamicVector scaling(matrix.rows());
+    for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
+        scaling[i] = std::sqrt(inv_diag[i]);
+    }
 
     for (Eigen::Index column = 0; column < matrix.outerSize(); ++column) {
         for (SparseMatrix::InnerIterator entry(matrix, column); entry; ++entry) {
-            row_sum[entry.row()] += std::abs(entry.value()) * inv_diag[entry.row()];
+            entry.valueRef() *= scaling[entry.row()] * scaling[entry.col()];
         }
     }
 
-    const Precision bound = row_sum.maxCoeff();
-    if (!(bound > diagonal_epsilon) || !std::isfinite(bound)) {
+    return scaling;
+}
+
+Precision CpuAmgPreconditioner::estimate_spectral_radius(
+        const SparseMatrix& matrix,
+        const DynamicVector& inv_diag) {
+    DynamicVector inv_sqrt(matrix.rows());
+    for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
+        inv_sqrt[i] = std::sqrt(inv_diag[i]);
+    }
+
+    DynamicVector x(matrix.rows());
+    for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
+        const Precision index = static_cast<Precision>(i + 1);
+        x[i] = std::sin(index * Precision(12.9898))
+             + Precision(0.5) * std::sin(index * Precision(78.233));
+    }
+
+    const Precision initial_norm = x.norm();
+    if (!(initial_norm > diagonal_epsilon) || !std::isfinite(initial_norm)) {
         return Precision(1);
     }
-    return std::max(Precision(1), bound);
+    x /= initial_norm;
+
+    Precision rho = Precision(1);
+    for (int iteration = 0; iteration < spectral_iterations; ++iteration) {
+        const DynamicVector scaled_x = inv_sqrt.array() * x.array();
+        DynamicVector y = matrix * scaled_x;
+        y.array() *= inv_sqrt.array();
+
+        const Precision norm = y.norm();
+        if (!(norm > diagonal_epsilon) || !std::isfinite(norm)) {
+            return Precision(1);
+        }
+
+        x = y / norm;
+        rho = norm;
+    }
+
+    return std::max(Precision(1), spectral_safety * rho);
 }
 
 std::vector<int> CpuAmgPreconditioner::build_aggregates(const SparseMatrix& matrix,
@@ -295,8 +326,8 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
 
 void CpuAmgPreconditioner::prepare_level(Level& level) {
     level.inv_diag = inverse_diagonal(level.a);
-    const Precision radius_bound = estimate_jacobi_radius_bound(level.a, level.inv_diag);
-    level.smoother_omega = Precision(4) / (Precision(3) * radius_bound);
+    const Precision spectral_radius = estimate_spectral_radius(level.a, level.inv_diag);
+    level.smoother_omega = Precision(0.8) / spectral_radius;
 }
 
 void CpuAmgPreconditioner::smooth(const Level& level,
@@ -314,15 +345,18 @@ void CpuAmgPreconditioner::restrict_residual(const Level& level,
                                              DynamicVector& coarse) const {
     coarse.setZero(level.coarse_size);
     for (Eigen::Index i = 0; i < fine.size(); ++i) {
-        coarse[level.aggregates[static_cast<std::size_t>(i)]] += fine[i];
+        const int aggregate = level.aggregates[static_cast<std::size_t>(i)];
+        coarse[aggregate] += fine[i];
     }
+    coarse.array() *= level.coarse_scaling.array();
 }
 
 void CpuAmgPreconditioner::prolongate_and_add(const Level& level,
                                               const DynamicVector& coarse,
                                               DynamicVector& fine) const {
     for (Eigen::Index i = 0; i < fine.size(); ++i) {
-        fine[i] += coarse[level.aggregates[static_cast<std::size_t>(i)]];
+        const int aggregate = level.aggregates[static_cast<std::size_t>(i)];
+        fine[i] += level.coarse_scaling[aggregate] * coarse[aggregate];
     }
 }
 
