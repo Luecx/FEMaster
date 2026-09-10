@@ -21,6 +21,10 @@
 #include "model_data.h"
 #include "element/element.h"
 
+#include "../core/config.h"
+
+#include <vector>
+
 namespace fem::model {
 
 /**
@@ -247,10 +251,10 @@ Field ModelData::create_field_(const std::string& name,
  * Projects element-nodal values onto unique global nodes by weighted averaging.
  *
  * The compiled element-nodal prefix offsets locate the local rows belonging to
- * each dense element. For every connected global node and component, the method
- * accumulates the element-local value multiplied by the scalar weight of its
- * element. The accumulated field is then divided by the sum of participating
- * weights at that node.
+ * each dense element. A compact node-to-element-row gather map is constructed
+ * for the participating elements and stores each source row together with its
+ * scalar element weight. Global nodes are then independent reduction targets,
+ * so OpenMP partitions the nodal range without atomics or overlapping writes.
  *
  * Elements with zero weight do not participate. Nodes without a contributing
  * element retain the initialized zero row. The operation assumes that every
@@ -295,26 +299,20 @@ Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
         "ModelData: ELEMENT_NODAL field '", element_nodal.name,
         "' has ", element_nodal.rows, " rows, expected ", expected_rows);
 
-    // Initialize nodal value and weight accumulators for the projection
-    Field nodal{name, FieldDomain::NODE, node_count, element_nodal.components};
-    nodal.set_zero();
-    std::vector<Precision> weight_sum(static_cast<std::size_t>(node_count), Precision(0));
+    // Count participating element-nodal source rows for every global node. The
+    // shifted count layout becomes a CSR-style offset array after prefix summing.
+    std::vector<Index> node_offsets(static_cast<std::size_t>(node_count + 1), Index(0));
 
-    // Accumulate every participating element-local row at its connected global node
     for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
         const auto& element = elements[static_cast<std::size_t>(elem_idx)];
-        if (!element) {
-            continue;
-        }
+        if (!element) continue;
 
         const ID elem_id = element->elem_id;
         logging::error(elem_id >= 0 && static_cast<Index>(elem_id) < element_count,
             "ModelData: element id out of range in element_nodal_to_nodal: ", elem_id);
 
         const Precision weight = element_weights(static_cast<Index>(elem_id), 0);
-        if (weight == Precision(0)) {
-            continue;
-        }
+        if (weight == Precision(0)) continue;
 
         const Index offset      = static_cast<Index>(offsets(static_cast<Index>(elem_id), 0));
         const Index next_offset = static_cast<Index>(offsets(static_cast<Index>(elem_id) + 1, 0));
@@ -324,26 +322,71 @@ Field ModelData::element_nodal_to_nodal(const Field&       element_nodal,
             "ModelData: element nodal offset span does not match node count for element ", elem_id);
 
         for (Index local_node = 0; local_node < static_cast<Index>(element->n_nodes()); ++local_node) {
-            const Index element_row = offset + local_node;
-            const Index node_id     = static_cast<Index>(element->nodes()[local_node]);
-            logging::error(node_id < node_count,
+            const Index node_id = static_cast<Index>(element->nodes()[local_node]);
+            logging::error(node_id >= 0 && node_id < node_count,
                 "ModelData: node id out of range in element_nodal_to_nodal: ", node_id);
-
-            for (Index component = 0; component < element_nodal.components; ++component) {
-                nodal(node_id, component) += weight * element_nodal(element_row, component);
-            }
-            weight_sum[static_cast<std::size_t>(node_id)] += weight;
+            ++node_offsets[static_cast<std::size_t>(node_id + 1)];
         }
     }
 
-    // Normalize accumulated values by the total element weight at each node
+    // Convert nodal contribution counts into half-open gather ranges
     for (Index node = 0; node < node_count; ++node) {
-        const Precision weight = weight_sum[static_cast<std::size_t>(node)];
-        if (weight == Precision(0)) {
-            continue;
+        node_offsets[static_cast<std::size_t>(node + 1)] += node_offsets[static_cast<std::size_t>(node)];
+    }
+
+    const Index contribution_count = node_offsets.back();
+    std::vector<Index>     source_rows   (static_cast<std::size_t>(contribution_count));
+    std::vector<Precision> source_weights(static_cast<std::size_t>(contribution_count));
+    std::vector<Index>     write_offsets = node_offsets;
+
+    // Fill the compact gather map in element order. Each entry identifies one
+    // element-nodal source row and its already resolved scalar element weight.
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        const auto& element = elements[static_cast<std::size_t>(elem_idx)];
+        if (!element) continue;
+
+        const ID elem_id = element->elem_id;
+        const Precision weight = element_weights(static_cast<Index>(elem_id), 0);
+        if (weight == Precision(0)) continue;
+
+        const Index offset = static_cast<Index>(offsets(static_cast<Index>(elem_id), 0));
+        for (Index local_node = 0; local_node < static_cast<Index>(element->n_nodes()); ++local_node) {
+            const Index node_id = static_cast<Index>(element->nodes()[local_node]);
+            const Index target  = write_offsets[static_cast<std::size_t>(node_id)]++;
+
+            source_rows   [static_cast<std::size_t>(target)] = offset + local_node;
+            source_weights[static_cast<std::size_t>(target)] = weight;
         }
+    }
+
+    // Gather and normalize each global node independently. OpenMP partitions the
+    // target rows, so no two workers can write the same nodal result entry.
+    Field nodal{name, FieldDomain::NODE, node_count, element_nodal.components};
+    nodal.set_zero();
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index node = 0; node < node_count; ++node) {
+        Precision weight_sum = Precision(0);
+        const Index begin = node_offsets[static_cast<std::size_t>(node)];
+        const Index end   = node_offsets[static_cast<std::size_t>(node + 1)];
+
+        for (Index entry = begin; entry < end; ++entry) {
+            const auto index         = static_cast<std::size_t>(entry);
+            const Index source_row   = source_rows[index];
+            const Precision weight   = source_weights[index];
+            weight_sum              += weight;
+
+            for (Index component = 0; component < element_nodal.components; ++component) {
+                nodal(node, component) += weight * element_nodal(source_row, component);
+            }
+        }
+
+        if (weight_sum == Precision(0)) continue;
+
         for (Index component = 0; component < element_nodal.components; ++component) {
-            nodal(node, component) /= weight;
+            nodal(node, component) /= weight_sum;
         }
     }
 
