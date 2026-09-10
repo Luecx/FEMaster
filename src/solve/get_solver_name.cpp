@@ -11,7 +11,7 @@ std::string get_solver_name(SolverDevice device,
 
     if (method == INDIRECT) {
         return device == GPU
-            ? "GPU PCG (CPU smoothed-aggregation AMG prototype)"
+            ? "GPU PCG (CPU aggregation AMG prototype)"
             : "CPU PCG (Eigen IncompleteCholesky)";
     }
 
