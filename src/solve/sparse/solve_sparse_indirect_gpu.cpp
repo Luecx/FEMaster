@@ -30,16 +30,19 @@ constexpr const char* AMGX_CONFIG =
     "main:use_scalar_norm=1,"
     "amg:algorithm=AGGREGATION,"
     "amg:selector=SIZE_2,"
-    "amg:smoother(smooth)=BLOCK_JACOBI,"
-    "smooth:relaxation_factor=0.8,"
+    "amg:smoother(smooth)=MULTICOLOR_DILU,"
+    "smooth:relaxation_factor=0.75,"
+    "amg:max_uncolored_percentage=0.05,"
+    "amg:matrix_coloring_scheme=PARALLEL_GREEDY,"
     "amg:presweeps=0,"
     "amg:postsweeps=3,"
     "amg:interpolator=D2,"
-    "amg:coarse_solver=NOSOLVER,"
+    "amg:coarse_solver=DENSE_LU_SOLVER,"
+    "amg:min_coarse_rows=32,"
     "amg:max_iters=1,"
     "amg:max_levels=50,"
     "amg:cycle=V,"
-    "main:max_iters=2000,"
+    "main:max_iters=1000,"
     "main:monitor_residual=1,"
     "main:store_res_history=1,"
     "main:convergence=RELATIVE_INI,"
@@ -161,7 +164,7 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     constexpr AMGX_Mode mode = AMGX_mode_dFFI;
 #endif
 
-    logging::info(true, "AMGX backend: FGMRES + aggregation AMG + symmetric diagonal scaling");
+    logging::info(true, "AMGX backend: FGMRES + aggregation AMG + multicolor DILU + symmetric diagonal scaling");
     logging::info(true, "AMGX upload: N=", n, ", nnz=", nnz);
 
     DynamicMatrix result(mat.rows(), rhs_matrix.cols());
