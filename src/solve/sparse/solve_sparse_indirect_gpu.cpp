@@ -24,6 +24,7 @@ constexpr const char* AMGX_CONFIG =
     "config_version=2,"
     "determinism_flag=1,"
     "solver(main)=PCG,"
+    "main:scaling=DIAGONAL_SYMMETRIC,"
     "main:preconditioner(amg)=AMG,"
     "amg:algorithm=AGGREGATION,"
     "amg:selector=SIZE_2,"
@@ -144,7 +145,7 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     constexpr AMGX_Mode mode = AMGX_mode_dFFI;
 #endif
 
-    logging::info(true, "AMGX backend: PCG + aggregation AMG, scalar CSR");
+    logging::info(true, "AMGX backend: PCG + aggregation AMG + symmetric diagonal scaling");
     logging::info(true, "AMGX upload: N=", n, ", nnz=", nnz);
 
     AmgxHandles handles;
@@ -229,7 +230,7 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
 DynamicMatrix solve_indirect_gpu(SparseMatrix&,
                                  const DynamicMatrix&) {
     logging::error(false,
-                   "GPU indirect solving requires FEMASTER_ENABLE_AMGX=ON on this branch");
+                   "GPU indirect solving requires AMGX integration on this branch");
     return {};
 }
 
