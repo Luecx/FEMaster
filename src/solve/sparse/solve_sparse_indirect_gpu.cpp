@@ -23,9 +23,11 @@ namespace {
 constexpr const char* AMGX_CONFIG =
     "config_version=2,"
     "determinism_flag=1,"
-    "solver(main)=PCG,"
+    "solver(main)=FGMRES,"
     "main:scaling=DIAGONAL_SYMMETRIC,"
     "main:preconditioner(amg)=AMG,"
+    "main:gmres_n_restart=32,"
+    "main:use_scalar_norm=1,"
     "amg:algorithm=AGGREGATION,"
     "amg:selector=SIZE_2,"
     "amg:smoother(smooth)=BLOCK_JACOBI,"
@@ -37,9 +39,9 @@ constexpr const char* AMGX_CONFIG =
     "amg:max_iters=1,"
     "amg:max_levels=50,"
     "amg:cycle=V,"
-    "main:max_iters=10000,"
+    "main:max_iters=2000,"
     "main:monitor_residual=1,"
-    "main:store_res_history=0,"
+    "main:store_res_history=1,"
     "main:convergence=RELATIVE_INI,"
     "main:tolerance=1e-10,"
     "main:norm=L2,"
@@ -121,6 +123,20 @@ double elapsed_ms(const std::chrono::steady_clock::time_point& begin) {
         std::chrono::steady_clock::now() - begin).count();
 }
 
+void log_residual_history(AMGX_solver_handle solver, int iterations) {
+    for (int iteration = 0; iteration < iterations; ++iteration) {
+        if (iteration >= 10 && (iteration + 1) % 100 != 0 && iteration != iterations - 1) {
+            continue;
+        }
+
+        double residual = 0.0;
+        check_amgx(AMGX_solver_get_iteration_residual(solver, iteration, 0, &residual),
+                   "AMGX_solver_get_iteration_residual");
+        logging::info(true, "AMGX iteration ", iteration + 1,
+                      " residual: ", residual);
+    }
+}
+
 } // namespace
 
 DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
@@ -145,82 +161,96 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     constexpr AMGX_Mode mode = AMGX_mode_dFFI;
 #endif
 
-    logging::info(true, "AMGX backend: PCG + aggregation AMG + symmetric diagonal scaling");
+    logging::info(true, "AMGX backend: FGMRES + aggregation AMG + symmetric diagonal scaling");
     logging::info(true, "AMGX upload: N=", n, ", nnz=", nnz);
 
-    AmgxHandles handles;
-    check_amgx(AMGX_config_create(&handles.config, AMGX_CONFIG),
-               "AMGX_config_create");
-    check_amgx(AMGX_resources_create_simple(&handles.resources, handles.config),
-               "AMGX_resources_create_simple");
-    check_amgx(AMGX_matrix_create(&handles.matrix, handles.resources, mode),
-               "AMGX_matrix_create");
-    check_amgx(AMGX_vector_create(&handles.rhs, handles.resources, mode),
-               "AMGX_vector_create(rhs)");
-    check_amgx(AMGX_vector_create(&handles.solution, handles.resources, mode),
-               "AMGX_vector_create(solution)");
-    check_amgx(AMGX_solver_create(&handles.solver, handles.resources, mode, handles.config),
-               "AMGX_solver_create");
-
-    const auto upload_begin = std::chrono::steady_clock::now();
-    check_amgx(AMGX_matrix_upload_all(handles.matrix,
-                                      n,
-                                      nnz,
-                                      1,
-                                      1,
-                                      csr.outerIndexPtr(),
-                                      csr.innerIndexPtr(),
-                                      csr.valuePtr(),
-                                      nullptr),
-               "AMGX_matrix_upload_all");
-    check_amgx(AMGX_vector_bind(handles.rhs, handles.matrix),
-               "AMGX_vector_bind(rhs)");
-    check_amgx(AMGX_vector_bind(handles.solution, handles.matrix),
-               "AMGX_vector_bind(solution)");
-    const double upload_ms = elapsed_ms(upload_begin);
-
-    const auto setup_begin = std::chrono::steady_clock::now();
-    check_amgx(AMGX_solver_setup(handles.solver, handles.matrix),
-               "AMGX_solver_setup");
-    const double setup_ms = elapsed_ms(setup_begin);
-
     DynamicMatrix result(mat.rows(), rhs_matrix.cols());
+    double upload_ms = 0.0;
+    double setup_ms = 0.0;
     double solve_ms = 0.0;
+    Eigen::Index failed_column = -1;
+    AMGX_SOLVE_STATUS failed_status = AMGX_SOLVE_SUCCESS;
 
-    for (Eigen::Index column = 0; column < rhs_matrix.cols(); ++column) {
-        DynamicVector rhs = rhs_matrix.col(column);
-        DynamicVector solution = DynamicVector::Zero(mat.rows());
+    {
+        AmgxHandles handles;
+        check_amgx(AMGX_config_create(&handles.config, AMGX_CONFIG),
+                   "AMGX_config_create");
+        check_amgx(AMGX_resources_create_simple(&handles.resources, handles.config),
+                   "AMGX_resources_create_simple");
+        check_amgx(AMGX_matrix_create(&handles.matrix, handles.resources, mode),
+                   "AMGX_matrix_create");
+        check_amgx(AMGX_vector_create(&handles.rhs, handles.resources, mode),
+                   "AMGX_vector_create(rhs)");
+        check_amgx(AMGX_vector_create(&handles.solution, handles.resources, mode),
+                   "AMGX_vector_create(solution)");
+        check_amgx(AMGX_solver_create(&handles.solver, handles.resources, mode, handles.config),
+                   "AMGX_solver_create");
 
-        check_amgx(AMGX_vector_upload(handles.rhs, n, 1, rhs.data()),
-                   "AMGX_vector_upload(rhs)");
-        check_amgx(AMGX_vector_set_zero(handles.solution, n, 1),
-                   "AMGX_vector_set_zero(solution)");
+        const auto upload_begin = std::chrono::steady_clock::now();
+        check_amgx(AMGX_matrix_upload_all(handles.matrix,
+                                          n,
+                                          nnz,
+                                          1,
+                                          1,
+                                          csr.outerIndexPtr(),
+                                          csr.innerIndexPtr(),
+                                          csr.valuePtr(),
+                                          nullptr),
+                   "AMGX_matrix_upload_all");
+        check_amgx(AMGX_vector_bind(handles.rhs, handles.matrix),
+                   "AMGX_vector_bind(rhs)");
+        check_amgx(AMGX_vector_bind(handles.solution, handles.matrix),
+                   "AMGX_vector_bind(solution)");
+        upload_ms = elapsed_ms(upload_begin);
 
-        const auto solve_begin = std::chrono::steady_clock::now();
-        check_amgx(AMGX_solver_solve(handles.solver, handles.rhs, handles.solution),
-                   "AMGX_solver_solve");
-        solve_ms += elapsed_ms(solve_begin);
+        const auto setup_begin = std::chrono::steady_clock::now();
+        check_amgx(AMGX_solver_setup(handles.solver, handles.matrix),
+                   "AMGX_solver_setup");
+        setup_ms = elapsed_ms(setup_begin);
 
-        AMGX_SOLVE_STATUS status = AMGX_SOLVE_FAILED;
-        int iterations = 0;
-        check_amgx(AMGX_solver_get_status(handles.solver, &status),
-                   "AMGX_solver_get_status");
-        check_amgx(AMGX_solver_get_iterations_number(handles.solver, &iterations),
-                   "AMGX_solver_get_iterations_number");
+        for (Eigen::Index column = 0; column < rhs_matrix.cols(); ++column) {
+            DynamicVector rhs = rhs_matrix.col(column);
+            DynamicVector solution = DynamicVector::Zero(mat.rows());
 
-        logging::info(true, "RHS ", column, ": ", iterations,
-                      " AMGX iterations, status=", status_name(status));
-        logging::error(status == AMGX_SOLVE_SUCCESS,
-                       "AMGX solve for RHS ", column, " ", status_name(status));
+            check_amgx(AMGX_vector_upload(handles.rhs, n, 1, rhs.data()),
+                       "AMGX_vector_upload(rhs)");
+            check_amgx(AMGX_vector_set_zero(handles.solution, n, 1),
+                       "AMGX_vector_set_zero(solution)");
 
-        check_amgx(AMGX_vector_download(handles.solution, solution.data()),
-                   "AMGX_vector_download(solution)");
-        result.col(column) = solution;
+            const auto solve_begin = std::chrono::steady_clock::now();
+            check_amgx(AMGX_solver_solve(handles.solver, handles.rhs, handles.solution),
+                       "AMGX_solver_solve");
+            solve_ms += elapsed_ms(solve_begin);
+
+            AMGX_SOLVE_STATUS status = AMGX_SOLVE_FAILED;
+            int iterations = 0;
+            check_amgx(AMGX_solver_get_status(handles.solver, &status),
+                       "AMGX_solver_get_status");
+            check_amgx(AMGX_solver_get_iterations_number(handles.solver, &iterations),
+                       "AMGX_solver_get_iterations_number");
+
+            log_residual_history(handles.solver, iterations);
+            logging::info(true, "RHS ", column, ": ", iterations,
+                          " AMGX iterations, status=", status_name(status));
+
+            if (status != AMGX_SOLVE_SUCCESS) {
+                failed_column = column;
+                failed_status = status;
+                break;
+            }
+
+            check_amgx(AMGX_vector_download(handles.solution, solution.data()),
+                       "AMGX_vector_download(solution)");
+            result.col(column) = solution;
+        }
     }
 
     logging::info(true, "AMGX matrix upload: ", upload_ms, " ms");
     logging::info(true, "AMGX AMG setup    : ", setup_ms, " ms");
     logging::info(true, "AMGX solve total  : ", solve_ms, " ms");
+
+    logging::error(failed_column < 0,
+                   "AMGX solve for RHS ", failed_column, " ", status_name(failed_status));
 
     return result;
 }
