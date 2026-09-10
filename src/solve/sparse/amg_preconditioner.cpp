@@ -3,6 +3,8 @@
 #include "../../core/logging.h"
 #include "../../core/timer.h"
 
+#include <Eigen/Eigenvalues>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -25,7 +27,7 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
     logging::error(matrix.rows() == matrix.cols(), "AMG requires a square matrix");
     logging::error(matrix.rows() > 0, "AMG requires a non-empty matrix");
 
-    logging::info(true, "Building CPU signed-pair aggregation AMG hierarchy");
+    logging::info(true, "Building CPU local-spectral aggregation AMG hierarchy");
     logging::up();
     logging::info(true, "fine level: N=", matrix.rows(), " nnz=", matrix.nonZeros());
 
@@ -61,26 +63,24 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
 
         timer.start();
         int aggregate_count = 0;
-        fine.aggregates = build_aggregates(
+        int min_aggregate_size = 0;
+        int max_aggregate_size = 0;
+        Precision average_aggregate_size = 0;
+        const auto aggregates = build_aggregates(
             fine.a,
-            fine.inv_diag,
-            fine.interpolation_weights,
-            aggregate_count);
-        fine.coarse_size = aggregate_count;
+            aggregate_count,
+            min_aggregate_size,
+            max_aggregate_size,
+            average_aggregate_size);
         timer.stop();
-
-        Eigen::Index sign_flips = 0;
-        for (Eigen::Index i = 0; i < fine.interpolation_weights.size(); ++i) {
-            if (fine.interpolation_weights[i] < 0) {
-                ++sign_flips;
-            }
-        }
 
         logging::info(true,
                       "level ", level_index,
-                      " signed pair aggregation: ", timer.elapsed(), " ms",
-                      " -> N=", aggregate_count,
-                      " sign flips=", sign_flips);
+                      " algebraic aggregation: ", timer.elapsed(), " ms",
+                      " -> aggregates=", aggregate_count,
+                      " size[min/avg/max]=", min_aggregate_size,
+                      "/", average_aggregate_size,
+                      "/", max_aggregate_size);
 
         if (aggregate_count <= 0 || aggregate_count >= fine.a.rows()) {
             logging::warning(false, "AMG aggregation did not reduce the system; stopping hierarchy construction");
@@ -88,24 +88,69 @@ void CpuAmgPreconditioner::compute(const SparseMatrix& matrix) {
         }
 
         timer.start();
-        SparseMatrix coarse = build_coarse_matrix(
+        Eigen::Index coarse_size = 0;
+        std::vector<Eigen::Index> rank_histogram(static_cast<std::size_t>(max_local_basis + 1), 0);
+        SparseMatrix prolongator = build_spectral_prolongator(
             fine.a,
-            fine.aggregates,
-            fine.interpolation_weights,
-            aggregate_count);
-        fine.coarse_scaling = equilibrate(coarse);
-        coarse.makeCompressed();
+            aggregates,
+            aggregate_count,
+            coarse_size,
+            rank_histogram);
         timer.stop();
 
         logging::info(true,
                       "level ", level_index,
-                      " Galerkin assembly + equilibration: ", timer.elapsed(), " ms",
-                      " -> nnz=", coarse.nonZeros());
+                      " local spectral basis: ", timer.elapsed(), " ms",
+                      " -> N=", coarse_size,
+                      " P nnz=", prolongator.nonZeros());
+        logging::info(true,
+                      "level ", level_index,
+                      " local ranks: 1=", rank_histogram[1],
+                      " 2=", rank_histogram[2],
+                      " 3=", rank_histogram[3],
+                      " 4=", rank_histogram[4],
+                      " 5=", rank_histogram[5],
+                      " 6=", rank_histogram[6]);
 
-        if (coarse.rows() >= fine.a.rows()) {
-            logging::warning(false, "AMG coarse matrix did not reduce the system; stopping hierarchy construction");
+        if (coarse_size <= 0 || coarse_size >= fine.a.rows()) {
+            logging::warning(false, "AMG spectral coarse space did not reduce the system; stopping hierarchy construction");
             break;
         }
+
+        timer.start();
+        SparseMatrix ap = fine.a * prolongator;
+        ap.makeCompressed();
+        timer.stop();
+        logging::info(true,
+                      "level ", level_index,
+                      " A*P: ", timer.elapsed(), " ms",
+                      " -> nnz=", ap.nonZeros());
+
+        timer.start();
+        SparseMatrix prolongator_t = prolongator.transpose();
+        prolongator_t.makeCompressed();
+        SparseMatrix coarse = prolongator_t * ap;
+        coarse.makeCompressed();
+        timer.stop();
+        logging::info(true,
+                      "level ", level_index,
+                      " P^T*A*P: ", timer.elapsed(), " ms",
+                      " -> N=", coarse.rows(),
+                      " nnz=", coarse.nonZeros());
+
+        timer.start();
+        const DynamicVector coarse_scaling = equilibrate(coarse);
+        scale_prolongator_columns(prolongator, coarse_scaling);
+        prolongator.makeCompressed();
+        prolongator_t = prolongator.transpose();
+        prolongator_t.makeCompressed();
+        timer.stop();
+        logging::info(true,
+                      "level ", level_index,
+                      " coarse equilibration: ", timer.elapsed(), " ms");
+
+        fine.p = std::move(prolongator);
+        fine.pt = std::move(prolongator_t);
 
         Level next;
         next.a = std::move(coarse);
@@ -227,15 +272,18 @@ Precision CpuAmgPreconditioner::estimate_spectral_radius(
     return std::max(Precision(1), spectral_safety * rho);
 }
 
-std::vector<int> CpuAmgPreconditioner::build_aggregates(
-        const SparseMatrix& matrix,
-        const DynamicVector& inv_diag,
-        DynamicVector& interpolation_weights,
-        int& aggregate_count) {
-    const int n = static_cast<int>(matrix.rows());
+std::vector<int> CpuAmgPreconditioner::pair_graph(
+        const SparseMatrix& graph,
+        const std::vector<int>& group_sizes,
+        int& coarse_count,
+        std::vector<int>& coarse_sizes) {
+    const int n = static_cast<int>(graph.rows());
+    const DynamicVector inv_diag = inverse_diagonal(graph);
+
     std::vector<int> aggregates(static_cast<std::size_t>(n), -1);
-    interpolation_weights = DynamicVector::Ones(n);
-    aggregate_count = 0;
+    coarse_sizes.clear();
+    coarse_sizes.reserve(static_cast<std::size_t>((n + 1) / 2));
+    coarse_count = 0;
 
     for (int i = 0; i < n; ++i) {
         if (aggregates[static_cast<std::size_t>(i)] >= 0) {
@@ -244,11 +292,14 @@ std::vector<int> CpuAmgPreconditioner::build_aggregates(
 
         int strongest_neighbor = -1;
         Precision strongest_strength = -std::numeric_limits<Precision>::infinity();
-        Precision strongest_value = Precision(0);
 
-        for (SparseMatrix::InnerIterator entry(matrix, i); entry; ++entry) {
+        for (SparseMatrix::InnerIterator entry(graph, i); entry; ++entry) {
             const int j = static_cast<int>(entry.row());
             if (j == i || aggregates[static_cast<std::size_t>(j)] >= 0) {
+                continue;
+            }
+            if (group_sizes[static_cast<std::size_t>(i)]
+                + group_sizes[static_cast<std::size_t>(j)] > target_aggregate_size) {
                 continue;
             }
 
@@ -256,31 +307,29 @@ std::vector<int> CpuAmgPreconditioner::build_aggregates(
             if (strength > strongest_strength) {
                 strongest_strength = strength;
                 strongest_neighbor = j;
-                strongest_value = entry.value();
             }
         }
 
-        const int aggregate = aggregate_count++;
+        const int aggregate = coarse_count++;
         aggregates[static_cast<std::size_t>(i)] = aggregate;
-        interpolation_weights[i] = Precision(1);
+        int size = group_sizes[static_cast<std::size_t>(i)];
 
         if (strongest_neighbor >= 0 && strongest_strength > Precision(0)) {
             aggregates[static_cast<std::size_t>(strongest_neighbor)] = aggregate;
-            interpolation_weights[strongest_neighbor] = strongest_value > Precision(0)
-                ? Precision(-1)
-                : Precision(1);
+            size += group_sizes[static_cast<std::size_t>(strongest_neighbor)];
         }
+
+        coarse_sizes.push_back(size);
     }
 
     return aggregates;
 }
 
-SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
-        const SparseMatrix& matrix,
+SparseMatrix CpuAmgPreconditioner::aggregate_strength_graph(
+        const SparseMatrix& graph,
         const std::vector<int>& aggregates,
-        const DynamicVector& interpolation_weights,
         int aggregate_count) {
-    const int n = static_cast<int>(matrix.rows());
+    const int n = static_cast<int>(graph.rows());
 
     std::vector<int> first(static_cast<std::size_t>(aggregate_count), -1);
     std::vector<int> next(static_cast<std::size_t>(n), -1);
@@ -297,7 +346,7 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
 
     TripletList triplets;
     const Eigen::Index reserve_count = std::min<Eigen::Index>(
-        matrix.nonZeros(), static_cast<Eigen::Index>(aggregate_count) * 128);
+        graph.nonZeros(), static_cast<Eigen::Index>(aggregate_count) * 128);
     triplets.reserve(static_cast<std::size_t>(reserve_count));
 
     for (int coarse_column = 0; coarse_column < aggregate_count; ++coarse_column) {
@@ -306,20 +355,16 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
         for (int fine_column = first[static_cast<std::size_t>(coarse_column)];
              fine_column >= 0;
              fine_column = next[static_cast<std::size_t>(fine_column)]) {
-            const Precision column_weight = interpolation_weights[fine_column];
-
-            for (SparseMatrix::InnerIterator entry(matrix, fine_column); entry; ++entry) {
-                const int fine_row = static_cast<int>(entry.row());
-                const int coarse_row = aggregates[static_cast<std::size_t>(fine_row)];
-                const Precision weighted_value =
-                    interpolation_weights[fine_row] * entry.value() * column_weight;
+            for (SparseMatrix::InnerIterator entry(graph, fine_column); entry; ++entry) {
+                const int coarse_row = aggregates[static_cast<std::size_t>(entry.row())];
+                const Precision value = std::abs(entry.value());
 
                 if (marker[static_cast<std::size_t>(coarse_row)] != coarse_column) {
                     marker[static_cast<std::size_t>(coarse_row)] = coarse_column;
-                    values[static_cast<std::size_t>(coarse_row)] = weighted_value;
+                    values[static_cast<std::size_t>(coarse_row)] = value;
                     touched.push_back(coarse_row);
                 } else {
-                    values[static_cast<std::size_t>(coarse_row)] += weighted_value;
+                    values[static_cast<std::size_t>(coarse_row)] += value;
                 }
             }
         }
@@ -327,7 +372,7 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
         std::sort(touched.begin(), touched.end());
         for (const int coarse_row : touched) {
             const Precision value = values[static_cast<std::size_t>(coarse_row)];
-            if (value != Precision(0)) {
+            if (value > Precision(0)) {
                 triplets.emplace_back(coarse_row, coarse_column, value);
             }
         }
@@ -337,6 +382,174 @@ SparseMatrix CpuAmgPreconditioner::build_coarse_matrix(
     coarse.setFromTriplets(triplets.begin(), triplets.end());
     coarse.makeCompressed();
     return coarse;
+}
+
+std::vector<int> CpuAmgPreconditioner::build_aggregates(
+        const SparseMatrix& matrix,
+        int& aggregate_count,
+        int& min_aggregate_size,
+        int& max_aggregate_size,
+        Precision& average_aggregate_size) {
+    const int n = static_cast<int>(matrix.rows());
+
+    std::vector<int> fine_to_group(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        fine_to_group[static_cast<std::size_t>(i)] = i;
+    }
+
+    SparseMatrix graph = matrix;
+    std::vector<int> group_sizes(static_cast<std::size_t>(n), 1);
+    int current_count = n;
+
+    for (int pass = 0; pass < max_aggregation_passes; ++pass) {
+        int next_count = 0;
+        std::vector<int> next_sizes;
+        const auto pair_map = pair_graph(graph, group_sizes, next_count, next_sizes);
+
+        if (next_count <= 0 || next_count >= current_count) {
+            break;
+        }
+
+        for (int i = 0; i < n; ++i) {
+            fine_to_group[static_cast<std::size_t>(i)] =
+                pair_map[static_cast<std::size_t>(fine_to_group[static_cast<std::size_t>(i)])];
+        }
+
+        const int reduction = current_count - next_count;
+        current_count = next_count;
+        group_sizes = std::move(next_sizes);
+
+        if (pass + 1 < max_aggregation_passes && reduction > 0) {
+            graph = aggregate_strength_graph(graph, pair_map, current_count);
+        }
+
+        if (reduction <= std::max(1, current_count / 100)) {
+            break;
+        }
+    }
+
+    aggregate_count = current_count;
+    std::vector<int> counts(static_cast<std::size_t>(aggregate_count), 0);
+    for (const int aggregate : fine_to_group) {
+        ++counts[static_cast<std::size_t>(aggregate)];
+    }
+
+    min_aggregate_size = n;
+    max_aggregate_size = 0;
+    for (const int count : counts) {
+        min_aggregate_size = std::min(min_aggregate_size, count);
+        max_aggregate_size = std::max(max_aggregate_size, count);
+    }
+    average_aggregate_size = aggregate_count > 0
+        ? static_cast<Precision>(n) / static_cast<Precision>(aggregate_count)
+        : Precision(0);
+
+    return fine_to_group;
+}
+
+SparseMatrix CpuAmgPreconditioner::build_spectral_prolongator(
+        const SparseMatrix& matrix,
+        const std::vector<int>& aggregates,
+        int aggregate_count,
+        Eigen::Index& coarse_size,
+        std::vector<Eigen::Index>& rank_histogram) {
+    const int n = static_cast<int>(matrix.rows());
+
+    std::vector<std::vector<int>> members(static_cast<std::size_t>(aggregate_count));
+    for (int i = 0; i < n; ++i) {
+        members[static_cast<std::size_t>(aggregates[static_cast<std::size_t>(i)])].push_back(i);
+    }
+
+    std::vector<int> local_position(static_cast<std::size_t>(n), -1);
+    TripletList triplets;
+    triplets.reserve(static_cast<std::size_t>(matrix.rows()) * static_cast<std::size_t>(max_local_basis));
+
+    coarse_size = 0;
+
+    for (int aggregate = 0; aggregate < aggregate_count; ++aggregate) {
+        const auto& aggregate_members = members[static_cast<std::size_t>(aggregate)];
+        const int local_size = static_cast<int>(aggregate_members.size());
+        if (local_size == 0) {
+            continue;
+        }
+
+        for (int local = 0; local < local_size; ++local) {
+            local_position[static_cast<std::size_t>(aggregate_members[static_cast<std::size_t>(local)])] = local;
+        }
+
+        DynamicMatrix local = DynamicMatrix::Zero(local_size, local_size);
+        for (int local_column = 0; local_column < local_size; ++local_column) {
+            const int fine_column = aggregate_members[static_cast<std::size_t>(local_column)];
+            for (SparseMatrix::InnerIterator entry(matrix, fine_column); entry; ++entry) {
+                const int fine_row = static_cast<int>(entry.row());
+                if (aggregates[static_cast<std::size_t>(fine_row)] != aggregate) {
+                    continue;
+                }
+                const int local_row = local_position[static_cast<std::size_t>(fine_row)];
+                if (local_row >= 0) {
+                    local(local_row, local_column) = entry.value();
+                }
+            }
+        }
+
+        local = Precision(0.5) * (local + local.transpose()).eval();
+
+        Eigen::SelfAdjointEigenSolver<DynamicMatrix> eig(local);
+        logging::error(eig.info() == Eigen::Success,
+                       "AMG local spectral decomposition failed for aggregate ", aggregate);
+
+        const auto& eigenvalues = eig.eigenvalues();
+        const Precision lambda_max = std::max(eigenvalues[local_size - 1], diagonal_epsilon);
+        const Precision cutoff = local_spectral_cutoff * lambda_max;
+
+        const int rank_limit = std::min(
+            max_local_basis,
+            std::max(1, local_size / 2));
+
+        int rank = 1;
+        for (int mode = 0; mode < rank_limit; ++mode) {
+            if (eigenvalues[mode] <= cutoff) {
+                rank = mode + 1;
+            }
+        }
+        rank = std::min(rank, rank_limit);
+
+        ++rank_histogram[static_cast<std::size_t>(rank)];
+
+        const Eigen::Index base = coarse_size;
+        for (int local_row = 0; local_row < local_size; ++local_row) {
+            const int fine_row = aggregate_members[static_cast<std::size_t>(local_row)];
+            for (int mode = 0; mode < rank; ++mode) {
+                const Precision value = eig.eigenvectors()(local_row, mode);
+                if (std::abs(value) > Precision(1e-14)) {
+                    triplets.emplace_back(fine_row, base + mode, value);
+                }
+            }
+        }
+
+        coarse_size += rank;
+
+        for (const int fine : aggregate_members) {
+            local_position[static_cast<std::size_t>(fine)] = -1;
+        }
+    }
+
+    SparseMatrix prolongator(matrix.rows(), coarse_size);
+    prolongator.setFromTriplets(triplets.begin(), triplets.end());
+    prolongator.makeCompressed();
+    return prolongator;
+}
+
+void CpuAmgPreconditioner::scale_prolongator_columns(
+        SparseMatrix& prolongator,
+        const DynamicVector& scaling) {
+    logging::error(prolongator.cols() == scaling.size(), "AMG prolongator scaling size mismatch");
+
+    for (Eigen::Index column = 0; column < prolongator.outerSize(); ++column) {
+        for (SparseMatrix::InnerIterator entry(prolongator, column); entry; ++entry) {
+            entry.valueRef() *= scaling[column];
+        }
+    }
 }
 
 void CpuAmgPreconditioner::prepare_level(Level& level) {
@@ -352,28 +565,6 @@ void CpuAmgPreconditioner::smooth(const Level& level,
     for (int sweep = 0; sweep < sweeps; ++sweep) {
         const DynamicVector residual = rhs - level.a * solution;
         solution.array() += level.smoother_omega * level.inv_diag.array() * residual.array();
-    }
-}
-
-void CpuAmgPreconditioner::restrict_residual(const Level& level,
-                                             const DynamicVector& fine,
-                                             DynamicVector& coarse) const {
-    coarse.setZero(level.coarse_size);
-    for (Eigen::Index i = 0; i < fine.size(); ++i) {
-        const int aggregate = level.aggregates[static_cast<std::size_t>(i)];
-        coarse[aggregate] += level.interpolation_weights[i] * fine[i];
-    }
-    coarse.array() *= level.coarse_scaling.array();
-}
-
-void CpuAmgPreconditioner::prolongate_and_add(const Level& level,
-                                              const DynamicVector& coarse,
-                                              DynamicVector& fine) const {
-    for (Eigen::Index i = 0; i < fine.size(); ++i) {
-        const int aggregate = level.aggregates[static_cast<std::size_t>(i)];
-        fine[i] += level.interpolation_weights[i]
-                 * level.coarse_scaling[aggregate]
-                 * coarse[aggregate];
     }
 }
 
@@ -393,12 +584,12 @@ void CpuAmgPreconditioner::vcycle(std::size_t level_index,
     smooth(level, rhs, solution, pre_sweeps);
 
     workspace.residual.noalias() = rhs - level.a * solution;
-    restrict_residual(level, workspace.residual, workspace.coarse_rhs);
+    workspace.coarse_rhs.noalias() = level.pt * workspace.residual;
     workspace.coarse_error.setZero();
 
     vcycle(level_index + 1, workspace.coarse_rhs, workspace.coarse_error);
 
-    prolongate_and_add(level, workspace.coarse_error, solution);
+    solution.noalias() += level.p * workspace.coarse_error;
     smooth(level, rhs, solution, post_sweeps);
 }
 
