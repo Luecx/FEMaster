@@ -1,6 +1,6 @@
 /**
  * @file amg_preconditioner.h
- * @brief Declares the experimental CPU aggregation AMG preconditioner.
+ * @brief Declares the experimental CPU algebraic multigrid preconditioner.
  *
  * @author Finn Eggers
  */
@@ -17,16 +17,12 @@
 namespace fem::solver::detail {
 
 /**
- * @brief Experimental symmetric algebraic aggregation AMG preconditioner.
+ * @brief Experimental symmetric matrix-only spectral aggregation AMG preconditioner.
  *
- * The hierarchy is constructed once for a fixed SPD matrix. Each application
- * performs one symmetric V-cycle. The implementation intentionally lives on
- * the CPU for now so the hierarchy can be validated independently of CUDA.
- *
- * Fine unknowns are paired purely from the scaled matrix graph. The tentative
- * interpolation keeps the low-energy sign implied by the strongest local
- * coupling instead of assuming that every strongly coupled pair has equal
- * values. No node, element, DOF, or constraint metadata is used.
+ * The hierarchy is constructed once for a fixed SPD matrix. Aggregates are
+ * formed only from the scaled matrix graph. On every aggregate a small dense
+ * eigenproblem is solved and the locally lowest-energy modes form the coarse
+ * basis. No node, element, DOF, or constraint metadata is used.
  */
 class CpuAmgPreconditioner {
 public:
@@ -40,10 +36,8 @@ public:
 private:
     struct Level {
         SparseMatrix a;
-        std::vector<int> aggregates;
-        DynamicVector interpolation_weights;
-        Eigen::Index coarse_size = 0;
-        DynamicVector coarse_scaling;
+        SparseMatrix p;
+        SparseMatrix pt;
         DynamicVector inv_diag;
         Precision smoother_omega = 1;
     };
@@ -55,35 +49,46 @@ private:
     };
 
     static constexpr Eigen::Index coarse_direct_size = 512;
-    static constexpr int max_levels = 20;
-    static constexpr int pre_sweeps = 2;
-    static constexpr int post_sweeps = 2;
+    static constexpr int max_levels = 16;
+    static constexpr int pre_sweeps = 1;
+    static constexpr int post_sweeps = 1;
     static constexpr int spectral_iterations = 8;
+
+    static constexpr int target_aggregate_size = 12;
+    static constexpr int max_aggregation_passes = 6;
+    static constexpr int max_local_basis = 6;
+    static constexpr Precision local_spectral_cutoff = Precision(0.20);
 
     static DynamicVector inverse_diagonal(const SparseMatrix& matrix);
     static DynamicVector equilibrate(SparseMatrix& matrix);
     static Precision estimate_spectral_radius(const SparseMatrix& matrix,
                                               const DynamicVector& inv_diag);
+
     static std::vector<int> build_aggregates(const SparseMatrix& matrix,
-                                             const DynamicVector& inv_diag,
-                                             DynamicVector& interpolation_weights,
-                                             int& aggregate_count);
-    static SparseMatrix build_coarse_matrix(const SparseMatrix& matrix,
-                                            const std::vector<int>& aggregates,
-                                            const DynamicVector& interpolation_weights,
-                                            int aggregate_count);
+                                             int& aggregate_count,
+                                             int& min_aggregate_size,
+                                             int& max_aggregate_size,
+                                             Precision& average_aggregate_size);
+    static std::vector<int> pair_graph(const SparseMatrix& graph,
+                                       const std::vector<int>& group_sizes,
+                                       int& coarse_count,
+                                       std::vector<int>& coarse_sizes);
+    static SparseMatrix aggregate_strength_graph(const SparseMatrix& graph,
+                                                 const std::vector<int>& aggregates,
+                                                 int aggregate_count);
+    static SparseMatrix build_spectral_prolongator(const SparseMatrix& matrix,
+                                                   const std::vector<int>& aggregates,
+                                                   int aggregate_count,
+                                                   Eigen::Index& coarse_size,
+                                                   std::vector<Eigen::Index>& rank_histogram);
+    static void scale_prolongator_columns(SparseMatrix& prolongator,
+                                          const DynamicVector& scaling);
 
     void prepare_level(Level& level);
     void smooth(const Level& level,
                 const DynamicVector& rhs,
                 DynamicVector& solution,
                 int sweeps) const;
-    void restrict_residual(const Level& level,
-                           const DynamicVector& fine,
-                           DynamicVector& coarse) const;
-    void prolongate_and_add(const Level& level,
-                            const DynamicVector& coarse,
-                            DynamicVector& fine) const;
     void vcycle(std::size_t level,
                 const DynamicVector& rhs,
                 DynamicVector& solution) const;
