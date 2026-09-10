@@ -84,12 +84,71 @@ struct SolveResult {
     double solve_ms = 0.0;
 };
 
+struct DiagonalStats {
+    Precision min = std::numeric_limits<Precision>::infinity();
+    Precision max = -std::numeric_limits<Precision>::infinity();
+    Eigen::Index missing = 0;
+    Eigen::Index nonpositive = 0;
+    Eigen::Index nonfinite = 0;
+};
+
 double elapsed_ms(const std::chrono::steady_clock::time_point& begin) {
     return std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
 }
 
-void factor_ic0(cuda::CudaCSR& mat) {
+DiagonalStats diagonal_stats(const SparseMatrix& A) {
+    DiagonalStats stats;
+
+    for (Eigen::Index i = 0; i < A.rows(); ++i) {
+        const Precision aii = A.coeff(i, i);
+
+        if (aii == Precision{0}) {
+            ++stats.missing;
+        }
+        if (!std::isfinite(aii)) {
+            ++stats.nonfinite;
+            continue;
+        }
+        if (aii <= Precision{0}) {
+            ++stats.nonpositive;
+        }
+
+        stats.min = std::min(stats.min, aii);
+        stats.max = std::max(stats.max, aii);
+    }
+
+    return stats;
+}
+
+void log_diagonal_stats(const SparseMatrix& A, const char* label) {
+    const DiagonalStats stats = diagonal_stats(A);
+    const Precision ratio =
+        stats.min > Precision{0}
+            ? stats.max / stats.min
+            : std::numeric_limits<Precision>::infinity();
+
+    logging::info(true,
+                  "    ", label,
+                  " diagonal: min=", stats.min,
+                  ", max=", stats.max,
+                  ", max/min=", ratio,
+                  ", zero=", stats.missing,
+                  ", nonpositive=", stats.nonpositive,
+                  ", nonfinite=", stats.nonfinite);
+}
+
+Eigen::Index original_active_row(Eigen::Index prepared_row,
+                                 const Prepared& prepared) {
+    if (!prepared.permuted) {
+        return prepared_row;
+    }
+    return prepared.P.indices()(prepared_row);
+}
+
+void factor_ic0(cuda::CudaCSR& mat,
+                const SparseMatrix& host_matrix,
+                const Prepared& prepared) {
     cusparseMatDescr_t descr;
     csric02Info_t info;
     int buffer_size = 0;
@@ -114,8 +173,16 @@ void factor_ic0(cuda::CudaCSR& mat) {
     int zero_pivot = -1;
     cusparseStatus_t zero_pivot_status =
         cusparseXcsric02_zeroPivot(cuda::manager.handle_cusparse, info, &zero_pivot);
-    logging::error(zero_pivot_status != CUSPARSE_STATUS_ZERO_PIVOT,
-                   "IC(0) analysis failed: structural zero pivot at row ", zero_pivot);
+
+    if (zero_pivot_status == CUSPARSE_STATUS_ZERO_PIVOT) {
+        const Eigen::Index row = static_cast<Eigen::Index>(zero_pivot);
+        const Eigen::Index original_row = original_active_row(row, prepared);
+        const Precision aii = host_matrix.coeff(row, row);
+        logging::error(false,
+                       "IC(0) analysis failed: structural zero pivot at prepared row ", row,
+                       ", original active row ", original_row,
+                       ", diagonal=", aii);
+    }
     runtime_check_cuda(zero_pivot_status);
 
     runtime_check_cuda(CUSOLV_CSRIC(cuda::manager.handle_cusparse,
@@ -126,8 +193,16 @@ void factor_ic0(cuda::CudaCSR& mat) {
     zero_pivot = -1;
     zero_pivot_status =
         cusparseXcsric02_zeroPivot(cuda::manager.handle_cusparse, info, &zero_pivot);
-    logging::error(zero_pivot_status != CUSPARSE_STATUS_ZERO_PIVOT,
-                   "IC(0) factorization failed: numerical zero pivot at row ", zero_pivot);
+
+    if (zero_pivot_status == CUSPARSE_STATUS_ZERO_PIVOT) {
+        const Eigen::Index row = static_cast<Eigen::Index>(zero_pivot);
+        const Eigen::Index original_row = original_active_row(row, prepared);
+        const Precision aii = host_matrix.coeff(row, row);
+        logging::error(false,
+                       "IC(0) factorization failed: numerical zero pivot at prepared row ", row,
+                       ", original active row ", original_row,
+                       ", diagonal=", aii);
+    }
     runtime_check_cuda(zero_pivot_status);
 
     runtime_check_cuda(cusparseDestroyCsric02Info(info));
@@ -242,9 +317,11 @@ Precision true_residual(const SparseMatrix& A,
     return worst;
 }
 
-SolveResult solve_variant(SparseMatrix& A,
-                          const DynamicMatrix& b,
+SolveResult solve_variant(Prepared& prepared,
                           const Variant& variant) {
+    SparseMatrix& A = prepared.A;
+    DynamicMatrix& b = prepared.b;
+
     const auto N = A.cols();
     const auto nnz = A.nonZeros();
 
@@ -259,10 +336,11 @@ SolveResult solve_variant(SparseMatrix& A,
     if (variant.ic0) {
         SparseMatrix P = A;
         shift_preconditioner(P, variant.shift);
+        log_diagonal_stats(P, variant.name);
 
         prec = std::make_unique<cuda::CudaCSR>(P);
         mat_gpu = std::make_unique<cuda::CudaCSR>(A, *prec);
-        factor_ic0(*prec);
+        factor_ic0(*prec, P, prepared);
     } else {
         mat_gpu = std::make_unique<cuda::CudaCSR>(A);
     }
@@ -570,18 +648,18 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     cuda::manager.create_cuda();
 
     const std::vector<Variant> variants = {
-        {"01 CG natural / ALG1",           Ordering::NATURAL, false, false, Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"02 CG natural / ALG2",           Ordering::NATURAL, false, false, Precision{0}, CUSPARSE_SPMV_CSR_ALG2},
-        {"03 diagonal-scaled CG",          Ordering::NATURAL, true,  false, Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"04 AMD + IC0",                   Ordering::AMD,     false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"05 AMD + IC0 / shift 1e-4",      Ordering::AMD,     false, true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
-        {"06 IC0 natural / ALG1",          Ordering::NATURAL, false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"07 IC0 natural / ALG2",          Ordering::NATURAL, false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG2},
-        {"08 IC0 natural / shift 1e-6",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-6), CUSPARSE_SPMV_CSR_ALG1},
-        {"09 IC0 natural / shift 1e-4",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
-        {"10 IC0 natural / shift 1e-2",    Ordering::NATURAL, false, true,  static_cast<Precision>(1e-2), CUSPARSE_SPMV_CSR_ALG1},
-        {"11 COLAMD + IC0",                Ordering::COLAMD,  false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
-        {"12 diagonal-scaled + IC0",       Ordering::NATURAL, true,  true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"01 CG natural / ALG1",                 Ordering::NATURAL, false, false, Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"02 diagonal-scaled CG",                Ordering::NATURAL, true,  false, Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"03 AMD + IC0",                         Ordering::AMD,     false, true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"04 AMD + scaled + IC0",                Ordering::AMD,     true,  true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"05 AMD + scaled + IC0 / shift 1e-2",  Ordering::AMD,     true,  true,  static_cast<Precision>(1e-2), CUSPARSE_SPMV_CSR_ALG1},
+        {"06 scaled + IC0",                      Ordering::NATURAL, true,  true,  Precision{0}, CUSPARSE_SPMV_CSR_ALG1},
+        {"07 scaled + IC0 / shift 1e-4",        Ordering::NATURAL, true,  true,  static_cast<Precision>(1e-4), CUSPARSE_SPMV_CSR_ALG1},
+        {"08 scaled + IC0 / shift 1e-2",        Ordering::NATURAL, true,  true,  static_cast<Precision>(1e-2), CUSPARSE_SPMV_CSR_ALG1},
+        {"09 scaled + IC0 / shift 1e-1",        Ordering::NATURAL, true,  true,  static_cast<Precision>(1e-1), CUSPARSE_SPMV_CSR_ALG1},
+        {"10 scaled + IC0 / shift 1",           Ordering::NATURAL, true,  true,  Precision{1}, CUSPARSE_SPMV_CSR_ALG1},
+        {"11 IC0 natural / shift 1e-1",         Ordering::NATURAL, false, true,  static_cast<Precision>(1e-1), CUSPARSE_SPMV_CSR_ALG1},
+        {"12 IC0 natural / shift 1",            Ordering::NATURAL, false, true,  Precision{1}, CUSPARSE_SPMV_CSR_ALG1},
     };
 
     logging::info(true, "");
@@ -595,6 +673,7 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
     logging::info(true, "validation tolerance : ", VALIDATION_TOLERANCE);
     logging::info(true, "max iterations       : ", BENCHMARK_MAX_ITERATIONS);
     logging::info(true, "variants             : ", variants.size());
+    log_diagonal_stats(mat, "original matrix");
     logging::info(true, "============================================================================================================");
 
     std::vector<Result> results;
@@ -619,7 +698,7 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
             Prepared prepared = prepare(mat, rhs, variant);
             result.transform_ms = elapsed_ms(transform_begin);
 
-            SolveResult solve = solve_variant(prepared.A, prepared.b, variant);
+            SolveResult solve = solve_variant(prepared, variant);
             result.setup_ms = solve.setup_ms;
             result.solve_ms = solve.solve_ms;
             result.iterations = solve.iterations;
