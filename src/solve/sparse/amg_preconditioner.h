@@ -17,16 +17,16 @@
 namespace fem::solver::detail {
 
 /**
- * @brief Experimental symmetric aggregation AMG preconditioner.
+ * @brief Experimental symmetric algebraic aggregation AMG preconditioner.
  *
  * The hierarchy is constructed once for a fixed SPD matrix. Each application
  * performs one symmetric V-cycle. The implementation intentionally lives on
  * the CPU for now so the hierarchy can be validated independently of CUDA.
  *
- * The transfer operator is piecewise constant. It is stored as a fine-to-coarse
- * aggregate map rather than as sparse P/P^T matrices. Every coarse level is
- * symmetrically equilibrated; the corresponding scale factors are folded into
- * restriction and prolongation so the Galerkin relation remains symmetric.
+ * Fine unknowns are paired purely from the scaled matrix graph. The tentative
+ * interpolation keeps the low-energy sign implied by the strongest local
+ * coupling instead of assuming that every strongly coupled pair has equal
+ * values. No node, element, DOF, or constraint metadata is used.
  */
 class CpuAmgPreconditioner {
 public:
@@ -41,6 +41,7 @@ private:
     struct Level {
         SparseMatrix a;
         std::vector<int> aggregates;
+        DynamicVector interpolation_weights;
         Eigen::Index coarse_size = 0;
         DynamicVector coarse_scaling;
         DynamicVector inv_diag;
@@ -54,7 +55,7 @@ private:
     };
 
     static constexpr Eigen::Index coarse_direct_size = 512;
-    static constexpr int max_levels = 16;
+    static constexpr int max_levels = 20;
     static constexpr int pre_sweeps = 2;
     static constexpr int post_sweeps = 2;
     static constexpr int spectral_iterations = 8;
@@ -65,9 +66,11 @@ private:
                                               const DynamicVector& inv_diag);
     static std::vector<int> build_aggregates(const SparseMatrix& matrix,
                                              const DynamicVector& inv_diag,
+                                             DynamicVector& interpolation_weights,
                                              int& aggregate_count);
     static SparseMatrix build_coarse_matrix(const SparseMatrix& matrix,
                                             const std::vector<int>& aggregates,
+                                            const DynamicVector& interpolation_weights,
                                             int aggregate_count);
 
     void prepare_level(Level& level);
