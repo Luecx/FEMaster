@@ -24,9 +24,9 @@ namespace fem::solver::detail {
  * the CPU for now so the hierarchy can be validated independently of CUDA.
  *
  * The transfer operator is piecewise constant. It is stored as a fine-to-coarse
- * aggregate map rather than as sparse P/P^T matrices. This keeps hierarchy
- * construction and V-cycle transfers linear in the matrix/vector sizes and
- * avoids the large temporary fill of generic sparse triple products.
+ * aggregate map rather than as sparse P/P^T matrices. Every coarse level is
+ * symmetrically equilibrated; the corresponding scale factors are folded into
+ * restriction and prolongation so the Galerkin relation remains symmetric.
  */
 class CpuAmgPreconditioner {
 public:
@@ -42,6 +42,7 @@ private:
         SparseMatrix a;
         std::vector<int> aggregates;
         Eigen::Index coarse_size = 0;
+        DynamicVector coarse_scaling;
         DynamicVector inv_diag;
         Precision smoother_omega = 1;
     };
@@ -56,10 +57,12 @@ private:
     static constexpr int max_levels = 16;
     static constexpr int pre_sweeps = 2;
     static constexpr int post_sweeps = 2;
+    static constexpr int spectral_iterations = 8;
 
     static DynamicVector inverse_diagonal(const SparseMatrix& matrix);
-    static Precision estimate_jacobi_radius_bound(const SparseMatrix& matrix,
-                                                   const DynamicVector& inv_diag);
+    static DynamicVector equilibrate(SparseMatrix& matrix);
+    static Precision estimate_spectral_radius(const SparseMatrix& matrix,
+                                              const DynamicVector& inv_diag);
     static std::vector<int> build_aggregates(const SparseMatrix& matrix,
                                              const DynamicVector& inv_diag,
                                              int& aggregate_count);
