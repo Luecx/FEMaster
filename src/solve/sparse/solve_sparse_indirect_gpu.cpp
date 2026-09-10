@@ -126,10 +126,14 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
             continue;
         }
 
+        double total_amg_apply_ms = 0;
+        int amg_apply_count = 0;
+
         vec_x.clear();
         host_r = rhs.col(column);
         vec_r.upload(host_r.data());
-        preconditioner.apply(host_r, host_z);
+        total_amg_apply_ms += Timer::measure_time([&]() { preconditioner.apply(host_r, host_z); });
+        ++amg_apply_count;
         vec_z.upload(host_z.data());
         vec_p.copy(vec_z);
 
@@ -165,19 +169,21 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
                                           vec_r, 1, &r_norm));
 
             const CudaPrecision relative_residual = r_norm / rhs_norm;
-            if (k <= 10 || k % 100 == 0) {
+            if (k <= 10 || k % 10 == 0) {
                 logging::info(true,
                               "RHS ", column,
                               " iteration ", k,
-                              " relative residual: ", relative_residual);
+                              " relative residual: ", relative_residual,
+                              " avg AMG apply: ", total_amg_apply_ms / amg_apply_count, " ms");
             }
 
-            if (r_norm < 1e-8) {
+            if (relative_residual < 1e-8) {
                 break;
             }
 
             vec_r.download(host_r.data());
-            preconditioner.apply(host_r, host_z);
+            total_amg_apply_ms += Timer::measure_time([&]() { preconditioner.apply(host_r, host_z); });
+            ++amg_apply_count;
             vec_z.upload(host_z.data());
 
             runtime_check_cuda(CUBLAS_DOT(cuda::manager.handle_cublas, N,
@@ -195,7 +201,11 @@ DynamicMatrix solve_indirect_gpu(SparseMatrix& mat,
 
         vec_x.download(sol.col(column).data());
         max_iterations = std::max(max_iterations, std::min(k, static_cast<int>(N)));
-        max_residual = std::max(max_residual, r_norm);
+        max_residual = std::max(max_residual, r_norm / rhs_norm);
+        logging::info(true,
+                      "RHS ", column,
+                      " AMG applications: ", amg_apply_count,
+                      " average apply time: ", total_amg_apply_ms / std::max(amg_apply_count, 1), " ms");
     }
 
     runtime_check_cuda(cusparseDestroySpMat(descr_A));
