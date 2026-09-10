@@ -63,8 +63,10 @@ public:
     static double measure_time(Func&& func);
 
 private:
-    std::chrono::high_resolution_clock::time_point start_time{};
-    std::chrono::high_resolution_clock::time_point end_time{};
+    using Clock = std::chrono::steady_clock;
+
+    Clock::time_point start_time{};
+    Clock::time_point end_time{};
 };
 
 template<typename Func>
