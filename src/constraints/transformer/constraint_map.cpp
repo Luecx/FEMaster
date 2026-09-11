@@ -13,8 +13,9 @@
  *
  * The explicit partition into master and slave DOFs allows vector recovery and
  * projection to be performed without multiplying by the complete sparse
- * transformation matrix. Matrix reduction still uses `T` directly to construct
- * the congruence transformation
+ * transformation matrix. Matrix reduction extracts the principal master block
+ * directly for selector-only maps and otherwise constructs the general
+ * congruence transformation
  *
  *     K_r = T^T K T.
  *
@@ -168,6 +169,81 @@ DynamicVector ConstraintMap::project(const DynamicVector& full) const {
 // This preserves the virtual work and quadratic-form representation of the
 // original operator in the admissible homogeneous coordinate space.
 SparseMatrix ConstraintMap::reduce_matrix(const SparseMatrix& matrix) const {
+    // A map without slave-to-master coefficients is a pure selector. For the
+    // common fixed-DOF case T only embeds the ordered master coordinates, so
+    // T^T K T is exactly the principal submatrix K(masters, masters).
+    bool ordered_masters = true;
+    for (Index master = 1; master < n_master(); ++master) {
+        if (masters[static_cast<std::size_t>(master - 1)] >=
+            masters[static_cast<std::size_t>(master)]) {
+            ordered_masters = false;
+            break;
+        }
+    }
+
+    if (X.nonZeros() == 0 && ordered_masters) {
+        logging::error(
+            matrix.rows() == static_cast<Eigen::Index>(full_size) &&
+            matrix.cols() == static_cast<Eigen::Index>(full_size),
+            "[ConstraintMap::reduce_matrix] matrix size does not match full constraint space"
+        );
+
+        // Map full-system indices to reduced coordinates. The full_size sentinel
+        // marks constrained/slave rows that must be omitted from the principal block.
+        const Index invalid = full_size;
+        std::vector<Index> full_to_reduced(static_cast<std::size_t>(full_size), invalid);
+        for (Index reduced_dof = 0; reduced_dof < n_master(); ++reduced_dof) {
+            const Index full_dof = masters[static_cast<std::size_t>(reduced_dof)];
+            logging::error(full_dof < full_size,
+                "[ConstraintMap::reduce_matrix] master DOF out of range: ", full_dof);
+            full_to_reduced[static_cast<std::size_t>(full_dof)] = reduced_dof;
+        }
+
+        // Count retained entries per reduced column so Eigen can allocate the
+        // output sparsity exactly before the ordered insertion pass.
+        Eigen::VectorXi nonzeros_per_column = Eigen::VectorXi::Zero(
+            static_cast<Eigen::Index>(n_master())
+        );
+
+        for (Index reduced_col = 0; reduced_col < n_master(); ++reduced_col) {
+            const Index full_col = masters[static_cast<std::size_t>(reduced_col)];
+            int count = 0;
+            for (SparseMatrix::InnerIterator entry(matrix, static_cast<int>(full_col)); entry; ++entry) {
+                const Index full_row = static_cast<Index>(entry.row());
+                if (full_to_reduced[static_cast<std::size_t>(full_row)] != invalid) {
+                    ++count;
+                }
+            }
+            nonzeros_per_column[static_cast<Eigen::Index>(reduced_col)] = count;
+        }
+
+        SparseMatrix reduced(
+            static_cast<Eigen::Index>(n_master()),
+            static_cast<Eigen::Index>(n_master())
+        );
+        reduced.reserve(nonzeros_per_column);
+
+        // The master list is strictly ordered and every source column stores its
+        // row indices in ascending order. The mapped reduced rows are therefore
+        // also inserted monotonically within each output column.
+        for (Index reduced_col = 0; reduced_col < n_master(); ++reduced_col) {
+            const Index full_col = masters[static_cast<std::size_t>(reduced_col)];
+            for (SparseMatrix::InnerIterator entry(matrix, static_cast<int>(full_col)); entry; ++entry) {
+                const Index reduced_row = full_to_reduced[static_cast<std::size_t>(entry.row())];
+                if (reduced_row == invalid) continue;
+
+                reduced.insert(
+                    static_cast<Eigen::Index>(reduced_row),
+                    static_cast<Eigen::Index>(reduced_col)
+                ) = entry.value();
+            }
+        }
+
+        reduced.makeCompressed();
+        return reduced;
+    }
+
+    // General coupled constraints require the complete congruence transform.
     // Work with compressed sparse operands because Eigen's sparse products are
     // sensitive to the storage state of the input matrices. The transformation
     // transpose is materialized once so the left product does not rebuild it

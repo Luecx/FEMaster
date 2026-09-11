@@ -29,8 +29,10 @@
 
 #include "../bc/load_collector.h"
 #include "../bc/support_collector.h"
+#include "../core/config.h"
 
 #include <charconv>
+#include <exception>
 #include <iterator>
 #include <string>
 #include <system_error>
@@ -69,26 +71,50 @@ ID parse_local_id(const std::string& source, const char* entity) {
  * Every compiled structural element receives a lifecycle callback. Elements
  * that do not require persistent step data use the default no-op implementation,
  * while formulations such as finite-rotation shells construct their cached
- * reference geometry here.
+ * reference geometry here. Independent element initialization may execute in
+ * parallel because every structural element owns its complete step-local state.
  *
- * Initialization is transactional at model level: if one element throws, the
- * method invokes `step_end()` for the complete model to release every cache that
- * may already have been created, then propagates the original exception.
+ * Initialization remains transactional at model level. Worker exceptions are
+ * captured inside the OpenMP region because C++ exceptions cannot cross an
+ * OpenMP boundary. After all workers have completed, a failed initialization
+ * releases every potentially created element cache through `step_end()` and
+ * rethrows the first captured exception.
  */
 void Model::step_begin() {
-    // Initialize analysis-local state for every compiled structural element
-    try {
-        for (auto& elem : _data->elements) {
-            if (elem) {
-                if (auto* structural = elem->as<StructuralElement>()) {
-                    structural->step_begin();
+    const Index element_count = static_cast<Index>(_data->elements.size());
+    std::exception_ptr failure = nullptr;
+
+    // Initialize independent analysis-local element state in parallel. Each
+    // worker catches its own exception so no exception escapes the OpenMP region.
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        try {
+            auto& elem = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!elem) continue;
+
+            if (auto* structural = elem->as<StructuralElement>()) {
+                structural->step_begin();
+            }
+        } catch (...) {
+            // Preserve the first failure while allowing all workers to reach the
+            // implicit barrier before model-level cleanup is attempted.
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                if (!failure) {
+                    failure = std::current_exception();
                 }
             }
         }
-    } catch (...) {
-        // Release partially initialized state before propagating the failure
+    }
+
+    // Release partially initialized state before propagating a worker failure
+    if (failure) {
         step_end();
-        throw;
+        std::rethrow_exception(failure);
     }
 }
 

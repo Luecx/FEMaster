@@ -8,9 +8,10 @@
  * element-nodal quantities are recovered into global nodal fields through the
  * weighting operation provided by `ModelData`.
  *
- * Nodal stress recovery, shell-face recovery, beam section forces and shear
- * flow may evaluate elements with OpenMP. Eigen and MKL internal threading are
- * temporarily restricted during those loops to avoid nested oversubscription.
+ * Nodal stress recovery, shell-face recovery, shell-resultant recovery, beam
+ * section forces and shear flow may evaluate elements with OpenMP. Eigen and MKL
+ * internal threading are temporarily restricted during those loops to avoid
+ * nested oversubscription.
  *
  * @see Model
  * @see ModelData
@@ -23,6 +24,9 @@
 #include "../core/config.h"
 #include "element/element_structural.h"
 #include "model.h"
+
+#include <exception>
+#include <vector>
 
 #ifdef _OPENMP
     #include <omp.h>
@@ -261,35 +265,115 @@ std::tuple<Field, Field> Model::compute_stress_top_bot(Field& displacement, bool
  * Recovers nodal shell force and moment resultants.
  *
  * Supporting elements accumulate their eight-component resultant convention and
- * one participation count at every connected global node. The model divides the
- * accumulated values by those counts to obtain an arithmetic nodal average;
- * nodes without shell contributions retain zero rows.
+ * one participation count at every connected global node. Parallel element
+ * recovery writes into one private nodal accumulator per OpenMP worker because
+ * adjacent shell elements may share nodes. The worker fields are reduced by
+ * global node and divided by the summed counts to preserve the original
+ * arithmetic nodal average.
  *
  * @param displacement Global nodal displacement field used for recovery.
  * @return Averaged eight-component nodal shell-resultant field.
  */
 Field Model::compute_shell_resultants(Field& displacement) {
-    // Allocate nodal accumulators for resultants and contribution counts
-    const Index node_count = _data->field_rows(FieldDomain::NODE);
-    Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
-    Field count{"SHELL_RESULTANTS_COUNT", FieldDomain::NODE, node_count, 1};
-    resultants.set_zero();
-    count.set_zero();
+    const Index node_count    = _data->field_rows(FieldDomain::NODE);
+    const Index element_count = static_cast<Index>(_data->elements.size());
 
-    // Accumulate formulation-specific shell resultants from structural elements
-    for (auto el : _data->elements) {
-        if (!el) continue;
-        if (auto sel = el->as<StructuralElement>()) {
-            sel->compute_shell_section_forces(resultants, count, displacement);
+#ifdef _OPENMP
+    const int thread_count = global_config.max_threads > 1 ? global_config.max_threads : 1;
+#else
+    const int thread_count = 1;
+#endif
+
+    // Allocate independent nodal accumulators because adjacent shell elements
+    // may write resultants to the same global node.
+    std::vector<Field> thread_resultants;
+    std::vector<Field> thread_counts;
+    thread_resultants.reserve(static_cast<std::size_t>(thread_count));
+    thread_counts.reserve(static_cast<std::size_t>(thread_count));
+
+    for (int thread = 0; thread < thread_count; ++thread) {
+        thread_resultants.emplace_back("SHELL_RESULTANTS_THREAD", FieldDomain::NODE, node_count, 8);
+        thread_counts.emplace_back("SHELL_RESULTANTS_COUNT_THREAD", FieldDomain::NODE, node_count, 1);
+        thread_resultants.back().set_zero();
+        thread_counts.back().set_zero();
+    }
+
+    // Prevent nested Eigen/MKL threading inside the element-parallel recovery loop
+    Eigen::setNbThreads(1);
+#ifdef USE_MKL
+    mkl_set_num_threads(1);
+#endif
+
+    std::exception_ptr failure = nullptr;
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    // Recover each element into the accumulator owned by its OpenMP worker
+    for (Index elem_idx = 0; elem_idx < element_count; ++elem_idx) {
+        try {
+            int thread = 0;
+#ifdef _OPENMP
+            thread = omp_get_thread_num();
+#endif
+
+            auto el = _data->elements[static_cast<std::size_t>(elem_idx)];
+            if (!el) continue;
+
+            if (auto sel = el->as<StructuralElement>()) {
+                sel->compute_shell_section_forces(
+                    thread_resultants[static_cast<std::size_t>(thread)],
+                    thread_counts[static_cast<std::size_t>(thread)],
+                    displacement
+                );
+            }
+        } catch (...) {
+            // Keep C++ exceptions inside the OpenMP region and propagate the
+            // first failure after all workers reach the implicit barrier.
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                if (!failure) {
+                    failure = std::current_exception();
+                }
+            }
         }
     }
 
-    // Convert accumulated contributions into arithmetic nodal averages
-    for (Index i = 0; i < node_count; ++i) {
-        if (count(i, 0) != Precision(0)) {
-            for (Index j = 0; j < resultants.components; ++j) {
-                resultants(i, j) /= count(i, 0);
+    // Restore the configured linear-algebra thread counts after element recovery
+#ifdef USE_MKL
+    mkl_set_num_threads(global_config.max_threads);
+#endif
+    Eigen::setNbThreads(global_config.max_threads);
+
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+
+    // Reduce worker-local contributions independently for every global node
+    Field resultants{"SHELL_RESULTANTS", FieldDomain::NODE, node_count, 8};
+    resultants.set_zero();
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static, 1024) num_threads(global_config.max_threads) if(global_config.max_threads > 1)
+#endif
+    for (Index node = 0; node < node_count; ++node) {
+        Precision count = Precision(0);
+
+        for (int thread = 0; thread < thread_count; ++thread) {
+            const auto index = static_cast<std::size_t>(thread);
+            count += thread_counts[index](node, 0);
+
+            for (Index component = 0; component < resultants.components; ++component) {
+                resultants(node, component) += thread_resultants[index](node, component);
             }
+        }
+
+        if (count == Precision(0)) continue;
+
+        for (Index component = 0; component < resultants.components; ++component) {
+            resultants(node, component) /= count;
         }
     }
 

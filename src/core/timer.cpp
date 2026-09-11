@@ -12,11 +12,11 @@
 namespace fem {
 
 void Timer::start() {
-    start_time = std::chrono::high_resolution_clock::now();
+    start_time = Clock::now();
 }
 
 void Timer::stop() {
-    end_time = std::chrono::high_resolution_clock::now();
+    end_time = Clock::now();
 }
 
 Time Timer::elapsed() const {
