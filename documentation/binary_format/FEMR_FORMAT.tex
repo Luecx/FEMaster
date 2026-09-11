@@ -47,7 +47,8 @@ block, so loading one field never decompresses another field.
 
 Strings use a \texttt{uint16} byte length followed by UTF-8 bytes. Version 1
 supports only the field domains \texttt{UNKNOWN} (0), \texttt{NODE} (1), and
-\texttt{ELEMENT} (2). Writers and readers reject all other domain codes.
+\texttt{ELEMENT} (2). Writers skip fields from other domains with a warning;
+readers reject unsupported domain codes found in a version 1 file.
 
 \subsection{Stable mesh and field indexing}
 

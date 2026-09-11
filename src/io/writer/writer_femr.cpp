@@ -218,11 +218,15 @@ void FemrWriter::ensure_frame(Precision frame_value) {
 void FemrWriter::write_field(const model::Field& field, const std::string& field_name,
                              const model::ModelData*, Precision frame_value) {
     logging::error(file_.is_open(), "FemrWriter: file is not open");
-    logging::error(field.domain == model::FieldDomain::UNKNOWN
-                   || field.domain == model::FieldDomain::NODE
-                   || field.domain == model::FieldDomain::ELEMENT,
-                   "FemrWriter v1 supports only UNKNOWN, NODE, and ELEMENT fields: ",
-                   field_name);
+    const bool supported_domain = field.domain == model::FieldDomain::UNKNOWN
+                               || field.domain == model::FieldDomain::NODE
+                               || field.domain == model::FieldDomain::ELEMENT;
+    if (!supported_domain) {
+        logging::warning(false,
+                         "FemrWriter v1 skips unsupported field domain for field: ",
+                         field_name);
+        return;
+    }
     ensure_frame(frame_value);
     const std::uint64_t field_id = next_field_id_++;
     Bytes metadata;
