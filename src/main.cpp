@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 #include <argparse/argparse.hpp>
 
 #include "core/config.h"
@@ -68,23 +69,10 @@ int main(int argc, char** argv) {
         .choices("femaster", "abaqus")
         .help("Input deck syntax (default: femaster).");
 
-    program.add_argument("--no-res")
-        .flag()
-        .help("Disable native FEMaster .res result output.");
-
-    program.add_argument("--no-frd")
-        .flag()
-        .help("Disable CalculiX/CGX .frd result output.");
-
-    program.add_argument("--result-format")
-        .default_value(std::string{"text"})
-        .choices("text", "binary")
-        .help("Add native binary .femr output; text keeps the existing .res output only.");
-
-    program.add_argument("--result-compression")
-        .default_value(std::string{"none"})
-        .choices("none", "lz4", "zstd")
-        .help("Compression for independently loadable .femr field-data chunks.");
+    program.add_argument("--output-format")
+        .nargs(argparse::nargs_pattern::at_least_one)
+        .choices("res", "frd", "femr")
+        .help("Result formats to write (default: res frd).");
 
     // ---- Documentation mode flags (flat, no nested parser) ----
     program.add_argument("--document")
@@ -141,15 +129,15 @@ int main(int argc, char** argv) {
     std::string       output_file = program.get<std::string>("--output");
 
     fem::io::writer::WriterFileFormats writer_formats;
-    const std::string result_format = program.get<std::string>("--result-format");
-    writer_formats.res = !program.get<bool>("--no-res");
-    writer_formats.frd = !program.get<bool>("--no-frd");
-    writer_formats.femr = result_format == "binary";
-    writer_formats.result_compression = program.get<std::string>("--result-compression");
-
-    if (writer_formats.result_compression != "none" && !writer_formats.femr) {
-        std::cerr << "Error: --result-compression requires --result-format binary.\n";
-        return 1;
+    if (program.is_used("--output-format")) {
+        writer_formats = {};
+        writer_formats.res = false;
+        writer_formats.frd = false;
+        for (const auto& output_format : program.get<std::vector<std::string>>("--output-format")) {
+            writer_formats.res  = writer_formats.res  || output_format == "res";
+            writer_formats.frd  = writer_formats.frd  || output_format == "frd";
+            writer_formats.femr = writer_formats.femr || output_format == "femr";
+        }
     }
 
     fem::global_config.max_threads = ncpus;
@@ -260,9 +248,6 @@ int main(int argc, char** argv) {
     fem::logging::info(true, "Write .res : ", writer_formats.res ? "yes" : "no");
     fem::logging::info(true, "Write .frd : ", writer_formats.frd ? "yes" : "no");
     fem::logging::info(true, "Write .femr: ", writer_formats.femr ? "yes" : "no");
-    if (writer_formats.femr) {
-        fem::logging::info(true, "Compression: ", writer_formats.result_compression);
-    }
     fem::logging::info(true, "");
 
     // Dispatch only the input syntax; both readers share FEMaster model/solver behavior

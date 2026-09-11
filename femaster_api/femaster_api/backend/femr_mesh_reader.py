@@ -20,12 +20,22 @@ class FemrElement:
 class FemrMesh:
     nodes: dict[int, tuple[float, float, float]]
     elements: dict[int, FemrElement]
+    node_ids: tuple[int, ...]
+    element_ids: tuple[int, ...]
 
     def node(self, id: int) -> tuple[float, float, float]:
         return self.nodes[id]
 
     def element(self, id: int) -> FemrElement:
         return self.elements[id]
+
+    def node_at(self, row: int) -> tuple[float, float, float]:
+        """Return the node represented by a NODE field row."""
+        return self.nodes[self.node_ids[row]]
+
+    def element_at(self, row: int) -> FemrElement:
+        """Return the element represented by an ELEMENT field row."""
+        return self.elements[self.element_ids[row]]
 
 
 class MeshFemrResults(FemrResults):
@@ -74,6 +84,7 @@ class MeshFemrResults(FemrResults):
         node_count, element_count = struct.unpack_from("<QQ", raw)
         pos = 16
         nodes: dict[int, tuple[float, float, float]] = {}
+        node_ids: list[int] = []
         for _ in range(node_count):
             if pos + 28 > len(raw):
                 raise ValueError("truncated FEMR node data")
@@ -82,8 +93,10 @@ class MeshFemrResults(FemrResults):
             if node_id in nodes:
                 raise ValueError(f"duplicate FEMR node id: {node_id}")
             nodes[node_id] = (x, y, z)
+            node_ids.append(node_id)
 
         elements: dict[int, FemrElement] = {}
+        element_ids: list[int] = []
         for _ in range(element_count):
             if pos + 6 > len(raw):
                 raise ValueError("truncated FEMR element header")
@@ -98,15 +111,16 @@ class MeshFemrResults(FemrResults):
             connectivity_size = element_node_count * 4
             if pos + connectivity_size > len(raw):
                 raise ValueError("truncated FEMR element connectivity")
-            node_ids = struct.unpack_from(f"<{element_node_count}i", raw, pos)
+            connectivity = struct.unpack_from(f"<{element_node_count}i", raw, pos)
             pos += connectivity_size
             if element_id in elements:
                 raise ValueError(f"duplicate FEMR element id: {element_id}")
-            elements[element_id] = FemrElement(element_id, element_type, node_ids)
+            elements[element_id] = FemrElement(element_id, element_type, connectivity)
+            element_ids.append(element_id)
 
         if pos != len(raw):
             raise ValueError("unexpected trailing bytes in FEMR mesh chunk")
-        return FemrMesh(nodes, elements)
+        return FemrMesh(nodes, elements, tuple(node_ids), tuple(element_ids))
 
 
 def open_results(path: str | Path) -> MeshFemrResults:

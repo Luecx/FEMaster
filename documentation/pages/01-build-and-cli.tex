@@ -59,8 +59,8 @@ Apple Accelerate is available only on macOS. When enabled, supported symmetric C
 FEMaster model.inp
 FEMaster model.inp --output model.res
 FEMaster model.inp --ncpus 8
-FEMaster model.inp --no-frd
-FEMaster model.inp --no-res
+FEMaster model.inp --output-format res
+FEMaster model.inp --output-format frd femr
 \end{shellcmd}
 
 \begin{longtable}{@{}p{0.28\linewidth}p{0.62\linewidth}@{}}
@@ -71,12 +71,13 @@ FEMaster model.inp --no-res
 \file{input_file} & Path to the input deck. If no \file{.inp} suffix is supplied, it is added automatically. \\
 \key{--output FILE} & Explicit output base or result file path. The suffix \file{.res}, \file{.frd}, or \file{.inp} is stripped before writers are opened, so \file{--output run.res} produces \file{run.res} and \file{run.frd}. \\
 \key{--ncpus N} & Number of threads allowed for parallel assembly and compute sections. \\
-\key{--no-res} & Disables native FEMaster \file{.res} result output, leaving \file{.frd} output enabled by default. \\
-\key{--no-frd} & Disables CalculiX/CGX \file{.frd} result output, leaving native \file{.res} output enabled by default. \\
+\key{--output-format} & Selects one or more result formats from \key{res}, \key{frd}, and \key{femr}. \\
 \bottomrule
 \end{longtable}
 
-By default both result writers are enabled. Combining \key{--no-res} and \key{--no-frd} leaves parsing, solution, and console diagnostics enabled without writing either result format.
+By default the \file{.res} and \file{.frd} writers are enabled. Supplying
+\key{--output-format} replaces that default selection. FEMR version 1 uses LZ4
+compression for independently loadable field chunks.
 
 At the end of a regular solver run, FEMaster prints a process timing summary in hours, minutes, seconds, milliseconds, and total milliseconds. This timing covers the full executable run, including parsing, solving, result writing, and shutdown.
 

@@ -28,4 +28,8 @@ def test_mesh_is_loaded_once_and_only_on_access(tmp_path) -> None:
         assert loaded.node(10) == (0.0, 1.0, 2.0)
         assert loaded.element(7).type == "T3"
         assert loaded.element(7).node_ids == (10, 20)
+        assert loaded.node_ids == (10, 20)
+        assert loaded.element_ids == (7,)
+        assert loaded.node_at(1) == (3.0, 4.0, 5.0)
+        assert loaded.element_at(0).id == 7
         assert results.mesh is loaded

@@ -15,9 +15,7 @@ namespace model { struct ModelData; }
 namespace io {
 namespace writer {
 
-enum class FemrCompression : std::uint8_t { None = 0, Lz4 = 1, Zstd = 2 };
-
-FemrCompression femr_compression_from_string(const std::string& value);
+enum class FemrCompression : std::uint8_t { None = 0, Lz4 = 1 };
 
 /** Versioned, chunked FEMaster binary result writer.
  *
@@ -27,8 +25,7 @@ FemrCompression femr_compression_from_string(const std::string& value);
  */
 class FemrWriter {
 public:
-    explicit FemrWriter(const std::string& filename = "",
-                        FemrCompression compression = FemrCompression::None);
+    explicit FemrWriter(const std::string& filename = "");
     ~FemrWriter();
 
     FemrWriter(FemrWriter&& other) noexcept;
@@ -53,7 +50,6 @@ private:
     void ensure_frame(Precision frame_value);
 
     std::ofstream file_;
-    FemrCompression compression_{FemrCompression::None};
     int current_loadcase_{0};
     std::uint32_t current_frame_{0};
     std::uint64_t next_field_id_{1};

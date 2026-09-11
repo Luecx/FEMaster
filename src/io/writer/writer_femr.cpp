@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <set>
+#include <lz4.h>
 #include <utility>
 
 namespace fem {
@@ -63,115 +63,21 @@ void append_string(Bytes& out, const std::string& value) {
     out.insert(out.end(), value.begin(), value.end());
 }
 
-void append_lz4_length(Bytes& out, std::size_t length) {
-    while (length >= 255) { out.push_back(255); length -= 255; }
-    out.push_back(static_cast<std::uint8_t>(length));
-}
-
-std::uint32_t read_u32(const std::uint8_t* data) {
-    return static_cast<std::uint32_t>(data[0])
-         | (static_cast<std::uint32_t>(data[1]) << 8)
-         | (static_cast<std::uint32_t>(data[2]) << 16)
-         | (static_cast<std::uint32_t>(data[3]) << 24);
-}
-
-// Dependency-free LZ4 block compressor. Fields are independent blocks, which
-// both bounds memory use and is essential for field-level lazy loading.
 Bytes encode_lz4(const Bytes& input) {
-    Bytes out;
-    constexpr std::size_t hash_size = 1u << 16;
-    std::vector<std::int64_t> table(hash_size, -1);
-    std::size_t anchor = 0, cursor = 0;
-
-    while (cursor + 4 <= input.size()) {
-        const std::uint32_t sequence = read_u32(input.data() + cursor);
-        const std::size_t hash = (sequence * 2654435761u) >> 16;
-        const std::int64_t candidate = table[hash];
-        table[hash] = static_cast<std::int64_t>(cursor);
-        if (candidate < 0 || cursor - static_cast<std::size_t>(candidate) > 65535 ||
-            read_u32(input.data() + candidate) != sequence) {
-            ++cursor;
-            continue;
-        }
-
-        const std::size_t literal = cursor - anchor;
-        std::size_t match = 4;
-        while (cursor + match < input.size() &&
-               input[static_cast<std::size_t>(candidate) + match] == input[cursor + match]) ++match;
-        const std::size_t encoded_match = match - 4;
-        out.push_back(static_cast<std::uint8_t>((std::min<std::size_t>(literal, 15) << 4)
-                                               | std::min<std::size_t>(encoded_match, 15)));
-        if (literal >= 15) append_lz4_length(out, literal - 15);
-        out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(anchor),
-                   input.begin() + static_cast<std::ptrdiff_t>(cursor));
-        const std::size_t offset = cursor - static_cast<std::size_t>(candidate);
-        append_uint(out, static_cast<std::uint16_t>(offset));
-        if (encoded_match >= 15) append_lz4_length(out, encoded_match - 15);
-        cursor += match; anchor = cursor;
-    }
-
-    const std::size_t literal = input.size() - anchor;
-    out.push_back(static_cast<std::uint8_t>(std::min<std::size_t>(literal, 15) << 4));
-    if (literal >= 15) append_lz4_length(out, literal - 15);
-    out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(anchor), input.end());
-    return out;
-}
-
-// Minimal standards-compliant Zstandard encoder using raw and RLE blocks. It
-// has no linked dependency and compresses repeated byte runs (common in sparse
-// and zero-valued result arrays); arbitrary data remains an interoperable raw
-// block within the Zstandard frame.
-Bytes encode_zstd(const Bytes& input) {
-    Bytes out{0x28, 0xb5, 0x2f, 0xfd};
-    const std::uint64_t size = input.size();
-    if (size < 256) {
-        out.push_back(0x20); append_uint(out, static_cast<std::uint8_t>(size));
-    } else if (size < 65792) {
-        out.push_back(0x60); append_uint(out, static_cast<std::uint16_t>(size - 256));
-    } else if (size <= 0xffffffffu) {
-        out.push_back(0xa0); append_uint(out, static_cast<std::uint32_t>(size));
-    } else {
-        out.push_back(0xe0); append_uint(out, size);
-    }
-
-    struct Block { std::size_t offset; std::size_t size; bool rle; };
-    constexpr std::size_t max_block = 131071, min_rle = 8;
-    std::vector<Block> blocks;
-    std::size_t cursor = 0;
-    while (cursor < input.size()) {
-        std::size_t run = 1;
-        while (cursor + run < input.size() && input[cursor + run] == input[cursor] && run < max_block) ++run;
-        if (run >= min_rle) {
-            blocks.push_back({cursor, run, true}); cursor += run; continue;
-        }
-        const std::size_t raw_begin = cursor++;
-        while (cursor < input.size() && cursor - raw_begin < max_block) {
-            run = 1;
-            while (cursor + run < input.size() && input[cursor + run] == input[cursor] && run < max_block) ++run;
-            if (run >= min_rle) break;
-            ++cursor;
-        }
-        blocks.push_back({raw_begin, cursor - raw_begin, false});
-    }
-    if (blocks.empty()) blocks.push_back({0, 0, false});
-    for (std::size_t i = 0; i < blocks.size(); ++i) {
-        const Block block = blocks[i];
-        const bool last = i + 1 == blocks.size();
-        const std::uint32_t block_header = (static_cast<std::uint32_t>(block.size) << 3)
-                                         | (block.rle ? 2u : 0u) | (last ? 1u : 0u);
-        out.push_back(static_cast<std::uint8_t>(block_header));
-        out.push_back(static_cast<std::uint8_t>(block_header >> 8));
-        out.push_back(static_cast<std::uint8_t>(block_header >> 16));
-        if (block.rle) out.push_back(input[block.offset]);
-        else out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(block.offset),
-                        input.begin() + static_cast<std::ptrdiff_t>(block.offset + block.size));
-    }
+    logging::error(input.size() <= static_cast<std::size_t>(LZ4_MAX_INPUT_SIZE),
+                   "FemrWriter: field chunk exceeds the LZ4 block size limit");
+    const int source_size = static_cast<int>(input.size());
+    Bytes out(static_cast<std::size_t>(LZ4_compressBound(source_size)));
+    const int stored_size = LZ4_compress_default(
+        reinterpret_cast<const char*>(input.data()),
+        reinterpret_cast<char*>(out.data()), source_size, static_cast<int>(out.size()));
+    logging::error(stored_size > 0, "FemrWriter: LZ4 compression failed");
+    out.resize(static_cast<std::size_t>(stored_size));
     return out;
 }
 
 Bytes compress(const Bytes& input, FemrCompression method) {
     if (method == FemrCompression::Lz4) return encode_lz4(input);
-    if (method == FemrCompression::Zstd) return encode_zstd(input);
     return input;
 }
 
@@ -187,23 +93,14 @@ std::uint8_t step_code(WriterStepType type) {
 
 } // namespace
 
-FemrCompression femr_compression_from_string(const std::string& value) {
-    if (value == "none") return FemrCompression::None;
-    if (value == "lz4") return FemrCompression::Lz4;
-    if (value == "zstd") return FemrCompression::Zstd;
-    logging::error(false, "FemrWriter: unknown compression: ", value);
-    return FemrCompression::None;
-}
-
-FemrWriter::FemrWriter(const std::string& filename, FemrCompression compression)
-    : compression_(compression) {
+FemrWriter::FemrWriter(const std::string& filename) {
     if (!filename.empty()) open(filename);
 }
 
 FemrWriter::~FemrWriter() { close(); }
 
 FemrWriter::FemrWriter(FemrWriter&& other) noexcept
-    : file_(std::move(other.file_)), compression_(other.compression_),
+    : file_(std::move(other.file_)),
       current_loadcase_(other.current_loadcase_), current_frame_(other.current_frame_),
       next_field_id_(other.next_field_id_), last_frame_value_(other.last_frame_value_),
       frame_written_(other.frame_written_), closed_(other.closed_),
@@ -211,7 +108,7 @@ FemrWriter::FemrWriter(FemrWriter&& other) noexcept
 
 FemrWriter& FemrWriter::operator=(FemrWriter&& other) noexcept {
     if (this != &other) {
-        close(); file_ = std::move(other.file_); compression_ = other.compression_;
+        close(); file_ = std::move(other.file_);
         current_loadcase_ = other.current_loadcase_; current_frame_ = other.current_frame_;
         next_field_id_ = other.next_field_id_; last_frame_value_ = other.last_frame_value_;
         frame_written_ = other.frame_written_; closed_ = other.closed_;
@@ -243,7 +140,7 @@ void FemrWriter::write_header() {
     append_uint(payload, std::uint16_t{0});
     payload.push_back(1); // little endian
     payload.push_back(static_cast<std::uint8_t>(sizeof(Precision)));
-    payload.push_back(static_cast<std::uint8_t>(compression_));
+    payload.push_back(static_cast<std::uint8_t>(FemrCompression::Lz4));
     payload.push_back(0);
     append_uint(payload, std::uint64_t{0});
     write_chunk("HEAD", payload);
@@ -270,24 +167,25 @@ void FemrWriter::write_chunk(const char type[4], const Bytes& payload,
 
 void FemrWriter::write_model_data(const model::ModelData& model_data) {
     Bytes payload;
-    std::set<ID> node_ids;
-    for (const auto& element : model_data.elements) {
-        if (!element) continue;
-        for (ID node_id : *element) node_ids.insert(node_id);
-    }
-    const std::uint64_t node_count = node_ids.size();
-    const std::uint64_t element_count = static_cast<std::uint64_t>(std::count_if(
-        model_data.elements.begin(), model_data.elements.end(), [](const auto& item) { return item != nullptr; }));
+    const std::uint64_t node_count = model_data.positions
+        ? static_cast<std::uint64_t>(model_data.positions->rows) : 0;
+    const std::uint64_t element_count = static_cast<std::uint64_t>(model_data.elements.size());
     append_uint(payload, node_count); append_uint(payload, element_count);
     logging::error(model_data.positions != nullptr || node_count == 0,
                    "FemrWriter: mesh nodes require a positions field");
-    for (ID id : node_ids) {
-        append_i32(payload, id);
+    // MESH order is the normative dense field-row mapping: node/element entry
+    // zero corresponds to row zero in NODE/ELEMENT FDAT arrays. Identifiers are
+    // stored explicitly as well, so readers never infer them from connectivity.
+    for (Index row = 0; row < static_cast<Index>(node_count); ++row) {
+        append_i32(payload, static_cast<std::int32_t>(row));
         for (Index component = 0; component < 3; ++component)
-            append_f64(payload, static_cast<double>((*model_data.positions)(static_cast<Index>(id), component)));
+            append_f64(payload, static_cast<double>((*model_data.positions)(row, component)));
     }
-    for (const auto& element : model_data.elements) {
-        if (!element) continue;
+    for (Index row = 0; row < static_cast<Index>(element_count); ++row) {
+        const auto& element = model_data.elements[static_cast<std::size_t>(row)];
+        logging::error(element != nullptr, "FemrWriter: dense element row is empty: ", row);
+        logging::error(element->elem_id == static_cast<ID>(row),
+                       "FemrWriter: element identifier does not match its dense row");
         append_i32(payload, element->elem_id);
         append_string(payload, element->type_name());
         append_uint(payload, static_cast<std::uint16_t>(element->n_nodes()));
@@ -320,6 +218,11 @@ void FemrWriter::ensure_frame(Precision frame_value) {
 void FemrWriter::write_field(const model::Field& field, const std::string& field_name,
                              const model::ModelData*, Precision frame_value) {
     logging::error(file_.is_open(), "FemrWriter: file is not open");
+    logging::error(field.domain == model::FieldDomain::UNKNOWN
+                   || field.domain == model::FieldDomain::NODE
+                   || field.domain == model::FieldDomain::ELEMENT,
+                   "FemrWriter v1 supports only UNKNOWN, NODE, and ELEMENT fields: ",
+                   field_name);
     ensure_frame(frame_value);
     const std::uint64_t field_id = next_field_id_++;
     Bytes metadata;
@@ -338,7 +241,7 @@ void FemrWriter::write_field(const model::Field& field, const std::string& field
         for (Index component = 0; component < field.components; ++component)
             append_precision(values, field(row, component));
     Bytes data; append_uint(data, field_id); data.insert(data.end(), values.begin(), values.end());
-    write_chunk("FDAT", data, compression_);
+    write_chunk("FDAT", data, FemrCompression::Lz4);
 }
 
 } // namespace writer

@@ -24,8 +24,7 @@ ResultWriters::ResultWriters(const std::string& job_base_name,
     }
 
     if (options.femr) {
-        femr_writer.reset(new FemrWriter(job_base_name + ".femr",
-                                        femr_compression_from_string(options.result_compression)));
+        femr_writer.reset(new FemrWriter(job_base_name + ".femr"));
     }
 }
 

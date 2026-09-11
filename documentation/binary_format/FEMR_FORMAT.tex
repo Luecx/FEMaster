@@ -1,0 +1,71 @@
+\section{FEMR binary result format}
+\label{sec:femr-format}
+
+FEMR version 1 is FEMaster's seekable binary result container. Multi-byte
+integers and floating-point values are little-endian. Unknown chunks are
+skipped using their stored size, allowing compatible format extensions.
+
+Binary output is selected explicitly, for example:
+\begin{verbatim}
+FEMaster model.inp --output-format femr
+FEMaster model.inp --output-format res frd femr
+\end{verbatim}
+FEMR version 1 always compresses each independently loadable field-data chunk
+with LZ4. There is no compression setting in the command-line interface.
+
+\subsection{Chunk envelope}
+
+Every chunk begins with a 32-byte envelope containing, in order:
+\begin{itemize}
+  \item a four-byte chunk code;
+  \item a \texttt{uint32} compression code (0 for none, 1 for an LZ4 block);
+  \item \texttt{uint64} stored and uncompressed payload sizes;
+  \item a \texttt{uint32} CRC32 of the uncompressed payload; and
+  \item a reserved \texttt{uint32}, which is zero in version 1.
+\end{itemize}
+Only \texttt{FDAT} is compressed in version 1. Each field is a separate LZ4
+block, so loading one field never decompresses another field.
+
+\subsection{Chunks}
+
+\begin{description}
+  \item[HEAD] Must be first. It stores the \texttt{FEMR} magic, major and minor
+  version, byte order, scalar width, default compression and reserved data.
+  \item[MESH] Starts with \texttt{uint64} node and element counts. Each node
+  stores an explicit \texttt{int32} identifier and three \texttt{float64}
+  coordinates. Each element stores its explicit identifier, a length-prefixed
+  UTF-8 type name, node count and explicit node identifiers.
+  \item[LCAS] Stores the load-case identifier and step type.
+  \item[FRAM] Stores load-case identifier, dense frame identifier and value.
+  \item[FMET] Stores field identifier, load-case and frame identifiers, name,
+  domain, scalar width, row count and component count.
+  \item[FDAT] Stores the field identifier followed by its dense row-major scalar
+  array.
+  \item[CSUM] Must be last. Its payload is the CRC32 of every preceding chunk
+  envelope and stored payload byte.
+\end{description}
+
+Strings use a \texttt{uint16} byte length followed by UTF-8 bytes. Version 1
+supports only the field domains \texttt{UNKNOWN} (0), \texttt{NODE} (1), and
+\texttt{ELEMENT} (2). Writers and readers reject all other domain codes.
+
+\subsection{Stable mesh and field indexing}
+
+MESH ordering defines the stable dense result indexing. Node entry $i$ maps to
+row $i$ of every NODE field, and element entry $i$ maps to row $i$ of every
+ELEMENT field. Node and element identifiers are nevertheless stored explicitly;
+they must not be reconstructed from element connectivity.
+
+\subsection{Lazy access}
+
+A reader scans only chunk envelopes and the small metadata chunks. It seeks
+over MESH and FDAT payloads and retains their offsets. Mesh or field payloads
+are read, decompressed and checked only when requested.
+
+\begin{verbatim}
+import femaster_api as femaster
+
+with femaster.open_results("model.femr") as results:
+    stress = results.loadcase(1).frame(20).field("STRESS")
+    mesh = results.mesh
+\end{verbatim}

@@ -14,9 +14,6 @@ _DOMAIN = {
     0: FieldDomain.UNKNOWN,
     1: FieldDomain.NODE,
     2: FieldDomain.ELEMENT,
-    3: FieldDomain.ELEMENT_NODAL,
-    4: FieldDomain.ELEMENT_IP,
-    5: getattr(FieldDomain, "ELEMENT_MP", FieldDomain.UNKNOWN),
 }
 
 
@@ -175,6 +172,8 @@ class FemrResults:
             raise ValueError(f"missing FEMR field-data chunks: {sorted(missing)}")
 
     def _load_field(self, meta: _FieldMeta) -> Field:
+        if meta.domain not in _DOMAIN:
+            raise ValueError(f"unsupported FEMR v1 field domain: {meta.domain}")
         ref = self._data[meta.field_id]
         self._file.seek(ref.offset)
         stored = self._file.read(ref.stored_size)
@@ -223,8 +222,6 @@ def _decompress(stored: bytes, method: int, raw_size: int) -> bytes:
         raw = stored
     elif method == 1:
         raw = _decode_lz4(stored)
-    elif method == 2:
-        raw = _decode_zstd_raw_frame(stored)
     else:
         raise ValueError(f"unsupported FEMR compression id: {method}")
     if len(raw) != raw_size:
@@ -252,24 +249,4 @@ def _decode_lz4(data: bytes) -> bytes:
                 if value != 255: break
         match += 4
         for _ in range(match): out.append(out[-offset])
-    return bytes(out)
-
-
-def _decode_zstd_raw_frame(data: bytes) -> bytes:
-    if data[:4] != b"\x28\xb5\x2f\xfd": raise ValueError("invalid Zstandard frame")
-    descriptor = data[4]; pos = 5
-    if not descriptor & 0x20: raise ValueError("unsupported multi-segment Zstandard frame")
-    fcs_flag = descriptor >> 6
-    fcs_size = (1, 2, 4, 8)[fcs_flag]
-    frame_size = int.from_bytes(data[pos:pos + fcs_size], "little")
-    if fcs_size == 2: frame_size += 256
-    pos += fcs_size; out = bytearray()
-    while True:
-        header = int.from_bytes(data[pos:pos + 3], "little"); pos += 3
-        last, block_type, size = header & 1, (header >> 1) & 3, header >> 3
-        if block_type == 0: out += data[pos:pos + size]; pos += size
-        elif block_type == 1: out += data[pos:pos + 1] * size; pos += 1
-        else: raise ValueError("compressed Zstandard blocks require the optional zstandard package")
-        if last: break
-    if len(out) != frame_size: raise ValueError("Zstandard frame size mismatch")
     return bytes(out)
