@@ -1,10 +1,18 @@
-"""Canonical semantic field types."""
+"""Canonical semantic field types independent of storage format.
+
+``FieldType`` describes what numerical values mean; ``FieldDomain`` describes
+where those values live.  RES and FRD readers normalize their native field names
+through ``from_name`` so downstream post-processing can work with one semantic
+vocabulary even when writers use aliases or append frame/mode numbers.
+"""
+
+from __future__ import annotations
 
 from enum import Enum
 
 
 class FieldType(Enum):
-    """Format-independent semantic field types."""
+    """Canonical semantic meaning of a model or result field."""
 
     UNKNOWN = "UNKNOWN"
     POSITION = "POSITION"
@@ -38,18 +46,23 @@ class FieldType(Enum):
 
     @classmethod
     def from_name(cls, name: str) -> "FieldType":
+        """Resolve FEMaster/RES/FRD names and numbered variants canonically."""
+
         normalized = "".join(
-            character for character in name.upper() if character.isalnum()
+            character
+            for character in name.upper()
+            if character.isalnum()
         )
 
-        for prefix, field_type in (
+        prefixes = (
             ("MODESHAPE", cls.MODE_SHAPE),
             ("BUCKLINGMODE", cls.BUCKLING_MODE),
             ("PARTICIPATION", cls.PARTICIPATION),
             ("DISPLACEMENT", cls.DISPLACEMENT),
             ("VELOCITY", cls.VELOCITY),
             ("ACCELERATION", cls.ACCELERATION),
-        ):
+        )
+        for prefix, field_type in prefixes:
             if normalized.startswith(prefix):
                 return field_type
 
@@ -91,9 +104,11 @@ class FieldType(Enum):
             return aliases[normalized]
 
         for item in cls:
-            if normalized in {
-                "".join(character for character in item.name.upper() if character.isalnum()),
-                "".join(character for character in item.value.upper() if character.isalnum()),
-            }:
+            candidates = {
+                "".join(c for c in item.name.upper() if c.isalnum()),
+                "".join(c for c in item.value.upper() if c.isalnum()),
+            }
+            if normalized in candidates:
                 return item
+
         return cls.UNKNOWN

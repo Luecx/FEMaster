@@ -1,10 +1,18 @@
-"""Field storage domains."""
+"""Physical storage domains shared by model fields and result fields.
+
+The enum mirrors the domains implemented by FEMaster ``ModelData``.  It is the
+single domain definition used by input fields, native RES parsing and FRD result
+conversion, preventing each file format from inventing a competing set of
+location enums.
+"""
+
+from __future__ import annotations
 
 from enum import Enum
 
 
 class FieldDomain(Enum):
-    """Physical storage domains implemented by FEMaster ModelData."""
+    """Location at which each row of a field is defined."""
 
     UNKNOWN = "UNKNOWN"
     NODE = "NODE"

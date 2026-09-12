@@ -1,4 +1,15 @@
-"""Rigid Part instance placement."""
+"""Rigid assembly instance of one reusable part.
+
+An ``Instance`` references a part by semantic name and stores only assembly
+placement information.  Topology is never duplicated in Python.  Optional
+translation and axis-angle rotation rows mirror FEMaster's native ``*INSTANCE``
+syntax and are validated at construction time.
+
+Repository positions are intentionally absent from this class; part and instance
+identity is expressed through stable names.
+"""
+
+from __future__ import annotations
 
 from collections.abc import Iterable
 
@@ -7,7 +18,7 @@ from ..common.named_object import NamedObject
 
 
 class Instance(NamedObject):
-    """Rigid placement of one reusable Part in the assembly."""
+    """Rigid placement of a named ``Part`` inside the assembly."""
 
     def __init__(
         self,
@@ -20,22 +31,30 @@ class Instance(NamedObject):
         super().__init__(name)
         self.part = str(part)
 
-        self.translation = None
+        self.translation: tuple[float, float, float] | None = None
         if translation is not None:
             values = tuple(float(value) for value in translation)
             if len(values) != 3:
                 raise ValueError("instance translation requires exactly 3 values")
             self.translation = values
 
-        self.rotation = None
+        self.rotation: tuple[
+            tuple[float, float, float],
+            tuple[float, float, float],
+            float,
+        ] | None = None
         if rotation is not None:
             point_a = tuple(float(value) for value in rotation[0])
             point_b = tuple(float(value) for value in rotation[1])
             if len(point_a) != 3 or len(point_b) != 3:
-                raise ValueError("instance rotation axis points require exactly 3 values")
+                raise ValueError(
+                    "instance rotation axis points require exactly 3 values"
+                )
             self.rotation = (point_a, point_b, float(rotation[2]))
 
     def export(self) -> str:
+        """Export one native ``*INSTANCE`` block including optional placement."""
+
         lines = [keyword("INSTANCE", NAME=self.name, PART=self.part)]
         if self.translation is not None:
             lines.append(csv(self.translation))

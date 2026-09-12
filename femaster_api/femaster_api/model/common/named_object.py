@@ -1,19 +1,29 @@
-"""Immutable semantic-name base object."""
+"""Base object for model entities with immutable semantic names.
+
+Named model objects are indexed by ``NamedRepository``.  Their name therefore
+forms part of repository identity and must remain stable after insertion.
+Making only the name immutable keeps the surrounding FEM definition mutable
+without allowing repository lookup tables to become stale.
+"""
+
+from __future__ import annotations
 
 
 class NamedObject:
-    """Base object with an immutable non-empty semantic name."""
+    """Base class for FEMaster objects identified by a stable semantic name."""
 
     __slots__ = ("_name",)
 
     def __init__(self, name: str) -> None:
-        name = str(name).strip()
-        if not name:
+        normalized = str(name).strip()
+        if not normalized:
             raise ValueError("name must not be empty")
-        self._name = name
+        self._name = normalized
 
     @property
     def name(self) -> str:
+        """Return the immutable semantic name used for repository lookup."""
+
         return self._name
 
     def __repr__(self) -> str:

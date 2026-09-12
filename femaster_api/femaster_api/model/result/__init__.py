@@ -1,7 +1,11 @@
-"""Format-independent result hierarchy."""
+"""Format-independent FEMaster solution, frame and field hierarchy.
 
-from .frame import Frame
-from .load_case import LoadCase
+Result files are read directly through ``Result.read_res`` / ``Result.read_frd``;
+there is intentionally no separate public I/O package.
+"""
+
 from .result import Result
+from .result_frame import Frame
+from .result_solution import Solution
 
-__all__ = [name for name in globals() if not name.startswith("_")]
+__all__ = ["Frame", "Result", "Solution"]

@@ -1,96 +1,102 @@
-# FEMaster Python Code Style
+# FEMaster Python API Style
 
-These rules mirror the C++ code philosophy: correctness and explicit FEM
-semantics take precedence over compactness or framework abstractions.
+These rules intentionally mirror the FEMaster C++ style: preserve finite-element
+semantics first, make ownership explicit, and prefer readable local code over
+framework abstractions.
 
-## 1. Package structure
+## Source structure
 
-- Every model object lives below `femaster_api/model/`.
-- Model concepts are grouped into semantic subpackages (`part`, `mesh`, `field`,
-  `result`, `section`, `load`, ...).
-- `io` contains only parsing/import infrastructure and syntax-level records.
-- Do not create model classes at package root.
-- Do not reintroduce flat collection modules such as `mesh.py`, `fields.py`,
-  `materials.py` or `steps.py`.
+Every model concept lives below `femaster_api/model/`. Do not create parallel
+model hierarchies under generic packages such as `io`, `export`, `importers` or
+`mesh`. `Project` lives directly in `model/project.py`. Nodes, elements,
+surfaces, regions, materials, sections, loads, supports, constraints, steps,
+fields and results each have their own semantic package.
 
-## 2. One class per file
+A Python source file may define **at most one class**. This includes base classes,
+concrete classes, repositories, enums and helper/control classes. Pure functions,
+type aliases and lookup tables may share a module when they naturally belong to
+that module and do not hide an additional class.
 
-**Every Python source file contains at most one class definition.**
+Use grouped filenames inside semantic packages. Examples are `step_modal.py`,
+`step_static.py`, `region_node.py`, `surface_element.py`, `load_pressure.py` and
+`section_shell.py`. Concrete FEM element classes use one file each, such as
+`element_c3d8.py` and `element_mitc4.py`.
 
-This applies equally to:
+Step implementation details that are not analysis steps themselves belong below
+`step/util/`, for example `solver_control.py`, `time_control.py` and
+`rayleigh_damping.py`.
 
-- public model classes,
-- repositories,
-- enums,
-- control/value classes,
-- abstract/base classes,
-- parser/importer classes,
-- private helper classes.
+## Documentation
 
-A module may contain helper functions and type aliases when no class is defined
-or when those helpers are local to the single class in that file.
+Every Python file starts with a substantial module docstring. It should explain
+what the module represents, where the concept is owned, how identifiers are
+interpreted, and any important native FEMaster export/import behavior. Tiny
+one-line module docstrings are not acceptable for model modules.
 
-`__init__.py` files only re-export names and must not define classes.
+Every public class and every non-trivial public method has a docstring. Comments
+inside functions should mark logical phases or explain FEM semantics, parsing
+state, identifier spaces, numerical meaning or non-obvious format behavior.
+Do not add comments that merely restate an assignment.
 
-## 3. Model architecture
+## Ownership
 
-- `Project` is the top-level model owner.
-- `Part` owns part-local nodes, elements, regions, surfaces and sections.
-- The default Part exists only as `project.parts[0]`.
-- `project.parts.default()` returns exactly `project.parts[0]`.
-- The default Part cannot be deleted or replaced.
-- Named repositories support `repository[index]` and `repository[name]`.
-- Repository positions are convenience indices, never persistent model IDs.
-- Persistent references between named objects use names.
-- Node and element repositories preserve FEMaster IDs.
-- Loads and supports belong directly to their collectors.
-- Field and result objects are model objects and live under `model/field` and
-  `model/result`.
+`Project` owns shared/global definitions and assembly-level concepts. `Part`
+owns part-local nodes, elements, regions, surfaces and sections. The implicit
+default part exists only as `project.parts[0]`; `parts.default()` returns that
+same object and it cannot be removed.
 
-## 4. Export
+Loads and supports belong directly to their collectors. Do not keep a second
+global copy. Persistent references between named objects use semantic names, not
+repository positions.
 
-Every model class with an independent native representation implements
-`export()` itself.
+Node and element IDs are native FEMaster IDs and must never be silently
+renumbered. Integer subscription on an ID repository addresses the FEMaster ID;
+explicit positional access uses `.at(index)`.
 
-Repositories implement `export()` only where they own ordering or grouping
-required by the input syntax. `Project.export()` orchestrates dependency order;
-it must not become a type-switching serializer registry.
+## Export
 
-Do not introduce visitors, serializer registries, decorators or metaclasses for
-ordinary native export.
+Every independently exportable class owns an `export()` method. Repositories own
+`export()` when grouping/order is part of their responsibility. `Project.export()`
+only composes these pieces in native scope/dependency order. Do not introduce a
+serializer registry, visitor hierarchy, decorator-based dispatch or metaclass.
 
-## 5. Import
+## Input reading
 
-Importers populate the same public model classes users construct manually.
-Do not maintain a second DTO hierarchy.
+Input reading belongs to `Project` through `Project.read_inp()` and
+`Project.read_inp_text()`. Parsing populates the same public model users construct
+manually. Temporary syntax state should use ordinary private data structures,
+not a second public DTO object hierarchy.
 
-Use:
+Successfully parsed but unsupported keyword blocks remain visible as unparsed
+data. Never silently discard syntax that the public model cannot represent.
 
-- `InpImporter.import_file()` / `import_text()`
-- `ResImporter.import_file()` / `import_text()`
-- `FrdImporter.import_file()` / `import_text()`
+## Results
 
-Successfully parsed but unsupported input blocks are retained explicitly rather
-than silently discarded.
+The canonical post-processing hierarchy is:
 
-## 6. Fields and results
+`Result -> Solution -> Frame -> Field`
 
-`FieldDomain` and `FieldType` are the central format-independent definitions.
-RES and FRD importers map into:
+`Solution` represents one solver/loadcase result. `Frame` owns a numeric ID, an
+optional physical `value`, and fields. `FieldDomain` defines storage location and
+`FieldType` defines semantic meaning. RES and FRD parsing must normalize into
+these shared classes rather than define format-specific result models.
 
-```text
-Result -> LoadCase -> Frame -> Field
-```
+Result readers are class methods on `Result`: `read()`, `read_res()`,
+`read_res_text()`, `read_frd()` and `read_frd_text()`.
 
-Format-specific readers must not create competing field classes or enums.
+## Validation
 
-## 7. Code organization
+Validate invariants where invalid data first becomes meaningful: duplicate names
+or IDs, element connectivity size, vector dimension, immutable semantic names,
+field row width/address width, protected default-part removal and required native
+keyword data. Do not add speculative validation that changes FEMaster semantics.
 
-Prefer direct, locally understandable Python. Keep mathematical and semantic
-ownership explicit. Use small abstractions only when they represent a genuine
-concept or meaningful repeated behavior.
+## Dependencies and abstractions
 
-Validate invariants at the object boundary where invalid data first becomes
-meaningful. Never silently renumber node or element IDs.
+Prefer ordinary Python and the standard library. Add an abstraction only when it
+represents a real FEMaster concept or substantial repeated behavior. Do not add
+Pydantic, attrs, serialization frameworks, dependency injection or generic
+repository infrastructure beyond the small repository primitives already used.
 
-Do not claim tests passed unless they were actually executed.
+Tests must enforce the structural rules above. Do not claim tests pass unless
+they were actually executed.

@@ -1,11 +1,19 @@
-"""Named beam profile."""
+"""Named global beam-profile definition.
+
+A profile stores the scalar section properties consumed by FEMaster beam
+sections.  It is independent of material and element-region assignment, allowing
+one profile to be reused by multiple ``BeamSection`` objects.  Values are kept
+in the native profile order so export remains transparent and reversible.
+"""
+
+from __future__ import annotations
 
 from ..common.format import block, csv, keyword
 from ..common.named_object import NamedObject
 
 
 class Profile(NamedObject):
-    """General beam profile using native scalar section properties."""
+    """General beam profile expressed by FEMaster's scalar section properties."""
 
     def __init__(
         self,
@@ -21,9 +29,13 @@ class Profile(NamedObject):
         refz: float = 0.0,
     ) -> None:
         super().__init__(name)
-        self.values = tuple(float(value) for value in (
-            area, iy, iz, j, iyz, ey, ez, refy, refz
-        ))
+        self.values = tuple(
+            float(value)
+            for value in (area, iy, iz, j, iyz, ey, ez, refy, refz)
+        )
 
     def export(self) -> str:
-        return block([keyword("PROFILE", NAME=self.name), csv(self.values)])
+        return block([
+            keyword("PROFILE", NAME=self.name),
+            csv(self.values),
+        ])
