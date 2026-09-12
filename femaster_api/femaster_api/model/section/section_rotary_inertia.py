@@ -1,9 +1,8 @@
-"""Concentrated rotary inertia assigned to ``ROTARYI`` point elements.
+"""Concentrated diagonal rotary inertia assigned to ``ROTARYI`` elements.
 
-The native command currently supports the three principal inertia values while
-products of inertia are required to remain zero.  The Python model therefore
-stores the physically active diagonal components explicitly and emits the three
-zero products in FEMaster's six-value input order.
+FEMaster's current point-property path accepts the three principal inertia terms;
+products of inertia are exported as zero.  Keeping that assumption explicit in
+this class prevents the Python API from implying unsupported coupled inertia.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from .section import Section
 
 
 class RotaryInertiaSection(Section):
-    """Principal concentrated rotary-inertia property."""
+    """Diagonal concentrated rotary inertia property."""
 
     def __init__(
         self,
@@ -27,7 +26,7 @@ class RotaryInertiaSection(Section):
         self.inertia = tuple(float(value) for value in inertia)
         if len(self.inertia) != 3:
             raise ValueError(
-                "RotaryInertiaSection requires exactly 3 principal inertias"
+                "RotaryInertiaSection requires exactly 3 diagonal moments"
             )
 
     def export(self) -> str:

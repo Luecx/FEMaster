@@ -1,13 +1,10 @@
-"""Generalized shell section defined directly by ABD and transverse-shear terms.
+"""Direct generalized shell section using ABD and transverse shear stiffness.
 
-FEMaster's ABD shell-section form consumes exactly 36 coupling/stiffness values
-followed by four transverse-shear coefficients.  The Python class stores those
-groups separately for readability, validates their dimensions immediately and
-emits the native forty-value sequence unchanged.
-
-Material and orientation names remain optional because generalized ABD input can
-be fully constitutive on its own while still supporting semantic metadata needed
-by downstream shell calculations.
+The object stores a full 6x6 ABD matrix and a 2x2 transverse shear matrix in
+row-major flattened order.  Sizes are validated immediately because an
+incomplete generalized section has no meaningful native representation.
+Optional material and orientation references retain FEMaster's current
+``SHELLSECTION TYPE=ABD`` capabilities.
 """
 
 from __future__ import annotations
@@ -19,7 +16,7 @@ from .section import Section
 
 
 class ABDShellSection(Section):
-    """Generalized 6x6 ABD plus 2x2 transverse-shear shell section."""
+    """Direct generalized shell stiffness assignment."""
 
     def __init__(
         self,
@@ -50,13 +47,16 @@ class ABDShellSection(Section):
 
     def export(self) -> str:
         values = (*self.abd, *self.shear)
-        rows = [csv(values[start:start + 8]) for start in range(0, len(values), 8)]
+        rows = [
+            csv(values[start:start + 8])
+            for start in range(0, len(values), 8)
+        ]
         return block([
             keyword(
                 "SHELLSECTION",
+                TYPE="ABD",
                 ELSET=self.element_region,
                 MATERIAL=self.material,
-                TYPE="ABD",
                 THICKNESS=self.thickness,
                 ORIENTATION=self.orientation,
                 CSYSAXIS=self.csys_axis,

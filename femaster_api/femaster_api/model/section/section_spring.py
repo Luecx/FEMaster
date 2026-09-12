@@ -1,8 +1,8 @@
-"""Single-DOF spring property assigned to ``SPRING1`` point elements.
+"""Ground-spring property assigned to ``SPRING1`` point elements.
 
-The property stores the structural degree of freedom and scalar stiffness
-separately, matching FEMaster's two-line ``*SPRING`` data syntax.  Valid DOFs are
-1..6 and are checked when the section is constructed.
+The property stores one structural degree of freedom and one constant stiffness.
+DOF validation is performed immediately because FEMaster structural point
+springs address the six standard translational/rotational components.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from .section import Section
 
 
 class SpringSection(Section):
-    """Linear one-degree-of-freedom ground-spring property."""
+    """Constant one-DOF ground spring property."""
 
     def __init__(
         self,

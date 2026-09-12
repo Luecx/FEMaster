@@ -1,9 +1,8 @@
-"""Continuum solid-section assignment.
+"""Three-dimensional continuum section assignment.
 
-A solid section links one part-local element region to one globally named
-material and may additionally reference a coordinate-system orientation.  The
-object maps directly to FEMaster's ``*SOLIDSECTION`` command and carries no
-geometry-specific data row.
+``SolidSection`` connects one element region to a global material and optionally
+one material orientation.  It exports directly to FEMaster's native
+``*SOLIDSECTION`` keyword and contains no element-specific serializer logic.
 """
 
 from __future__ import annotations
@@ -13,7 +12,7 @@ from .section_material import MaterialSection
 
 
 class SolidSection(MaterialSection):
-    """Material assignment for a solid-element region."""
+    """Material assignment for continuum solid elements."""
 
     def __init__(
         self,

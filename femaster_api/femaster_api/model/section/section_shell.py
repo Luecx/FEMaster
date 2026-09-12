@@ -1,9 +1,9 @@
-"""Integrated shell section with material, thickness and orientation controls.
+"""Integrated shell section with constant thickness.
 
-The section represents FEMaster's ordinary integrated shell formulation.  It
-references one global material, stores one positive thickness and may reference
-a named orientation.  ``csys_axis`` selects which local coordinate-system axis
-is used and is validated against FEMaster's supported values 1..3.
+This class represents the material-integrated shell form, not a direct ABD
+stiffness.  Thickness, material orientation and coordinate-system axis are
+stored explicitly so the object corresponds one-to-one with the native
+``*SHELLSECTION, TYPE=INTEGRATED`` definition.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from .section_material import MaterialSection
 
 
 class ShellSection(MaterialSection):
-    """Integrated shell section with one material and one thickness."""
+    """Material-integrated shell section with constant thickness."""
 
     def __init__(
         self,
@@ -28,9 +28,6 @@ class ShellSection(MaterialSection):
         self.thickness = float(thickness)
         self.orientation = orientation
         self.csys_axis = int(csys_axis)
-
-        if self.thickness <= 0.0:
-            raise ValueError("ShellSection thickness must be positive")
         if self.csys_axis not in (1, 2, 3):
             raise ValueError("ShellSection csys_axis must be 1, 2 or 3")
 
@@ -38,9 +35,9 @@ class ShellSection(MaterialSection):
         return block([
             keyword(
                 "SHELLSECTION",
+                TYPE="INTEGRATED",
                 ELSET=self.element_region,
                 MATERIAL=self.material,
-                TYPE="INTEGRATED",
                 ORIENTATION=self.orientation,
                 CSYSAXIS=self.csys_axis,
             ),

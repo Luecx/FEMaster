@@ -54,6 +54,7 @@ class FieldType(Enum):
             if character.isalnum()
         )
 
+        # Numbered transient/modal names keep the same semantic type.
         prefixes = (
             ("MODESHAPE", cls.MODE_SHAPE),
             ("BUCKLINGMODE", cls.BUCKLING_MODE),

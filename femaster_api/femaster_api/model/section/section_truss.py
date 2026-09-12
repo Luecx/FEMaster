@@ -1,8 +1,9 @@
-"""Truss-section assignment with scalar cross-sectional area.
+"""Axial truss section assignment.
 
-The section links a truss element region to a material and one positive area.
-The value is validated before export so malformed zero/negative cross sections
-cannot reach the native ``*TRUSSSECTION`` block.
+``TrussSection`` associates an element region with one global material and a
+strictly positive cross-sectional area.  The object maps directly to
+``*TRUSSSECTION`` and performs the only local physical validation required for
+that native definition.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from .section_material import MaterialSection
 
 
 class TrussSection(MaterialSection):
-    """Material and area assignment for a truss-element region."""
+    """Material-backed truss section defined by cross-sectional area."""
 
     def __init__(
         self,
