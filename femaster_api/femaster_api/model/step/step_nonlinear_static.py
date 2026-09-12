@@ -1,9 +1,9 @@
-"""Nonlinear static structural analysis step.
+"""Nonlinear static structural analysis with concrete collector references.
 
-The class exposes FEMaster's nonlinear increment controls directly instead of
-hiding them in an opaque options mapping.  ``None`` means that the solver default
-is retained.  The control mode is stored as the native upper-case token so load
-control and arc-length-style extensions can remain visible in the exported deck.
+The class exposes FEMaster's nonlinear increment controls directly.  Loads and
+supports are object relationships inherited from ``Step``; only the nonlinear
+control mode itself remains a native token because it is intrinsic procedure
+configuration rather than a reference to another model object.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, keyword
+from ..load.load_collector import LoadCollector
+from ..support.support_collector import SupportCollector
 from .step import Step
 from .util.constraint_method import ConstraintMethod
 from .util.solver_control import SolverControl
@@ -25,8 +27,8 @@ class NonlinearStaticStep(Step):
         self,
         name: str,
         *,
-        loads: Iterable[str] = (),
-        supports: Iterable[str] = (),
+        loads: Iterable[LoadCollector] = (),
+        supports: Iterable[SupportCollector] = (),
         solver: SolverControl | None = None,
         constraint_method: ConstraintMethod | None = None,
         control: str = "LOAD",

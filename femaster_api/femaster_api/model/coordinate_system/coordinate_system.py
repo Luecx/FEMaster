@@ -1,9 +1,10 @@
 """Base class for named global coordinate-system definitions.
 
-Coordinate systems are project-level reusable definitions referenced by loads,
-supports, sections and other model concepts through semantic names.  Concrete
-subclasses own the geometry needed by one native orientation type and therefore
-also own their exact export syntax.
+Coordinate systems are project-level reusable objects used directly by loads,
+supports, sections and constraints.  Consumers store the ``CoordinateSystem``
+object itself; the immutable semantic name is only a native serialization token.
+Concrete subclasses own the geometry needed by one orientation type and their
+exact export syntax.
 """
 
 from __future__ import annotations

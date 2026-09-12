@@ -1,18 +1,23 @@
-"""Concrete element region.
+"""Element-region specialization storing actual finite-element objects.
 
-Region of elements exported through the native ``*ELSET`` keyword.  The class contains only domain-specific keyword metadata; member
-storage, deterministic ordering and row export are implemented by ``Region``.
-Keeping each region domain in its own module makes imports and future
-domain-specific validation explicit.
+``ElementRegion`` corresponds to native ``*ELSET`` and owns references to
+``Element`` instances rather than sparse integer IDs.  The persistent element
+IDs remain part of the element objects and are emitted only during serialization.
+Sections, loads and constraints can consequently hold the region object itself.
 """
 
 from __future__ import annotations
 
+from ..element.element import Element
 from .region import Region
 
 
-class ElementRegion(Region):
-    """Region of elements exported through the native ``*ELSET`` keyword."""
+class ElementRegion(Region[Element]):
+    """Ordered region of concrete elements exported through ``*ELSET``."""
 
-    keyword_name = 'ELSET'
-    name_key = 'NAME'
+    keyword_name = "ELSET"
+    name_key = "NAME"
+    member_type = Element
+
+    def _member_value(self, member: Element) -> int:
+        return member.id

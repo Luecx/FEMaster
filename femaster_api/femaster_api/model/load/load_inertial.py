@@ -1,9 +1,12 @@
-"""Rigid-body translational and rotational inertia loading.
+"""Rigid-body translational and rotational inertia loading on element objects.
 
-The load stores a target together with center position, center acceleration,
-angular velocity and angular acceleration vectors.  All vector dimensions are
-validated at construction time so export cannot silently emit malformed
-``*INERTIALOAD`` rows.
+The load stores an ``Element`` or ``ElementRegion`` target together with center
+position, center acceleration, angular velocity and angular acceleration vectors.
+The target's ID/name is a file-format token only and is never retained as the
+in-memory relationship.
+
+All vector dimensions are validated at construction time so export cannot
+silently emit malformed ``*INERTIALOAD`` rows.
 """
 
 from __future__ import annotations
@@ -11,6 +14,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..element.element import Element
+from ..region.region_element import ElementRegion
 from .load import Load
 
 
@@ -19,7 +24,7 @@ class InertialLoad(Load):
 
     def __init__(
         self,
-        target: str,
+        target: Element | ElementRegion,
         *,
         center: Iterable[float] = (0.0, 0.0, 0.0),
         center_acceleration: Iterable[float] = (0.0, 0.0, 0.0),
@@ -27,7 +32,9 @@ class InertialLoad(Load):
         alpha: Iterable[float] = (0.0, 0.0, 0.0),
         consider_point_masses: bool = True,
     ) -> None:
-        self.target = str(target)
+        if not isinstance(target, (Element, ElementRegion)):
+            raise TypeError("target must be Element or ElementRegion")
+        self.target = target
         self.center = self._vec3(center, "center")
         self.center_acceleration = self._vec3(
             center_acceleration,
@@ -48,6 +55,7 @@ class InertialLoad(Load):
         return result
 
     def export(self, collector: str) -> str:
+        target = self.target.id if isinstance(self.target, Element) else self.target.name
         return block([
             keyword(
                 "INERTIALOAD",
@@ -55,7 +63,7 @@ class InertialLoad(Load):
                 CONSIDER_POINT_MASSES=int(self.consider_point_masses),
             ),
             csv((
-                self.target,
+                target,
                 *self.center,
                 *self.center_acceleration,
                 *self.omega,

@@ -1,29 +1,36 @@
 """Base representation of one part-local finite element.
 
-Every concrete FEMaster element type derives from ``Element`` and defines its
-native ``TYPE`` token together with the required connectivity size.  The base
-class validates that topology immediately, preserves the sparse element ID and
-exports only the connectivity row.  Keyword grouping belongs to
-``ElementRepository`` because one ``*ELEMENT`` header represents many rows.
+Every concrete FEMaster element owns a sparse element ID and a connectivity made
+of actual ``Node`` objects.  Node IDs are therefore never used as an in-memory
+cross-object reference: they are read only when parsing a deck and written only
+when serializing the element row.  This makes connectivity navigable and prevents
+a Python model from containing dangling integer references after construction.
 
-The class deliberately does not own sections, materials or regions; those are
-separate model concepts linked by semantic names.
+Concrete element classes define only their native ``TYPE`` token and required
+node count.  Grouping several element rows under one ``*ELEMENT`` header remains
+the responsibility of ``ElementRepository``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from ..common.format import csv
+from ..node.node import Node
 
 
 class Element:
-    """Base finite element with persistent ID and fixed node connectivity."""
+    """Base finite element with persistent ID and object-valued connectivity."""
 
     type_name = "ELEMENT"
     node_count: int | None = None
 
-    def __init__(self, id: int, nodes: tuple[int, ...] | list[int]) -> None:
+    def __init__(self, id: int, nodes: Iterable[Node]) -> None:
         self.id = int(id)
-        self.nodes = tuple(int(node) for node in nodes)
+        self.nodes = tuple(nodes)
+
+        if not all(isinstance(node, Node) for node in self.nodes):
+            raise TypeError("element connectivity must contain Node objects")
 
         if self.node_count is not None and len(self.nodes) != self.node_count:
             raise ValueError(
@@ -32,6 +39,6 @@ class Element:
             )
 
     def export(self) -> str:
-        """Export this element as one connectivity row."""
+        """Export this element using the persistent IDs of its connected nodes."""
 
-        return csv((self.id, *self.nodes))
+        return csv((self.id, *(node.id for node in self.nodes)))

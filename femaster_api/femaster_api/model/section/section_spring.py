@@ -1,13 +1,14 @@
-"""Ground-spring property assigned to ``SPRING1`` point elements.
+"""Ground-spring property assigned to a concrete ``ElementRegion`` object.
 
 The property stores one structural degree of freedom and one constant stiffness.
-DOF validation is performed immediately because FEMaster structural point
-springs address the six standard translational/rotational components.
+Its assignment target is a real region object; the region name is produced only
+for native ``*SPRING`` serialization.  DOF validation is performed immediately.
 """
 
 from __future__ import annotations
 
 from ..common.format import block, csv, keyword
+from ..region.region_element import ElementRegion
 from .section import Section
 
 
@@ -17,7 +18,7 @@ class SpringSection(Section):
     def __init__(
         self,
         name: str,
-        element_region: str,
+        element_region: ElementRegion,
         dof: int,
         stiffness: float,
     ) -> None:
@@ -29,7 +30,7 @@ class SpringSection(Section):
 
     def export(self) -> str:
         return block([
-            keyword("SPRING", ELSET=self.element_region),
+            keyword("SPRING", ELSET=self.element_region.name),
             csv((self.dof,)),
             csv((self.stiffness,)),
         ])

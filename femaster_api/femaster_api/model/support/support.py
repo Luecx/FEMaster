@@ -1,12 +1,12 @@
-"""Prescribed structural degrees of freedom on a node target.
+"""Prescribed structural degrees of freedom on a concrete node-domain target.
 
-A ``Support`` stores up to six translational/rotational values in FEMaster DOF
-order.  ``None`` means that a component is unconstrained, while a numeric value
-prescribes the corresponding DOF.  The object belongs directly to one
-``SupportCollector`` and receives that collector name only during export.
+A ``Support`` stores a ``Node`` or ``NodeRegion`` object directly together with
+up to six prescribed translational/rotational values.  ``None`` leaves a DOF
+unconstrained.  An optional orientation is a concrete ``CoordinateSystem``;
+neither target IDs/names nor orientation names are accepted as public reference
+surrogates.
 
-Trailing unconstrained components are omitted from the native data row without
-changing the position of interior ``None`` entries.
+The owning ``SupportCollector`` supplies only its own name during native export.
 """
 
 from __future__ import annotations
@@ -14,7 +14,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
-from ..common.typing import EntityReference
+from ..coordinate_system.coordinate_system import CoordinateSystem
+from ..node.node import Node
+from ..region.region_node import NodeRegion
 
 
 class Support:
@@ -22,11 +24,16 @@ class Support:
 
     def __init__(
         self,
-        target: EntityReference,
+        target: Node | NodeRegion,
         values: Iterable[float | None],
         *,
-        orientation: str | None = None,
+        orientation: CoordinateSystem | None = None,
     ) -> None:
+        if not isinstance(target, (Node, NodeRegion)):
+            raise TypeError("target must be Node or NodeRegion")
+        if orientation is not None and not isinstance(orientation, CoordinateSystem):
+            raise TypeError("orientation must be a CoordinateSystem object")
+
         self.target = target
         self.values = tuple(
             None if value is None else float(value)
@@ -44,11 +51,14 @@ class Support:
         while values and values[-1] is None:
             values.pop()
 
+        target = self.target.id if isinstance(self.target, Node) else self.target.name
         return block([
             keyword(
                 "SUPPORT",
                 SUPPORT_COLLECTOR=collector,
-                ORIENTATION=self.orientation,
+                ORIENTATION=(
+                    self.orientation.name if self.orientation is not None else None
+                ),
             ),
-            csv((self.target, *values)),
+            csv((target, *values)),
         ])

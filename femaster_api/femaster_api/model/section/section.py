@@ -1,27 +1,29 @@
-"""Base class for section and point-property assignments.
+"""Base class for section/property assignments to concrete ``ElementRegion``s.
 
-A section associates an element region with constitutive or concentrated
-properties.  The Python object has its own immutable name for repository lookup
-although several FEMaster section keywords identify the assignment only by
-``ELSET``.  Cross-object references therefore remain explicit strings rather
-than repository positions.
+A section relates an element region to constitutive or concentrated properties.
+The region is stored as the actual ``ElementRegion`` object; its semantic name is
+used only when native ``ELSET=...`` syntax is emitted.  Repository positions and
+string references never participate in the in-memory relationship.
 
-Continuum, shell, beam and truss sections belong to a ``Part``.  Only the
-point-element properties explicitly allowed by FEMaster may additionally live in
-the assembly-level section repository on ``Project``.
+Continuum, shell, beam and truss sections belong to a ``Part``.  Point-element
+properties may additionally live in the assembly-level section repository where
+FEMaster permits them.
 """
 
 from __future__ import annotations
 
 from ..common.named_object import NamedObject
+from ..region.region_element import ElementRegion
 
 
 class Section(NamedObject):
     """Base class for one named element-property assignment."""
 
-    def __init__(self, name: str, element_region: str) -> None:
+    def __init__(self, name: str, element_region: ElementRegion) -> None:
         super().__init__(name)
-        self.element_region = str(element_region)
+        if not isinstance(element_region, ElementRegion):
+            raise TypeError("element_region must be an ElementRegion object")
+        self.element_region = element_region
 
     def export(self) -> str:
         raise NotImplementedError

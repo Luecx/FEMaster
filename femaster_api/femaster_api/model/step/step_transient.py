@@ -1,10 +1,9 @@
-"""Linear structural transient analysis with Newmark integration.
+"""Linear structural transient step with concrete load/support collectors.
 
-The step owns the physical time interval and optionally Newmark parameters,
-Rayleigh damping and result-write cadence.  Numerical helper objects live under
-``step/util`` because they are reusable controls rather than independent model
-entities.  Loads and supports remain collector references inherited from
-``Step``.
+The step owns physical time control and optionally Newmark parameters, Rayleigh
+damping and result-write cadence.  Load and support relationships are actual
+collector objects inherited from ``Step``; their names appear only in exported
+native input syntax.
 """
 
 from __future__ import annotations
@@ -12,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..load.load_collector import LoadCollector
+from ..support.support_collector import SupportCollector
 from .step import Step
 from .util.newmark_control import NewmarkControl
 from .util.rayleigh_damping import RayleighDamping
@@ -29,8 +30,8 @@ class TransientStep(Step):
         name: str,
         time: TimeControl,
         *,
-        loads: Iterable[str] = (),
-        supports: Iterable[str] = (),
+        loads: Iterable[LoadCollector] = (),
+        supports: Iterable[SupportCollector] = (),
         solver: SolverControl | None = None,
         newmark: NewmarkControl | None = None,
         damping: RayleighDamping | None = None,

@@ -1,9 +1,8 @@
-"""Linear static structural analysis step.
+"""Linear static structural analysis step with concrete collector references.
 
-``StaticStep`` extends the common loadcase definition with the optional inertia
-relief and load-rebalancing controls implemented by FEMaster.  Load and support
-collectors, solver selection and constraint treatment are inherited from
-``Step``.
+``StaticStep`` extends the common object-based loadcase definition with optional
+inertia-relief and load-rebalancing controls.  Loads and supports are actual
+collector objects inherited from ``Step`` rather than semantic-name strings.
 """
 
 from __future__ import annotations
@@ -11,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, keyword
+from ..load.load_collector import LoadCollector
+from ..support.support_collector import SupportCollector
 from .step import Step
 from .util.constraint_method import ConstraintMethod
 from .util.solver_control import SolverControl
@@ -25,8 +26,8 @@ class StaticStep(Step):
         self,
         name: str,
         *,
-        loads: Iterable[str] = (),
-        supports: Iterable[str] = (),
+        loads: Iterable[LoadCollector] = (),
+        supports: Iterable[SupportCollector] = (),
         solver: SolverControl | None = None,
         constraint_method: ConstraintMethod | None = None,
         inertia_relief: bool = False,

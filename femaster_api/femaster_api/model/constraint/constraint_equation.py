@@ -1,16 +1,13 @@
-"""Linear multi-point equation with an arbitrary number of terms.
+"""Linear multi-point equation whose terms reference real node-domain objects.
 
-``Equation`` owns the complete representation of one native ``*EQUATION``
-constraint, including the lightweight value object used for individual terms.
-A term has no independent lifecycle in the FEMaster model, so it is deliberately
-nested as ``Equation.Term`` instead of being exported as a separate top-level
-model class.  This keeps the public constraint namespace compact while retaining
-named attributes for node reference, degree of freedom and coefficient.
+``Equation`` owns the complete native ``*EQUATION`` relation.  Each nested
+``Equation.Term`` stores a ``Node`` or ``NodeRegion`` object, never an integer ID
+or semantic-name string.  The object is converted to its native token only when
+serializing the term triple.
 
-All terms, including tuples supplied to the constructor, pass through ``add``.
-That gives constructor input and fluent builder input exactly the same validation
-and normalization rules while preserving the user-defined term order required by
-FEMaster's term-count-plus-triples input syntax.
+``Term`` remains nested because it has no independent model lifecycle.  Keeping
+it named still gives callers readable attributes while avoiding a second public
+constraint concept.
 """
 
 from __future__ import annotations
@@ -18,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..node.node import Node
+from ..region.region_node import NodeRegion
 from .constraint import Constraint
 
 
@@ -29,10 +28,12 @@ class Equation(Constraint):
 
         def __init__(
             self,
-            node: int | str,
+            node: Node | NodeRegion,
             dof: int,
             coefficient: float,
         ) -> None:
+            if not isinstance(node, (Node, NodeRegion)):
+                raise TypeError("node must be Node or NodeRegion")
             self.node = node
             self.dof = int(dof)
             self.coefficient = float(coefficient)
@@ -42,13 +43,10 @@ class Equation(Constraint):
 
     def __init__(
         self,
-        terms: Iterable[Term | tuple[int | str, int, float]] = (),
+        terms: Iterable[Term | tuple[Node | NodeRegion, int, float]] = (),
     ) -> None:
         self.terms: list[Equation.Term] = []
 
-        # Normalize every constructor term through the same path used by add().
-        # Existing Term objects are copied so an Equation always owns its term
-        # instances and later external mutation cannot change the equation.
         for term in terms:
             if isinstance(term, Equation.Term):
                 self.add(term.node, term.dof, term.coefficient)
@@ -58,7 +56,7 @@ class Equation(Constraint):
 
     def add(
         self,
-        node: int | str,
+        node: Node | NodeRegion,
         dof: int,
         coefficient: float,
     ) -> "Equation":
@@ -72,7 +70,8 @@ class Equation(Constraint):
 
         values: list[object] = []
         for term in self.terms:
-            values.extend((term.node, term.dof, term.coefficient))
+            node = term.node.id if isinstance(term.node, Node) else term.node.name
+            values.extend((node, term.dof, term.coefficient))
 
         return block([
             keyword("EQUATION"),

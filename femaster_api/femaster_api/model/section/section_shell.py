@@ -1,14 +1,17 @@
-"""Integrated shell section with constant thickness.
+"""Integrated shell section with concrete region/material/orientation objects.
 
 This class represents the material-integrated shell form, not a direct ABD
-stiffness.  Thickness, material orientation and coordinate-system axis are
-stored explicitly so the object corresponds one-to-one with the native
-``*SHELLSECTION, TYPE=INTEGRATED`` definition.
+stiffness.  ``ElementRegion`` and ``Material`` are mandatory object references;
+an optional material orientation is a ``CoordinateSystem`` object.  Thickness
+and coordinate-system axis remain intrinsic numerical section data.
 """
 
 from __future__ import annotations
 
 from ..common.format import block, csv, keyword
+from ..coordinate_system.coordinate_system import CoordinateSystem
+from ..material.material import Material
+from ..region.region_element import ElementRegion
 from .section_material import MaterialSection
 
 
@@ -18,13 +21,15 @@ class ShellSection(MaterialSection):
     def __init__(
         self,
         name: str,
-        element_region: str,
-        material: str,
+        element_region: ElementRegion,
+        material: Material,
         thickness: float,
-        orientation: str | None = None,
+        orientation: CoordinateSystem | None = None,
         csys_axis: int = 1,
     ) -> None:
         super().__init__(name, element_region, material)
+        if orientation is not None and not isinstance(orientation, CoordinateSystem):
+            raise TypeError("orientation must be a CoordinateSystem object")
         self.thickness = float(thickness)
         self.orientation = orientation
         self.csys_axis = int(csys_axis)
@@ -36,9 +41,11 @@ class ShellSection(MaterialSection):
             keyword(
                 "SHELLSECTION",
                 TYPE="INTEGRATED",
-                ELSET=self.element_region,
-                MATERIAL=self.material,
-                ORIENTATION=self.orientation,
+                ELSET=self.element_region.name,
+                MATERIAL=self.material.name,
+                ORIENTATION=(
+                    self.orientation.name if self.orientation is not None else None
+                ),
                 CSYSAXIS=self.csys_axis,
             ),
             csv((self.thickness,)),

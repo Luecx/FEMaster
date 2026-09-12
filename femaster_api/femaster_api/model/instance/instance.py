@@ -1,12 +1,12 @@
-"""Rigid assembly instance of one reusable part.
+"""Rigid assembly instance of one reusable ``Part`` object.
 
-An ``Instance`` references a part by semantic name and stores only assembly
-placement information.  Topology is never duplicated in Python.  Optional
-translation and axis-angle rotation rows mirror FEMaster's native ``*INSTANCE``
-syntax and are validated at construction time.
+An ``Instance`` stores the concrete ``Part`` it instantiates; a part name is not
+accepted as a substitute object.  The native ``PART=...`` token is derived from
+``part.name`` only during export.  This guarantees that an instance cannot carry
+a dangling part reference inside an otherwise valid Python project.
 
-Repository positions are intentionally absent from this class; part and instance
-identity is expressed through stable names.
+Optional translation and axis-angle rotation rows mirror FEMaster's native
+``*INSTANCE`` syntax and are validated at construction time.
 """
 
 from __future__ import annotations
@@ -15,21 +15,24 @@ from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
 from ..common.named_object import NamedObject
+from ..part.part import Part
 
 
 class Instance(NamedObject):
-    """Rigid placement of a named ``Part`` inside the assembly."""
+    """Rigid placement of one concrete ``Part`` inside the assembly."""
 
     def __init__(
         self,
         name: str,
-        part: str,
+        part: Part,
         *,
         translation: Iterable[float] | None = None,
         rotation: tuple[Iterable[float], Iterable[float], float] | None = None,
     ) -> None:
         super().__init__(name)
-        self.part = str(part)
+        if not isinstance(part, Part):
+            raise TypeError("part must be a Part object")
+        self.part = part
 
         self.translation: tuple[float, float, float] | None = None
         if translation is not None:
@@ -55,7 +58,7 @@ class Instance(NamedObject):
     def export(self) -> str:
         """Export one native ``*INSTANCE`` block including optional placement."""
 
-        lines = [keyword("INSTANCE", NAME=self.name, PART=self.part)]
+        lines = [keyword("INSTANCE", NAME=self.name, PART=self.part.name)]
         if self.translation is not None:
             lines.append(csv(self.translation))
         if self.rotation is not None:

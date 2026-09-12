@@ -1,9 +1,10 @@
 """Named scalar amplitude shared by time-dependent model definitions.
 
 An amplitude stores ordered ``(time, value)`` samples and the interpolation rule
-used between them.  Loads reference the amplitude by immutable semantic name, so
-the same curve can be reused by multiple collectors and steps without copying
-sample data.
+used between them.  Loads retain the ``Amplitude`` object itself when they use a
+time function; ``amplitude.name`` is consulted only while native keywords are
+serialized.  The same curve can therefore be shared by identity without copying
+data or passing semantic-name strings through the Python model.
 
 The class owns the native ``*AMPLITUDE`` representation directly.
 """

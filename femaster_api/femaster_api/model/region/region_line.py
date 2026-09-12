@@ -1,18 +1,24 @@
-"""Concrete line region.
+"""Semantic line-element region without a standalone native set keyword.
 
-Semantic region of line entities; FEMaster currently has no standalone line-set keyword.  The class contains only domain-specific keyword metadata; member
-storage, deterministic ordering and row export are implemented by ``Region``.
-Keeping each region domain in its own module makes imports and future
-domain-specific validation explicit.
+FEMaster currently exposes no independent line-entity object or native line-set
+keyword.  The Python representation therefore groups concrete ``Element``
+objects that are interpreted as line-like by the consuming operation.  Keeping
+real element objects still follows the same no-string-reference rule as every
+other modeled relationship.
 """
 
 from __future__ import annotations
 
+from ..element.element import Element
 from .region import Region
 
 
-class LineRegion(Region):
-    """Semantic region of line entities; FEMaster currently has no standalone line-set keyword."""
+class LineRegion(Region[Element]):
+    """Semantic region of line-like finite elements."""
 
     keyword_name = None
-    name_key = 'NAME'
+    name_key = "NAME"
+    member_type = Element
+
+    def _member_value(self, member: Element) -> int:
+        return member.id

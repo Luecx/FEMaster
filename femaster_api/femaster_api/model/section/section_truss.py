@@ -1,14 +1,15 @@
-"""Axial truss section assignment.
+"""Axial truss section relating concrete region and material objects.
 
-``TrussSection`` associates an element region with one global material and a
-strictly positive cross-sectional area.  The object maps directly to
-``*TRUSSSECTION`` and performs the only local physical validation required for
-that native definition.
+``TrussSection`` stores an ``ElementRegion`` and ``Material`` directly together
+with a strictly positive cross-sectional area.  Only native export converts the
+two object relationships to their semantic names.
 """
 
 from __future__ import annotations
 
 from ..common.format import block, csv, keyword
+from ..material.material import Material
+from ..region.region_element import ElementRegion
 from .section_material import MaterialSection
 
 
@@ -18,8 +19,8 @@ class TrussSection(MaterialSection):
     def __init__(
         self,
         name: str,
-        element_region: str,
-        material: str,
+        element_region: ElementRegion,
+        material: Material,
         area: float,
     ) -> None:
         super().__init__(name, element_region, material)
@@ -31,8 +32,8 @@ class TrussSection(MaterialSection):
         return block([
             keyword(
                 "TRUSSSECTION",
-                ELSET=self.element_region,
-                MATERIAL=self.material,
+                ELSET=self.element_region.name,
+                MATERIAL=self.material.name,
             ),
             csv((self.area,)),
         ])

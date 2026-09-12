@@ -1,9 +1,9 @@
-"""Kinematic or distributing coupling between master and slave regions.
+"""Kinematic/distributing coupling between concrete master and slave objects.
 
-The constraint stores semantic names only.  A slave may refer to either a node
-region or a surface region; the explicit ``slave_is_surface`` flag controls the
-native keyword spelling without requiring the coupling to inspect project
-repositories during export.
+The master is a ``Node`` or ``NodeRegion``.  The slave is a ``Node`` /
+``NodeRegion`` or a ``Surface`` / ``SurfaceRegion``.  The native distinction
+between ``SLAVE=`` and ``SFSET=`` is inferred from the actual Python type rather
+than stored in a parallel boolean flag or encoded in a string reference.
 """
 
 from __future__ import annotations
@@ -11,6 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..node.node import Node
+from ..region.region_node import NodeRegion
+from ..region.region_surface import SurfaceRegion
+from ..surface.surface import Surface
 from .constraint import Constraint
 from .constraint_coupling_type import CouplingType
 
@@ -20,30 +24,45 @@ class Coupling(Constraint):
 
     def __init__(
         self,
-        master: str,
-        slave: str,
+        master: Node | NodeRegion,
+        slave: Node | NodeRegion | Surface | SurfaceRegion,
         *,
         type: CouplingType = CouplingType.KINEMATIC,
         dofs: Iterable[bool | int] = (1, 1, 1, 1, 1, 1),
-        slave_is_surface: bool = False,
     ) -> None:
-        self.master = str(master)
-        self.slave = str(slave)
+        if not isinstance(master, (Node, NodeRegion)):
+            raise TypeError("master must be Node or NodeRegion")
+        if not isinstance(slave, (Node, NodeRegion, Surface, SurfaceRegion)):
+            raise TypeError(
+                "slave must be Node, NodeRegion, Surface or SurfaceRegion"
+            )
+        if not isinstance(type, CouplingType):
+            raise TypeError("type must be CouplingType")
+
+        self.master = master
+        self.slave = slave
         self.type = type
         self.dofs = tuple(int(bool(value)) for value in dofs)
-        self.slave_is_surface = bool(slave_is_surface)
 
         if len(self.dofs) != 6:
             raise ValueError("Coupling requires exactly 6 DOF flags")
 
     def export(self) -> str:
+        master = self.master.id if isinstance(self.master, Node) else self.master.name
+        slave_is_surface = isinstance(self.slave, (Surface, SurfaceRegion))
+        slave = (
+            self.slave.id
+            if isinstance(self.slave, Node)
+            else self.slave.name
+        )
+
         return block([
             keyword(
                 "COUPLING",
-                MASTER=self.master,
+                MASTER=master,
                 TYPE=self.type.value,
-                SFSET=self.slave if self.slave_is_surface else None,
-                SLAVE=None if self.slave_is_surface else self.slave,
+                SFSET=slave if slave_is_surface else None,
+                SLAVE=None if slave_is_surface else slave,
             ),
             csv(self.dofs),
         ])

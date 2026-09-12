@@ -1,122 +1,119 @@
 # FEMaster Python API
 
-The Python API mirrors the semantic FEMaster model instead of exposing a flat
-collection of loosely related objects. All editable FEM concepts live below
-`femaster_api.model`; the package root only re-exports the public API for concise
-user code.
+The Python API mirrors the semantic FEMaster model as a connected object graph.
+All editable FEM concepts live below `femaster_api.model`; the package root only
+re-exports the public API for concise user code.
 
-## Ownership
+## Ownership and references
 
 `Project` owns shared definitions, assembly definitions, collectors and analysis
 steps. `Part` owns part-local nodes, elements, regions, surfaces and sections.
 The implicit default part is permanently stored as `project.parts[0]` and is
-returned by `project.parts.default()`; it is never duplicated on `Project`.
+returned by `project.parts.default()`.
 
-Nodes and elements preserve their native sparse FEMaster IDs. Named repositories
-preserve insertion order and support both positional and name-based lookup, while
-repository positions are never used as persistent model identifiers.
+Cross-object relationships always store **objects, never names or IDs**. For
+example:
+
+- element connectivity contains `Node` objects,
+- `NodeRegion` contains `Node` objects,
+- a `NodalForce` target is `Node | NodeRegion`,
+- a load amplitude is `Amplitude | None`,
+- a load/support orientation is `CoordinateSystem | None`,
+- a section stores its `ElementRegion`, `Material` and (where applicable)
+  `Profile` / `CoordinateSystem` objects,
+- an `Instance` stores its `Part`,
+- a `Step` stores `LoadCollector` / `SupportCollector` objects.
+
+IDs and names remain stable identities and native file tokens. They are used for
+repository lookup and during import/export, but they are not substitutes for
+objects inside model constructors. There are deliberately no generic
+`EntityReference`, `NodeReference` or `ElementReference` aliases.
+
+## Example
+
+```python
+from femaster_api import (
+    Amplitude,
+    ElementRegion,
+    IsotropicElasticity,
+    LoadCollector,
+    Material,
+    Node,
+    NodeRegion,
+    NodalForce,
+    Project,
+    StaticStep,
+    Support,
+    SupportCollector,
+    T3,
+    TrussSection,
+)
+
+project = Project("bar")
+part = project.parts.default()
+
+n1 = part.nodes.add(Node(1, 0.0, 0.0, 0.0))
+n2 = part.nodes.add(Node(2, 1.0, 0.0, 0.0))
+bar = part.elements.add(T3(1, (n1, n2)))
+
+root = part.regions.add(NodeRegion("ROOT", (n1,)))
+tip = part.regions.add(NodeRegion("TIP", (n2,)))
+bar_region = part.regions.add(ElementRegion("BAR", (bar,)))
+
+steel = project.materials.add(
+    Material("STEEL", elasticity=IsotropicElasticity(210000.0, 0.3))
+)
+part.sections.add(TrussSection("BAR_SECTION", bar_region, steel, 100.0))
+
+ramp = project.amplitudes.add(
+    Amplitude("RAMP").add(0.0, 0.0).add(1.0, 1.0)
+)
+
+bc = project.support_collectors.add(SupportCollector("BC"))
+bc.add(Support(root, (0.0, 0.0, 0.0)))
+
+loads = project.load_collectors.add(LoadCollector("LOAD"))
+loads.add(NodalForce(tip, (1000.0, 0.0, 0.0, 0.0, 0.0, 0.0), amplitude=ramp))
+
+project.steps.add(StaticStep("STATIC", loads=(loads,), supports=(bc,)))
+project.write("bar.inp")
+```
+
+Input reading resolves native IDs/names immediately back to those same public
+objects:
+
+```python
+project = Project.read_inp("bar.inp")
+```
+
+Unsupported keyword blocks are retained on `project.unparsed_blocks` rather than
+silently discarded.
 
 ## Package layout
 
-The source is intentionally split by FEM concept and follows a strict rule of at
-most one class per Python file. Concrete variants are grouped by filename prefix:
+The source is split by FEM concept and permits at most one **top-level** class per
+Python file. Tightly scoped implementation types may be nested when they have no
+independent model lifecycle, e.g. `Equation.Term` and `Connector.Type`.
 
 ```text
 model/
   project.py
   node/
-    node.py
-    node_repository.py
   element/
-    element.py
-    element_repository.py
-    element_c3d8.py
-    element_s4.py
-    ...
   surface/
-    surface.py
-    surface_element.py
-    surface_node.py
-    surface_repository.py
   region/
-    region.py
-    region_node.py
-    region_element.py
-    region_surface.py
-    region_line.py
-    region_repository.py
+  material/
+  section/
+  load/
+  support/
+  constraint/
   step/
-    step.py
-    step_static.py
-    step_modal.py
-    step_buckling.py
-    step_nonlinear_static.py
-    step_transient.py
-    step_repository.py
     util/
-      solver_control.py
-      solver_device.py
-      solver_method.py
-      constraint_method.py
-      time_control.py
-      newmark_control.py
-      rayleigh_damping.py
   field/
-    field.py
-    field_domain.py
-    field_type.py
-    field_repository.py
   result/
-    result.py
-    result_solution.py
-    result_frame.py
 ```
 
-The same convention is used for materials, sections, loads, supports,
-constraints, amplitudes, profiles, coordinate systems, features, parts and
-instances. There is deliberately no generic `mesh/`, `io/` or `model/project/`
-package.
-
-The public concrete element set follows FEMaster's canonical internal names:
-
-- solids: `C3D4`, `C3D5`, `C3D6`, `C3D8`, `C3D8R`, `C3D10`, `C3D15`, `C3D20`, `C3D20R`
-- shells: `S3`, `S4`, `S6`, `S8`
-- truss: `T3`
-- beam: `B33`
-
-Aliases and implementation-specific variants such as `T3D2`, `MITC*`, `QSPT`
-and point-element helper classes are intentionally not exposed as concrete
-Python element classes.
-
-## Export and input reading
-
-Every object that has a native FEMaster representation implements `export()`.
-Repositories implement `export()` only where they own ordering or grouping.
-`Project.export()` therefore only orchestrates global dependency order and
-scope.
-
-```python
-from femaster_api import Node, Project, T3
-
-project = Project("model")
-part = project.parts.default()
-
-part.nodes.add(Node(1, 0.0, 0.0, 0.0))
-part.nodes.add(Node(2, 1.0, 0.0, 0.0))
-part.elements.add(T3(1, (1, 2)))
-
-project.write("model.inp")
-```
-
-Input reading belongs to the model root rather than a parallel importer object:
-
-```python
-project = Project.read_inp("model.inp")
-project = Project.read_inp_text(text)
-```
-
-Unsupported keyword blocks are retained on `project.unparsed_blocks` instead of
-being silently discarded.
+There is deliberately no generic `mesh/`, `io/` or `model/project/` package.
 
 ## Results
 
@@ -126,25 +123,7 @@ Post-processing uses one format-independent hierarchy:
 Result -> Solution -> Frame -> Field
 ```
 
-A `Solution` represents one solver/loadcase result. A `Frame` has a discrete
-`id`, an optional physical `value` and a collection of fields. The meaning of
-`value` depends on the analysis and file format: for example time, frequency,
-buckling factor or another frame coordinate.
-
-```python
-from femaster_api import Result
-
-result = Result.read("job.res")
-result = Result.read_res("job.res")
-result = Result.read_frd("job.frd")
-
-solution = result.solution(1)
-frame = solution.frame(1)
-displacement = frame.field("DISPLACEMENT")
-```
-
-FEMaster FRD output stores the physical frame value in its `100CL` record, so it
-is retained as `Frame.value`. The current native RES writer does not persist the
-`frame_value` argument; in that case `Frame.value` is intentionally `None`
-unless an explicit `FRAME` record is present. Semantic entity identifiers such
-as `17` and `bolt.17` are preserved by result readers.
+`Result.read_res()` and `Result.read_frd()` normalize native result formats into
+that common representation. Result entity identifiers are output addresses, not
+editable model-object relationships, so they remain the semantic IDs encoded by
+the result file.

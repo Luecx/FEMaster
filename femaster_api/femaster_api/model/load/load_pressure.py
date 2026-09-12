@@ -1,28 +1,34 @@
-"""Scalar pressure load on a surface region.
+"""Scalar pressure on a concrete surface or surface-region object.
 
-Pressure is modeled separately from general vector traction because the native
-``*PLOAD`` syntax and physical interpretation are distinct.  An optional
-amplitude reference allows the same pressure definition to participate in
-time-dependent analyses.
+``PressureLoad`` keeps the target and optional amplitude as real model objects.
+No public constructor accepts a surface name or amplitude name as a substitute.
+The native ``*PLOAD`` record derives those semantic names only at export time.
 """
 
 from __future__ import annotations
 
+from ..amplitude.amplitude import Amplitude
 from ..common.format import block, csv, keyword
-from ..common.typing import EntityReference
+from ..region.region_surface import SurfaceRegion
+from ..surface.surface import Surface
 from .load import Load
 
 
 class PressureLoad(Load):
-    """Scalar pressure applied to one surface target."""
+    """Scalar pressure applied to one concrete surface-domain target."""
 
     def __init__(
         self,
-        target: EntityReference,
+        target: Surface | SurfaceRegion,
         pressure: float,
         *,
-        amplitude: str | None = None,
+        amplitude: Amplitude | None = None,
     ) -> None:
+        if not isinstance(target, (Surface, SurfaceRegion)):
+            raise TypeError("target must be Surface or SurfaceRegion")
+        if amplitude is not None and not isinstance(amplitude, Amplitude):
+            raise TypeError("amplitude must be an Amplitude object")
+
         self.target = target
         self.pressure = float(pressure)
         self.amplitude = amplitude
@@ -32,7 +38,7 @@ class PressureLoad(Load):
             keyword(
                 "PLOAD",
                 LOAD_COLLECTOR=collector,
-                AMPLITUDE=self.amplitude,
+                AMPLITUDE=self.amplitude.name if self.amplitude is not None else None,
             ),
-            csv((self.target, self.pressure)),
+            csv((self.target.name, self.pressure)),
         ])

@@ -1,10 +1,10 @@
-"""Reusable FEMaster part definition.
+"""Reusable FEMaster part definition and owner of part-local model objects.
 
-A ``Part`` is the sole owner of part-local nodes, elements, regions, surfaces and
-section assignments.  This mirrors the C++ model before compilation and keeps
-local IDs meaningful across repeated instances.  Shared definitions such as
-materials, profiles and amplitudes remain on ``Project`` and are referenced by
-semantic name.
+A ``Part`` owns nodes, elements, regions, surfaces and section assignments.  The
+objects are connected directly: element connectivity contains ``Node`` objects,
+regions contain their entity objects, and sections reference region/material
+objects.  Shared project-level definitions are therefore reused by identity, not
+through copied semantic-name strings.
 
 The same class also represents the implicit root/default part.  The owning
 ``PartRepository`` decides whether export wraps the content in ``*PART`` /

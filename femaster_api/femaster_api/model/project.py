@@ -1,25 +1,23 @@
 """Editable FEMaster project root and native input-deck reader.
 
 ``Project`` owns every editable model concept that is not local to a ``Part``.
-The implicit default part still lives exclusively at ``project.parts[0]``; nodes,
-elements, local regions, surfaces and ordinary sections are therefore always
-owned through a part.  Shared materials, profiles, coordinate systems,
-amplitudes and model fields live once at project scope, while instances,
-assembly regions/surfaces, constraints, collectors and analysis steps describe
-the assembled problem.
+More importantly, the Python object graph uses real object relationships: an
+``Instance`` stores a ``Part``, a load stores its target / amplitude /
+orientation objects, sections store their region/material/profile objects, and
+analysis steps store their collector objects.  Native IDs and semantic names are
+therefore serialization tokens, not the in-memory representation of references.
 
-The class is also the public input-model I/O boundary.  ``read_inp`` and
-``read_inp_text`` parse FEMaster/Abaqus-like keyword decks directly into the same
-public model classes used for programmatic construction.  There is deliberately
-no parallel parser DTO hierarchy and no public ``io`` package.  Unsupported
-blocks are retained in ``unparsed_blocks`` as simple dictionaries so data is not
-silently discarded.
+``read_inp`` / ``read_inp_text`` are the boundary where textual tokens are
+resolved.  A parsed name such as ``AMPLITUDE=RAMP`` is looked up immediately and
+the resulting ``Amplitude`` object is passed to the model constructor.  Unknown
+or unresolved relationships fail explicitly rather than leaving a dangling
+string inside an otherwise valid project.  Unsupported keyword blocks remain in
+``unparsed_blocks`` so syntax is never silently discarded.
 
-Native export remains equally direct: each concrete model class owns its
-``export`` implementation, repositories own only required grouping/order, and
-``Project.export`` composes those pieces in dependency order.  ``run`` writes the
-resulting deck and invokes FEMaster synchronously without mirroring the complete
-solver CLI in Python.
+Native export works in the opposite direction: concrete model classes own their
+``export`` representation, repositories own grouping/order, and ``Project`` only
+composes scopes and dependencies.  No generic entity-reference wrapper or
+serializer registry is involved.
 """
 
 from __future__ import annotations
@@ -40,6 +38,7 @@ from .constraint.constraint_equation import Equation
 from .constraint.constraint_repository import ConstraintRepository
 from .constraint.constraint_rigid_body import RigidBodyConstraint
 from .constraint.constraint_tie import Tie
+from .coordinate_system.coordinate_system import CoordinateSystem
 from .coordinate_system.coordinate_system_cylindrical import CylindricalCoordinateSystem
 from .coordinate_system.coordinate_system_rectangular import RectangularCoordinateSystem
 from .coordinate_system.coordinate_system_repository import CoordinateSystemRepository
@@ -74,6 +73,7 @@ from .profile.profile_repository import ProfileRepository
 from .region.region_element import ElementRegion
 from .region.region_node import NodeRegion
 from .region.region_repository import RegionRepository
+from .region.region_surface import SurfaceRegion
 from .section.section_beam import BeamSection
 from .section.section_mass import MassSection
 from .section.section_repository import SectionRepository
@@ -100,6 +100,7 @@ from .step.util.time_control import TimeControl
 from .support.support import Support
 from .support.support_collector import SupportCollector
 from .support.support_collector_repository import SupportCollectorRepository
+from .surface.surface import Surface
 from .surface.surface_element import ElementSurface
 from .surface.surface_node import NodeSurface
 from .surface.surface_repository import SurfaceRepository
@@ -122,7 +123,8 @@ class Project:
         self.surfaces = SurfaceRepository()
         self.sections = AssemblySectionRepository()
 
-        # Shared global definitions referenced by semantic name.
+        # Shared global definitions.  Other model objects retain references to
+        # these objects directly rather than copying their semantic names.
         self.materials = MaterialRepository()
         self.profiles = ProfileRepository()
         self.coordinate_systems = CoordinateSystemRepository()
@@ -138,9 +140,8 @@ class Project:
         # Ordered analysis procedures.
         self.steps = StepRepository()
 
-        # Unknown imported blocks are retained explicitly for diagnostics and
-        # round-trip awareness.  They are not re-exported automatically because
-        # their semantic scope/dependencies are unknown.
+        # Unsupported imported blocks remain visible for diagnostics / future
+        # support.  They are not re-exported because their semantics are unknown.
         self.unparsed_blocks: list[_Block] = []
 
     # ------------------------------------------------------------------
@@ -235,7 +236,7 @@ class Project:
 
     @classmethod
     def read_inp_text(cls, text: str) -> "Project":
-        """Parse input text directly into the editable ``Project`` hierarchy."""
+        """Parse input text and resolve every supported relation to an object."""
 
         parsed = cls._blocks(text)
         project = cls(cls._model_name(parsed))
@@ -279,11 +280,11 @@ class Project:
                 continue
 
             if name == "INSTANCE":
-                project.instances.add(cls._read_instance(item))
+                project.instances.add(cls._read_instance(project, item))
                 continue
 
             # --------------------------------------------------------------
-            # Analysis procedures and their child commands
+            # Analysis procedures and child commands
             # --------------------------------------------------------------
             if name == "LOADCASE":
                 current_step = cls._create_step(item)
@@ -291,6 +292,7 @@ class Project:
                 continue
 
             if current_step is not None and cls._read_step_subcommand(
+                project,
                 current_step,
                 item,
             ):
@@ -303,31 +305,32 @@ class Project:
             surfaces = project.surfaces if in_assembly else current_part.surfaces
 
             if name == "NODE":
-                node_ids: list[int] = []
+                nodes: list[Node] = []
                 for row in item["data"]:
                     values = [value for value in row if value != ""]
                     if len(values) < 3:
                         raise ValueError(
                             f"NODE at line {item['line']} requires id, x, y"
                         )
-                    node = Node(
-                        int(values[0]),
-                        float(values[1]),
-                        float(values[2]),
-                        float(values[3]) if len(values) > 3 else 0.0,
+                    node = current_part.nodes.add(
+                        Node(
+                            int(values[0]),
+                            float(values[1]),
+                            float(values[2]),
+                            float(values[3]) if len(values) > 3 else 0.0,
+                        )
                     )
-                    current_part.nodes.add(node)
-                    node_ids.append(node.id)
+                    nodes.append(node)
 
                 nset = cls._key(item, "NSET")
                 if nset:
-                    cls._node_region(regions, nset).add(*node_ids)
+                    cls._node_region(regions, nset).add(*nodes)
                 continue
 
             if name == "ELEMENT":
                 type_name = cls._required(item, "TYPE").upper()
                 element_class = ELEMENT_TYPES.get(type_name)
-                element_ids: list[int] = []
+                elements: list[Element] = []
 
                 for row in item["data"]:
                     values = [value for value in row if value != ""]
@@ -338,20 +341,23 @@ class Project:
                         )
 
                     element_id = int(values[0])
-                    connectivity = tuple(int(value) for value in values[1:])
+                    nodes = tuple(
+                        current_part.nodes[int(value)]
+                        for value in values[1:]
+                    )
 
                     if element_class is None:
-                        element = Element(element_id, connectivity)
+                        element = Element(element_id, nodes)
                         element.type_name = type_name
                     else:
-                        element = element_class(element_id, connectivity)
+                        element = element_class(element_id, nodes)
 
                     current_part.elements.add(element)
-                    element_ids.append(element_id)
+                    elements.append(element)
 
                 elset = cls._key(item, "ELSET")
                 if elset:
-                    cls._element_region(regions, elset).add(*element_ids)
+                    cls._element_region(regions, elset).add(*elements)
                 continue
 
             if name == "NSET":
@@ -361,7 +367,11 @@ class Project:
                         f"NSET at line {item['line']} requires NAME"
                     )
                 cls._node_region(regions, region_name).add(
-                    *cls._flat_tokens(item)
+                    *cls._resolve_node_members(
+                        current_part,
+                        regions,
+                        cls._flat_tokens(item),
+                    )
                 )
                 continue
 
@@ -372,7 +382,11 @@ class Project:
                         f"ELSET at line {item['line']} requires NAME"
                     )
                 cls._element_region(regions, region_name).add(
-                    *cls._flat_tokens(item)
+                    *cls._resolve_element_members(
+                        current_part,
+                        regions,
+                        cls._flat_tokens(item),
+                    )
                 )
                 continue
 
@@ -382,11 +396,18 @@ class Project:
                     raise ValueError(
                         f"SFSET at line {item['line']} requires SFSET or NAME"
                     )
-                region = regions.surfaces[region_name] if region_name in regions.surfaces else None
-                if region is None:
-                    from .region.region_surface import SurfaceRegion
-                    region = regions.surfaces.add(SurfaceRegion(region_name))
-                region.add(*cls._flat_tokens(item))
+                region = (
+                    regions.surfaces[region_name]
+                    if region_name in regions.surfaces
+                    else regions.surfaces.add(SurfaceRegion(region_name))
+                )
+                region.add(
+                    *cls._resolve_surface_members(
+                        surfaces,
+                        regions,
+                        cls._flat_tokens(item),
+                    )
+                )
                 continue
 
             if name == "SURFACE":
@@ -408,7 +429,13 @@ class Project:
                     surface = NodeSurface(surface_name)
                     for row in item["data"]:
                         if row and row[0]:
-                            surface.add(cls._token(row[0]))
+                            surface.add(
+                                cls._resolve_node_target(
+                                    project,
+                                    current_part,
+                                    cls._token(row[0]),
+                                )
+                            )
                     surfaces.add(surface)
                     continue
 
@@ -416,7 +443,11 @@ class Project:
                 for row in item["data"]:
                     if len(row) >= 2 and row[0] and row[1]:
                         surface.add(
-                            cls._token(row[0]),
+                            cls._resolve_element_target(
+                                project,
+                                current_part,
+                                cls._token(row[0]),
+                            ),
                             cls._surface_side(row[1]),
                         )
                 surfaces.add(surface)
@@ -438,8 +469,7 @@ class Project:
 
                 if type_name == "ISOTROPIC":
                     current_material.elasticity = IsotropicElasticity(
-                        values[0],
-                        values[1],
+                        values[0], values[1]
                     )
                 elif type_name == "GENISO":
                     current_material.elasticity = GeneralizedIsotropicElasticity(
@@ -507,14 +537,17 @@ class Project:
                 "BEAMSECTION",
                 "TRUSSSECTION",
             }:
-                cls._read_part_section(current_part.sections, item)
+                cls._read_part_section(project, current_part, item)
                 continue
 
             if name in {"MASS", "ROTARYINERTIA", "SPRING"}:
                 target_sections = (
                     project.sections if in_assembly else current_part.sections
                 )
-                cls._read_point_section(target_sections, item)
+                target_regions = (
+                    project.regions if in_assembly else current_part.regions
+                )
+                cls._read_point_section(target_sections, target_regions, item)
                 continue
 
             # --------------------------------------------------------------
@@ -544,7 +577,11 @@ class Project:
                 values.extend([0.0] * max(0, 10 - len(values)))
                 project.features.add(
                     PointMass(
-                        cls._required(item, "NSET"),
+                        cls._resolve_node_region(
+                            project,
+                            current_part,
+                            cls._required(item, "NSET"),
+                        ),
                         values[0],
                         inertia=values[1:4],
                         spring=values[4:7],
@@ -561,7 +598,10 @@ class Project:
                     project,
                     cls._required(item, "SUPPORT_COLLECTOR"),
                 )
-                orientation = cls._key(item, "ORIENTATION")
+                orientation = cls._resolve_coordinate_system(
+                    project,
+                    cls._key(item, "ORIENTATION"),
+                )
 
                 for row in item["data"]:
                     if not row:
@@ -572,7 +612,11 @@ class Project:
                     ]
                     collector.add(
                         Support(
-                            cls._token(row[0]),
+                            cls._resolve_node_target(
+                                project,
+                                current_part,
+                                cls._token(row[0]),
+                            ),
                             values,
                             orientation=orientation,
                         )
@@ -587,7 +631,7 @@ class Project:
                 "TLOAD",
                 "INERTIALOAD",
             }:
-                cls._read_load(project, item)
+                cls._read_load(project, current_part, item)
                 continue
 
             # --------------------------------------------------------------
@@ -595,21 +639,40 @@ class Project:
             # --------------------------------------------------------------
             if name == "RBM":
                 project.constraints.add(
-                    RigidBodyConstraint(cls._required(item, "ELSET"))
+                    RigidBodyConstraint(
+                        cls._resolve_element_region(
+                            project,
+                            current_part,
+                            cls._required(item, "ELSET"),
+                        )
+                    )
                 )
                 continue
 
             if name == "COUPLING":
-                slave = (
+                surface_name = (
                     cls._key(item, "SURFACE")
                     or cls._key(item, "SFSET")
-                    or cls._key(item, "SLAVE")
                 )
-                if not slave:
+                slave_name = surface_name or cls._key(item, "SLAVE")
+                if not slave_name:
                     raise ValueError(
                         f"COUPLING at line {item['line']} requires a slave target"
                     )
 
+                slave = (
+                    cls._resolve_surface_target(
+                        project,
+                        current_part,
+                        surface_name,
+                    )
+                    if surface_name is not None
+                    else cls._resolve_node_target(
+                        project,
+                        current_part,
+                        cls._token(slave_name),
+                    )
+                )
                 dofs = (
                     [int(value) for value in item["data"][0] if value != ""]
                     if item["data"]
@@ -617,7 +680,11 @@ class Project:
                 )
                 project.constraints.add(
                     Coupling(
-                        cls._required(item, "MASTER"),
+                        cls._resolve_node_target(
+                            project,
+                            current_part,
+                            cls._token(cls._required(item, "MASTER")),
+                        ),
                         slave,
                         type=CouplingType[
                             (
@@ -626,10 +693,6 @@ class Project:
                             ).upper()
                         ],
                         dofs=dofs,
-                        slave_is_surface=(
-                            cls._key(item, "SURFACE") is not None
-                            or cls._key(item, "SFSET") is not None
-                        ),
                     )
                 )
                 continue
@@ -637,10 +700,21 @@ class Project:
             if name == "CONNECTOR":
                 project.constraints.add(
                     Connector(
-                        cls._required(item, "TYPE"),
-                        cls._required(item, "NSET1"),
-                        cls._required(item, "NSET2"),
-                        cls._required(item, "COORDINATESYSTEM"),
+                        Connector.Type[cls._required(item, "TYPE").upper()],
+                        cls._resolve_node_region(
+                            project,
+                            current_part,
+                            cls._required(item, "NSET1"),
+                        ),
+                        cls._resolve_node_region(
+                            project,
+                            current_part,
+                            cls._required(item, "NSET2"),
+                        ),
+                        cls._require_coordinate_system(
+                            project,
+                            cls._required(item, "COORDINATESYSTEM"),
+                        ),
                     )
                 )
                 continue
@@ -648,8 +722,16 @@ class Project:
             if name == "TIE":
                 project.constraints.add(
                     Tie(
-                        cls._required(item, "MASTER"),
-                        cls._required(item, "SLAVE"),
+                        cls._resolve_surface_target(
+                            project,
+                            current_part,
+                            cls._required(item, "MASTER"),
+                        ),
+                        cls._resolve_surface_target(
+                            project,
+                            current_part,
+                            cls._required(item, "SLAVE"),
+                        ),
                         adjust=(
                             cls._key(item, "ADJUST", "YES") or "YES"
                         ).upper() == "YES",
@@ -676,7 +758,11 @@ class Project:
                     for index in range(term_count):
                         start = 3 * index
                         equation.add(
-                            cls._token(values[start]),
+                            cls._resolve_node_target(
+                                project,
+                                current_part,
+                                cls._token(values[start]),
+                            ),
                             int(values[start + 1]),
                             float(values[start + 2]),
                         )
@@ -795,11 +881,159 @@ class Project:
         return int(value)
 
     # ------------------------------------------------------------------
+    # Native-token -> model-object resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_node_members(
+        part: Part,
+        regions: RegionRepository,
+        tokens: Iterable[int | str],
+    ) -> list[Node]:
+        result: list[Node] = []
+        for token in tokens:
+            if isinstance(token, int):
+                result.append(part.nodes[token])
+            elif token in regions.nodes:
+                result.extend(regions.nodes[token].members)
+            else:
+                raise ValueError(f"cannot resolve node-region member: {token}")
+        return result
+
+    @staticmethod
+    def _resolve_element_members(
+        part: Part,
+        regions: RegionRepository,
+        tokens: Iterable[int | str],
+    ) -> list[Element]:
+        result: list[Element] = []
+        for token in tokens:
+            if isinstance(token, int):
+                result.append(part.elements[token])
+            elif token in regions.elements:
+                result.extend(regions.elements[token].members)
+            else:
+                raise ValueError(f"cannot resolve element-region member: {token}")
+        return result
+
+    @staticmethod
+    def _resolve_surface_members(
+        surfaces: SurfaceRepository,
+        regions: RegionRepository,
+        tokens: Iterable[int | str],
+    ) -> list[Surface]:
+        result: list[Surface] = []
+        for token in tokens:
+            if not isinstance(token, str):
+                raise ValueError("surface-region members must be named surfaces")
+            if token in surfaces:
+                result.append(surfaces[token])
+            elif token in regions.surfaces:
+                result.extend(regions.surfaces[token].members)
+            else:
+                raise ValueError(f"cannot resolve surface-region member: {token}")
+        return result
+
+    @classmethod
+    def _resolve_node_target(
+        cls,
+        project: "Project",
+        part: Part,
+        token: int | str,
+    ) -> Node | NodeRegion:
+        if isinstance(token, int):
+            return part.nodes[token]
+        if token in part.regions.nodes:
+            return part.regions.nodes[token]
+        if token in project.regions.nodes:
+            return project.regions.nodes[token]
+        raise ValueError(f"cannot resolve node target: {token}")
+
+    @classmethod
+    def _resolve_element_target(
+        cls,
+        project: "Project",
+        part: Part,
+        token: int | str,
+    ) -> Element | ElementRegion:
+        if isinstance(token, int):
+            return part.elements[token]
+        if token in part.regions.elements:
+            return part.regions.elements[token]
+        if token in project.regions.elements:
+            return project.regions.elements[token]
+        raise ValueError(f"cannot resolve element target: {token}")
+
+    @classmethod
+    def _resolve_surface_target(
+        cls,
+        project: "Project",
+        part: Part,
+        name: str,
+    ) -> Surface | SurfaceRegion:
+        if name in part.surfaces:
+            return part.surfaces[name]
+        if name in part.regions.surfaces:
+            return part.regions.surfaces[name]
+        if name in project.surfaces:
+            return project.surfaces[name]
+        if name in project.regions.surfaces:
+            return project.regions.surfaces[name]
+        raise ValueError(f"cannot resolve surface target: {name}")
+
+    @classmethod
+    def _resolve_node_region(
+        cls,
+        project: "Project",
+        part: Part,
+        name: str,
+    ) -> NodeRegion:
+        if name in part.regions.nodes:
+            return part.regions.nodes[name]
+        if name in project.regions.nodes:
+            return project.regions.nodes[name]
+        raise ValueError(f"cannot resolve node region: {name}")
+
+    @classmethod
+    def _resolve_element_region(
+        cls,
+        project: "Project",
+        part: Part,
+        name: str,
+    ) -> ElementRegion:
+        if name in part.regions.elements:
+            return part.regions.elements[name]
+        if name in project.regions.elements:
+            return project.regions.elements[name]
+        raise ValueError(f"cannot resolve element region: {name}")
+
+    @staticmethod
+    def _resolve_coordinate_system(
+        project: "Project",
+        name: str | None,
+    ) -> CoordinateSystem | None:
+        return None if name is None else project.coordinate_systems[name]
+
+    @staticmethod
+    def _require_coordinate_system(
+        project: "Project",
+        name: str,
+    ) -> CoordinateSystem:
+        return project.coordinate_systems[name]
+
+    @staticmethod
+    def _resolve_amplitude(
+        project: "Project",
+        name: str | None,
+    ) -> Amplitude | None:
+        return None if name is None else project.amplitudes[name]
+
+    # ------------------------------------------------------------------
     # Object construction helpers used by the input reader
     # ------------------------------------------------------------------
 
     @classmethod
-    def _read_instance(cls, item: _Block) -> Instance:
+    def _read_instance(cls, project: "Project", item: _Block) -> Instance:
         translation = None
         rotation = None
 
@@ -826,7 +1060,7 @@ class Project:
 
         return Instance(
             cls._required(item, "NAME"),
-            cls._required(item, "PART"),
+            project.parts[cls._required(item, "PART")],
             translation=translation,
             rotation=rotation,
         )
@@ -834,44 +1068,56 @@ class Project:
     @classmethod
     def _read_part_section(
         cls,
-        sections: SectionRepository,
+        project: "Project",
+        part: Part,
         item: _Block,
     ) -> None:
         name = item["name"]
-        section_name = cls._key(item, "NAME") or f"{name}_{len(sections)}"
-        elset = cls._required(item, "ELSET")
+        section_name = cls._key(item, "NAME") or f"{name}_{len(part.sections)}"
+        element_region = part.regions.elements[cls._required(item, "ELSET")]
+
+        material_name = cls._key(item, "MATERIAL")
+        material = project.materials[material_name] if material_name else None
+        orientation_name = cls._key(item, "ORIENTATION")
+        orientation = cls._resolve_coordinate_system(project, orientation_name)
 
         if name == "SOLIDSECTION":
-            sections.add(
+            if material is None:
+                raise ValueError("SOLIDSECTION requires MATERIAL")
+            part.sections.add(
                 SolidSection(
                     section_name,
-                    elset,
-                    cls._required(item, "MATERIAL"),
-                    cls._key(item, "ORIENTATION"),
+                    element_region,
+                    material,
+                    orientation,
                 )
             )
             return
 
         if name == "TRUSSSECTION":
-            sections.add(
+            if material is None:
+                raise ValueError("TRUSSSECTION requires MATERIAL")
+            part.sections.add(
                 TrussSection(
                     section_name,
-                    elset,
-                    cls._required(item, "MATERIAL"),
+                    element_region,
+                    material,
                     cls._flat_floats(item)[0],
                 )
             )
             return
 
         if name == "BEAMSECTION":
-            orientation = cls._flat_floats(item)
-            sections.add(
+            if material is None:
+                raise ValueError("BEAMSECTION requires MATERIAL")
+            beam_orientation = cls._flat_floats(item)
+            part.sections.add(
                 BeamSection(
                     section_name,
-                    elset,
-                    cls._required(item, "MATERIAL"),
-                    cls._required(item, "PROFILE"),
-                    orientation[:3],
+                    element_region,
+                    material,
+                    project.profiles[cls._required(item, "PROFILE")],
+                    beam_orientation[:3],
                 )
             )
             return
@@ -888,35 +1134,37 @@ class Project:
                     f"SHELLSECTION TYPE=ABD at line {item['line']} "
                     "requires 40 values"
                 )
-            sections.add(
+            part.sections.add(
                 ABDShellSection(
                     section_name,
-                    elset,
+                    element_region,
                     values[:36],
                     values[36:40],
                     thickness=float(
                         cls._key(item, "THICKNESS", "1.0") or 1.0
                     ),
-                    material=cls._key(item, "MATERIAL"),
-                    orientation=cls._key(item, "ORIENTATION"),
+                    material=material,
+                    orientation=orientation,
                     csys_axis=csys_axis,
                 )
             )
             return
 
+        if material is None:
+            raise ValueError("integrated SHELLSECTION requires MATERIAL")
         thickness_values = cls._flat_floats(item)
         thickness = (
             thickness_values[0]
             if thickness_values
             else float(cls._key(item, "THICKNESS", "1.0") or 1.0)
         )
-        sections.add(
+        part.sections.add(
             ShellSection(
                 section_name,
-                elset,
-                cls._required(item, "MATERIAL"),
+                element_region,
+                material,
                 thickness,
-                cls._key(item, "ORIENTATION"),
+                orientation,
                 csys_axis,
             )
         )
@@ -925,17 +1173,18 @@ class Project:
     def _read_point_section(
         cls,
         sections: SectionRepository,
+        regions: RegionRepository,
         item: _Block,
     ) -> None:
         section_name = (
             cls._key(item, "NAME")
             or f"{item['name']}_{len(sections)}"
         )
-        elset = cls._required(item, "ELSET")
+        element_region = regions.elements[cls._required(item, "ELSET")]
         values = cls._flat_floats(item)
 
         if item["name"] == "MASS":
-            sections.add(MassSection(section_name, elset, values[0]))
+            sections.add(MassSection(section_name, element_region, values[0]))
             return
 
         if item["name"] == "ROTARYINERTIA":
@@ -945,7 +1194,7 @@ class Project:
                     "ROTARY INERTIA products I12, I13 and I23 must be zero"
                 )
             sections.add(
-                RotaryInertiaSection(section_name, elset, values[:3])
+                RotaryInertiaSection(section_name, element_region, values[:3])
             )
             return
 
@@ -954,7 +1203,7 @@ class Project:
                 f"SPRING at line {item['line']} requires DOF and stiffness"
             )
         sections.add(
-            SpringSection(section_name, elset, int(values[0]), values[1])
+            SpringSection(section_name, element_region, int(values[0]), values[1])
         )
 
     @classmethod
@@ -1012,19 +1261,31 @@ class Project:
         return result
 
     @classmethod
-    def _read_load(cls, project: "Project", item: _Block) -> None:
+    def _read_load(
+        cls,
+        project: "Project",
+        part: Part,
+        item: _Block,
+    ) -> None:
         collector = cls._load_collector(
             project,
             cls._required(item, "LOAD_COLLECTOR"),
         )
-        amplitude = cls._key(item, "AMPLITUDE")
-        orientation = cls._key(item, "ORIENTATION")
+        amplitude = cls._resolve_amplitude(project, cls._key(item, "AMPLITUDE"))
+        orientation = cls._resolve_coordinate_system(
+            project,
+            cls._key(item, "ORIENTATION"),
+        )
 
         if item["name"] == "CLOAD":
             for row in item["data"]:
                 collector.add(
                     NodalForce(
-                        cls._token(row[0]),
+                        cls._resolve_node_target(
+                            project,
+                            part,
+                            cls._token(row[0]),
+                        ),
                         (float(value) for value in row[1:7]),
                         orientation=orientation,
                         amplitude=amplitude,
@@ -1036,7 +1297,7 @@ class Project:
             for row in item["data"]:
                 collector.add(
                     SurfaceTraction(
-                        cls._token(row[0]),
+                        cls._resolve_surface_target(project, part, row[0]),
                         (float(value) for value in row[1:4]),
                         orientation=orientation,
                         amplitude=amplitude,
@@ -1048,7 +1309,7 @@ class Project:
             for row in item["data"]:
                 collector.add(
                     PressureLoad(
-                        cls._token(row[0]),
+                        cls._resolve_surface_target(project, part, row[0]),
                         float(row[1]),
                         amplitude=amplitude,
                     )
@@ -1059,7 +1320,11 @@ class Project:
             for row in item["data"]:
                 collector.add(
                     VolumeLoad(
-                        cls._token(row[0]),
+                        cls._resolve_element_target(
+                            project,
+                            part,
+                            cls._token(row[0]),
+                        ),
                         (float(value) for value in row[1:4]),
                         orientation=orientation,
                         amplitude=amplitude,
@@ -1070,7 +1335,7 @@ class Project:
         if item["name"] == "TLOAD":
             collector.add(
                 ThermalLoad(
-                    cls._required(item, "TEMPERATUREFIELD"),
+                    project.fields[cls._required(item, "TEMPERATUREFIELD")],
                     float(
                         cls._key(item, "REFERENCETEMPERATURE", "0") or 0
                     ),
@@ -1083,7 +1348,11 @@ class Project:
         values.extend([0.0] * max(0, 12 - len(values)))
         collector.add(
             InertialLoad(
-                row[0],
+                cls._resolve_element_target(
+                    project,
+                    part,
+                    cls._token(row[0]),
+                ),
                 center=values[0:3],
                 center_acceleration=values[3:6],
                 omega=values[6:9],
@@ -1115,12 +1384,17 @@ class Project:
         )
 
     @classmethod
-    def _read_step_subcommand(cls, step: Any, item: _Block) -> bool:
+    def _read_step_subcommand(
+        cls,
+        project: "Project",
+        step: Any,
+        item: _Block,
+    ) -> bool:
         name = item["name"]
 
         if name == "SUPPORTS":
             step.supports = tuple(
-                value
+                project.support_collectors[value]
                 for row in item["data"]
                 for value in row
                 if value
@@ -1129,7 +1403,7 @@ class Project:
 
         if name == "LOADS":
             step.loads = tuple(
-                value
+                project.load_collectors[value]
                 for row in item["data"]
                 for value in row
                 if value

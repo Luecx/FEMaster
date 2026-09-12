@@ -1,9 +1,8 @@
-"""Undamped eigenfrequency extraction step.
+"""Undamped eigenfrequency extraction with concrete support collectors.
 
-A modal step does not activate structural load collectors; it uses support
-collectors and requests a fixed number of eigenmodes.  The concrete class owns
-the ``*NUMEIGENVALUES`` child block while shared loadcase syntax remains in
-``Step``.
+A modal step does not activate structural load collectors.  It stores the actual
+``SupportCollector`` objects that define its boundary conditions and requests a
+fixed number of eigenmodes.  Native collector names are emitted only by ``Step``.
 """
 
 from __future__ import annotations
@@ -11,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..support.support_collector import SupportCollector
 from .step import Step
 
 
@@ -24,7 +24,7 @@ class ModalStep(Step):
         name: str,
         number_of_modes: int,
         *,
-        supports: Iterable[str] = (),
+        supports: Iterable[SupportCollector] = (),
     ) -> None:
         super().__init__(name, supports=supports)
         self.number_of_modes = int(number_of_modes)

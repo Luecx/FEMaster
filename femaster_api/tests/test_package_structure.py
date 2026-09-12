@@ -12,8 +12,8 @@ PACKAGE_ROOT = Path(femaster_api.__file__).parent
 MODEL_ROOT = PACKAGE_ROOT / "model"
 
 
-def test_every_python_file_defines_at_most_one_class():
-    """Prevent future drift back to large multi-class aggregation modules."""
+def test_every_python_file_defines_at_most_one_top_level_class():
+    """Allow scoped nested helpers but prevent multi-concept aggregation files."""
 
     offenders: list[str] = []
 
@@ -60,6 +60,15 @@ def test_domain_layout_has_no_io_mesh_or_project_subpackage():
     assert (MODEL_ROOT / "surface").is_dir()
     assert (MODEL_ROOT / "region").is_dir()
     assert (MODEL_ROOT / "result").is_dir()
+
+
+def test_no_generic_entity_reference_aliases_remain():
+    """Relationships must name their concrete object types at the use site."""
+
+    assert not (MODEL_ROOT / "common" / "typing.py").exists()
+    assert not hasattr(femaster_api, "EntityReference")
+    assert not hasattr(femaster_api, "NodeReference")
+    assert not hasattr(femaster_api, "ElementReference")
 
 
 def test_concrete_element_set_matches_canonical_femaster_types():

@@ -1,8 +1,8 @@
-"""Concentrated diagonal rotary inertia assigned to ``ROTARYI`` elements.
+"""Concentrated diagonal rotary inertia on a concrete ``ElementRegion``.
 
 FEMaster's current point-property path accepts the three principal inertia terms;
-products of inertia are exported as zero.  Keeping that assumption explicit in
-this class prevents the Python API from implying unsupported coupled inertia.
+products of inertia are exported as zero.  The section keeps its assignment
+region as an object and turns it into an ``ELSET`` name only when serialized.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..region.region_element import ElementRegion
 from .section import Section
 
 
@@ -19,7 +20,7 @@ class RotaryInertiaSection(Section):
     def __init__(
         self,
         name: str,
-        element_region: str,
+        element_region: ElementRegion,
         inertia: Iterable[float],
     ) -> None:
         super().__init__(name, element_region)
@@ -31,6 +32,6 @@ class RotaryInertiaSection(Section):
 
     def export(self) -> str:
         return block([
-            keyword("ROTARY INERTIA", ELSET=self.element_region),
+            keyword("ROTARY INERTIA", ELSET=self.element_region.name),
             csv((*self.inertia, 0.0, 0.0, 0.0)),
         ])

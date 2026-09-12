@@ -1,9 +1,8 @@
-"""Linearized eigenvalue buckling analysis step.
+"""Linearized eigenvalue buckling step with object-valued collectors.
 
-The procedure combines a static preload definition with a requested number of
-buckling eigenpairs.  An optional spectral shift is emitted through ``*SIGMA``.
-All collector and solver references remain semantic names inherited from
-``Step``.
+The procedure combines concrete preload/support collector objects with a
+requested number of buckling eigenpairs.  An optional spectral shift is emitted
+through ``*SIGMA``.  No collector name is stored as an in-memory reference.
 """
 
 from __future__ import annotations
@@ -11,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
+from ..load.load_collector import LoadCollector
+from ..support.support_collector import SupportCollector
 from .step import Step
 from .util.solver_control import SolverControl
 
@@ -25,8 +26,8 @@ class BucklingStep(Step):
         name: str,
         number_of_modes: int,
         *,
-        loads: Iterable[str] = (),
-        supports: Iterable[str] = (),
+        loads: Iterable[LoadCollector] = (),
+        supports: Iterable[SupportCollector] = (),
         solver: SolverControl | None = None,
         sigma: float | None = None,
     ) -> None:
