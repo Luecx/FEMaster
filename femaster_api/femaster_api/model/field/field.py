@@ -1,16 +1,15 @@
-"""Sparse semantic field shared by model input and solver results.
+"""Sparse field representation for editable model data and solver results.
 
-``Field`` combines three independent pieces of information: a human/native name,
-a physical ``FieldDomain`` and a canonical ``FieldType``.  Values are stored by
-semantic entity identifiers rather than dense solver row numbers.  This allows
-native RES identifiers such as ``17`` and ``"bolt.17"`` to survive a read/write
-cycle without global renumbering.
+``Field`` is shared by input-model fields and the post-processing hierarchy, but
+the two use cases deliberately have different address semantics.  Editable model
+fields store actual ``Node`` / ``Element`` objects.  Only element-local indices
+remain integers because they are intrinsic positions inside an element rather
+than references to another model object.
 
-For model input export the addressing shape is validated against the domain:
-NODE/ELEMENT use one identifier, ELEMENT_NODAL/ELEMENT_IP use an element plus
-one local index, and ELEMENT_MP uses element, local integration point and local
-material point.  UNKNOWN result fields are intentionally not exportable as
-``*FIELD`` because the input parser has no UNKNOWN domain.
+RES/FRD result fields do not own the originating model graph and therefore keep
+the semantic solver addresses encoded by the result file.  Result readers use a
+private insertion path for those serialized addresses; the public ``set`` method
+is reserved for object-valued editable-model addressing.
 """
 
 from __future__ import annotations
@@ -19,9 +18,11 @@ from collections.abc import Iterable
 
 from ..common.format import block, csv, keyword
 from ..common.named_object import NamedObject
+from ..element.element import Element
+from ..node.node import Node
 from .field_domain import FieldDomain
 from .field_type import FieldType
-from .typing import FieldKey
+from .typing import FieldKey, ModelFieldKey, ResultFieldKey
 
 
 class Field(NamedObject):
@@ -51,8 +52,30 @@ class Field(NamedObject):
             return len(next(iter(self.values.values())))
         return 0
 
-    def set(self, key: FieldKey, values: Iterable[float]) -> "Field":
-        """Store one semantic row while enforcing a consistent row width."""
+    def set(self, key: ModelFieldKey, values: Iterable[float]) -> "Field":
+        """Store one editable-model row addressed by concrete model objects.
+
+        ``Node`` and ``Element`` IDs are intentionally not accepted here.  For
+        element-local domains the first tuple entry is the concrete ``Element``;
+        subsequent entries are zero-based local node/IP/material-point indices.
+        """
+
+        self._validate_model_key(key)
+        self._store(key, values)
+        return self
+
+    def _set_result(
+        self,
+        key: ResultFieldKey,
+        values: Iterable[float],
+    ) -> "Field":
+        """Store one serialized result row without pretending it is a model link."""
+
+        self._store(key, values)
+        return self
+
+    def _store(self, key: FieldKey, values: Iterable[float]) -> None:
+        """Store one row after validating component width."""
 
         row = tuple(float(value) for value in values)
 
@@ -66,15 +89,14 @@ class Field(NamedObject):
             raise ValueError(f"field {self.name!r} has inconsistent row width")
 
         self.values[key] = row
-        return self
 
     def get(self, key: FieldKey) -> tuple[float, ...]:
-        """Return one field row by semantic key."""
+        """Return one field row by its model object or result address."""
 
         return self.values[key]
 
     def export(self) -> str:
-        """Export this field as a native FEMaster ``*FIELD`` block."""
+        """Export an editable model field as one native ``*FIELD`` block."""
 
         if self.domain is FieldDomain.UNKNOWN:
             raise ValueError(
@@ -92,33 +114,83 @@ class Field(NamedObject):
         ]
 
         for key in sorted(self.values, key=self._sort_key):
-            address = key if isinstance(key, tuple) else (key,)
-            self._validate_address(address)
+            address = self._model_address(key)
             lines.append(csv((*address, *self.values[key])))
 
         return block(lines)
 
-    def _validate_address(self, address: tuple[object, ...]) -> None:
-        """Validate the number of semantic index columns for this domain."""
+    def _validate_model_key(self, key: ModelFieldKey) -> None:
+        """Validate object-valued addressing for the selected model domain."""
 
-        required = {
-            FieldDomain.NODE: 1,
-            FieldDomain.ELEMENT: 1,
-            FieldDomain.ELEMENT_NODAL: 2,
-            FieldDomain.ELEMENT_IP: 2,
-            FieldDomain.ELEMENT_MP: 3,
-        }[self.domain]
+        if self.domain is FieldDomain.NODE:
+            if not isinstance(key, Node):
+                raise TypeError("NODE field keys must be Node objects")
+            return
 
-        if len(address) != required:
-            raise ValueError(
-                f"field {self.name!r} with domain {self.domain.value} "
-                f"requires {required} index columns, got {len(address)}"
-            )
+        if self.domain is FieldDomain.ELEMENT:
+            if not isinstance(key, Element):
+                raise TypeError("ELEMENT field keys must be Element objects")
+            return
+
+        if self.domain in {FieldDomain.ELEMENT_NODAL, FieldDomain.ELEMENT_IP}:
+            if not (
+                isinstance(key, tuple)
+                and len(key) == 2
+                and isinstance(key[0], Element)
+                and type(key[1]) is int
+            ):
+                raise TypeError(
+                    f"{self.domain.value} field keys must be (Element, int)"
+                )
+            if key[1] < 0:
+                raise ValueError("element-local field indices must be non-negative")
+            return
+
+        if self.domain is FieldDomain.ELEMENT_MP:
+            if not (
+                isinstance(key, tuple)
+                and len(key) == 3
+                and isinstance(key[0], Element)
+                and type(key[1]) is int
+                and type(key[2]) is int
+            ):
+                raise TypeError(
+                    "ELEMENT_MP field keys must be (Element, int, int)"
+                )
+            if key[1] < 0 or key[2] < 0:
+                raise ValueError("element-local field indices must be non-negative")
+            return
+
+        raise ValueError(
+            f"field {self.name!r} with domain {self.domain.value} "
+            "has no editable-model address representation"
+        )
+
+    def _model_address(self, key: FieldKey) -> tuple[int, ...]:
+        """Reduce a validated model-object key to native numeric address columns."""
+
+        self._validate_model_key(key)  # type: ignore[arg-type]
+
+        if isinstance(key, Node):
+            return (key.id,)
+        if isinstance(key, Element):
+            return (key.id,)
+
+        element = key[0]
+        return (element.id, *key[1:])  # type: ignore[union-attr]
 
     @staticmethod
     def _sort_key(key: FieldKey) -> tuple[str, ...]:
+        """Build a deterministic ordering for model and result field addresses."""
+
         values = key if isinstance(key, tuple) else (key,)
-        return tuple(str(value) for value in values)
+        normalized: list[str] = []
+        for value in values:
+            if isinstance(value, (Node, Element)):
+                normalized.append(str(value.id))
+            else:
+                normalized.append(str(value))
+        return tuple(normalized)
 
     def __getitem__(self, key: FieldKey) -> tuple[float, ...]:
         return self.get(key)

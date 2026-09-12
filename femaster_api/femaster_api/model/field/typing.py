@@ -1,11 +1,30 @@
-"""Semantic key aliases used by sparse ``Field`` storage.
+"""Address types used by model and result ``Field`` storage.
 
-A node/element field usually uses one integer or qualified string key.
-Element-location fields use tuples such as ``("bolt.17", local_ip)`` and
-material-point fields use ``("bolt.17", local_ip, local_mp)``.
+Editable model fields keep real FEM objects in every entity-address position.
+``NODE`` fields are keyed by ``Node`` objects, ``ELEMENT`` fields by ``Element``
+objects, and element-local domains use ``(Element, local_index, ...)`` tuples.
+The local indices are intrinsic zero-based positions and therefore remain
+integers.
+
+Result files are different: RES/FRD addresses are solver output identifiers and
+may be bare integers or qualified strings such as ``"bolt.17"``.  Those
+serialized result addresses are retained deliberately because a ``Result`` does
+not own the editable model object graph.
 """
 
 from __future__ import annotations
 
+from ..element.element import Element
+from ..node.node import Node
+
+
+ModelFieldKey = (
+    Node
+    | Element
+    | tuple[Element, int]
+    | tuple[Element, int, int]
+)
+
 FieldIndex = int | str
-FieldKey = FieldIndex | tuple[FieldIndex, ...]
+ResultFieldKey = FieldIndex | tuple[FieldIndex, ...]
+FieldKey = ModelFieldKey | ResultFieldKey

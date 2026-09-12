@@ -1,8 +1,9 @@
-"""Small cantilever-style truss example using the rewritten FEMaster API.
+"""Small cantilever-style truss example using only object-valued relationships.
 
-The example intentionally uses only canonical public element names.  The two-node
-truss is therefore represented by ``T3`` rather than the historical ``T3D2``
-alias, matching the reduced element surface of the Python API.
+Every relation between FEMaster concepts is represented by the corresponding
+Python object.  IDs and names are used only to create intrinsic identities and by
+repositories/export; they are never passed as substitutes for nodes, regions,
+materials, collectors or other referenced objects.
 """
 
 from femaster_api import (
@@ -29,19 +30,19 @@ part = project.parts.default()
 # Part-local topology
 # -------------------------------------------------------------------------
 
-part.nodes.add(Node(1, 0.0, 0.0, 0.0))
-part.nodes.add(Node(2, 1000.0, 0.0, 0.0))
-part.elements.add(T3(1, (1, 2)))
+root_node = part.nodes.add(Node(1, 0.0, 0.0, 0.0))
+tip_node = part.nodes.add(Node(2, 1000.0, 0.0, 0.0))
+bar_element = part.elements.add(T3(1, (root_node, tip_node)))
 
-part.regions.add(NodeRegion("ROOT", (1,)))
-part.regions.add(NodeRegion("TIP", (2,)))
-part.regions.add(ElementRegion("BAR", (1,)))
+root = part.regions.add(NodeRegion("ROOT", (root_node,)))
+tip = part.regions.add(NodeRegion("TIP", (tip_node,)))
+bar = part.regions.add(ElementRegion("BAR", (bar_element,)))
 
 # -------------------------------------------------------------------------
 # Material and section
 # -------------------------------------------------------------------------
 
-project.materials.add(
+steel = project.materials.add(
     Material(
         "STEEL",
         elasticity=IsotropicElasticity(210000.0, 0.3),
@@ -52,27 +53,32 @@ project.materials.add(
 part.sections.add(
     TrussSection(
         "BAR_SECTION",
-        element_region="BAR",
-        material="STEEL",
+        element_region=bar,
+        material=steel,
         area=100.0,
     )
 )
 
 # -------------------------------------------------------------------------
-# Boundary conditions and load
+# Boundary conditions, load and analysis step
 # -------------------------------------------------------------------------
 
 supports = project.support_collectors.add(SupportCollector("SUPPORTS"))
-supports.add(Support("ROOT", (0.0, 0.0, 0.0)))
+supports.add(Support(root, (0.0, 0.0, 0.0)))
 
 loads = project.load_collectors.add(LoadCollector("LOADS"))
-loads.add(NodalForce("TIP", (1000.0, 0.0, 0.0, 0.0, 0.0, 0.0)))
+loads.add(
+    NodalForce(
+        tip,
+        (1000.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    )
+)
 
 project.steps.add(
     StaticStep(
         "STATIC",
-        loads=("LOADS",),
-        supports=("SUPPORTS",),
+        loads=(loads,),
+        supports=(supports,),
     )
 )
 

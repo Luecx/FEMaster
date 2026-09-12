@@ -6,6 +6,9 @@ from femaster_api import (
     Amplitude,
     ElementRegion,
     ElementSurface,
+    Field,
+    FieldDomain,
+    Instance,
     IsotropicElasticity,
     LoadCollector,
     Material,
@@ -59,6 +62,17 @@ def make_project() -> Project:
         Amplitude("RAMP").add(0.0, 0.0).add(1.0, 1.0)
     )
 
+    density = project.fields.add(
+        Field("RHO", FieldDomain.ELEMENT, ("RHO",))
+    )
+    density.set(element, (0.8,))
+
+    directors = project.fields.add(
+        Field("DIRECTORS", FieldDomain.ELEMENT_NODAL, ("X", "Y", "Z"))
+    )
+    directors.set((element, 0), (0.0, 0.0, 1.0))
+    directors.set((element, 1), (0.0, 0.0, 1.0))
+
     supports = project.support_collectors.add(SupportCollector("BC"))
     supports.add(Support(root, (0.0, 0.0, 0.0), orientation=orientation))
 
@@ -102,6 +116,8 @@ def test_project_export_and_read_inp_text_round_trip_object_relationships():
     assert "AMPLITUDE=RAMP" in text
     assert "ORIENTATION=GLOBAL" in text
     assert "*LOADCASE, TYPE=LINEARSTATIC, NAME=STATIC" in text
+    assert "*FIELD, NAME=RHO, TYPE=ELEMENT" in text
+    assert "50, 0.8" in text
 
     project = Project.read_inp_text(text)
     part = project.parts.default()
@@ -137,11 +153,23 @@ def test_project_export_and_read_inp_text_round_trip_object_relationships():
     assert step.loads == (project.load_collectors["LOAD"],)
     assert step.supports == (project.support_collectors["BC"],)
 
+    density = project.fields["RHO"]
+    assert list(density.values) == [part.elements[50]]
+    assert density[part.elements[50]] == (0.8,)
 
-def test_cross_object_relationships_reject_string_surrogates():
+    directors = project.fields["DIRECTORS"]
+    assert set(directors.values) == {
+        (part.elements[50], 0),
+        (part.elements[50], 1),
+    }
+
+
+def test_cross_object_relationships_reject_string_and_id_surrogates():
     project = make_project()
     part = project.parts.default()
     node = part.nodes[10]
+    element = part.elements[50]
+    material = project.materials["STEEL"]
     amplitude = project.amplitudes["RAMP"]
 
     with pytest.raises(TypeError):
@@ -154,11 +182,55 @@ def test_cross_object_relationships_reject_string_surrogates():
         T3(99, (10, 20))
 
     with pytest.raises(TypeError):
-        NodeRegion("BAD", ("10",))
+        NodeRegion("BAD", (10,))
+
+    with pytest.raises(TypeError):
+        ElementRegion("BAD", (50,))
+
+    with pytest.raises(TypeError):
+        TrussSection("BAD", "BAR", material, 1.0)
+
+    with pytest.raises(TypeError):
+        Support("ROOT", (0.0,))
+
+    with pytest.raises(TypeError):
+        PressureLoad("OUTER", 1.0)
 
     with pytest.raises(TypeError):
         StaticStep("BAD", loads=("LOAD",))
 
+    with pytest.raises(TypeError):
+        StaticStep("BAD", supports=("BC",))
+
+    with pytest.raises(TypeError):
+        Instance("BAD", "PART")
+
+    element_field = Field("RHO2", FieldDomain.ELEMENT, ("RHO",))
+    with pytest.raises(TypeError):
+        element_field.set(element.id, (1.0,))
+
+    nodal_field = Field("TEMP", FieldDomain.NODE, ("T",))
+    with pytest.raises(TypeError):
+        nodal_field.set(node.id, (20.0,))
+
+    local_field = Field("IP", FieldDomain.ELEMENT_IP, ("V",))
+    with pytest.raises(TypeError):
+        local_field.set((element.id, 0), (1.0,))
+
     valid = NodalForce(node, amplitude=amplitude)
     assert valid.target is node
     assert valid.amplitude is amplitude
+
+
+def test_model_field_local_indices_remain_intrinsic_integers():
+    project = make_project()
+    element = project.parts.default().elements[50]
+
+    field = Field("MP", FieldDomain.ELEMENT_MP, ("V",))
+    field.set((element, 2, 3), (7.0,))
+
+    assert field[(element, 2, 3)] == (7.0,)
+    assert "50, 2, 3, 7.0" in field.export()
+
+    with pytest.raises(ValueError):
+        field.set((element, -1, 0), (1.0,))

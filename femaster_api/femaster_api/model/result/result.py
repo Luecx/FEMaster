@@ -16,8 +16,9 @@ API is therefore format-oriented and discoverable from the result object itself:
     Result.read_frd("job.frd")
 
 The parsers preserve semantic node/element identifiers, including qualified
-instance-local identifiers such as ``"bolt.17"``.  Format-specific syntax is
-normalized into the central ``FieldDomain`` and ``FieldType`` definitions.
+instance-local identifiers such as ``"bolt.17"``.  These are serialized result
+addresses, not editable-model references; result readers therefore use Field's
+private result-address insertion path rather than the object-valued model API.
 """
 
 from __future__ import annotations
@@ -270,7 +271,7 @@ class Result:
                     cls._float_token(token)
                     for token in tokens[2:]
                 ]
-                current_field.set(current_node, values)
+                current_field._set_result(current_node, values)
                 continue
 
             # -2 continues the current node when a result has more than six
@@ -387,7 +388,7 @@ class Result:
                     index_cols:index_cols + value_cols
                 ]
             )
-            field.set(key, values)
+            field._set_result(key, values)
             read_rows += 1
 
             if rows and read_rows >= rows:

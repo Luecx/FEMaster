@@ -569,7 +569,9 @@ class Project:
                 continue
 
             if name == "FIELD":
-                project.fields.add(cls._read_model_field(item))
+                project.fields.add(
+                    cls._read_model_field(project, current_part, item)
+                )
                 continue
 
             if name == "POINTMASS":
@@ -1207,7 +1209,14 @@ class Project:
         )
 
     @classmethod
-    def _read_model_field(cls, item: _Block) -> Field:
+    def _read_model_field(
+        cls,
+        project: "Project",
+        part: Part,
+        item: _Block,
+    ) -> Field:
+        """Read one model field and resolve its entity address to model objects."""
+
         domain_name = (
             cls._key(item, "TYPE")
             or cls._key(item, "DOMAIN")
@@ -1224,6 +1233,11 @@ class Project:
             "MP": FieldDomain.ELEMENT_MP,
         }
         domain = aliases.get(domain_name, FieldDomain.UNKNOWN)
+        if domain is FieldDomain.UNKNOWN:
+            raise ValueError(
+                f"FIELD at line {item['line']} has unsupported domain: "
+                f"{domain_name}"
+            )
 
         cols = int(cls._key(item, "COLS", "0") or 0)
         result = Field(
@@ -1232,28 +1246,81 @@ class Project:
             [f"C{index + 1}" for index in range(cols)],
         )
 
-        index_cols = {
-            FieldDomain.NODE: 1,
-            FieldDomain.ELEMENT: 1,
-            FieldDomain.ELEMENT_NODAL: 2,
-            FieldDomain.ELEMENT_IP: 2,
-            FieldDomain.ELEMENT_MP: 3,
-            FieldDomain.UNKNOWN: 1,
-        }[domain]
-
+        # The first address column always denotes a model entity and is resolved
+        # immediately.  Remaining columns are zero-based positions local to that
+        # element and therefore remain intrinsic integers.
         for row in item["data"]:
-            if len(row) < index_cols:
+            if not row or row[0] == "":
                 continue
-            indices = tuple(
-                cls._token(value)
-                for value in row[:index_cols]
-            )
-            key = indices[0] if len(indices) == 1 else indices
+
+            if domain is FieldDomain.NODE:
+                target = cls._resolve_node_target(
+                    project,
+                    part,
+                    cls._token(row[0]),
+                )
+                if not isinstance(target, Node):
+                    raise ValueError(
+                        "NODE field rows must address a concrete Node"
+                    )
+                key = target
+                value_start = 1
+
+            elif domain is FieldDomain.ELEMENT:
+                target = cls._resolve_element_target(
+                    project,
+                    part,
+                    cls._token(row[0]),
+                )
+                if not isinstance(target, Element):
+                    raise ValueError(
+                        "ELEMENT field rows must address a concrete Element"
+                    )
+                key = target
+                value_start = 1
+
+            elif domain in {
+                FieldDomain.ELEMENT_NODAL,
+                FieldDomain.ELEMENT_IP,
+            }:
+                if len(row) < 2 or row[1] == "":
+                    raise ValueError(
+                        f"{domain.value} field row requires element and local index"
+                    )
+                target = cls._resolve_element_target(
+                    project,
+                    part,
+                    cls._token(row[0]),
+                )
+                if not isinstance(target, Element):
+                    raise ValueError(
+                        f"{domain.value} field rows must address a concrete Element"
+                    )
+                key = (target, int(row[1]))
+                value_start = 2
+
+            else:
+                if len(row) < 3 or row[1] == "" or row[2] == "":
+                    raise ValueError(
+                        "ELEMENT_MP field row requires element, local IP and local MP"
+                    )
+                target = cls._resolve_element_target(
+                    project,
+                    part,
+                    cls._token(row[0]),
+                )
+                if not isinstance(target, Element):
+                    raise ValueError(
+                        "ELEMENT_MP field rows must address a concrete Element"
+                    )
+                key = (target, int(row[1]), int(row[2]))
+                value_start = 3
+
             result.set(
                 key,
                 (
                     float(value)
-                    for value in row[index_cols:]
+                    for value in row[value_start:]
                     if value != ""
                 ),
             )
