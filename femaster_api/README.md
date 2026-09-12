@@ -1,7 +1,43 @@
 # FEMaster Python API
 
-The Python API mirrors the semantic FEMaster model and exports native FEMaster
-keyword input directly from the model objects.
+The Python API mirrors FEMaster's semantic model. All model objects live below
+`femaster_api.model`; importers are the only public object layer outside the
+model package.
+
+## Structure
+
+The package is intentionally split by semantic concept:
+
+```text
+femaster_api/
+    model/
+        project/
+        part/
+        instance/
+        mesh/
+            elements/
+        region/
+        material/
+        profile/
+        coordinate_system/
+        section/
+        amplitude/
+        load/
+        support/
+        constraint/
+        feature/
+        step/
+        field/
+        result/
+        common/
+    io/
+```
+
+Every Python source file contains **at most one class definition**. Repositories,
+enums, controls and concrete element types therefore each have their own file.
+
+`model/__init__.py` and the package root re-export the public classes, so normal
+use remains compact:
 
 ```python
 from femaster_api import Node, Project, T3D2
@@ -13,7 +49,6 @@ part.nodes.add(Node(1, 0.0, 0.0, 0.0))
 part.nodes.add(Node(2, 1.0, 0.0, 0.0))
 part.elements.add(T3D2(1, (1, 2)))
 
-text = project.export()
 project.write("model.inp")
 ```
 
@@ -27,35 +62,38 @@ project.parts["WING"]
 project.parts.default()
 ```
 
-The default Part is permanently stored at position zero. It is not duplicated on
-`Project` and cannot be deleted.
+The default Part is permanently stored at position zero. It is not duplicated
+on `Project` and cannot be deleted.
 
-Nodes and elements are different: their integer keys are FEMaster IDs rather
-than repository positions.
+Node and element repositories preserve FEMaster IDs. Their integer subscription
+is semantic ID lookup rather than positional lookup:
 
 ```python
 part.nodes[100]
 part.elements[250]
 ```
 
-Use `repository.at(index)` only when insertion-order positional access is really
-required for ID-based repositories.
+Use `repository.at(index)` only for explicit insertion-order access.
 
-## Importing input and results
+## Export and import
+
+Every model object with an independent native representation implements
+`export()`. Repositories implement `export()` only when they own grouping or
+ordering.
 
 ```python
-from femaster_api import InpImporter, import_result
-
-project = InpImporter().import_file("model.inp")
-result = import_result("model.res")
-field = result.field("DISP", loadcase=1, frame=0)
+text = project.export()
 ```
 
-For in-memory text, importers also provide `import_text()`.
+Input and result parsing lives under `femaster_api.io`:
 
-RES and FEMaster-generated nodal FRD output use the common
-`Result -> LoadCase -> Frame -> Field` hierarchy and the central `FieldDomain`
-and `FieldType` enums.
+```python
+from femaster_api import InpImporter, ResImporter, FrdImporter
 
-See `PYTHON_STYLE.md` for the architectural and documentation conventions used
-by the package.
+project = InpImporter().import_file("model.inp")
+result = ResImporter().import_file("model.res")
+```
+
+`Field`, `FieldDomain`, `FieldType`, `Frame`, `LoadCase` and `Result` are model
+objects and therefore live under `femaster_api.model.field` and
+`femaster_api.model.result`, not beside the model package.

@@ -1,65 +1,23 @@
-"""Input and result importers for the FEMaster Python API."""
+"""Input and result importers."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from .frd import FrdReader as _FrdReader
-from .inp import InpReader as _InpReader, KeywordBlock
-from .res import ResReader as _ResReader
-
-
-class InpImporter:
-    """Import FEMaster/Abaqus-like INP decks into Project objects."""
-
-    def __init__(self) -> None:
-        self._impl = _InpReader()
-
-    def import_file(self, path: str | Path):
-        """Import one UTF-8 input file."""
-
-        return self._impl.read(path)
-
-    def import_text(self, text: str):
-        """Import one input deck from text."""
-
-        return self._impl.parse(text)
-
-
-class ResImporter:
-    """Import native FEMaster RES result files."""
-
-    def __init__(self) -> None:
-        self._impl = _ResReader()
-
-    def import_file(self, path: str | Path):
-        return self._impl.read(path)
-
-    def import_text(self, text: str):
-        return self._impl.parse(text)
-
-
-class FrdImporter:
-    """Import FEMaster-generated CalculiX/CGX FRD result files."""
-
-    def __init__(self) -> None:
-        self._impl = _FrdReader()
-
-    def import_file(self, path: str | Path):
-        return self._impl.read(path)
-
-    def import_text(self, text: str):
-        return self._impl.parse(text)
+from .frd_importer import FrdImporter
+from .inp_importer import InpImporter
+from .keyword_block import KeywordBlock
+from .res_importer import ResImporter
 
 
 def import_input(path: str | Path):
-    """Import a FEMaster/Abaqus-like INP deck into a Project."""
+    """Import a FEMaster/Abaqus-like input deck."""
 
     return InpImporter().import_file(path)
 
 
 def import_result(path: str | Path):
-    """Import a supported FEMaster result file by filename extension."""
+    """Import a supported FEMaster result file by extension."""
 
     path = Path(path)
     suffix = path.suffix.lower()
@@ -69,7 +27,9 @@ def import_result(path: str | Path):
     if suffix == ".frd":
         return FrdImporter().import_file(path)
 
-    raise ValueError(f"unsupported result format: {path.suffix or '<none>'}")
+    raise ValueError(
+        f"unsupported result format: {path.suffix or '<none>'}"
+    )
 
 
 __all__ = [

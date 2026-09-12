@@ -16,7 +16,11 @@ END FIELD
 
 def test_res_importer_preserves_semantic_entity_ids():
     result = ResImporter().import_text(RES)
-    displacement = result.field("DISPLACEMENT", loadcase=1, frame=0)
+    displacement = result.field(
+        "DISPLACEMENT",
+        loadcase=1,
+        frame=0,
+    )
 
     assert displacement.domain is FieldDomain.NODE
     assert displacement.type is FieldType.DISPLACEMENT

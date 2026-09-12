@@ -1,116 +1,26 @@
-"""Public FEMaster model classes."""
+"""Public FEMaster model classes.
 
-from .assembly import Instance, InstanceRepository, Part, PartRepository
-from .boundary import (
-    Amplitude,
-    AmplitudeInterpolation,
-    AmplitudeRepository,
-    InertialLoad,
-    Load,
-    LoadCollector,
-    LoadCollectorRepository,
-    NodalForce,
-    PressureLoad,
-    Support,
-    SupportCollector,
-    SupportCollectorRepository,
-    SurfaceTraction,
-    ThermalLoad,
-    VolumeLoad,
-)
-from .constraints import (
-    Connector,
-    ConnectorType,
-    Constraint,
-    ConstraintRepository,
-    Coupling,
-    CouplingType,
-    Equation,
-    EquationTerm,
-    RigidBodyConstraint,
-    Tie,
-)
-from .coordinates import (
-    CoordinateSystem,
-    CoordinateSystemRepository,
-    CylindricalCoordinateSystem,
-    RectangularCoordinateSystem,
-)
-from .features import Feature, FeatureRepository, PointMass
-from .materials import (
-    ABDElasticity,
-    Elasticity,
-    GeneralizedIsotropicElasticity,
-    IsotropicElasticity,
-    Material,
-    MaterialRepository,
-    OrthotropicElasticity,
-    Profile,
-    ProfileRepository,
-)
-from .mesh import (
-    B33,
-    C3D4,
-    C3D5,
-    C3D6,
-    C3D8,
-    C3D8R,
-    C3D10,
-    C3D15,
-    C3D20,
-    C3D20R,
-    MITC3FRT,
-    MITC4,
-    MITC4FRT,
-    MITC6FRT,
-    MITC8,
-    MITC8FRT,
-    QSPT,
-    S3,
-    S4,
-    S6,
-    S8,
-    T3,
-    T3D2,
-    Element,
-    ElementRepository,
-    MassElement,
-    Node,
-    NodeRepository,
-    RotaryInertiaElement,
-    SpringElement,
-    Surface,
-)
-from .regions import ElementRegion, LineRegion, NodeRegion, Region, RegionRepository, SurfaceRegion
-from .sections import (
-    ABDShellSection,
-    AssemblySectionRepository,
-    BeamSection,
-    MassSection,
-    MaterialSection,
-    RotaryInertiaSection,
-    Section,
-    SectionRepository,
-    ShellSection,
-    SolidSection,
-    SpringSection,
-    TrussSection,
-)
-from .steps import (
-    BucklingStep,
-    ConstraintMethod,
-    ModalStep,
-    NewmarkControl,
-    NonlinearStaticStep,
-    RayleighDamping,
-    SolverControl,
-    SolverDevice,
-    SolverMethod,
-    StaticStep,
-    Step,
-    StepRepository,
-    TimeControl,
-    TransientStep,
-)
+Every public model class is implemented in its own file. The subpackages reflect
+semantic ownership rather than the historical flat Python API layout.
+"""
+
+from .amplitude import *
+from .load import *
+from .support import *
+from .common import *
+from .constraint import *
+from .coordinate_system import *
+from .feature import *
+from .field import *
+from .instance import *
+from .material import *
+from .mesh import *
+from .part import *
+from .profile import *
+from .project import *
+from .region import *
+from .result import *
+from .section import *
+from .step import *
 
 __all__ = [name for name in globals() if not name.startswith("_")]

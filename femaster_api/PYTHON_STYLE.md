@@ -1,165 +1,96 @@
 # FEMaster Python Code Style
 
-These rules apply to the FEMaster Python API. They intentionally mirror the C++
-style: correctness and explicit FEM semantics take precedence over compactness,
-framework abstractions, or formatter-driven code shape.
+These rules mirror the C++ code philosophy: correctness and explicit FEM
+semantics take precedence over compactness or framework abstractions.
 
-## 1. Priorities
+## 1. Package structure
 
-When several implementations are possible, prefer in this order:
+- Every model object lives below `femaster_api/model/`.
+- Model concepts are grouped into semantic subpackages (`part`, `mesh`, `field`,
+  `result`, `section`, `load`, ...).
+- `io` contains only parsing/import infrastructure and syntax-level records.
+- Do not create model classes at package root.
+- Do not reintroduce flat collection modules such as `mesh.py`, `fields.py`,
+  `materials.py` or `steps.py`.
 
-1. Correct FEMaster semantics.
-2. Clear ownership and scope.
-3. Direct, locally understandable Python.
-4. Readable top-to-bottom control flow.
-5. Stable semantic names and FEMaster identifiers.
-6. Reuse of existing public model classes.
-7. Small abstractions only where they remove real repeated behavior.
+## 2. One class per file
 
-Do not introduce a framework merely to reduce line count.
+**Every Python source file contains at most one class definition.**
 
-## 2. Model architecture
+This applies equally to:
 
-- `Project` is the top-level owner of global definitions and repositories.
+- public model classes,
+- repositories,
+- enums,
+- control/value classes,
+- abstract/base classes,
+- parser/importer classes,
+- private helper classes.
+
+A module may contain helper functions and type aliases when no class is defined
+or when those helpers are local to the single class in that file.
+
+`__init__.py` files only re-export names and must not define classes.
+
+## 3. Model architecture
+
+- `Project` is the top-level model owner.
 - `Part` owns part-local nodes, elements, regions, surfaces and sections.
 - The default Part exists only as `project.parts[0]`.
-- `project.parts.default()` must return exactly `project.parts[0]`.
+- `project.parts.default()` returns exactly `project.parts[0]`.
 - The default Part cannot be deleted or replaced.
 - Named repositories support `repository[index]` and `repository[name]`.
-- Repository indices are positional conveniences, never persistent model IDs.
+- Repository positions are convenience indices, never persistent model IDs.
 - Persistent references between named objects use names.
-- Node and element repositories preserve FEMaster IDs; `nodes[id]` and
-  `elements[id]` address those semantic IDs.
-- Loads and supports belong directly to their collectors. Do not maintain a
-  second global copy of collector entries.
+- Node and element repositories preserve FEMaster IDs.
+- Loads and supports belong directly to their collectors.
+- Field and result objects are model objects and live under `model/field` and
+  `model/result`.
 
-## 3. Export
+## 4. Export
 
-Every class that has an independent native input representation implements
+Every model class with an independent native representation implements
 `export()` itself.
 
-Repositories implement `export()` when they own ordering or grouping required
-by the input format. `Project.export()` only orchestrates global output order;
+Repositories implement `export()` only where they own ordering or grouping
+required by the input syntax. `Project.export()` orchestrates dependency order;
 it must not become a type-switching serializer registry.
 
-Use the small `_format.py` helpers for keyword lines, CSV rows and block joining.
-Do not introduce visitors, decorators, serializer registries or metaclasses for
-ordinary output.
+Do not introduce visitors, serializer registries, decorators or metaclasses for
+ordinary native export.
 
-`write()` is the filesystem convenience on top of `export()`. It must not contain
-independent serialization logic.
+## 5. Import
 
-## 4. Import
+Importers populate the same public model classes users construct manually.
+Do not maintain a second DTO hierarchy.
 
-Public import APIs use importer terminology:
+Use:
 
-- `InpImporter`
-- `ResImporter`
-- `FrdImporter`
-- `import_input()`
-- `import_result()`
-- `Project.import_file()`
+- `InpImporter.import_file()` / `import_text()`
+- `ResImporter.import_file()` / `import_text()`
+- `FrdImporter.import_file()` / `import_text()`
 
-Importer methods use `import_file()` for filesystem input and `import_text()` for
-already available text. Python's reserved `import` keyword is not used as a
-method name.
+Successfully parsed but unsupported input blocks are retained explicitly rather
+than silently discarded.
 
-Importers populate the same public object model that users construct manually.
-Do not create a second DTO hierarchy for parsed files.
+## 6. Fields and results
 
-Syntax that is parsed successfully but has no semantic implementation must be
-retained explicitly as unsupported/unparsed data rather than silently ignored.
+`FieldDomain` and `FieldType` are the central format-independent definitions.
+RES and FRD importers map into:
 
-Result importers map format-specific data into the common hierarchy:
-
-`Result -> LoadCase -> Frame -> Field`
-
-`FieldDomain` and `FieldType` are the central definitions for field semantics.
-Format importers must not maintain independent competing field enums.
-
-## 5. Files and modules
-
-Each module starts with a descriptive module docstring explaining:
-
-- what the module defines,
-- where the objects live in FEMaster scope,
-- ownership responsibilities,
-- important identifier or export conventions.
-
-Keep related small value classes together when they form one subsystem. Split a
-module when it becomes difficult to understand as one semantic unit, not merely
-because it exceeds an arbitrary line count.
-
-## 6. Classes
-
-Every public class receives a docstring describing responsibility and scope.
-Class contents should normally follow this order:
-
-1. Class constants.
-2. Construction and persistent definition data.
-3. Public modification/access operations.
-4. Export.
-5. Container protocol methods.
-6. Private helpers.
-
-Avoid properties that only hide a trivial public attribute. Properties are
-appropriate for invariants such as immutable semantic names.
-
-## 7. Functions
-
-Non-trivial functions should read as a sequence of documented phases. Use
-section comments for substantial phases:
-
-```python
-# ------------------------------------------------------------------
-# Part-local topology
-# ------------------------------------------------------------------
+```text
+Result -> LoadCase -> Frame -> Field
 ```
 
-Within algorithms, comments should explain FEM semantics, state transitions,
-identifier spaces, parsing decisions or numerical meaning. Do not comment every
-obvious assignment individually.
+Format-specific readers must not create competing field classes or enums.
 
-Long functions are acceptable when they remain a clear ordered semantic pass.
-Do not extract one-use helpers solely to shorten a function.
+## 7. Code organization
 
-## 8. Data classes and dependencies
-
-Prefer ordinary Python classes and small standard-library types. `dataclass` is
-acceptable for passive records, but it is not required for every model object.
-
-Do not add Pydantic, attrs, validation frameworks, serializer frameworks or
-other third-party dependencies for functionality that is straightforward with
-the standard library.
-
-## 9. Formatting
-
-- Use four spaces.
-- Use type annotations on public APIs.
-- Keep short expressions on one line.
-- Align closely related assignments when it improves visual structure.
-- Prefer explicit names over abbreviations except established FEM terminology.
-- Avoid formatter rules that destroy useful mathematical or structural layout.
-
-## 10. Validation
+Prefer direct, locally understandable Python. Keep mathematical and semantic
+ownership explicit. Use small abstractions only when they represent a genuine
+concept or meaningful repeated behavior.
 
 Validate invariants at the object boundary where invalid data first becomes
-meaningful, for example:
+meaningful. Never silently renumber node or element IDs.
 
-- duplicate repository names or IDs,
-- element connectivity size,
-- vector dimension,
-- immutable names,
-- required keyword keys,
-- field row width,
-- protected default Part removal.
-
-Do not silently renumber user node or element IDs.
-
-## 11. Scope of changes
-
-Do not retain compatibility abstractions for an obsolete API unless explicitly
-required. When an API is intentionally redesigned, keep one clear implementation
-rather than a new model plus adapters for every previous representation.
-
-Do not claim tests have passed unless they were actually executed.
+Do not claim tests passed unless they were actually executed.
