@@ -60,3 +60,47 @@ def test_domain_layout_has_no_io_mesh_or_project_subpackage():
     assert (MODEL_ROOT / "surface").is_dir()
     assert (MODEL_ROOT / "region").is_dir()
     assert (MODEL_ROOT / "result").is_dir()
+
+
+def test_concrete_element_set_matches_canonical_femaster_types():
+    """Expose only the canonical internal element names requested by the API."""
+
+    expected = {
+        "B33",
+        "C3D4",
+        "C3D5",
+        "C3D6",
+        "C3D8",
+        "C3D8R",
+        "C3D10",
+        "C3D15",
+        "C3D20",
+        "C3D20R",
+        "S3",
+        "S4",
+        "S6",
+        "S8",
+        "T3",
+    }
+
+    assert set(femaster_api.ELEMENT_TYPES) == expected
+
+    element_root = MODEL_ROOT / "element"
+    forbidden_modules = {
+        "element_t3d2.py",
+        "element_mitc4.py",
+        "element_mitc8.py",
+        "element_qspt.py",
+        "element_mitc3frt.py",
+        "element_mitc4frt.py",
+        "element_mitc6frt.py",
+        "element_mitc8frt.py",
+        "element_mass.py",
+        "element_rotary_inertia.py",
+        "element_spring.py",
+    }
+
+    assert not any((element_root / name).exists() for name in forbidden_modules)
+    assert not hasattr(femaster_api, "T3D2")
+    assert not hasattr(femaster_api, "MITC4")
+    assert not hasattr(femaster_api, "QSPT")

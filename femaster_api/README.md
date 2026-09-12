@@ -77,6 +77,17 @@ constraints, amplitudes, profiles, coordinate systems, features, parts and
 instances. There is deliberately no generic `mesh/`, `io/` or `model/project/`
 package.
 
+The public concrete element set follows FEMaster's canonical internal names:
+
+- solids: `C3D4`, `C3D5`, `C3D6`, `C3D8`, `C3D8R`, `C3D10`, `C3D15`, `C3D20`, `C3D20R`
+- shells: `S3`, `S4`, `S6`, `S8`
+- truss: `T3`
+- beam: `B33`
+
+Aliases and implementation-specific variants such as `T3D2`, `MITC*`, `QSPT`
+and point-element helper classes are intentionally not exposed as concrete
+Python element classes.
+
 ## Export and input reading
 
 Every object that has a native FEMaster representation implements `export()`.
@@ -85,14 +96,14 @@ Repositories implement `export()` only where they own ordering or grouping.
 scope.
 
 ```python
-from femaster_api import Node, Project, T3D2
+from femaster_api import Node, Project, T3
 
 project = Project("model")
 part = project.parts.default()
 
 part.nodes.add(Node(1, 0.0, 0.0, 0.0))
 part.nodes.add(Node(2, 1.0, 0.0, 0.0))
-part.elements.add(T3D2(1, (1, 2)))
+part.elements.add(T3(1, (1, 2)))
 
 project.write("model.inp")
 ```

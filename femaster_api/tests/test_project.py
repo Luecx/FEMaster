@@ -14,7 +14,7 @@ from femaster_api import (
     Support,
     SupportCollector,
     SurfaceRegion,
-    T3D2,
+    T3,
     TrussSection,
 )
 
@@ -25,7 +25,7 @@ def make_project() -> Project:
 
     part.nodes.add(Node(10, 0.0, 0.0, 0.0))
     part.nodes.add(Node(20, 1000.0, 0.0, 0.0))
-    part.elements.add(T3D2(50, (10, 20)))
+    part.elements.add(T3(50, (10, 20)))
 
     part.regions.add(NodeRegion("ROOT", (10,)))
     part.regions.add(NodeRegion("TIP", (20,)))
@@ -81,6 +81,7 @@ def test_project_export_and_read_inp_text_round_trip_core_semantics():
     source = make_project()
     text = source.export()
 
+    assert "*ELEMENT, TYPE=T3" in text
     assert "*SURFACE, NAME=OUTER, TYPE=ELEMENT" in text
     assert "*SFSET, SFSET=SURFACE_SET" in text
     assert "*LOADCASE, TYPE=LINEARSTATIC, NAME=STATIC" in text
@@ -92,6 +93,7 @@ def test_project_export_and_read_inp_text_round_trip_core_semantics():
     assert part.nodes[10].x == 0.0
     assert part.nodes[20].x == 1000.0
     assert part.elements[50].nodes == (10, 20)
+    assert part.elements[50].type_name == "T3"
     assert part.surfaces["OUTER"].entries == [(50, 1)]
     assert part.regions.surfaces["SURFACE_SET"].members == ["OUTER"]
     assert project.materials["STEEL"].elasticity.youngs_modulus == 210000.0

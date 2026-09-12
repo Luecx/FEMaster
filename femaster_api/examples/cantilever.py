@@ -1,4 +1,9 @@
-"""Small cantilever-style truss example using the rewritten FEMaster API."""
+"""Small cantilever-style truss example using the rewritten FEMaster API.
+
+The example intentionally uses only canonical public element names.  The two-node
+truss is therefore represented by ``T3`` rather than the historical ``T3D2``
+alias, matching the reduced element surface of the Python API.
+"""
 
 from femaster_api import (
     ElementRegion,
@@ -12,7 +17,7 @@ from femaster_api import (
     StaticStep,
     Support,
     SupportCollector,
-    T3D2,
+    T3,
     TrussSection,
 )
 
@@ -26,7 +31,7 @@ part = project.parts.default()
 
 part.nodes.add(Node(1, 0.0, 0.0, 0.0))
 part.nodes.add(Node(2, 1000.0, 0.0, 0.0))
-part.elements.add(T3D2(1, (1, 2)))
+part.elements.add(T3(1, (1, 2)))
 
 part.regions.add(NodeRegion("ROOT", (1,)))
 part.regions.add(NodeRegion("TIP", (2,)))
