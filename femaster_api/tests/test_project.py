@@ -113,7 +113,10 @@ def test_project_export_and_read_inp_text_round_trip_object_relationships():
     assert part.surfaces["OUTER"].entries == [(part.elements[50], 1)]
     assert part.regions.surfaces["SURFACE_SET"].members == [part.surfaces["OUTER"]]
 
-    section = part.sections["BAR_SECTION"]
+    # Native section keywords identify assignments by ELSET and do not persist
+    # the Python repository name, so validate the reconstructed section by order
+    # and, importantly, by object identity of its semantic relationships.
+    section = part.sections[0]
     assert section.element_region is part.regions.elements["BAR"]
     assert section.material is project.materials["STEEL"]
 
