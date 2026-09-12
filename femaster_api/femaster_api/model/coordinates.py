@@ -18,7 +18,7 @@ def _vec3(values: Iterable[float]) -> tuple[float, float, float]:
 class CoordinateSystem(NamedObject):
     """Base class for named FEMaster coordinate systems."""
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         raise NotImplementedError
 
 
@@ -37,7 +37,7 @@ class RectangularCoordinateSystem(CoordinateSystem):
         self.y_axis = None if y_axis is None else _vec3(y_axis)
         self.z_axis = None if z_axis is None else _vec3(z_axis)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         values: list[float] = list(self.x_axis)
         if self.y_axis is not None:
             values.extend(self.y_axis)
@@ -64,7 +64,7 @@ class CylindricalCoordinateSystem(CoordinateSystem):
         self.axis      = _vec3(axis)
         self.reference = _vec3(reference)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("ORIENTATION", NAME=self.name, TYPE="CYLINDRICAL"),
             csv((*self.origin, *self.axis, *self.reference)),
@@ -74,5 +74,5 @@ class CylindricalCoordinateSystem(CoordinateSystem):
 class CoordinateSystemRepository(NamedRepository[CoordinateSystem]):
     """Repository of named global coordinate systems."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(item.to_femaster() for item in self)
+    def export(self) -> str:
+        return "\n\n".join(item.export() for item in self)

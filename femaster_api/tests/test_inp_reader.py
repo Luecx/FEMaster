@@ -1,4 +1,4 @@
-from femaster_api import InpReader, MassElement, MassSection
+from femaster_api import InpImporter, MassElement, MassSection
 
 
 DECK = """\
@@ -30,8 +30,8 @@ BC
 """
 
 
-def test_inp_reader_builds_public_model():
-    project = InpReader().parse(DECK)
+def test_inp_importer_builds_public_model():
+    project = InpImporter().import_text(DECK)
     part = project.parts.default()
 
     assert project.name == "READ_TEST"

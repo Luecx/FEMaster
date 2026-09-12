@@ -41,7 +41,7 @@ class Amplitude(NamedObject):
         self.points.append((float(time), float(value)))
         return self
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("AMPLITUDE", NAME=self.name, TYPE=self.interpolation.value),
             *(csv(point) for point in self.points),
@@ -51,14 +51,14 @@ class Amplitude(NamedObject):
 class AmplitudeRepository(NamedRepository[Amplitude]):
     """Repository of named global amplitudes."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(amplitude.to_femaster() for amplitude in self)
+    def export(self) -> str:
+        return "\n\n".join(amplitude.export() for amplitude in self)
 
 
 class Load:
     """Base class for one collector-owned FEMaster load definition."""
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         raise NotImplementedError
 
 
@@ -80,7 +80,7 @@ class NodalForce(Load):
         if len(self.values) != 6:
             raise ValueError("NodalForce requires exactly 6 force/moment values")
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         return block([
             keyword(
                 "CLOAD",
@@ -110,7 +110,7 @@ class SurfaceTraction(Load):
         if len(self.values) != 3:
             raise ValueError("SurfaceTraction requires exactly 3 components")
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         return block([
             keyword(
                 "DLOAD",
@@ -130,7 +130,7 @@ class PressureLoad(Load):
         self.pressure  = float(pressure)
         self.amplitude = amplitude
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         return block([
             keyword("PLOAD", LOAD_COLLECTOR=collector, AMPLITUDE=self.amplitude),
             csv((self.target, self.pressure)),
@@ -155,7 +155,7 @@ class VolumeLoad(Load):
         if len(self.values) != 3:
             raise ValueError("VolumeLoad requires exactly 3 components")
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         return block([
             keyword(
                 "VLOAD",
@@ -174,7 +174,7 @@ class ThermalLoad(Load):
         self.temperature_field      = str(temperature_field)
         self.reference_temperature = float(reference_temperature)
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         return keyword(
             "TLOAD",
             LOAD_COLLECTOR=collector,
@@ -203,7 +203,7 @@ class InertialLoad(Load):
         self.alpha                 = tuple(float(value) for value in alpha)
         self.consider_point_masses = bool(consider_point_masses)
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         return block([
             keyword(
                 "INERTIALOAD",
@@ -233,15 +233,15 @@ class LoadCollector(NamedObject):
         self.loads.append(load)
         return load
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(load.to_femaster(self.name) for load in self.loads)
+    def export(self) -> str:
+        return "\n\n".join(load.export(self.name) for load in self.loads)
 
 
 class LoadCollectorRepository(NamedRepository[LoadCollector]):
     """Repository of named load collectors."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(collector.to_femaster() for collector in self if collector.loads)
+    def export(self) -> str:
+        return "\n\n".join(collector.export() for collector in self if collector.loads)
 
 
 class Support:
@@ -264,7 +264,7 @@ class Support:
         if len(self.values) > 6:
             raise ValueError("Support accepts at most 6 prescribed DOF values")
 
-    def to_femaster(self, collector: str) -> str:
+    def export(self, collector: str) -> str:
         values = list(self.values)
         while values and values[-1] is None:
             values.pop()
@@ -291,12 +291,12 @@ class SupportCollector(NamedObject):
         self.supports.append(support)
         return support
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(support.to_femaster(self.name) for support in self.supports)
+    def export(self) -> str:
+        return "\n\n".join(support.export(self.name) for support in self.supports)
 
 
 class SupportCollectorRepository(NamedRepository[SupportCollector]):
     """Repository of named support collectors."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(collector.to_femaster() for collector in self if collector.supports)
+    def export(self) -> str:
+        return "\n\n".join(collector.export() for collector in self if collector.supports)

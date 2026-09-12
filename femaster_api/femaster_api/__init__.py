@@ -2,11 +2,11 @@
 
 The public API mirrors FEMaster's semantic model: Project owns named global
 repositories, Part owns local topology, collectors own loads/supports, and each
-exportable class writes its own FEMaster representation.
+exportable class exports its own native input representation.
 """
 
 from .fields import Field, FieldDomain, FieldRepository, FieldType
-from .io import FrdReader, InpReader, ResReader, read_input, read_result
+from .io import FrdImporter, InpImporter, ResImporter, import_input, import_result
 from .model import *
 from .project import Project
 from .repository import IdRepository, NamedObject, NamedRepository

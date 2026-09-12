@@ -20,7 +20,7 @@ class Section(NamedObject):
         super().__init__(name)
         self.element_region = str(element_region)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         raise NotImplementedError
 
 
@@ -39,7 +39,7 @@ class SolidSection(MaterialSection):
         super().__init__(name, element_region, material)
         self.orientation = orientation
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return keyword(
             "SOLIDSECTION",
             ELSET=self.element_region,
@@ -68,7 +68,7 @@ class ShellSection(MaterialSection):
         if self.csys_axis not in (1, 2, 3):
             raise ValueError("ShellSection csys_axis must be 1, 2 or 3")
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword(
                 "SHELLSECTION",
@@ -112,7 +112,7 @@ class ABDShellSection(Section):
         if self.csys_axis not in (1, 2, 3):
             raise ValueError("ABDShellSection csys_axis must be 1, 2 or 3")
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         values = (*self.abd, *self.shear)
         rows = [csv(values[start:start + 8]) for start in range(0, len(values), 8)]
         return block([
@@ -149,7 +149,7 @@ class BeamSection(MaterialSection):
         if all(value == 0.0 for value in self.orientation):
             raise ValueError("BeamSection orientation must be non-zero")
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword(
                 "BEAMSECTION",
@@ -170,7 +170,7 @@ class TrussSection(MaterialSection):
         if self.area <= 0.0:
             raise ValueError("TrussSection area must be positive")
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("TRUSSSECTION", ELSET=self.element_region, MATERIAL=self.material),
             csv((self.area,)),
@@ -184,7 +184,7 @@ class MassSection(Section):
         super().__init__(name, element_region)
         self.mass = float(mass)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("MASS", ELSET=self.element_region, TYPE="ISOTROPIC"),
             csv((self.mass,)),
@@ -200,7 +200,7 @@ class RotaryInertiaSection(Section):
         if len(self.inertia) != 3:
             raise ValueError("RotaryInertiaSection requires exactly 3 diagonal moments")
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("ROTARY INERTIA", ELSET=self.element_region),
             csv((*self.inertia, 0.0, 0.0, 0.0)),
@@ -217,7 +217,7 @@ class SpringSection(Section):
         if self.dof < 1 or self.dof > 6:
             raise ValueError("SpringSection dof must be between 1 and 6")
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("SPRING", ELSET=self.element_region),
             csv((self.dof,)),
@@ -228,8 +228,8 @@ class SpringSection(Section):
 class SectionRepository(NamedRepository[Section]):
     """Named repository of Part-local section and point-property assignments."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(section.to_femaster() for section in self)
+    def export(self) -> str:
+        return "\n\n".join(section.export() for section in self)
 
 
 class AssemblySectionRepository(SectionRepository):

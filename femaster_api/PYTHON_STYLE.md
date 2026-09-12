@@ -35,31 +35,47 @@ Do not introduce a framework merely to reduce line count.
 
 ## 3. Export
 
-Every class that has an independent FEMaster representation implements
-`to_femaster()` itself.
+Every class that has an independent native input representation implements
+`export()` itself.
 
-Repositories implement `to_femaster()` when they own ordering or grouping
-required by the input format. `Project.to_femaster()` only orchestrates global
-output order; it must not become a type-switching serializer registry.
+Repositories implement `export()` when they own ordering or grouping required
+by the input format. `Project.export()` only orchestrates global output order;
+it must not become a type-switching serializer registry.
 
 Use the small `_format.py` helpers for keyword lines, CSV rows and block joining.
 Do not introduce visitors, decorators, serializer registries or metaclasses for
-ordinary FEMaster output.
+ordinary output.
 
-## 4. Readers
+`write()` is the filesystem convenience on top of `export()`. It must not contain
+independent serialization logic.
 
-Readers populate the same public object model that users construct manually.
+## 4. Import
+
+Public import APIs use importer terminology:
+
+- `InpImporter`
+- `ResImporter`
+- `FrdImporter`
+- `import_input()`
+- `import_result()`
+- `Project.import_file()`
+
+Importer methods use `import_file()` for filesystem input and `import_text()` for
+already available text. Python's reserved `import` keyword is not used as a
+method name.
+
+Importers populate the same public object model that users construct manually.
 Do not create a second DTO hierarchy for parsed files.
 
 Syntax that is parsed successfully but has no semantic implementation must be
 retained explicitly as unsupported/unparsed data rather than silently ignored.
 
-Result readers map format-specific data into the common hierarchy:
+Result importers map format-specific data into the common hierarchy:
 
 `Result -> LoadCase -> Frame -> Field`
 
 `FieldDomain` and `FieldType` are the central definitions for field semantics.
-Format readers must not maintain independent competing field enums.
+Format importers must not maintain independent competing field enums.
 
 ## 5. Files and modules
 
@@ -82,7 +98,7 @@ Class contents should normally follow this order:
 1. Class constants.
 2. Construction and persistent definition data.
 3. Public modification/access operations.
-4. FEMaster export.
+4. Export.
 5. Container protocol methods.
 6. Private helpers.
 

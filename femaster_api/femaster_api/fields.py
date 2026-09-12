@@ -1,8 +1,8 @@
-"""Central field definitions shared by model input and result readers.
+"""Central field definitions shared by model input and result importers.
 
 Field domains describe where rows live. Field types describe semantic meaning
 independently of the result format that carried the values. This prevents RES,
-FRD and future readers from maintaining separate name conventions.
+FRD and future importers from maintaining separate name conventions.
 """
 
 from __future__ import annotations
@@ -182,8 +182,8 @@ class Field(NamedObject):
 
         return self.values[key]
 
-    def to_femaster(self) -> str:
-        """Return this field as a FEMaster FIELD block."""
+    def export(self) -> str:
+        """Export this field as a FIELD block."""
 
         lines = [
             keyword(
@@ -191,7 +191,7 @@ class Field(NamedObject):
                 NAME=self.name,
                 TYPE=self.domain.value,
                 COLS=self.cols,
-                FILL="NONE",
+                FILL="ZERO",
             )
         ]
 
@@ -215,5 +215,5 @@ class Field(NamedObject):
 class FieldRepository(NamedRepository[Field]):
     """Named repository of global model fields."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(field.to_femaster() for field in self)
+    def export(self) -> str:
+        return "\n\n".join(field.export() for field in self)

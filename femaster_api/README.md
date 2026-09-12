@@ -1,6 +1,6 @@
 # FEMaster Python API
 
-The Python API mirrors the semantic FEMaster model and writes native FEMaster
+The Python API mirrors the semantic FEMaster model and exports native FEMaster
 keyword input directly from the model objects.
 
 ```python
@@ -13,6 +13,7 @@ part.nodes.add(Node(1, 0.0, 0.0, 0.0))
 part.nodes.add(Node(2, 1.0, 0.0, 0.0))
 part.elements.add(T3D2(1, (1, 2)))
 
+text = project.export()
 project.write("model.inp")
 ```
 
@@ -40,15 +41,17 @@ part.elements[250]
 Use `repository.at(index)` only when insertion-order positional access is really
 required for ID-based repositories.
 
-## Reading input and results
+## Importing input and results
 
 ```python
-from femaster_api import InpReader, ResReader, FrdReader, read_result
+from femaster_api import InpImporter, import_result
 
-project = InpReader().read("model.inp")
-result = read_result("model.res")
+project = InpImporter().import_file("model.inp")
+result = import_result("model.res")
 field = result.field("DISP", loadcase=1, frame=0)
 ```
+
+For in-memory text, importers also provide `import_text()`.
 
 RES and FEMaster-generated nodal FRD output use the common
 `Result -> LoadCase -> Frame -> Field` hierarchy and the central `FieldDomain`

@@ -1,7 +1,7 @@
 """Global FEMaster material and profile definitions.
 
 Material behavior is represented by small explicit classes. Each constitutive
-sub-definition knows how to write only its own keyword block; Material composes
+sub-definition knows how to export only its own keyword block; Material composes
 those blocks in FEMaster order. No serializer registry is involved.
 """
 
@@ -14,7 +14,7 @@ from ..repository import NamedObject, NamedRepository
 class Elasticity:
     """Base class for exportable elastic constitutive definitions."""
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         raise NotImplementedError
 
 
@@ -25,7 +25,7 @@ class IsotropicElasticity(Elasticity):
         self.youngs_modulus = float(youngs_modulus)
         self.poisson_ratio  = float(poisson_ratio)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("ELASTIC", TYPE="ISOTROPIC"),
             csv((self.youngs_modulus, self.poisson_ratio)),
@@ -40,7 +40,7 @@ class GeneralizedIsotropicElasticity(Elasticity):
         self.poisson_ratio  = float(poisson_ratio)
         self.shear_modulus  = float(shear_modulus)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("ELASTIC", TYPE="GENISO"),
             csv((self.youngs_modulus, self.poisson_ratio, self.shear_modulus)),
@@ -64,7 +64,7 @@ class OrthotropicElasticity(Elasticity):
     ) -> None:
         self.values = tuple(float(value) for value in (e1, e2, e3, nu12, nu13, nu23, g12, g13, g23))
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("ELASTIC", TYPE="ENGINEERINGCONSTANTS"),
             csv(self.values),
@@ -77,7 +77,7 @@ class ABDElasticity(Elasticity):
     def __init__(self, values: tuple[float, ...] | list[float]) -> None:
         self.values = tuple(float(value) for value in values)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         lines = [keyword("ELASTIC", TYPE="ABD")]
         for start in range(0, len(self.values), 8):
             lines.append(csv(self.values[start:start + 8]))
@@ -100,13 +100,13 @@ class Material(NamedObject):
         self.density           = None if density is None else float(density)
         self.thermal_expansion = None if thermal_expansion is None else float(thermal_expansion)
 
-    def to_femaster(self) -> str:
-        """Return the complete FEMaster material definition."""
+    def export(self) -> str:
+        """Export the complete material definition."""
 
         lines = [keyword("MATERIAL", NAME=self.name)]
 
         if self.elasticity is not None:
-            lines.append(self.elasticity.to_femaster())
+            lines.append(self.elasticity.export())
 
         if self.density is not None:
             lines.extend([keyword("DENSITY"), csv((self.density,))])
@@ -120,8 +120,8 @@ class Material(NamedObject):
 class MaterialRepository(NamedRepository[Material]):
     """Repository of named global materials."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(material.to_femaster() for material in self)
+    def export(self) -> str:
+        return "\n\n".join(material.export() for material in self)
 
 
 class Profile(NamedObject):
@@ -143,12 +143,12 @@ class Profile(NamedObject):
         super().__init__(name)
         self.values = tuple(float(value) for value in (area, iy, iz, j, iyz, ey, ez, refy, refz))
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([keyword("PROFILE", NAME=self.name), csv(self.values)])
 
 
 class ProfileRepository(NamedRepository[Profile]):
     """Repository of named beam profiles."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(profile.to_femaster() for profile in self)
+    def export(self) -> str:
+        return "\n\n".join(profile.export() for profile in self)

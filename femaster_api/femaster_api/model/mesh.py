@@ -22,8 +22,8 @@ class Node:
         self.y  = float(y)
         self.z  = float(z)
 
-    def to_femaster(self) -> str:
-        """Return this node as one FEMaster NODE data row."""
+    def export(self) -> str:
+        """Export this node as one NODE data row."""
 
         return csv((self.id, self.x, self.y, self.z))
 
@@ -31,12 +31,12 @@ class Node:
 class NodeRepository(IdRepository[Node]):
     """Repository of part-local nodes keyed by FEMaster node id."""
 
-    def to_femaster(self) -> str:
-        """Return all nodes as one FEMaster NODE block."""
+    def export(self) -> str:
+        """Export all nodes as one NODE block."""
 
         if not self._items:
             return ""
-        return block([keyword("NODE"), *(node.to_femaster() for node in self)])
+        return block([keyword("NODE"), *(node.export() for node in self)])
 
 
 class Element:
@@ -54,8 +54,8 @@ class Element:
                 f"{self.type_name} requires {self.node_count} nodes, got {len(self.nodes)}"
             )
 
-    def to_femaster(self) -> str:
-        """Return this element as one FEMaster ELEMENT connectivity row."""
+    def export(self) -> str:
+        """Export this element as one ELEMENT connectivity row."""
 
         return csv((self.id, *self.nodes))
 
@@ -232,8 +232,8 @@ ELEMENT_TYPES: dict[str, type[Element]] = {
 class ElementRepository(IdRepository[Element]):
     """Repository of part-local elements keyed by FEMaster element id."""
 
-    def to_femaster(self) -> str:
-        """Return elements grouped into deterministic FEMaster TYPE blocks."""
+    def export(self) -> str:
+        """Export elements grouped into deterministic TYPE blocks."""
 
         groups: dict[str, list[Element]] = {}
         for element in self:
@@ -244,7 +244,7 @@ class ElementRepository(IdRepository[Element]):
             result.append(
                 block([
                     keyword("ELEMENT", TYPE=type_name),
-                    *(element.to_femaster() for element in elements),
+                    *(element.export() for element in elements),
                 ])
             )
         return "\n\n".join(result)
@@ -268,8 +268,8 @@ class Surface(NamedObject):
         self.entries.append((element, int(side)))
         return self
 
-    def to_femaster(self) -> str:
-        """Return this surface as one FEMaster SURFACE block."""
+    def export(self) -> str:
+        """Export this surface as one SURFACE block."""
 
         return block([
             keyword("SURFACE", NAME=self.name, TYPE="ELEMENT"),

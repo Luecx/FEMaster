@@ -41,7 +41,7 @@ def make_project() -> Project:
 
 
 def test_project_export_is_femaster_deck():
-    text = make_project().to_femaster()
+    text = make_project().export()
 
     assert "*MODEL, NAME=TEST" in text
     assert "*NODE" in text

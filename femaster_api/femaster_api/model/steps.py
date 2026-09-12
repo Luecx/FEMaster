@@ -40,7 +40,7 @@ class SolverControl:
         self.device = device
         self.method = method
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return keyword("SOLVER", DEVICE=self.device.value, METHOD=self.method.value)
 
 
@@ -76,14 +76,14 @@ class Step(NamedObject):
             lines.extend([keyword("LOADS"), csv(self.loads)])
 
         if self.solver is not None:
-            lines.append(self.solver.to_femaster())
+            lines.append(self.solver.export())
 
         if self.constraint_method is not None:
             lines.append(keyword("CONSTRAINTMETHOD", TYPE=self.constraint_method.value))
 
         return lines
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         raise NotImplementedError
 
 
@@ -113,7 +113,7 @@ class StaticStep(Step):
         self.inertia_relief  = bool(inertia_relief)
         self.rebalance_loads = bool(rebalance_loads)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         lines = self._common_lines()
         if self.inertia_relief:
             lines.append(keyword("INERTIARELIEF"))
@@ -131,7 +131,7 @@ class ModalStep(Step):
         super().__init__(name, supports=supports)
         self.number_of_modes = int(number_of_modes)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             *self._common_lines(include_loads=False),
             keyword("NUMEIGENVALUES"),
@@ -158,7 +158,7 @@ class BucklingStep(Step):
         self.number_of_modes = int(number_of_modes)
         self.sigma           = None if sigma is None else float(sigma)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         lines = [
             *self._common_lines(),
             keyword("NUMEIGENVALUES"),
@@ -207,7 +207,7 @@ class NonlinearStaticStep(Step):
         self.max_iterations    = max_iterations
         self.tolerance         = tolerance
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         keys = {
             "CONTROL": self.control,
             "INCREMENTS": self.increments,
@@ -272,7 +272,7 @@ class TransientStep(Step):
         self.damping     = damping
         self.write_every = write_every
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         lines = [
             *self._common_lines(),
             keyword("TIME"),
@@ -293,5 +293,5 @@ class TransientStep(Step):
 class StepRepository(NamedRepository[Step]):
     """Repository of named analysis steps in execution order."""
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(step.to_femaster() for step in self)
+    def export(self) -> str:
+        return "\n\n".join(step.export() for step in self)

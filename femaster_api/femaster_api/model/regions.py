@@ -30,8 +30,8 @@ class Region(NamedObject):
         self.members.extend(members)
         return self
 
-    def to_femaster(self) -> str:
-        """Return this region when a direct FEMaster set keyword exists."""
+    def export(self) -> str:
+        """Export this region when a direct set keyword exists."""
 
         if self.keyword_name is None:
             raise NotImplementedError(
@@ -95,11 +95,11 @@ class RegionRepository:
             return self.lines.add(region)
         raise TypeError(f"unsupported region type: {type(region).__name__}")
 
-    def to_femaster(self) -> str:
-        """Return directly representable NSET and ELSET definitions."""
+    def export(self) -> str:
+        """Export directly representable NSET and ELSET definitions."""
 
         rendered = [
-            *(region.to_femaster() for region in self.nodes),
-            *(region.to_femaster() for region in self.elements),
+            *(region.export() for region in self.nodes),
+            *(region.export() for region in self.elements),
         ]
         return "\n\n".join(item for item in rendered if item)

@@ -3,7 +3,7 @@
 Project mirrors the semantic scope of FEMaster input: reusable Parts own local
 topology, while shared definitions, assembly regions/surfaces, constraints,
 assembly point-properties, collectors, features and analysis steps live at
-project level. The class also provides the public write/run boundary.
+project level. The class also provides the public export/import and run boundary.
 """
 
 from __future__ import annotations
@@ -77,23 +77,23 @@ class Project:
 
         self.steps = StepRepository()
 
-        # Reader fallback. Unknown keyword blocks are retained for diagnostics
+        # Import fallback. Unknown keyword blocks are retained for diagnostics
         # but are not exported automatically because their scope/dependencies
         # cannot be reconstructed safely without a semantic implementation.
         self.unparsed_blocks: list[object] = []
 
-    def to_femaster(self) -> str:
-        """Return the complete FEMaster input deck in dependency order."""
+    def export(self) -> str:
+        """Export the complete native input deck in dependency order."""
 
         # ------------------------------------------------------------------
         # Build the assembly scope
         # ------------------------------------------------------------------
 
         assembly_body = blocks((
-            self.instances.to_femaster(),
-            self.regions.to_femaster(),
-            "\n\n".join(surface.to_femaster() for surface in self.surfaces),
-            self.sections.to_femaster(),
+            self.instances.export(),
+            self.regions.export(),
+            "\n\n".join(surface.export() for surface in self.surfaces),
+            self.sections.export(),
         ))
 
         assembly = ""
@@ -112,36 +112,36 @@ class Project:
             keyword("MODEL", NAME=self.name),
 
             # Shared definitions are independent of part instantiation.
-            self.coordinate_systems.to_femaster(),
-            self.materials.to_femaster(),
-            self.profiles.to_femaster(),
-            self.amplitudes.to_femaster(),
+            self.coordinate_systems.export(),
+            self.materials.export(),
+            self.profiles.export(),
+            self.amplitudes.export(),
 
             # The default Part is written in root scope; explicit Parts receive
             # PART/ENDPART wrappers. Assembly instances materialize them later.
-            self.parts.to_femaster(),
+            self.parts.export(),
             assembly,
 
             # Remaining definitions operate on compiled assembly topology.
-            self.fields.to_femaster(),
-            self.features.to_femaster(),
-            self.constraints.to_femaster(),
+            self.fields.export(),
+            self.features.export(),
+            self.constraints.export(),
 
             # Collectors own individual BC/load entries. Steps only reference
             # collector names and therefore follow the definitions here.
-            self.support_collectors.to_femaster(),
-            self.load_collectors.to_femaster(),
-            self.steps.to_femaster(),
+            self.support_collectors.export(),
+            self.load_collectors.export(),
+            self.steps.export(),
 
             keyword("END"),
         )) + "\n"
 
     def write(self, path: str | Path) -> Path:
-        """Write the complete project as a UTF-8 FEMaster input file."""
+        """Export the project to a UTF-8 native input file."""
 
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(self.to_femaster(), encoding="utf-8")
+        path.write_text(self.export(), encoding="utf-8")
         return path
 
     def run(
@@ -153,7 +153,7 @@ class Project:
         input_name: str | None = None,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        """Write the project and execute FEMaster synchronously.
+        """Export the project and execute FEMaster synchronously.
 
         Additional command-line arguments are passed through unchanged instead
         of mirroring FEMaster's complete CLI in Python. The generated input path
@@ -183,9 +183,9 @@ class Project:
         )
 
     @classmethod
-    def read(cls, path: str | Path) -> "Project":
-        """Read a FEMaster/Abaqus-like INP file into the Python object model."""
+    def import_file(cls, path: str | Path) -> "Project":
+        """Import a FEMaster/Abaqus-like INP file into the Python object model."""
 
-        from .io.inp import InpReader
+        from .io import InpImporter
 
-        return InpReader().read(path)
+        return InpImporter().import_file(path)

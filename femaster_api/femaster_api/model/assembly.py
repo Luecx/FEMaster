@@ -33,15 +33,15 @@ class Part(NamedObject):
         self.surfaces = NamedRepository[Surface]()
         self.sections = SectionRepository()
 
-    def to_femaster(self, *, root: bool = False) -> str:
-        """Return this part in root scope or as an explicit PART block."""
+    def export(self, *, root: bool = False) -> str:
+        """Export this part in root scope or as an explicit PART block."""
 
         body = blocks((
-            self.nodes.to_femaster(),
-            self.elements.to_femaster(),
-            self.regions.to_femaster(),
-            "\n\n".join(surface.to_femaster() for surface in self.surfaces),
-            self.sections.to_femaster(),
+            self.nodes.export(),
+            self.elements.export(),
+            self.regions.export(),
+            "\n\n".join(surface.export() for surface in self.surfaces),
+            self.sections.export(),
         ))
 
         # The implicit default part is represented by ordinary root definitions
@@ -90,12 +90,12 @@ class PartRepository(NamedRepository[Part]):
         self._items = [default]
         self._names = {default.name: default}
 
-    def to_femaster(self) -> str:
-        """Return root topology followed by all explicit PART blocks."""
+    def export(self) -> str:
+        """Export root topology followed by all explicit PART blocks."""
 
         return blocks((
-            self.default().to_femaster(root=True),
-            *(part.to_femaster() for part in self.explicit()),
+            self.default().export(root=True),
+            *(part.export() for part in self.explicit()),
         ))
 
 
@@ -132,8 +132,8 @@ class Instance(NamedObject):
                 raise ValueError("instance rotation axis points require exactly 3 values")
             self.rotation = (point_a, point_b, float(rotation[2]))
 
-    def to_femaster(self) -> str:
-        """Return the FEMaster INSTANCE block including optional placement rows."""
+    def export(self) -> str:
+        """Export the INSTANCE block including optional placement rows."""
 
         lines = [keyword("INSTANCE", NAME=self.name, PART=self.part)]
 
@@ -154,5 +154,5 @@ class InstanceRepository(NamedRepository[Instance]):
     scope because assembly-level sets and surfaces must share that same scope.
     """
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(instance.to_femaster() for instance in self)
+    def export(self) -> str:
+        return "\n\n".join(instance.export() for instance in self)

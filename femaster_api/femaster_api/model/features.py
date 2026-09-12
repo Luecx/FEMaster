@@ -17,7 +17,7 @@ def _vec3(values: Iterable[float]) -> tuple[float, float, float]:
 class Feature:
     """Base class for one assembly-level FEMaster feature."""
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         raise NotImplementedError
 
 
@@ -39,7 +39,7 @@ class PointMass(Feature):
         self.spring            = _vec3(spring)
         self.rotational_spring = _vec3(rotational_spring)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword("POINTMASS", NSET=self.node_region),
             csv((self.mass, *self.inertia, *self.spring, *self.rotational_spring)),
@@ -58,8 +58,8 @@ class FeatureRepository:
         self._items.append(feature)
         return feature
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(feature.to_femaster() for feature in self._items)
+    def export(self) -> str:
+        return "\n\n".join(feature.export() for feature in self._items)
 
     def __iter__(self) -> Iterator[Feature]:
         return iter(self._items)

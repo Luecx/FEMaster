@@ -16,7 +16,7 @@ from .._format import block, csv, keyword
 class Constraint:
     """Base class for one assembly-level constraint."""
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         raise NotImplementedError
 
 
@@ -40,7 +40,7 @@ class RigidBodyConstraint(Constraint):
     def __init__(self, element_region: str) -> None:
         self.element_region = str(element_region)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return keyword("RBM", ELSET=self.element_region)
 
 
@@ -62,7 +62,7 @@ class Coupling(Constraint):
         self.dofs             = tuple(int(bool(value)) for value in dofs)
         self.slave_is_surface = bool(slave_is_surface)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return block([
             keyword(
                 "COUPLING",
@@ -84,7 +84,7 @@ class Connector(Constraint):
         self.nset2             = str(nset2)
         self.coordinate_system = str(coordinate_system)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return keyword(
             "CONNECTOR",
             TYPE=self.type,
@@ -110,7 +110,7 @@ class Tie(Constraint):
         self.adjust   = bool(adjust)
         self.distance = None if distance is None else float(distance)
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         return keyword(
             "TIE",
             MASTER=self.master,
@@ -141,7 +141,7 @@ class Equation(Constraint):
         self.terms.append(EquationTerm(node, dof, coefficient))
         return self
 
-    def to_femaster(self) -> str:
+    def export(self) -> str:
         values: list[object] = []
         for term in self.terms:
             values.extend((term.node, term.dof, term.coefficient))
@@ -164,8 +164,8 @@ class ConstraintRepository:
         self._items.append(constraint)
         return constraint
 
-    def to_femaster(self) -> str:
-        return "\n\n".join(item.to_femaster() for item in self._items)
+    def export(self) -> str:
+        return "\n\n".join(item.export() for item in self._items)
 
     def __getitem__(self, index: int) -> Constraint:
         return self._items[index]

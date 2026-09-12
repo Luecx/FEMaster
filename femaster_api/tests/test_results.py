@@ -1,4 +1,4 @@
-from femaster_api import FieldDomain, FieldType, ResReader
+from femaster_api import FieldDomain, FieldType, ResImporter
 
 
 RES = """\
@@ -14,8 +14,8 @@ END FIELD
 """
 
 
-def test_res_reader_preserves_semantic_entity_ids():
-    result = ResReader().parse(RES)
+def test_res_importer_preserves_semantic_entity_ids():
+    result = ResImporter().import_text(RES)
     displacement = result.field("DISPLACEMENT", loadcase=1, frame=0)
 
     assert displacement.domain is FieldDomain.NODE
