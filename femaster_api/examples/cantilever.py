@@ -1,119 +1,74 @@
-from femaster_api import *
+"""Small cantilever-style truss example using the rewritten FEMaster API."""
 
-model = Model("cantilever")
-
-# ------------------------------------------------------------------
-# Nodes
-# ------------------------------------------------------------------
-
-n1 = model.nodes.add(Node(0.0, 0.0, 0.0))
-n2 = model.nodes.add(Node(1.0, 0.0, 0.0))
-
-# ------------------------------------------------------------------
-# Element
-# ------------------------------------------------------------------
-
-beam = model.elements.add(Element(B33, (n1, n2)))
-
-# ------------------------------------------------------------------
-# Sets
-# ------------------------------------------------------------------
-
-beam_set  = model.sets.add(ElementSet("BEAM", (beam,)))
-fixed_set = model.sets.add(NodeSet("FIXED", (n1,)))
-tip_set   = model.sets.add(NodeSet("TIP", (n2,)))
-
-# ------------------------------------------------------------------
-# Material
-# ------------------------------------------------------------------
-
-steel = Material("STEEL")
-steel = steel.set_isotropic_elasticity(
-    E  = 210e9,
-    nu = 0.3,
-)
-steel = steel.set_density(7850)
-
-steel = model.materials.add(steel)
-
-# ------------------------------------------------------------------
-# Beam profile
-# ------------------------------------------------------------------
-
-profile = Profile(
-    name = "BOX",
-    area = 2.0e-4,
-    iy   = 1.0e-8,
-    iz   = 2.0e-8,
-    j    = 5.0e-9,
+from femaster_api import (
+    ElementRegion,
+    IsotropicElasticity,
+    LoadCollector,
+    Material,
+    Node,
+    NodeRegion,
+    NodalForce,
+    Project,
+    StaticStep,
+    Support,
+    SupportCollector,
+    T3D2,
+    TrussSection,
 )
 
-profile = model.profiles.add(profile)
 
-# ------------------------------------------------------------------
-# Section
-# ------------------------------------------------------------------
+project = Project("cantilever")
+part = project.parts.default()
 
-section = BeamSection(
-    name        = "BEAM_SECTION",
-    material    = steel,
-    element_set = beam_set,
-    profile     = profile,
-    orientation = (0.0, 1.0, 0.0),
-)
+# -------------------------------------------------------------------------
+# Part-local topology
+# -------------------------------------------------------------------------
 
-model.sections.add(section)
+part.nodes.add(Node(1, 0.0, 0.0, 0.0))
+part.nodes.add(Node(2, 1000.0, 0.0, 0.0))
+part.elements.add(T3D2(1, (1, 2)))
 
-# ------------------------------------------------------------------
-# Boundary conditions
-# ------------------------------------------------------------------
+part.regions.add(NodeRegion("ROOT", (1,)))
+part.regions.add(NodeRegion("TIP", (2,)))
+part.regions.add(ElementRegion("BAR", (1,)))
 
-bc = SupportCollector("BCS").add(
-    Support(
-        target = fixed_set,
-        values = (0, 0, 0, 0, 0, 0),
+# -------------------------------------------------------------------------
+# Material and section
+# -------------------------------------------------------------------------
+
+project.materials.add(
+    Material(
+        "STEEL",
+        elasticity=IsotropicElasticity(210000.0, 0.3),
+        density=7.85e-9,
     )
 )
 
-model.support_collectors.add(bc)
-
-# ------------------------------------------------------------------
-# Loads
-# ------------------------------------------------------------------
-
-loads = LoadCollector("LOADS").add(
-    NodalForce(
-        target = tip_set,
-        values = (0.0, 0.0, -1000.0, 0.0, 0.0, 0.0),
+part.sections.add(
+    TrussSection(
+        "BAR_SECTION",
+        element_region="BAR",
+        material="STEEL",
+        area=100.0,
     )
 )
 
-model.load_collectors.add(loads)
+# -------------------------------------------------------------------------
+# Boundary conditions and load
+# -------------------------------------------------------------------------
 
-# ------------------------------------------------------------------
-# Analysis step
-# ------------------------------------------------------------------
+supports = project.support_collectors.add(SupportCollector("SUPPORTS"))
+supports.add(Support("ROOT", (0.0, 0.0, 0.0)))
 
-step = StaticStep(
-    name     = "STATIC",
-    loads    = (loads,),
-    supports = (bc,),
+loads = project.load_collectors.add(LoadCollector("LOADS"))
+loads.add(NodalForce("TIP", (1000.0, 0.0, 0.0, 0.0, 0.0, 0.0)))
+
+project.steps.add(
+    StaticStep(
+        "STATIC",
+        loads=("LOADS",),
+        supports=("SUPPORTS",),
+    )
 )
 
-model.steps.add(step)
-
-# ------------------------------------------------------------------
-# Validate
-# ------------------------------------------------------------------
-
-model.validate(raise_on_error=True)
-
-# ------------------------------------------------------------------
-# Export
-# ------------------------------------------------------------------
-
-results = FEMaster(model=model).run("cantilever.inp")
-
-displacement = results.field("DISPLACEMENT")
-
-print(displacement.row(0))
+project.write("cantilever.inp")
