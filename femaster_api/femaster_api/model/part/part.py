@@ -6,9 +6,9 @@ regions contain their entity objects, and sections reference region/material
 objects.  Shared project-level definitions are therefore reused by identity, not
 through copied semantic-name strings.
 
-The same class also represents the implicit root/default part.  The owning
-``PartRepository`` decides whether export wraps the content in ``*PART`` /
-``*ENDPART`` or writes it directly in root scope.
+Export follows dependency order as well: node/element regions are written before
+surfaces because surfaces may use those regions, while surface regions are
+written after surfaces because they group concrete ``Surface`` objects.
 """
 
 from __future__ import annotations
@@ -36,11 +36,15 @@ class Part(NamedObject):
     def export(self, *, root: bool = False) -> str:
         """Export this part either in root scope or as an explicit ``*PART``."""
 
+        # Preserve dependency order between set definitions, surface topology
+        # and surface groups.  Object relationships make this ordering explicit:
+        # a SurfaceRegion cannot be reconstructed before its Surface exists.
         body = blocks((
             self.nodes.export(),
             self.elements.export(),
-            self.regions.export(),
+            self.regions.export_entity_regions(),
             self.surfaces.export(),
+            self.regions.export_surface_regions(),
             self.sections.export(),
         ))
 

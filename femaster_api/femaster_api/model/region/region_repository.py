@@ -1,13 +1,14 @@
 """Container for the independent FEMaster region namespaces.
 
 Node, element, surface and line regions intentionally use separate named
-repositories because identical names may be meaningful in different entity
-domains and FEMaster itself resolves them through domain-specific contexts.
-``RegionRepository`` is therefore a small facade rather than one flattened set
-table.
+repositories because identical names may be meaningful in different domains.
+The repository also exposes export phases because surface regions depend on
+already-defined ``Surface`` objects: ``*NSET`` / ``*ELSET`` must be available
+before topology that may reference them, while ``*SFSET`` must be written only
+after the referenced ``*SURFACE`` definitions.
 
-Only domains with a direct native keyword are emitted by ``export``.  A line
-region can still be represented in memory without inventing unsupported syntax.
+Line regions currently have no standalone native keyword and are therefore kept
+in memory without inventing unsupported serialization syntax.
 """
 
 from __future__ import annotations
@@ -42,12 +43,29 @@ class RegionRepository:
             return self.lines.add(region)
         raise TypeError(f"unsupported region type: {type(region).__name__}")
 
-    def export(self) -> str:
-        """Export all region domains with a native standalone representation."""
+    def export_entity_regions(self) -> str:
+        """Export node/element regions before dependent surface definitions."""
 
         rendered = [
             *(region.export() for region in self.nodes),
             *(region.export() for region in self.elements),
-            *(region.export() for region in self.surfaces),
         ]
+        return "\n\n".join(item for item in rendered if item)
+
+    def export_surface_regions(self) -> str:
+        """Export surface groups after their ``Surface`` objects are defined."""
+
+        return "\n\n".join(
+            item
+            for item in (region.export() for region in self.surfaces)
+            if item
+        )
+
+    def export(self) -> str:
+        """Export all serializable regions when dependency phasing is irrelevant."""
+
+        rendered = (
+            self.export_entity_regions(),
+            self.export_surface_regions(),
+        )
         return "\n\n".join(item for item in rendered if item)
