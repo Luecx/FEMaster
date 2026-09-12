@@ -12,7 +12,6 @@ from .constraint_connector_type import ConnectorType
 from .constraint_coupling import Coupling
 from .constraint_coupling_type import CouplingType
 from .constraint_equation import Equation
-from .constraint_equation_term import EquationTerm
 from .constraint_repository import ConstraintRepository
 from .constraint_rigid_body import RigidBodyConstraint
 from .constraint_tie import Tie
@@ -25,7 +24,6 @@ __all__ = [
     "Coupling",
     "CouplingType",
     "Equation",
-    "EquationTerm",
     "RigidBodyConstraint",
     "Tie",
 ]
